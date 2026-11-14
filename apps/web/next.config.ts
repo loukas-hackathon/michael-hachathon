@@ -5,6 +5,12 @@ const config: NextConfig = {
   transpilePackages: ["@michael/shared"],
   // The floating dev badge sits on top of the tab bar; keep screenshots honest.
   devIndicators: false,
+  experimental: {
+    // Instant tabs: visited and prefetched screens stay in the browser's router cache for five
+    // minutes, so switching back paints at once. The tab bar refreshes a stale copy in the
+    // background (components/tab-bar.tsx); server actions that revalidate still clear it.
+    staleTimes: { dynamic: 300, static: 300 },
+  },
   // Old names for Connections: links and docs that say Devices still land on the list.
   async redirects() {
     return [
