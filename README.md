@@ -123,3 +123,86 @@ static bearer header, so use the query-string form of the key:
 `https://<railway-domain>/mcp?key=<API_KEY>`. Treat that URL as a secret.
 
 **Any MCP client:** Streamable HTTP, stateless, `POST /mcp`, JSON responses.
+
+## Connect Claude Code
+
+Michael sees your Claude Code work in two ways. The collector reads the history from the
+transcripts on your Mac (`pnpm collect --sources claude-code`, see `apps/collector/README.md`).
+Hooks add the live part: each prompt the moment you send it, and each time Claude Code is left
+waiting for you.
+
+Add this to `~/.claude/settings.json` (merge it into an existing `hooks` block if you have one):
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "https://<railway-domain>/v1/webhooks/claude-code",
+            "timeout": 3,
+            "headers": { "Authorization": "Bearer $MICHAEL_API_KEY" },
+            "allowedEnvVars": ["MICHAEL_API_KEY"]
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "permission_prompt|idle_prompt",
+        "hooks": [
+          {
+            "type": "http",
+            "url": "https://<railway-domain>/v1/webhooks/claude-code",
+            "timeout": 3,
+            "headers": { "Authorization": "Bearer $MICHAEL_API_KEY" },
+            "allowedEnvVars": ["MICHAEL_API_KEY"]
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "https://<railway-domain>/v1/webhooks/claude-code",
+            "timeout": 3,
+            "headers": { "Authorization": "Bearer $MICHAEL_API_KEY" },
+            "allowedEnvVars": ["MICHAEL_API_KEY"]
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "https://<railway-domain>/v1/webhooks/claude-code",
+            "timeout": 1,
+            "headers": { "Authorization": "Bearer $MICHAEL_API_KEY" },
+            "allowedEnvVars": ["MICHAEL_API_KEY"]
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+- The key is read from the environment, never written in the file: put
+  `export MICHAEL_API_KEY=<API_KEY>` in your shell profile and restart Claude Code. Only variables
+  listed in `allowedEnvVars` reach the header. If the variable is missing, the API answers `401`,
+  nothing is stored and the session carries on.
+- Local API: use `http://localhost:8787/v1/webhooks/claude-code` and the key `dev-key`.
+- A hook cannot fail a session. The API answers `204` straight away, and Claude Code carries on if
+  the post fails. If the API cannot be reached at all, a prompt waits 3 seconds at most. `SessionEnd`
+  gets 1 second because Claude Code allows 1.5 seconds for all hooks on exit.
+- Stored: the first 120 characters of each prompt with anything that looks like a key masked, and a
+  mark each time Claude Code waits for an approval or sits idle after finishing. `Stop` and
+  `SessionEnd` are accepted and not stored yet, so you can leave those two out. Tool input, tool
+  output and Claude's answers are never stored.
+- The same prompt arriving later from the transcripts is recognised and not stored twice.

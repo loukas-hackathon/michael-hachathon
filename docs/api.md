@@ -186,7 +186,7 @@ A duplicate `(source, external_id)` is skipped and counted in `duplicates` (not 
 ### Source webhooks
 
 All `POST`, auth required, body is the provider's native payload. Each maps to `EventInput[]` and
-ingests idempotently. Response `200 IngestResponse`. Status: all `stub`.
+ingests idempotently. Response `200 IngestResponse`. Status: `stub`, except where a row says `live`.
 
 | Path                              | Sender                                                     | Maps to                         |
 | --------------------------------- | ---------------------------------------------------------- | ------------------------------- |
@@ -194,8 +194,30 @@ ingests idempotently. Response `200 IngestResponse`. Status: all `stub`.
 | `/v1/webhooks/health-auto-export` | Health Auto Export iOS app                                 | `sleep`, `workout`, `biometric` |
 | `/v1/webhooks/ios-shortcuts`      | iPhone Shortcuts automations (app open/close)              | `app_usage`                     |
 | `/v1/webhooks/activitywatch`      | local sync script reading the ActivityWatch API on the Mac | `app_usage`, `focus_session`    |
+| `/v1/webhooks/claude-code`        | Claude Code `type: "http"` hooks (**live**)                | `ai_prompt`, `notification`     |
 
 The exact provider payload for each is documented in the issue that implements it, then copied here.
+
+`POST /v1/webhooks/claude-code` takes the hook payload Claude Code posts (see "Connect Claude Code"
+in the README). Fields read: `hook_event_name`, `session_id`, `prompt_id`, `cwd`, `prompt`,
+`notification_type`. Everything else in the payload (tool input, tool output, the assistant's
+answer, the notification text) is dropped before anything is stored. Payloads carry no timestamp,
+so `start_at` is the time of arrival.
+
+| `hook_event_name`                                               | Stored as                                                                       |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `UserPromptSubmit`                                              | `ai_prompt`, `external_id` `cc:<session_id>:prompt:<prompt_id>`                 |
+| `Notification` with type `permission_prompt` or `idle_prompt`   | `notification` (Claude Code is waiting for the person), `data.kind` is the type |
+| `Stop`, `SessionEnd`, other notification types, any other event | accepted, not stored (they need an event type of their own)                     |
+
+- Response: always `204` with an empty body once the key is accepted, also for a payload we do not
+  recognise, so a hook never slows or fails a session. Claude Code reads a JSON body as hook output,
+  which is why this route does not return `IngestResponse`. The header `x-michael-result` says what
+  happened: `stored`, `duplicate`, `ignored` or `error`. A missing or wrong key is still `401`.
+- A `UserPromptSubmit` that is not a typed prompt (a background task report, a slash command) is
+  `ignored`.
+- The transcript reader in `apps/collector` later sends the same prompt under the same
+  `external_id` (the transcript's `promptId` is the hook's `prompt_id`), so one prompt is one event.
 
 ### Events from the local collectors
 
@@ -210,8 +232,9 @@ The `data` payload per type:
 | `macos_usage`                 | `screen`       | `Screen on` or `Screen off`        | `state` (`on` or `off`), `device`                                                                                             |
 | `chrome`                      | `web_visit`    | page title                         | `host`, `seconds`, `foreground?`, `category?`, `origin`, `profile?`. Never the full address                                   |
 | `chrome`                      | `search`       | the search term                    | `engine`, `term`, `origin`, `profile?`                                                                                        |
-| `claude_code`                 | `ai_session`   | session title                      | `tool`, `project`, `model?`, `turns`, `waiting_seconds?`, `input_tokens?`, `output_tokens?`                                   |
+| `claude_code`                 | `ai_session`   | session title                      | `tool`, `session_id`, `project`, `model?`, `turns`, `waiting_seconds`, `input_tokens`, `cached_input_tokens`, `output_tokens` |
 | `claude_code`                 | `ai_prompt`    | first 120 characters of the prompt | `tool`, `session_id`, `project`                                                                                               |
+| `claude_code`                 | `notification` | `Claude Code`                      | `tool`, `session_id`, `project`, `kind` (`permission_prompt` or `idle_prompt`). Live hook only                                |
 
 Browsing events (`web_visit`, `search`) carry `origin`: `history` when they come from Chrome's own
 history file (`apps/collector`), `extension` when the browser extension saw them live. The same
@@ -226,6 +249,24 @@ visit can arrive from both; the patterns layer decides which to trust. From `his
 - Visits to excluded hosts (banking, health, adult, password managers, the local network, and the
   user's own list) are never sent, and neither are their titles or search terms
   (`apps/collector/src/site-privacy.ts`).
+
+AI tool events (`ai_session`, `ai_prompt`) from `claude_code`:
+
+- One `ai_session` is one **work stretch** of a Claude Code session: a run of activity with no pause
+  longer than 30 minutes. A session left open for days gives several. `external_id` is
+  `cc:<session_id>:<start_at>`. A stretch is sent once it is closed (its last record is more than
+  30 minutes old), so its numbers are final.
+- `title` is the session's own title, else the first 80 characters of the stretch's first prompt.
+- `turns` counts prompts typed by the person. `waiting_seconds` is the time Claude Code sat finished
+  and waiting: from the end of an assistant turn to the next typed prompt, gaps of 30 minutes or
+  more left out.
+- `input_tokens` is everything the model read (fresh input, cache writes and cache reads), subagents
+  included; `cached_input_tokens` is the cache read part of it. `model` is the most used one.
+- `project` is the name of the working folder.
+- Prompt titles are cut to 120 characters on one line, with anything that looks like a key or token
+  replaced by `[secret]`. Pasted blocks and editor context are left out; a prompt with nothing typed
+  is titled `Prompt without typed text`. Tool input, tool output, file contents and assistant text
+  are never stored. The rules live in `packages/shared/src/ai-prompts.ts`.
 
 ### Goals
 

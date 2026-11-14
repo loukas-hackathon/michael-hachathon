@@ -6,6 +6,7 @@
   "scripts": {
     "start": "tsx src/index.ts",
     "check:chrome": "tsx src/checks/chrome.check.ts",
+    "check:claude-code": "tsx src/checks/claude-code.check.ts",
     "typecheck": "tsc -p tsconfig.json",
     "test": "tsx --test \"src/**/*.test.ts\""
   },

@@ -15,11 +15,12 @@ By default it posts to `http://localhost:8787` with the key `dev-key`. Point it 
 `MICHAEL_API_URL` and `MICHAEL_API_KEY`. Positions are kept in `~/.michael/collector-state.json`,
 so a restart continues where it stopped, and running a backfill twice never duplicates events.
 
-| Source         | What it reads                                                                          | Needs                                                            |
-| -------------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| `mac-usage`    | Which app was in front and when, notifications, screen on and off (about 4 weeks back) | Full Disk Access for the terminal or app that runs the collector |
-| `iphone-usage` | iPhone and Apple Watch app usage synced by Screen Time, about a day behind the phone   | Full Disk Access, and Share Across Devices on in Screen Time     |
-| `chrome`       | Sites visited in Chrome, time on each, and what was searched for (months back)         | Nothing: Chrome's history file is readable without a permission  |
+| Source         | What it reads                                                                                                | Needs                                                            |
+| -------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| `mac-usage`    | Which app was in front and when, notifications, screen on and off (about 4 weeks back)                       | Full Disk Access for the terminal or app that runs the collector |
+| `iphone-usage` | iPhone and Apple Watch app usage synced by Screen Time, about a day behind the phone                         | Full Disk Access, and Share Across Devices on in Screen Time     |
+| `chrome`       | Sites visited in Chrome, time on each, and what was searched for (months back)                               | Nothing: Chrome's history file is readable without a permission  |
+| `claude-code`  | Claude Code sessions: work stretches, prompts typed, time spent waiting for you, tokens (about 30 days back) | Nothing: the transcripts sit in your own `~/.claude` folder      |
 
 `iphone-usage` needs "Share Across Devices" on in Screen Time on both the iPhone and the Mac. It
 gives which app was in front, for how long and where it was opened from, about 4 weeks back. The
@@ -45,6 +46,22 @@ which post the same events (see `docs/data-sources.md`).
 
 `pnpm --filter @michael/collector check:chrome` runs the reader against a made up history file and
 checks these rules.
+
+## What the Claude Code source leaves out
+
+- It keeps the first 120 characters of each prompt you typed, on one line, and numbers: start and
+  end of each work stretch, prompts typed, seconds spent waiting for you, tokens, model, and the
+  name of the working folder.
+- Tool input, tool output, file contents and the assistant's answers are never sent. Neither is
+  text you pasted or context your editor attached.
+- Anything in a prompt that looks like a key, token or password is replaced by `[secret]` before
+  it leaves the Mac.
+- A work stretch is sent once it has been quiet for 30 minutes, so its numbers are final. Prompts
+  are sent straight away. For prompts the moment they are typed, add the hooks from "Connect Claude
+  Code" in the root README.
+
+`pnpm --filter @michael/collector check:claude-code` runs the reader against made up transcripts
+and checks these rules.
 
 ## Adding a source
 
