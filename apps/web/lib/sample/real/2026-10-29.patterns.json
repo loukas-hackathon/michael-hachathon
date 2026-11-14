@@ -1,0 +1,1531 @@
+{
+  "from": "2026-10-28T22:00:00.000Z",
+  "to": "2026-10-29T22:00:00.000Z",
+  "timezone": "Europe/Athens",
+  "generated_at": "2026-11-14T16:51:03.061Z",
+  "days": [
+    {
+      "day": "2026-10-29",
+      "complete": true
+    }
+  ],
+  "inputs": {
+    "mac_app_usage": 425,
+    "iphone_app_usage": 194,
+    "web_visits": 54,
+    "web_visits_superseded": 0,
+    "web_visits_unmeasured": 152,
+    "searches": 4,
+    "goal_blocks": 0,
+    "sleeps": 0,
+    "ai_sessions": 24
+  },
+  "headlines": [
+    "33 disruptions a day during focus, 56 minutes a day in the apps that caused them. Longest uninterrupted stretch: 13 minutes on a typical day with focus, 13 minutes at best.",
+    "A disruption of 30 seconds costs 1 minute before the app that was left is back in front (medians over 25 disruptions). That adds up to 38 minutes a day.",
+    "No travel, shopping, video, social or news browsing during focus on 1 day with focus.",
+    "47 app switches per active hour. 30% of screen time is spent in stays shorter than 2 minutes (median stay 23 seconds).",
+    "Screen time 11h 57 a day over 1 day (Mac 5h 03, iPhone 6h 54). Most of it: communication 3h 59, social 3h 19, work 2h 20 a day.",
+    "AI tools open for 12h 05 a day by the clock, 24 sessions a day (24 sessions, 19h 15 of session time in total). 32% of session time was the tool waiting for the user."
+  ],
+  "phone_cadence": {
+    "status": "not_enough_data",
+    "reason": "not enough data: needs at least 3 days of phone usage, found 1",
+    "minimum": "at least 3 days of iPhone usage and 20 waking gaps between sessions; an hour needs 5 gaps, the working window 20",
+    "summary": null,
+    "evidence": [],
+    "data": null
+  },
+  "mac_app_cadence": {
+    "status": "not_enough_data",
+    "reason": "not enough data: needs at least 3 days of Mac usage, found 1",
+    "minimum": "at least 3 days of Mac usage; an app needs 10 activations on 2 or more days, and 5 gaps for a median gap",
+    "summary": null,
+    "evidence": [],
+    "data": null
+  },
+  "focus_disruptions": {
+    "status": "ok",
+    "reason": null,
+    "minimum": "at least one focus stretch (15 minutes or more, at least half of it in work apps) or one planned goal block with device data",
+    "summary": "33 disruptions a day during focus, 56 minutes a day in the apps that caused them. Longest uninterrupted stretch: 13 minutes on a typical day with focus, 13 minutes at best.",
+    "evidence": [
+      "4e04a180-5115-4720-ad9f-2878d8adef63",
+      "65b7657e-e8c3-4f7f-bf28-40891cec75d8",
+      "814f69d2-0797-421a-8a8c-e56bb6c4f9e0",
+      "73e4030b-3b01-4358-9a01-cf1c56e138b2",
+      "7d62aa08-4dfd-4597-84c5-39f124265138",
+      "fb8f5ccb-8fa7-464e-84fb-e76dc0012e92",
+      "ad527f06-d0f7-4627-a214-b10478cd60ec",
+      "6a6aa3ff-c2da-4ec4-8fd7-9339b2ab7d54",
+      "a9217d3e-f1d9-42c1-ad7e-68f455344c89",
+      "8c63b347-23ca-4846-bf52-7269e2339dfa",
+      "00b349e4-50ea-44b3-9a7b-0f326d7cbbc5",
+      "ce47865e-a7e0-4f34-8467-54401b647ed7",
+      "a1451cc0-934c-4cf4-a8e6-36624c03d993",
+      "8bc99a6e-8a29-448f-a718-ebd0ecf8fcc6",
+      "5a174a63-f13b-4209-b96f-5921e2431240",
+      "77af6bf4-028a-4da7-ba49-0401f3b2eddf",
+      "b270b9af-20d6-4774-9697-7bc34561f3d7",
+      "cf36edf3-b448-4c4a-af61-11d3caabc9a3",
+      "8470353a-8683-4ad5-a65d-b5dc95bacadb"
+    ],
+    "data": {
+      "mode": "inferred",
+      "days_with_data": 1,
+      "uncategorised_share": 0.13,
+      "blocks": 0,
+      "stretches": 4,
+      "focus_minutes": 98,
+      "disruptions": 33,
+      "disruptions_per_day": 33,
+      "minutes_lost": 55.8,
+      "minutes_lost_per_day": 55.8,
+      "longest_uninterrupted_minutes": 12.7,
+      "median_daily_longest_uninterrupted_minutes": 12.7,
+      "daily": [
+        {
+          "day": "2026-10-29",
+          "complete": true,
+          "focus_minutes": 98,
+          "stretches": 4,
+          "disruptions": 33,
+          "ended_stretches": 3,
+          "minutes_lost": 55.8,
+          "longest_uninterrupted_minutes": 12.7
+        }
+      ],
+      "items": [
+        {
+          "mode": "inferred",
+          "day": "2026-10-29",
+          "start_at": "2026-10-29T15:55:18.000Z",
+          "end_at": "2026-10-29T16:05:18.000Z",
+          "device": "mac",
+          "trigger": {
+            "kind": "site",
+            "key": "mail.google.com",
+            "name": "mail.google.com",
+            "category": "communication"
+          },
+          "opened_by_notification": null,
+          "left": {
+            "kind": "app",
+            "key": "com.microsoft.VSCode",
+            "name": "VS Code",
+            "category": "work"
+          },
+          "minutes_lost": 10,
+          "minutes_until_back": null,
+          "ended_stretch": true,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": [
+            "4e04a180-5115-4720-ad9f-2878d8adef63",
+            "b5873f7b-88a0-437e-b2bc-5eed1773425a",
+            "4597e7b7-362c-4015-8f43-be47e4494f3e",
+            "47d4337b-7b2f-4228-8a45-05d1ee1f8aca"
+          ]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-10-29",
+          "start_at": "2026-10-29T15:50:46.000Z",
+          "end_at": "2026-10-29T15:54:56.000Z",
+          "device": "iphone",
+          "trigger": {
+            "kind": "app",
+            "key": "com.burbn.instagram",
+            "name": "Instagram",
+            "category": "social"
+          },
+          "opened_by_notification": null,
+          "left": {
+            "kind": "app",
+            "key": "com.microsoft.VSCode",
+            "name": "VS Code",
+            "category": "work"
+          },
+          "minutes_lost": 4.1,
+          "minutes_until_back": 4.2,
+          "ended_stretch": false,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": [
+            "65b7657e-e8c3-4f7f-bf28-40891cec75d8",
+            "e628411f-33ac-4abd-a35a-050f4a5e3730",
+            "c91a6e62-3072-4359-bb3d-595839584a0c",
+            "ffedcc6f-a9b6-4d92-b5b6-2750af8d3c80",
+            "4e04a180-5115-4720-ad9f-2878d8adef63"
+          ]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-10-29",
+          "start_at": "2026-10-29T15:37:16.000Z",
+          "end_at": "2026-10-29T15:37:55.000Z",
+          "device": "mac",
+          "trigger": {
+            "kind": "app",
+            "key": "net.whatsapp.WhatsApp",
+            "name": "WhatsApp",
+            "category": "communication"
+          },
+          "opened_by_notification": null,
+          "left": {
+            "kind": "app",
+            "key": "notion.id",
+            "name": "Notion",
+            "category": "work"
+          },
+          "minutes_lost": 0.7,
+          "minutes_until_back": null,
+          "ended_stretch": false,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": ["814f69d2-0797-421a-8a8c-e56bb6c4f9e0"]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-10-29",
+          "start_at": "2026-10-29T15:19:16.000Z",
+          "end_at": "2026-10-29T15:29:16.000Z",
+          "device": "iphone",
+          "trigger": {
+            "kind": "app",
+            "key": "com.burbn.instagram",
+            "name": "Instagram",
+            "category": "social"
+          },
+          "opened_by_notification": null,
+          "left": {
+            "kind": "app",
+            "key": "com.microsoft.VSCode",
+            "name": "VS Code",
+            "category": "work"
+          },
+          "minutes_lost": 10,
+          "minutes_until_back": null,
+          "ended_stretch": true,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": ["73e4030b-3b01-4358-9a01-cf1c56e138b2", "96b486f8-08a1-4548-9965-7a31583c2467"]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-10-29",
+          "start_at": "2026-10-29T15:16:01.000Z",
+          "end_at": "2026-10-29T15:17:08.000Z",
+          "device": "mac",
+          "trigger": {
+            "kind": "app",
+            "key": "net.whatsapp.WhatsApp",
+            "name": "WhatsApp",
+            "category": "communication"
+          },
+          "opened_by_notification": null,
+          "left": {
+            "kind": "site",
+            "key": "claude.ai",
+            "name": "claude.ai",
+            "category": "ai"
+          },
+          "minutes_lost": 1.1,
+          "minutes_until_back": 2.7,
+          "ended_stretch": false,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": ["7d62aa08-4dfd-4597-84c5-39f124265138"]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-10-29",
+          "start_at": "2026-10-29T15:15:07.000Z",
+          "end_at": "2026-10-29T15:15:46.000Z",
+          "device": "mac",
+          "trigger": {
+            "kind": "app",
+            "key": "net.whatsapp.WhatsApp",
+            "name": "WhatsApp",
+            "category": "communication"
+          },
+          "opened_by_notification": null,
+          "left": {
+            "kind": "site",
+            "key": "claude.ai",
+            "name": "claude.ai",
+            "category": "ai"
+          },
+          "minutes_lost": 0.6,
+          "minutes_until_back": 0.7,
+          "ended_stretch": false,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": ["fb8f5ccb-8fa7-464e-84fb-e76dc0012e92"]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-10-29",
+          "start_at": "2026-10-29T15:12:39.000Z",
+          "end_at": "2026-10-29T15:12:58.000Z",
+          "device": "mac",
+          "trigger": {
+            "kind": "app",
+            "key": "net.whatsapp.WhatsApp",
+            "name": "WhatsApp",
+            "category": "communication"
+          },
+          "opened_by_notification": null,
+          "left": {
+            "kind": "app",
+            "key": "com.microsoft.Word",
+            "name": "Word",
+            "category": "work"
+          },
+          "minutes_lost": 0.3,
+          "minutes_until_back": null,
+          "ended_stretch": false,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": ["ad527f06-d0f7-4627-a214-b10478cd60ec", "a6d6858e-8db3-46f9-bdc0-a035dfd1886e"]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-10-29",
+          "start_at": "2026-10-29T15:09:02.000Z",
+          "end_at": "2026-10-29T15:10:02.000Z",
+          "device": "mac",
+          "trigger": {
+            "kind": "app",
+            "key": "com.apple.QuickTimePlayerX",
+            "name": "QuickTimePlayerX",
+            "category": "video"
+          },
+          "opened_by_notification": null,
+          "left": {
+            "kind": "app",
+            "key": "com.microsoft.VSCode",
+            "name": "VS Code",
+            "category": "work"
+          },
+          "minutes_lost": 1,
+          "minutes_until_back": 1,
+          "ended_stretch": false,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": ["6a6aa3ff-c2da-4ec4-8fd7-9339b2ab7d54"]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-10-29",
+          "start_at": "2026-10-29T15:07:46.000Z",
+          "end_at": "2026-10-29T15:08:09.000Z",
+          "device": "mac",
+          "trigger": {
+            "kind": "app",
+            "key": "net.whatsapp.WhatsApp",
+            "name": "WhatsApp",
+            "category": "communication"
+          },
+          "opened_by_notification": null,
+          "left": {
+            "kind": "site",
+            "key": "docs.google.com",
+            "name": "docs.google.com",
+            "category": "work"
+          },
+          "minutes_lost": 0.4,
+          "minutes_until_back": null,
+          "ended_stretch": false,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": ["a9217d3e-f1d9-42c1-ad7e-68f455344c89"]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-10-29",
+          "start_at": "2026-10-29T12:43:39.000Z",
+          "end_at": "2026-10-29T12:44:03.000Z",
+          "device": "iphone",
+          "trigger": {
+            "kind": "app",
+            "key": "com.burbn.instagram",
+            "name": "Instagram",
+            "category": "social"
+          },
+          "opened_by_notification": false,
+          "left": {
+            "kind": "app",
+            "key": "com.apple.mobilenotes",
+            "name": "Notes",
+            "category": "work"
+          },
+          "minutes_lost": 0.4,
+          "minutes_until_back": 0.4,
+          "ended_stretch": false,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": ["8c63b347-23ca-4846-bf52-7269e2339dfa"]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-10-29",
+          "start_at": "2026-10-29T12:43:30.000Z",
+          "end_at": "2026-10-29T12:43:36.000Z",
+          "device": "iphone",
+          "trigger": {
+            "kind": "app",
+            "key": "com.burbn.instagram",
+            "name": "Instagram",
+            "category": "social"
+          },
+          "opened_by_notification": false,
+          "left": {
+            "kind": "app",
+            "key": "com.apple.mobilenotes",
+            "name": "Notes",
+            "category": "work"
+          },
+          "minutes_lost": 0.1,
+          "minutes_until_back": 0.1,
+          "ended_stretch": false,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": ["00b349e4-50ea-44b3-9a7b-0f326d7cbbc5"]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-10-29",
+          "start_at": "2026-10-29T12:43:19.000Z",
+          "end_at": "2026-10-29T12:43:26.000Z",
+          "device": "iphone",
+          "trigger": {
+            "kind": "app",
+            "key": "com.burbn.instagram",
+            "name": "Instagram",
+            "category": "social"
+          },
+          "opened_by_notification": false,
+          "left": {
+            "kind": "app",
+            "key": "com.apple.mobilenotes",
+            "name": "Notes",
+            "category": "work"
+          },
+          "minutes_lost": 0.1,
+          "minutes_until_back": 0.1,
+          "ended_stretch": false,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": ["ce47865e-a7e0-4f34-8467-54401b647ed7"]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-10-29",
+          "start_at": "2026-10-29T12:42:39.000Z",
+          "end_at": "2026-10-29T12:43:07.000Z",
+          "device": "iphone",
+          "trigger": {
+            "kind": "app",
+            "key": "com.burbn.instagram",
+            "name": "Instagram",
+            "category": "social"
+          },
+          "opened_by_notification": null,
+          "left": {
+            "kind": "app",
+            "key": "com.microsoft.VSCode",
+            "name": "VS Code",
+            "category": "work"
+          },
+          "minutes_lost": 0.5,
+          "minutes_until_back": 3.8,
+          "ended_stretch": false,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": ["a1451cc0-934c-4cf4-a8e6-36624c03d993"]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-10-29",
+          "start_at": "2026-10-29T12:34:59.000Z",
+          "end_at": "2026-10-29T12:42:21.000Z",
+          "device": "iphone",
+          "trigger": {
+            "kind": "app",
+            "key": "net.whatsapp.WhatsAppSMB",
+            "name": "WhatsApp Business",
+            "category": "communication"
+          },
+          "opened_by_notification": null,
+          "left": {
+            "kind": "app",
+            "key": "com.microsoft.VSCode",
+            "name": "VS Code",
+            "category": "work"
+          },
+          "minutes_lost": 6.9,
+          "minutes_until_back": 7.4,
+          "ended_stretch": false,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": [
+            "8bc99a6e-8a29-448f-a718-ebd0ecf8fcc6",
+            "1ef12743-b22c-47c4-8076-8579522e199a",
+            "7adf0376-5105-4bb1-8549-fce79e1c19d8",
+            "6767466c-97c9-4e51-a21c-40265057a146",
+            "8a89546d-78c2-4a26-8a45-9aaf3c928a9f"
+          ]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-10-29",
+          "start_at": "2026-10-29T12:30:31.000Z",
+          "end_at": "2026-10-29T12:31:11.000Z",
+          "device": "mac",
+          "trigger": {
+            "kind": "app",
+            "key": "net.whatsapp.WhatsApp",
+            "name": "WhatsApp",
+            "category": "communication"
+          },
+          "opened_by_notification": null,
+          "left": {
+            "kind": "app",
+            "key": "com.microsoft.VSCode",
+            "name": "VS Code",
+            "category": "work"
+          },
+          "minutes_lost": 0.7,
+          "minutes_until_back": 0.7,
+          "ended_stretch": false,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": ["5a174a63-f13b-4209-b96f-5921e2431240"]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-10-29",
+          "start_at": "2026-10-29T12:28:57.000Z",
+          "end_at": "2026-10-29T12:29:50.000Z",
+          "device": "mac",
+          "trigger": {
+            "kind": "app",
+            "key": "net.whatsapp.WhatsApp",
+            "name": "WhatsApp",
+            "category": "communication"
+          },
+          "opened_by_notification": null,
+          "left": {
+            "kind": "app",
+            "key": "com.microsoft.VSCode",
+            "name": "VS Code",
+            "category": "work"
+          },
+          "minutes_lost": 0.8,
+          "minutes_until_back": 0.9,
+          "ended_stretch": false,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": ["77af6bf4-028a-4da7-ba49-0401f3b2eddf", "c2112db7-6275-4672-beaf-76e9b70155dc"]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-10-29",
+          "start_at": "2026-10-29T12:25:13.000Z",
+          "end_at": "2026-10-29T12:26:49.000Z",
+          "device": "iphone",
+          "trigger": {
+            "kind": "app",
+            "key": "com.burbn.instagram",
+            "name": "Instagram",
+            "category": "social"
+          },
+          "opened_by_notification": null,
+          "left": {
+            "kind": "site",
+            "key": "docs.google.com",
+            "name": "docs.google.com",
+            "category": "work"
+          },
+          "minutes_lost": 0.9,
+          "minutes_until_back": null,
+          "ended_stretch": false,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": [
+            "b270b9af-20d6-4774-9697-7bc34561f3d7",
+            "75bfe7c2-8bee-4965-b527-ff7e64b0a7d7",
+            "25d4f7be-c35e-44d5-bbcf-79a51654283c"
+          ]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-10-29",
+          "start_at": "2026-10-29T08:42:02.000Z",
+          "end_at": "2026-10-29T08:52:02.000Z",
+          "device": "mac",
+          "trigger": {
+            "kind": "site",
+            "key": "mail.google.com",
+            "name": "mail.google.com",
+            "category": "communication"
+          },
+          "opened_by_notification": null,
+          "left": {
+            "kind": "app",
+            "key": "com.microsoft.VSCode",
+            "name": "VS Code",
+            "category": "work"
+          },
+          "minutes_lost": 7.7,
+          "minutes_until_back": null,
+          "ended_stretch": true,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": [
+            "cf36edf3-b448-4c4a-af61-11d3caabc9a3",
+            "cd36d913-1b2d-4e5a-922b-b0aa9b8c2f2f",
+            "41cf73d7-560e-4343-b729-b41333cb53e1",
+            "e3983f76-8d20-4517-bec1-a3c1e1bc20ed",
+            "cbe15ee9-f58a-4e5a-aeca-a216b84da14c"
+          ]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-10-29",
+          "start_at": "2026-10-29T08:41:22.000Z",
+          "end_at": "2026-10-29T08:41:39.000Z",
+          "device": "mac",
+          "trigger": {
+            "kind": "app",
+            "key": "net.whatsapp.WhatsApp",
+            "name": "WhatsApp",
+            "category": "communication"
+          },
+          "opened_by_notification": null,
+          "left": {
+            "kind": "app",
+            "key": "com.microsoft.VSCode",
+            "name": "VS Code",
+            "category": "work"
+          },
+          "minutes_lost": 0.3,
+          "minutes_until_back": 0.3,
+          "ended_stretch": false,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": ["8470353a-8683-4ad5-a65d-b5dc95bacadb"]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-10-29",
+          "start_at": "2026-10-29T08:40:16.000Z",
+          "end_at": "2026-10-29T08:40:59.000Z",
+          "device": "mac",
+          "trigger": {
+            "kind": "site",
+            "key": "mail.google.com",
+            "name": "mail.google.com",
+            "category": "communication"
+          },
+          "opened_by_notification": null,
+          "left": {
+            "kind": "app",
+            "key": "com.microsoft.VSCode",
+            "name": "VS Code",
+            "category": "work"
+          },
+          "minutes_lost": 0.7,
+          "minutes_until_back": 0.7,
+          "ended_stretch": false,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": ["cf36edf3-b448-4c4a-af61-11d3caabc9a3"]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-10-29",
+          "start_at": "2026-10-29T08:39:55.000Z",
+          "end_at": "2026-10-29T08:40:04.000Z",
+          "device": "mac",
+          "trigger": {
+            "kind": "site",
+            "key": "mail.google.com",
+            "name": "mail.google.com",
+            "category": "communication"
+          },
+          "opened_by_notification": null,
+          "left": {
+            "kind": "site",
+            "key": "docs.google.com",
+            "name": "docs.google.com",
+            "category": "work"
+          },
+          "minutes_lost": 0.2,
+          "minutes_until_back": null,
+          "ended_stretch": false,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": ["cf36edf3-b448-4c4a-af61-11d3caabc9a3"]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-10-29",
+          "start_at": "2026-10-29T08:36:41.000Z",
+          "end_at": "2026-10-29T08:36:47.000Z",
+          "device": "mac",
+          "trigger": {
+            "kind": "app",
+            "key": "net.whatsapp.WhatsApp",
+            "name": "WhatsApp",
+            "category": "communication"
+          },
+          "opened_by_notification": null,
+          "left": {
+            "kind": "app",
+            "key": "com.microsoft.VSCode",
+            "name": "VS Code",
+            "category": "work"
+          },
+          "minutes_lost": 0.1,
+          "minutes_until_back": 1.6,
+          "ended_stretch": false,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": ["e08efd44-b058-4114-8469-be77732eeece"]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-10-29",
+          "start_at": "2026-10-29T08:31:04.000Z",
+          "end_at": "2026-10-29T08:32:05.000Z",
+          "device": "mac",
+          "trigger": {
+            "kind": "app",
+            "key": "com.apple.QuickTimePlayerX",
+            "name": "QuickTimePlayerX",
+            "category": "video"
+          },
+          "opened_by_notification": null,
+          "left": {
+            "kind": "app",
+            "key": "com.microsoft.VSCode",
+            "name": "VS Code",
+            "category": "work"
+          },
+          "minutes_lost": 0.4,
+          "minutes_until_back": 1,
+          "ended_stretch": false,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": ["52cfff11-6b10-4176-9148-b332d5083337"]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-10-29",
+          "start_at": "2026-10-29T08:29:42.000Z",
+          "end_at": "2026-10-29T08:29:47.000Z",
+          "device": "mac",
+          "trigger": {
+            "kind": "app",
+            "key": "net.whatsapp.WhatsApp",
+            "name": "WhatsApp",
+            "category": "communication"
+          },
+          "opened_by_notification": null,
+          "left": {
+            "kind": "site",
+            "key": "docs.google.com",
+            "name": "docs.google.com",
+            "category": "work"
+          },
+          "minutes_lost": 0.1,
+          "minutes_until_back": 3.4,
+          "ended_stretch": false,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": ["d30e5b12-9c6a-46db-8cde-71895c808010"]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-10-29",
+          "start_at": "2026-10-29T08:27:50.000Z",
+          "end_at": "2026-10-29T08:28:58.000Z",
+          "device": "mac",
+          "trigger": {
+            "kind": "app",
+            "key": "com.apple.QuickTimePlayerX",
+            "name": "QuickTimePlayerX",
+            "category": "video"
+          },
+          "opened_by_notification": null,
+          "left": {
+            "kind": "app",
+            "key": "com.microsoft.VSCode",
+            "name": "VS Code",
+            "category": "work"
+          },
+          "minutes_lost": 1.1,
+          "minutes_until_back": 1.1,
+          "ended_stretch": false,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": ["43e2712d-6e8e-40bc-903c-95fb172f9b06"]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-10-29",
+          "start_at": "2026-10-29T08:27:41.000Z",
+          "end_at": "2026-10-29T08:27:44.000Z",
+          "device": "mac",
+          "trigger": {
+            "kind": "app",
+            "key": "com.apple.QuickTimePlayerX",
+            "name": "QuickTimePlayerX",
+            "category": "video"
+          },
+          "opened_by_notification": null,
+          "left": {
+            "kind": "site",
+            "key": "docs.google.com",
+            "name": "docs.google.com",
+            "category": "work"
+          },
+          "minutes_lost": 0.1,
+          "minutes_until_back": 1.4,
+          "ended_stretch": false,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": ["807ad982-ef44-43a4-8f88-71bacaa16bf3"]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-10-29",
+          "start_at": "2026-10-29T08:23:29.000Z",
+          "end_at": "2026-10-29T08:27:26.000Z",
+          "device": "iphone",
+          "trigger": {
+            "kind": "app",
+            "key": "com.burbn.instagram",
+            "name": "Instagram",
+            "category": "social"
+          },
+          "opened_by_notification": null,
+          "left": {
+            "kind": "site",
+            "key": "docs.google.com",
+            "name": "docs.google.com",
+            "category": "work"
+          },
+          "minutes_lost": 4,
+          "minutes_until_back": 4,
+          "ended_stretch": false,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": ["c2069348-fe7f-40ce-86ae-3219580243cc"]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-10-29",
+          "start_at": "2026-10-29T08:22:22.000Z",
+          "end_at": "2026-10-29T08:22:49.000Z",
+          "device": "mac",
+          "trigger": {
+            "kind": "app",
+            "key": "net.whatsapp.WhatsApp",
+            "name": "WhatsApp",
+            "category": "communication"
+          },
+          "opened_by_notification": null,
+          "left": {
+            "kind": "app",
+            "key": "com.microsoft.VSCode",
+            "name": "VS Code",
+            "category": "work"
+          },
+          "minutes_lost": 0.5,
+          "minutes_until_back": 0.5,
+          "ended_stretch": false,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": ["439a98a8-f26c-4026-9fa7-566eee40f40c"]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-10-29",
+          "start_at": "2026-10-29T08:18:37.000Z",
+          "end_at": "2026-10-29T08:18:41.000Z",
+          "device": "mac",
+          "trigger": {
+            "kind": "app",
+            "key": "net.whatsapp.WhatsApp",
+            "name": "WhatsApp",
+            "category": "communication"
+          },
+          "opened_by_notification": null,
+          "left": {
+            "kind": "site",
+            "key": "drive.google.com",
+            "name": "drive.google.com",
+            "category": "work"
+          },
+          "minutes_lost": 0.1,
+          "minutes_until_back": 0.1,
+          "ended_stretch": false,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": ["23de8eb7-2a83-4693-abcd-00d0024005aa"]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-10-29",
+          "start_at": "2026-10-29T08:16:26.000Z",
+          "end_at": "2026-10-29T08:16:37.000Z",
+          "device": "mac",
+          "trigger": {
+            "kind": "app",
+            "key": "com.apple.QuickTimePlayerX",
+            "name": "QuickTimePlayerX",
+            "category": "video"
+          },
+          "opened_by_notification": null,
+          "left": {
+            "kind": "app",
+            "key": "com.microsoft.VSCode",
+            "name": "VS Code",
+            "category": "work"
+          },
+          "minutes_lost": 0.2,
+          "minutes_until_back": 0.2,
+          "ended_stretch": false,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": ["56ed582d-5a1a-4e50-88d8-456675d199a9"]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-10-29",
+          "start_at": "2026-10-29T08:15:33.000Z",
+          "end_at": "2026-10-29T08:15:42.000Z",
+          "device": "mac",
+          "trigger": {
+            "kind": "app",
+            "key": "com.apple.QuickTimePlayerX",
+            "name": "QuickTimePlayerX",
+            "category": "video"
+          },
+          "opened_by_notification": null,
+          "left": {
+            "kind": "site",
+            "key": "drive.google.com",
+            "name": "drive.google.com",
+            "category": "work"
+          },
+          "minutes_lost": 0.2,
+          "minutes_until_back": 2.9,
+          "ended_stretch": false,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": ["ebaf7cce-0f81-434c-a928-d0aff786abf5"]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-10-29",
+          "start_at": "2026-10-29T08:13:40.000Z",
+          "end_at": "2026-10-29T08:15:19.000Z",
+          "device": "mac",
+          "trigger": {
+            "kind": "app",
+            "key": "com.apple.QuickTimePlayerX",
+            "name": "QuickTimePlayerX",
+            "category": "video"
+          },
+          "opened_by_notification": null,
+          "left": {
+            "kind": "app",
+            "key": "com.microsoft.VSCode",
+            "name": "VS Code",
+            "category": "work"
+          },
+          "minutes_lost": 1.7,
+          "minutes_until_back": 1.7,
+          "ended_stretch": false,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": ["847f5daa-27c2-4202-ad9b-eb4685873a05"]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-10-29",
+          "start_at": "2026-10-29T08:12:21.000Z",
+          "end_at": "2026-10-29T08:12:37.000Z",
+          "device": "mac",
+          "trigger": {
+            "kind": "app",
+            "key": "net.whatsapp.WhatsApp",
+            "name": "WhatsApp",
+            "category": "communication"
+          },
+          "opened_by_notification": null,
+          "left": {
+            "kind": "site",
+            "key": "docs.google.com",
+            "name": "docs.google.com",
+            "category": "work"
+          },
+          "minutes_lost": 0.3,
+          "minutes_until_back": 0.3,
+          "ended_stretch": false,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": ["1e4625c8-d96f-42b5-827e-441e3d3b6aaf"]
+        }
+      ]
+    }
+  },
+  "recovery_cost": {
+    "status": "ok",
+    "reason": null,
+    "minimum": "at least 5 disruptions after which the user got back to the app they left; a day needs 3 for its own median",
+    "summary": "A disruption of 30 seconds costs 1 minute before the app that was left is back in front (medians over 25 disruptions). That adds up to 38 minutes a day.",
+    "evidence": [
+      "8bc99a6e-8a29-448f-a718-ebd0ecf8fcc6",
+      "65b7657e-e8c3-4f7f-bf28-40891cec75d8",
+      "c2069348-fe7f-40ce-86ae-3219580243cc",
+      "a1451cc0-934c-4cf4-a8e6-36624c03d993",
+      "d30e5b12-9c6a-46db-8cde-71895c808010",
+      "ebaf7cce-0f81-434c-a928-d0aff786abf5",
+      "7d62aa08-4dfd-4597-84c5-39f124265138",
+      "847f5daa-27c2-4202-ad9b-eb4685873a05",
+      "e08efd44-b058-4114-8469-be77732eeece",
+      "807ad982-ef44-43a4-8f88-71bacaa16bf3",
+      "43e2712d-6e8e-40bc-903c-95fb172f9b06",
+      "52cfff11-6b10-4176-9148-b332d5083337",
+      "6a6aa3ff-c2da-4ec4-8fd7-9339b2ab7d54",
+      "77af6bf4-028a-4da7-ba49-0401f3b2eddf",
+      "cf36edf3-b448-4c4a-af61-11d3caabc9a3",
+      "5a174a63-f13b-4209-b96f-5921e2431240",
+      "fb8f5ccb-8fa7-464e-84fb-e76dc0012e92",
+      "439a98a8-f26c-4026-9fa7-566eee40f40c",
+      "8c63b347-23ca-4846-bf52-7269e2339dfa",
+      "8470353a-8683-4ad5-a65d-b5dc95bacadb"
+    ],
+    "data": {
+      "measured": 25,
+      "not_returned": 5,
+      "median_minutes_lost": 0.5,
+      "median_minutes_until_back": 1,
+      "multiplier": 2.2,
+      "total_minutes_until_back": 37.9,
+      "minutes_until_back_per_day": 37.9,
+      "daily": [
+        {
+          "day": "2026-10-29",
+          "measured": 25,
+          "total_minutes_until_back": 37.9,
+          "median_minutes_until_back": 1
+        }
+      ]
+    }
+  },
+  "repeat_offenders": {
+    "status": "not_enough_data",
+    "reason": "not enough data: no app or site disrupted focus on 2 or more days (33 disruptions found)",
+    "minimum": "an app or site that caused disruptions on at least 2 different days",
+    "summary": null,
+    "evidence": [],
+    "data": null
+  },
+  "drift": {
+    "status": "ok",
+    "reason": null,
+    "minimum": "browsing data (web visits) and at least one focus stretch or planned work block",
+    "summary": "No travel, shopping, video, social or news browsing during focus on 1 day with focus.",
+    "evidence": [],
+    "data": {
+      "minutes": 0,
+      "by_category": [],
+      "daily": [],
+      "items": []
+    }
+  },
+  "late_screens": {
+    "status": "not_enough_data",
+    "reason": "not enough data: needs at least 3 nights with device data, found 0",
+    "minimum": "at least 3 nights inside the range on days with device data; usual bedtime needs 3 recorded sleeps of 3 hours or more; the recovery comparison needs 3 late and 3 other nights",
+    "summary": null,
+    "evidence": [],
+    "data": null
+  },
+  "context_switching": {
+    "status": "ok",
+    "reason": null,
+    "minimum": "at least 60 minutes of active device time in the range; a day needs 30 active minutes for its own rate",
+    "summary": "47 app switches per active hour. 30% of screen time is spent in stays shorter than 2 minutes (median stay 23 seconds).",
+    "evidence": [
+      "c583fac0-f13e-4d04-b651-7785d1902a5f",
+      "e40135ea-4edb-4a8a-901c-3667b5321f63",
+      "6c73830c-9998-4a00-b08c-76ce3ae7cbea",
+      "b4f86916-5a7d-4930-b2b2-5ec3d3c210f0",
+      "450d7a7f-132d-48a6-9238-d30fc72106f7",
+      "6faeafca-9272-4483-93aa-b7fa7d3570e1",
+      "1421ebd9-e1f4-4217-bcbc-de01abba5f81",
+      "d52cea47-35d2-4fcf-9c3d-9adeac83ee27",
+      "41079a88-1000-48eb-9239-f75813fb2351",
+      "43779c72-5f8d-4e42-b1c0-d0aa8e7833b3",
+      "6ebe7747-d5d5-4fb0-89fa-9d2a13edb2e4",
+      "b7f1ec67-a041-4e3c-b8b8-c265b4c17ecf",
+      "dbed6409-db76-48cd-8d0a-83fe4df636de",
+      "b3d20664-df58-4cfc-a2c2-2625eacda206",
+      "e811ae66-b7de-4b12-953c-7fa3eab6d096",
+      "93f83676-10c2-4b07-b648-27acafb0491c",
+      "25231258-e370-4047-87b4-1cd3c7c848f5",
+      "b58d742c-4ac1-4b8a-b8c9-cac071580f33",
+      "9f83cd0e-a426-4559-9017-3708f2cff55b"
+    ],
+    "data": {
+      "days_with_data": 1,
+      "active_minutes": 717.1,
+      "switches": 561,
+      "switches_per_active_hour": 46.9,
+      "fragment_share": 0.3,
+      "median_stay_seconds": 23,
+      "daily": [
+        {
+          "day": "2026-10-29",
+          "complete": true,
+          "active_minutes": 717.1,
+          "switches": 561,
+          "switches_per_active_hour": 46.9,
+          "fragment_share": 0.3
+        }
+      ]
+    }
+  },
+  "time_by_app": {
+    "status": "ok",
+    "reason": null,
+    "minimum": "any Mac or iPhone app usage in the range",
+    "summary": "Screen time 11h 57 a day over 1 day (Mac 5h 03, iPhone 6h 54). Most of it: communication 3h 59, social 3h 19, work 2h 20 a day.",
+    "evidence": [
+      "09087a24-af78-4eea-89cb-7d1e2d91b1ee",
+      "a93896a0-c3da-4b1a-9049-fb69a5adc288",
+      "758ad3c6-2087-41a7-89c3-5656bd27a405",
+      "cb6977f6-1be4-4455-a7ec-68fdaa29c140",
+      "1be86273-0e0d-4ff3-9766-b3b59d57744b",
+      "03a786c9-9057-4e92-936b-1f9bc026f9f4",
+      "e127e302-f071-456b-a8b5-755f8c1ecad7",
+      "47d4337b-7b2f-4228-8a45-05d1ee1f8aca",
+      "81385f8f-5390-4cce-9566-92d98d3b9066",
+      "42417737-ebf7-4fad-9332-6cf859e8e90f",
+      "7dcccd1c-fcc1-4e2c-91a3-fddba713146a",
+      "057b7e8c-3b70-44bf-95df-a43552b30deb",
+      "73e4030b-3b01-4358-9a01-cf1c56e138b2",
+      "e65c64de-ba93-4139-abe1-121b0589a317",
+      "3907d32c-af17-4fc8-90ef-f9f9b39469ce",
+      "adc552a1-314c-4198-b243-a320ab8b478b",
+      "fb7442ad-16a6-4dac-adf2-5a64e3c93fc8",
+      "a7e95737-988c-4f60-9c1a-8a47404df1c6",
+      "bbbe6d80-2877-43da-874d-9fec708b87ad",
+      "feeb0f50-84ac-462d-bf54-e8039755cf00"
+    ],
+    "data": {
+      "days_with_data": 1,
+      "active_minutes_per_day": 716.9,
+      "totals": {
+        "active_seconds": 43016,
+        "mac_seconds": 18161,
+        "iphone_seconds": 24855,
+        "overlap_seconds": 9544,
+        "by_category": [
+          {
+            "category": "communication",
+            "seconds": 14328
+          },
+          {
+            "category": "social",
+            "seconds": 11969
+          },
+          {
+            "category": "work",
+            "seconds": 8376
+          },
+          {
+            "category": "other",
+            "seconds": 5627
+          },
+          {
+            "category": "ai",
+            "seconds": 1477
+          },
+          {
+            "category": "video",
+            "seconds": 998
+          },
+          {
+            "category": "music",
+            "seconds": 177
+          },
+          {
+            "category": "system",
+            "seconds": 64
+          }
+        ],
+        "apps": [
+          {
+            "subject": {
+              "kind": "app",
+              "key": "com.burbn.instagram",
+              "name": "Instagram",
+              "category": "social"
+            },
+            "device": "iphone",
+            "seconds": 9712
+          },
+          {
+            "subject": {
+              "kind": "app",
+              "key": "com.apple.InCallService",
+              "name": "Phone call",
+              "category": "communication"
+            },
+            "device": "iphone",
+            "seconds": 6377
+          },
+          {
+            "subject": {
+              "kind": "app",
+              "key": "com.microsoft.VSCode",
+              "name": "VS Code",
+              "category": "work"
+            },
+            "device": "mac",
+            "seconds": 6192
+          },
+          {
+            "subject": {
+              "kind": "app",
+              "key": "net.whatsapp.WhatsAppSMB",
+              "name": "WhatsApp Business",
+              "category": "communication"
+            },
+            "device": "iphone",
+            "seconds": 3952
+          },
+          {
+            "subject": {
+              "kind": "app",
+              "key": "com.google.Chrome",
+              "name": "Chrome",
+              "category": "other"
+            },
+            "device": "mac",
+            "seconds": 3627
+          },
+          {
+            "subject": {
+              "kind": "app",
+              "key": "net.whatsapp.WhatsApp",
+              "name": "WhatsApp",
+              "category": "communication"
+            },
+            "device": "mac",
+            "seconds": 2082
+          },
+          {
+            "subject": {
+              "kind": "app",
+              "key": "com.zhiliaoapp.musically",
+              "name": "TikTok",
+              "category": "social"
+            },
+            "device": "iphone",
+            "seconds": 1898
+          },
+          {
+            "subject": {
+              "kind": "site",
+              "key": "claude.ai",
+              "name": "claude.ai",
+              "category": "ai"
+            },
+            "device": "mac",
+            "seconds": 1477
+          },
+          {
+            "subject": {
+              "kind": "site",
+              "key": "mail.google.com",
+              "name": "mail.google.com",
+              "category": "communication"
+            },
+            "device": "mac",
+            "seconds": 1206
+          },
+          {
+            "subject": {
+              "kind": "site",
+              "key": "docs.google.com",
+              "name": "docs.google.com",
+              "category": "work"
+            },
+            "device": "mac",
+            "seconds": 1103
+          },
+          {
+            "subject": {
+              "kind": "app",
+              "key": "com.google.Maps",
+              "name": "Google Maps",
+              "category": "other"
+            },
+            "device": "iphone",
+            "seconds": 1046
+          },
+          {
+            "subject": {
+              "kind": "app",
+              "key": "com.apple.QuickTimePlayerX",
+              "name": "QuickTimePlayerX",
+              "category": "video"
+            },
+            "device": "mac",
+            "seconds": 871
+          },
+          {
+            "subject": {
+              "kind": "site",
+              "key": "drive.google.com",
+              "name": "drive.google.com",
+              "category": "work"
+            },
+            "device": "mac",
+            "seconds": 623
+          },
+          {
+            "subject": {
+              "kind": "app",
+              "key": "com.apple.mobilephone",
+              "name": "Phone",
+              "category": "communication"
+            },
+            "device": "iphone",
+            "seconds": 384
+          },
+          {
+            "subject": {
+              "kind": "app",
+              "key": "com.google.GoogleMobile",
+              "name": "Google",
+              "category": "other"
+            },
+            "device": "iphone",
+            "seconds": 336
+          }
+        ],
+        "other_apps_seconds": 2130
+      },
+      "daily": [
+        {
+          "day": "2026-10-29",
+          "complete": true,
+          "active_seconds": 43016,
+          "mac_seconds": 18161,
+          "iphone_seconds": 24855,
+          "overlap_seconds": 9544,
+          "by_category": [
+            {
+              "category": "communication",
+              "seconds": 14328
+            },
+            {
+              "category": "social",
+              "seconds": 11969
+            },
+            {
+              "category": "work",
+              "seconds": 8376
+            },
+            {
+              "category": "other",
+              "seconds": 5627
+            },
+            {
+              "category": "ai",
+              "seconds": 1477
+            },
+            {
+              "category": "video",
+              "seconds": 998
+            },
+            {
+              "category": "music",
+              "seconds": 177
+            },
+            {
+              "category": "system",
+              "seconds": 64
+            }
+          ],
+          "apps": [
+            {
+              "subject": {
+                "kind": "app",
+                "key": "com.burbn.instagram",
+                "name": "Instagram",
+                "category": "social"
+              },
+              "device": "iphone",
+              "seconds": 9712
+            },
+            {
+              "subject": {
+                "kind": "app",
+                "key": "com.apple.InCallService",
+                "name": "Phone call",
+                "category": "communication"
+              },
+              "device": "iphone",
+              "seconds": 6377
+            },
+            {
+              "subject": {
+                "kind": "app",
+                "key": "com.microsoft.VSCode",
+                "name": "VS Code",
+                "category": "work"
+              },
+              "device": "mac",
+              "seconds": 6192
+            },
+            {
+              "subject": {
+                "kind": "app",
+                "key": "net.whatsapp.WhatsAppSMB",
+                "name": "WhatsApp Business",
+                "category": "communication"
+              },
+              "device": "iphone",
+              "seconds": 3952
+            },
+            {
+              "subject": {
+                "kind": "app",
+                "key": "com.google.Chrome",
+                "name": "Chrome",
+                "category": "other"
+              },
+              "device": "mac",
+              "seconds": 3627
+            },
+            {
+              "subject": {
+                "kind": "app",
+                "key": "net.whatsapp.WhatsApp",
+                "name": "WhatsApp",
+                "category": "communication"
+              },
+              "device": "mac",
+              "seconds": 2082
+            },
+            {
+              "subject": {
+                "kind": "app",
+                "key": "com.zhiliaoapp.musically",
+                "name": "TikTok",
+                "category": "social"
+              },
+              "device": "iphone",
+              "seconds": 1898
+            },
+            {
+              "subject": {
+                "kind": "site",
+                "key": "claude.ai",
+                "name": "claude.ai",
+                "category": "ai"
+              },
+              "device": "mac",
+              "seconds": 1477
+            },
+            {
+              "subject": {
+                "kind": "site",
+                "key": "mail.google.com",
+                "name": "mail.google.com",
+                "category": "communication"
+              },
+              "device": "mac",
+              "seconds": 1206
+            },
+            {
+              "subject": {
+                "kind": "site",
+                "key": "docs.google.com",
+                "name": "docs.google.com",
+                "category": "work"
+              },
+              "device": "mac",
+              "seconds": 1103
+            }
+          ],
+          "other_apps_seconds": 5390
+        }
+      ]
+    }
+  },
+  "ai_tool_use": {
+    "status": "ok",
+    "reason": null,
+    "minimum": "at least one AI session in the range; the waiting share needs sessions that report waiting time",
+    "summary": "AI tools open for 12h 05 a day by the clock, 24 sessions a day (24 sessions, 19h 15 of session time in total). 32% of session time was the tool waiting for the user.",
+    "evidence": [
+      "fb9ff9c0-5037-45fc-8d58-075a238bba40",
+      "d35c8085-8966-474d-a967-219ec023276a",
+      "27f9d910-02c9-4304-84de-b4b6e558ff57",
+      "028f93f4-7803-4329-b916-f454ce4f6eed",
+      "36987b3e-ee4e-4997-91fc-25a3a0cf2b35",
+      "c494b92f-ca3d-41e0-bf85-ed9a45f2578f",
+      "95faa9d9-bf1a-44c6-9b5d-f24c20f031da",
+      "16b7707c-bfa6-4363-9eb3-b57de6db1f7e",
+      "43f71725-db62-464f-aff8-e5a355726731",
+      "553d3b97-eb03-4b7e-a088-a1cc7a40969e",
+      "9d8b6a06-b91c-467d-b49f-5edd5effbc86",
+      "67bfee87-4901-45e6-b199-141a052b4c53",
+      "13833aa5-7ed5-44a0-957b-23e840fe9c40",
+      "4c3b4b25-8662-4d3a-95f2-789df859e925",
+      "d077bd14-9f70-45fa-8dca-d10eabbfeb1c",
+      "35535949-35f8-4639-8172-0fcd112e30d6",
+      "13634fc7-dfe1-4405-8a71-995ef18a911e",
+      "8751c095-c860-47c9-b3b6-2c7fe09c2386",
+      "f344519a-7cde-4b48-9932-c4112f6a8cb4",
+      "40bfcfc2-f29f-4f2b-af1c-aede55cc73a4"
+    ],
+    "data": {
+      "days_with_data": 1,
+      "sessions": 24,
+      "sessions_per_day": 24,
+      "session_minutes": 1155.2,
+      "wall_minutes": 725.1,
+      "waiting_minutes": 366.4,
+      "waiting_share": 0.32,
+      "by_tool": [
+        {
+          "tool": "claude_code",
+          "sessions": 24,
+          "session_minutes": 1155.2,
+          "waiting_share": 0.32
+        }
+      ],
+      "daily": [
+        {
+          "day": "2026-10-29",
+          "sessions": 24,
+          "session_minutes": 1155.2,
+          "wall_minutes": 725.1
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,493 @@
+{
+  "from": "2026-10-31T22:00:00.000Z",
+  "to": "2026-11-01T22:00:00.000Z",
+  "timezone": "Europe/Athens",
+  "generated_at": "2026-11-14T16:51:03.061Z",
+  "days": [
+    {
+      "day": "2026-11-01",
+      "complete": true
+    }
+  ],
+  "inputs": {
+    "mac_app_usage": 9,
+    "iphone_app_usage": 177,
+    "web_visits": 2,
+    "web_visits_superseded": 0,
+    "web_visits_unmeasured": 0,
+    "searches": 2,
+    "goal_blocks": 0,
+    "sleeps": 0,
+    "ai_sessions": 0
+  },
+  "headlines": [
+    "34 app switches per active hour. 22% of screen time is spent in stays shorter than 2 minutes (median stay 13 seconds).",
+    "Screen time 3h 34 a day over 1 day (Mac 10 minutes, iPhone 3h 24). Most of it: social 111 minutes, other 76 minutes, communication 15 minutes a day."
+  ],
+  "phone_cadence": {
+    "status": "not_enough_data",
+    "reason": "not enough data: needs at least 3 days of phone usage, found 1",
+    "minimum": "at least 3 days of iPhone usage and 20 waking gaps between sessions; an hour needs 5 gaps, the working window 20",
+    "summary": null,
+    "evidence": [],
+    "data": null
+  },
+  "mac_app_cadence": {
+    "status": "not_enough_data",
+    "reason": "not enough data: needs at least 3 days of Mac usage, found 1",
+    "minimum": "at least 3 days of Mac usage; an app needs 10 activations on 2 or more days, and 5 gaps for a median gap",
+    "summary": null,
+    "evidence": [],
+    "data": null
+  },
+  "focus_disruptions": {
+    "status": "not_enough_data",
+    "reason": "not enough data: no focus stretch of at least 15 minutes and no planned goal block in 1 day of usage",
+    "minimum": "at least one focus stretch (15 minutes or more, at least half of it in work apps) or one planned goal block with device data",
+    "summary": null,
+    "evidence": [],
+    "data": null
+  },
+  "recovery_cost": {
+    "status": "not_enough_data",
+    "reason": "not enough data: needs at least 5 disruptions with a return to the app that was left, found 0",
+    "minimum": "at least 5 disruptions after which the user got back to the app they left; a day needs 3 for its own median",
+    "summary": null,
+    "evidence": [],
+    "data": null
+  },
+  "repeat_offenders": {
+    "status": "not_enough_data",
+    "reason": "not enough data: no app or site disrupted focus on 2 or more days (0 disruptions found)",
+    "minimum": "an app or site that caused disruptions on at least 2 different days",
+    "summary": null,
+    "evidence": [],
+    "data": null
+  },
+  "drift": {
+    "status": "not_enough_data",
+    "reason": "not enough data: no focus stretch or planned work block in this range",
+    "minimum": "browsing data (web visits) and at least one focus stretch or planned work block",
+    "summary": null,
+    "evidence": [],
+    "data": null
+  },
+  "late_screens": {
+    "status": "not_enough_data",
+    "reason": "not enough data: needs at least 3 nights with device data, found 0",
+    "minimum": "at least 3 nights inside the range on days with device data; usual bedtime needs 3 recorded sleeps of 3 hours or more; the recovery comparison needs 3 late and 3 other nights",
+    "summary": null,
+    "evidence": [],
+    "data": null
+  },
+  "context_switching": {
+    "status": "ok",
+    "reason": null,
+    "minimum": "at least 60 minutes of active device time in the range; a day needs 30 active minutes for its own rate",
+    "summary": "34 app switches per active hour. 22% of screen time is spent in stays shorter than 2 minutes (median stay 13 seconds).",
+    "evidence": [
+      "93cc4cb6-184f-427e-8999-b8fcc7e377db",
+      "46f6ed98-bf48-4fec-a3e7-9f7b3f85f56d",
+      "6ce3dc90-3310-4cec-88f5-c14a591c328c",
+      "38c9f068-3f89-4317-ab93-619c875f9a79",
+      "9e919b49-7bc4-4e51-a075-6993a92c41bd",
+      "44f5592d-4bc9-4c4c-af8e-394e3b2cef31",
+      "aa9d31b1-d049-4e44-b4fe-5df0760e1a21",
+      "8305f15b-2ec6-4d2a-a77e-331a1b4f35ec",
+      "87af8eb8-3613-4ff1-a735-40e519f181f1",
+      "58b1ac13-4c5f-46d5-882f-814979e5484d",
+      "f6c89759-a9d4-4bcc-8dac-b4abd082d91c",
+      "fba32255-43f1-4b9e-b804-885e09148333",
+      "dd5259b8-65d9-4fc5-aa60-7e455f705710",
+      "72dfc501-19e9-4d71-a194-81f6dbe7a844",
+      "c0e38335-0263-4f6b-9a9b-fac0157cecf2",
+      "860b7a72-75bc-4123-8167-27bb99617ce8",
+      "30838e03-f529-415e-a8af-aecf52893aa8",
+      "b5c7bb7a-38a3-4c47-9b9c-402744942461",
+      "caa6ddc1-170b-4174-84ca-840e41c77b44",
+      "aee41493-d068-46d4-b02d-ecfef22326ea"
+    ],
+    "data": {
+      "days_with_data": 1,
+      "active_minutes": 214.1,
+      "switches": 121,
+      "switches_per_active_hour": 33.9,
+      "fragment_share": 0.22,
+      "median_stay_seconds": 13,
+      "daily": [
+        {
+          "day": "2026-11-01",
+          "complete": true,
+          "active_minutes": 214.1,
+          "switches": 121,
+          "switches_per_active_hour": 33.9,
+          "fragment_share": 0.22
+        }
+      ]
+    }
+  },
+  "time_by_app": {
+    "status": "ok",
+    "reason": null,
+    "minimum": "any Mac or iPhone app usage in the range",
+    "summary": "Screen time 3h 34 a day over 1 day (Mac 10 minutes, iPhone 3h 24). Most of it: social 111 minutes, other 76 minutes, communication 15 minutes a day.",
+    "evidence": [
+      "9c1cd26e-adb1-4e66-bdcb-2a6417b0cdc7",
+      "7643758d-de29-47ef-adfa-ed4cdba36954",
+      "53ec0dcd-61be-4714-925b-7ebe8e7eaa25",
+      "bf1f4756-df01-4c06-8ccb-e9f85d1c5d74",
+      "dc3855a4-3d97-4b03-9c6d-42028826e007",
+      "b51abf6f-9bdb-4401-a0ff-21c77c919223",
+      "614eca06-fe39-4e33-b161-015ac90a88eb",
+      "de013942-7c5f-4546-8022-f41c24e12088",
+      "4c28268f-4e34-45e0-9f2f-a62ac587e172",
+      "b4961911-471d-4685-ad0c-99b3f7d9ad7a",
+      "6782dbca-861b-4299-a166-ba94bd5d0ea4",
+      "6df642bd-3b27-47ff-9dbc-d858f64698fe",
+      "35681821-750b-4a0a-849a-dd729feb8c77",
+      "683a4f86-4014-47fd-a723-c0e85838760f",
+      "379b04de-17e7-4669-b0ef-45cc02e12e1e",
+      "774dbb14-7031-4852-b37e-eba6b2d9314e",
+      "81f9fb9a-f26f-4f7d-ac86-989e1efbc928",
+      "05284006-bd06-47f6-8634-64f9edae7f82",
+      "42c6b7d0-8120-4e2a-91fa-a308109999bc",
+      "b61967c4-03de-449d-a864-1693741944e9"
+    ],
+    "data": {
+      "days_with_data": 1,
+      "active_minutes_per_day": 213.9,
+      "totals": {
+        "active_seconds": 12836,
+        "mac_seconds": 623,
+        "iphone_seconds": 12213,
+        "overlap_seconds": 0,
+        "by_category": [
+          {
+            "category": "social",
+            "seconds": 6672
+          },
+          {
+            "category": "other",
+            "seconds": 4562
+          },
+          {
+            "category": "communication",
+            "seconds": 902
+          },
+          {
+            "category": "music",
+            "seconds": 469
+          },
+          {
+            "category": "video",
+            "seconds": 167
+          },
+          {
+            "category": "system",
+            "seconds": 64
+          }
+        ],
+        "apps": [
+          {
+            "subject": {
+              "kind": "app",
+              "key": "com.burbn.instagram",
+              "name": "Instagram",
+              "category": "social"
+            },
+            "device": "iphone",
+            "seconds": 3437
+          },
+          {
+            "subject": {
+              "kind": "app",
+              "key": "com.zhiliaoapp.musically",
+              "name": "TikTok",
+              "category": "social"
+            },
+            "device": "iphone",
+            "seconds": 3235
+          },
+          {
+            "subject": {
+              "kind": "app",
+              "key": "com.google.Maps",
+              "name": "Google Maps",
+              "category": "other"
+            },
+            "device": "iphone",
+            "seconds": 2808
+          },
+          {
+            "subject": {
+              "kind": "app",
+              "key": "com.google.GoogleMobile",
+              "name": "Google",
+              "category": "other"
+            },
+            "device": "iphone",
+            "seconds": 909
+          },
+          {
+            "subject": {
+              "kind": "app",
+              "key": "com.apple.InCallService",
+              "name": "Phone call",
+              "category": "communication"
+            },
+            "device": "iphone",
+            "seconds": 783
+          },
+          {
+            "subject": {
+              "kind": "app",
+              "key": "com.spotify.client",
+              "name": "Spotify",
+              "category": "music"
+            },
+            "device": "iphone",
+            "seconds": 469
+          },
+          {
+            "subject": {
+              "kind": "app",
+              "key": "com.google.Chrome",
+              "name": "Chrome",
+              "category": "other"
+            },
+            "device": "mac",
+            "seconds": 444
+          },
+          {
+            "subject": {
+              "kind": "app",
+              "key": "com.google.ios.youtube",
+              "name": "YouTube",
+              "category": "video"
+            },
+            "device": "iphone",
+            "seconds": 167
+          },
+          {
+            "subject": {
+              "kind": "app",
+              "key": "com.apple.PassbookUIService",
+              "name": "Apple Pay",
+              "category": "other"
+            },
+            "device": "iphone",
+            "seconds": 92
+          },
+          {
+            "subject": {
+              "kind": "app",
+              "key": "com.brave.Browser",
+              "name": "Browser",
+              "category": "other"
+            },
+            "device": "mac",
+            "seconds": 91
+          },
+          {
+            "subject": {
+              "kind": "app",
+              "key": "gr.winbank.redesign",
+              "name": "Redesign",
+              "category": "other"
+            },
+            "device": "iphone",
+            "seconds": 89
+          },
+          {
+            "subject": {
+              "kind": "app",
+              "key": "com.apple.mobilephone",
+              "name": "Phone",
+              "category": "communication"
+            },
+            "device": "iphone",
+            "seconds": 78
+          },
+          {
+            "subject": {
+              "kind": "app",
+              "key": "com.apple.systempreferences",
+              "name": "System Settings",
+              "category": "system"
+            },
+            "device": "mac",
+            "seconds": 64
+          },
+          {
+            "subject": {
+              "kind": "app",
+              "key": "com.apple.camera",
+              "name": "Camera",
+              "category": "other"
+            },
+            "device": "iphone",
+            "seconds": 50
+          },
+          {
+            "subject": {
+              "kind": "app",
+              "key": "com.google.Gmail",
+              "name": "Gmail",
+              "category": "communication"
+            },
+            "device": "iphone",
+            "seconds": 28
+          }
+        ],
+        "other_apps_seconds": 92
+      },
+      "daily": [
+        {
+          "day": "2026-11-01",
+          "complete": true,
+          "active_seconds": 12836,
+          "mac_seconds": 623,
+          "iphone_seconds": 12213,
+          "overlap_seconds": 0,
+          "by_category": [
+            {
+              "category": "social",
+              "seconds": 6672
+            },
+            {
+              "category": "other",
+              "seconds": 4562
+            },
+            {
+              "category": "communication",
+              "seconds": 902
+            },
+            {
+              "category": "music",
+              "seconds": 469
+            },
+            {
+              "category": "video",
+              "seconds": 167
+            },
+            {
+              "category": "system",
+              "seconds": 64
+            }
+          ],
+          "apps": [
+            {
+              "subject": {
+                "kind": "app",
+                "key": "com.burbn.instagram",
+                "name": "Instagram",
+                "category": "social"
+              },
+              "device": "iphone",
+              "seconds": 3437
+            },
+            {
+              "subject": {
+                "kind": "app",
+                "key": "com.zhiliaoapp.musically",
+                "name": "TikTok",
+                "category": "social"
+              },
+              "device": "iphone",
+              "seconds": 3235
+            },
+            {
+              "subject": {
+                "kind": "app",
+                "key": "com.google.Maps",
+                "name": "Google Maps",
+                "category": "other"
+              },
+              "device": "iphone",
+              "seconds": 2808
+            },
+            {
+              "subject": {
+                "kind": "app",
+                "key": "com.google.GoogleMobile",
+                "name": "Google",
+                "category": "other"
+              },
+              "device": "iphone",
+              "seconds": 909
+            },
+            {
+              "subject": {
+                "kind": "app",
+                "key": "com.apple.InCallService",
+                "name": "Phone call",
+                "category": "communication"
+              },
+              "device": "iphone",
+              "seconds": 783
+            },
+            {
+              "subject": {
+                "kind": "app",
+                "key": "com.spotify.client",
+                "name": "Spotify",
+                "category": "music"
+              },
+              "device": "iphone",
+              "seconds": 469
+            },
+            {
+              "subject": {
+                "kind": "app",
+                "key": "com.google.Chrome",
+                "name": "Chrome",
+                "category": "other"
+              },
+              "device": "mac",
+              "seconds": 444
+            },
+            {
+              "subject": {
+                "kind": "app",
+                "key": "com.google.ios.youtube",
+                "name": "YouTube",
+                "category": "video"
+              },
+              "device": "iphone",
+              "seconds": 167
+            },
+            {
+              "subject": {
+                "kind": "app",
+                "key": "com.apple.PassbookUIService",
+                "name": "Apple Pay",
+                "category": "other"
+              },
+              "device": "iphone",
+              "seconds": 92
+            },
+            {
+              "subject": {
+                "kind": "app",
+                "key": "com.brave.Browser",
+                "name": "Browser",
+                "category": "other"
+              },
+              "device": "mac",
+              "seconds": 91
+            }
+          ],
+          "other_apps_seconds": 401
+        }
+      ]
+    }
+  },
+  "ai_tool_use": {
+    "status": "not_enough_data",
+    "reason": "not enough data: no AI sessions in this range",
+    "minimum": "at least one AI session in the range; the waiting share needs sessions that report waiting time",
+    "summary": null,
+    "evidence": [],
+    "data": null
+  }
+}

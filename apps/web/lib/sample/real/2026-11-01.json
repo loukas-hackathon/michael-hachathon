@@ -1,0 +1,3433 @@
+{
+  "date": "2026-11-01",
+  "label": "Sunday 1 Nov: light weekend day, Mac barely opened",
+  "events": [
+    {
+      "id": "16fb938b-8847-4b94-a92c-9aa1c6bcd85b",
+      "source": "macos_usage",
+      "type": "screen",
+      "start_at": "2026-10-31T13:39:28.000Z",
+      "end_at": "2026-11-01T16:23:36.000Z",
+      "title": "Screen off",
+      "data": {
+        "state": "off",
+        "device": "mac"
+      },
+      "external_id": "kc:0EA6229A-394E-428C-9AEB-6BDC1BCEB840",
+      "created_at": "2026-11-14T16:50:45.036Z"
+    },
+    {
+      "id": "82d6f831-43b5-4196-a228-ea956751a89d",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-10-31T22:02:16.065Z",
+      "end_at": "2026-10-31T22:02:18.300Z",
+      "title": "Spotify",
+      "data": {
+        "bundle_id": "com.spotify.client",
+        "device": "iphone",
+        "seconds": 2
+      },
+      "external_id": "biome:01df6cb2:1793484136066:com.spotify.client",
+      "created_at": "2026-11-14T16:50:46.938Z"
+    },
+    {
+      "id": "2d56292f-7a9b-4417-8a75-23f3eb2f8382",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-10-31T22:02:19.518Z",
+      "end_at": "2026-10-31T22:04:19.308Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 120,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793484139518:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.938Z"
+    },
+    {
+      "id": "229484f9-8d6c-4976-b0e2-50a8dca8c09a",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-10-31T22:04:19.308Z",
+      "end_at": "2026-10-31T22:04:25.373Z",
+      "title": "Spotify",
+      "data": {
+        "bundle_id": "com.spotify.client",
+        "device": "iphone",
+        "seconds": 6,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793484259309:com.spotify.client",
+      "created_at": "2026-11-14T16:50:46.938Z"
+    },
+    {
+      "id": "9034476f-1297-440b-8ae8-db95025f2552",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-10-31T22:13:57.719Z",
+      "end_at": "2026-10-31T22:14:11.217Z",
+      "title": "Spotify",
+      "data": {
+        "bundle_id": "com.spotify.client",
+        "device": "iphone",
+        "seconds": 13
+      },
+      "external_id": "biome:01df6cb2:1793484837719:com.spotify.client",
+      "created_at": "2026-11-14T16:50:46.939Z"
+    },
+    {
+      "id": "e3f1ba36-7901-44de-afa9-63584789e1d2",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-10-31T22:19:07.986Z",
+      "end_at": "2026-10-31T22:19:44.186Z",
+      "title": "Phone call",
+      "data": {
+        "bundle_id": "com.apple.InCallService",
+        "device": "iphone",
+        "seconds": 36,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793485147987:com.apple.InCallService",
+      "created_at": "2026-11-14T16:50:46.939Z"
+    },
+    {
+      "id": "25feceb7-013d-4e1a-adb7-294c8d355e7a",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-10-31T22:25:09.644Z",
+      "end_at": "2026-10-31T22:25:11.689Z",
+      "title": "Spotify",
+      "data": {
+        "bundle_id": "com.spotify.client",
+        "device": "iphone",
+        "seconds": 2
+      },
+      "external_id": "biome:01df6cb2:1793485509644:com.spotify.client",
+      "created_at": "2026-11-14T16:50:46.939Z"
+    },
+    {
+      "id": "4b058b81-284c-4094-8633-4b4b6a2b2bc0",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-10-31T22:25:12.227Z",
+      "end_at": "2026-10-31T22:25:46.896Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 35,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793485512227:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.940Z"
+    },
+    {
+      "id": "7bdf547f-fc71-487a-ba04-0b9d6bdebd9e",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-10-31T22:25:47.130Z",
+      "end_at": "2026-10-31T22:25:50.603Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 3,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793485547130:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.940Z"
+    },
+    {
+      "id": "697e2dfd-f70c-464d-8eb8-35792b3a8d02",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-10-31T22:25:51.993Z",
+      "end_at": "2026-10-31T22:26:06.658Z",
+      "title": "Ultrasyncplus",
+      "data": {
+        "bundle_id": "com.uhssystems.ultrasyncplus",
+        "device": "iphone",
+        "seconds": 15,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793485551993:com.uhssystems.ultrasyncplus",
+      "created_at": "2026-11-14T16:50:46.940Z"
+    },
+    {
+      "id": "683a4f86-4014-47fd-a723-c0e85838760f",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-10-31T22:31:04.090Z",
+      "end_at": "2026-10-31T22:33:54.751Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 171,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793485864091:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.941Z"
+    },
+    {
+      "id": "9c1cd26e-adb1-4e66-bdcb-2a6417b0cdc7",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-10-31T22:33:54.836Z",
+      "end_at": "2026-10-31T23:25:45.172Z",
+      "title": "TikTok",
+      "data": {
+        "bundle_id": "com.zhiliaoapp.musically",
+        "device": "iphone",
+        "seconds": 3110,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793486034837:com.zhiliaoapp.musically",
+      "created_at": "2026-11-14T16:50:46.941Z"
+    },
+    {
+      "id": "379b04de-17e7-4669-b0ef-45cc02e12e1e",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-10-31T23:25:45.496Z",
+      "end_at": "2026-10-31T23:28:31.823Z",
+      "title": "YouTube",
+      "data": {
+        "bundle_id": "com.google.ios.youtube",
+        "device": "iphone",
+        "seconds": 166,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793489145496:com.google.ios.youtube",
+      "created_at": "2026-11-14T16:50:46.941Z"
+    },
+    {
+      "id": "6775c7fe-41fc-4fc1-bfb4-249cce74a37c",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-10-31T23:28:32.012Z",
+      "end_at": "2026-10-31T23:30:34.259Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 122,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793489312013:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.941Z"
+    },
+    {
+      "id": "64b104e1-eaaf-4737-a41d-90da2fee5040",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-10-31T23:30:35.990Z",
+      "end_at": "2026-10-31T23:30:46.994Z",
+      "title": "Clock",
+      "data": {
+        "bundle_id": "com.apple.mobiletimer",
+        "device": "iphone",
+        "seconds": 11,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793489435991:com.apple.mobiletimer",
+      "created_at": "2026-11-14T16:50:46.941Z"
+    },
+    {
+      "id": "c83e7b5d-960e-444d-8f85-bb0aad27f004",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T07:17:50.352Z",
+      "end_at": "2026-11-01T07:17:51.425Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 1,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793517470353:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.941Z"
+    },
+    {
+      "id": "b01fceec-95e3-4e16-9f78-ffdc84e1a58e",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T07:17:54.637Z",
+      "end_at": "2026-11-01T07:18:24.179Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 30
+      },
+      "external_id": "biome:01df6cb2:1793517474638:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.942Z"
+    },
+    {
+      "id": "b4fafff0-8c42-4d55-8d04-4a74f5ab1197",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T07:18:24.209Z",
+      "end_at": "2026-11-01T07:18:26.667Z",
+      "title": "Phone",
+      "data": {
+        "bundle_id": "com.apple.mobilephone",
+        "device": "iphone",
+        "seconds": 2,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793517504209:com.apple.mobilephone",
+      "created_at": "2026-11-14T16:50:46.942Z"
+    },
+    {
+      "id": "d575e10d-aea9-4533-a567-deaac077e853",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T07:18:26.667Z",
+      "end_at": "2026-11-01T07:18:37.534Z",
+      "title": "Phone call",
+      "data": {
+        "bundle_id": "com.apple.InCallService",
+        "device": "iphone",
+        "seconds": 11,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793517506667:com.apple.InCallService",
+      "created_at": "2026-11-14T16:50:46.942Z"
+    },
+    {
+      "id": "b6da7d48-3a83-4345-81b2-397b8a7e49d2",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T07:18:37.534Z",
+      "end_at": "2026-11-01T07:18:39.963Z",
+      "title": "Phone",
+      "data": {
+        "bundle_id": "com.apple.mobilephone",
+        "device": "iphone",
+        "seconds": 2,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793517517534:com.apple.mobilephone",
+      "created_at": "2026-11-14T16:50:46.942Z"
+    },
+    {
+      "id": "f53f93e5-e2c9-4821-bb97-cf7861aff68e",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T07:18:39.963Z",
+      "end_at": "2026-11-01T07:18:41.787Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 2,
+        "opened_from": "app_switcher"
+      },
+      "external_id": "biome:01df6cb2:1793517519963:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.942Z"
+    },
+    {
+      "id": "95906ae2-fe6e-411f-987a-f3a591a83c9b",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T07:18:47.989Z",
+      "end_at": "2026-11-01T07:19:01.043Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 13
+      },
+      "external_id": "biome:01df6cb2:1793517527990:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.943Z"
+    },
+    {
+      "id": "3220bbf2-dda4-4e3d-bfe5-2ca87be1f050",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T07:19:41.458Z",
+      "end_at": "2026-11-01T07:19:45.482Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 4,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793517581458:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.943Z"
+    },
+    {
+      "id": "81f9fb9a-f26f-4f7d-ac86-989e1efbc928",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T08:49:11.169Z",
+      "end_at": "2026-11-01T08:51:55.352Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 164
+      },
+      "external_id": "biome:01df6cb2:1793522951169:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.943Z"
+    },
+    {
+      "id": "07a2fe8a-4a9d-43e4-beb8-e66a0841f5f6",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T08:51:55.614Z",
+      "end_at": "2026-11-01T08:52:07.083Z",
+      "title": "Spotify",
+      "data": {
+        "bundle_id": "com.spotify.client",
+        "device": "iphone",
+        "seconds": 11,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793523115614:com.spotify.client",
+      "created_at": "2026-11-14T16:50:46.943Z"
+    },
+    {
+      "id": "6e49c12d-fcb7-4be8-80df-b9d2f0e4fa1a",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T08:52:49.683Z",
+      "end_at": "2026-11-01T08:52:51.459Z",
+      "title": "Spotify",
+      "data": {
+        "bundle_id": "com.spotify.client",
+        "device": "iphone",
+        "seconds": 2
+      },
+      "external_id": "biome:01df6cb2:1793523169683:com.spotify.client",
+      "created_at": "2026-11-14T16:50:46.943Z"
+    },
+    {
+      "id": "b5091ec4-fd63-4a15-86db-822a7286e024",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T08:52:51.459Z",
+      "end_at": "2026-11-01T08:53:09.549Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 18,
+        "opened_from": "app_switcher"
+      },
+      "external_id": "biome:01df6cb2:1793523171460:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.944Z"
+    },
+    {
+      "id": "569ea8c9-90e3-4c81-93fc-a9fec382111e",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T08:53:09.549Z",
+      "end_at": "2026-11-01T08:53:11.142Z",
+      "title": "Camera",
+      "data": {
+        "bundle_id": "com.apple.camera",
+        "device": "iphone",
+        "seconds": 2,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793523189549:com.apple.camera",
+      "created_at": "2026-11-14T16:50:46.944Z"
+    },
+    {
+      "id": "bf1f4756-df01-4c06-8ccb-e9f85d1c5d74",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T08:53:11.142Z",
+      "end_at": "2026-11-01T09:04:11.893Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 661,
+        "opened_from": "app_switcher"
+      },
+      "external_id": "biome:01df6cb2:1793523191143:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.944Z"
+    },
+    {
+      "id": "cf1a7fd9-5a0c-48dc-ab6c-076455edc6da",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T09:04:12.219Z",
+      "end_at": "2026-11-01T09:04:36.958Z",
+      "title": "Spotify",
+      "data": {
+        "bundle_id": "com.spotify.client",
+        "device": "iphone",
+        "seconds": 25,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793523852220:com.spotify.client",
+      "created_at": "2026-11-14T16:50:46.944Z"
+    },
+    {
+      "id": "d4898a05-268a-4fbb-84e7-e4efe4ecdb2f",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T09:19:34.840Z",
+      "end_at": "2026-11-01T09:19:36.522Z",
+      "title": "Spotify",
+      "data": {
+        "bundle_id": "com.spotify.client",
+        "device": "iphone",
+        "seconds": 2
+      },
+      "external_id": "biome:01df6cb2:1793524774840:com.spotify.client",
+      "created_at": "2026-11-14T16:50:46.944Z"
+    },
+    {
+      "id": "0e3ff818-47ae-4451-85e2-bc761023604e",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T09:19:37.762Z",
+      "end_at": "2026-11-01T09:19:45.886Z",
+      "title": "Google Maps",
+      "data": {
+        "bundle_id": "com.google.Maps",
+        "device": "iphone",
+        "seconds": 8,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793524777762:com.google.Maps",
+      "created_at": "2026-11-14T16:50:46.944Z"
+    },
+    {
+      "id": "7af4227e-db98-4b2c-8c6c-c5705523258c",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T09:19:46.402Z",
+      "end_at": "2026-11-01T09:19:58.775Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 12,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793524786403:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.945Z"
+    },
+    {
+      "id": "de013942-7c5f-4546-8022-f41c24e12088",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T09:19:58.775Z",
+      "end_at": "2026-11-01T09:24:40.100Z",
+      "title": "Google Maps",
+      "data": {
+        "bundle_id": "com.google.Maps",
+        "device": "iphone",
+        "seconds": 281,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793524798775:com.google.Maps",
+      "created_at": "2026-11-14T16:50:46.945Z"
+    },
+    {
+      "id": "38f8bb04-39ff-4624-a0a2-b6073a6178ed",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T09:24:40.100Z",
+      "end_at": "2026-11-01T09:24:43.798Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 4,
+        "opened_from": "app_switcher"
+      },
+      "external_id": "biome:01df6cb2:1793525080101:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.945Z"
+    },
+    {
+      "id": "9ca771c1-2631-4518-b334-c2ec125a4382",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T09:24:43.798Z",
+      "end_at": "2026-11-01T09:24:45.960Z",
+      "title": "Google Maps",
+      "data": {
+        "bundle_id": "com.google.Maps",
+        "device": "iphone",
+        "seconds": 2,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793525083799:com.google.Maps",
+      "created_at": "2026-11-14T16:50:46.945Z"
+    },
+    {
+      "id": "42c6b7d0-8120-4e2a-91fa-a308109999bc",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T09:24:45.960Z",
+      "end_at": "2026-11-01T09:27:16.139Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 150,
+        "opened_from": "app_switcher"
+      },
+      "external_id": "biome:01df6cb2:1793525085961:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.945Z"
+    },
+    {
+      "id": "9b172d22-9da3-451c-8cbd-58d26f089b8a",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T09:27:46.060Z",
+      "end_at": "2026-11-01T09:27:47.974Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 2
+      },
+      "external_id": "biome:01df6cb2:1793525266061:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.946Z"
+    },
+    {
+      "id": "b180f44a-4b51-4138-b911-9a1e73963afb",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T09:27:49.942Z",
+      "end_at": "2026-11-01T09:27:52.548Z",
+      "title": "Google Maps",
+      "data": {
+        "bundle_id": "com.google.Maps",
+        "device": "iphone",
+        "seconds": 3,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793525269943:com.google.Maps",
+      "created_at": "2026-11-14T16:50:46.946Z"
+    },
+    {
+      "id": "c45315e0-694c-43d0-ad61-e3c6d7b077dc",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T09:28:00.270Z",
+      "end_at": "2026-11-01T09:28:01.804Z",
+      "title": "Google Maps",
+      "data": {
+        "bundle_id": "com.google.Maps",
+        "device": "iphone",
+        "seconds": 2
+      },
+      "external_id": "biome:01df6cb2:1793525280270:com.google.Maps",
+      "created_at": "2026-11-14T16:50:46.946Z"
+    },
+    {
+      "id": "3396fb46-8550-45d7-9705-8e26c86601b6",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T09:28:01.804Z",
+      "end_at": "2026-11-01T09:29:27.140Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 85,
+        "opened_from": "app_switcher"
+      },
+      "external_id": "biome:01df6cb2:1793525281804:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.946Z"
+    },
+    {
+      "id": "1a5f9fa7-4cdc-425e-8491-66d292fc09fb",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T09:29:27.156Z",
+      "end_at": "2026-11-01T09:29:29.121Z",
+      "title": "Phone",
+      "data": {
+        "bundle_id": "com.apple.mobilephone",
+        "device": "iphone",
+        "seconds": 2,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793525367157:com.apple.mobilephone",
+      "created_at": "2026-11-14T16:50:46.946Z"
+    },
+    {
+      "id": "2bf5976d-ef78-4487-9c02-c092b3340787",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T09:29:29.121Z",
+      "end_at": "2026-11-01T09:29:30.867Z",
+      "title": "Phone call",
+      "data": {
+        "bundle_id": "com.apple.InCallService",
+        "device": "iphone",
+        "seconds": 2,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793525369122:com.apple.InCallService",
+      "created_at": "2026-11-14T16:50:46.946Z"
+    },
+    {
+      "id": "4b92f747-6347-465e-8773-1fc862216317",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T10:18:17.605Z",
+      "end_at": "2026-11-01T10:18:43.286Z",
+      "title": "Phone call",
+      "data": {
+        "bundle_id": "com.apple.InCallService",
+        "device": "iphone",
+        "seconds": 26,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793528297605:com.apple.InCallService",
+      "created_at": "2026-11-14T16:50:46.947Z"
+    },
+    {
+      "id": "1ed59274-9e80-48ab-96db-e4b87c5b54a8",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T10:25:35.041Z",
+      "end_at": "2026-11-01T10:25:37.219Z",
+      "title": "Phone",
+      "data": {
+        "bundle_id": "com.apple.mobilephone",
+        "device": "iphone",
+        "seconds": 2
+      },
+      "external_id": "biome:01df6cb2:1793528735041:com.apple.mobilephone",
+      "created_at": "2026-11-14T16:50:46.947Z"
+    },
+    {
+      "id": "d7c3cb43-905c-4de1-b3ee-27f97c183849",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T10:25:37.676Z",
+      "end_at": "2026-11-01T10:25:51.437Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 14,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793528737676:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.947Z"
+    },
+    {
+      "id": "6a582b07-3c5c-4e65-9431-9936f766ff04",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T10:26:50.209Z",
+      "end_at": "2026-11-01T10:27:16.086Z",
+      "title": "Phone call",
+      "data": {
+        "bundle_id": "com.apple.InCallService",
+        "device": "iphone",
+        "seconds": 26,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793528810210:com.apple.InCallService",
+      "created_at": "2026-11-14T16:50:46.947Z"
+    },
+    {
+      "id": "a388e163-13c1-401a-8b05-8201fd39c471",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T10:35:23.303Z",
+      "end_at": "2026-11-01T10:35:37.103Z",
+      "title": "Phone call",
+      "data": {
+        "bundle_id": "com.apple.InCallService",
+        "device": "iphone",
+        "seconds": 14,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793529323304:com.apple.InCallService",
+      "created_at": "2026-11-14T16:50:46.947Z"
+    },
+    {
+      "id": "2b8f0dad-ff80-4dcd-ac00-636cd49938ef",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T10:52:02.551Z",
+      "end_at": "2026-11-01T10:52:22.879Z",
+      "title": "Phone call",
+      "data": {
+        "bundle_id": "com.apple.InCallService",
+        "device": "iphone",
+        "seconds": 20,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793530322551:com.apple.InCallService",
+      "created_at": "2026-11-14T16:50:46.948Z"
+    },
+    {
+      "id": "ce50b261-f248-42fa-a717-c3924dfc9dac",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T11:20:49.976Z",
+      "end_at": "2026-11-01T11:20:52.284Z",
+      "title": "Phone",
+      "data": {
+        "bundle_id": "com.apple.mobilephone",
+        "device": "iphone",
+        "seconds": 2,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793532049976:com.apple.mobilephone",
+      "created_at": "2026-11-14T16:50:46.948Z"
+    },
+    {
+      "id": "4c28268f-4e34-45e0-9f2f-a62ac587e172",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T11:20:52.284Z",
+      "end_at": "2026-11-01T11:25:17.353Z",
+      "title": "Phone call",
+      "data": {
+        "bundle_id": "com.apple.InCallService",
+        "device": "iphone",
+        "seconds": 265,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793532052285:com.apple.InCallService",
+      "created_at": "2026-11-14T16:50:46.948Z"
+    },
+    {
+      "id": "724137ee-c931-42d5-bf34-faa1035a1efc",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T11:25:17.353Z",
+      "end_at": "2026-11-01T11:25:20.517Z",
+      "title": "Phone",
+      "data": {
+        "bundle_id": "com.apple.mobilephone",
+        "device": "iphone",
+        "seconds": 3,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793532317354:com.apple.mobilephone",
+      "created_at": "2026-11-14T16:50:46.948Z"
+    },
+    {
+      "id": "b9fa3a04-43ae-403a-ba6a-13c0e999c2c9",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T11:26:22.350Z",
+      "end_at": "2026-11-01T11:26:28.468Z",
+      "title": "Apple Pay",
+      "data": {
+        "bundle_id": "com.apple.PassbookUIService",
+        "device": "iphone",
+        "seconds": 6,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793532382351:com.apple.PassbookUIService",
+      "created_at": "2026-11-14T16:50:46.948Z"
+    },
+    {
+      "id": "d4a0c78f-5949-41c5-a7f7-4ed6396719be",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T11:26:38.664Z",
+      "end_at": "2026-11-01T11:26:51.482Z",
+      "title": "Wallet",
+      "data": {
+        "bundle_id": "com.apple.Passbook",
+        "device": "iphone",
+        "seconds": 13,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793532398664:com.apple.Passbook",
+      "created_at": "2026-11-14T16:50:46.948Z"
+    },
+    {
+      "id": "5e2bf421-6438-4be6-9b04-891b6cd19440",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T11:26:51.578Z",
+      "end_at": "2026-11-01T11:26:54.245Z",
+      "title": "Phone",
+      "data": {
+        "bundle_id": "com.apple.mobilephone",
+        "device": "iphone",
+        "seconds": 3,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793532411578:com.apple.mobilephone",
+      "created_at": "2026-11-14T16:50:46.949Z"
+    },
+    {
+      "id": "6bfc6385-aae3-4bee-a540-70c78e5cd927",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T11:26:54.245Z",
+      "end_at": "2026-11-01T11:28:56.336Z",
+      "title": "Phone call",
+      "data": {
+        "bundle_id": "com.apple.InCallService",
+        "device": "iphone",
+        "seconds": 122,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793532414246:com.apple.InCallService",
+      "created_at": "2026-11-14T16:50:46.949Z"
+    },
+    {
+      "id": "65ebfc88-5bce-495e-94f4-3991e9c38717",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T11:28:56.336Z",
+      "end_at": "2026-11-01T11:28:59.060Z",
+      "title": "Phone",
+      "data": {
+        "bundle_id": "com.apple.mobilephone",
+        "device": "iphone",
+        "seconds": 3,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793532536337:com.apple.mobilephone",
+      "created_at": "2026-11-14T16:50:46.949Z"
+    },
+    {
+      "id": "89b88b51-2368-4e3e-8f30-ecc0f69f119f",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T11:29:44.918Z",
+      "end_at": "2026-11-01T11:31:52.948Z",
+      "title": "Phone call",
+      "data": {
+        "bundle_id": "com.apple.InCallService",
+        "device": "iphone",
+        "seconds": 128,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793532584919:com.apple.InCallService",
+      "created_at": "2026-11-14T16:50:46.949Z"
+    },
+    {
+      "id": "594dad7b-ed44-4a7e-aa97-9bc030d09add",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T11:31:53.564Z",
+      "end_at": "2026-11-01T11:31:55.480Z",
+      "title": "Phone",
+      "data": {
+        "bundle_id": "com.apple.mobilephone",
+        "device": "iphone",
+        "seconds": 2
+      },
+      "external_id": "biome:01df6cb2:1793532713564:com.apple.mobilephone",
+      "created_at": "2026-11-14T16:50:46.949Z"
+    },
+    {
+      "id": "c18d08dc-1098-4ce8-9e57-cf1d13b8cd60",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T11:31:55.480Z",
+      "end_at": "2026-11-01T11:33:11.645Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 76,
+        "opened_from": "app_switcher"
+      },
+      "external_id": "biome:01df6cb2:1793532715481:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.949Z"
+    },
+    {
+      "id": "5ec16270-00a4-4511-9918-3481bf74b4ed",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T11:33:12.383Z",
+      "end_at": "2026-11-01T11:35:27.461Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 135,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793532792384:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.950Z"
+    },
+    {
+      "id": "36978525-5328-4ec5-8f84-7d6715add639",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T11:36:53.071Z",
+      "end_at": "2026-11-01T11:37:05.789Z",
+      "title": "Messages",
+      "data": {
+        "bundle_id": "com.apple.MobileSMS",
+        "device": "iphone",
+        "seconds": 13,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793533013071:com.apple.MobileSMS",
+      "created_at": "2026-11-14T16:50:46.950Z"
+    },
+    {
+      "id": "db23d574-475f-4cd5-8424-3801e161c72b",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T11:37:05.807Z",
+      "end_at": "2026-11-01T11:37:09.573Z",
+      "title": "Spotify",
+      "data": {
+        "bundle_id": "com.spotify.client",
+        "device": "iphone",
+        "seconds": 4,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793533025807:com.spotify.client",
+      "created_at": "2026-11-14T16:50:46.950Z"
+    },
+    {
+      "id": "c26f73c0-8703-4731-83d7-92177792464e",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T11:50:17.072Z",
+      "end_at": "2026-11-01T11:50:25.566Z",
+      "title": "Apple Pay",
+      "data": {
+        "bundle_id": "com.apple.PassbookUIService",
+        "device": "iphone",
+        "seconds": 8,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793533817073:com.apple.PassbookUIService",
+      "created_at": "2026-11-14T16:50:46.950Z"
+    },
+    {
+      "id": "7dc2367c-c940-43f3-946c-72220b60442e",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T12:01:24.797Z",
+      "end_at": "2026-11-01T12:01:25.958Z",
+      "title": "Spotify",
+      "data": {
+        "bundle_id": "com.spotify.client",
+        "device": "iphone",
+        "seconds": 1
+      },
+      "external_id": "biome:01df6cb2:1793534484798:com.spotify.client",
+      "created_at": "2026-11-14T16:50:46.950Z"
+    },
+    {
+      "id": "2a0b4227-6e6a-40f6-a42c-488409468fc8",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T12:01:25.974Z",
+      "end_at": "2026-11-01T12:01:29.365Z",
+      "title": "Phone",
+      "data": {
+        "bundle_id": "com.apple.mobilephone",
+        "device": "iphone",
+        "seconds": 3,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793534485974:com.apple.mobilephone",
+      "created_at": "2026-11-14T16:50:46.951Z"
+    },
+    {
+      "id": "0a4ceb60-be12-4953-8bd6-6267615f7830",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T12:01:29.365Z",
+      "end_at": "2026-11-01T12:01:30.756Z",
+      "title": "Phone call",
+      "data": {
+        "bundle_id": "com.apple.InCallService",
+        "device": "iphone",
+        "seconds": 1,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793534489365:com.apple.InCallService",
+      "created_at": "2026-11-14T16:50:46.951Z"
+    },
+    {
+      "id": "6233fd5d-cab5-459e-b08f-93c46ef3a9a8",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T12:03:19.488Z",
+      "end_at": "2026-11-01T12:03:20.708Z",
+      "title": "Phone",
+      "data": {
+        "bundle_id": "com.apple.mobilephone",
+        "device": "iphone",
+        "seconds": 1,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793534599489:com.apple.mobilephone",
+      "created_at": "2026-11-14T16:50:46.951Z"
+    },
+    {
+      "id": "d83f6360-e7cc-4133-a7f7-2b2e36f68368",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T12:15:01.858Z",
+      "end_at": "2026-11-01T12:15:04.154Z",
+      "title": "Phone",
+      "data": {
+        "bundle_id": "com.apple.mobilephone",
+        "device": "iphone",
+        "seconds": 2
+      },
+      "external_id": "biome:01df6cb2:1793535301858:com.apple.mobilephone",
+      "created_at": "2026-11-14T16:50:46.951Z"
+    },
+    {
+      "id": "9cb2860f-b77c-4614-b5cb-9facc3343a28",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T12:15:05.013Z",
+      "end_at": "2026-11-01T12:15:44.726Z",
+      "title": "Google",
+      "data": {
+        "bundle_id": "com.google.GoogleMobile",
+        "device": "iphone",
+        "seconds": 40,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793535305013:com.google.GoogleMobile",
+      "created_at": "2026-11-14T16:50:46.951Z"
+    },
+    {
+      "id": "1a8a6803-a57b-4015-ac1f-b45fddc9ff45",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T12:15:58.095Z",
+      "end_at": "2026-11-01T12:17:40.391Z",
+      "title": "Google",
+      "data": {
+        "bundle_id": "com.google.GoogleMobile",
+        "device": "iphone",
+        "seconds": 102
+      },
+      "external_id": "biome:01df6cb2:1793535358095:com.google.GoogleMobile",
+      "created_at": "2026-11-14T16:50:46.951Z"
+    },
+    {
+      "id": "72dcf8fc-d692-46ae-bb14-8307602bb82a",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T12:17:40.391Z",
+      "end_at": "2026-11-01T12:17:59.967Z",
+      "title": "Apple Pay",
+      "data": {
+        "bundle_id": "com.apple.PassbookUIService",
+        "device": "iphone",
+        "seconds": 20,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793535460392:com.apple.PassbookUIService",
+      "created_at": "2026-11-14T16:50:46.952Z"
+    },
+    {
+      "id": "398391cb-9165-4425-a391-88d4a2d85f8b",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T12:17:59.967Z",
+      "end_at": "2026-11-01T12:18:19.122Z",
+      "title": "Google",
+      "data": {
+        "bundle_id": "com.google.GoogleMobile",
+        "device": "iphone",
+        "seconds": 19,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793535479967:com.google.GoogleMobile",
+      "created_at": "2026-11-14T16:50:46.952Z"
+    },
+    {
+      "id": "b49bacbc-18b1-45f0-b4f2-837d91f025d9",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T12:18:19.122Z",
+      "end_at": "2026-11-01T12:18:22.716Z",
+      "title": "Apple Pay",
+      "data": {
+        "bundle_id": "com.apple.PassbookUIService",
+        "device": "iphone",
+        "seconds": 4,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793535499123:com.apple.PassbookUIService",
+      "created_at": "2026-11-14T16:50:46.952Z"
+    },
+    {
+      "id": "cad26fcd-f6b7-4906-8c7e-92273fa85dba",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T12:18:22.716Z",
+      "end_at": "2026-11-01T12:18:34.722Z",
+      "title": "Google",
+      "data": {
+        "bundle_id": "com.google.GoogleMobile",
+        "device": "iphone",
+        "seconds": 12,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793535502716:com.google.GoogleMobile",
+      "created_at": "2026-11-14T16:50:46.953Z"
+    },
+    {
+      "id": "05284006-bd06-47f6-8634-64f9edae7f82",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T12:18:34.743Z",
+      "end_at": "2026-11-01T12:21:15.421Z",
+      "title": "Google",
+      "data": {
+        "bundle_id": "com.google.GoogleMobile",
+        "device": "iphone",
+        "seconds": 161,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793535514744:com.google.GoogleMobile",
+      "created_at": "2026-11-14T16:50:46.953Z"
+    },
+    {
+      "id": "b6865e9d-bcdb-4391-af74-aae2077dfa39",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T13:13:16.680Z",
+      "end_at": "2026-11-01T13:13:17.911Z",
+      "title": "Google",
+      "data": {
+        "bundle_id": "com.google.GoogleMobile",
+        "device": "iphone",
+        "seconds": 1
+      },
+      "external_id": "biome:01df6cb2:1793538796681:com.google.GoogleMobile",
+      "created_at": "2026-11-14T16:50:46.953Z"
+    },
+    {
+      "id": "ae03c524-90d4-4373-a228-dbdd7fc8d4f8",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T13:13:17.926Z",
+      "end_at": "2026-11-01T13:13:27.747Z",
+      "title": "Phone",
+      "data": {
+        "bundle_id": "com.apple.mobilephone",
+        "device": "iphone",
+        "seconds": 10,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793538797927:com.apple.mobilephone",
+      "created_at": "2026-11-14T16:50:46.953Z"
+    },
+    {
+      "id": "4fc43de4-93f3-413a-8072-ed3277617ba6",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T13:13:27.747Z",
+      "end_at": "2026-11-01T13:13:28.960Z",
+      "title": "Phone call",
+      "data": {
+        "bundle_id": "com.apple.InCallService",
+        "device": "iphone",
+        "seconds": 1,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793538807748:com.apple.InCallService",
+      "created_at": "2026-11-14T16:50:46.953Z"
+    },
+    {
+      "id": "8e556f76-edb7-4e92-b45e-4b77c5a96847",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T13:13:34.390Z",
+      "end_at": "2026-11-01T13:13:35.847Z",
+      "title": "Phone call",
+      "data": {
+        "bundle_id": "com.apple.InCallService",
+        "device": "iphone",
+        "seconds": 1,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793538814390:com.apple.InCallService",
+      "created_at": "2026-11-14T16:50:46.953Z"
+    },
+    {
+      "id": "cbd83f0b-7fe5-4bb4-b610-a79cd2d7c4ff",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T13:15:43.484Z",
+      "end_at": "2026-11-01T13:15:44.905Z",
+      "title": "Phone",
+      "data": {
+        "bundle_id": "com.apple.mobilephone",
+        "device": "iphone",
+        "seconds": 1,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793538943484:com.apple.mobilephone",
+      "created_at": "2026-11-14T16:50:46.954Z"
+    },
+    {
+      "id": "8ef8a124-47bb-405e-9f2d-6c56b406880b",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T13:21:33.946Z",
+      "end_at": "2026-11-01T13:21:35.922Z",
+      "title": "Phone",
+      "data": {
+        "bundle_id": "com.apple.mobilephone",
+        "device": "iphone",
+        "seconds": 2
+      },
+      "external_id": "biome:01df6cb2:1793539293946:com.apple.mobilephone",
+      "created_at": "2026-11-14T16:50:46.954Z"
+    },
+    {
+      "id": "774dbb14-7031-4852-b37e-eba6b2d9314e",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T13:21:37.015Z",
+      "end_at": "2026-11-01T13:24:21.751Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 165,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793539297016:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.954Z"
+    },
+    {
+      "id": "b61967c4-03de-449d-a864-1693741944e9",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T13:36:21.356Z",
+      "end_at": "2026-11-01T13:38:38.263Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 137
+      },
+      "external_id": "biome:01df6cb2:1793540181356:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.954Z"
+    },
+    {
+      "id": "26a20a1f-b72e-4232-85be-7669e60a27b4",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T13:44:17.658Z",
+      "end_at": "2026-11-01T13:46:02.086Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 104
+      },
+      "external_id": "biome:01df6cb2:1793540657659:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.954Z"
+    },
+    {
+      "id": "c1a289ce-685d-4abb-98df-deb70f3b1eb2",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T14:00:29.909Z",
+      "end_at": "2026-11-01T14:00:55.333Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 25
+      },
+      "external_id": "biome:01df6cb2:1793541629910:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.955Z"
+    },
+    {
+      "id": "af8ac87d-f133-4d90-a91b-c6c9077a083d",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T14:20:55.518Z",
+      "end_at": "2026-11-01T14:20:58.014Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 2
+      },
+      "external_id": "biome:01df6cb2:1793542855519:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.955Z"
+    },
+    {
+      "id": "a6177a9e-ce3f-4b0c-9310-105e0401a069",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T14:20:58.014Z",
+      "end_at": "2026-11-01T14:21:17.293Z",
+      "title": "Spotify",
+      "data": {
+        "bundle_id": "com.spotify.client",
+        "device": "iphone",
+        "seconds": 19,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793542858014:com.spotify.client",
+      "created_at": "2026-11-14T16:50:46.955Z"
+    },
+    {
+      "id": "15c1ea3f-48a7-4250-a399-d61260e79ea2",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T14:30:20.866Z",
+      "end_at": "2026-11-01T14:30:23.875Z",
+      "title": "Spotify",
+      "data": {
+        "bundle_id": "com.spotify.client",
+        "device": "iphone",
+        "seconds": 3
+      },
+      "external_id": "biome:01df6cb2:1793543420866:com.spotify.client",
+      "created_at": "2026-11-14T16:50:46.955Z"
+    },
+    {
+      "id": "fbc4ecff-65bf-4533-ac85-4d4e8c691659",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T14:46:28.622Z",
+      "end_at": "2026-11-01T14:46:30.629Z",
+      "title": "Spotify",
+      "data": {
+        "bundle_id": "com.spotify.client",
+        "device": "iphone",
+        "seconds": 2
+      },
+      "external_id": "biome:01df6cb2:1793544388622:com.spotify.client",
+      "created_at": "2026-11-14T16:50:46.955Z"
+    },
+    {
+      "id": "d767d41c-49ac-4927-b7d6-edb712114beb",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T14:46:31.356Z",
+      "end_at": "2026-11-01T14:46:40.088Z",
+      "title": "Google",
+      "data": {
+        "bundle_id": "com.google.GoogleMobile",
+        "device": "iphone",
+        "seconds": 9,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793544391357:com.google.GoogleMobile",
+      "created_at": "2026-11-14T16:50:46.956Z"
+    },
+    {
+      "id": "0745d9c4-9b93-491f-9506-94dddd7b18eb",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T14:54:14.580Z",
+      "end_at": "2026-11-01T14:54:16.529Z",
+      "title": "Google",
+      "data": {
+        "bundle_id": "com.google.GoogleMobile",
+        "device": "iphone",
+        "seconds": 2
+      },
+      "external_id": "biome:01df6cb2:1793544854581:com.google.GoogleMobile",
+      "created_at": "2026-11-14T16:50:46.956Z"
+    },
+    {
+      "id": "614eca06-fe39-4e33-b161-015ac90a88eb",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T14:54:18.249Z",
+      "end_at": "2026-11-01T14:59:22.564Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 304,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793544858250:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.956Z"
+    },
+    {
+      "id": "b4913de5-15f1-4a6b-978b-740b74624d43",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T14:59:24.120Z",
+      "end_at": "2026-11-01T15:01:38.191Z",
+      "title": "Google",
+      "data": {
+        "bundle_id": "com.google.GoogleMobile",
+        "device": "iphone",
+        "seconds": 134,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793545164120:com.google.GoogleMobile",
+      "created_at": "2026-11-14T16:50:46.956Z"
+    },
+    {
+      "id": "35681821-750b-4a0a-849a-dd729feb8c77",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:01:38.191Z",
+      "end_at": "2026-11-01T15:04:31.199Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 173,
+        "opened_from": "app_switcher"
+      },
+      "external_id": "biome:01df6cb2:1793545298192:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.956Z"
+    },
+    {
+      "id": "bf4cd82d-e9f6-4708-aef6-a6d1a55fae9c",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:05:11.997Z",
+      "end_at": "2026-11-01T15:05:32.072Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 20
+      },
+      "external_id": "biome:01df6cb2:1793545511997:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.956Z"
+    },
+    {
+      "id": "b45e25c6-5fb6-4bdd-8061-5cf69d53debf",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:05:32.204Z",
+      "end_at": "2026-11-01T15:06:16.102Z",
+      "title": "Google Maps",
+      "data": {
+        "bundle_id": "com.google.Maps",
+        "device": "iphone",
+        "seconds": 44,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793545532204:com.google.Maps",
+      "created_at": "2026-11-14T16:50:46.957Z"
+    },
+    {
+      "id": "409e7edb-312f-4235-9a64-3af0c0e3c3a2",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:06:16.609Z",
+      "end_at": "2026-11-01T15:06:52.576Z",
+      "title": "Google",
+      "data": {
+        "bundle_id": "com.google.GoogleMobile",
+        "device": "iphone",
+        "seconds": 36,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793545576609:com.google.GoogleMobile",
+      "created_at": "2026-11-14T16:50:46.957Z"
+    },
+    {
+      "id": "3a7c5ed9-7c84-44ed-b0d6-6ad531ebbbd5",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:06:52.576Z",
+      "end_at": "2026-11-01T15:06:54.089Z",
+      "title": "Google Maps",
+      "data": {
+        "bundle_id": "com.google.Maps",
+        "device": "iphone",
+        "seconds": 2,
+        "opened_from": "app_switcher"
+      },
+      "external_id": "biome:01df6cb2:1793545612576:com.google.Maps",
+      "created_at": "2026-11-14T16:50:46.957Z"
+    },
+    {
+      "id": "5c62dfbd-4a94-411c-b756-e1fe309b9537",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:06:54.089Z",
+      "end_at": "2026-11-01T15:07:14.529Z",
+      "title": "Google",
+      "data": {
+        "bundle_id": "com.google.GoogleMobile",
+        "device": "iphone",
+        "seconds": 20,
+        "opened_from": "app_switcher"
+      },
+      "external_id": "biome:01df6cb2:1793545614090:com.google.GoogleMobile",
+      "created_at": "2026-11-14T16:50:46.957Z"
+    },
+    {
+      "id": "76f91950-806b-4e0f-b038-d876058d43d3",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:07:16.253Z",
+      "end_at": "2026-11-01T15:07:43.953Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 28,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793545636254:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.957Z"
+    },
+    {
+      "id": "43d3aef0-bb6f-4e78-9339-2e3e2117c31a",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:11:35.388Z",
+      "end_at": "2026-11-01T15:13:38.376Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 123
+      },
+      "external_id": "biome:01df6cb2:1793545895389:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.958Z"
+    },
+    {
+      "id": "9b579984-4a52-4207-8296-cad867ccd166",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:13:38.376Z",
+      "end_at": "2026-11-01T15:13:44.795Z",
+      "title": "Google Maps",
+      "data": {
+        "bundle_id": "com.google.Maps",
+        "device": "iphone",
+        "seconds": 6,
+        "opened_from": "app_switcher"
+      },
+      "external_id": "biome:01df6cb2:1793546018376:com.google.Maps",
+      "created_at": "2026-11-14T16:50:46.958Z"
+    },
+    {
+      "id": "bb9843e7-3c00-417a-b6d7-b4731d8dfdea",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:13:46.613Z",
+      "end_at": "2026-11-01T15:13:48.759Z",
+      "title": "Google Maps",
+      "data": {
+        "bundle_id": "com.google.Maps",
+        "device": "iphone",
+        "seconds": 2
+      },
+      "external_id": "biome:01df6cb2:1793546026613:com.google.Maps",
+      "created_at": "2026-11-14T16:50:46.958Z"
+    },
+    {
+      "id": "d6cd4010-9dd9-4807-a220-4303594f8545",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:13:48.759Z",
+      "end_at": "2026-11-01T15:13:51.844Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 3,
+        "opened_from": "app_switcher"
+      },
+      "external_id": "biome:01df6cb2:1793546028760:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.958Z"
+    },
+    {
+      "id": "c0a0d7d8-3525-4629-a242-c2d21de5a7e1",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:13:51.844Z",
+      "end_at": "2026-11-01T15:14:14.085Z",
+      "title": "Google Maps",
+      "data": {
+        "bundle_id": "com.google.Maps",
+        "device": "iphone",
+        "seconds": 22,
+        "opened_from": "app_switcher"
+      },
+      "external_id": "biome:01df6cb2:1793546031844:com.google.Maps",
+      "created_at": "2026-11-14T16:50:46.958Z"
+    },
+    {
+      "id": "ea863973-4246-4fa4-befc-c06249446d63",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:14:14.085Z",
+      "end_at": "2026-11-01T15:14:34.814Z",
+      "title": "Google",
+      "data": {
+        "bundle_id": "com.google.GoogleMobile",
+        "device": "iphone",
+        "seconds": 21,
+        "opened_from": "app_switcher"
+      },
+      "external_id": "biome:01df6cb2:1793546054086:com.google.GoogleMobile",
+      "created_at": "2026-11-14T16:50:46.958Z"
+    },
+    {
+      "id": "eb5553ad-1dd6-416f-a248-e7b1cd6852b4",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:14:35.014Z",
+      "end_at": "2026-11-01T15:15:32.712Z",
+      "title": "Spotify",
+      "data": {
+        "bundle_id": "com.spotify.client",
+        "device": "iphone",
+        "seconds": 58,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793546075014:com.spotify.client",
+      "created_at": "2026-11-14T16:50:46.959Z"
+    },
+    {
+      "id": "af9d0fb4-2f3b-4858-9ed6-5454f18725ce",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:15:32.712Z",
+      "end_at": "2026-11-01T15:15:42.457Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 10,
+        "opened_from": "app_switcher"
+      },
+      "external_id": "biome:01df6cb2:1793546132712:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.959Z"
+    },
+    {
+      "id": "648ee873-0f25-4b23-b8f6-59205be92584",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:15:43.794Z",
+      "end_at": "2026-11-01T15:17:21.901Z",
+      "title": "Google",
+      "data": {
+        "bundle_id": "com.google.GoogleMobile",
+        "device": "iphone",
+        "seconds": 98,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793546143795:com.google.GoogleMobile",
+      "created_at": "2026-11-14T16:50:46.959Z"
+    },
+    {
+      "id": "079decc8-e60d-4b7f-a5ae-2aeccadb20da",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:17:23.808Z",
+      "end_at": "2026-11-01T15:17:25.947Z",
+      "title": "TikTok",
+      "data": {
+        "bundle_id": "com.zhiliaoapp.musically",
+        "device": "iphone",
+        "seconds": 2,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793546243808:com.zhiliaoapp.musically",
+      "created_at": "2026-11-14T16:50:46.959Z"
+    },
+    {
+      "id": "2e2e22c0-f793-4146-9cff-61191513bd4e",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:17:25.947Z",
+      "end_at": "2026-11-01T15:18:21.100Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 55,
+        "opened_from": "app_switcher"
+      },
+      "external_id": "biome:01df6cb2:1793546245947:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.959Z"
+    },
+    {
+      "id": "3f1712ce-d47f-4fe3-95ca-7f015045cccf",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:18:21.100Z",
+      "end_at": "2026-11-01T15:18:32.133Z",
+      "title": "TikTok",
+      "data": {
+        "bundle_id": "com.zhiliaoapp.musically",
+        "device": "iphone",
+        "seconds": 11,
+        "opened_from": "app_switcher"
+      },
+      "external_id": "biome:01df6cb2:1793546301100:com.zhiliaoapp.musically",
+      "created_at": "2026-11-14T16:50:46.960Z"
+    },
+    {
+      "id": "6b061b45-860f-438d-b9fd-1a8e8f4b5275",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:18:32.133Z",
+      "end_at": "2026-11-01T15:18:35.140Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 3,
+        "opened_from": "app_switcher"
+      },
+      "external_id": "biome:01df6cb2:1793546312134:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.960Z"
+    },
+    {
+      "id": "f1aeefa4-f98f-4f5d-a96d-a724a45fafc3",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:18:35.140Z",
+      "end_at": "2026-11-01T15:20:21.163Z",
+      "title": "TikTok",
+      "data": {
+        "bundle_id": "com.zhiliaoapp.musically",
+        "device": "iphone",
+        "seconds": 106,
+        "opened_from": "app_switcher"
+      },
+      "external_id": "biome:01df6cb2:1793546315140:com.zhiliaoapp.musically",
+      "created_at": "2026-11-14T16:50:46.960Z"
+    },
+    {
+      "id": "a955e742-f061-42e0-af33-e6b2009fc3be",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:27:05.470Z",
+      "end_at": "2026-11-01T15:27:11.132Z",
+      "title": "TikTok",
+      "data": {
+        "bundle_id": "com.zhiliaoapp.musically",
+        "device": "iphone",
+        "seconds": 6
+      },
+      "external_id": "biome:01df6cb2:1793546825471:com.zhiliaoapp.musically",
+      "created_at": "2026-11-14T16:50:46.960Z"
+    },
+    {
+      "id": "e63fa6e0-d676-4d78-ae92-f32bf4847b9e",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:27:12.196Z",
+      "end_at": "2026-11-01T15:27:58.834Z",
+      "title": "Spotify",
+      "data": {
+        "bundle_id": "com.spotify.client",
+        "device": "iphone",
+        "seconds": 47,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793546832197:com.spotify.client",
+      "created_at": "2026-11-14T16:50:46.960Z"
+    },
+    {
+      "id": "ebc27243-b477-43d1-b0ab-a70b5a19a5f8",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:29:46.611Z",
+      "end_at": "2026-11-01T15:29:51.269Z",
+      "title": "Spotify",
+      "data": {
+        "bundle_id": "com.spotify.client",
+        "device": "iphone",
+        "seconds": 5
+      },
+      "external_id": "biome:01df6cb2:1793546986612:com.spotify.client",
+      "created_at": "2026-11-14T16:50:46.960Z"
+    },
+    {
+      "id": "33ed8ca5-3477-4e28-bb78-2819f7e3b77e",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:29:51.295Z",
+      "end_at": "2026-11-01T15:30:06.281Z",
+      "title": "Phone",
+      "data": {
+        "bundle_id": "com.apple.mobilephone",
+        "device": "iphone",
+        "seconds": 15,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793546991295:com.apple.mobilephone",
+      "created_at": "2026-11-14T16:50:46.961Z"
+    },
+    {
+      "id": "63c1109b-4fb1-41a1-a602-a2502ba31d5c",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:30:06.281Z",
+      "end_at": "2026-11-01T15:30:28.117Z",
+      "title": "Phone call",
+      "data": {
+        "bundle_id": "com.apple.InCallService",
+        "device": "iphone",
+        "seconds": 22,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793547006281:com.apple.InCallService",
+      "created_at": "2026-11-14T16:50:46.961Z"
+    },
+    {
+      "id": "c8b32a56-a899-404b-afc5-ad608846ea90",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:30:28.117Z",
+      "end_at": "2026-11-01T15:30:33.365Z",
+      "title": "Phone",
+      "data": {
+        "bundle_id": "com.apple.mobilephone",
+        "device": "iphone",
+        "seconds": 5,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793547028118:com.apple.mobilephone",
+      "created_at": "2026-11-14T16:50:46.961Z"
+    },
+    {
+      "id": "aa870fa1-7718-491e-b5cb-6e5720ae8cce",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:30:36.980Z",
+      "end_at": "2026-11-01T15:31:34.485Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 58,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793547036980:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.961Z"
+    },
+    {
+      "id": "0481f5e6-e791-490e-a081-4140a59eb67d",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:31:37.586Z",
+      "end_at": "2026-11-01T15:32:44.822Z",
+      "title": "Google",
+      "data": {
+        "bundle_id": "com.google.GoogleMobile",
+        "device": "iphone",
+        "seconds": 67,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793547097587:com.google.GoogleMobile",
+      "created_at": "2026-11-14T16:50:46.961Z"
+    },
+    {
+      "id": "8116ce39-058c-45ef-aad8-097a7fd9021e",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:32:44.841Z",
+      "end_at": "2026-11-01T15:32:50.169Z",
+      "title": "Phone",
+      "data": {
+        "bundle_id": "com.apple.mobilephone",
+        "device": "iphone",
+        "seconds": 5,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793547164841:com.apple.mobilephone",
+      "created_at": "2026-11-14T16:50:46.962Z"
+    },
+    {
+      "id": "14b2fa58-b217-4056-bc13-86e76cbde0b8",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:32:50.169Z",
+      "end_at": "2026-11-01T15:33:16.467Z",
+      "title": "Phone call",
+      "data": {
+        "bundle_id": "com.apple.InCallService",
+        "device": "iphone",
+        "seconds": 26,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793547170170:com.apple.InCallService",
+      "created_at": "2026-11-14T16:50:46.962Z"
+    },
+    {
+      "id": "a70a0275-1572-4bdd-bda7-d6161c235ded",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:33:16.489Z",
+      "end_at": "2026-11-01T15:34:35.121Z",
+      "title": "Google Maps",
+      "data": {
+        "bundle_id": "com.google.Maps",
+        "device": "iphone",
+        "seconds": 79,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793547196490:com.google.Maps",
+      "created_at": "2026-11-14T16:50:46.962Z"
+    },
+    {
+      "id": "614d938c-94dd-4ba6-b8b8-ccbbdb1efb1a",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:34:35.142Z",
+      "end_at": "2026-11-01T15:34:39.583Z",
+      "title": "Phone",
+      "data": {
+        "bundle_id": "com.apple.mobilephone",
+        "device": "iphone",
+        "seconds": 4,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793547275142:com.apple.mobilephone",
+      "created_at": "2026-11-14T16:50:46.962Z"
+    },
+    {
+      "id": "47550c9c-4a6b-4a0c-83f3-a5f20502433b",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:34:39.583Z",
+      "end_at": "2026-11-01T15:35:01.237Z",
+      "title": "Phone call",
+      "data": {
+        "bundle_id": "com.apple.InCallService",
+        "device": "iphone",
+        "seconds": 22,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793547279583:com.apple.InCallService",
+      "created_at": "2026-11-14T16:50:46.962Z"
+    },
+    {
+      "id": "5e3b29c1-c5b0-4fcb-aed7-cd9c2b28d7e8",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:35:01.237Z",
+      "end_at": "2026-11-01T15:35:07.357Z",
+      "title": "Phone",
+      "data": {
+        "bundle_id": "com.apple.mobilephone",
+        "device": "iphone",
+        "seconds": 6,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793547301237:com.apple.mobilephone",
+      "created_at": "2026-11-14T16:50:46.962Z"
+    },
+    {
+      "id": "dc3855a4-3d97-4b03-9c6d-42028826e007",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:35:07.357Z",
+      "end_at": "2026-11-01T15:45:17.992Z",
+      "title": "Google Maps",
+      "data": {
+        "bundle_id": "com.google.Maps",
+        "device": "iphone",
+        "seconds": 611,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793547307358:com.google.Maps",
+      "created_at": "2026-11-14T16:50:46.963Z"
+    },
+    {
+      "id": "86e369cc-c583-48a6-8223-2cdfe7e64a45",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:45:18.016Z",
+      "end_at": "2026-11-01T15:45:30.084Z",
+      "title": "Spotify",
+      "data": {
+        "bundle_id": "com.spotify.client",
+        "device": "iphone",
+        "seconds": 12,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793547918016:com.spotify.client",
+      "created_at": "2026-11-14T16:50:46.963Z"
+    },
+    {
+      "id": "f5ae4346-8e15-43ba-a42c-b953ccb0f6ba",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:45:30.084Z",
+      "end_at": "2026-11-01T15:46:41.379Z",
+      "title": "Google Maps",
+      "data": {
+        "bundle_id": "com.google.Maps",
+        "device": "iphone",
+        "seconds": 71,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793547930084:com.google.Maps",
+      "created_at": "2026-11-14T16:50:46.963Z"
+    },
+    {
+      "id": "e4b9278d-0666-4211-bba3-b49c1b1523a4",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:46:41.379Z",
+      "end_at": "2026-11-01T15:47:37.432Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 56,
+        "opened_from": "app_switcher"
+      },
+      "external_id": "biome:01df6cb2:1793548001379:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.963Z"
+    },
+    {
+      "id": "7b4ecb7c-df1a-4dda-b6cf-3900bf3fe96c",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:47:37.432Z",
+      "end_at": "2026-11-01T15:48:50.694Z",
+      "title": "Google Maps",
+      "data": {
+        "bundle_id": "com.google.Maps",
+        "device": "iphone",
+        "seconds": 73,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793548057432:com.google.Maps",
+      "created_at": "2026-11-14T16:50:46.963Z"
+    },
+    {
+      "id": "84e237e8-b0dd-4f8a-be0d-31408ad7487c",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:48:50.694Z",
+      "end_at": "2026-11-01T15:48:53.268Z",
+      "title": "Phone call",
+      "data": {
+        "bundle_id": "com.apple.InCallService",
+        "device": "iphone",
+        "seconds": 3,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793548130695:com.apple.InCallService",
+      "created_at": "2026-11-14T16:50:46.963Z"
+    },
+    {
+      "id": "53ec0dcd-61be-4714-925b-7ebe8e7eaa25",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T15:48:53.268Z",
+      "end_at": "2026-11-01T16:00:33.561Z",
+      "title": "Google Maps",
+      "data": {
+        "bundle_id": "com.google.Maps",
+        "device": "iphone",
+        "seconds": 700,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793548133268:com.google.Maps",
+      "created_at": "2026-11-14T16:50:46.964Z"
+    },
+    {
+      "id": "e7ca2669-a503-449a-b35c-dc06f297b98c",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T16:00:33.592Z",
+      "end_at": "2026-11-01T16:01:00.701Z",
+      "title": "Spotify",
+      "data": {
+        "bundle_id": "com.spotify.client",
+        "device": "iphone",
+        "seconds": 27,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793548833593:com.spotify.client",
+      "created_at": "2026-11-14T16:50:46.964Z"
+    },
+    {
+      "id": "8ba088c8-4280-41f4-817b-ad3688eb1fc1",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T16:01:00.701Z",
+      "end_at": "2026-11-01T16:01:03.690Z",
+      "title": "Google Maps",
+      "data": {
+        "bundle_id": "com.google.Maps",
+        "device": "iphone",
+        "seconds": 3,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793548860702:com.google.Maps",
+      "created_at": "2026-11-14T16:50:46.964Z"
+    },
+    {
+      "id": "76d5a567-508a-4e99-906d-82014cb21e09",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T16:01:03.690Z",
+      "end_at": "2026-11-01T16:01:37.135Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 33,
+        "opened_from": "app_switcher"
+      },
+      "external_id": "biome:01df6cb2:1793548863691:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.964Z"
+    },
+    {
+      "id": "fe47b69b-cec2-4b36-ac12-cc91a0fd7426",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T16:03:20.561Z",
+      "end_at": "2026-11-01T16:03:24.018Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 3
+      },
+      "external_id": "biome:01df6cb2:1793549000561:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.964Z"
+    },
+    {
+      "id": "e6965d96-2d9a-4d7f-af71-6f08ae65e523",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T16:03:24.018Z",
+      "end_at": "2026-11-01T16:03:35.211Z",
+      "title": "Spotify",
+      "data": {
+        "bundle_id": "com.spotify.client",
+        "device": "iphone",
+        "seconds": 11,
+        "opened_from": "app_switcher"
+      },
+      "external_id": "biome:01df6cb2:1793549004018:com.spotify.client",
+      "created_at": "2026-11-14T16:50:46.965Z"
+    },
+    {
+      "id": "610b72b8-0233-4e1f-b853-52dc22259e83",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T16:08:07.426Z",
+      "end_at": "2026-11-01T16:08:09.449Z",
+      "title": "Spotify",
+      "data": {
+        "bundle_id": "com.spotify.client",
+        "device": "iphone",
+        "seconds": 2
+      },
+      "external_id": "biome:01df6cb2:1793549287426:com.spotify.client",
+      "created_at": "2026-11-14T16:50:46.965Z"
+    },
+    {
+      "id": "399ca0ee-e446-4e70-b5fd-4b3fcb9a0713",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T16:08:09.449Z",
+      "end_at": "2026-11-01T16:08:15.776Z",
+      "title": "Google Maps",
+      "data": {
+        "bundle_id": "com.google.Maps",
+        "device": "iphone",
+        "seconds": 6,
+        "opened_from": "app_switcher"
+      },
+      "external_id": "biome:01df6cb2:1793549289449:com.google.Maps",
+      "created_at": "2026-11-14T16:50:46.965Z"
+    },
+    {
+      "id": "6df642bd-3b27-47ff-9dbc-d858f64698fe",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T16:08:15.776Z",
+      "end_at": "2026-11-01T16:11:15.493Z",
+      "title": "Spotify",
+      "data": {
+        "bundle_id": "com.spotify.client",
+        "device": "iphone",
+        "seconds": 180,
+        "opened_from": "app_switcher"
+      },
+      "external_id": "biome:01df6cb2:1793549295776:com.spotify.client",
+      "created_at": "2026-11-14T16:50:46.965Z"
+    },
+    {
+      "id": "18c70c42-ac17-49fb-9104-604c7a32a900",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T16:12:44.208Z",
+      "end_at": "2026-11-01T16:12:47.273Z",
+      "title": "Spotify",
+      "data": {
+        "bundle_id": "com.spotify.client",
+        "device": "iphone",
+        "seconds": 3
+      },
+      "external_id": "biome:01df6cb2:1793549564209:com.spotify.client",
+      "created_at": "2026-11-14T16:50:46.965Z"
+    },
+    {
+      "id": "c4ff25d6-b94b-4dc0-8b83-e957aa5f63b3",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T16:19:57.673Z",
+      "end_at": "2026-11-01T16:19:59.435Z",
+      "title": "Spotify",
+      "data": {
+        "bundle_id": "com.spotify.client",
+        "device": "iphone",
+        "seconds": 2
+      },
+      "external_id": "biome:01df6cb2:1793549997673:com.spotify.client",
+      "created_at": "2026-11-14T16:50:46.965Z"
+    },
+    {
+      "id": "6782dbca-861b-4299-a166-ba94bd5d0ea4",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T16:19:59.771Z",
+      "end_at": "2026-11-01T16:23:01.542Z",
+      "title": "Google",
+      "data": {
+        "bundle_id": "com.google.GoogleMobile",
+        "device": "iphone",
+        "seconds": 182,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793549999772:com.google.GoogleMobile",
+      "created_at": "2026-11-14T16:50:46.966Z"
+    },
+    {
+      "id": "a793e0ee-0aab-4cbc-bf76-3748f931d944",
+      "source": "macos_usage",
+      "type": "screen",
+      "start_at": "2026-11-01T16:23:36.000Z",
+      "end_at": "2026-11-01T16:41:44.000Z",
+      "title": "Screen on",
+      "data": {
+        "state": "on",
+        "device": "mac"
+      },
+      "external_id": "kc:A54C4645-BF8F-4BD2-AEDC-5D22A585C7B0",
+      "created_at": "2026-11-14T16:50:45.037Z"
+    },
+    {
+      "id": "f1e43278-02a4-4127-a901-693e4a4b584c",
+      "source": "chrome",
+      "type": "web_visit",
+      "start_at": "2026-11-01T16:23:55.711Z",
+      "end_at": "2026-11-01T16:24:12.711Z",
+      "title": "Search engine",
+      "data": {
+        "host": "google.com",
+        "category": "search",
+        "seconds": 17,
+        "foreground": true,
+        "origin": "history"
+      },
+      "external_id": "chrome:Default:130147",
+      "created_at": "2026-11-14T16:50:48.556Z"
+    },
+    {
+      "id": "f04b14fa-0737-4c72-8f2b-b7f11ad26d35",
+      "source": "chrome",
+      "type": "search",
+      "start_at": "2026-11-01T16:23:55.711Z",
+      "end_at": null,
+      "title": "Search",
+      "data": {
+        "engine": "google",
+        "origin": "history"
+      },
+      "external_id": "chrome:Default:search:130147",
+      "created_at": "2026-11-14T16:50:48.556Z"
+    },
+    {
+      "id": "754e4812-b8be-476a-a5b3-78f03258d8d3",
+      "source": "macos_usage",
+      "type": "notification",
+      "start_at": "2026-11-01T16:24:01.000Z",
+      "end_at": null,
+      "title": "Messages",
+      "data": {
+        "bundle_id": "com.apple.MobileSMS",
+        "device": "mac"
+      },
+      "external_id": "kc:42C4FC69-90C3-45CA-AA59-51DBE15C83A3",
+      "created_at": "2026-11-14T16:50:45.037Z"
+    },
+    {
+      "id": "1460bb16-64ca-47db-9b2d-3deabc081428",
+      "source": "macos_usage",
+      "type": "notification",
+      "start_at": "2026-11-01T16:24:06.000Z",
+      "end_at": null,
+      "title": "Messages",
+      "data": {
+        "bundle_id": "com.apple.MobileSMS",
+        "device": "mac"
+      },
+      "external_id": "kc:EFACD905-F214-4893-814F-C6CDD94083F7",
+      "created_at": "2026-11-14T16:50:45.037Z"
+    },
+    {
+      "id": "7f37b322-5364-4161-809a-f95bcb06e1d9",
+      "source": "macos_usage",
+      "type": "notification",
+      "start_at": "2026-11-01T16:24:07.000Z",
+      "end_at": null,
+      "title": "Messages",
+      "data": {
+        "bundle_id": "com.apple.MobileSMS",
+        "device": "mac"
+      },
+      "external_id": "kc:35DEA56A-5752-4BFA-AD66-6D63270EEAC4",
+      "created_at": "2026-11-14T16:50:45.037Z"
+    },
+    {
+      "id": "11570205-c450-4dd3-b1cf-f460f5648c42",
+      "source": "chrome",
+      "type": "web_visit",
+      "start_at": "2026-11-01T16:24:12.556Z",
+      "end_at": "2026-11-01T16:24:24.556Z",
+      "title": "Website",
+      "data": {
+        "seconds": 12,
+        "foreground": true,
+        "origin": "history"
+      },
+      "external_id": "chrome:Default:130149",
+      "created_at": "2026-11-14T16:50:48.556Z"
+    },
+    {
+      "id": "20d0f14f-21ae-43cd-a528-cbf85fb06414",
+      "source": "chrome",
+      "type": "web_visit",
+      "start_at": "2026-11-01T16:24:23.379Z",
+      "end_at": "2026-11-01T16:24:31.379Z",
+      "title": "Website",
+      "data": {
+        "seconds": 8,
+        "foreground": false,
+        "origin": "history"
+      },
+      "external_id": "chrome:Default:130150",
+      "created_at": "2026-11-14T16:50:48.557Z"
+    },
+    {
+      "id": "e326a929-9209-4bc9-9bd7-cd79cc11165e",
+      "source": "chrome",
+      "type": "web_visit",
+      "start_at": "2026-11-01T16:24:31.541Z",
+      "end_at": "2026-11-01T16:24:47.541Z",
+      "title": "Website",
+      "data": {
+        "seconds": 16,
+        "foreground": true,
+        "origin": "history"
+      },
+      "external_id": "chrome:Default:130151",
+      "created_at": "2026-11-14T16:50:48.557Z"
+    },
+    {
+      "id": "d227d90d-cfe1-49be-9a56-699e82e3e8e9",
+      "source": "chrome",
+      "type": "web_visit",
+      "start_at": "2026-11-01T16:24:42.594Z",
+      "end_at": "2026-11-01T16:24:46.594Z",
+      "title": "Website",
+      "data": {
+        "seconds": 4,
+        "foreground": true,
+        "origin": "history"
+      },
+      "external_id": "chrome:Default:130155",
+      "created_at": "2026-11-14T16:50:48.557Z"
+    },
+    {
+      "id": "1df59248-276d-402c-a52f-a16d6eddb814",
+      "source": "chrome",
+      "type": "web_visit",
+      "start_at": "2026-11-01T16:24:45.807Z",
+      "end_at": "2026-11-01T16:24:59.807Z",
+      "title": "Website",
+      "data": {
+        "seconds": 14,
+        "foreground": true,
+        "origin": "history"
+      },
+      "external_id": "chrome:Default:130156",
+      "created_at": "2026-11-14T16:50:48.557Z"
+    },
+    {
+      "id": "9f6924d5-9f7a-4e40-93b7-8189b0056e6c",
+      "source": "chrome",
+      "type": "web_visit",
+      "start_at": "2026-11-01T16:24:59.657Z",
+      "end_at": "2026-11-01T16:25:03.657Z",
+      "title": "Website",
+      "data": {
+        "seconds": 4,
+        "foreground": true,
+        "origin": "history"
+      },
+      "external_id": "chrome:Default:130160",
+      "created_at": "2026-11-14T16:50:48.557Z"
+    },
+    {
+      "id": "e2bc32b8-92de-4fad-a894-780ab7868a8f",
+      "source": "chrome",
+      "type": "web_visit",
+      "start_at": "2026-11-01T16:25:02.728Z",
+      "end_at": "2026-11-01T16:25:05.728Z",
+      "title": "Website",
+      "data": {
+        "seconds": 3,
+        "foreground": true,
+        "origin": "history"
+      },
+      "external_id": "chrome:Default:130164",
+      "created_at": "2026-11-14T16:50:48.558Z"
+    },
+    {
+      "id": "72469f01-97a4-46f9-b1c0-5a49346c98ef",
+      "source": "chrome",
+      "type": "web_visit",
+      "start_at": "2026-11-01T16:25:04.517Z",
+      "end_at": "2026-11-01T16:25:05.517Z",
+      "title": "Website",
+      "data": {
+        "seconds": 1,
+        "foreground": true,
+        "origin": "history"
+      },
+      "external_id": "chrome:Default:130166",
+      "created_at": "2026-11-14T16:50:48.558Z"
+    },
+    {
+      "id": "e9c05c2f-4b77-4f1d-8603-8d7a2152a545",
+      "source": "chrome",
+      "type": "web_visit",
+      "start_at": "2026-11-01T16:25:05.311Z",
+      "end_at": "2026-11-01T16:25:10.311Z",
+      "title": "Website",
+      "data": {
+        "seconds": 5,
+        "foreground": true,
+        "origin": "history"
+      },
+      "external_id": "chrome:Default:130168",
+      "created_at": "2026-11-14T16:50:48.558Z"
+    },
+    {
+      "id": "caa67843-af2e-4792-a5da-7c2a86e73a11",
+      "source": "chrome",
+      "type": "web_visit",
+      "start_at": "2026-11-01T16:25:07.675Z",
+      "end_at": "2026-11-01T16:25:09.675Z",
+      "title": "Website",
+      "data": {
+        "seconds": 2,
+        "foreground": false,
+        "origin": "history"
+      },
+      "external_id": "chrome:Default:130169",
+      "created_at": "2026-11-14T16:50:48.558Z"
+    },
+    {
+      "id": "47e3dd7c-c7f2-49ac-97c0-35362a441a0e",
+      "source": "chrome",
+      "type": "web_visit",
+      "start_at": "2026-11-01T16:25:10.168Z",
+      "end_at": "2026-11-01T16:28:51.168Z",
+      "title": "Website",
+      "data": {
+        "seconds": 221,
+        "foreground": true,
+        "origin": "history"
+      },
+      "external_id": "chrome:Default:130172",
+      "created_at": "2026-11-14T16:50:48.558Z"
+    },
+    {
+      "id": "096b4488-5489-4bbe-a359-2d9e587e8037",
+      "source": "chrome",
+      "type": "web_visit",
+      "start_at": "2026-11-01T16:25:10.862Z",
+      "end_at": "2026-11-01T16:26:41.862Z",
+      "title": "Website",
+      "data": {
+        "seconds": 91,
+        "foreground": false,
+        "origin": "history"
+      },
+      "external_id": "chrome:Default:130173",
+      "created_at": "2026-11-14T16:50:48.559Z"
+    },
+    {
+      "id": "5359903f-3885-4905-ba22-5bdb91cc4fd8",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T16:25:38.390Z",
+      "end_at": "2026-11-01T16:25:40.697Z",
+      "title": "Google",
+      "data": {
+        "bundle_id": "com.google.GoogleMobile",
+        "device": "iphone",
+        "seconds": 2
+      },
+      "external_id": "biome:01df6cb2:1793550338391:com.google.GoogleMobile",
+      "created_at": "2026-11-14T16:50:46.966Z"
+    },
+    {
+      "id": "fcd9e4d1-0502-4613-b41f-ae335a6b8e33",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T16:26:55.444Z",
+      "end_at": "2026-11-01T16:26:57.456Z",
+      "title": "Google",
+      "data": {
+        "bundle_id": "com.google.GoogleMobile",
+        "device": "iphone",
+        "seconds": 2
+      },
+      "external_id": "biome:01df6cb2:1793550415445:com.google.GoogleMobile",
+      "created_at": "2026-11-14T16:50:46.966Z"
+    },
+    {
+      "id": "e9d7c797-0a40-4fa1-9837-a132e11863b3",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T16:27:00.049Z",
+      "end_at": "2026-11-01T16:27:09.841Z",
+      "title": "Redesign",
+      "data": {
+        "bundle_id": "gr.winbank.redesign",
+        "device": "iphone",
+        "seconds": 10,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793550420050:gr.winbank.redesign",
+      "created_at": "2026-11-14T16:50:46.966Z"
+    },
+    {
+      "id": "f78598f7-6aae-47d7-9409-221735556df8",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T16:27:19.374Z",
+      "end_at": "2026-11-01T16:27:21.305Z",
+      "title": "Redesign",
+      "data": {
+        "bundle_id": "gr.winbank.redesign",
+        "device": "iphone",
+        "seconds": 2,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793550439375:gr.winbank.redesign",
+      "created_at": "2026-11-14T16:50:46.966Z"
+    },
+    {
+      "id": "5612788b-1bdd-4caa-85d6-accb37a1cd5b",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T16:27:22.033Z",
+      "end_at": "2026-11-01T16:27:41.516Z",
+      "title": "Redesign",
+      "data": {
+        "bundle_id": "gr.winbank.redesign",
+        "device": "iphone",
+        "seconds": 19,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793550442034:gr.winbank.redesign",
+      "created_at": "2026-11-14T16:50:46.967Z"
+    },
+    {
+      "id": "499e5bb6-5f5b-4495-9829-8e409b79ef65",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T16:27:41.516Z",
+      "end_at": "2026-11-01T16:27:47.002Z",
+      "title": "Camera",
+      "data": {
+        "bundle_id": "com.apple.camera",
+        "device": "iphone",
+        "seconds": 5,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793550461516:com.apple.camera",
+      "created_at": "2026-11-14T16:50:46.967Z"
+    },
+    {
+      "id": "e11d1676-c738-458f-bdb5-fc5db457a9a9",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T16:27:47.002Z",
+      "end_at": "2026-11-01T16:28:41.876Z",
+      "title": "Redesign",
+      "data": {
+        "bundle_id": "gr.winbank.redesign",
+        "device": "iphone",
+        "seconds": 55,
+        "opened_from": "app_switcher"
+      },
+      "external_id": "biome:01df6cb2:1793550467002:gr.winbank.redesign",
+      "created_at": "2026-11-14T16:50:46.967Z"
+    },
+    {
+      "id": "f3f31b21-ab95-4f94-9d7d-b3fbabffdd7d",
+      "source": "chrome",
+      "type": "web_visit",
+      "start_at": "2026-11-01T16:28:49.494Z",
+      "end_at": "2026-11-01T16:28:55.494Z",
+      "title": "Website",
+      "data": {
+        "seconds": 6,
+        "foreground": true,
+        "origin": "history"
+      },
+      "external_id": "chrome:Default:130179",
+      "created_at": "2026-11-14T16:50:48.559Z"
+    },
+    {
+      "id": "5fb9deee-02d2-4bd6-a990-398920270389",
+      "source": "chrome",
+      "type": "web_visit",
+      "start_at": "2026-11-01T16:28:49.941Z",
+      "end_at": "2026-11-01T16:28:51.941Z",
+      "title": "Website",
+      "data": {
+        "seconds": 2,
+        "foreground": false,
+        "origin": "history"
+      },
+      "external_id": "chrome:Default:130180",
+      "created_at": "2026-11-14T16:50:48.559Z"
+    },
+    {
+      "id": "41b9bc5a-b737-46ec-bed8-841e96fc9529",
+      "source": "chrome",
+      "type": "web_visit",
+      "start_at": "2026-11-01T16:28:52.206Z",
+      "end_at": "2026-11-01T16:28:54.206Z",
+      "title": "Website",
+      "data": {
+        "seconds": 2,
+        "foreground": false,
+        "origin": "history"
+      },
+      "external_id": "chrome:Default:130181",
+      "created_at": "2026-11-14T16:50:48.559Z"
+    },
+    {
+      "id": "25be25f5-1e80-4622-8e74-1240b21ef98a",
+      "source": "chrome",
+      "type": "web_visit",
+      "start_at": "2026-11-01T16:28:54.562Z",
+      "end_at": "2026-11-01T16:30:07.562Z",
+      "title": "Website",
+      "data": {
+        "seconds": 73,
+        "foreground": true,
+        "origin": "history"
+      },
+      "external_id": "chrome:Default:130184",
+      "created_at": "2026-11-14T16:50:48.560Z"
+    },
+    {
+      "id": "f25f3840-f992-4f83-bf93-e37c5eb7de52",
+      "source": "chrome",
+      "type": "web_visit",
+      "start_at": "2026-11-01T16:28:54.770Z",
+      "end_at": "2026-11-01T16:29:42.770Z",
+      "title": "Website",
+      "data": {
+        "seconds": 48,
+        "foreground": false,
+        "origin": "history"
+      },
+      "external_id": "chrome:Default:130185",
+      "created_at": "2026-11-14T16:50:48.560Z"
+    },
+    {
+      "id": "5a541090-fa34-44f8-a5ef-a20fbb3eb150",
+      "source": "macos_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T16:29:36.000Z",
+      "end_at": "2026-11-01T16:31:06.000Z",
+      "title": "Chrome",
+      "data": {
+        "bundle_id": "com.google.Chrome",
+        "device": "mac",
+        "seconds": 90
+      },
+      "external_id": "kc:99F59629-170C-49D6-81FC-37BA424A259C",
+      "created_at": "2026-11-14T16:50:45.037Z"
+    },
+    {
+      "id": "de66447d-bf66-4217-81f4-0715a7b07fcd",
+      "source": "chrome",
+      "type": "web_visit",
+      "start_at": "2026-11-01T16:30:06.088Z",
+      "end_at": "2026-11-01T16:42:57.088Z",
+      "title": "Website",
+      "data": {
+        "seconds": 771,
+        "foreground": true,
+        "origin": "history"
+      },
+      "external_id": "chrome:Default:130196",
+      "created_at": "2026-11-14T16:50:48.560Z"
+    },
+    {
+      "id": "10982780-2aee-48ae-954e-480bfb202656",
+      "source": "chrome",
+      "type": "web_visit",
+      "start_at": "2026-11-01T16:31:01.208Z",
+      "end_at": "2026-11-01T16:31:04.208Z",
+      "title": "Website",
+      "data": {
+        "seconds": 3,
+        "foreground": true,
+        "origin": "history"
+      },
+      "external_id": "chrome:Default:130197",
+      "created_at": "2026-11-14T16:50:48.560Z"
+    },
+    {
+      "id": "48b32912-5e5e-4012-8e86-f21ea277dab4",
+      "source": "macos_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T16:31:06.000Z",
+      "end_at": "2026-11-01T16:32:06.000Z",
+      "title": "Browser",
+      "data": {
+        "bundle_id": "com.brave.Browser",
+        "device": "mac",
+        "seconds": 60
+      },
+      "external_id": "kc:A1933368-9E25-4F0C-BB13-6241D363545B",
+      "created_at": "2026-11-14T16:50:45.037Z"
+    },
+    {
+      "id": "183988e0-22e0-4016-86f0-e976762563c9",
+      "source": "macos_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T16:32:13.000Z",
+      "end_at": "2026-11-01T16:32:42.000Z",
+      "title": "System Settings",
+      "data": {
+        "bundle_id": "com.apple.systempreferences",
+        "device": "mac",
+        "seconds": 29
+      },
+      "external_id": "kc:B303D867-7223-4E01-99E7-78C6AB8AB149",
+      "created_at": "2026-11-14T16:50:45.037Z"
+    },
+    {
+      "id": "13ef1f8d-4d3f-4539-b97e-06a5c6297c6a",
+      "source": "macos_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T16:32:42.000Z",
+      "end_at": "2026-11-01T16:32:44.000Z",
+      "title": "Chrome",
+      "data": {
+        "bundle_id": "com.google.Chrome",
+        "device": "mac",
+        "seconds": 2
+      },
+      "external_id": "kc:E5483B3D-185F-4909-B2A9-70573E9D17A3",
+      "created_at": "2026-11-14T16:50:45.037Z"
+    },
+    {
+      "id": "af519758-b99a-4259-a42c-2dcfc3df3378",
+      "source": "macos_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T16:33:31.000Z",
+      "end_at": "2026-11-01T16:33:56.000Z",
+      "title": "System Settings",
+      "data": {
+        "bundle_id": "com.apple.systempreferences",
+        "device": "mac",
+        "seconds": 25
+      },
+      "external_id": "kc:4A2666CD-42E4-47EC-86E2-2FF8F1139EAD",
+      "created_at": "2026-11-14T16:50:45.037Z"
+    },
+    {
+      "id": "d4a239be-6d51-4ba6-9d7b-ea34662592d2",
+      "source": "macos_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T16:33:56.000Z",
+      "end_at": "2026-11-01T16:33:57.000Z",
+      "title": "Chrome",
+      "data": {
+        "bundle_id": "com.google.Chrome",
+        "device": "mac",
+        "seconds": 1
+      },
+      "external_id": "kc:116B804C-018A-4FA3-871D-3361724679A9",
+      "created_at": "2026-11-14T16:50:45.037Z"
+    },
+    {
+      "id": "adde5409-9e47-4d25-95a2-cf9c0da4382c",
+      "source": "macos_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T16:33:57.000Z",
+      "end_at": "2026-11-01T16:34:28.000Z",
+      "title": "Browser",
+      "data": {
+        "bundle_id": "com.brave.Browser",
+        "device": "mac",
+        "seconds": 31
+      },
+      "external_id": "kc:26B57A60-AA8F-4009-B14A-7F3ECDD98821",
+      "created_at": "2026-11-14T16:50:45.037Z"
+    },
+    {
+      "id": "b3c4bb88-f43c-4ccf-9588-5022abf60146",
+      "source": "macos_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T16:35:19.000Z",
+      "end_at": "2026-11-01T16:35:29.000Z",
+      "title": "System Settings",
+      "data": {
+        "bundle_id": "com.apple.systempreferences",
+        "device": "mac",
+        "seconds": 10
+      },
+      "external_id": "kc:D8CFFE91-0FF1-48F7-8FA8-D5860DCD6366",
+      "created_at": "2026-11-14T16:50:45.037Z"
+    },
+    {
+      "id": "b51abf6f-9bdb-4401-a0ff-21c77c919223",
+      "source": "macos_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T16:35:29.000Z",
+      "end_at": "2026-11-01T16:41:45.000Z",
+      "title": "Chrome",
+      "data": {
+        "bundle_id": "com.google.Chrome",
+        "device": "mac",
+        "seconds": 376
+      },
+      "external_id": "kc:F7985413-8BDC-47F7-89A2-6069476E3C49",
+      "created_at": "2026-11-14T16:50:45.037Z"
+    },
+    {
+      "id": "5c95d30d-1c36-4676-9fd3-08236089a8e4",
+      "source": "chrome",
+      "type": "search",
+      "start_at": "2026-11-01T16:36:01.444Z",
+      "end_at": null,
+      "title": "Search",
+      "data": {
+        "engine": "google",
+        "origin": "history"
+      },
+      "external_id": "chrome:Default:search:130198",
+      "created_at": "2026-11-14T16:50:48.560Z"
+    },
+    {
+      "id": "f6844d95-163d-4c50-9c43-baacf1947d7f",
+      "source": "chrome",
+      "type": "web_visit",
+      "start_at": "2026-11-01T16:36:01.444Z",
+      "end_at": "2026-11-01T16:36:25.444Z",
+      "title": "Search engine",
+      "data": {
+        "host": "google.com",
+        "category": "search",
+        "seconds": 24,
+        "foreground": true,
+        "origin": "history"
+      },
+      "external_id": "chrome:Default:130199",
+      "created_at": "2026-11-14T16:50:48.561Z"
+    },
+    {
+      "id": "1fef28fa-e785-4abf-8188-2d91dfe6a118",
+      "source": "macos_usage",
+      "type": "notification",
+      "start_at": "2026-11-01T16:38:03.000Z",
+      "end_at": null,
+      "title": "Autohotspot",
+      "data": {
+        "bundle_id": "com.apple.wifi.usernotifications.autohotspot",
+        "device": "mac"
+      },
+      "external_id": "kc:531B7958-E082-49B6-9224-58619D4EF55A",
+      "created_at": "2026-11-14T16:50:45.037Z"
+    },
+    {
+      "id": "ed671515-772b-47a1-a3ff-0998fe1e8d61",
+      "source": "macos_usage",
+      "type": "screen",
+      "start_at": "2026-11-01T16:41:44.000Z",
+      "end_at": "2026-11-01T16:42:12.000Z",
+      "title": "Screen off",
+      "data": {
+        "state": "off",
+        "device": "mac"
+      },
+      "external_id": "kc:EF03E9CC-0EF1-47B7-9CC4-D713AC82B6AF",
+      "created_at": "2026-11-14T16:50:45.037Z"
+    },
+    {
+      "id": "fed71b74-2577-40f5-8836-8c45627e385f",
+      "source": "macos_usage",
+      "type": "screen",
+      "start_at": "2026-11-01T16:42:12.000Z",
+      "end_at": null,
+      "title": "Screen on",
+      "data": {
+        "state": "on",
+        "device": "mac"
+      },
+      "external_id": "kc:BC51FE39-7AD9-4836-9489-BDACCBA31EA5",
+      "created_at": "2026-11-14T16:50:45.037Z"
+    },
+    {
+      "id": "c4cd7b7a-bb3d-4182-bc26-0ef1389fcea0",
+      "source": "macos_usage",
+      "type": "screen",
+      "start_at": "2026-11-01T16:42:12.000Z",
+      "end_at": "2026-11-01T16:44:28.000Z",
+      "title": "Screen off",
+      "data": {
+        "state": "off",
+        "device": "mac"
+      },
+      "external_id": "kc:E3DA4280-BB6C-4D47-9242-BFECDBF5B5DC",
+      "created_at": "2026-11-14T16:50:45.038Z"
+    },
+    {
+      "id": "8bf51a1f-9009-4572-ad88-e7156a60b750",
+      "source": "macos_usage",
+      "type": "screen",
+      "start_at": "2026-11-01T16:44:28.000Z",
+      "end_at": null,
+      "title": "Screen on",
+      "data": {
+        "state": "on",
+        "device": "mac"
+      },
+      "external_id": "kc:A5C89A59-2266-492C-ABC3-A2C2568F47FB",
+      "created_at": "2026-11-14T16:50:45.038Z"
+    },
+    {
+      "id": "281d3f02-9065-4b4d-9506-d01c20b4a64f",
+      "source": "macos_usage",
+      "type": "screen",
+      "start_at": "2026-11-01T16:44:28.000Z",
+      "end_at": "2026-11-02T09:14:36.000Z",
+      "title": "Screen off",
+      "data": {
+        "state": "off",
+        "device": "mac"
+      },
+      "external_id": "kc:ED82DCC5-C532-4897-A35D-C5878A731FC5",
+      "created_at": "2026-11-14T16:50:45.038Z"
+    },
+    {
+      "id": "8f1acdce-d40c-46c2-9cf3-291801758520",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T16:56:53.083Z",
+      "end_at": "2026-11-01T16:57:18.883Z",
+      "title": "Phone call",
+      "data": {
+        "bundle_id": "com.apple.InCallService",
+        "device": "iphone",
+        "seconds": 26,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793552213083:com.apple.InCallService",
+      "created_at": "2026-11-14T16:50:46.967Z"
+    },
+    {
+      "id": "aee41493-d068-46d4-b02d-ecfef22326ea",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T17:42:26.920Z",
+      "end_at": "2026-11-01T17:42:29.412Z",
+      "title": "Redesign",
+      "data": {
+        "bundle_id": "gr.winbank.redesign",
+        "device": "iphone",
+        "seconds": 2
+      },
+      "external_id": "biome:01df6cb2:1793554946921:gr.winbank.redesign",
+      "created_at": "2026-11-14T16:50:46.968Z"
+    },
+    {
+      "id": "caa6ddc1-170b-4174-84ca-840e41c77b44",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T18:13:30.483Z",
+      "end_at": "2026-11-01T18:13:56.374Z",
+      "title": "Phone call",
+      "data": {
+        "bundle_id": "com.apple.InCallService",
+        "device": "iphone",
+        "seconds": 26,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793556810484:com.apple.InCallService",
+      "created_at": "2026-11-14T16:50:46.968Z"
+    },
+    {
+      "id": "b5c7bb7a-38a3-4c47-9b9c-402744942461",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T18:26:45.528Z",
+      "end_at": "2026-11-01T18:26:51.408Z",
+      "title": "Phone call",
+      "data": {
+        "bundle_id": "com.apple.InCallService",
+        "device": "iphone",
+        "seconds": 6,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793557605529:com.apple.InCallService",
+      "created_at": "2026-11-14T16:50:46.968Z"
+    },
+    {
+      "id": "30838e03-f529-415e-a8af-aecf52893aa8",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T18:28:44.508Z",
+      "end_at": "2026-11-01T18:28:45.638Z",
+      "title": "Phone call",
+      "data": {
+        "bundle_id": "com.apple.InCallService",
+        "device": "iphone",
+        "seconds": 1,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793557724509:com.apple.InCallService",
+      "created_at": "2026-11-14T16:50:46.968Z"
+    },
+    {
+      "id": "860b7a72-75bc-4123-8167-27bb99617ce8",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T19:26:49.178Z",
+      "end_at": "2026-11-01T19:27:14.067Z",
+      "title": "Gmail",
+      "data": {
+        "bundle_id": "com.google.Gmail",
+        "device": "iphone",
+        "seconds": 25,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793561209178:com.google.Gmail",
+      "created_at": "2026-11-14T16:50:46.968Z"
+    },
+    {
+      "id": "c0e38335-0263-4f6b-9a9b-fac0157cecf2",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T19:27:14.067Z",
+      "end_at": "2026-11-01T19:27:23.066Z",
+      "title": "Chrome",
+      "data": {
+        "bundle_id": "com.google.chrome.ios",
+        "device": "iphone",
+        "seconds": 9,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793561234067:com.google.chrome.ios",
+      "created_at": "2026-11-14T16:50:46.968Z"
+    },
+    {
+      "id": "72dfc501-19e9-4d71-a194-81f6dbe7a844",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T19:27:23.066Z",
+      "end_at": "2026-11-01T19:27:26.149Z",
+      "title": "Gmail",
+      "data": {
+        "bundle_id": "com.google.Gmail",
+        "device": "iphone",
+        "seconds": 3,
+        "opened_from": "app_switcher"
+      },
+      "external_id": "biome:01df6cb2:1793561243066:com.google.Gmail",
+      "created_at": "2026-11-14T16:50:46.969Z"
+    },
+    {
+      "id": "dd5259b8-65d9-4fc5-aa60-7e455f705710",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T19:27:26.149Z",
+      "end_at": "2026-11-01T19:27:31.669Z",
+      "title": "Chrome",
+      "data": {
+        "bundle_id": "com.google.chrome.ios",
+        "device": "iphone",
+        "seconds": 6,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793561246149:com.google.chrome.ios",
+      "created_at": "2026-11-14T16:50:46.969Z"
+    },
+    {
+      "id": "fba32255-43f1-4b9e-b804-885e09148333",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T19:27:31.669Z",
+      "end_at": "2026-11-01T19:27:39.145Z",
+      "title": "Apple Pay",
+      "data": {
+        "bundle_id": "com.apple.PassbookUIService",
+        "device": "iphone",
+        "seconds": 7,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793561251669:com.apple.PassbookUIService",
+      "created_at": "2026-11-14T16:50:46.969Z"
+    },
+    {
+      "id": "f6c89759-a9d4-4bcc-8dac-b4abd082d91c",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T19:37:08.291Z",
+      "end_at": "2026-11-01T19:37:09.721Z",
+      "title": "Chrome",
+      "data": {
+        "bundle_id": "com.google.chrome.ios",
+        "device": "iphone",
+        "seconds": 1
+      },
+      "external_id": "biome:01df6cb2:1793561828291:com.google.chrome.ios",
+      "created_at": "2026-11-14T16:50:46.969Z"
+    },
+    {
+      "id": "3474bf9e-0ec4-4254-b684-b1f52cfd94ad",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T19:37:09.741Z",
+      "end_at": "2026-11-01T19:39:19.507Z",
+      "title": "Google Maps",
+      "data": {
+        "bundle_id": "com.google.Maps",
+        "device": "iphone",
+        "seconds": 130,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793561829742:com.google.Maps",
+      "created_at": "2026-11-14T16:50:46.969Z"
+    },
+    {
+      "id": "58b1ac13-4c5f-46d5-882f-814979e5484d",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T19:39:19.541Z",
+      "end_at": "2026-11-01T19:39:54.107Z",
+      "title": "Spotify",
+      "data": {
+        "bundle_id": "com.spotify.client",
+        "device": "iphone",
+        "seconds": 35,
+        "opened_from": "home_screen"
+      },
+      "external_id": "biome:01df6cb2:1793561959541:com.spotify.client",
+      "created_at": "2026-11-14T16:50:46.969Z"
+    },
+    {
+      "id": "7643758d-de29-47ef-adfa-ed4cdba36954",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T19:39:54.107Z",
+      "end_at": "2026-11-01T19:52:27.278Z",
+      "title": "Google Maps",
+      "data": {
+        "bundle_id": "com.google.Maps",
+        "device": "iphone",
+        "seconds": 753,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793561994108:com.google.Maps",
+      "created_at": "2026-11-14T16:50:46.970Z"
+    },
+    {
+      "id": "87af8eb8-3613-4ff1-a735-40e519f181f1",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T19:52:27.278Z",
+      "end_at": "2026-11-01T19:53:04.380Z",
+      "title": "Apple Pay",
+      "data": {
+        "bundle_id": "com.apple.PassbookUIService",
+        "device": "iphone",
+        "seconds": 37,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793562747279:com.apple.PassbookUIService",
+      "created_at": "2026-11-14T16:50:46.970Z"
+    },
+    {
+      "id": "8305f15b-2ec6-4d2a-a77e-331a1b4f35ec",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T19:57:23.907Z",
+      "end_at": "2026-11-01T19:57:28.977Z",
+      "title": "Google Maps",
+      "data": {
+        "bundle_id": "com.google.Maps",
+        "device": "iphone",
+        "seconds": 5,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793563043907:com.google.Maps",
+      "created_at": "2026-11-14T16:50:46.970Z"
+    },
+    {
+      "id": "aa9d31b1-d049-4e44-b4fe-5df0760e1a21",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T20:55:19.339Z",
+      "end_at": "2026-11-01T20:56:02.610Z",
+      "title": "Camera",
+      "data": {
+        "bundle_id": "com.apple.camera",
+        "device": "iphone",
+        "seconds": 43,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793566519339:com.apple.camera",
+      "created_at": "2026-11-14T16:50:46.970Z"
+    },
+    {
+      "id": "44f5592d-4bc9-4c4c-af8e-394e3b2cef31",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T21:22:34.612Z",
+      "end_at": "2026-11-01T21:22:37.094Z",
+      "title": "Google Maps",
+      "data": {
+        "bundle_id": "com.google.Maps",
+        "device": "iphone",
+        "seconds": 2
+      },
+      "external_id": "biome:01df6cb2:1793568154612:com.google.Maps",
+      "created_at": "2026-11-14T16:50:46.970Z"
+    },
+    {
+      "id": "9e919b49-7bc4-4e51-a075-6993a92c41bd",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T21:22:37.094Z",
+      "end_at": "2026-11-01T21:22:47.392Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 10,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793568157095:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.970Z"
+    },
+    {
+      "id": "38c9f068-3f89-4317-ab93-619c875f9a79",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T21:22:47.392Z",
+      "end_at": "2026-11-01T21:22:55.588Z",
+      "title": "Apple Pay",
+      "data": {
+        "bundle_id": "com.apple.PassbookUIService",
+        "device": "iphone",
+        "seconds": 8,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793568167392:com.apple.PassbookUIService",
+      "created_at": "2026-11-14T16:50:46.971Z"
+    },
+    {
+      "id": "6ce3dc90-3310-4cec-88f5-c14a591c328c",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T21:22:55.588Z",
+      "end_at": "2026-11-01T21:23:32.603Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 37,
+        "opened_from": "other"
+      },
+      "external_id": "biome:01df6cb2:1793568175589:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.971Z"
+    },
+    {
+      "id": "46f6ed98-bf48-4fec-a3e7-9f7b3f85f56d",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T21:24:13.108Z",
+      "end_at": "2026-11-01T21:24:55.214Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 42
+      },
+      "external_id": "biome:01df6cb2:1793568253109:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.971Z"
+    },
+    {
+      "id": "b4961911-471d-4685-ad0c-99b3f7d9ad7a",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T21:32:44.685Z",
+      "end_at": "2026-11-01T21:36:02.436Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 198
+      },
+      "external_id": "biome:01df6cb2:1793568764686:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.971Z"
+    },
+    {
+      "id": "93cc4cb6-184f-427e-8999-b8fcc7e377db",
+      "source": "iphone_usage",
+      "type": "app_usage",
+      "start_at": "2026-11-01T21:58:05.025Z",
+      "end_at": "2026-11-01T21:58:31.821Z",
+      "title": "Instagram",
+      "data": {
+        "bundle_id": "com.burbn.instagram",
+        "device": "iphone",
+        "seconds": 27
+      },
+      "external_id": "biome:01df6cb2:1793570285025:com.burbn.instagram",
+      "created_at": "2026-11-14T16:50:46.971Z"
+    }
+  ]
+}
