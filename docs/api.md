@@ -197,12 +197,33 @@ ingests idempotently. Response `200 IngestResponse`. Status: `stub`, except wher
 | Path                              | Sender                                                     | Maps to                         |
 | --------------------------------- | ---------------------------------------------------------- | ------------------------------- |
 | `/v1/webhooks/omi`                | Omi app (memory created / transcript)                      | `conversation`, `memory`        |
-| `/v1/webhooks/health-auto-export` | Health Auto Export iOS app                                 | `sleep`, `workout`, `biometric` |
+| `/v1/webhooks/health-auto-export` | Health Auto Export iOS app (**live**)                      | `sleep`, `workout`, `biometric` |
 | `/v1/webhooks/ios-shortcuts`      | iPhone Shortcuts automations (app open/close)              | `app_usage`                     |
 | `/v1/webhooks/activitywatch`      | local sync script reading the ActivityWatch API on the Mac | `app_usage`, `focus_session`    |
 | `/v1/webhooks/claude-code`        | Claude Code `type: "http"` hooks (**live**)                | `ai_prompt`, `notification`     |
 
 The exact provider payload for each is documented in the issue that implements it, then copied here.
+
+`POST /v1/webhooks/health-auto-export` takes the app's JSON export as is
+(`{ data: { metrics: [...], workouts: [...] } }`, format:
+https://help.healthyapps.dev/en/health-auto-export/export-format). Setup:
+`docs/sources/health-auto-export.md`. Mapping (`apps/api/src/ingest/health-auto-export.ts`):
+
+| Input                                       | Event       | `title`                          | `data`                                                                                                               | `external_id`                   |
+| ------------------------------------------- | ----------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| `sleep_analysis`, summarised or segments    | `sleep`     | `Sleep 6h55m`                    | `duration_min`, `deep_min?`, `rem_min?`, `core_min?`, `awake_min?`, `in_bed_min?`, `device?`                         | `hae:sleep:<start, UTC minute>` |
+| `workouts[]` (v1 or v2)                     | `workout`   | `Outdoor Run 42m, 6.1 km`        | `name`, `duration_min`, `active_kcal?`, `distance?`, `distance_units?`, `avg_hr?`, `max_hr?`, `location?`, `device?` | `hae:workout:<id or start>`     |
+| kept metrics, one event per metric per hour | `biometric` | `Heart rate 77.2 bpm, 61 to 112` | `metric`, `units`, `samples`, then `min`, `avg`, `max` (rates) or `total` (counts)                                   | `hae:<metric>:<UTC hour>`       |
+
+- Kept metrics: `heart_rate`, `resting_heart_rate`, `walking_heart_rate_average`,
+  `heart_rate_variability`, `respiratory_rate`, `blood_oxygen_saturation`, `vo2_max` (min/avg/max)
+  and `step_count`, `active_energy`, `apple_exercise_time`, `apple_stand_time`, `flights_climbed`,
+  `walking_running_distance` (totals). Every other metric is dropped and named in the response
+  header `x-michael-skipped-metrics`. Workout routes (GPS) are never stored.
+- Ingest is insert once, so only finished data is stored: an hour once it is over, a night once it
+  ended 20 minutes ago. The next export picks up the rest. All times are stored in UTC.
+- A sample or workout that does not fit is skipped; the rest of the export is still stored. A body
+  without `data` is `400`.
 
 `POST /v1/webhooks/claude-code` takes the hook payload Claude Code posts (see "Connect Claude Code"
 in the README). Fields read: `hook_event_name`, `session_id`, `prompt_id`, `cwd`, `prompt`,
