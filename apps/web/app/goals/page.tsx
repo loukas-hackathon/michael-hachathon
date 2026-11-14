@@ -2,6 +2,7 @@ import { type Goal, GoalCategory } from "@michael/shared";
 import { EmptyState } from "@/components/empty-state";
 import { BalanceBars } from "@/components/gamification/balance";
 import { TargetCard } from "@/components/gamification/target-card";
+import { CalendarGoals } from "@/components/goals/calendar-goals";
 import { DayColumns, NotchTrack, SleepBars, SplitBar } from "@/components/goals/goal-charts";
 import { AddGoal, EditGoal, type GoalDraft } from "@/components/goals/goal-sheets";
 import { ScreenHeader } from "@/components/screen";
@@ -31,6 +32,7 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
   return (
     <main className="screen">
       <ScreenHeader context={context} title="Goals" actions={<AddGoal personalReady={personalReady} />} />
+      <CalendarGoals className="mt-4" />
 
       {week.goals.length === 0 ? (
         <EmptyState title="No goals yet.">

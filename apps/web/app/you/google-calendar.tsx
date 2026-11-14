@@ -1,3 +1,5 @@
+import { CalendarGoals } from "@/components/goals/calendar-goals";
+import { getGoalSuggestions } from "@/lib/api";
 import { formatTime } from "@/lib/format";
 import { getGoogleCalendar } from "@/lib/integrations";
 import { disconnectCalendar, syncCalendar } from "./google-calendar-actions";
@@ -29,6 +31,8 @@ export async function GoogleCalendarRow() {
     );
   }
 
+  // Right after connecting, Michael reads the user's habits off the calendar and offers them as goals.
+  const suggestions = await getGoalSuggestions();
   return (
     <div className="flex min-h-14 flex-col gap-2 px-4 py-2">
       <span className="flex flex-col">
@@ -51,6 +55,7 @@ export async function GoogleCalendarRow() {
           </button>
         </form>
       </span>
+      {suggestions.length > 0 ? <CalendarGoals initial={suggestions} className="pb-2" /> : null}
     </div>
   );
 }

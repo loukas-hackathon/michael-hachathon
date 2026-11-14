@@ -8,6 +8,8 @@ import {
   demoRecommendations,
   type Goal,
   type GoalCreate,
+  type GoalSuggestion,
+  type GoalSuggestionAccept,
   type GoalUpdate,
   mockEvents,
   mockGoals,
@@ -235,6 +237,24 @@ export async function removeGoalById(id: string): Promise<WriteResult> {
     return { ok: true };
   }
   return write("DELETE", `/v1/goals/${id}`);
+}
+
+/** Goals Michael reads off the user's own calendar (#134). Empty with mocks or when the API is down. */
+export async function getGoalSuggestions(): Promise<GoalSuggestion[]> {
+  if (USE_MOCKS) return [];
+  try {
+    return (await get<{ suggestions: GoalSuggestion[] }>("/v1/goals/suggestions")).suggestions;
+  } catch {
+    return [];
+  }
+}
+
+export async function acceptGoalSuggestion(
+  id: string,
+  edits: GoalSuggestionAccept = {},
+): Promise<WriteResult> {
+  if (USE_MOCKS) return { ok: false, message: "Suggestions need the live API." };
+  return write("POST", `/v1/goals/suggestions/${encodeURIComponent(id)}/accept`, edits);
 }
 // With mocks, one in-process list so Do it, Undo and Not now still hold while the server runs.
 let mockRecs: Recommendation[] | null = null;

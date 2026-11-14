@@ -4,6 +4,7 @@ import type { GoalCategory, WeakSpot, Weekday } from "@michael/shared";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { MiMark } from "@/components/brand";
+import { CalendarGoals } from "@/components/goals/calendar-goals";
 import { hm } from "@/lib/format";
 import { finishOnboarding, skipOnboarding } from "./actions";
 
@@ -305,6 +306,8 @@ export function OnboardingFlow() {
   const router = useRouter();
   const [step, setStep] = useState(0);
   const [picked, setPicked] = useState<GoalCategory[]>([]);
+  // Goals kept from the calendar (#134) count as an answer to the first question.
+  const [keptFromCalendar, setKeptFromCalendar] = useState(0);
   const [minutes, setMinutes] = useState<Record<GoalCategory, number>>(
     () => Object.fromEntries(GOALS.map((g) => [g.category, g.initial])) as Record<GoalCategory, number>,
   );
@@ -401,8 +404,8 @@ export function OnboardingFlow() {
     {
       q: "What are we playing for?",
       line: "Tap the goals that matter. I guard their time every week.",
-      cta: picked.length === 0 ? "Pick at least one" : "Next",
-      ready: picked.length > 0,
+      cta: picked.length === 0 && keptFromCalendar === 0 ? "Pick at least one" : "Next",
+      ready: picked.length > 0 || keptFromCalendar > 0,
       body: (
         <ul className="overflow-hidden rounded-group bg-fill">
           {GOALS.map((g, i) => {
@@ -563,6 +566,7 @@ export function OnboardingFlow() {
           </h1>
           <p className="mt-2 text-body text-label-2">{s.line}</p>
         </div>
+        {step === 0 ? <CalendarGoals className="mt-8" onKept={setKeptFromCalendar} /> : null}
         {s.body ? <div className="mt-8">{s.body}</div> : null}
       </div>
 

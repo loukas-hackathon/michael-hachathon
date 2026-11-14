@@ -564,6 +564,46 @@ export type OffTheRecordUpdate = z.infer<typeof OffTheRecordUpdate>;
 export const Weekday = z.enum(["mon", "tue", "wed", "thu", "fri", "sat", "sun"]);
 export type Weekday = z.infer<typeof Weekday>;
 
+// ---------- goal suggestions (#134): goals Michael reads off the user's own calendar ----------
+
+// One goal the user already lives by: recurring own calendar blocks (nobody else in them) grouped
+// into a goal, with the weekly hours they add up to and the calendar titles that would count.
+// The shape is a GoalCreate plus why: POST it to /v1/goals as it is, or accept it by id.
+export const GoalSuggestion = z.object({
+  // Stable for the same calendar ("training", "study", "title:guitar"), so accept can name it.
+  id: z.string().min(1).max(120),
+  title: z.string().min(1),
+  // Always one of the three areas for a new goal (#131); `area` repeats it for clarity.
+  category: GoalCategory,
+  area: GoalArea,
+  weekly_budget_minutes: z.number().int().positive(),
+  target: z.object({
+    kind: z.literal("time"),
+    calendar_titles: z.array(z.string().min(1)).min(1),
+  }),
+  // In Michael's voice: "Gym, Swimming and Yoga, Mon to Thu, 6h 30 a week."
+  evidence: z.string().min(1),
+  // Blocks a week on average and the weekdays they fall on.
+  sessions_per_week: z.number().nonnegative(),
+  days: z.array(Weekday),
+});
+export type GoalSuggestion = z.infer<typeof GoalSuggestion>;
+
+export const GoalSuggestionsResponse = z.object({
+  from: IsoDateTime,
+  to: IsoDateTime,
+  suggestions: z.array(GoalSuggestion),
+});
+export type GoalSuggestionsResponse = z.infer<typeof GoalSuggestionsResponse>;
+
+// Optional edits when accepting by id; anything left out keeps the suggestion's value.
+export const GoalSuggestionAccept = z.object({
+  title: z.string().min(1).max(120).optional(),
+  weekly_budget_minutes: z.number().int().min(0).max(10080).optional(),
+  calendar_titles: z.array(z.string().min(1).max(200)).min(1).max(20).optional(),
+});
+export type GoalSuggestionAccept = z.input<typeof GoalSuggestionAccept>;
+
 // Where the user says their time leaks. Analysis and nudges can look for these first.
 export const WeakSpot = z.enum([
   "phone_in_bed",
