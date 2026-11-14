@@ -17,6 +17,8 @@ export const RULES = {
   minGaps: 20,
   minHourGaps: 5,
   minDayGaps: 5,
+  // Sessions with a known open reason needed before the notification share is stated.
+  minOpenReasons: 20,
   // Mac: an app in front for less than this is passing through (Cmd Tab), not a visit.
   minVisitMs: 3 * SECOND,
   minMacDays: 3,

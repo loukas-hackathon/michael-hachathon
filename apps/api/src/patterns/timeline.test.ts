@@ -86,6 +86,27 @@ test("a web visit refines the browser, but never overrides another app in front"
   assert.equal(minutes(tl.mac), 20);
 });
 
+test("where the Mac log is alive, a web visit never adds Mac time of its own", () => {
+  const tl = range([
+    mac(APPS.editor, T("2026-11-10 09:00"), T("2026-11-10 09:30")),
+    // History says a page was in front from 10:00 to 10:20, but the Mac had nothing in front then
+    // (lid closed, or the page was measured on another machine). The Mac's own log wins.
+    web("youtube.com", T("2026-11-10 10:00"), T("2026-11-10 10:20"), "history", { foreground: true }),
+  ]);
+  assert.deepEqual(shape(tl.mac), ["VS Code 30"]);
+
+  // The same visit a week before the Mac log starts stands by itself.
+  const old = buildTimeline(
+    [
+      mac(APPS.editor, T("2026-11-10 09:00"), T("2026-11-10 09:30")),
+      web("youtube.com", T("2026-11-03 10:00"), T("2026-11-03 10:20"), "history", { foreground: true }),
+    ],
+    Date.parse(T("2026-11-01 00:00")),
+    Date.parse(T("2026-11-11 00:00")),
+  );
+  assert.deepEqual(shape(old.mac), ["youtube.com 20", "VS Code 30"]);
+});
+
 test("origin precedence: where the extension reported, history is ignored for that hour", () => {
   const visits = parseWebVisits([
     web("a.example", T("2026-11-10 10:00"), T("2026-11-10 10:10"), "history"),

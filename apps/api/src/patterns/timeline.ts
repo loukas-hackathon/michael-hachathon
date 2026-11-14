@@ -17,7 +17,8 @@ import { type Span, subtractSpans, sum, union } from "./util";
 //   1. Mac: one thing in front at a time. A non browser app beats a web visit, a web visit beats
 //      the bare browser, an extension visit beats a history visit, and a history visit Chrome
 //      measured in front beats one that was only open. Screen off time is removed.
-//   2. Web visits: where the extension reported, history is ignored (`preferExtension`).
+//   2. Web visits: where the extension reported, history is ignored (`preferExtension`). Where
+//      the Mac log is alive, a visit only refines browser time and never adds time of its own.
 //   3. Across devices: when the phone and the Mac overlap, the phone has the attention.
 
 export type OpenedFrom = "home_screen" | "app_switcher" | "notification" | "other";
@@ -40,8 +41,8 @@ export interface WebVisit extends Segment {
   origin: WebOrigin;
   /**
    * False when the length is how long the page stayed open, not how long it was in front (history
-   * rows Chrome did not measure, `data.foreground = false`). Such a visit only counts while a
-   * browser is in front on the Mac.
+   * rows Chrome did not measure, `data.foreground = false`). Such a visit never counts without
+   * the Mac log to confirm a browser was in front.
    */
   measured: boolean;
 }
@@ -77,6 +78,8 @@ export const subjectOf = (s: Segment): PatternSubject => ({
 });
 
 const BROWSER_APP_KEY = "mac:browser";
+/** The Mac log counts as alive this long before and after any Mac app interval. */
+const MAC_ALIVE_MS = 6 * HOUR;
 const OPENED_FROM = new Set<string>(["home_screen", "app_switcher", "notification", "other"]);
 
 const str = (v: unknown): string | null => (typeof v === "string" && v.length > 0 ? v : null);
@@ -185,6 +188,25 @@ function cut<T extends Span>(items: T[], holes: Span[]): T[] {
   return out;
 }
 
+/** The parts of `span` that lie inside `spans` (merged and sorted). */
+function overlaps(span: Span, spans: Span[]): Span[] {
+  // Merged spans are sorted by end as well as by start, so the first candidate can be searched.
+  let lo = 0;
+  let hi = spans.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if ((spans[mid]?.end ?? Number.POSITIVE_INFINITY) <= span.start) lo = mid + 1;
+    else hi = mid;
+  }
+  const out: Span[] = [];
+  for (let i = lo; i < spans.length; i++) {
+    const s = spans[i];
+    if (!s || s.start >= span.end) break;
+    out.push({ start: Math.max(s.start, span.start), end: Math.min(s.end, span.end) });
+  }
+  return out;
+}
+
 function clip<T extends Span>(items: T[], from: number, to: number): T[] {
   const out: T[] = [];
   for (const item of items) {
@@ -248,16 +270,20 @@ export function buildTimeline(events: Event[], from: number, to: number): Timeli
 
   const allVisits = clip(parseWebVisits(events), from, to);
   const { kept, superseded } = preferExtension(allVisits);
-  // A page that was only "open" may have sat in a background tab for an hour. It is believed
-  // only while a browser is in front, and loses to any visit whose time in front was measured.
+  // The Mac's own log is the better witness of what was in front. Wherever it is alive (within
+  // 6 hours of any Mac app interval), a web visit only refines time a browser was in front: it
+  // never adds Mac time of its own. Where the Mac log has nothing (before its 4 week horizon, or
+  // no Mac collector), a visit stands by itself, but only if its time in front was measured: a
+  // page that was merely "open" may have sat in a background tab for an hour.
   const browserInFront = union(macApps.filter((s) => s.appKey === BROWSER_APP_KEY));
+  const macAlive = union(macUsage.map((s) => ({ start: s.start - MAC_ALIVE_MS, end: s.end + MAC_ALIVE_MS })));
   const visits = cut(kept, off).flatMap((v) => {
-    if (v.measured) return [v];
     const pieces: WebVisit[] = [];
-    for (const b of browserInFront) {
-      const start = Math.max(v.start, b.start);
-      const end = Math.min(v.end, b.end);
-      if (end > start) pieces.push({ ...v, start, end });
+    for (const alive of overlaps(v, macAlive)) {
+      for (const p of overlaps(alive, browserInFront)) pieces.push({ ...v, start: p.start, end: p.end });
+    }
+    if (v.measured) {
+      for (const p of subtractSpans(v, macAlive)) pieces.push({ ...v, start: p.start, end: p.end });
     }
     return pieces;
   });

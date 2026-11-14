@@ -201,7 +201,10 @@ export function phoneCadence(ctx: Ctx): Detector<PhoneCadence> {
       notification,
       own_hand: ownHand,
       unknown,
-      notification_share: notification + ownHand > 0 ? round2(notification / (notification + ownHand)) : null,
+      notification_share:
+        notification + ownHand >= RULES.minOpenReasons
+          ? round2(notification / (notification + ownHand))
+          : null,
     },
     first_apps: firstApps,
     by_hour: byHour,
@@ -224,7 +227,9 @@ export function phoneCadence(ctx: Ctx): Detector<PhoneCadence> {
   const top = firstApps[0];
   if (top) parts.push(`${pct(top.share)} of pickups start with ${top.app.name}.`);
   parts.push(`${pct(data.checks_share)} last under 30 seconds.`);
-  if (data.opened.notification_share !== null) {
+  // The phone often gives no open reason (an app coming back after unlock). The split is only
+  // put in a sentence when the reason is known for at least half of the pick ups.
+  if (data.opened.notification_share !== null && notification + ownHand >= sessions.length / 2) {
     parts.push(`${pct(data.opened.notification_share)} were opened from a notification, the rest by hand.`);
   }
 

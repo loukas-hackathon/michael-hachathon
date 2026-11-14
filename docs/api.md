@@ -550,8 +550,12 @@ rules live there and nowhere else:
 - **Origin precedence:** for every clock hour in which the extension reported a visit
   (`data.origin = "extension"`), history visits that start in that hour are ignored; where the two
   still overlap the extension wins. A visit with no `origin` is history.
-- **Unmeasured history visits** (`data.foreground = false`: the length is how long the page stayed
-  open) count only while a browser is in front on the Mac, and lose to any measured visit.
+- **The Mac's log decides what was in front.** Wherever it is alive (within 6 hours of any Mac app
+  interval), a web visit counts only while a browser is in front: it refines browser time and
+  never adds Mac time of its own. Where the Mac log has nothing (before its 4 week horizon), a
+  visit stands by itself, but only if its time in front was measured: an unmeasured history visit
+  (`data.foreground = false`, the length is how long the page stayed open) is dropped there, and
+  everywhere loses to a measured visit.
 - **A visit's category** comes from the shared host list. If the host is not on it, the label the
   collector sent in `data.category` is used: `messaging` and `mail` read as `communication`, `dev`
   and `docs` as `work`, `finance` and `search` as `other`; the rest keep their name.
@@ -571,7 +575,8 @@ Roles used by the focus rules: **work** = `work`, `ai`; **distractor** = `commun
   it overlaps a recorded sleep or is longer than 3 hours (sleep or away). The first app skips the
   system (home screen). A session in which no app was opened (lock screen or home screen only) may
   be the phone waking for a notification, so it is counted apart and kept out of the rhythm. Opened: `notification` against `home_screen` or `app_switcher` (own hand);
-  `other` or missing is unknown. Hour buckets use the session start (gaps: the gap start). **Speaks
+  `other` or missing is unknown, and `notification_share` is null under 20 sessions with a known
+  reason. Hour buckets use the session start (gaps: the gap start). **Speaks
   from:** 3 days of iPhone usage and 20 waking gaps. An hour needs 5 gaps, a day 5, the working
   window 20.
 - `mac_app_cadence`: A **visit** is one time an app is brought to the front: consecutive intervals

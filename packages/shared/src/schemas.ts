@@ -410,7 +410,7 @@ export const PhoneCadence = z.object({
     notification: z.number().int().nonnegative(),
     own_hand: z.number().int().nonnegative(),
     unknown: z.number().int().nonnegative(),
-    // notification / (notification + own_hand); null when neither is known.
+    // notification / (notification + own_hand); null under 20 sessions with a known reason.
     notification_share: z.number().min(0).max(1).nullable(),
   }),
   first_apps: z.array(
