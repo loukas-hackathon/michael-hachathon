@@ -3,6 +3,7 @@ import { connection } from "next/server";
 import { CheckIn } from "@/components/chat/check-in";
 import { LiveCheckIn } from "@/components/chat/live-check-in";
 import { ScreenHeader } from "@/components/screen";
+import { TalkButton } from "@/components/voice/conversation-sheet";
 import { getChatHistory, getCheckIn, getScore, getVoiceEnabled } from "@/lib/api";
 import { SAMPLE_QUESTIONS } from "@/lib/check-in-data";
 import { Chat } from "./chat";
@@ -33,7 +34,7 @@ export default async function ChatPage() {
 
   return (
     <main className="screen flex min-h-dvh flex-col">
-      <ScreenHeader context={null} title="Chat" />
+      <ScreenHeader context={null} title="Chat" actions={<TalkButton elevenlabs={elevenlabs} />} />
       {today ? <LiveCheckIn initial={today.questions} /> : <CheckIn questions={SAMPLE_QUESTIONS} sample />}
       <Chat
         initial={history.messages}

@@ -61,18 +61,21 @@ export function mergeLines(initial: Line[], added: Line[]): Line[] {
 }
 
 export const setDraft = (draft: string) => set({ draft });
+/** Lines added since the page loaded, so a view can show only what comes after now. */
+export const chatLineCount = () => session.lines.length;
 export const setError = (error: string | null) => set({ error });
 
 /**
  * Sends one line and streams the answer into the session. Resolves when the reply is stored or
- * has failed; `onFailed` lets a mounted screen put the cursor back in the box.
+ * has failed; `onFailed` lets a mounted screen put the cursor back in the box. `spoken` asks for
+ * an answer to be read aloud (brief, no lists): the conversation speaks it itself.
  */
 export async function sendLine(
   text: string,
-  opts: { viaVoice?: boolean; elevenlabs?: boolean; onFailed?: () => void } = {},
-) {
+  opts: { viaVoice?: boolean; elevenlabs?: boolean; spoken?: boolean; onFailed?: () => void } = {},
+): Promise<{ ok: true; reply: string } | { ok: false; error: string } | null> {
   const message = text.trim();
-  if (!message || session.pending) return;
+  if (!message || session.pending) return null;
   const tempId = `pending-${Date.now()}`;
   const replyId = `${tempId}-reply`;
   set((s) => ({
@@ -84,17 +87,21 @@ export async function sendLine(
 
   // Michael's answer grows in its own bubble as it is written, then swaps for the stored pair.
   let streamed = "";
-  const res = await streamChat(message, (piece) => {
-    streamed += piece;
-    const content = streamed;
-    set((s) => ({
-      streamingId: replyId,
-      lines: [
-        ...s.lines.filter((x) => x.id !== replyId),
-        { id: replyId, role: "assistant", content, created_at: null },
-      ],
-    }));
-  });
+  const res = await streamChat(
+    message,
+    (piece) => {
+      streamed += piece;
+      const content = streamed;
+      set((s) => ({
+        streamingId: replyId,
+        lines: [
+          ...s.lines.filter((x) => x.id !== replyId),
+          { id: replyId, role: "assistant", content, created_at: null },
+        ],
+      }));
+    },
+    opts.spoken,
+  );
   const temp = (x: Line) => x.id !== tempId && x.id !== replyId;
   if (res.ok) {
     const done = res.data.actions;
@@ -112,16 +119,17 @@ export async function sendLine(
     if (done.length) window.dispatchEvent(new Event(TABS_STALE));
     // Spoken once the whole answer is in: a voice reading half sentences sounds broken.
     if (opts.viaVoice) void speakReply(res.data.reply.content, opts.elevenlabs ?? false);
-  } else {
-    // Nothing was stored: take the line back and put it in the box so it can be sent again.
-    set((s) => ({
-      pending: false,
-      streamingId: null,
-      lines: s.lines.filter(temp),
-      draft: s.draft || message,
-      error: res.error,
-    }));
-    if (opts.viaVoice) void speakReply(res.error, false);
-    else opts.onFailed?.();
+    return { ok: true, reply: res.data.reply.content };
   }
+  // Nothing was stored: take the line back and put it in the box so it can be sent again.
+  set((s) => ({
+    pending: false,
+    streamingId: null,
+    lines: s.lines.filter(temp),
+    draft: s.draft || message,
+    error: res.error,
+  }));
+  if (opts.viaVoice) void speakReply(res.error, false);
+  else opts.onFailed?.();
+  return { ok: false, error: res.error };
 }

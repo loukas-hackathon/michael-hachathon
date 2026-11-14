@@ -27,7 +27,8 @@ Do not animate:
 - Tab switches, the tab bar, headers, or anything the user does many times a minute.
 - Keyboard-driven actions, focus moves, typing.
 - Decoration: no loops, pulses or attention-seeking motion. The only loops allowed are the
-  skeleton breath and the push-to-talk listening ring, both stopped by reduced motion.
+  skeleton breath, the push-to-talk listening ring and the conversation's speaking breath
+  (`.m-speak-breath`), all stopped by reduced motion.
 
 ## 2. Tokens (apps/web/app/globals.css)
 

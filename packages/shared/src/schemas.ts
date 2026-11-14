@@ -2020,6 +2020,8 @@ export type ChatMessage = z.infer<typeof ChatMessage>;
 
 export const ChatRequest = z.object({
   message: z.string().trim().min(1).max(2000),
+  // The answer will be read aloud (conversation mode): one or two short sentences, no lists.
+  spoken: z.boolean().optional(),
 });
 export type ChatRequest = z.input<typeof ChatRequest>;
 

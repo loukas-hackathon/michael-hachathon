@@ -1,15 +1,15 @@
 import { openChatStream } from "@/lib/api";
 
-// POST /chat/stream { message }: passes the API's server-sent events through to the browser, so the
+// POST /chat/stream { message, spoken? }: passes the API's server-sent events through to the browser, so the
 // browser never holds the API key or the user's token. Errors come back as ApiError JSON.
 export async function POST(request: Request) {
-  const body = (await request.json().catch(() => null)) as { message?: unknown } | null;
+  const body = (await request.json().catch(() => null)) as { message?: unknown; spoken?: unknown } | null;
   const message = typeof body?.message === "string" ? body.message.trim().slice(0, 2000) : "";
   if (!message) return error(400, "bad_request", "Type a question first");
 
   let upstream: Response;
   try {
-    upstream = await openChatStream(message);
+    upstream = await openChatStream(message, body?.spoken === true);
   } catch (err) {
     console.error("chat stream:", err);
     // authHeaders() throws when signed out; fetch throws when the API is down.

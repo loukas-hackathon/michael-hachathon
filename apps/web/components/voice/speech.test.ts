@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  isEcho,
   meansNoVoiceHere,
   type RecognitionEvent,
   recognitionErrorCopy,
@@ -8,6 +9,14 @@ import {
   speechChunks,
   transcriptOf,
 } from "./speech";
+
+test("isEcho tells Michael's own voice from the user cutting in", () => {
+  const saying = "Forty seven minutes of deep work so far. Want a block at 15:00?";
+  assert.equal(isEcho("forty seven minutes of deep work", saying), true);
+  assert.equal(isEcho("", saying), true);
+  assert.equal(isEcho("wait, what about the gym tomorrow", saying), false);
+  assert.equal(isEcho("forty seven minutes wait what about the gym", saying), false);
+});
 
 test("speakable drops the chat's markdown so no voice reads asterisks or dashes", () => {
   const reply = "You have done **1h 20m** of deep work.\n\n- 09:30 to 10:50 on the pitch\n1. Gym at 18:00";

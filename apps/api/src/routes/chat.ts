@@ -86,6 +86,12 @@ Check in:
 - "What you told me" below are the user's own answers to earlier check in questions. Use them, quote them, never invent them.
 - When the user answers one of today's open check in questions in chat, keep it with answer_check_in. If the result gives a follow up, ask it word for word.`;
 
+// Added after the cached prompt when the answer is read aloud in a voice conversation (#299).
+const SPOKEN_STYLE = `This answer is spoken aloud in a voice conversation:
+- One or two short sentences, then one question or one concrete fix. Never a list, heading or markdown.
+- Say numbers as a person would: "forty seven minutes", "half past six", "two of three sessions".
+- If the user only greets you or says thanks, answer in a few words.`;
+
 /** "2026-11-14T19:05:00+02:00": the instant as the user's wall clock with its UTC offset. */
 function isoIn(zone: Zone, ms: number): string {
   const offset = zone.offsetAt(ms);
@@ -365,7 +371,7 @@ const REFUSAL = "I can't help with that one. Ask me about your day or your goals
 // Model calls per answer: room to look a block up, act, and then say what was done.
 const MAX_ROUNDS = 5;
 
-function request(messages: Anthropic.MessageParam[], context: string, lastRound: boolean) {
+function request(messages: Anthropic.MessageParam[], context: string, lastRound: boolean, spoken = false) {
   return {
     model: env.ANTHROPIC_MODEL,
     max_tokens: 4000,
@@ -375,6 +381,7 @@ function request(messages: Anthropic.MessageParam[], context: string, lastRound:
       // Stable prompt first so it can be cached; the per-request context comes after.
       { type: "text" as const, text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" as const } },
       { type: "text" as const, text: `What I know about the user right now:\n\n${context}` },
+      ...(spoken ? [{ type: "text" as const, text: SPOKEN_STYLE }] : []),
     ],
     tools: CHAT_TOOLS,
     // The last round must answer in words, not call another tool.
@@ -405,6 +412,8 @@ interface Hooks {
   /** Streams text as it is written; without it the model is called without streaming. */
   onText?: (text: string) => Promise<void>;
   onAction?: (action: Recommendation) => Promise<void>;
+  /** The answer is read aloud: brief, no lists (SPOKEN_STYLE). */
+  spoken?: boolean;
 }
 
 /** One model call: streamed piece by piece when `onText` is given. */
@@ -413,10 +422,12 @@ async function callModel(
   context: string,
   lastRound: boolean,
   onText: Hooks["onText"],
+  spoken = false,
 ): Promise<Anthropic.Message> {
   try {
-    if (!onText) return await anthropic().messages.create(request(messages, context, lastRound));
-    const stream = anthropic().messages.stream(request(messages, context, lastRound));
+    const body = request(messages, context, lastRound, spoken);
+    if (!onText) return await anthropic().messages.create(body);
+    const stream = anthropic().messages.stream(body);
     for await (const event of stream) {
       if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
         await onText(event.delta.text);
@@ -454,7 +465,7 @@ export async function askMichael(
   const turn: ChatTurnState = { proposals: 0 };
   for (let round = 0; round < MAX_ROUNDS; round++) {
     wrote = false;
-    const response = await callModel(messages, context, round === MAX_ROUNDS - 1, onText);
+    const response = await callModel(messages, context, round === MAX_ROUNDS - 1, onText, hooks.spoken);
     if (response.stop_reason === "refusal") {
       texts.push(REFUSAL);
       break;
@@ -507,12 +518,12 @@ export async function askMichael(
 
 /** Everything both POST routes need before the model is called. */
 async function prepare(body: unknown) {
-  const { message } = parse(ChatRequest, body);
+  const { message, spoken = false } = parse(ChatRequest, body);
   // Fail before storing anything when chat is not configured.
   anthropic();
   const [earlier, context] = await Promise.all([store.listChatMessages(HISTORY_TURNS), contextForNow()]);
   const turns: Anthropic.MessageParam[] = [...toTurns(earlier), { role: "user", content: message }];
-  return { message, turns, context };
+  return { message, turns, context, spoken };
 }
 
 async function save(message: string, { answer, actions }: MichaelAnswer): Promise<ChatResponse> {
@@ -547,8 +558,8 @@ export const chat = new Hono()
   // POST /v1/chat { message }  Michael answers from today's timeline, goals and patterns, and acts
   // on the user's own calendar when asked (ChatResponse.actions)
   .post("/chat", async (c) => {
-    const { message, turns, context } = await prepare(await jsonBody(c));
-    const body = await save(message, await askMichael(turns, context));
+    const { message, turns, context, spoken } = await prepare(await jsonBody(c));
+    const body = await save(message, await askMichael(turns, context, { spoken }));
     return c.json(body, 201);
   })
   // POST /v1/chat/stream { message }  the same answer as server-sent events: `delta` { text } as it
@@ -556,10 +567,11 @@ export const chat = new Hono()
   // `error` ApiError if the model fails mid-way.
   .post("/chat/stream", async (c) => {
     // Validation and "not set up" still fail as plain JSON errors, before the stream opens.
-    const { message, turns, context } = await prepare(await jsonBody(c));
+    const { message, turns, context, spoken } = await prepare(await jsonBody(c));
     return streamSSE(c, async (sse) => {
       try {
         const answer = await askMichael(turns, context, {
+          spoken,
           onText: (text) => sse.writeSSE({ event: "delta", data: JSON.stringify({ text }) }),
           onAction: (action) => sse.writeSSE({ event: "action", data: JSON.stringify(action) }),
         });
