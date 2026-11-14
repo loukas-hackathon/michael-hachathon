@@ -949,6 +949,31 @@ MCP). `manual` events, typed by the user, are always kept. `since` is when colle
 `null`. Never set sources show `updated_at` as `1970-01-01T00:00:00.000Z`. The check lives in
 `apps/api/src/privacy.ts` and runs inside `Store.insertEvents`.
 
+### Device keys (personal tokens)
+
+```ts
+type PersonalToken = {
+  id: string;
+  name: string;
+  prefix: string;
+  created_at: string;
+  last_used_at: string | null;
+};
+type PersonalTokenCreated = { token: PersonalToken; secret: string /* "mk_...", shown once */ };
+```
+
+| Method | Path             | Body       | Response                                             | Status |
+| ------ | ---------------- | ---------- | ---------------------------------------------------- | ------ |
+| GET    | `/v1/tokens`     |            | `200 { tokens: PersonalToken[] }` (never the secret) | live   |
+| POST   | `/v1/tokens`     | `{ name }` | `201 PersonalTokenCreated`                           | live   |
+| DELETE | `/v1/tokens/:id` |            | `204` (stops working within 30 s), `404`             | live   |
+
+Only a signed-in session (Supabase token) may call these: device keys, OAuth tokens and the demo
+API key get `403 forbidden`. A device key acts for its owner on ingest, webhooks and `/mcp`
+(`Authorization: Bearer mk_...` or `?key=mk_...` where query keys are allowed). One key per device
+(Mac collector, Health Auto Export). Only the sha256 is stored. The web app makes them under
+You > Devices. Claude connects with MCP OAuth instead (no key).
+
 ### Michael for agents
 
 ```ts

@@ -18,6 +18,7 @@ import { privacy } from "./routes/privacy";
 import { product } from "./routes/product";
 import { recommendations } from "./routes/recommendations";
 import { score } from "./routes/score";
+import { tokens } from "./routes/tokens";
 import { webhooks } from "./routes/webhooks";
 import { store } from "./store";
 
@@ -40,6 +41,7 @@ const v1 = new Hono()
   .route("/", integrations)
   .route("/", privacy)
   .route("/", product)
+  .route("/", tokens)
   .route("/", connect);
 
 export const app = new Hono()
