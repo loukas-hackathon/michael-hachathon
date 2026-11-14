@@ -9,11 +9,15 @@ import {
   type Goal,
   type GoalCreate,
   type GoalUpdate,
+  type Instruction,
+  type InstructionCreate,
+  type InstructionUpdate,
   type Integration,
   type IntegrationProvider,
   mockAnalysisRun,
   mockEvents,
   mockGoals,
+  mockInstructions,
   mockRecommendations,
   type Nudge,
   type NudgeStatus,
@@ -138,6 +142,12 @@ export interface Store extends PrivacyBackend {
   // The onboarding answers (routes/profile.ts fills in defaults); null until first saved.
   getProfile(): Promise<Profile | null>;
   saveProfile(profile: Profile): Promise<Profile>;
+  // ---- standing instructions (the user's ground rules), oldest first ----
+  listInstructions(): Promise<Instruction[]>;
+  createInstruction(input: z.output<typeof InstructionCreate>): Promise<Instruction>;
+  /** A null in the patch clears `days`, `time` or `end_time`; a missing key leaves it alone. */
+  updateInstruction(id: string, patch: z.output<typeof InstructionUpdate>): Promise<Instruction | null>;
+  deleteInstruction(id: string): Promise<boolean>;
   listRecommendations(filter?: { status?: RecommendationStatus }): Promise<Recommendation[]>;
   updateRecommendationStatus(id: string, status: RecommendationStatus): Promise<Recommendation | null>;
   getRecommendation(id: string): Promise<Recommendation | null>;
@@ -243,6 +253,29 @@ export const emptyIntegration = (provider: IntegrationProvider): IntegrationReco
   scope: null,
 });
 
+/** An instruction as the contract has it: `days`, `time` and `end_time` are left out when not set. */
+export const toInstruction = (r: {
+  id: string;
+  text: string;
+  kind: Instruction["kind"];
+  days?: number[] | null;
+  time?: string | null;
+  end_time?: string | null;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}): Instruction => ({
+  id: r.id,
+  text: r.text,
+  kind: r.kind,
+  ...(r.days?.length ? { days: [...r.days].sort((a, b) => a - b) } : {}),
+  ...(r.time ? { time: r.time } : {}),
+  ...(r.end_time ? { end_time: r.end_time } : {}),
+  active: r.active,
+  created_at: r.created_at,
+  updated_at: r.updated_at,
+});
+
 const now = () => new Date().toISOString();
 const overlaps = (e: Event, from: number, to: number) => {
   const start = Date.parse(e.start_at);
@@ -259,6 +292,7 @@ export class MemoryStore implements Store {
     {
       events: Event[];
       goals: Goal[];
+      instructions: Instruction[];
       recommendations: Recommendation[];
       runs: AnalysisRun[];
       privacy: PrivacyRules;
@@ -280,6 +314,7 @@ export class MemoryStore implements Store {
       x = {
         events: demo ? [] : structuredClone(mockEvents),
         goals: demo ? [] : structuredClone(mockGoals),
+        instructions: structuredClone(mockInstructions),
         recommendations: [...structuredClone(mockRecommendations), ...demoRecommendations()],
         runs: [structuredClone(mockAnalysisRun)],
         privacy: { offTheRecord: false, since: null, sources: {} },
@@ -415,6 +450,39 @@ export class MemoryStore implements Store {
   async saveProfile(profile: Profile) {
     this.profiles.set(currentUserId(), structuredClone(profile));
     return structuredClone(profile);
+  }
+
+  async listInstructions() {
+    return this.d.instructions;
+  }
+
+  async createInstruction(i: z.output<typeof InstructionCreate>) {
+    const instruction = toInstruction({
+      id: crypto.randomUUID(),
+      ...i,
+      created_at: now(),
+      updated_at: now(),
+    });
+    this.d.instructions.push(instruction);
+    return instruction;
+  }
+
+  async updateInstruction(id: string, patch: z.output<typeof InstructionUpdate>) {
+    const list = this.d.instructions;
+    const at = list.findIndex((i) => i.id === id);
+    const found = list[at];
+    if (!found) return null;
+    const changes = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined));
+    const updated = toInstruction({ ...found, ...changes, updated_at: now() });
+    list[at] = updated;
+    return updated;
+  }
+
+  async deleteInstruction(id: string) {
+    const d = this.d;
+    const before = d.instructions.length;
+    d.instructions = d.instructions.filter((i) => i.id !== id);
+    return d.instructions.length < before;
   }
 
   async listRecommendations(filter?: { status?: RecommendationStatus }) {

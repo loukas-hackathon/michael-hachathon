@@ -3,8 +3,8 @@
 **On your side.** Michael finds the time you lose every day and gives it back to your goals.
 
 Michael is a coach for the whole day. He builds **one timeline of your day** from your Apple Watch,
-calendar, Mac, iPhone, browser and Claude Code, checks it against your goals (work, gym, rest,
-food), and recommends or makes concrete changes, each tied to a goal.
+calendar, Mac, iPhone, browser and Claude Code, checks it against your goals (business, health,
+personal), and recommends or makes concrete changes, each tied to a goal.
 
 - **One day, with the maths.** Today shows the share of your planned goal time actually spent, what
   leaked away and to what, and the time won back. Goals have weekly budgets and show the sums.

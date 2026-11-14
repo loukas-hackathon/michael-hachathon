@@ -53,8 +53,49 @@ export const EventType = z.enum([
 ]);
 export type EventType = z.infer<typeof EventType>;
 
-export const GoalCategory = z.enum(["work", "gym", "rest", "food"]);
+// Goals sit in three categories: business, health, personal. The four older values are still
+// accepted and readable until every client has moved: `work` means business; `gym`, `rest` and
+// `food` mean health. Group and reason with `goalArea`, never with the raw value.
+export const GoalCategory = z.enum(["business", "health", "personal", "work", "gym", "rest", "food"]);
 export type GoalCategory = z.infer<typeof GoalCategory>;
+
+export const GoalArea = z.enum(["business", "health", "personal"]);
+export type GoalArea = z.infer<typeof GoalArea>;
+
+const GOAL_AREA: Record<GoalCategory, GoalArea> = {
+  business: "business",
+  health: "health",
+  personal: "personal",
+  work: "business",
+  gym: "health",
+  rest: "health",
+  food: "health",
+};
+
+/** The one of the three categories a goal category belongs to, for any of the seven values. */
+export const goalArea = (category: GoalCategory): GoalArea => GOAL_AREA[category];
+
+// What a goal measures. `time`: weekly minutes in planned blocks (the default). `target`: a value
+// per day (sleep 7.5 hours, screens off at 23:00). `count`: times a week. `checklist`: the day's
+// one to three business outcomes. Only `time` goals take part in the time score.
+export const GoalKind = z.enum(["time", "target", "count", "checklist"]);
+export type GoalKind = z.infer<typeof GoalKind>;
+
+// One shared vocabulary for apps and sites. Unknown ids stay "other": the categoriser never guesses.
+export const AppCategory = z.enum([
+  "work",
+  "communication",
+  "social",
+  "video",
+  "news",
+  "shopping",
+  "travel",
+  "ai",
+  "music",
+  "system",
+  "other",
+]);
+export type AppCategory = z.infer<typeof AppCategory>;
 
 // proposed -> accepted -> done (action executed) -> undone (reverted before the event started)
 // proposed -> dismissed
@@ -148,7 +189,8 @@ export const Goal = z.object({
   category: GoalCategory,
   title: z.string().min(1),
   description: z.string().nullable(),
-  // Free-form measurable target, e.g. { "sleep_hours": 8 } or { "gym_sessions_per_week": 4 }.
+  // Free form record. The keys the API understands are in `GoalTarget` below: kind, label,
+  // calendar_titles, work_categories and the values of a target or count goal.
   target: z.record(z.string(), z.unknown()).nullable(),
   // Weekly time budget, e.g. "70.3 training: 9 hours this week" = 540.
   weekly_budget_minutes: z.number().int().nonnegative().nullable(),
@@ -158,11 +200,56 @@ export const Goal = z.object({
 });
 export type Goal = z.infer<typeof Goal>;
 
+// "HH:MM", 24 hour, local wall clock (Europe/Athens). Also used by the profile below.
+export const ClockTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Expected HH:MM");
+export type ClockTime = z.infer<typeof ClockTime>;
+
+// The keys of `goal.target` the API understands. The record stays free form: unknown keys are kept
+// as they are, known keys must have the right type. Checked on create and update; goals already
+// stored are read leniently (`goalKind`, and the readers in apps/api, skip what they cannot use).
+export const GoalTarget = z.looseObject({
+  kind: GoalKind.optional(),
+  // A free label for a personal goal: "fun", "family", "hobby".
+  label: z.string().min(1).max(40).optional(),
+  // Calendar event titles that count towards the goal (docs/api.md, Goals).
+  calendar_titles: z.array(z.string().min(1)).optional(),
+  // Attention categories that count as this goal's work inside its blocks, for example
+  // ["communication"] on a sales goal: there they are spent and verified, not lost.
+  work_categories: z.array(AppCategory).optional(),
+  // kind `target`: a value per day.
+  sleep_hours: z.number().positive().max(24).optional(),
+  screens_off: ClockTime.optional(),
+  // kind `count`: times a week.
+  per_week: z.number().int().positive().optional(),
+});
+export type GoalTarget = z.infer<typeof GoalTarget>;
+
+type GoalLike = { category?: GoalCategory; title?: string; target?: Record<string, unknown> | null };
+
+/** A target with a sleep or bed key, or the word in the title. */
+const describesSleep = (goal: GoalLike) =>
+  Object.keys(goal.target ?? {}).some((k) => /sleep|bed/i.test(k)) || /\bsleep\b/i.test(goal.title ?? "");
+
+/**
+ * What a goal measures: `target.kind` when it holds one of the kinds, otherwise `time`. One
+ * fallback for goals saved before kinds existed: a `rest` goal that describes sleep is a target.
+ */
+export function goalKind(goal: GoalLike): GoalKind {
+  const kind = GoalKind.safeParse(goal.target?.kind);
+  if (kind.success) return kind.data;
+  if (goal.category === "rest" && describesSleep(goal)) return "target";
+  return "time";
+}
+
+/** A health goal of kind `target` that describes sleep. Sleep is measured by nights, not blocks. */
+export const isSleepGoal = (goal: GoalLike & { category: GoalCategory }): boolean =>
+  goalArea(goal.category) === "health" && goalKind(goal) === "target" && describesSleep(goal);
+
 export const GoalCreate = z.object({
   category: GoalCategory,
   title: z.string().min(1),
   description: z.string().nullish(),
-  target: z.record(z.string(), z.unknown()).nullish(),
+  target: GoalTarget.nullish(),
   weekly_budget_minutes: z.number().int().nonnegative().nullish(),
   active: z.boolean().default(true),
 });
@@ -170,6 +257,77 @@ export type GoalCreate = z.input<typeof GoalCreate>;
 
 export const GoalUpdate = GoalCreate.partial();
 export type GoalUpdate = z.input<typeof GoalUpdate>;
+
+// ---------- standing instructions ----------
+// Not goals: the user's ground rules ("keep Sundays clear", "home every day by 21:00"). Given at
+// setup, changed any time. Michael never plans into the time they protect.
+
+// clear_day: nothing planned on `days`. home_by: nothing planned after `time` (on `days`, or every
+// day). quiet_hours: nothing between `time` and `end_time`. custom: text for the coach only.
+export const InstructionKind = z.enum(["clear_day", "home_by", "quiet_hours", "custom"]);
+export type InstructionKind = z.infer<typeof InstructionKind>;
+
+// 0 = Sunday .. 6 = Saturday, as in JavaScript's getDay().
+const Weekdays = z.array(z.number().int().min(0).max(6)).min(1).max(7);
+
+export const Instruction = z.object({
+  id: z.uuid(),
+  // The user's own words, kept exactly as written.
+  text: z.string().min(1),
+  kind: InstructionKind,
+  days: Weekdays.optional(),
+  time: ClockTime.optional(),
+  end_time: ClockTime.optional(),
+  active: z.boolean(),
+  created_at: IsoDateTime,
+  updated_at: IsoDateTime,
+});
+export type Instruction = z.infer<typeof Instruction>;
+
+const instructionText = z
+  .string()
+  .max(500)
+  .refine((t) => t.trim().length > 0, "Text must not be blank");
+
+/** What a kind needs before it can protect any time, or null when the shape is complete. */
+export function instructionShapeError(i: {
+  kind: InstructionKind;
+  days?: number[] | null;
+  time?: string | null;
+  end_time?: string | null;
+}): string | null {
+  if (i.kind === "clear_day" && !i.days?.length) return "clear_day needs `days`";
+  if (i.kind === "home_by" && !i.time) return "home_by needs `time`";
+  if (i.kind === "quiet_hours" && !(i.time && i.end_time)) return "quiet_hours needs `time` and `end_time`";
+  return null;
+}
+
+export const InstructionCreate = z
+  .object({
+    text: instructionText,
+    kind: InstructionKind.default("custom"),
+    days: Weekdays.nullish(),
+    time: ClockTime.nullish(),
+    end_time: ClockTime.nullish(),
+    active: z.boolean().default(true),
+  })
+  .superRefine((i, ctx) => {
+    const message = instructionShapeError(i);
+    if (message) ctx.addIssue({ code: "custom", message });
+  });
+export type InstructionCreate = z.input<typeof InstructionCreate>;
+
+// Every field optional; null clears `days`, `time` or `end_time`. The API checks the shape of the
+// result (the stored instruction with the change applied), not of the change alone.
+export const InstructionUpdate = z.object({
+  text: instructionText.optional(),
+  kind: InstructionKind.optional(),
+  days: Weekdays.nullish(),
+  time: ClockTime.nullish(),
+  end_time: ClockTime.nullish(),
+  active: z.boolean().optional(),
+});
+export type InstructionUpdate = z.input<typeof InstructionUpdate>;
 
 // ---------- recommendations ----------
 
@@ -351,9 +509,7 @@ export type OffTheRecordUpdate = z.infer<typeof OffTheRecordUpdate>;
 
 // ---------- profile: the onboarding answers (GET/PUT /v1/profile) ----------
 
-// "HH:MM", 24 hour, Europe/Athens wall clock.
-export const ClockTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Expected HH:MM");
-export type ClockTime = z.infer<typeof ClockTime>;
+// `ClockTime` ("HH:MM", 24 hour, Europe/Athens wall clock) is defined with the goals above.
 
 export const Weekday = z.enum(["mon", "tue", "wed", "thu", "fri", "sat", "sun"]);
 export type Weekday = z.infer<typeof Weekday>;
@@ -694,21 +850,7 @@ export type WeeklyScore = z.infer<typeof WeeklyScore>;
 // Computed with plain rules by apps/api/src/patterns. Durations are minutes with one decimal unless
 // the field name says seconds. Shares are 0..1. Days are local days in the report's timezone.
 
-// One shared vocabulary for apps and sites. Unknown ids stay "other": the categoriser never guesses.
-export const AppCategory = z.enum([
-  "work",
-  "communication",
-  "social",
-  "video",
-  "news",
-  "shopping",
-  "travel",
-  "ai",
-  "music",
-  "system",
-  "other",
-]);
-export type AppCategory = z.infer<typeof AppCategory>;
+// `AppCategory`, the shared vocabulary for apps and sites, is defined with the enums above.
 
 export const PatternDevice = z.enum(["mac", "iphone"]);
 export type PatternDevice = z.infer<typeof PatternDevice>;
@@ -1143,7 +1285,7 @@ const scoreTotals = {
 export const ScoreLostStretch = z.object({
   start_at: IsoDateTime,
   end_at: IsoDateTime,
-  // Time in distracting apps and sites inside the stretch, one decimal.
+  // Time inside the stretch that was off purpose for the block's goal, one decimal.
   minutes: z.number().nonnegative(),
   what: z.string(),
   kind: z.enum(["app", "site"]),
@@ -1167,8 +1309,21 @@ export const ScoreBlock = z.object({
   // One per 5 minutes from start_at; the last one is shorter when the block is not a multiple of 5.
   ticks: z.array(ScoreTick),
   lost: z.array(ScoreLostStretch),
+  // Ids of the active standing instructions this block's time falls under (a work block planned
+  // on a clear Sunday). Empty when it breaks none. It never changes the block's minutes.
+  instructions_broken: z.array(z.uuid()),
 });
 export type ScoreBlock = z.infer<typeof ScoreBlock>;
+
+// The same totals for one of the three categories, so a strong business week with no personal
+// time does not read as a win. Always three entries, in the order business, health, personal.
+export const ScoreArea = z.object({
+  area: GoalArea,
+  // Every active goal in the category, scored or not.
+  goal_ids: z.array(z.uuid()),
+  ...scoreTotals,
+});
+export type ScoreArea = z.infer<typeof ScoreArea>;
 
 export const ScoreDay = z.object({
   date: LocalDay,
@@ -1194,14 +1349,20 @@ export const ScoreDayDetail = ScoreDay.extend({
   now: IsoDateTime,
   time_won_back: TimeWonBack,
   blocks: z.array(ScoreBlock),
+  // The day per category. The three add up to the day.
+  areas: z.array(ScoreArea),
 });
 export type ScoreDayDetail = z.infer<typeof ScoreDayDetail>;
 
 export const ScoreGoal = GoalScore.extend({
   title: z.string(),
   category: GoalCategory,
-  // False for sleep (a rest goal whose target describes sleep): listed with its budget for the
-  // Goals screen, outside the score. Its planned and spent minutes are 0 and mean nothing.
+  // The one of the three categories the goal belongs to, and what it measures.
+  area: GoalArea,
+  kind: GoalKind,
+  // True only for goals of kind `time`. A `target`, `count` or `checklist` goal (sleep is a
+  // target) is listed with its budget for the Goals screen, outside the score: its planned and
+  // spent minutes are 0 and mean nothing.
   scored: z.boolean(),
   elapsed_minutes: Minutes,
   lost_minutes: Minutes,
@@ -1225,6 +1386,8 @@ export const Score = WeeklyScore.extend({
   lost_minutes: Minutes,
   ahead_minutes: Minutes,
   unverified_minutes: Minutes,
+  // The week per category. The three add up to the week.
+  areas: z.array(ScoreArea),
   // Monday to Sunday of the week that holds `date`.
   days: z.array(ScoreDay),
   day: ScoreDayDetail,
@@ -1353,7 +1516,7 @@ export const MomentGoal = z.object({
   budget_minutes: z.number().int().nonnegative().nullable(),
   // This week (Monday 00:00 local) until now.
   spent_week_minutes: z.number().int().nonnegative(),
-  // Today: planned blocks (rest: a seventh of the weekly budget), time held, time lost in them.
+  // Today: planned blocks (sleep: a seventh of the weekly budget), time held, time lost in them.
   planned_today_minutes: z.number().int().nonnegative(),
   spent_today_minutes: z.number().int().nonnegative(),
   lost_today_minutes: z.number().int().nonnegative(),

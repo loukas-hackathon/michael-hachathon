@@ -16,6 +16,7 @@ export const TOOL_SCOPE: Record<string, AgentScope> = {
   get_timeline: "timeline",
   get_patterns: "timeline",
   get_goals: "goals",
+  get_instructions: "goals",
   add_goal: "goals",
   update_goal: "goals",
   list_recommendations: "recommendations",
@@ -70,6 +71,8 @@ export function summarise(name: string, title: string | undefined, input: unknow
       return `Read your patterns${range}`;
     case "get_goals":
       return "Read your goals";
+    case "get_instructions":
+      return "Read your standing instructions";
     case "list_recommendations":
       return "Read my advice";
     case "get_nudges":

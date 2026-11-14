@@ -27,6 +27,9 @@ function parseGoals(input: unknown): GoalAnswer[] {
 
 // What each goal is called and which calendar titles count towards it (docs/api.md, Goals).
 const GOAL_TEMPLATE: Record<GoalCategory, { title: string; target: Record<string, unknown> }> = {
+  business: { title: "Deep work", target: { calendar_titles: ["Deep work", "Focus", "Study"] } },
+  health: { title: "Training", target: { calendar_titles: ["Gym", "Run", "Swim", "Training"] } },
+  personal: { title: "Personal time", target: {} },
   work: { title: "Deep work", target: { calendar_titles: ["Deep work", "Focus", "Study"] } },
   gym: { title: "Training", target: { calendar_titles: ["Gym", "Run", "Swim", "Training"] } },
   rest: { title: "Sleep", target: {} },

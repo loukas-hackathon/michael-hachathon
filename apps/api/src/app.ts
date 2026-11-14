@@ -13,6 +13,7 @@ import { chat } from "./routes/chat";
 import { demo } from "./routes/demo";
 import { events } from "./routes/events";
 import { goals } from "./routes/goals";
+import { instructions } from "./routes/instructions";
 import { integrations, oauth } from "./routes/integrations";
 import { moments } from "./routes/moments";
 import { nudges } from "./routes/nudges";
@@ -40,6 +41,7 @@ const v1 = new Hono()
   .use(requireUser())
   .route("/", events)
   .route("/", goals)
+  .route("/", instructions)
   .route("/", recommendations)
   .route("/", analysis)
   .route("/", patterns)
