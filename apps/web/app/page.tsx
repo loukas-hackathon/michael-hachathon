@@ -40,7 +40,7 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
       />
       <WatchLine demo={demo} />
 
-      {day.blocks.length === 0 ? (
+      {day.blocks.length === 0 && day.week.scorePct == null ? (
         <>
           <EmptyState title="Nothing yet.">
             Wear the watch tonight and your first brief arrives in the morning.
@@ -60,53 +60,55 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
             <p className="mt-1 text-subhead font-semibold">{verdict(day.balance).line}</p>
           ) : null}
 
-          <section aria-label="Goal time today" className="mt-5">
-            {t.scorePct === null && firstBlock ? (
-              <p className="text-title3 font-semibold">
-                Your first block starts at <span className="tnum">{formatTime(firstBlock.start)}</span>.
-              </p>
-            ) : (
-              <h2 className="flex flex-col">
-                <span className="font-num text-score font-extrabold tracking-[-0.02em] tnum">
-                  <CountUp value={t.scorePct ?? 0} suffix="%" />
-                </span>
-                <span className="text-title3 font-semibold">
-                  of your goal time {day.moment === "evening" ? "today" : "so far"}.
-                </span>
-              </h2>
-            )}
-            <div className="mt-3">
-              <Tape
-                ticks={ticks}
-                nowAt={day.moment === "evening" || t.scorePct === null ? null : nowIndex(ticks)}
-                nowLabel={formatTime(day.now)}
-                recordAt={day.record?.tick ?? null}
-                label={`${hm(t.spent)} spent (${hm(t.unverified)} unconfirmed), ${hm(t.lost)} lost, ${hm(t.ahead)} still ahead`}
+          {day.blocks.length > 0 ? (
+            <section aria-label="Goal time today" className="mt-5">
+              {t.scorePct === null && firstBlock ? (
+                <p className="text-title3 font-semibold">
+                  Your first block starts at <span className="tnum">{formatTime(firstBlock.start)}</span>.
+                </p>
+              ) : (
+                <h2 className="flex flex-col">
+                  <span className="font-num text-score font-extrabold tracking-[-0.02em] tnum">
+                    <CountUp value={t.scorePct ?? 0} suffix="%" />
+                  </span>
+                  <span className="text-title3 font-semibold">
+                    of your goal time {day.moment === "evening" ? "today" : "so far"}.
+                  </span>
+                </h2>
+              )}
+              <div className="mt-3">
+                <Tape
+                  ticks={ticks}
+                  nowAt={day.moment === "evening" || t.scorePct === null ? null : nowIndex(ticks)}
+                  nowLabel={formatTime(day.now)}
+                  recordAt={day.record?.tick ?? null}
+                  label={`${hm(t.spent)} spent (${hm(t.unverified)} unconfirmed), ${hm(t.lost)} lost, ${hm(t.ahead)} still ahead`}
+                />
+              </div>
+              <TapeKey
+                items={
+                  t.scorePct === null
+                    ? [{ kind: "ahead" as const, text: `${hm(t.planned)} planned` }]
+                    : [
+                        ...(t.spent - t.unverified > 0 || t.unverified === 0
+                          ? [{ kind: "spent" as const, text: `${hm(t.spent - t.unverified)} spent` }]
+                          : []),
+                        ...(t.unverified > 0
+                          ? [{ kind: "unverified" as const, text: `${hm(t.unverified)} unconfirmed` }]
+                          : []),
+                        ...(t.lost > 0 ? [{ kind: "lost" as const, text: `${hm(t.lost)} lost` }] : []),
+                        ...(t.ahead > 0 ? [{ kind: "ahead" as const, text: `${hm(t.ahead)} ahead` }] : []),
+                      ]
+                }
               />
-            </div>
-            <TapeKey
-              items={
-                t.scorePct === null
-                  ? [{ kind: "ahead" as const, text: `${hm(t.planned)} planned` }]
-                  : [
-                      ...(t.spent - t.unverified > 0 || t.unverified === 0
-                        ? [{ kind: "spent" as const, text: `${hm(t.spent - t.unverified)} spent` }]
-                        : []),
-                      ...(t.unverified > 0
-                        ? [{ kind: "unverified" as const, text: `${hm(t.unverified)} unconfirmed` }]
-                        : []),
-                      ...(t.lost > 0 ? [{ kind: "lost" as const, text: `${hm(t.lost)} lost` }] : []),
-                      ...(t.ahead > 0 ? [{ kind: "ahead" as const, text: `${hm(t.ahead)} ahead` }] : []),
-                    ]
-              }
-            />
-            {day.record ? (
-              <p className="mt-2 flex items-center gap-2 text-subhead">
-                <span aria-hidden="true" className="size-[7px] shrink-0 rotate-45 rounded-[1px] bg-label" />
-                {day.record.line}
-              </p>
-            ) : null}
-          </section>
+              {day.record ? (
+                <p className="mt-2 flex items-center gap-2 text-subhead">
+                  <span aria-hidden="true" className="size-[7px] shrink-0 rotate-45 rounded-[1px] bg-label" />
+                  {day.record.line}
+                </p>
+              ) : null}
+            </section>
+          ) : null}
 
           {day.wonBackMinutes > 0 ? (
             <p className="mt-4 text-body">

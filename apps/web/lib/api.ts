@@ -26,6 +26,8 @@ import {
   type Score,
   Source,
   type SourceSetting,
+  type TargetResponse,
+  type TargetUpdate,
   type TimelineResponse,
 } from "@michael/shared";
 import { cookies } from "next/headers";
@@ -431,7 +433,8 @@ export async function getGoalsWeek(variant?: string): Promise<GoalsView> {
   if (variant === "baseline") return sampleGoalsBaseline;
   if (variant === "sample") return sampleGoals;
   if (USE_MOCKS) return sampleWeekFromStore();
-  return goalsFromScore(await getScore());
+  const [score, targets] = await Promise.all([getScore(), getTargets().catch(() => null)]);
+  return goalsFromScore(score, targets);
 }
 
 /** The sample week, following the in-process goal list: edits, new goals and pauses show. */
@@ -588,6 +591,33 @@ export async function putPlaces(update: PlacesUpdate): Promise<WriteResult> {
     return {
       ok: false,
       message: err.success ? err.data.error.message : `PUT /v1/places failed: ${res.status}`,
+    };
+  } catch {
+    return { ok: false, message: "Michael's server can't be reached." };
+  }
+}
+
+// ---------- weekly targets (#165) ----------
+
+export async function getTargets(): Promise<TargetResponse> {
+  return get<TargetResponse>("/v1/targets/current");
+}
+
+/** Accept Michael's proposal ({ accept: true }) or set the user's own numbers. */
+export async function putTarget(weekStart: string, update: TargetUpdate): Promise<WriteResult> {
+  if (USE_MOCKS) return { ok: true };
+  try {
+    const res = await fetch(`${API_URL}/v1/targets/${weekStart}`, {
+      method: "PUT",
+      headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
+      body: JSON.stringify(update),
+      cache: "no-store",
+    });
+    if (res.ok) return { ok: true };
+    const err = ApiError.safeParse(await res.json().catch(() => null));
+    return {
+      ok: false,
+      message: err.success ? err.data.error.message : `PUT /v1/targets failed: ${res.status}`,
     };
   } catch {
     return { ok: false, message: "Michael's server can't be reached." };
