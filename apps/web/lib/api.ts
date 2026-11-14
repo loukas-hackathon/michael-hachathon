@@ -110,11 +110,6 @@ export async function sendChat(message: string): Promise<ChatResult> {
     : { ok: false, code: "internal", message: `POST /v1/chat failed: ${res.status}` };
 }
 
-/** POST /v1/recommendations/:id/undo: takes back something Michael did on the calendar. */
-export async function undoRecommendation(id: string): Promise<Recommendation> {
-  return send<Recommendation>("POST", `/v1/recommendations/${encodeURIComponent(id)}/undo`);
-}
-
 export async function getTimeline(from: string, to: string): Promise<TimelineResponse> {
   if (USE_MOCKS) return { from, to, events: mockEvents };
   const qs = new URLSearchParams({ from, to });
@@ -217,6 +212,9 @@ export async function getRecommendations(): Promise<Recommendation[]> {
 
 export type RecResult = { ok: true; rec: Recommendation } | { ok: false; status: number; message: string };
 
+// Chat always talks to the API, so a recommendation it made is not in the mock list: send those on.
+const isMockRec = (id: string) => mockRecList().some((r) => r.id === id);
+
 /** The same rules the API applies (apps/api/src/actions/calendar.ts), on the in-memory list. */
 function mockRecAction(id: string, op: "execute" | "undo" | "dismiss"): RecResult {
   const rec = mockRecList().find((r) => r.id === id);
@@ -268,19 +266,19 @@ async function recCall(method: "POST" | "PATCH", path: string, body?: unknown): 
 
 /** POST /v1/recommendations/:id/execute: Michael carries out the action on the user's own time. */
 export async function executeRecommendation(id: string): Promise<RecResult> {
-  if (USE_MOCKS) return mockRecAction(id, "execute");
+  if (USE_MOCKS && isMockRec(id)) return mockRecAction(id, "execute");
   return recCall("POST", `/v1/recommendations/${encodeURIComponent(id)}/execute`);
 }
 
 /** POST /v1/recommendations/:id/undo, allowed until the block starts. */
 export async function undoRecommendation(id: string): Promise<RecResult> {
-  if (USE_MOCKS) return mockRecAction(id, "undo");
+  if (USE_MOCKS && isMockRec(id)) return mockRecAction(id, "undo");
   return recCall("POST", `/v1/recommendations/${encodeURIComponent(id)}/undo`);
 }
 
 /** PATCH /v1/recommendations/:id { status: dismissed }: "Not now". */
 export async function dismissRecommendation(id: string): Promise<RecResult> {
-  if (USE_MOCKS) return mockRecAction(id, "dismiss");
+  if (USE_MOCKS && isMockRec(id)) return mockRecAction(id, "dismiss");
   return recCall("PATCH", `/v1/recommendations/${encodeURIComponent(id)}`, { status: "dismissed" });
 }
 
