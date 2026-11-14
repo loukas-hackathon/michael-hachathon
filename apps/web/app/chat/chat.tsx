@@ -1,8 +1,9 @@
 "use client";
 
-import type { ChatMessage } from "@michael/shared";
+import type { ChatMessage, Recommendation } from "@michael/shared";
 import { type FormEvent, useEffect, useRef, useState, useTransition } from "react";
 import { formatTime } from "@/lib/format";
+import { ActionChips } from "./action-chips";
 import { streamChat } from "./stream-chat";
 
 const STARTERS = [
@@ -21,6 +22,8 @@ export function Chat({ initial }: { initial: ChatMessage[] }) {
   const [pending, startTransition] = useTransition();
   const end = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
+  // What Michael did while answering, by reply id: shown as "Done. Undo" chips under that reply.
+  const [acted, setActed] = useState<Record<string, Recommendation[]>>({});
 
   // Keep the newest line (or the thinking bubble) in view, as in Messages.
   const tail = lines.length + (pending ? 1 : 0);
@@ -51,6 +54,8 @@ export function Chat({ initial }: { initial: ChatMessage[] }) {
       const temp = (x: Line) => x.id !== tempId && x.id !== replyId;
       if (res.ok) {
         setLines((l) => [...l.filter(temp), res.data.message, res.data.reply]);
+        const done = res.data.actions;
+        if (done.length) setActed((a) => ({ ...a, [res.data.reply.id]: done }));
       } else {
         // Nothing was stored: take the line back and put it in the box so it can be sent again.
         setLines((l) => l.filter(temp));
@@ -101,6 +106,7 @@ export function Chat({ initial }: { initial: ChatMessage[] }) {
                 >
                   {m.content}
                 </p>
+                {acted[m.id] ? <ActionChips actions={acted[m.id] ?? []} /> : null}
                 {m.role === "assistant" && m.created_at ? (
                   <span className="mt-0.5 px-1 text-caption text-label-2 tnum">
                     {formatTime(m.created_at)}

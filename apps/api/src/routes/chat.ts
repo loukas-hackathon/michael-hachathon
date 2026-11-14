@@ -9,11 +9,13 @@ import {
   type Goal,
   MICHAEL_VOICE,
   type PatternReport,
+  type Recommendation,
   type Score,
   voiceDuration,
 } from "@michael/shared";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
+import { CHAT_TOOLS, runChatTool, undoLine } from "../actions/chat-tools";
 import { env } from "../env";
 import { HttpError, jsonBody, parse } from "../http";
 import { DEFAULT_TIMEZONE } from "../patterns";
@@ -54,8 +56,24 @@ In this chat:
 Facts:
 - Use only the context below about the user's day, goals and patterns. If the data does not say, say so; never invent numbers or events.
 - For goal progress and budgets, quote the score figures exactly as given; they are the same numbers the app shows.
-- You can advise but in this chat you cannot change the calendar or anything else yet. Never claim you did something.
-- You never touch events with other people, never delete, and never send anything in the user's name.`;
+- Quote times and ids only from the context or from tool results.
+
+Acting:
+- You act only on the user's own time: you can add a block to their calendar (create_focus_block), move one of their own solo blocks (move_calendar_block) and take back something you did (undo_action). On everything else you advise.
+- Act when the user asks you to, or clearly agrees to a change you proposed. If the time or the block is unclear, ask first instead of guessing.
+- You never touch events with other people, never delete the user's events, and never send anything in the user's name. If a tool refuses, say why in one line and offer advice instead.
+- Never claim you did something unless a tool result says it is done.
+- After acting, say in one or two short sentences what you did, with times, and end with the undo line exactly as the tool gave it, e.g. "Undo until 15:00."
+- Times you pass to tools are ISO 8601 with the user's UTC offset, as in "Now (ISO)" below.`;
+
+/** "2026-11-14T19:05:00+02:00": the instant as the user's wall clock with its UTC offset. */
+function isoIn(zone: Zone, ms: number): string {
+  const offset = zone.offsetAt(ms);
+  const wall = new Date(Math.floor(ms / 1000) * 1000 + offset).toISOString().slice(0, 19);
+  const m = Math.abs(offset) / 60_000;
+  const pad = (n: number) => String(Math.floor(n)).padStart(2, "0");
+  return `${wall}${offset < 0 ? "-" : "+"}${pad(m / 60)}:${pad(m % 60)}`;
+}
 
 const minutes = (ms: number) => Math.round(ms / 60_000);
 // Durations the voice sheet way, so the model copies the same format: "47 minutes", "2h 15".
@@ -71,6 +89,8 @@ export interface ChatContextInput {
   week: PatternReport | null;
   /** The week's score as GET /v1/score gives it; null when it could not be built. */
   score?: Score | null;
+  /** Things Michael did that can still be undone (status done, undo deadline ahead). */
+  undoable?: Recommendation[];
 }
 
 const pct = (p: number | null) => (p === null ? "no score yet" : `${Math.round(p)}%`);
@@ -130,7 +150,9 @@ export function buildChatContext(input: ChatContextInput): string {
     day: "numeric",
     month: "long",
   }).format(now);
-  const parts: string[] = [`Now: ${weekday}, ${zone.clock(now)} (${zone.name}).`];
+  const parts: string[] = [
+    `Now: ${weekday}, ${zone.clock(now)} (${zone.name}). Now (ISO): ${isoIn(zone, now)}.`,
+  ];
 
   const active = input.goals.filter((g) => g.active);
   parts.push(
@@ -139,7 +161,7 @@ export function buildChatContext(input: ChatContextInput): string {
           .map((g) => {
             const budget = g.weekly_budget_minutes ? `, ${hm(g.weekly_budget_minutes)} a week planned` : "";
             const why = g.description ? ` (${g.description})` : "";
-            return `- ${g.title} [${g.category}${budget}]${why}`;
+            return `- ${g.title} [${g.category}${budget}]${why} {goal_id ${g.id}}`;
           })
           .join("\n")}`
       : "Goals: none set yet.",
@@ -160,7 +182,15 @@ export function buildChatContext(input: ChatContextInput): string {
       const end = e.end_at ? Date.parse(e.end_at) : null;
       const when = end ? `${zone.clock(start)} to ${zone.clock(end)}` : zone.clock(start);
       const planned = start > now ? " (planned)" : "";
-      return `- ${when} ${e.type.replace("_", " ")}: ${e.title}${planned}`;
+      // Ids only where Michael may act: the user's own blocks that have not started.
+      const others = e.data.with_others === true || Number(e.data.attendees ?? 0) >= 2;
+      const tag =
+        e.type !== "calendar_event" || start <= now
+          ? ""
+          : others
+            ? " [with other people, advice only]"
+            : ` {event_id ${e.id}}`;
+      return `- ${when} ${e.type.replace("_", " ")}: ${e.title}${planned}${tag}`;
     });
   parts.push(
     todayLines.length
@@ -201,6 +231,15 @@ export function buildChatContext(input: ChatContextInput): string {
   if (input.score) parts.push(scoreLines(input.score));
   if (weekLines.length) parts.push(`Last 7 days:\n${weekLines.join("\n")}`);
 
+  const undoable = (input.undoable ?? []).flatMap((r) =>
+    r.action?.undo_until && Date.parse(r.action.undo_until) > now
+      ? [
+          `- ${r.title}, undo until ${zone.clock(Date.parse(r.action.undo_until))} {recommendation_id ${r.id}}`,
+        ]
+      : [],
+  );
+  if (undoable.length) parts.push(`Things I did that can still be undone:\n${undoable.join("\n")}`);
+
   const headlines = (label: string, r: PatternReport | null) =>
     r?.headlines.length ? [`${label}:\n${r.headlines.map((h) => `- ${h}`).join("\n")}`] : [];
   parts.push(
@@ -219,7 +258,7 @@ async function contextForNow(): Promise<string> {
   const nowIso = new Date(now).toISOString();
   // Pattern reports are best effort: a detector failing must not take the chat down.
   const report = (from: string) => patternReportFor({ from, to: nowIso }).catch(() => null);
-  const [goals, events, today, week, score] = await Promise.all([
+  const [goals, events, today, week, score, undoable] = await Promise.all([
     store.listGoals(),
     store.listEvents({
       from: new Date(now - WEEK_MS).toISOString(),
@@ -232,8 +271,9 @@ async function contextForNow(): Promise<string> {
       console.error("chat: score failed", err);
       return null;
     }),
+    store.listRecommendations({ status: "done" }).catch(() => []),
   ]);
-  return buildChatContext({ now, goals, events, today, week, score });
+  return buildChatContext({ now, goals, events, today, week, score, undoable });
 }
 
 let client: Anthropic | null = null;
@@ -251,11 +291,13 @@ function anthropic(): Anthropic {
 }
 
 const REFUSAL = "I can't help with that one. Ask me about your day or your goals.";
+// Model calls per answer: room to look a block up, act, and then say what was done.
+const MAX_ROUNDS = 5;
 
-function request(messages: Anthropic.MessageParam[], context: string) {
+function request(messages: Anthropic.MessageParam[], context: string, lastRound: boolean) {
   return {
     model: env.ANTHROPIC_MODEL,
-    max_tokens: 2000,
+    max_tokens: 4000,
     // Chat is latency sensitive and the answers are short.
     output_config: { effort: "low" as const },
     system: [
@@ -263,6 +305,9 @@ function request(messages: Anthropic.MessageParam[], context: string) {
       { type: "text" as const, text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" as const } },
       { type: "text" as const, text: `What I know about the user right now:\n\n${context}` },
     ],
+    tools: CHAT_TOOLS,
+    // The last round must answer in words, not call another tool.
+    tool_choice: lastRound ? { type: "none" as const } : { type: "auto" as const },
     messages,
   };
 }
@@ -273,44 +318,116 @@ function upstream(err: unknown): unknown {
     : err;
 }
 
-/** The answer text of a finished message; the refusal line when Claude declined. */
-function answerOf(response: Anthropic.Message): string {
-  if (response.stop_reason === "refusal") return REFUSAL;
-  const text = response.content
+const textOf = (response: Anthropic.Message) =>
+  response.content
     .flatMap((b) => (b.type === "text" ? [b.text] : []))
     .join("")
     .trim();
-  if (!text) throw new HttpError("upstream_error", "Claude returned an empty answer");
-  return text;
+
+export interface MichaelAnswer {
+  answer: string;
+  /** Recommendations done or undone while answering, in order. */
+  actions: Recommendation[];
 }
 
-async function askMichael(messages: Anthropic.MessageParam[], context: string): Promise<string> {
-  let response: Anthropic.Message;
-  try {
-    response = await anthropic().messages.create(request(messages, context));
-  } catch (err) {
-    throw upstream(err);
-  }
-  return answerOf(response);
+interface Hooks {
+  /** Streams text as it is written; without it the model is called without streaming. */
+  onText?: (text: string) => Promise<void>;
+  onAction?: (action: Recommendation) => Promise<void>;
 }
 
-/** Same as askMichael, but hands each piece of text to `onText` as it arrives. */
-async function streamMichael(
+/** One model call: streamed piece by piece when `onText` is given. */
+async function callModel(
   messages: Anthropic.MessageParam[],
   context: string,
-  onText: (text: string) => Promise<void>,
-): Promise<string> {
+  lastRound: boolean,
+  onText: Hooks["onText"],
+): Promise<Anthropic.Message> {
   try {
-    const stream = anthropic().messages.stream(request(messages, context));
+    if (!onText) return await anthropic().messages.create(request(messages, context, lastRound));
+    const stream = anthropic().messages.stream(request(messages, context, lastRound));
     for await (const event of stream) {
       if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
         await onText(event.delta.text);
       }
     }
-    return answerOf(await stream.finalMessage());
+    return await stream.finalMessage();
   } catch (err) {
     throw upstream(err);
   }
+}
+
+/**
+ * Michael's answer, acting through the chat tools when asked. Tools run here, server side; the
+ * caller sees text (and, when streaming, each action as it lands). The answer always ends with the
+ * undo deadline of what was done, even if the model forgot to say it.
+ */
+export async function askMichael(
+  turns: Anthropic.MessageParam[],
+  context: string,
+  hooks: Hooks = {},
+): Promise<MichaelAnswer> {
+  const messages = [...turns];
+  const texts: string[] = [];
+  const actions: Recommendation[] = [];
+  let wrote = false;
+  // Text from a later round starts a new paragraph in the stream too.
+  const onText = hooks.onText
+    ? async (text: string) => {
+        if (!wrote && texts.length) await hooks.onText?.("\n\n");
+        wrote = true;
+        await hooks.onText?.(text);
+      }
+    : undefined;
+
+  for (let round = 0; round < MAX_ROUNDS; round++) {
+    wrote = false;
+    const response = await callModel(messages, context, round === MAX_ROUNDS - 1, onText);
+    if (response.stop_reason === "refusal") {
+      texts.push(REFUSAL);
+      break;
+    }
+    const text = textOf(response);
+    if (text) texts.push(text);
+    const calls = response.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
+    if (response.stop_reason !== "tool_use" || calls.length === 0) break;
+
+    // Hand the whole turn back unchanged (thinking blocks included), then every result in one turn.
+    messages.push({ role: "assistant", content: response.content });
+    const results: Anthropic.ToolResultBlockParam[] = [];
+    for (const call of calls) {
+      const outcome = await runChatTool(call.name, call.input);
+      if (outcome.action) {
+        actions.push(outcome.action);
+        await hooks.onAction?.(outcome.action);
+      }
+      results.push({
+        type: "tool_result",
+        tool_use_id: call.id,
+        content: outcome.content,
+        ...(outcome.isError ? { is_error: true } : {}),
+      });
+    }
+    messages.push({ role: "user", content: results });
+  }
+
+  let answer = texts.join("\n\n").trim();
+  const done = actions.filter((a) => a.status === "done");
+  const missing = done.flatMap((a) => {
+    const line = undoLine(a);
+    return line && !answer.includes(line) ? [`${line}.`] : [];
+  });
+  if (!answer && done.length) answer = `Done: ${done.map((a) => a.title).join("; ")}.`;
+  if (missing.length) {
+    const tail = [...new Set(missing)].join(" ");
+    await hooks.onText?.(answer ? ` ${tail}` : tail);
+    answer = answer ? `${answer} ${tail}` : tail;
+  }
+  if (!answer) {
+    if (actions.length) answer = `Undone: ${actions.map((a) => a.title).join("; ")}.`;
+    else throw new HttpError("upstream_error", "Claude returned an empty answer");
+  }
+  return { answer, actions };
 }
 
 /** Everything both POST routes need before the model is called. */
@@ -323,10 +440,10 @@ async function prepare(body: unknown) {
   return { message, turns, context };
 }
 
-async function save(message: string, answer: string): Promise<ChatResponse> {
+async function save(message: string, { answer, actions }: MichaelAnswer): Promise<ChatResponse> {
   const stored = await store.addChatMessage("user", message);
   const reply = await store.addChatMessage("assistant", answer);
-  return { message: stored, reply };
+  return { message: stored, reply, actions };
 }
 
 /** Stored lines as model turns. The first turn must be the user's, so a leading answer is dropped. */
@@ -343,22 +460,25 @@ export const chat = new Hono()
     const body: ChatHistory = { messages: await store.listChatMessages(limit) };
     return c.json(body);
   })
-  // POST /v1/chat { message }  Michael answers from today's timeline, goals and patterns
+  // POST /v1/chat { message }  Michael answers from today's timeline, goals and patterns, and acts
+  // on the user's own calendar when asked (ChatResponse.actions)
   .post("/chat", async (c) => {
     const { message, turns, context } = await prepare(await jsonBody(c));
     const body = await save(message, await askMichael(turns, context));
     return c.json(body, 201);
   })
   // POST /v1/chat/stream { message }  the same answer as server-sent events: `delta` { text } as it
-  // is written, then `done` ChatResponse, or `error` ApiError if the model fails mid-way.
+  // is written, `action` Recommendation for each thing done or undone, then `done` ChatResponse, or
+  // `error` ApiError if the model fails mid-way.
   .post("/chat/stream", async (c) => {
     // Validation and "not set up" still fail as plain JSON errors, before the stream opens.
     const { message, turns, context } = await prepare(await jsonBody(c));
     return streamSSE(c, async (sse) => {
       try {
-        const answer = await streamMichael(turns, context, (text) =>
-          sse.writeSSE({ event: "delta", data: JSON.stringify({ text }) }),
-        );
+        const answer = await askMichael(turns, context, {
+          onText: (text) => sse.writeSSE({ event: "delta", data: JSON.stringify({ text }) }),
+          onAction: (action) => sse.writeSSE({ event: "action", data: JSON.stringify(action) }),
+        });
         const body = await save(message, answer);
         await sse.writeSSE({ event: "done", data: JSON.stringify(body) });
       } catch (err) {

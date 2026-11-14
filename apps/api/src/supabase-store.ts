@@ -78,6 +78,7 @@ const toRecommendation = (r: Record<string, unknown>): Recommendation => ({
   status: r.status as RecommendationStatus,
   executed_at: iso(r.executed_at as string | null),
   undone_at: iso(r.undone_at as string | null),
+  source: (r.source as Recommendation["source"]) ?? "analysis",
   created_at: iso(r.created_at as string) as string,
   updated_at: iso(r.updated_at as string) as string,
 });
@@ -372,6 +373,25 @@ export class SupabaseStore implements Store {
         .maybeSingle(),
     );
     return row ? toRecommendation(row) : null;
+  }
+
+  async createRecommendation(i: NewRecommendation) {
+    const row = check(
+      await this.db
+        .from("recommendations")
+        .insert({
+          user_id: currentUserId(),
+          analysis_run_id: i.analysis_run_id ?? null,
+          goal_id: i.goal_id,
+          title: i.title,
+          rationale: i.rationale,
+          action: i.action,
+          source: i.source ?? "analysis",
+        })
+        .select("*")
+        .single(),
+    );
+    return toRecommendation(row);
   }
 
   async getRecommendationExecution(id: string) {

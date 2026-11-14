@@ -207,6 +207,11 @@ export const RecommendationAction = z.object({
 });
 export type RecommendationAction = z.infer<typeof RecommendationAction>;
 
+// Where a recommendation came from: the analysis run, or the user asking in chat (or by voice), in
+// which case Michael carried it out straight away.
+export const RecommendationSource = z.enum(["analysis", "chat"]);
+export type RecommendationSource = z.infer<typeof RecommendationSource>;
+
 export const Recommendation = z.object({
   id: z.uuid(),
   analysis_run_id: z.uuid().nullable(),
@@ -217,6 +222,8 @@ export const Recommendation = z.object({
   status: RecommendationStatus,
   executed_at: IsoDateTime.nullable(),
   undone_at: IsoDateTime.nullable(),
+  // Absent on older rows: read as "analysis".
+  source: RecommendationSource.optional(),
   created_at: IsoDateTime,
   updated_at: IsoDateTime,
 });
@@ -1207,6 +1214,9 @@ export const ChatResponse = z.object({
   // The user's line as stored, then Michael's answer.
   message: ChatMessage,
   reply: ChatMessage,
+  // What Michael did on the user's own calendar while answering (source "chat"): status "done"
+  // with `action.undo_until` as the undo deadline, or "undone" when the user asked to take one back.
+  actions: z.array(Recommendation).default([]),
 });
 export type ChatResponse = z.infer<typeof ChatResponse>;
 

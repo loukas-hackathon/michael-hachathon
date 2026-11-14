@@ -1,7 +1,7 @@
 "use server";
 
 import type { ChatResponse } from "@michael/shared";
-import { sendChat } from "@/lib/api";
+import { sendChat, undoRecommendation } from "@/lib/api";
 import { copyFor } from "./copy";
 
 export type SendResult = { ok: true; data: ChatResponse } | { ok: false; error: string };
@@ -21,5 +21,16 @@ export async function sendMessage(message: string): Promise<SendResult> {
     // bearer() throws when signed out.
     console.error("chat:", err);
     return { ok: false, error: copyFor("unauthorized") };
+  }
+}
+
+/** Takes back something Michael did from chat (the Undo on its chip). */
+export async function undoAction(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await undoRecommendation(id);
+    return { ok: true };
+  } catch (err) {
+    console.error("chat undo:", err);
+    return { ok: false, error: "Too late to undo, or it is already undone." };
   }
 }

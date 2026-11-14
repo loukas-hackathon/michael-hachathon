@@ -128,6 +128,7 @@ type Recommendation = {
   status: RecommendationStatus;
   executed_at: string | null;
   undone_at: string | null;
+  source?: "analysis" | "chat"; // "chat": asked for in chat or by voice and carried out at once
   created_at: string;
   updated_at: string;
 };
@@ -756,11 +757,11 @@ travel site" or "an uncategorised site". Structured `data` carries the host for 
 
 ### Chat
 
-| Method | Path                | Body                                  | Response                                                                                                                                                                                                        | Status |
-| ------ | ------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| GET    | `/v1/chat?limit=50` |                                       | `200 { messages: ChatMessage[] }` (oldest first, limit 1..100)                                                                                                                                                  | live   |
-| POST   | `/v1/chat`          | `{ message: string }` (1..2000 chars) | `201 { message: ChatMessage, reply: ChatMessage }`; `503 unavailable` without `ANTHROPIC_API_KEY`; `502 upstream_error` if Claude fails                                                                         | live   |
-| POST   | `/v1/chat/stream`   | `{ message: string }` (1..2000 chars) | `200 text/event-stream`: `event: delta` `{ text }` per piece, then `event: done` `ChatResponse`, or `event: error` `ApiError`. Validation and `503 unavailable` come back as plain JSON before the stream opens | live   |
+| Method | Path                | Body                                  | Response                                                                                                                                                                                                                                                                   | Status |
+| ------ | ------------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| GET    | `/v1/chat?limit=50` |                                       | `200 { messages: ChatMessage[] }` (oldest first, limit 1..100)                                                                                                                                                                                                             | live   |
+| POST   | `/v1/chat`          | `{ message: string }` (1..2000 chars) | `201 ChatResponse` `{ message, reply, actions: Recommendation[] }`; `503 unavailable` without `ANTHROPIC_API_KEY`; `502 upstream_error` if Claude fails                                                                                                                    | live   |
+| POST   | `/v1/chat/stream`   | `{ message: string }` (1..2000 chars) | `200 text/event-stream`: `event: delta` `{ text }` per piece, `event: action` `Recommendation` per thing done or undone, then `event: done` `ChatResponse`, or `event: error` `ApiError`. Validation and `503 unavailable` come back as plain JSON before the stream opens | live   |
 
 `/v1/chat` stays for callers that want the whole answer (MCP, voice); `/v1/chat/stream` gives the
 first words fast and stores the same pair when it finishes.
@@ -773,8 +774,20 @@ left; today's score and biggest losses inside goal blocks),
 the active goals with weekly budgets, today's calendar, workout, sleep, meal and focus entries,
 today's screen time totals, 7 day totals per type and the pattern headlines for today and the last
 7 days, plus the last 20 lines of chat. Raw app, web and AI events are never sent, only totals, and
-conversations and memories stay out. Nothing is stored when the call fails. The chat only advises;
-it never changes the calendar.
+conversations and memories stay out. Nothing is stored when the call fails.
+
+**Chat acts on the user's own time (#46).** Claude gets four tools, run server side inside the
+request (no HTTP self calls): `find_calendar_blocks { from, to }` (ids and whether a block may be
+moved), `create_focus_block { title, start_at, end_at, goal_id? }`, `move_calendar_block { event_id,
+start_at, end_at?, new_title? }` and `undo_action { recommendation_id }`. Each action becomes a
+recommendation with `source: "chat"` that is carried out at once by the same code as
+`POST /v1/recommendations/:id/execute` (and `/undo`), so every guard rail holds: events with other
+people and anything already started are refused (the model hears the 409 and advises instead;
+the refused recommendation is stored as `dismissed`), Michael never deletes the user's events, and
+undo works until the block starts. `ChatResponse.actions` lists what was done (`status: "done"`,
+deadline in `action.undo_until`) or undone in this answer, and the reply always ends with
+"Undo until HH:MM." for each thing done. The context gives Claude ids only for the user's own blocks
+that have not started, goal ids, and the things that can still be undone.
 
 ### Moments (Morning and Evening)
 

@@ -82,6 +82,11 @@ export interface RecommendationActionUpdate {
   execution?: unknown;
 }
 
+export type NewRecommendation = Pick<Recommendation, "goal_id" | "title" | "rationale" | "action"> & {
+  analysis_run_id?: string | null;
+  source?: Recommendation["source"];
+};
+
 export type EventPatch = Partial<Pick<Event, "start_at" | "end_at" | "title" | "data">>;
 
 // JSON with sorted keys, so jsonb's own key order never reads as a change.
@@ -125,6 +130,8 @@ export interface Store extends PrivacyBackend {
   listRecommendations(filter?: { status?: RecommendationStatus }): Promise<Recommendation[]>;
   updateRecommendationStatus(id: string, status: RecommendationStatus): Promise<Recommendation | null>;
   getRecommendation(id: string): Promise<Recommendation | null>;
+  /** A new recommendation of the current user; status starts at proposed. */
+  createRecommendation(input: NewRecommendation): Promise<Recommendation>;
   /** The execution record saved by `recordRecommendationAction`, or null. */
   getRecommendationExecution(id: string): Promise<unknown>;
   recordRecommendationAction(id: string, update: RecommendationActionUpdate): Promise<Recommendation | null>;
@@ -363,6 +370,25 @@ export class MemoryStore implements Store {
 
   async getRecommendation(id: string) {
     return this.recommendations.find((r) => r.id === id) ?? null;
+  }
+
+  async createRecommendation(i: NewRecommendation) {
+    const rec: Recommendation = {
+      id: crypto.randomUUID(),
+      analysis_run_id: i.analysis_run_id ?? null,
+      goal_id: i.goal_id,
+      title: i.title,
+      rationale: i.rationale,
+      action: i.action,
+      status: "proposed",
+      executed_at: null,
+      undone_at: null,
+      source: i.source ?? "analysis",
+      created_at: now(),
+      updated_at: now(),
+    };
+    this.recommendations.push(rec);
+    return rec;
   }
 
   async getRecommendationExecution(id: string) {
