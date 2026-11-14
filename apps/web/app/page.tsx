@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen";
 import { Tape, TapeKey } from "@/components/tape";
+import { BriefCard } from "@/components/today/brief-card";
 import { MichaelCard } from "@/components/today/michael-card";
 import { MomentCard } from "@/components/today/moment-card";
 import { RecommendationsPanel } from "@/components/today/recommendations";
@@ -112,6 +113,8 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
           ) : null}
         </>
       )}
+
+      <BriefCard sample={day.sample} />
 
       {day.sample ? (
         <p className="mt-8 text-footnote text-label-2">
