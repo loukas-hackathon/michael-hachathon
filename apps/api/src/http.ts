@@ -7,6 +7,7 @@ const STATUS: Record<ErrorCode, ContentfulStatusCode> = {
   bad_request: 400,
   unauthorized: 401,
   not_found: 404,
+  forbidden: 403,
   conflict: 409,
   upstream_error: 502,
   not_implemented: 501,

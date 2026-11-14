@@ -66,10 +66,10 @@ pnpm env:copy` inside it, use other ports (`PORT=8788 pnpm dev:api`), and merge 
 
 ## Product decisions that affect code
 
-- **Autonomy:** Michael may act on the user's OWN calendar and Mac: move blocks, create focus
-  blocks, block distracting Mac apps, draft follow-ups. He asks first for anything involving other
-  people. He never deletes and never sends in the user's name. Every action can be undone until
-  the event starts.
+- **Autonomy:** "acts on your time, advises on your life". Michael may act on the user's OWN
+  calendar blocks and Mac: move blocks, create focus blocks, block distracting Mac apps, draft
+  follow-ups. He never touches events with other people, never deletes, never sends in the user's
+  name. Every action can be undone until the event starts.
 - **Goals** have a weekly time budget (for example "70.3 training: 9 hours this week").
 - **Headline score:** share of planned goal time actually spent on goals; "time won back" beneath.
 - **Two moments:** Morning (when the watch detects waking) and Evening (one hour before usual bedtime).

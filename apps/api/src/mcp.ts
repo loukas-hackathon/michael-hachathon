@@ -70,8 +70,8 @@ export function createMcpServer(): McpServer {
       inputSchema: EventInput.shape,
     },
     async (input) => {
-      const { inserted, duplicates } = await store.insertEvents([EventInput.parse(input)]);
-      return json({ inserted: inserted.length, duplicates, events: inserted });
+      const { inserted, duplicates, ignored } = await store.insertEvents([EventInput.parse(input)]);
+      return json({ inserted: inserted.length, duplicates, ignored, events: inserted });
     },
   );
 

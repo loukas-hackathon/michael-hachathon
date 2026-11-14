@@ -33,13 +33,13 @@ export const events = new Hono()
   })
   .post("/events", async (c) => {
     const input = parse(EventInput, await jsonBody(c));
-    const { inserted, duplicates } = await store.insertEvents([input]);
-    const body: IngestResponse = { inserted: inserted.length, duplicates, events: inserted };
+    const { inserted, duplicates, ignored } = await store.insertEvents([input]);
+    const body: IngestResponse = { inserted: inserted.length, duplicates, ignored, events: inserted };
     return c.json(body, 201);
   })
   .post("/events/batch", async (c) => {
     const input = parse(EventBatchInput, await jsonBody(c));
-    const { inserted, duplicates } = await store.insertEvents(input.events);
-    const body: IngestResponse = { inserted: inserted.length, duplicates, events: inserted };
+    const { inserted, duplicates, ignored } = await store.insertEvents(input.events);
+    const body: IngestResponse = { inserted: inserted.length, duplicates, ignored, events: inserted };
     return c.json(body, 201);
   });

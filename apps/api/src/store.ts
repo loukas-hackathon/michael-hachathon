@@ -26,6 +26,8 @@ export interface TimelineFilter {
 export interface InsertResult {
   inserted: Event[];
   duplicates: number;
+  // Dropped by privacy settings (source off / off the record). Enforced in its own issue.
+  ignored: number;
 }
 
 // Storage boundary. Routes and MCP tools depend only on this interface.
@@ -91,7 +93,7 @@ export class MemoryStore implements Store {
       this.events.push(event);
       inserted.push(event);
     }
-    return { inserted, duplicates };
+    return { inserted, duplicates, ignored: 0 };
   }
 
   async listGoals() {
@@ -109,6 +111,7 @@ export class MemoryStore implements Store {
       title: i.title,
       description: i.description ?? null,
       target: i.target ?? null,
+      weekly_budget_minutes: i.weekly_budget_minutes ?? null,
       active: i.active,
       created_at: now(),
       updated_at: now(),

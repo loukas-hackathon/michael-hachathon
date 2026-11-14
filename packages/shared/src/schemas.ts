@@ -38,14 +38,18 @@ export type EventType = z.infer<typeof EventType>;
 export const GoalCategory = z.enum(["work", "gym", "rest", "food"]);
 export type GoalCategory = z.infer<typeof GoalCategory>;
 
-export const RecommendationStatus = z.enum(["proposed", "accepted", "dismissed", "done"]);
+// proposed -> accepted -> done (action executed) -> undone (reverted before the event started)
+// proposed -> dismissed
+export const RecommendationStatus = z.enum(["proposed", "accepted", "dismissed", "done", "undone"]);
 export type RecommendationStatus = z.infer<typeof RecommendationStatus>;
 
-// Actions are modelled now but NOT executed in the MVP (advise-only).
+// Michael acts on the user's own time: own calendar blocks and Mac only. He never touches events
+// with other people, never deletes, and never sends in the user's name. Undo until the event starts.
 export const ActionKind = z.enum([
   "move_calendar_block",
-  "create_calendar_block",
-  "draft_message",
+  "create_focus_block",
+  "block_mac_app",
+  "draft_follow_up",
   "reminder",
 ]);
 export type ActionKind = z.infer<typeof ActionKind>;
@@ -53,7 +57,8 @@ export type ActionKind = z.infer<typeof ActionKind>;
 export const AnalysisStatus = z.enum(["queued", "running", "succeeded", "failed"]);
 export type AnalysisStatus = z.infer<typeof AnalysisStatus>;
 
-export const AnalysisTrigger = z.enum(["manual", "scheduled", "mcp"]);
+// morning = watch detects waking; evening = one hour before usual bedtime.
+export const AnalysisTrigger = z.enum(["manual", "scheduled", "mcp", "morning", "evening"]);
 export type AnalysisTrigger = z.infer<typeof AnalysisTrigger>;
 
 export const IntegrationProvider = z.enum(["google_calendar", "whoop"]);
@@ -112,6 +117,8 @@ export type TimelineResponse = z.infer<typeof TimelineResponse>;
 export const IngestResponse = z.object({
   inserted: z.number().int().nonnegative(),
   duplicates: z.number().int().nonnegative(),
+  // Dropped because the source is switched off or the user is off the record.
+  ignored: z.number().int().nonnegative(),
   events: z.array(Event),
 });
 export type IngestResponse = z.infer<typeof IngestResponse>;
@@ -125,6 +132,8 @@ export const Goal = z.object({
   description: z.string().nullable(),
   // Free-form measurable target, e.g. { "sleep_hours": 8 } or { "gym_sessions_per_week": 4 }.
   target: z.record(z.string(), z.unknown()).nullable(),
+  // Weekly time budget, e.g. "70.3 training: 9 hours this week" = 540.
+  weekly_budget_minutes: z.number().int().nonnegative().nullable(),
   active: z.boolean(),
   created_at: IsoDateTime,
   updated_at: IsoDateTime,
@@ -136,6 +145,7 @@ export const GoalCreate = z.object({
   title: z.string().min(1),
   description: z.string().nullish(),
   target: z.record(z.string(), z.unknown()).nullish(),
+  weekly_budget_minutes: z.number().int().nonnegative().nullish(),
   active: z.boolean().default(true),
 });
 export type GoalCreate = z.input<typeof GoalCreate>;
@@ -148,6 +158,11 @@ export type GoalUpdate = z.input<typeof GoalUpdate>;
 export const RecommendationAction = z.object({
   kind: ActionKind,
   payload: z.record(z.string(), z.unknown()),
+  // True when other people are affected (e.g. a meeting with attendees). Such actions are never
+  // executed; Michael only advises on them.
+  involves_others: z.boolean(),
+  // Undo is allowed until this time (normally the affected event's start). Null = no deadline.
+  undo_until: IsoDateTime.nullable(),
 });
 export type RecommendationAction = z.infer<typeof RecommendationAction>;
 
@@ -159,6 +174,8 @@ export const Recommendation = z.object({
   rationale: z.string(),
   action: RecommendationAction.nullable(),
   status: RecommendationStatus,
+  executed_at: IsoDateTime.nullable(),
+  undone_at: IsoDateTime.nullable(),
   created_at: IsoDateTime,
   updated_at: IsoDateTime,
 });
@@ -208,12 +225,112 @@ export const Integration = z.object({
 });
 export type Integration = z.infer<typeof Integration>;
 
+// ---------- privacy: sources and off the record ----------
+
+export const SourceSetting = z.object({
+  source: Source,
+  enabled: z.boolean(),
+  updated_at: IsoDateTime,
+});
+export type SourceSetting = z.infer<typeof SourceSetting>;
+
+export const SourceSettingUpdate = z.object({ enabled: z.boolean() });
+export type SourceSettingUpdate = z.infer<typeof SourceSettingUpdate>;
+
+// One tap stops all collection.
+export const PrivacyState = z.object({
+  off_the_record: z.boolean(),
+  since: IsoDateTime.nullable(),
+  sources: z.array(SourceSetting),
+});
+export type PrivacyState = z.infer<typeof PrivacyState>;
+
+export const OffTheRecordUpdate = z.object({ off_the_record: z.boolean() });
+export type OffTheRecordUpdate = z.infer<typeof OffTheRecordUpdate>;
+
+// ---------- Michael for agents ----------
+
+export const AgentScope = z.enum(["timeline", "goals", "recommendations", "score", "write_events"]);
+export type AgentScope = z.infer<typeof AgentScope>;
+
+export const AgentStatus = z.enum(["pending", "approved", "revoked"]);
+export type AgentStatus = z.infer<typeof AgentStatus>;
+
+export const AgentClient = z.object({
+  id: z.uuid(),
+  name: z.string().min(1),
+  status: AgentStatus,
+  scopes: z.array(AgentScope),
+  created_at: IsoDateTime,
+  last_seen_at: IsoDateTime.nullable(),
+});
+export type AgentClient = z.infer<typeof AgentClient>;
+
+export const AgentClientUpdate = z.object({
+  status: AgentStatus.optional(),
+  scopes: z.array(AgentScope).optional(),
+});
+export type AgentClientUpdate = z.infer<typeof AgentClientUpdate>;
+
+// Every query is logged and visible: "who asked about me today".
+export const AgentQuery = z.object({
+  id: z.uuid(),
+  agent_id: z.uuid(),
+  tool: z.string(),
+  summary: z.string(),
+  allowed: z.boolean(),
+  created_at: IsoDateTime,
+});
+export type AgentQuery = z.infer<typeof AgentQuery>;
+
+// ---------- nudges ----------
+
+export const NudgeChannel = z.enum(["watch", "push", "telegram"]);
+export type NudgeChannel = z.infer<typeof NudgeChannel>;
+
+export const NudgeStatus = z.enum(["queued", "sent", "failed", "suppressed"]);
+export type NudgeStatus = z.infer<typeof NudgeStatus>;
+
+// At most 5 per day, under 15 words, never during quiet hours.
+export const Nudge = z.object({
+  id: z.uuid(),
+  recommendation_id: z.uuid().nullable(),
+  channel: NudgeChannel,
+  text: z.string().min(1),
+  status: NudgeStatus,
+  created_at: IsoDateTime,
+  sent_at: IsoDateTime.nullable(),
+});
+export type Nudge = z.infer<typeof Nudge>;
+
+// ---------- score ----------
+
+export const GoalScore = z.object({
+  goal_id: z.uuid(),
+  budget_minutes: z.number().int().nonnegative(),
+  planned_minutes: z.number().int().nonnegative(),
+  spent_minutes: z.number().int().nonnegative(),
+});
+export type GoalScore = z.infer<typeof GoalScore>;
+
+// Headline: share of planned goal time actually spent on goals; "time won back" beneath it.
+export const WeeklyScore = z.object({
+  week_start: IsoDateTime,
+  planned_minutes: z.number().int().nonnegative(),
+  spent_minutes: z.number().int().nonnegative(),
+  score_pct: z.number().min(0).max(100),
+  time_won_back_minutes: z.number().int().nonnegative(),
+  goals: z.array(GoalScore),
+});
+export type WeeklyScore = z.infer<typeof WeeklyScore>;
+
 // ---------- errors ----------
 
 export const ErrorCode = z.enum([
   "bad_request",
   "unauthorized",
   "not_found",
+  "forbidden",
   "conflict",
   "upstream_error",
   "not_implemented",
