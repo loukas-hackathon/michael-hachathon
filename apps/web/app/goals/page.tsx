@@ -155,6 +155,10 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
             {groups.map(({ c, items, more }) => {
               const spent = items.reduce((n, r) => n + r.goal.spentMinutes, 0);
               const budget = items.reduce((n, r) => n + r.goal.budgetMinutes, 0);
+              // The lead goal is already answered above: no second row for it. Only when it is the
+              // area's one goal does a quiet line keep the area from looking empty.
+              const rows = items.filter((r) => r.goal.id !== top?.goal.id);
+              const leadOnly = rows.length === 0 && more.length === 0 && top != null;
               return (
                 <section key={c} className="mt-6 xl:mt-0 xl:mb-6">
                   <div className="mb-2 flex items-baseline justify-between gap-3">
@@ -166,7 +170,13 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
                     ) : null}
                   </div>
                   <ul className="overflow-hidden rounded-group bg-fill">
-                    {items.map((r, i) => (
+                    {leadOnly && top ? (
+                      <li className="flex min-h-11 items-center justify-between gap-3 px-4 py-2.5">
+                        <span className="text-body text-label-2">{top.goal.title}</span>
+                        <span className="text-footnote text-label-2">Above</span>
+                      </li>
+                    ) : null}
+                    {rows.map((r, i) => (
                       <li key={r.goal.id}>
                         <GoalRow
                           status={r}
@@ -184,7 +194,7 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
                       <li key={x.id}>
                         <ExtraRow
                           goal={x}
-                          first={items.length === 0 && i === 0}
+                          first={rows.length === 0 && !leadOnly && i === 0}
                           draft={drafts.get(x.id)}
                           personalReady={personalReady}
                         />
