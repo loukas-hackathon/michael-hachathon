@@ -1,8 +1,10 @@
+import { redirect } from "next/navigation";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen";
 import { Tape, TapeKey } from "@/components/tape";
 import { MichaelCard } from "@/components/today/michael-card";
-import { getToday } from "@/lib/api";
+import { MomentCard } from "@/components/today/moment-card";
+import { getToday, needsOnboarding } from "@/lib/api";
 import { type DayView, nowIndex, tape, totals } from "@/lib/day";
 import { formatDay, formatTime, hm, minutesPhrase } from "@/lib/format";
 
@@ -10,6 +12,7 @@ const TITLE: Record<DayView["moment"], string> = { morning: "Morning", today: "T
 
 export default async function TodayPage({ searchParams }: { searchParams: Promise<{ demo?: string }> }) {
   const { demo } = await searchParams;
+  if (await needsOnboarding()) redirect("/onboarding");
   const day = await getToday(demo);
   const ticks = tape(day);
   const t = totals(day);
@@ -79,6 +82,8 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
               back today.
             </p>
           ) : null}
+
+          {day.moment !== "today" ? <MomentCard kind={day.moment} /> : null}
 
           {day.lead ? <MichaelCard lead={day.lead} /> : null}
 

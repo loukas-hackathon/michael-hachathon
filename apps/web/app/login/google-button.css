@@ -1,0 +1,53 @@
+/*
+ * "Continue with Google", in Google's own neutral button colours (Google Identity branding
+ * guidelines: light and dark themes). These are Google's, not ours, so they live here as local
+ * tokens rather than in the Michael palette.
+ */
+.g-button {
+  --g-bg: #ffffff;
+  --g-stroke: #747775;
+  --g-text: #1f1f1f;
+  background: var(--g-bg);
+  color: var(--g-text);
+  box-shadow: inset 0 0 0 1px var(--g-stroke);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .g-button {
+    --g-bg: #131314;
+    --g-stroke: #8e918f;
+    --g-text: #e3e3e3;
+  }
+}
+
+:root[data-theme="dark"] .g-button {
+  --g-bg: #131314;
+  --g-stroke: #8e918f;
+  --g-text: #e3e3e3;
+}
+
+.g-button:disabled {
+  cursor: progress;
+}
+
+.g-spinner {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  border: 2px solid color-mix(in srgb, currentColor 22%, transparent);
+  border-top-color: currentColor;
+  animation: g-spin 700ms linear infinite;
+}
+
+@keyframes g-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .g-spinner {
+    animation: none;
+  }
+}

@@ -4,13 +4,19 @@ import {
   type ChatHistory,
   type ChatMessage,
   type ChatResponse,
+  DEFAULT_PROFILE,
   type Goal,
   type GoalCreate,
   type GoalUpdate,
   mockEvents,
   mockGoals,
   mockRecommendations,
+  type NudgeTestResult,
   type PrivacyState,
+  type Profile,
+  type ProfileUpdate,
+  type PushConfig,
+  type PushSubscriptionInput,
   type Recommendation,
   type Score,
   Source,
@@ -42,7 +48,7 @@ export async function bearer(): Promise<string> {
   return data.session.access_token;
 }
 
-async function get<T>(path: string): Promise<T> {
+export async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     headers: { authorization: `Bearer ${await bearer()}` },
     cache: "no-store",
@@ -51,15 +57,28 @@ async function get<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-async function send<T>(method: "PUT" | "PATCH", path: string, body: unknown): Promise<T> {
+async function send<T>(method: "PUT" | "PATCH" | "POST", path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     method,
     headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
-    body: JSON.stringify(body),
+    body: body === undefined ? undefined : JSON.stringify(body),
     cache: "no-store",
   });
   if (!res.ok) throw new Error(`${method} ${path} failed: ${res.status}`);
   return (await res.json()) as T;
+}
+
+/**
+ * The raw server-sent event stream of POST /v1/chat/stream, for the /chat/stream route to pass on.
+ * Throws when signed out or the API cannot be reached.
+ */
+export async function openChatStream(message: string): Promise<Response> {
+  return fetch(`${API_URL}/v1/chat/stream`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
+    body: JSON.stringify({ message }),
+    cache: "no-store",
+  });
 }
 
 /** Chat always talks to the API: there is no fixture for a conversation. */
@@ -140,7 +159,7 @@ async function write(
   }
 }
 
-export async function createGoal(goal: GoalCreate): Promise<WriteResult> {
+export async function postGoal(goal: GoalCreate): Promise<WriteResult> {
   if (USE_MOCKS) {
     const t = new Date().toISOString();
     mockGoalStore.push({
@@ -159,7 +178,7 @@ export async function createGoal(goal: GoalCreate): Promise<WriteResult> {
   return write("POST", "/v1/goals", goal);
 }
 
-export async function updateGoal(id: string, patch: GoalUpdate): Promise<WriteResult> {
+export async function patchGoal(id: string, patch: GoalUpdate): Promise<WriteResult> {
   if (USE_MOCKS) {
     const g = mockGoalStore.find((x) => x.id === id);
     if (!g) return { ok: false, message: "That goal no longer exists." };
@@ -169,7 +188,7 @@ export async function updateGoal(id: string, patch: GoalUpdate): Promise<WriteRe
   return write("PATCH", `/v1/goals/${id}`, patch);
 }
 
-export async function deleteGoal(id: string): Promise<WriteResult> {
+export async function removeGoalById(id: string): Promise<WriteResult> {
   if (USE_MOCKS) {
     const i = mockGoalStore.findIndex((x) => x.id === id);
     if (i >= 0) mockGoalStore.splice(i, 1);
@@ -213,6 +232,20 @@ export async function patchSource(source: Source, enabled: boolean): Promise<Sou
     return { ...s };
   }
   return send<SourceSetting>("PATCH", `/v1/privacy/sources/${encodeURIComponent(source)}`, { enabled });
+}
+
+// Nudges on this device (Web Push). Mocks have no push service, so the button explains that.
+export async function getPushConfig(): Promise<PushConfig> {
+  if (USE_MOCKS) return { enabled: false, public_key: null, devices: 0 };
+  return get<PushConfig>("/v1/push");
+}
+
+export async function postPushSubscription(sub: PushSubscriptionInput): Promise<PushConfig> {
+  return send<PushConfig>("POST", "/v1/push/subscriptions", sub);
+}
+
+export async function postTestNudge(): Promise<NudgeTestResult> {
+  return send<NudgeTestResult>("POST", "/v1/nudges/test");
 }
 
 const SAMPLE_DAYS: Record<string, DayView> = {
@@ -277,4 +310,45 @@ function sampleWeekFromStore(): GoalsView {
       };
     });
   return { ...sampleGoals, goals };
+}
+
+// ---------- profile and onboarding (docs/api.md, Profile) ----------
+
+// With mocks, one in-process profile so onboarding can be walked through without the API.
+let mockProfile: Profile = structuredClone(DEFAULT_PROFILE);
+
+export async function getProfile(): Promise<Profile> {
+  if (USE_MOCKS) return structuredClone(mockProfile);
+  return get<Profile>("/v1/profile");
+}
+
+export async function putProfile(patch: ProfileUpdate): Promise<Profile> {
+  if (USE_MOCKS) {
+    mockProfile = { ...mockProfile, ...patch, updated_at: new Date().toISOString() };
+    return structuredClone(mockProfile);
+  }
+  return send<Profile>("PUT", "/v1/profile", patch);
+}
+
+export async function createGoal(input: GoalCreate): Promise<Goal | null> {
+  if (USE_MOCKS) return null;
+  const res = await fetch(`${API_URL}/v1/goals`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
+    body: JSON.stringify(input),
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`POST /v1/goals failed: ${res.status}`);
+  return (await res.json()) as Goal;
+}
+
+/** A new user (no goals, never onboarded) starts with the talk. Fails open: Today always renders. */
+export async function needsOnboarding(): Promise<boolean> {
+  if (USE_MOCKS) return false;
+  try {
+    const [goals, profile] = await Promise.all([getGoals(), getProfile()]);
+    return goals.length === 0 && profile.onboarded_at === null;
+  } catch {
+    return false;
+  }
 }

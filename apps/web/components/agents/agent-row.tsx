@@ -1,25 +1,47 @@
 "use client";
 
+import type { AgentScope } from "@michael/shared";
 import { useState } from "react";
+import { saveAgent } from "@/lib/agents-actions";
 
-type Scope = { key: string; label: string; on: boolean };
+type Scope = { key: AgentScope; label: string; on: boolean };
 
-/**
- * An allowed agent: tap to see what it may read, switch scopes, or revoke it.
- * Local state until PATCH /v1/agents/:id is live.
- */
+/** An allowed agent: tap to see what it may read, switch scopes, or revoke it (PATCH /v1/agents/:id). */
 export function AgentRow({
+  id,
   name,
   lastAsked,
   scopes,
 }: {
+  id: string;
   name: string;
   lastAsked: string | null;
   scopes: Scope[];
 }) {
   const [state, setState] = useState(scopes);
   const [revoked, setRevoked] = useState(false);
+  const [failed, setFailed] = useState(false);
   const shared = state.filter((s) => s.on).map((s) => s.label);
+
+  function toggle(key: AgentScope, on: boolean) {
+    const before = state;
+    const next = state.map((x) => (x.key === key ? { ...x, on } : x));
+    setState(next);
+    setFailed(false);
+    saveAgent(id, { scopes: next.filter((s) => s.on).map((s) => s.key) }).catch(() => {
+      setState(before);
+      setFailed(true);
+    });
+  }
+
+  function revoke() {
+    setRevoked(true);
+    setFailed(false);
+    saveAgent(id, { status: "revoked" }).catch(() => {
+      setRevoked(false);
+      setFailed(true);
+    });
+  }
 
   return (
     <details className="group">
@@ -33,9 +55,11 @@ export function AgentRow({
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="text-body font-semibold">{name}</span>
           <span className="truncate text-footnote text-label-2 tnum">
-            {revoked
-              ? "Revoked. Sees nothing."
-              : `${shared.length ? shared.join(", ") : "Nothing shared"}${lastAsked ? `. Last asked ${lastAsked}` : ""}`}
+            {failed
+              ? "I could not save that. Try again."
+              : revoked
+                ? "Revoked. Sees nothing."
+                : `${shared.length ? shared.join(", ") : "Nothing shared"}${lastAsked ? `. Last asked ${lastAsked}` : ""}`}
           </span>
         </span>
         <svg
@@ -69,11 +93,7 @@ export function AgentRow({
                     type="checkbox"
                     className="m-switch shrink-0"
                     checked={s.on}
-                    onChange={(e) =>
-                      setState((prev) =>
-                        prev.map((x) => (x.key === s.key ? { ...x, on: e.target.checked } : x)),
-                      )
-                    }
+                    onChange={(e) => toggle(s.key, e.target.checked)}
                   />
                 </label>
               </li>
@@ -81,7 +101,7 @@ export function AgentRow({
           </ul>
           <button
             type="button"
-            onClick={() => setRevoked(true)}
+            onClick={revoke}
             className="press mt-2 min-h-11 px-0 text-subhead font-semibold text-danger"
           >
             Revoke {name}

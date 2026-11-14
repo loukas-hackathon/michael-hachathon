@@ -1,10 +1,114 @@
+import {
+  type CalendarSyncResult,
+  IntegrationProvider,
+  type IntegrationsResponse,
+  type OAuthConnectResponse,
+} from "@michael/shared";
 import { Hono } from "hono";
-import { notImplemented } from "../http";
+import { z } from "zod";
+import { currentUserId, runAsUser } from "../context";
+import { webUrl } from "../env";
+import { HttpError, parse } from "../http";
+import { syncGoogleCalendar } from "../integrations/calendar-sync";
+import { authUrl, emailFromIdToken, exchangeCode, revokeToken } from "../integrations/google";
+import { signState, verifyState } from "../integrations/state";
+import { emptyIntegration, publicIntegration, store } from "../store";
 
-// GET /v1/integrations is authed; OAuth connect/callback are mounted without auth in app.ts
-// because they are browser redirects.
-export const integrations = new Hono().get("/integrations", notImplemented("GET /v1/integrations"));
+function onlyGoogle(provider: IntegrationProvider) {
+  if (provider !== "google_calendar")
+    throw new HttpError("not_implemented", `${provider} is not wired up yet`);
+}
 
-export const oauth = new Hono()
-  .get("/oauth/:provider/connect", notImplemented("OAuth connect"))
-  .get("/oauth/:provider/callback", notImplemented("OAuth callback"));
+// Authed routes, mounted under /v1 behind requireUser.
+export const integrations = new Hono()
+  .get("/integrations", async (c) => {
+    const stored = await store.listIntegrations();
+    const body: IntegrationsResponse = {
+      integrations: IntegrationProvider.options.map((p) =>
+        publicIntegration(stored.find((r) => r.provider === p) ?? emptyIntegration(p)),
+      ),
+    };
+    return c.json(body);
+  })
+  // The web app calls this with the user's token, then sends the browser to `url`. The signed
+  // `state` carries the user id, because Google's redirect back to us arrives without auth.
+  .post("/integrations/:provider/connect", async (c) => {
+    const provider = parse(IntegrationProvider, c.req.param("provider"));
+    onlyGoogle(provider);
+    const body: OAuthConnectResponse = { url: authUrl(signState(currentUserId(), provider)) };
+    return c.json(body);
+  })
+  .post("/integrations/:provider/sync", async (c) => {
+    const provider = parse(IntegrationProvider, c.req.param("provider"));
+    onlyGoogle(provider);
+    const body: CalendarSyncResult = await syncGoogleCalendar();
+    return c.json(body);
+  })
+  // Disconnect: revoke at Google and forget the tokens. Events already on the timeline stay.
+  .delete("/integrations/:provider", async (c) => {
+    const provider = parse(IntegrationProvider, c.req.param("provider"));
+    onlyGoogle(provider);
+    const rec = await store.getIntegration(provider);
+    const token = rec?.refresh_token ?? rec?.access_token;
+    if (token) await revokeToken(token);
+    const saved = await store.saveIntegration(provider, {
+      status: "disconnected",
+      access_token: null,
+      refresh_token: null,
+      expires_at: null,
+      account: null,
+      error: null,
+    });
+    return c.json(publicIntegration(saved));
+  });
+
+const CallbackQuery = z.object({
+  state: z.string().min(1).max(2048),
+  code: z.string().min(1).max(4096).optional(),
+  error: z.string().max(200).optional(),
+});
+
+const backToWeb = (params: Record<string, string>) => `${webUrl()}/you?${new URLSearchParams(params)}`;
+
+// Browser redirect from Google, mounted at /oauth/google/callback (the redirect URI registered in
+// Google Cloud). No auth header, so the signed `state` says who it is for.
+export const oauth = new Hono().get("/oauth/google/callback", async (c) => {
+  const provider: IntegrationProvider = "google_calendar";
+  const q = CallbackQuery.safeParse(c.req.query());
+  const state = q.success ? verifyState(q.data.state) : null;
+  if (!q.success || !state || state.provider !== provider) {
+    return c.redirect(backToWeb({ integration_error: provider, reason: "expired" }));
+  }
+  if (q.data.error || !q.data.code) {
+    // The user said no on Google's screen.
+    return c.redirect(backToWeb({ integration_error: provider, reason: "declined" }));
+  }
+  const code = q.data.code;
+
+  return runAsUser(state.userId, async () => {
+    try {
+      const t = await exchangeCode(code);
+      await store.saveIntegration(provider, {
+        status: "connected",
+        access_token: t.access_token,
+        expires_at: new Date(Date.now() + t.expires_in * 1000).toISOString(),
+        // Google only sends a refresh token with consent; keep the old one if this answer has none.
+        ...(t.refresh_token ? { refresh_token: t.refresh_token } : {}),
+        scope: t.scope ?? null,
+        account: emailFromIdToken(t.id_token),
+        connected_at: new Date().toISOString(),
+        error: null,
+      });
+    } catch (err) {
+      console.error("oauth callback", err);
+      return c.redirect(backToWeb({ integration_error: provider, reason: "token" }));
+    }
+    // First sync now, so the timeline fills while the user is still looking.
+    try {
+      await syncGoogleCalendar();
+    } catch (err) {
+      console.error("first calendar sync", err);
+    }
+    return c.redirect(backToWeb({ connected: provider }));
+  });
+});

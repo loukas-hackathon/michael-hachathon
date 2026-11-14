@@ -22,7 +22,7 @@ returns `501 not_implemented`, `planned` = not routed yet. Update the status whe
     account (`demo@michael.app`). Per-user ingest tokens come later.
 - **Shared secret details:**
   Send `Authorization: Bearer <API_KEY>`. Applies to everything under `/v1/*` and `/mcp`, except
-  `/health` and the OAuth connect/callback redirects. Only `/v1/webhooks/*` and `/mcp` also accept
+  `/health` and the OAuth callback redirect (`/oauth/google/callback`). Only `/v1/webhooks/*` and `/mcp` also accept
   `?key=<API_KEY>` (for webhook senders and claude.ai connectors that cannot set headers); every
   other route rejects it. To be replaced by real auth (per-source secrets / HMAC, OAuth for MCP)
   if we go multi-user.
@@ -61,6 +61,7 @@ Enums:
 - `AgentScope`: `timeline | goals | recommendations | score | write_events`
 - `AgentStatus`: `pending | approved | revoked`
 - `NudgeChannel`: `watch | push | telegram`; `NudgeStatus`: `queued | sent | failed | suppressed`
+- `NudgeKind`: `focus_drift | block_soon | wind_down | goal_behind`; `NudgeSkip`: `nothing_to_say | quiet_hours | daily_cap | too_soon | off_the_record`
 - `AppCategory`: `work | communication | social | video | news | shopping | travel | ai | music | system | other`
   (one shared categoriser for apps and sites, `packages/shared/src/categories.ts`; unknown = `other`)
 - `IntegrationProvider`: `google_calendar | whoop`
@@ -147,6 +148,7 @@ type AnalysisRun = {
 type Integration = {
   provider: IntegrationProvider;
   status: IntegrationStatus;
+  account: string | null; // Google: the address of the account the user picked
   connected_at: string | null;
   last_sync_at: string | null;
   error: string | null;
@@ -754,18 +756,109 @@ travel site" or "an uncategorised site". Structured `data` carries the host for 
 
 ### Chat
 
-| Method | Path                | Body                                  | Response                                                                                                                                | Status |
-| ------ | ------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| GET    | `/v1/chat?limit=50` |                                       | `200 { messages: ChatMessage[] }` (oldest first, limit 1..100)                                                                          | live   |
-| POST   | `/v1/chat`          | `{ message: string }` (1..2000 chars) | `201 { message: ChatMessage, reply: ChatMessage }`; `503 unavailable` without `ANTHROPIC_API_KEY`; `502 upstream_error` if Claude fails | live   |
+| Method | Path                | Body                                  | Response                                                                                                                                                                                                        | Status |
+| ------ | ------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| GET    | `/v1/chat?limit=50` |                                       | `200 { messages: ChatMessage[] }` (oldest first, limit 1..100)                                                                                                                                                  | live   |
+| POST   | `/v1/chat`          | `{ message: string }` (1..2000 chars) | `201 { message: ChatMessage, reply: ChatMessage }`; `503 unavailable` without `ANTHROPIC_API_KEY`; `502 upstream_error` if Claude fails                                                                         | live   |
+| POST   | `/v1/chat/stream`   | `{ message: string }` (1..2000 chars) | `200 text/event-stream`: `event: delta` `{ text }` per piece, then `event: done` `ChatResponse`, or `event: error` `ApiError`. Validation and `503 unavailable` come back as plain JSON before the stream opens | live   |
+
+`/v1/chat` stays for callers that want the whole answer (MCP, voice); `/v1/chat/stream` gives the
+first words fast and stores the same pair when it finishes.
 
 The API keeps the history per user (`chat_messages`); the client sends only the new line. Michael
 answers with Claude (`ANTHROPIC_MODEL`, default `claude-opus-5-5`) from a summary built in the API:
+the week's score with the same figures as `GET /v1/score` (built in process by `scoreFor`, not over
+HTTP: score, spent of elapsed, lost, ahead, time won back, and per goal spent of budget and what is
+left; today's score and biggest losses inside goal blocks),
 the active goals with weekly budgets, today's calendar, workout, sleep, meal and focus entries,
 today's screen time totals, 7 day totals per type and the pattern headlines for today and the last
 7 days, plus the last 20 lines of chat. Raw app, web and AI events are never sent, only totals, and
 conversations and memories stay out. Nothing is stored when the call fails. The chat only advises;
 it never changes the calendar.
+
+### Moments (Morning and Evening)
+
+| Method | Path                           | Response     | Status |
+| ------ | ------------------------------ | ------------ | ------ |
+| GET    | `/v1/moments/morning?at=<iso>` | `200 Moment` | live   |
+| GET    | `/v1/moments/evening?at=<iso>` | `200 Moment` | live   |
+
+`at` is optional (default now) and shows the moment as of another instant. `400` for another kind
+or a bad `at`. Days, weeks (Monday first) and hours are Europe/Athens.
+
+```ts
+type MomentKind = "morning" | "evening";
+type MomentGoal = {
+  goal_id: string;
+  title: string;
+  category: GoalCategory;
+  budget_minutes: number | null;
+  spent_week_minutes: number; // Monday 00:00 until now
+  planned_today_minutes: number; // goal blocks today; rest: a seventh of the weekly budget
+  spent_today_minutes: number;
+  lost_today_minutes: number; // interruptions inside this goal's blocks
+  planned_ahead_minutes: number; // from now to the end of the week
+  unplanned_minutes: number | null; // budget - spent - planned ahead; null without a budget and for rest
+};
+type MomentStretch = {
+  start_at: string;
+  end_at: string;
+  title: string; // the block's calendar title, or "Unbooked time"
+  goal_id: string | null;
+  block_event_id: string | null;
+  expected_lost_minutes: number;
+  history_days: number;
+  usual_trigger: string | null; // app name or site label
+};
+type MomentMove = {
+  title: string; // "Book 60 minutes of deep work at 08:00"
+  rationale: string; // the maths
+  action_kind: ActionKind | null;
+  start_at: string | null;
+  end_at: string | null;
+  goal_id: string | null;
+};
+type Moment = {
+  kind: MomentKind;
+  day: string; // YYYY-MM-DD
+  timezone: string;
+  generated_at: string;
+  headline: string;
+  phrased_by: "template" | "model";
+  goals: MomentGoal[];
+  totals: {
+    planned_minutes: number; // goal blocks today, rest excluded
+    spent_minutes: number;
+    lost_minutes: number; // interruptions in focus time today
+    baseline_lost_minutes: number | null; // daily average on the last 7 days with device data
+    won_back_minutes: number; // evening: baseline - lost, at least 0; morning: 0
+  };
+  at_risk: MomentStretch | null; // morning only
+  suggestions: MomentMove[]; // morning: at most 2; evening: []
+  lesson: string | null; // evening only
+  first_move: MomentMove | null; // evening only
+};
+```
+
+How the numbers are made (`apps/api/src/moments/compute.ts`, pure, with tests):
+
+- **Planned** is goal blocks (the same matching as Patterns: `data.goal_id`, `data.goal_category`,
+  or a category word or "deep work"/"focus" in the title; meetings with any other attendee never count).
+- **Spent**: rest is sleep, counted on the day it ends; gym is workouts when the watch reported any;
+  everything else is elapsed block time less the minutes lost to interruptions inside it.
+- **Lost** comes from the focus analysis behind `focus_disruptions`. **Won back** (evening) is the
+  daily average lost on the last 7 days with device data less what was lost today.
+- **At risk** (morning): for each block still ahead today, the minutes usually lost in those hours
+  (per hour of day, averaged over the history days) scaled to the block; the largest wins. With no
+  block, the costliest remaining hour between 08:00 and 21:00. Null without history.
+- **Moves**: silence the usual trigger during the stretch at risk (a phone trigger becomes "phone in
+  another room"), and book the goal with the most unplanned budget in the first free slot from 08:00
+  to 21:00 (its length is the gap spread over the days left, 30 to 90 minutes in quarters).
+  Evening: tomorrow's first goal block, or that booking for tomorrow.
+
+Only `headline` may be phrased by Claude (`ANTHROPIC_MODEL`, when `ANTHROPIC_API_KEY` is set). The model sees the computed
+facts only, and its line is used only if it keeps the voice rules and every number in it appears in
+the facts; otherwise `phrased_by` is `template`. Lines are cached per user, kind, day and facts.
 
 ### Recommendations
 
@@ -776,23 +869,97 @@ it never changes the calendar.
 
 Changing status never executes `action`; use the routes below.
 
-| Method | Path                              | Response                                                                                                                                        | Status |
-| ------ | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| POST   | `/v1/recommendations/:id/execute` | `200 Recommendation` (`status: done`, `executed_at` set). `409 conflict` if `involves_others` (Michael never touches events with other people). | stub   |
-| POST   | `/v1/recommendations/:id/undo`    | `200 Recommendation` (`status: undone`). `409 conflict` after `undo_until`.                                                                     | stub   |
+| Method | Path                              | Response                                                                  | Status |
+| ------ | --------------------------------- | ------------------------------------------------------------------------- | ------ |
+| POST   | `/v1/recommendations/:id/execute` | `200 Recommendation` (`status: done`, `executed_at` set). `409` see below | live   |
+| POST   | `/v1/recommendations/:id/undo`    | `200 Recommendation` (`status: undone`, `undone_at` set). `409` see below | live   |
 
-Rules: act only on the user's own calendar blocks and Mac; never touch events with other people; never delete; never send in the user's name.
+Kinds carried out: `move_calendar_block` and `create_focus_block`; other kinds answer `501`.
+
+```ts
+// move_calendar_block: one of the user's own solo blocks (a timeline event id). A new start keeps
+// the length unless end_at is given; new_title renames. At least one of the three.
+type MoveCalendarBlockPayload = { event_id: string; start_at?: string; end_at?: string; new_title?: string };
+// create_focus_block: a new block, tagged as Michael's (title defaults to "Focus block").
+type CreateFocusBlockPayload = { start_at: string; end_at: string; title?: string };
+```
+
+Rules: act only on the user's own calendar blocks and Mac; never touch events with other people;
+never delete the user's events; never send in the user's name.
+
+- With Google Calendar connected the change happens in the calendar (a created block carries the
+  private extended property `michael=1`) and the timeline mirror follows at once. Without it, the
+  change happens on the timeline only (a created block is a `calendar_event` with `source: "agent"`).
+- `409 conflict` when: the action is `null`; the recommendation is already `done` or `dismissed`;
+  `involves_others` is true; the block has `data.with_others` or 2 or more attendees, or Google
+  itself now shows someone else on it (checked live before every write); the block or the new
+  time has already started; it is an all day event.
+- Undo: a moved block goes back to its original time and title; a created block is deleted, and
+  only if Google still marks it as Michael's. Allowed until the earliest of `undo_until`, the
+  block's original start and its new start; afterwards `409`. Undo of anything not `done` is `409`.
+- What was changed is kept on the recommendation (`execution`, internal, never returned).
 
 ### Integrations (OAuth)
 
-| Method | Path                           | Auth                        | Response                                           | Status |
-| ------ | ------------------------------ | --------------------------- | -------------------------------------------------- | ------ |
-| GET    | `/v1/integrations`             | Bearer                      | `200 { integrations: Integration[] }`              | stub   |
-| GET    | `/v1/oauth/:provider/connect`  | none                        | `302` to provider consent screen                   | stub   |
-| GET    | `/v1/oauth/:provider/callback` | none (validated by `state`) | `302` back to web `/settings?connected=<provider>` | stub   |
+| Method | Path                                       | Auth                        | Response                                                       | Status |
+| ------ | ------------------------------------------ | --------------------------- | -------------------------------------------------------------- | ------ |
+| GET    | `/v1/integrations`                         | Bearer                      | `200 { integrations: Integration[] }` (every provider, always) | live   |
+| POST   | `/v1/integrations/google_calendar/connect` | Bearer                      | `200 { url }`: Google's consent screen; the browser goes there | live   |
+| GET    | `/oauth/google/callback`                   | none (validated by `state`) | `302` to `${WEB_URL}/you?connected=google_calendar`            | live   |
+| POST   | `/v1/integrations/google_calendar/sync`    | Bearer                      | `200 CalendarSyncResult`; `409` if not connected               | live   |
+| DELETE | `/v1/integrations/google_calendar`         | Bearer                      | `200 Integration` (`disconnected`); revokes at Google          | live   |
 
-`:provider` is `google_calendar` or `whoop`. Tokens are stored in the `integrations` table and are
-never returned by the API. Redirect URI: `${PUBLIC_API_URL}/v1/oauth/<provider>/callback`.
+`whoop` answers `501` until it is wired up. Tokens live in the `integrations` table and are never
+returned by the API.
+
+**Connect flow (one tap for the user).** The web app's `/integrations/google/connect` calls
+`POST /v1/integrations/google_calendar/connect` with the user's token and redirects the browser to
+`url`. That is Google's consent screen with `scope=openid email https://www.googleapis.com/auth/calendar.events`,
+`access_type=offline`, `prompt=select_account consent` (the user picks which Google account, which
+can differ from the one they signed in with) and `include_granted_scopes=true`. `state` is signed
+with a key derived from `API_KEY`, names the user and expires after 15 minutes, so it stops CSRF and
+binds the callback to the user who started it. Google returns to `${PUBLIC_API_URL}/oauth/google/callback`;
+the API swaps the code for tokens, stores the refresh token and the account address (from the ID
+token), runs the first sync and redirects to `/you?connected=google_calendar`. Failures redirect to
+`/you?integration_error=google_calendar&reason=expired|declined|token`. Access tokens are refreshed
+when they have under a minute left; a revoked grant sets `status: "error"`.
+
+**Sync.** Pulls the primary calendar, now minus 7 days to now plus 7 days, recurring events expanded,
+into `calendar_event` events with `source: "google_calendar"` and `external_id` = Google's event id.
+Idempotent: unchanged events are left alone, changed ones (title, time) are updated in place, and
+mirrored events that were deleted or cancelled in Google within the window are removed from the
+timeline (the calendar itself is never touched). Cancelled and declined events are skipped. Runs
+after connecting, on `POST .../sync`, and every `CALENDAR_SYNC_MINUTES` (default 15) for every
+connected user. Off the record, or with the `google_calendar` source switched off, sync reads nothing
+and answers zero counts.
+
+```ts
+type CalendarSyncResult = {
+  from: string;
+  to: string;
+  fetched: number;
+  inserted: number;
+  updated: number;
+  unchanged: number;
+  removed: number;
+  last_sync_at: string;
+};
+// `data` of a google_calendar event
+type CalendarEventData = {
+  calendar: "primary";
+  status: string;
+  all_day: boolean; // all day events start and end at local midnight in the calendar's zone
+  attendees: number; // people on the invite, the user included, rooms left out
+  with_others: boolean; // anyone else invited, or someone else organised it: Michael never touches it
+  organizer_self: boolean;
+  michael: boolean; // a block Michael created
+  transparency: string; // "transparent" = shows as free
+  recurring: boolean;
+  location: string | null;
+  html_link: string | null;
+  updated: string | null;
+};
+```
 
 ### Privacy
 
@@ -813,6 +980,70 @@ drops events and counts them in `ignored` (every path: `/v1/events`, `/v1/events
 MCP). `manual` events, typed by the user, are always kept. `since` is when collection stopped, or
 `null`. Never set sources show `updated_at` as `1970-01-01T00:00:00.000Z`. The check lives in
 `apps/api/src/privacy.ts` and runs inside `Store.insertEvents`.
+
+### Device keys (personal tokens)
+
+```ts
+type PersonalToken = {
+  id: string;
+  name: string;
+  prefix: string;
+  created_at: string;
+  last_used_at: string | null;
+};
+type PersonalTokenCreated = { token: PersonalToken; secret: string /* "mk_...", shown once */ };
+```
+
+| Method | Path             | Body       | Response                                             | Status |
+| ------ | ---------------- | ---------- | ---------------------------------------------------- | ------ |
+| GET    | `/v1/tokens`     |            | `200 { tokens: PersonalToken[] }` (never the secret) | live   |
+| POST   | `/v1/tokens`     | `{ name }` | `201 PersonalTokenCreated`                           | live   |
+| DELETE | `/v1/tokens/:id` |            | `204` (stops working within 30 s), `404`             | live   |
+
+Only a signed-in session (Supabase token) may call these: device keys, OAuth tokens and the demo
+API key get `403 forbidden`. A device key acts for its owner on ingest, webhooks and `/mcp`
+(`Authorization: Bearer mk_...` or `?key=mk_...` where query keys are allowed). One key per device
+(Mac collector, Health Auto Export). Only the sha256 is stored. The web app makes them under
+You > Devices. Claude connects with MCP OAuth instead (no key).
+
+### Profile
+
+The onboarding answers: quiet hours, the usual week and the user's weak spots. Goals themselves go
+through `/v1/goals`.
+
+```ts
+type ClockTime = string; // "HH:MM", 24 hour, Europe/Athens wall clock
+type Weekday = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
+type WeakSpot =
+  | "phone_in_bed"
+  | "late_nights"
+  | "context_switching"
+  | "skipped_lunch"
+  | "doomscrolling"
+  | "back_to_back_meetings"
+  | "inbox_all_day"
+  | "late_caffeine";
+type TimeWindow = { start: ClockTime; end: ClockTime }; // may cross midnight
+type Profile = {
+  quiet_hours: TimeWindow; // no nudges inside; default 22:00 to 07:00
+  work_hours: TimeWindow; // default 09:00 to 18:00
+  work_days: Weekday[]; // default mon to fri
+  gym_days: Weekday[]; // default []
+  weak_spots: WeakSpot[]; // default []
+  onboarded_at: string | null; // set when onboarding is finished or skipped
+  updated_at: string | null; // null until first saved
+};
+type ProfileUpdate = Partial<Omit<Profile, "updated_at">>; // arrays are replaced, not merged
+```
+
+| Method | Path          | Body            | Response                       | Status |
+| ------ | ------------- | --------------- | ------------------------------ | ------ |
+| GET    | `/v1/profile` |                 | `200 Profile` (defaults first) | live   |
+| PUT    | `/v1/profile` | `ProfileUpdate` | `200 Profile`                  | live   |
+
+The web app sends a new user (no goals and `onboarded_at: null`) from Today to `/onboarding`.
+Stored as one jsonb document per user (`user_profiles`); a missing or invalid field reads as its
+default.
 
 ### Michael for agents
 
@@ -837,12 +1068,26 @@ type AgentQuery = {
 
 | Method | Path                           | Body                                                    | Response                                                     | Status |
 | ------ | ------------------------------ | ------------------------------------------------------- | ------------------------------------------------------------ | ------ |
-| GET    | `/v1/agents`                   |                                                         | `200 { agents: AgentClient[] }`                              | stub   |
-| PATCH  | `/v1/agents/:id`               | `{ status?, scopes? }` (approve, revoke, change scopes) | `200 AgentClient`                                            | stub   |
-| GET    | `/v1/agents/queries?from=&to=` |                                                         | `200 { queries: AgentQuery[] }` ("who asked about me today") | stub   |
+| GET    | `/v1/agents`                   |                                                         | `200 { agents: AgentClient[] }`, newest first                | live   |
+| PATCH  | `/v1/agents/:id`               | `{ status?, scopes? }` (approve, revoke, change scopes) | `200 AgentClient`, `404`                                     | live   |
+| GET    | `/v1/agents/queries?from=&to=` |                                                         | `200 { queries: AgentQuery[] }` ("who asked about me today") | live   |
 
-A new agent's first MCP request registers it as `pending` and returns `forbidden` until the user
-approves it. Every MCP tool call is logged as an `AgentQuery`.
+- An agent is an MCP client the user connected with OAuth (see "MCP authorization"). Tapping
+  Allow on the consent page is the one tap approval: it creates the agent as `approved` with the
+  scopes it asked for, or updates the user's agent of the same name (reconnecting Claude keeps one
+  record). The API key is our own tooling, not an agent: it is neither checked nor logged.
+- Scopes are read live from the agent on every MCP request, so a `PATCH` applies at once.
+  `status: "revoked"` also revokes the agent's tokens (`401` from then on; reconnect to use it again).
+- Every MCP tool call by an agent is logged as an `AgentQuery`, allowed or not. `summary` is one
+  plain line ("Read your day from Sat 09:00 to Sat 17:00", `Added "Ran 5 km" to your day`), never
+  the payload. A call outside the agent's scopes, or by an agent that is not `approved`, returns a
+  tool result with `isError: true` ("Not allowed. ...") and is logged with `allowed: false`.
+- Scope per tool: `get_timeline`, `get_patterns` = `timeline`; `get_goals` = `goals`;
+  `get_recommendations` = `recommendations`; `get_score` = `score`; `add_event` = `write_events`.
+  A tool not in that list needs `timeline` if it is read only, else `write_events`
+  (`apps/api/src/mcp-guard.ts`).
+- `queries`: `from` defaults to local midnight today (Europe/Athens), `to` to now; newest first,
+  at most 500.
 
 ### Nudges
 
@@ -850,20 +1095,78 @@ approves it. Every MCP tool call is logged as an `AgentQuery`.
 type Nudge = {
   id: string;
   recommendation_id: string | null;
+  goal_id: string | null; // the goal it serves
+  kind: NudgeKind;
+  key: string; // dedupe key: never twice on one local day
+  day: string; // local day, "YYYY-MM-DD"
   channel: NudgeChannel;
-  text: string;
+  text: string; // under 15 words
+  reason: string; // the maths, e.g. "70.3 training: 1h of 10h done; the pace by now is 3h 34m."
   status: NudgeStatus;
   created_at: string;
   sent_at: string | null;
 };
+type NudgeCheckResult = {
+  checked_at: string;
+  nudge: Nudge | null; // created by this check (queued, sent, failed or suppressed)
+  skipped: NudgeSkip | null; // why nothing went out
+  sent_today: number; // nudges today that count towards the cap (all but suppressed)
+};
 ```
 
-| Method | Path                   | Response                  | Status |
-| ------ | ---------------------- | ------------------------- | ------ |
-| GET    | `/v1/nudges?from=&to=` | `200 { nudges: Nudge[] }` | stub   |
+| Method | Path                   | Response                                                                | Status |
+| ------ | ---------------------- | ----------------------------------------------------------------------- | ------ |
+| GET    | `/v1/nudges?from=&to=` | `200 { nudges: Nudge[] }` (default: today, Europe/Athens, oldest first) | live   |
+| POST   | `/v1/nudges/check`     | `200 NudgeCheckResult` (runs the engine once, no body)                  | live   |
+| POST   | `/v1/nudges/test`      | `200 NudgeTestResult` (push one nudge to the caller's devices now)      | live   |
 
-Nudges: at most 5 per day, under 15 words, none in quiet hours (deep work, dinner, after 22:00);
-extra ones are stored as `suppressed`.
+Nudge engine (`apps/api/src/nudges/engine.ts`, pure, thresholds in `LIMITS`). Each check picks the
+most urgent candidate of four rules, each tied to a goal:
+
+| Kind          | When                                                                          | Example                                                           |
+| ------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `focus_drift` | inside a work goal block, 3+ of the last 10 min on distractor apps or sites   | "6 min on Instagram in your focus block. Back to it until 12:00." |
+| `block_soon`  | a goal block starts in 2 to 15 min                                            | "Gym at 18:00. Wrap up in 12 min."                                |
+| `wind_down`   | 30 min before the night, 3+ of the last 10 min on screens, a rest goal exists | "Screens off by 22:00. Sleep is on the plan."                     |
+| `goal_behind` | before 19:00, a weekly budget behind its linear pace by 60+ min and 15%+      | "Gym 2h 34m behind this week. Book 90 min today."                 |
+
+Goal time spent this week = the goal's calendar blocks so far plus its own events (`work`:
+`focus_session`, `gym`: `workout`, `rest`: `sleep`, `food`: `meal`), counted once. Rules: at most 5
+per day; none in quiet hours (22:00 to 07:00, dinner 20:00 to 21:00, work goal blocks except
+`focus_drift`); one key once per local day (`goal_behind` once per day in all); at least 20 min
+between nudges. Once 5 went out, the best candidate is stored as `suppressed` (once per key). Off
+the record stops all nudges. Delivery is pluggable (`apps/api/src/nudges/channels.ts`): with VAPID
+keys set, nudges go out as Web Push to every device the user turned nudges on for (`sent` when one
+accepted, `failed` when all refused, `queued` when there is no device); without keys they are only
+logged and stay `queued`.
+
+Scheduler (`apps/api/src/scheduler.ts`): inside the API process, every `SCHEDULER_INTERVAL_MINUTES`
+(default 5) the check runs once for each user with events received in the last 24 hours, each run
+scoped as that user. On by default when `NODE_ENV=production`, `SCHEDULER_ENABLED` overrides.
+
+`POST /v1/nudges/test` sends the best current candidate (or a sample line) to the caller's devices
+at once, ignoring the cap, quiet hours and dedupe, and stores nothing. It is for the stage moment.
+
+```ts
+type NudgeTestResult = { text: string; reason: string; delivered: number; devices: number };
+type PushSubscriptionInput = {
+  endpoint: string;
+  expirationTime?: number | null;
+  keys: { p256dh: string; auth: string };
+};
+type PushConfig = { enabled: boolean; public_key: string | null; devices: number };
+```
+
+### Web push
+
+iOS 16.4+ delivers Web Push to Michael installed on the Home Screen, and mirrors it to the Apple
+Watch. The app's service worker is `apps/web/public/sw.js`.
+
+| Method | Path                     | Body                                 | Response                                | Status |
+| ------ | ------------------------ | ------------------------------------ | --------------------------------------- | ------ |
+| GET    | `/v1/push`               |                                      | `200 PushConfig`                        | live   |
+| POST   | `/v1/push/subscriptions` | `PushSubscriptionInput` (`toJSON()`) | `201 PushConfig` (saved for the caller) | live   |
+| DELETE | `/v1/push/subscriptions` | `{ endpoint }`                       | `200 PushConfig`                        | live   |
 
 ### Score
 

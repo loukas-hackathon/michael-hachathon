@@ -2,7 +2,7 @@
 
 import { GoalCategory, type GoalCreate } from "@michael/shared";
 import { revalidatePath } from "next/cache";
-import { createGoal, deleteGoal, updateGoal } from "@/lib/api";
+import { patchGoal, postGoal, removeGoalById } from "@/lib/api";
 import type { Category } from "@/lib/categories";
 
 // Goal setting from the Goals tab. Kinds follow #131: time, target, count, checklist.
@@ -65,7 +65,7 @@ function parse(form: FormData): { goal: GoalCreate } | { error: string } {
 export async function addGoal(_prev: FormState, form: FormData): Promise<FormState> {
   const parsed = parse(form);
   if ("error" in parsed) return { ok: false, message: parsed.error };
-  const res = await createGoal(parsed.goal);
+  const res = await postGoal(parsed.goal);
   if (!res.ok) return { ok: false, message: res.message };
   revalidatePath("/goals");
   revalidatePath("/");
@@ -76,7 +76,7 @@ export async function editGoal(id: string, _prev: FormState, form: FormData): Pr
   const parsed = parse(form);
   if ("error" in parsed) return { ok: false, message: parsed.error };
   const { active: _a, ...patch } = parsed.goal;
-  const res = await updateGoal(id, patch);
+  const res = await patchGoal(id, patch);
   if (!res.ok) return { ok: false, message: res.message };
   revalidatePath("/goals");
   revalidatePath("/");
@@ -84,7 +84,7 @@ export async function editGoal(id: string, _prev: FormState, form: FormData): Pr
 }
 
 export async function pauseGoal(id: string, active: boolean): Promise<FormState> {
-  const res = await updateGoal(id, { active });
+  const res = await patchGoal(id, { active });
   if (!res.ok) return { ok: false, message: res.message };
   revalidatePath("/goals");
   return {
@@ -94,7 +94,7 @@ export async function pauseGoal(id: string, active: boolean): Promise<FormState>
 }
 
 export async function removeGoal(id: string): Promise<FormState> {
-  const res = await deleteGoal(id);
+  const res = await removeGoalById(id);
   if (!res.ok) return { ok: false, message: res.message };
   revalidatePath("/goals");
   revalidatePath("/");

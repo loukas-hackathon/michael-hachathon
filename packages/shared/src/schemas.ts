@@ -3,6 +3,8 @@ import { z } from "zod";
 // ---------- primitives ----------
 
 export const IsoDateTime = z.iso.datetime({ offset: true });
+// "YYYY-MM-DD", a day in the user's timezone.
+export const LocalDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 // ---------- enums ----------
 
@@ -167,6 +169,29 @@ export type GoalUpdate = z.input<typeof GoalUpdate>;
 
 // ---------- recommendations ----------
 
+// Payloads of the actions POST /v1/recommendations/:id/execute can carry out.
+// move_calendar_block: one of the user's own solo blocks (a timeline event id). Give a new start
+// (the length is kept unless `end_at` is given), a new title, or both.
+export const MoveCalendarBlockPayload = z
+  .object({
+    event_id: z.uuid(),
+    start_at: IsoDateTime.optional(),
+    end_at: IsoDateTime.optional(),
+    new_title: z.string().min(1).max(200).optional(),
+  })
+  .refine((p) => p.start_at || p.end_at || p.new_title, { message: "Give start_at, end_at or new_title" });
+export type MoveCalendarBlockPayload = z.infer<typeof MoveCalendarBlockPayload>;
+
+// create_focus_block: a new block on the user's calendar, tagged as Michael's.
+export const CreateFocusBlockPayload = z
+  .object({
+    start_at: IsoDateTime,
+    end_at: IsoDateTime,
+    title: z.string().min(1).max(200).optional(),
+  })
+  .refine((p) => Date.parse(p.end_at) > Date.parse(p.start_at), { message: "end_at must be after start_at" });
+export type CreateFocusBlockPayload = z.infer<typeof CreateFocusBlockPayload>;
+
 export const RecommendationAction = z.object({
   kind: ActionKind,
   payload: z.record(z.string(), z.unknown()),
@@ -231,11 +256,55 @@ export type AnalysisResult = z.infer<typeof AnalysisResult>;
 export const Integration = z.object({
   provider: IntegrationProvider,
   status: IntegrationStatus,
+  // The connected account as the provider names it (Google: the calendar owner's address).
+  account: z.string().nullable(),
   connected_at: IsoDateTime.nullable(),
   last_sync_at: IsoDateTime.nullable(),
   error: z.string().nullable(),
 });
 export type Integration = z.infer<typeof Integration>;
+
+export const IntegrationsResponse = z.object({ integrations: z.array(Integration) });
+export type IntegrationsResponse = z.infer<typeof IntegrationsResponse>;
+
+// POST /v1/integrations/:provider/connect: the provider's consent screen, opened by the browser.
+export const OAuthConnectResponse = z.object({ url: z.url() });
+export type OAuthConnectResponse = z.infer<typeof OAuthConnectResponse>;
+
+// POST /v1/integrations/google_calendar/sync and the sync that runs after connecting.
+export const CalendarSyncResult = z.object({
+  from: IsoDateTime,
+  to: IsoDateTime,
+  fetched: z.number().int().nonnegative(),
+  inserted: z.number().int().nonnegative(),
+  updated: z.number().int().nonnegative(),
+  unchanged: z.number().int().nonnegative(),
+  // Mirrored events that were cancelled or deleted in the calendar since the last sync.
+  removed: z.number().int().nonnegative(),
+  last_sync_at: IsoDateTime,
+});
+export type CalendarSyncResult = z.infer<typeof CalendarSyncResult>;
+
+// `data` of a google_calendar calendar_event. Michael never touches events where `with_others` is true.
+export const CalendarEventData = z.object({
+  calendar: z.string(),
+  status: z.string(),
+  all_day: z.boolean(),
+  // People on the invite, the user included; meeting rooms are left out.
+  attendees: z.number().int().nonnegative(),
+  // True when anyone else is on the invite or someone else organised it.
+  with_others: z.boolean(),
+  organizer_self: z.boolean(),
+  // True for blocks Michael created himself.
+  michael: z.boolean(),
+  // "transparent" = shows as free.
+  transparency: z.string(),
+  recurring: z.boolean(),
+  location: z.string().nullable(),
+  html_link: z.string().nullable(),
+  updated: z.string().nullable(),
+});
+export type CalendarEventData = z.infer<typeof CalendarEventData>;
 
 // ---------- privacy: sources and off the record ----------
 
@@ -259,6 +328,60 @@ export type PrivacyState = z.infer<typeof PrivacyState>;
 
 export const OffTheRecordUpdate = z.object({ off_the_record: z.boolean() });
 export type OffTheRecordUpdate = z.infer<typeof OffTheRecordUpdate>;
+
+// ---------- profile: the onboarding answers (GET/PUT /v1/profile) ----------
+
+// "HH:MM", 24 hour, Europe/Athens wall clock.
+export const ClockTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Expected HH:MM");
+export type ClockTime = z.infer<typeof ClockTime>;
+
+export const Weekday = z.enum(["mon", "tue", "wed", "thu", "fri", "sat", "sun"]);
+export type Weekday = z.infer<typeof Weekday>;
+
+// Where the user says their time leaks. Analysis and nudges can look for these first.
+export const WeakSpot = z.enum([
+  "phone_in_bed",
+  "late_nights",
+  "context_switching",
+  "skipped_lunch",
+  "doomscrolling",
+  "back_to_back_meetings",
+  "inbox_all_day",
+  "late_caffeine",
+]);
+export type WeakSpot = z.infer<typeof WeakSpot>;
+
+export const TimeWindow = z.object({ start: ClockTime, end: ClockTime });
+export type TimeWindow = z.infer<typeof TimeWindow>;
+
+export const Profile = z.object({
+  // No nudges inside this window. May cross midnight (22:00 to 07:00 is the default).
+  quiet_hours: TimeWindow,
+  // The usual week: work hours on work days, and the days the user trains.
+  work_hours: TimeWindow,
+  work_days: z.array(Weekday),
+  gym_days: z.array(Weekday),
+  weak_spots: z.array(WeakSpot),
+  // Set when onboarding is finished or skipped; null means Today should offer onboarding.
+  onboarded_at: IsoDateTime.nullable(),
+  // null until the user saves anything (the response is then the defaults).
+  updated_at: IsoDateTime.nullable(),
+});
+export type Profile = z.infer<typeof Profile>;
+
+// Partial: only the fields sent change. Arrays are replaced, not merged.
+export const ProfileUpdate = Profile.omit({ updated_at: true }).partial();
+export type ProfileUpdate = z.infer<typeof ProfileUpdate>;
+
+export const DEFAULT_PROFILE: Profile = {
+  quiet_hours: { start: "22:00", end: "07:00" },
+  work_hours: { start: "09:00", end: "18:00" },
+  work_days: ["mon", "tue", "wed", "thu", "fri"],
+  gym_days: [],
+  weak_spots: [],
+  onboarded_at: null,
+  updated_at: null,
+};
 
 // ---------- Michael for agents ----------
 
@@ -320,17 +443,84 @@ export type NudgeChannel = z.infer<typeof NudgeChannel>;
 export const NudgeStatus = z.enum(["queued", "sent", "failed", "suppressed"]);
 export type NudgeStatus = z.infer<typeof NudgeStatus>;
 
-// At most 5 per day, under 15 words, never during quiet hours.
+// What a nudge is about. Each kind is one rule of the engine (apps/api/src/nudges).
+export const NudgeKind = z.enum(["focus_drift", "block_soon", "wind_down", "goal_behind"]);
+export type NudgeKind = z.infer<typeof NudgeKind>;
+
+// At most 5 per day, under 15 words, never during quiet hours, each tied to a goal.
 export const Nudge = z.object({
   id: z.uuid(),
   recommendation_id: z.uuid().nullable(),
+  goal_id: z.uuid().nullable(),
+  kind: NudgeKind,
+  // Dedupe key: the same key never nudges twice on one local day.
+  key: z.string(),
+  // Local day (user's timezone) the nudge belongs to.
+  day: LocalDay,
   channel: NudgeChannel,
   text: z.string().min(1),
+  // The maths behind it, one line, e.g. "3h 10m of 9h done; the pace by now is 5h 20m."
+  reason: z.string(),
   status: NudgeStatus,
   created_at: IsoDateTime,
   sent_at: IsoDateTime.nullable(),
 });
 export type Nudge = z.infer<typeof Nudge>;
+
+export const NudgesQuery = z.object({ from: IsoDateTime.optional(), to: IsoDateTime.optional() });
+export type NudgesQuery = z.infer<typeof NudgesQuery>;
+
+export const NudgesResponse = z.object({ nudges: z.array(Nudge) });
+export type NudgesResponse = z.infer<typeof NudgesResponse>;
+
+// Why the engine stayed silent (or suppressed) on a check.
+export const NudgeSkip = z.enum(["nothing_to_say", "quiet_hours", "daily_cap", "too_soon", "off_the_record"]);
+export type NudgeSkip = z.infer<typeof NudgeSkip>;
+
+// POST /v1/nudges/check: runs the engine once for the caller.
+export const NudgeCheckResult = z.object({
+  checked_at: IsoDateTime,
+  // The nudge created by this check (sent, queued or suppressed), or null.
+  nudge: Nudge.nullable(),
+  // Set when no nudge went out.
+  skipped: NudgeSkip.nullable(),
+  // Nudges today that count towards the cap of 5 (everything but suppressed).
+  sent_today: z.number().int().nonnegative(),
+});
+export type NudgeCheckResult = z.infer<typeof NudgeCheckResult>;
+
+// POST /v1/nudges/test: one nudge now, for the stage moment. Not stored, ignores the cap.
+export const NudgeTestResult = z.object({
+  text: z.string().min(1),
+  reason: z.string(),
+  // Devices that accepted it. 0 when push is not configured or no device has turned nudges on.
+  delivered: z.number().int().nonnegative(),
+  devices: z.number().int().nonnegative(),
+});
+export type NudgeTestResult = z.infer<typeof NudgeTestResult>;
+
+// ---------- web push (iPhone, Apple Watch mirror, desktop browsers) ----------
+
+// What the browser's PushSubscription.toJSON() gives. Only https push services are accepted.
+export const PushSubscriptionInput = z.object({
+  endpoint: z.url({ protocol: /^https$/ }).max(2048),
+  expirationTime: z.number().nullable().optional(),
+  keys: z.object({ p256dh: z.string().min(1).max(256), auth: z.string().min(1).max(128) }),
+});
+export type PushSubscriptionInput = z.infer<typeof PushSubscriptionInput>;
+
+export const PushUnsubscribe = z.object({ endpoint: z.url().max(2048) });
+export type PushUnsubscribe = z.infer<typeof PushUnsubscribe>;
+
+// GET /v1/push: what the app needs to subscribe, and whether this user has a device on.
+export const PushConfig = z.object({
+  // False until the API has VAPID keys.
+  enabled: z.boolean(),
+  // VAPID public key (base64url) for pushManager.subscribe, null when not enabled.
+  public_key: z.string().nullable(),
+  devices: z.number().int().nonnegative(),
+});
+export type PushConfig = z.infer<typeof PushConfig>;
 
 // ---------- score ----------
 
@@ -375,8 +565,6 @@ export type AppCategory = z.infer<typeof AppCategory>;
 
 export const PatternDevice = z.enum(["mac", "iphone"]);
 export type PatternDevice = z.infer<typeof PatternDevice>;
-
-export const LocalDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 // What was in front: an app (key = bundle id) or a site (key = host, never a full address).
 export const PatternSubject = z.object({
@@ -931,6 +1119,24 @@ export const ChatHistory = z.object({
 });
 export type ChatHistory = z.infer<typeof ChatHistory>;
 
+// ---------- device keys (personal tokens for collectors and webhooks) ----------
+
+// A revocable key that acts for one user. The secret ("mk_...") is shown once, at creation.
+export const PersonalToken = z.object({
+  id: z.uuid(),
+  name: z.string().min(1),
+  prefix: z.string(), // first characters, so the user can tell keys apart
+  created_at: IsoDateTime,
+  last_used_at: IsoDateTime.nullable(),
+});
+export type PersonalToken = z.infer<typeof PersonalToken>;
+
+export const PersonalTokenCreate = z.object({ name: z.string().min(1).max(60) });
+export type PersonalTokenCreate = z.infer<typeof PersonalTokenCreate>;
+
+export const PersonalTokenCreated = z.object({ token: PersonalToken, secret: z.string() });
+export type PersonalTokenCreated = z.infer<typeof PersonalTokenCreated>;
+
 // ---------- errors ----------
 
 export const ErrorCode = z.enum([
@@ -965,3 +1171,83 @@ export const Health = z.object({
   commit: z.string().nullable(),
 });
 export type Health = z.infer<typeof Health>;
+
+// ---------- moments (GET /v1/moments/:kind) ----------
+// Morning: what today holds against each goal's weekly budget, the stretch most likely to be
+// lost and one or two moves. Evening: what happened against the plan, time won back and lost,
+// one lesson and tomorrow's first move. Every number is computed from the timeline; only
+// `headline` may be phrased by a model, and it falls back to a template.
+
+export const MomentKind = z.enum(["morning", "evening"]);
+export type MomentKind = z.infer<typeof MomentKind>;
+
+export const MomentGoal = z.object({
+  goal_id: z.uuid(),
+  title: z.string(),
+  category: GoalCategory,
+  budget_minutes: z.number().int().nonnegative().nullable(),
+  // This week (Monday 00:00 local) until now.
+  spent_week_minutes: z.number().int().nonnegative(),
+  // Today: planned blocks (rest: a seventh of the weekly budget), time held, time lost in them.
+  planned_today_minutes: z.number().int().nonnegative(),
+  spent_today_minutes: z.number().int().nonnegative(),
+  lost_today_minutes: z.number().int().nonnegative(),
+  // Planned from now to the end of the week.
+  planned_ahead_minutes: z.number().int().nonnegative(),
+  // Budget left after what is spent and what is planned; null without a budget.
+  unplanned_minutes: z.number().int().nonnegative().nullable(),
+});
+export type MomentGoal = z.infer<typeof MomentGoal>;
+
+export const MomentStretch = z.object({
+  start_at: IsoDateTime,
+  end_at: IsoDateTime,
+  title: z.string(),
+  goal_id: z.uuid().nullable(),
+  block_event_id: z.string().nullable(),
+  // Average minutes lost in these hours on the history days, scaled to this stretch.
+  expected_lost_minutes: z.number().int().nonnegative(),
+  history_days: z.number().int().nonnegative(),
+  // What usually takes the time in these hours (an app name or a site label).
+  usual_trigger: z.string().nullable(),
+});
+export type MomentStretch = z.infer<typeof MomentStretch>;
+
+export const MomentMove = z.object({
+  title: z.string(),
+  // The maths behind it, one or two sentences.
+  rationale: z.string(),
+  action_kind: ActionKind.nullable(),
+  start_at: IsoDateTime.nullable(),
+  end_at: IsoDateTime.nullable(),
+  goal_id: z.uuid().nullable(),
+});
+export type MomentMove = z.infer<typeof MomentMove>;
+
+export const Moment = z.object({
+  kind: MomentKind,
+  day: LocalDay,
+  timezone: z.string(),
+  generated_at: IsoDateTime,
+  headline: z.string(),
+  phrased_by: z.enum(["template", "model"]),
+  goals: z.array(MomentGoal),
+  totals: z.object({
+    // Goal blocks today (rest excluded: sleep is not booked).
+    planned_minutes: z.number().int().nonnegative(),
+    spent_minutes: z.number().int().nonnegative(),
+    // Lost today to interruptions in focus time (morning: so far).
+    lost_minutes: z.number().int().nonnegative(),
+    // Daily average lost on the history days: the line "won back" is measured against.
+    baseline_lost_minutes: z.number().int().nonnegative().nullable(),
+    won_back_minutes: z.number().int().nonnegative(),
+  }),
+  // Morning only (null in the evening).
+  at_risk: MomentStretch.nullable(),
+  // Morning: one or two moves. Evening: empty.
+  suggestions: z.array(MomentMove).max(2),
+  // Evening only.
+  lesson: z.string().nullable(),
+  first_move: MomentMove.nullable(),
+});
+export type Moment = z.infer<typeof Moment>;

@@ -1,11 +1,13 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import type { MiddlewareHandler } from "hono";
-import { runAsUser } from "./context";
+import { agentsStore } from "./agents-store";
+import { type AuthMethod, runAsUser } from "./context";
 import { env } from "./env";
 import { errorResponse } from "./http";
 import { mcpResource, resourceMetadataUrl } from "./public-url";
 import { verifyAccessToken } from "./routes/oauth";
+import { isPersonalToken, userForPersonalToken } from "./tokens";
 
 const digest = (s: string) => createHash("sha256").update(s).digest();
 const expected = digest(env.API_KEY);
@@ -60,10 +62,33 @@ export const requireUser =
     if (!token) return deny("Sign in, or send the API key");
 
     let userId: string | null;
-    if (isApiKey(token)) userId = env.DEMO_USER_ID;
-    else if (opts.mcp && token.startsWith("mcp_at_")) {
-      userId = (await verifyAccessToken(token, mcpResource(c)))?.user_id ?? null;
-    } else userId = await userFromSupabaseToken(token);
+    let via: AuthMethod;
+    let agentId: string | null = null;
+    if (isApiKey(token)) {
+      userId = env.DEMO_USER_ID;
+      via = "api_key";
+    } else if (isPersonalToken(token)) {
+      // Device keys (Mac collector, Health Auto Export) made by the person in the app.
+      userId = await userForPersonalToken(token);
+      via = "personal_token";
+    } else if (opts.mcp && token.startsWith("mcp_at_")) {
+      const oauth = await verifyAccessToken(token, mcpResource(c));
+      userId = oauth?.user_id ?? null;
+      agentId = oauth?.agent_id ?? null;
+      via = "mcp_oauth";
+    } else {
+      userId = await userFromSupabaseToken(token);
+      via = "session";
+    }
     if (!userId) return deny("Invalid or expired credentials");
-    await runAsUser(userId, () => next());
+
+    if (agentId) {
+      // The agent behind the token: its current scopes apply and every tool call is logged.
+      const uid = userId;
+      const agent = await runAsUser(uid, () => agentsStore.getAgent(agentId), via);
+      if (!agent || agent.status === "revoked") return deny("This agent was revoked. Connect it again.");
+      await runAsUser(uid, () => next(), via, agent);
+      return;
+    }
+    await runAsUser(userId, () => next(), via);
   };

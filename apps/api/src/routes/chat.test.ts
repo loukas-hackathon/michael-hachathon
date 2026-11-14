@@ -1,8 +1,17 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ApiError, ChatHistory, type ChatMessage, type Event, mockGoals } from "@michael/shared";
+import type Anthropic from "@anthropic-ai/sdk";
+import {
+  ApiError,
+  ChatHistory,
+  type ChatMessage,
+  ChatResponse,
+  type Event,
+  mockGoals,
+  mockScore,
+} from "@michael/shared";
 import { app } from "../app";
-import { buildChatContext, toTurns } from "./chat";
+import { buildChatContext, scoreLines, setChatClientForTests, toTurns } from "./chat";
 
 const auth = { Authorization: "Bearer dev-key", "content-type": "application/json" };
 
@@ -82,4 +91,77 @@ test("POST /v1/chat without a model key answers 503 and stores nothing", {
   assert.equal(ApiError.parse(await res.json()).error.code, "unavailable");
   const history = ChatHistory.parse(await (await app.request("/v1/chat", { headers: auth })).json());
   assert.equal(history.messages.length, 0);
+});
+
+test("POST /v1/chat/stream without a model key answers 503 before streaming", {
+  skip: !!process.env.ANTHROPIC_API_KEY,
+}, async () => {
+  const res = await app.request("/v1/chat/stream", {
+    method: "POST",
+    headers: auth,
+    body: JSON.stringify({ message: "How is my day going?" }),
+  });
+  assert.equal(res.status, 503);
+  assert.equal(ApiError.parse(await res.json()).error.code, "unavailable");
+});
+
+test("the score goes into the chat context with its own figures", () => {
+  const text = scoreLines(mockScore);
+  assert.match(text, /64% of planned goal time spent/);
+  assert.match(text, /6h 56m spent of 10h 50m planned time already passed/);
+  assert.match(
+    text,
+    /4h of deep work per day \[work\]: 6h 6m spent of budget 20h \(13h 54m left to reach it\)/,
+  );
+});
+
+test("POST /v1/chat/stream sends deltas, then the stored reply", async () => {
+  const pieces = ["Two hours ", "of focus ", "left today."];
+  const fake = {
+    messages: {
+      stream: () => ({
+        async *[Symbol.asyncIterator]() {
+          for (const text of pieces) {
+            yield { type: "content_block_delta", index: 0, delta: { type: "text_delta", text } };
+          }
+        },
+        finalMessage: async () => ({
+          stop_reason: "end_turn",
+          content: [{ type: "text", text: pieces.join("") }],
+        }),
+      }),
+    },
+  } as unknown as Anthropic;
+  setChatClientForTests(fake);
+  try {
+    const res = await app.request("/v1/chat/stream", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ message: "What is left today?" }),
+    });
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get("content-type") ?? "", /text\/event-stream/);
+    const events = (await res.text())
+      .trim()
+      .split("\n\n")
+      .map((block) => ({
+        event: /^event: (.*)$/m.exec(block)?.[1],
+        data: JSON.parse(/^data: (.*)$/m.exec(block)?.[1] ?? "null"),
+      }));
+    assert.deepEqual(
+      events.filter((e) => e.event === "delta").map((e) => e.data.text),
+      pieces,
+    );
+    const done = events.at(-1);
+    assert.equal(done?.event, "done");
+    assert.equal(ChatResponse.parse(done?.data).reply.content, "Two hours of focus left today.");
+    // Stored for this user: the history now ends with the pair.
+    const history = ChatHistory.parse(await (await app.request("/v1/chat", { headers: auth })).json());
+    assert.deepEqual(
+      history.messages.slice(-2).map((m) => m.content),
+      ["What is left today?", "Two hours of focus left today."],
+    );
+  } finally {
+    setChatClientForTests(null);
+  }
 });

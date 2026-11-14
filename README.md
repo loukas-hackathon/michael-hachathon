@@ -121,12 +121,12 @@ What happens on merge, with no human involved:
 
 Where configuration lives (values are never committed):
 
-| Place                                        | Keys                                                                                                                 |
-| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Railway, service `api`                       | `NODE_ENV`, `API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `WEB_ORIGIN`, `PUBLIC_API_URL`, `GEMINI_API_KEY` |
-| Vercel, project `michael`                    | `API_URL`, `API_KEY`, `USE_MOCKS=false`                                                                              |
-| GitHub repo secrets                          | `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`, `RAILWAY_TOKEN`; variable `SUPABASE_PROJECT_REF`                    |
-| Local `apps/api/.env`, `apps/web/.env.local` | copies for local runs (`pnpm env:copy` in worktrees)                                                                 |
+| Place                                        | Keys                                                                                                                                                             |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Railway, service `api`                       | `NODE_ENV`, `API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `WEB_ORIGIN`, `PUBLIC_API_URL`, `GEMINI_API_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` |
+| Vercel, project `michael`                    | `API_URL`, `API_KEY`, `USE_MOCKS=false`                                                                                                                          |
+| GitHub repo secrets                          | `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`, `RAILWAY_TOKEN`; variable `SUPABASE_PROJECT_REF`                                                                |
+| Local `apps/api/.env`, `apps/web/.env.local` | copies for local runs (`pnpm env:copy` in worktrees)                                                                                                             |
 
 The production API key and access notes for the team are on the Build Hub (link in `CLAUDE.local.md`).
 
@@ -162,6 +162,10 @@ claude mcp add --transport http michael https://<railway-domain>/mcp \
 page. claude.ai signs in with MCP OAuth (`apps/api/src/routes/oauth.ts`): you sign in with Google
 in the web app, and the token Claude gets acts for you only. The Agents screen shows the same URL
 with a copy button. The old `?key=<API_KEY>` form still works and acts as the demo account.
+
+**Any other agent** gets its own token the same way (any MCP client with OAuth support): the
+Allow tap makes it an agent on the Agents screen, where you change its scopes or revoke it, and
+every question it asks is listed there.
 
 Claude Code can use the same OAuth flow: `claude mcp add --transport http michael <url>/mcp`, then
 `/mcp` in Claude Code to sign in.

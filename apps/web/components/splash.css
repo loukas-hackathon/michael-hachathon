@@ -1,0 +1,96 @@
+/*
+ * Launch animation (components/splash.tsx). About 1.2s in all, transform and opacity only.
+ * The overlay never takes taps, and it hides itself when the animation ends even without
+ * JavaScript, so it can never trap the app behind it.
+ */
+#m-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--m-bg);
+  color: var(--m-label);
+  pointer-events: none;
+  animation: m-splash-out 300ms cubic-bezier(0.23, 1, 0.32, 1) 950ms both;
+}
+
+#m-splash[data-done] {
+  display: none;
+}
+
+/* Same size and place as the iOS launch images in public/splash, so the hand over is seamless. */
+.m-splash-mark {
+  width: 96px;
+  height: auto;
+  overflow: visible;
+  animation: m-splash-lift 300ms cubic-bezier(0.23, 1, 0.32, 1) 950ms both;
+}
+
+.m-splash-body {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: m-splash-settle 520ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+/* The dot lands last: firm, no bounce. */
+.m-splash-dot {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: m-splash-land 460ms cubic-bezier(0.32, 0.72, 0, 1) 260ms both;
+}
+
+@keyframes m-splash-settle {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes m-splash-land {
+  from {
+    opacity: 0;
+    transform: translateY(-120%) scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes m-splash-lift {
+  to {
+    transform: scale(1.04);
+  }
+}
+
+@keyframes m-splash-out {
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+/* Opened from the Home Screen: iOS already showed the mark on its launch image, so hold it still
+ * and hand over to the app sooner. */
+#m-splash[data-standalone] {
+  animation-delay: 450ms;
+}
+#m-splash[data-standalone] .m-splash-mark {
+  animation-delay: 450ms;
+}
+#m-splash[data-standalone] .m-splash-body,
+#m-splash[data-standalone] .m-splash-dot {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #m-splash {
+    display: none;
+  }
+}

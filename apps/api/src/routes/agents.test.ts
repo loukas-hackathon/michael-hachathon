@@ -1,0 +1,158 @@
+import assert from "node:assert/strict";
+import { createHash, randomBytes } from "node:crypto";
+import { test } from "node:test";
+import { AgentClient, AgentQuery } from "@michael/shared";
+import { app } from "../app";
+import { athensMidnight } from "./agents";
+
+const apiKey = { Authorization: "Bearer dev-key" };
+const CALLBACK = "https://claude.ai/api/mcp/auth_callback";
+
+/** Connects an agent through the OAuth flow as the demo user; returns its access token. */
+async function connect(name: string, scope: string): Promise<string> {
+  const reg = await app.request("/oauth/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ client_name: name, redirect_uris: [CALLBACK] }),
+  });
+  const { client_id } = await reg.json();
+  const verifier = randomBytes(32).toString("base64url");
+  const qs = new URLSearchParams({
+    response_type: "code",
+    client_id,
+    redirect_uri: CALLBACK,
+    code_challenge: createHash("sha256").update(verifier).digest("base64url"),
+    code_challenge_method: "S256",
+    scope,
+  });
+  const auth = await app.request(`/oauth/authorize?${qs}`);
+  const id = new URL(auth.headers.get("location") ?? "").searchParams.get("request");
+  const decided = await app.request(`/v1/connect/requests/${id}`, {
+    method: "POST",
+    headers: { ...apiKey, "content-type": "application/json" },
+    body: JSON.stringify({ allow: true }),
+  });
+  const code = new URL((await decided.json()).redirect_to).searchParams.get("code") ?? "";
+  const token = await app.request("/oauth/token", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "authorization_code",
+      code,
+      code_verifier: verifier,
+      client_id,
+    }).toString(),
+  });
+  return (await token.json()).access_token;
+}
+
+async function callTool(token: string, name: string, args: Record<string, unknown>) {
+  const res = await app.request("/mcp", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+      accept: "application/json, text/event-stream",
+    },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }),
+  });
+  return { status: res.status, body: res.status === 200 ? await res.json() : null };
+}
+
+const listAgents = async () =>
+  AgentClient.array().parse((await (await app.request("/v1/agents", { headers: apiKey })).json()).agents);
+const listQueries = async () =>
+  AgentQuery.array().parse(
+    (await (await app.request("/v1/agents/queries", { headers: apiKey })).json()).queries,
+  );
+
+test("the consent tap creates an approved agent; scopes gate tools; every call is logged", async () => {
+  const token = await connect("Cursor", "timeline");
+  const agent = (await listAgents()).find((a) => a.name === "Cursor");
+  assert.ok(agent);
+  assert.equal(agent.status, "approved");
+  assert.deepEqual(agent.scopes, ["timeline"]);
+
+  const read = await callTool(token, "get_timeline", {});
+  assert.equal(read.status, 200);
+  assert.notEqual(read.body.result.isError, true);
+
+  const write = await callTool(token, "add_event", {
+    source: "agent",
+    type: "note",
+    start_at: new Date().toISOString(),
+    title: "Ran 5 km",
+  });
+  assert.equal(write.body.result.isError, true);
+  assert.match(write.body.result.content[0].text, /Not allowed/);
+
+  const mine = (await listQueries()).filter((q) => q.agent_id === agent.id);
+  assert.deepEqual(
+    mine.map((q) => [q.tool, q.allowed]),
+    [
+      ["add_event", false],
+      ["get_timeline", true],
+    ],
+  );
+  assert.equal(mine[0]?.summary, 'Added "Ran 5 km" to your day');
+  assert.ok((await listAgents()).find((a) => a.id === agent.id)?.last_seen_at);
+
+  // The user switches writing on: the same token may now add to the day.
+  const patched = await app.request(`/v1/agents/${agent.id}`, {
+    method: "PATCH",
+    headers: { ...apiKey, "content-type": "application/json" },
+    body: JSON.stringify({ scopes: ["timeline", "write_events"] }),
+  });
+  assert.equal(patched.status, 200);
+  const again = await callTool(token, "add_event", {
+    source: "agent",
+    type: "note",
+    start_at: new Date().toISOString(),
+    title: "Ran 5 km",
+  });
+  assert.notEqual(again.body.result.isError, true);
+
+  // Revoke: the token stops working at once.
+  const revoked = await app.request(`/v1/agents/${agent.id}`, {
+    method: "PATCH",
+    headers: { ...apiKey, "content-type": "application/json" },
+    body: JSON.stringify({ status: "revoked" }),
+  });
+  assert.equal(AgentClient.parse(await revoked.json()).status, "revoked");
+  assert.equal((await callTool(token, "get_goals", {})).status, 401);
+});
+
+test("reconnecting the same agent updates one record", async () => {
+  await connect("Claude", "timeline");
+  await connect("Claude", "timeline goals");
+  const claudes = (await listAgents()).filter((a) => a.name === "Claude");
+  assert.equal(claudes.length, 1);
+  assert.deepEqual(claudes[0]?.scopes, ["timeline", "goals"]);
+});
+
+test("PATCH /v1/agents/:id validates and 404s", async () => {
+  const missing = await app.request("/v1/agents/00000000-0000-4000-8000-000000000000", {
+    method: "PATCH",
+    headers: { ...apiKey, "content-type": "application/json" },
+    body: JSON.stringify({ status: "approved" }),
+  });
+  assert.equal(missing.status, 404);
+  const bad = await app.request("/v1/agents/00000000-0000-4000-8000-000000000000", {
+    method: "PATCH",
+    headers: { ...apiKey, "content-type": "application/json" },
+    body: JSON.stringify({ scopes: ["everything"] }),
+  });
+  assert.equal(bad.status, 400);
+  assert.equal((await app.request("/v1/agents/queries?from=yesterday", { headers: apiKey })).status, 400);
+});
+
+test("the API key on /mcp is not an agent and is not logged", async () => {
+  const before = (await listQueries()).length;
+  assert.equal((await callTool("dev-key", "get_goals", {})).status, 200);
+  assert.equal((await listQueries()).length, before);
+});
+
+test("athensMidnight is local midnight", () => {
+  assert.equal(athensMidnight(new Date("2026-11-14T12:00:00Z")), "2026-11-13T22:00:00.000Z");
+  assert.equal(athensMidnight(new Date("2026-07-01T12:00:00Z")), "2026-06-30T21:00:00.000Z");
+});

@@ -7,6 +7,10 @@ import type {
   Goal,
   GoalCreate,
   GoalUpdate,
+  IntegrationProvider,
+  Nudge,
+  NudgeStatus,
+  Profile,
   Recommendation,
   RecommendationStatus,
   Source,
@@ -17,7 +21,19 @@ import type { z } from "zod";
 import { currentUserId } from "./context";
 import { HttpError } from "./http";
 import { type PrivacyRules, screenEvents } from "./privacy";
-import type { InsertResult, Store, TimelineFilter } from "./store";
+import {
+  type EventPatch,
+  type InsertResult,
+  type IntegrationPatch,
+  type IntegrationRecord,
+  type NudgeCreate,
+  type PushDevice,
+  type RecommendationActionUpdate,
+  type Store,
+  sameEvent,
+  type TimelineFilter,
+  type UpsertResult,
+} from "./store";
 
 type EventRow = z.output<typeof EventInput>;
 
@@ -81,6 +97,34 @@ const toChatMessage = (r: Record<string, unknown>): ChatMessage => ({
   role: r.role as ChatRole,
   content: r.content as string,
   created_at: iso(r.created_at as string) as string,
+});
+
+const toIntegration = (r: Record<string, unknown>): IntegrationRecord => ({
+  provider: r.provider as IntegrationRecord["provider"],
+  status: r.status as IntegrationRecord["status"],
+  account: (r.account as string | null) ?? null,
+  connected_at: iso(r.connected_at as string | null),
+  last_sync_at: iso(r.last_sync_at as string | null),
+  error: (r.error as string | null) ?? null,
+  access_token: (r.access_token as string | null) ?? null,
+  refresh_token: (r.refresh_token as string | null) ?? null,
+  expires_at: iso(r.expires_at as string | null),
+  scope: (r.scope as string | null) ?? null,
+});
+
+const toNudge = (r: Record<string, unknown>): Nudge => ({
+  id: r.id as string,
+  recommendation_id: (r.recommendation_id as string | null) ?? null,
+  goal_id: (r.goal_id as string | null) ?? null,
+  kind: r.kind as Nudge["kind"],
+  key: (r.key as string | null) ?? "",
+  day: r.day as string,
+  channel: r.channel as Nudge["channel"],
+  text: r.text as string,
+  reason: (r.reason as string | null) ?? "",
+  status: r.status as NudgeStatus,
+  created_at: iso(r.created_at as string) as string,
+  sent_at: iso(r.sent_at as string | null),
 });
 
 function check<T>(res: { data: T; error: { message: string; code?: string } | null }): T {
@@ -274,6 +318,28 @@ export class SupabaseStore implements Store {
     return (rows ?? []).length > 0;
   }
 
+  // Stored as one jsonb document per user; routes/profile.ts validates it and fills in defaults.
+  async getProfile() {
+    const row = check(
+      await this.db.from("user_profiles").select("data").eq("user_id", currentUserId()).maybeSingle(),
+    );
+    return row ? (row.data as Profile) : null;
+  }
+
+  async saveProfile(profile: Profile) {
+    check(
+      await this.db.from("user_profiles").upsert(
+        {
+          user_id: currentUserId(),
+          data: profile,
+          updated_at: profile.updated_at ?? new Date().toISOString(),
+        },
+        { onConflict: "user_id" },
+      ),
+    );
+    return profile;
+  }
+
   async listRecommendations(filter?: { status?: RecommendationStatus }) {
     let q = this.db
       .from("recommendations")
@@ -282,6 +348,43 @@ export class SupabaseStore implements Store {
       .order("created_at", { ascending: false });
     if (filter?.status) q = q.eq("status", filter.status);
     return (check(await q) ?? []).map(toRecommendation);
+  }
+
+  async getRecommendation(id: string) {
+    const row = check(
+      await this.db
+        .from("recommendations")
+        .select("*")
+        .eq("user_id", currentUserId())
+        .eq("id", id)
+        .maybeSingle(),
+    );
+    return row ? toRecommendation(row) : null;
+  }
+
+  async getRecommendationExecution(id: string) {
+    const row = check(
+      await this.db
+        .from("recommendations")
+        .select("execution")
+        .eq("user_id", currentUserId())
+        .eq("id", id)
+        .maybeSingle(),
+    );
+    return (row?.execution as unknown) ?? null;
+  }
+
+  async recordRecommendationAction(id: string, u: RecommendationActionUpdate) {
+    const row = check(
+      await this.db
+        .from("recommendations")
+        .update(withoutUndefined({ ...u }))
+        .eq("user_id", currentUserId())
+        .eq("id", id)
+        .select("*")
+        .maybeSingle(),
+    );
+    return row ? toRecommendation(row) : null;
   }
 
   async updateRecommendationStatus(id: string, status: RecommendationStatus) {
@@ -331,5 +434,204 @@ export class SupabaseStore implements Store {
         .single(),
     );
     return toChatMessage(row);
+  }
+
+  async getEvent(id: string) {
+    const row = check(
+      await this.db.from("events").select("*").eq("user_id", currentUserId()).eq("id", id).maybeSingle(),
+    );
+    return row ? toEvent(row) : null;
+  }
+
+  async upsertEvents(inputs: EventRow[]): Promise<UpsertResult> {
+    const result: UpsertResult = { inserted: [], updated: [], unchanged: 0 };
+    if (!inputs.length) return result;
+    const userId = currentUserId();
+    const existing = new Map<string, Event>();
+    // Chunked so the `in` list stays well inside URL limits.
+    for (let i = 0; i < inputs.length; i += 200) {
+      const chunk = inputs.slice(i, i + 200);
+      const rows = check(
+        await this.db
+          .from("events")
+          .select("*")
+          .eq("user_id", userId)
+          .in("source", [...new Set(chunk.map((x) => x.source))])
+          .in(
+            "external_id",
+            chunk.map((x) => x.external_id as string),
+          ),
+      );
+      for (const r of rows ?? []) {
+        const e = toEvent(r);
+        existing.set(`${e.source}|${e.external_id}`, e);
+      }
+    }
+    const fresh: EventRow[] = [];
+    for (const i of inputs) {
+      const found = existing.get(`${i.source}|${i.external_id}`);
+      if (!found) fresh.push(i);
+      else if (sameEvent(found, i)) result.unchanged++;
+      else {
+        const row = check(
+          await this.db
+            .from("events")
+            .update({
+              type: i.type,
+              title: i.title,
+              start_at: i.start_at,
+              end_at: i.end_at ?? null,
+              data: i.data,
+            })
+            .eq("user_id", userId)
+            .eq("id", found.id)
+            .select("*")
+            .single(),
+        );
+        result.updated.push(toEvent(row));
+      }
+    }
+    result.inserted = (await this.insertEvents(fresh)).inserted;
+    return result;
+  }
+
+  async updateEvent(id: string, patch: EventPatch) {
+    const row = check(
+      await this.db
+        .from("events")
+        .update(withoutUndefined(patch as Record<string, unknown>))
+        .eq("user_id", currentUserId())
+        .eq("id", id)
+        .select("*")
+        .maybeSingle(),
+    );
+    return row ? toEvent(row) : null;
+  }
+
+  async deleteEvents(ids: string[]) {
+    if (!ids.length) return 0;
+    const rows = check(
+      await this.db.from("events").delete().eq("user_id", currentUserId()).in("id", ids).select("id"),
+    );
+    return (rows ?? []).length;
+  }
+
+  async listIntegrations() {
+    return (check(await this.db.from("integrations").select("*").eq("user_id", currentUserId())) ?? []).map(
+      toIntegration,
+    );
+  }
+
+  async getIntegration(provider: IntegrationProvider) {
+    const row = check(
+      await this.db
+        .from("integrations")
+        .select("*")
+        .eq("user_id", currentUserId())
+        .eq("provider", provider)
+        .maybeSingle(),
+    );
+    return row ? toIntegration(row) : null;
+  }
+
+  async saveIntegration(provider: IntegrationProvider, patch: IntegrationPatch) {
+    const row = check(
+      await this.db
+        .from("integrations")
+        .upsert(
+          { user_id: currentUserId(), provider, ...withoutUndefined(patch as Record<string, unknown>) },
+          { onConflict: "user_id,provider" },
+        )
+        .select("*")
+        .single(),
+    );
+    return toIntegration(row);
+  }
+
+  async listConnectedUserIds(provider: IntegrationProvider) {
+    const rows = check(
+      await this.db.from("integrations").select("user_id").eq("provider", provider).eq("status", "connected"),
+    );
+    return (rows ?? []).map((r) => r.user_id as string).filter(Boolean);
+  }
+
+  async listNudges(f: { from: string; to: string }) {
+    const rows = check(
+      await this.db
+        .from("nudges")
+        .select("*")
+        .eq("user_id", currentUserId())
+        .gte("created_at", f.from)
+        .lt("created_at", f.to)
+        .order("created_at", { ascending: true }),
+    );
+    return (rows ?? []).map(toNudge);
+  }
+
+  async createNudge(i: NudgeCreate) {
+    const res = await this.db
+      .from("nudges")
+      .insert({ ...i, user_id: currentUserId() })
+      .select("*")
+      .single();
+    // Unique (user_id, day, key): another check got there first.
+    if (res.error?.code === "23505") return null;
+    return toNudge(check(res));
+  }
+
+  async updateNudgeStatus(id: string, status: NudgeStatus) {
+    const row = check(
+      await this.db
+        .from("nudges")
+        .update({ status, ...(status === "sent" ? { sent_at: new Date().toISOString() } : {}) })
+        .eq("user_id", currentUserId())
+        .eq("id", id)
+        .select("*")
+        .maybeSingle(),
+    );
+    return row ? toNudge(row) : null;
+  }
+
+  async listPushDevices(): Promise<PushDevice[]> {
+    const rows = check(
+      await this.db
+        .from("push_subscriptions")
+        .select("endpoint, p256dh, auth")
+        .eq("user_id", currentUserId()),
+    );
+    return (rows ?? []).map((r) => ({ endpoint: r.endpoint, keys: { p256dh: r.p256dh, auth: r.auth } }));
+  }
+
+  async savePushDevice(device: PushDevice, userAgent: string | null) {
+    check(
+      await this.db.from("push_subscriptions").upsert(
+        {
+          user_id: currentUserId(),
+          endpoint: device.endpoint,
+          p256dh: device.keys.p256dh,
+          auth: device.keys.auth,
+          user_agent: userAgent,
+          last_used_at: new Date().toISOString(),
+        },
+        { onConflict: "endpoint" },
+      ),
+    );
+  }
+
+  async removePushDevice(endpoint: string) {
+    check(
+      await this.db
+        .from("push_subscriptions")
+        .delete()
+        .eq("user_id", currentUserId())
+        .eq("endpoint", endpoint),
+    );
+  }
+
+  async activeUserIds(since: string) {
+    const rows = check(await this.db.rpc("active_user_ids", { since }));
+    return ((rows ?? []) as unknown[]).map((r) =>
+      typeof r === "string" ? r : String((r as Record<string, unknown>).active_user_ids),
+    );
   }
 }

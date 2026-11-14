@@ -6,17 +6,24 @@ import { requireUser } from "./auth";
 import { env } from "./env";
 import { errorResponse, HttpError } from "./http";
 import { handleMcpRequest } from "./mcp";
+import { actions } from "./routes/actions";
+import { agents } from "./routes/agents";
 import { analysis } from "./routes/analysis";
 import { chat } from "./routes/chat";
 import { events } from "./routes/events";
 import { goals } from "./routes/goals";
 import { integrations, oauth } from "./routes/integrations";
+import { moments } from "./routes/moments";
+import { nudges } from "./routes/nudges";
 import { connect, oauthPublic } from "./routes/oauth";
 import { patterns } from "./routes/patterns";
 import { privacy } from "./routes/privacy";
 import { product } from "./routes/product";
+import { profile } from "./routes/profile";
+import { push } from "./routes/push";
 import { recommendations } from "./routes/recommendations";
 import { score } from "./routes/score";
+import { tokens } from "./routes/tokens";
 import { webhooks } from "./routes/webhooks";
 import { store } from "./store";
 
@@ -35,10 +42,17 @@ const v1 = new Hono()
   .route("/", patterns)
   .route("/", score)
   .route("/", chat)
+  .route("/", moments)
   .route("/", integrations)
   .route("/", privacy)
+  .route("/", nudges)
+  .route("/", push)
+  .route("/", actions)
+  .route("/", profile)
   .route("/", product)
-  .route("/", connect);
+  .route("/", tokens)
+  .route("/", connect)
+  .route("/", agents);
 
 export const app = new Hono()
   .use(logger())
@@ -55,7 +69,8 @@ export const app = new Hono()
   })
   // MCP OAuth: discovery, client registration, authorise and token (public by design).
   .route("/", oauthPublic)
-  .route("/v1", oauth)
+  // Google Calendar OAuth callback (/oauth/google/callback), validated by its signed state.
+  .route("/", oauth)
   .route("/v1/webhooks", webhooksApp)
   .route("/v1", v1)
   // claude.ai signs in with OAuth (routes/oauth.ts); the API key and ?key= keep working.
