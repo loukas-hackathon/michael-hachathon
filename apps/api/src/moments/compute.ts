@@ -1,6 +1,8 @@
 import {
   type Event,
   type Goal,
+  goalArea,
+  goalKind,
   isSleepGoal,
   type Moment,
   type MomentGoal,
@@ -160,6 +162,9 @@ export function computeMoment(input: MomentInput): MomentCore {
       goal_id: g.id,
       title: g.title,
       category: g.category,
+      area: goalArea(g.category),
+      kind: goalKind(g),
+      sleep: isRest,
       budget_minutes: g.weekly_budget_minutes,
       spent_week_minutes: spentWeek,
       planned_today_minutes: isRest ? Math.round(perDay) : toMin(blockTime(todayStart, tomorrowStart)),

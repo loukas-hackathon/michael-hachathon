@@ -220,6 +220,8 @@ export const mockInstructions: Instruction[] = [
     text: "Keep Sundays clear",
     kind: "clear_day",
     days: [0],
+    // The Sunday recovery session is the one thing allowed on a clear Sunday.
+    exceptions: ["Rhefuel"],
     active: true,
     created_at: CREATED,
     updated_at: CREATED,
@@ -387,6 +389,8 @@ export const mockScore: Score = {
           spent_minutes: 0,
         },
       ],
+      minutes_left: 834,
+      open_blocks: 3,
     },
     {
       goal_id: "10000000-0000-4000-8000-000000000002",
@@ -440,6 +444,8 @@ export const mockScore: Score = {
           spent_minutes: 0,
         },
       ],
+      minutes_left: 490,
+      open_blocks: 2,
     },
     {
       goal_id: "10000000-0000-4000-8000-000000000003",
@@ -493,6 +499,8 @@ export const mockScore: Score = {
           spent_minutes: 0,
         },
       ],
+      minutes_left: 0,
+      open_blocks: 0,
     },
     {
       goal_id: "10000000-0000-4000-8000-000000000004",
@@ -546,6 +554,8 @@ export const mockScore: Score = {
           spent_minutes: 0,
         },
       ],
+      minutes_left: 0,
+      open_blocks: 0,
     },
     {
       goal_id: "10000000-0000-4000-8000-000000000005",
@@ -599,6 +609,8 @@ export const mockScore: Score = {
           spent_minutes: 0,
         },
       ],
+      minutes_left: 180,
+      open_blocks: 0,
     },
   ],
   timezone: "Europe/Athens",
@@ -615,6 +627,9 @@ export const mockScore: Score = {
       ahead_minutes: 250,
       unverified_minutes: 0,
       score_pct: 62,
+      target_pct: null,
+      floor_pct: 50,
+      meets_floor: true,
     },
     {
       area: "health",
@@ -630,6 +645,9 @@ export const mockScore: Score = {
       ahead_minutes: 100,
       unverified_minutes: 0,
       score_pct: 83,
+      target_pct: null,
+      floor_pct: 50,
+      meets_floor: true,
     },
     {
       area: "personal",
@@ -641,6 +659,9 @@ export const mockScore: Score = {
       ahead_minutes: 0,
       unverified_minutes: 0,
       score_pct: null,
+      target_pct: null,
+      floor_pct: 50,
+      meets_floor: false,
     },
   ],
   days: [
@@ -748,6 +769,7 @@ export const mockScore: Score = {
         matched_by: "calendar_titles",
         start_at: "2026-11-11T07:00:00.000Z",
         end_at: "2026-11-11T09:00:00.000Z",
+        record_id: null,
         planned_minutes: 120,
         elapsed_minutes: 120,
         spent_minutes: 111,
@@ -786,6 +808,7 @@ export const mockScore: Score = {
         matched_by: "calendar_titles",
         start_at: "2026-11-11T09:30:00.000Z",
         end_at: "2026-11-11T10:30:00.000Z",
+        record_id: null,
         planned_minutes: 60,
         elapsed_minutes: 60,
         spent_minutes: 41,
@@ -815,6 +838,7 @@ export const mockScore: Score = {
         matched_by: "calendar_titles",
         start_at: "2026-11-11T12:00:00.000Z",
         end_at: "2026-11-11T13:30:00.000Z",
+        record_id: null,
         planned_minutes: 90,
         elapsed_minutes: 80,
         spent_minutes: 61,
@@ -889,6 +913,7 @@ export const mockScore: Score = {
         matched_by: "calendar_titles",
         start_at: "2026-11-11T16:00:00.000Z",
         end_at: "2026-11-11T16:40:00.000Z",
+        record_id: null,
         planned_minutes: 40,
         elapsed_minutes: 0,
         spent_minutes: 0,
@@ -945,6 +970,11 @@ export const mockScore: Score = {
     mac: "2026-11-11T13:30:00.000Z",
     iphone: "2026-11-11T13:16:00.000Z",
   },
+  target: null,
+  on_target: null,
+  records: [],
+  free_minutes_left: 4390,
+  sleep: { goal_minutes: 450, nightly: [431, 388, 452, null, null, null, null] },
 };
 
 // ---------- demo recommendations, relative to now ----------
@@ -981,9 +1011,16 @@ export const DEMO_RECOMMENDATION_IDS = [
 
 export function demoRecommendations(now: Date = new Date()): Recommendation[] {
   const hour = athensHour(now);
-  // Today if the slot is still comfortably ahead, otherwise tomorrow.
-  const focusDay = hour < 8 ? 0 : 1;
-  const runDay = hour < 17 ? 0 : 1;
+  // Today if the slot is still comfortably ahead, otherwise tomorrow; never on a Sunday, which the
+  // demo's standing instruction "Keep Sundays clear" protects (Do it would be refused).
+  const notSunday = (days: number) => {
+    const weekday = new Intl.DateTimeFormat("en-GB", { timeZone: DEMO_TZ, weekday: "short" }).format(
+      new Date(now.getTime() + days * 86_400_000),
+    );
+    return weekday === "Sun" ? days + 1 : days;
+  };
+  const focusDay = notSunday(hour < 8 ? 0 : 1);
+  const runDay = notSunday(hour < 17 ? 0 : 1);
   const focusStart = athensAt(now, focusDay, "09:30");
   const runStart = athensAt(now, runDay, "18:30");
   const syncStart = athensAt(now, 1, "11:00");

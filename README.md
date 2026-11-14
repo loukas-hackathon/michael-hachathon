@@ -2,7 +2,8 @@
 
 **On your side.** Michael finds the time you lose every day and gives it back to your goals.
 
-Michael is a coach for the whole day. He builds **one timeline of your day** from your Apple Watch,
+Michael is a coach for the whole working day, for founders and executives whose time is the business.
+He builds **one timeline of your day** from your Apple Watch,
 calendar, Mac, iPhone, browser and Claude Code, checks it against your goals (business, health,
 personal), and recommends or makes concrete changes, each tied to a goal.
 
@@ -10,7 +11,7 @@ personal), and recommends or makes concrete changes, each tied to a goal.
   leaked away and to what, and the time won back. Goals have weekly budgets and show the sums.
 - **Claude works with your day.** Paste one link into claude.ai and tap Allow: Claude reads your
   day and goals, books focus blocks on your own time, and undoes them. Every agent's question is
-  logged on the Agents screen ("who asked about me today").
+  logged under Agents in the Mi button ("who asked about me today").
 - **A nudge on your wrist.** At most five a day, never in quiet hours, under fifteen words. They
   land on the iPhone and the Apple Watch; Morning and Evening moments open and close the day.
 
@@ -28,7 +29,7 @@ event with other people.
 Pitch script: [`docs/pitch.md`](docs/pitch.md). Pre-stage checklist:
 [`docs/demo-runbook.md`](docs/demo-runbook.md).
 
-Built at the Gen AI Summit Hackathon, Athens, 14-15 November 2026.
+Built at the Gen AI Summit Hackathon, Athens, 14 and 15 November 2026.
 
 ## Architecture
 
@@ -69,7 +70,8 @@ pnpm check          # typecheck + lint
 ```
 
 With no Supabase variables set, the API uses an in-memory store seeded with a mock day, so
-everything works offline. The web app serves mock data while `USE_MOCKS=true`.
+everything works offline. The web app shows real data from `API_URL`; it serves fixtures only with
+`USE_MOCKS=true` (or in `next dev` with no `API_URL`). Any screen previews the sample with `?demo=sample`.
 
 ```bash
 curl localhost:8787/health
@@ -80,37 +82,37 @@ curl -H "Authorization: Bearer dev-key" "localhost:8787/v1/timeline?from=2026-11
 
 `apps/api` (`apps/api/.env.example`):
 
-| Var                                                 | Purpose                                                                                  |
-| --------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `PORT`                                              | default 8787 (Railway sets it)                                                           |
-| `API_KEY`                                           | shared bearer secret; acts as the demo account (required in production)                  |
-| `DEMO_WEEK`                                         | `on` (default): the demo account carries a generated week up to now; `off` turns it off  |
-| `DEMO_USER_ID`                                      | the demo account's user id (has a default)                                               |
-| `WEB_ORIGIN`                                        | CORS origins, comma-separated                                                            |
-| `PUBLIC_API_URL`                                    | public URL of the API, used for OAuth redirect URIs                                      |
-| `PUBLIC_WEB_URL`                                    | public URL of the web app (MCP OAuth consent page); empty = first non local `WEB_ORIGIN` |
-| `WEB_URL`                                           | web app URL the OAuth callbacks return to (defaults to the first `WEB_ORIGIN`)           |
-| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`         | database; empty = in-memory store                                                        |
-| `GEMINI_API_KEY`, `GEMINI_MODEL`                    | analysis                                                                                 |
-| `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`              | chat with Michael (`POST /v1/chat`, chat actions); without a key chat answers 503        |
-| `GOOGLE_CLIENT_ID/SECRET`, `WHOOP_CLIENT_ID/SECRET` | OAuth integrations                                                                       |
-| `CALENDAR_SYNC_MINUTES`                             | minutes between background Google Calendar syncs for every connected user (0 = off)      |
-| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`             | Web Push for nudges (iPhone, Apple Watch mirror); `npx web-push generate-vapid-keys`     |
-| `VAPID_SUBJECT`                                     | contact for push services, e.g. `mailto:team@michael.app`                                |
-| `SCHEDULER_ENABLED`, `SCHEDULER_INTERVAL_MINUTES`   | nudge check for every active user (default on in production, every 5 minutes)            |
-| `GOOGLE_MAPS_API_KEY`                               | travel times (Routes and Geocoding APIs); empty = places kept, travel skipped            |
-| `ELEVENLABS_API_KEY`                                | Michael's spoken voice for push to talk; arrives with PR #146 (browser voice without it) |
+| Var                                                             | Purpose                                                                                            |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `PORT`                                                          | default 8787 (Railway sets it)                                                                     |
+| `API_KEY`                                                       | shared bearer secret; acts as the demo account (required in production)                            |
+| `DEMO_WEEK`                                                     | `on` (default): the demo account carries a generated week up to now; `off` turns it off            |
+| `DEMO_USER_ID`                                                  | the demo account's user id (has a default)                                                         |
+| `WEB_ORIGIN`                                                    | CORS origins, comma-separated                                                                      |
+| `PUBLIC_API_URL`                                                | public URL of the API, used for OAuth redirect URIs                                                |
+| `PUBLIC_WEB_URL`                                                | public URL of the web app (MCP OAuth consent page); empty = first non local `WEB_ORIGIN`           |
+| `WEB_URL`                                                       | web app URL the OAuth callbacks return to (defaults to the first `WEB_ORIGIN`)                     |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`                     | database; empty = in-memory store                                                                  |
+| `GEMINI_API_KEY`, `GEMINI_MODEL`                                | analysis                                                                                           |
+| `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`                          | chat with Michael (`POST /v1/chat`, chat actions); without a key chat answers 503                  |
+| `GOOGLE_CLIENT_ID/SECRET`, `WHOOP_CLIENT_ID/SECRET`             | OAuth integrations                                                                                 |
+| `CALENDAR_SYNC_MINUTES`                                         | minutes between background Google Calendar syncs for every connected user (0 = off)                |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`                         | Web Push for nudges (iPhone, Apple Watch mirror); `npx web-push generate-vapid-keys`               |
+| `VAPID_SUBJECT`                                                 | contact for push services, e.g. `mailto:team@michael.app`                                          |
+| `SCHEDULER_ENABLED`, `SCHEDULER_INTERVAL_MINUTES`               | nudge check for every active user (default on in production, every 5 minutes)                      |
+| `GOOGLE_MAPS_API_KEY`                                           | travel times (Routes and Geocoding APIs); empty = places kept, travel skipped                      |
+| `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL` | Michael's spoken voice (`POST /v1/voice/speak`, free tier); without a key the browser voice speaks |
 
 `apps/web` (`apps/web/.env.example`). Only `NEXT_PUBLIC_` vars reach the browser:
 
-| Var                                                         | Purpose                                                               |
-| ----------------------------------------------------------- | --------------------------------------------------------------------- |
-| `USE_MOCKS`                                                 | `true` serves fixtures from `@michael/shared`                         |
-| `API_URL`                                                   | base URL of the API                                                   |
-| `API_KEY`                                                   | same secret as the API (the demo week)                                |
-| `PUBLIC_API_URL`                                            | optional: API URL shown in device keys (defaults to `API_URL`)        |
-| `MCP_URL`                                                   | optional: the MCP URL shown on the Agents screen (`API_URL` + `/mcp`) |
-| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Google sign in through Supabase Auth (anon key is public by design)   |
+| Var                                                         | Purpose                                                                   |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `USE_MOCKS`                                                 | only `true` serves fixtures (default: real data, `?demo=sample` previews) |
+| `API_URL`                                                   | base URL of the API                                                       |
+| `API_KEY`                                                   | same secret as the API (the demo week)                                    |
+| `PUBLIC_API_URL`                                            | optional: API URL shown in device keys (defaults to `API_URL`)            |
+| `MCP_URL`                                                   | optional: the MCP URL shown on the Agents screen (`API_URL` + `/mcp`)     |
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Google sign in through Supabase Auth (anon key is public by design)       |
 
 ## Browser extension
 
@@ -143,14 +145,19 @@ What happens on merge, with no human involved:
 | PR opened, CI green, no conflicts             | `Auto-merge` action squash-merges it                          |
 | API, `packages/shared` or root config changed | `Deploy API` action deploys to Railway, then checks `/health` |
 | new file in `supabase/migrations/`            | `Migrate database` action applies it to production            |
-| anything                                      | Vercel rebuilds the web app (PRs get preview URLs)            |
+| anything on `main`                            | Vercel rebuilds the web app (no PR previews, `vercel.json`)   |
+
+Everything runs in the EU next to the database (Frankfurt): the API on Railway in Amsterdam
+(`railway.json` `multiRegionConfig`, `europe-west4-drams3a`), the web functions on Vercel in
+Frankfurt (`apps/web/vercel.json` `regions: ["fra1"]`). Keep them there: a US region adds a
+transatlantic round trip to every query. The API's `Server-Timing` header shows its time and region.
 
 Where configuration lives (values are never committed):
 
 | Place                                        | Keys                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Railway, service `api`                       | `NODE_ENV`, `API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `WEB_ORIGIN`, `PUBLIC_API_URL`, `PUBLIC_WEB_URL`, `WEB_URL`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `CALENDAR_SYNC_MINUTES`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `SCHEDULER_ENABLED`, `SCHEDULER_INTERVAL_MINUTES`, `GOOGLE_MAPS_API_KEY`, `ELEVENLABS_API_KEY` (optional) |
-| Vercel, project `michael`                    | `API_URL`, `API_KEY`, `USE_MOCKS=false`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `MCP_URL` (optional), `PUBLIC_API_URL` (optional)                                                                                                                                                                                                                                                                             |
+| Vercel, project `michael`                    | `API_URL`, `API_KEY`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `MCP_URL` (optional), `PUBLIC_API_URL` (optional)                                                                                                                                                                                                                                                                                                |
 | GitHub repo secrets                          | `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`, `RAILWAY_TOKEN`; variable `SUPABASE_PROJECT_REF`                                                                                                                                                                                                                                                                                                                                   |
 | Local `apps/api/.env`, `apps/web/.env.local` | copies for local runs (`pnpm env:copy` in worktrees)                                                                                                                                                                                                                                                                                                                                                                                |
 
@@ -169,13 +176,13 @@ Seed the demo goals and recommendations (idempotent, never events): `pnpm --filt
    `GEMINI_API_KEY`, `WEB_ORIGIN` (the Vercel URL) and `PUBLIC_API_URL` (the Railway URL).
    Generate a domain, then check `https://<railway-domain>/health`.
 3. **Vercel (web):** import the repo, set the root directory to `apps/web` (framework Next.js).
-   Set `API_URL` (the Railway URL), `API_KEY`, `USE_MOCKS=false`, `NEXT_PUBLIC_SUPABASE_URL` and
-   `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+   Set `API_URL` (the Railway URL), `API_KEY`, `NEXT_PUBLIC_SUPABASE_URL` and
+   `NEXT_PUBLIC_SUPABASE_ANON_KEY`. Leave `USE_MOCKS` unset.
 
 ## Connect the MCP server
 
-Tools: read the day (`get_timeline`, `get_goals`, `get_score`, `get_patterns`, `get_moments`,
-`get_nudges`, `list_recommendations`) and change it (`add_event`, `add_goal`, `update_goal`,
+Tools: read the day (`get_timeline`, `get_goals`, `get_score`, `get_records`, `get_patterns`, `get_moments`,
+`get_nudges`, `list_recommendations`, `get_memories`) and change it (`add_event`, `remember`, `add_goal`, `update_goal`,
 `update_recommendation`, `execute_recommendation`, `undo_recommendation`, `create_focus_block`,
 `plan_travel`).
 See `docs/api.md`.
@@ -285,3 +292,13 @@ Add this to `~/.claude/settings.json` (merge it into an existing `hooks` block i
   `SessionEnd` are accepted and not stored yet, so you can leave those two out. Tool input, tool
   output and Claude's answers are never stored.
 - The same prompt arriving later from the transcripts is recognised and not stored twice.
+
+## Privacy
+
+- **Opt in per source.** Every source is off until connected; one tap goes off the record.
+- **Full detail for 90 days, then summaries.** A daily job rolls older events into daily totals per
+  source, type and category (no titles, no content) and deletes the raw rows
+  (`apps/api/src/retention.ts`).
+- **Deletion really deletes.** You > Delete my data calls `DELETE /v1/me/data`: every row of the
+  account is removed from the database, Google access is revoked and the sign in is deleted. The
+  response counts what went, table by table (docs/api.md, "Your data").

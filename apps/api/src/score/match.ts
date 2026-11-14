@@ -50,6 +50,16 @@ function startsWithEntry(title: string, entry: string): boolean {
   return !(WORD_CHAR.test(last) && WORD_CHAR.test(next));
 }
 
+/**
+ * True when a calendar title matches one of `entries` the way `calendar_titles` match: equal or
+ * starting with the entry at a word boundary, ignoring case and accents. Standing instructions use
+ * it for their `exceptions`, so a title counts the same everywhere.
+ */
+export function titleMatchesAny(title: string, entries: readonly string[]): boolean {
+  const t = normaliseTitle(title);
+  return entries.some((entry) => startsWithEntry(t, normaliseTitle(entry)));
+}
+
 /** The calendar titles a goal lists in `target.calendar_titles`. Anything that is not text is skipped. */
 export function calendarTitles(goal: Goal): string[] {
   const list = goal.target?.calendar_titles;

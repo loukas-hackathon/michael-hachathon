@@ -1,0 +1,55 @@
+# Shows where the API runs on Railway and, when asked, moves it (#229). Nobody needs a Railway
+# seat: it uses the same project token as Deploy API. The API belongs next to the database
+# (Supabase, Frankfurt), so the default target is EU West (Amsterdam).
+# Run it from Actions > Railway region > Run workflow, or `gh workflow run railway-region.yml`.
+name: Railway region
+on:
+  workflow_dispatch:
+    inputs:
+      scale:
+        description: 'Replica assignments for `railway scale`, e.g. "eu-west=1 us-west=0". Empty only shows the current state.'
+        required: false
+        default: ""
+permissions:
+  contents: read
+jobs:
+  region:
+    runs-on: ubuntu-latest
+    env:
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install -g @railway/cli@5.74.0
+      - name: Current state
+        run: |
+          cat > state.mjs <<'EOF'
+          const gql = async (query, variables = {}) => {
+            const res = await fetch("https://backboard.railway.com/graphql/v2", {
+              method: "POST",
+              headers: { "content-type": "application/json", "Project-Access-Token": process.env.RAILWAY_TOKEN },
+              body: JSON.stringify({ query, variables }),
+            });
+            return res.json();
+          };
+          const who = await gql("{ projectToken { projectId environmentId } }");
+          console.log(JSON.stringify(who));
+          const { projectId, environmentId } = who.data?.projectToken ?? {};
+          console.log(JSON.stringify(await gql("{ regions { name country location } }"), null, 1));
+          const project = await gql(
+            `query($id: String!) { project(id: $id) { services { edges { node { name serviceInstances { edges { node { environmentId region numReplicas latestDeployment { status createdAt } } } } } } } } }`,
+            { id: projectId },
+          );
+          console.log(JSON.stringify(project, null, 1));
+          const env = await gql(`query($id: String!) { environment(id: $id) { name config } }`, { id: environmentId });
+          console.log(JSON.stringify(env, null, 1));
+          EOF
+          node state.mjs
+          curl -sSI https://api-production-16521a26.up.railway.app/health | grep -i server-timing || true
+      - name: Scale
+        if: inputs.scale != ''
+        env:
+          SCALE: ${{ inputs.scale }}
+        # SCALE is split into words on purpose: one argument per region.
+        run: railway scale --service api --json $SCALE

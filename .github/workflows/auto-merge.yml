@@ -51,6 +51,19 @@ jobs:
             ci=$(gh pr view "$n" -R "$REPO" --json statusCheckRollup --jq '[.statusCheckRollup[] | select(.name == "check")] | length')
             if [ "$pending" != "0" ] || [ "$failed" != "0" ] || [ "$ci" = "0" ]; then continue; fi
             files=$(gh pr diff "$n" -R "$REPO" --name-only)
+            # CI checked migration order against main as it was then; main may have moved since (#178).
+            added=$(echo "$files" | grep -oE '^supabase/migrations/[0-9]{14}_[^/]+\.sql$' | xargs -r -n1 basename || true)
+            if [ -n "$added" ]; then
+              on_main=$(gh api "repos/$REPO/contents/supabase/migrations?ref=main" --jq '.[].name' || true)
+              newest=$(echo "$on_main" | grep -oE '^[0-9]{14}' | sort | tail -1 || true)
+              late=$(echo "$added" | grep -vxF -f <(echo "$on_main") | awk -v max="$newest" 'substr($0,1,14) <= max' || true)
+              if [ -n "$late" ]; then
+                if ! gh pr view "$n" -R "$REPO" --json comments --jq '.comments[].body' | grep -q "auto-merge: migration order"; then
+                  gh pr comment "$n" -R "$REPO" --body "auto-merge: migration order. Main now has $newest; rename $(echo $late) to a later timestamp, push, and I merge once CI is green."
+                fi
+                continue
+              fi
+            fi
             # --match-head-commit: refuse if new commits arrived after the checks we just read.
             if gh pr merge "$n" -R "$REPO" --squash --delete-branch --match-head-commit "$sha"; then
               echo "merged #$n"

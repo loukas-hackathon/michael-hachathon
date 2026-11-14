@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Evidence, Lead } from "@/lib/day";
 import { formatTime } from "@/lib/format";
 import { MiMark } from "../brand";
+import { RecoveryAction } from "./recovery";
 import { UndoButton } from "./undo-button";
 
 function Rich({ parts, strongClass }: { parts: Lead["insight"]; strongClass: string }) {
@@ -100,8 +101,11 @@ function HoursStrip({ evidence }: { evidence: Extract<Evidence, { kind: "hours" 
   );
 }
 
-/** Michael's lead: one finding, its evidence, the one fix he already made, and the undo. */
-export function MichaelCard({ lead }: { lead: Lead }) {
+/**
+ * Michael's lead: one finding, its evidence, the one fix he already made, and the undo. `primary`
+ * is false when another suggestion is the one thing to do now, so its recovery button stays tinted.
+ */
+export function MichaelCard({ lead, primary = true }: { lead: Lead; primary?: boolean }) {
   return (
     <article className="mt-5 flex flex-col gap-2.5 rounded-card bg-fill px-4 pt-3.5 pb-4">
       <header className="flex items-center gap-2 text-footnote font-semibold">
@@ -126,6 +130,7 @@ export function MichaelCard({ lead }: { lead: Lead }) {
         </p>
       ) : null}
       <div className="flex flex-wrap items-center gap-2">
+        {lead.recovery ? <RecoveryAction recovery={lead.recovery} primary={primary} /> : null}
         {lead.action ? (
           <UndoButton
             label={lead.action.label}

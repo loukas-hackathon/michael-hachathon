@@ -11,12 +11,21 @@ import d1114 from "./sample/real/2026-11-14.json";
 import p1114 from "./sample/real/2026-11-14.patterns.json";
 import { type Block, buildTimeline, type TimelineDay } from "./timeline";
 
-// Manolis' real days, anonymised (lib/sample/real/README.md). Used while the deployed database has
-// no real data yet; the shape is exactly GET /v1/timeline, so switching to the API changes nothing here.
+// Manolis' real days, anonymised (lib/sample/real/README.md), shown only with ?demo=sample (or while
+// USE_MOCKS is on). The live screen reads GET /v1/timeline through lib/timeline-data.ts; the shape
+// is the same, so both go through buildTimeline.
 
 const Events = Event.array();
-type Patterns = {
+
+/** The part of GET /v1/patterns the Timeline reads. */
+export type Patterns = {
   focus_disruptions?: { status: string; data?: { longest_uninterrupted_minutes?: number } | null };
+};
+
+/** Longest stretch without a break, when the focus detector had data. */
+export const longestFrom = (p: Patterns): number | null => {
+  const fd = p.focus_disruptions;
+  return fd?.status === "ok" ? (fd.data?.longest_uninterrupted_minutes ?? null) : null;
 };
 
 const REAL: Record<string, { file: unknown; patterns: Patterns }> = {
@@ -27,7 +36,6 @@ const REAL: Record<string, { file: unknown; patterns: Patterns }> = {
 };
 
 export const SAMPLE_DATE = sampleDay.date;
-export const DEFAULT_DATE = "2026-11-12";
 export const DATES_WITH_DATA = [...Object.keys(REAL), SAMPLE_DATE].sort();
 
 /** Athens midnight for these dates (all after the October clock change, so UTC+2). */
@@ -37,16 +45,14 @@ const nextDay = (date: string) =>
 
 export type TimelineResult = { day: TimelineDay; longestUninterrupted: number | null; label: string };
 
-export function getTimelineDay(date: string): TimelineResult | null {
+export function getTimelineDay(date: string, now?: number): TimelineResult | null {
   if (date === SAMPLE_DATE)
     return { day: fromSample(sampleDay), longestUninterrupted: null, label: "Sample day" };
   const real = REAL[date];
   if (!real) return null;
   const file = real.file as { label: string; events: unknown };
-  const day = buildTimeline(date, Events.parse(file.events), midnight(date), midnight(nextDay(date)));
-  const fd = real.patterns.focus_disruptions;
-  const longest = fd?.status === "ok" ? (fd.data?.longest_uninterrupted_minutes ?? null) : null;
-  return { day, longestUninterrupted: longest, label: file.label };
+  const day = buildTimeline(date, Events.parse(file.events), midnight(date), midnight(nextDay(date)), now);
+  return { day, longestUninterrupted: longestFrom(real.patterns), label: file.label };
 }
 
 /** The sample day as a timeline: planned blocks as outlines, filled up to now, cut by interruptions. */
@@ -87,6 +93,13 @@ function fromSample(view: DayView): TimelineDay {
     blocks,
     phone,
     ai: [],
+    drives: (view.drives ?? []).map((dr) => ({
+      start: t(dr.start),
+      end: t(dr.end),
+      to: dr.to,
+      minutes: dr.minutes,
+      trafficMinutes: Math.max(0, dr.minutes - dr.freeFlowMinutes),
+    })),
     segments: [
       { kind: "quiet", from: dayStart, to: from },
       { kind: "hours", from, to },

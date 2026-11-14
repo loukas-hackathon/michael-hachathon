@@ -236,3 +236,31 @@ test("mapping: all day events, declined and cancelled events, rooms and other or
   const untitled = toTimelineEvent(gEvent("u", NOW, 30, { summary: "  " }), "UTC");
   assert.equal(untitled?.title, "Busy");
 });
+
+test("return_to: a path on the web app is signed into state and used by the callback; other sites are refused", async () => {
+  const connect = (body: unknown) =>
+    app.request("/v1/integrations/google_calendar/connect", {
+      method: "POST",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  const res = await connect({ return_to: "/onboarding?step=done" });
+  assert.equal(res.status, 200);
+  const state = new URL(OAuthConnectResponse.parse(await res.json()).url).searchParams.get("state") ?? "";
+  assert.deepEqual(verifyState(state), {
+    userId: DEMO,
+    provider: "google_calendar",
+    returnTo: "/onboarding?step=done",
+  });
+  const cb = await app.request(
+    `/oauth/google/callback?state=${encodeURIComponent(state)}&error=access_denied`,
+  );
+  assert.equal(
+    cb.headers.get("location"),
+    "https://web.example.test/onboarding?step=done&integration_error=google_calendar&reason=declined",
+  );
+
+  for (const bad of ["//evil.example", "/\\evil.example", "https://evil.example/", "onboarding", "/a b"]) {
+    assert.equal((await connect({ return_to: bad })).status, 400, bad);
+  }
+});

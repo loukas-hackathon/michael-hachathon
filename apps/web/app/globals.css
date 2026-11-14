@@ -14,13 +14,43 @@
   --m-context: #d1d1d6;
   --m-spark: #ff2e93;
   --m-tint: #e6007a;
-  --m-tint-text: #e6007a;
+  --m-tint-text: #b80062; /* AA (4.5:1) on fill and on the tinted button; #e6007a was 4.05 */
   --m-on-tint: #ffffff;
   --m-danger: #ff3b30;
   --m-glass: rgb(249 249 251 / 0.82);
   --m-hatch: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='6'%3E%3Cpath d='M-1 7 7 -1M-1 1 1 -1M5 7 7 5' stroke='%236C6C70' stroke-width='1'/%3E%3C/svg%3E");
   --m-dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='6'%3E%3Ccircle cx='3' cy='3' r='0.8' fill='%23AEAEB2'/%3E%3C/svg%3E");
   --m-tabbar-h: 60px;
+
+  /* Motion tokens (docs/design-guide.md, "Motion"). Animate transform and opacity only. */
+  --m-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --m-ease-sheet: cubic-bezier(0.32, 0.72, 0, 1);
+  /*
+   * Springs, sampled from SwiftUI's spring(response:dampingFraction:) into linear(). Rules and the
+   * generator: .claude/skills/michael-motion/SKILL.md. Each spring has a matching duration token.
+   * --m-spring: response 0.4, damping 0.8 (about 1.5% overshoot). Releases, pops, arrivals.
+   * --m-spring-smooth: response 0.35, critically damped, no overshoot. Things that move across.
+   * Browsers without linear() fall back to the ease out curve (see @supports below).
+   */
+  --m-spring: var(--m-ease-out);
+  --m-spring-smooth: var(--m-ease-out);
+  --m-dur-press: 120ms;
+  --m-dur-ui: 200ms;
+  --m-dur-exit: 200ms;
+  --m-dur-enter: 420ms;
+  --m-dur-spring: 480ms;
+  --m-dur-smooth: 430ms;
+  --m-dur-sheet: 500ms;
+  --m-dur-sheet-out: 360ms;
+  --m-dur-count: 700ms;
+}
+@supports (transition-timing-function: linear(0, 1)) {
+  :root {
+    /* biome-ignore format: one spring per line reads better than 25 lines of numbers */
+    --m-spring: linear(0, 0.042, 0.141, 0.267, 0.399, 0.526, 0.639, 0.735, 0.813, 0.875, 0.922, 0.957, 0.981, 0.997, 1.007, 1.012, 1.015, 1.015, 1.014, 1.012, 1.01, 1.008, 1.007, 1.005, 1);
+    /* biome-ignore format: one spring per line reads better than 25 lines of numbers */
+    --m-spring-smooth: linear(0, 0.042, 0.136, 0.251, 0.368, 0.478, 0.575, 0.658, 0.727, 0.785, 0.831, 0.868, 0.898, 0.921, 0.939, 0.953, 0.964, 0.973, 0.979, 0.984, 0.988, 0.991, 0.993, 0.995, 1);
+  }
 }
 
 @media (prefers-color-scheme: dark) {
@@ -156,12 +186,17 @@ h3 {
   text-wrap: balance;
 }
 
-/* Press feedback for anything tappable. */
+/*
+ * Press feedback for anything tappable: in fast under the finger, back out on a spring, as UIKit
+ * buttons do. A tap that is released early reverses from where it is (CSS transitions retarget).
+ */
 .press {
-  transition: transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition: transform var(--m-dur-spring) var(--m-spring);
 }
-.press:active {
+.press:active:not(:disabled) {
   transform: scale(0.97);
+  transition-duration: var(--m-dur-press);
+  transition-timing-function: var(--m-ease-out);
 }
 
 .tnum {
@@ -176,6 +211,18 @@ h3 {
 }
 
 /* Room for the floating tab bar under every screen. */
+/* Installed app: content scrolls under the clock and battery, so the status bar gets the page
+ * colour behind it, as in a native app. Zero height in a browser tab. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 40;
+  height: env(safe-area-inset-top);
+  background: var(--m-bg);
+  pointer-events: none;
+}
+
 .screen {
   padding-top: env(safe-area-inset-top);
   padding-bottom: calc(var(--m-tabbar-h) + 40px + env(safe-area-inset-bottom));
@@ -192,14 +239,213 @@ h3 {
   pointer-events: none;
 }
 
+/* Push to talk: a calm breathing ring while Michael listens. */
+@keyframes m-listen {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.45;
+  }
+  50% {
+    transform: scale(1.45);
+    opacity: 0.12;
+  }
+}
+.m-listen-ring {
+  animation: m-listen 1.8s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .m-listen-ring {
+    animation: none;
+    transform: scale(1.3);
+    opacity: 0.25;
+  }
   .press,
-  .press:active,
+  .press:active:not(:disabled),
   .m-switch,
   .m-switch::after {
     transition: none;
     transform: none;
   }
+}
+
+/* ---------- motion (docs/design-guide.md, "Motion") ---------- */
+
+/* Tab bar: the icon gives under the finger and the newly selected one settles with a small spring. */
+.m-tab {
+  transition: opacity var(--m-dur-press) var(--m-ease-out);
+}
+.m-tab:active {
+  opacity: 0.6;
+}
+.m-tab-icon {
+  transition: transform var(--m-dur-press) var(--m-ease-out);
+}
+.m-tab:active .m-tab-icon {
+  transform: scale(0.86);
+}
+.m-tab[aria-current="page"] .m-tab-icon {
+  animation: m-tab-pop var(--m-dur-spring) var(--m-spring) both;
+}
+@keyframes m-tab-pop {
+  from {
+    transform: scale(0.86);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+@keyframes m-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* Live refresh (components/live-refresh.tsx): what arrived since the last look eases in. */
+.m-live-enter {
+  animation: m-rise-in var(--m-dur-enter) var(--m-ease-out) both;
+}
+.m-tick.m-live-enter {
+  transform-origin: 50% 100%;
+  animation-name: m-tick-in;
+}
+@keyframes m-tick-in {
+  from {
+    opacity: 0;
+    transform: scaleY(0.2);
+  }
+}
+.m-live-stamp {
+  animation: m-fade-in var(--m-dur-enter) var(--m-ease-out) both;
+}
+@keyframes m-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Score count up (components/count-up.tsx): once per session, 700ms, no bounce, after the splash. */
+@property --m-count {
+  syntax: "<integer>";
+  inherits: false;
+  initial-value: 0;
+}
+.m-count {
+  --m-count: var(--m-count-to);
+  counter-reset: m-count var(--m-count);
+}
+.m-count::before {
+  content: counter(m-count);
+}
+/* After the one count up, a changed number (a refresh, the user's own Done) tweens briefly. */
+:root[data-counted] .m-count {
+  transition: --m-count var(--m-dur-ui) var(--m-ease-out);
+}
+:root:not([data-counted]) .m-count {
+  animation: m-count-up var(--m-dur-count) var(--m-ease-out) both;
+}
+/* Waits for the splash: the splash script clears data-splashing the moment it is gone. */
+:root[data-splashing]:not([data-counted]) .m-count {
+  animation-play-state: paused;
+}
+@keyframes m-count-up {
+  from {
+    --m-count: 0;
+  }
+  to {
+    --m-count: var(--m-count-to);
+  }
+}
+
+/* Goals: closing the week (components/goals/goal-charts.tsx). The next notch breathes pink when a
+ * goal is nearly closed; a closed tape fills from the left once and its check lands. */
+.m-notch-next {
+  animation: m-notch-breathe 1.8s ease-in-out infinite;
+}
+@keyframes m-notch-breathe {
+  50% {
+    background: color-mix(in srgb, var(--m-spark) 45%, transparent);
+  }
+}
+.m-track-closed {
+  transform-origin: left center;
+  animation: m-track-close var(--m-dur-smooth) var(--m-ease-out) both;
+}
+@keyframes m-track-close {
+  from {
+    transform: scaleX(0.85);
+  }
+}
+.m-check-pop {
+  animation: m-check-pop var(--m-dur-spring) var(--m-ease-out) 180ms both;
+}
+@keyframes m-check-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+
+/* Skeletons (components/skeleton.tsx): nothing for 150ms, then a slow breath. No gradients. */
+.m-skeleton {
+  animation: m-fade-in var(--m-dur-ui) var(--m-ease-out) 150ms both;
+}
+.m-bone {
+  background: var(--m-fill);
+  animation: m-breathe 1.6s ease-in-out 350ms infinite;
+}
+@keyframes m-breathe {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .m-tab,
+  .m-tab-icon,
+  .m-tab:active .m-tab-icon {
+    transition: none;
+    transform: none;
+  }
+  .m-tab[aria-current="page"] .m-tab-icon,
+  .m-live-enter,
+  .m-live-stamp,
+  .m-bone,
+  .m-notch-next,
+  .m-track-closed,
+  .m-check-pop,
+  :root:not([data-counted]) .m-count {
+    animation: none;
+  }
+  :root[data-counted] .m-count {
+    transition: none;
+  }
+  .m-skeleton {
+    animation-name: m-fade-in;
+    animation-duration: 1ms;
+  }
+}
+
+/* Chat: a still caret follows Michael's words while he writes (no blink: loops are not for UI). */
+.m-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  border-radius: 1px;
+  background: currentColor;
+  opacity: 0.45;
+}
+/* The message field: the text caret shows focus, as in Messages; the field gets a hairline. */
+.m-field:focus-within {
+  box-shadow: 0 0 0 1px var(--m-separator);
+}
+.m-field textarea:focus-visible {
+  outline: none;
 }
 
 /* The iOS switch, drawn for browsers without <input switch>. Tinted when on. */
@@ -210,7 +456,7 @@ h3 {
   height: 31px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--m-label-2) 32%, transparent);
-  transition: background-color 200ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition: background-color var(--m-dur-ui) var(--m-ease-out);
   cursor: pointer;
 }
 .m-switch::after {
@@ -225,13 +471,22 @@ h3 {
   box-shadow:
     0 3px 8px rgb(0 0 0 / 0.15),
     0 1px 1px rgb(0 0 0 / 0.16);
-  transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
+  transform-origin: left center;
+  transition: transform var(--m-dur-smooth) var(--m-spring-smooth);
 }
 .m-switch:checked {
   background: var(--m-tint);
 }
 .m-switch:checked::after {
   transform: translateX(20px);
+  transform-origin: right center;
+}
+/* Under the finger the knob stretches towards where it will go, as the iOS switch does. */
+.m-switch:active:not(:disabled)::after {
+  transform: scaleX(1.22);
+}
+.m-switch:checked:active:not(:disabled)::after {
+  transform: translateX(20px) scaleX(1.22);
 }
 
 /* Bottom sheet (components/sheet.tsx): slides up on the iOS curve, the page dims behind it. */
@@ -250,12 +505,14 @@ h3 {
   box-shadow: 0 -8px 30px -12px rgb(0 0 0 / 0.3);
   transform: translateY(0);
   transition:
-    transform 500ms cubic-bezier(0.32, 0.72, 0, 1),
+    transform var(--m-dur-sheet) var(--m-ease-sheet),
     overlay 500ms allow-discrete,
     display 500ms allow-discrete;
 }
 .m-sheet:not([open]) {
   transform: translateY(100%);
+  /* Dismissal is quicker than presentation: the user already decided. */
+  transition-duration: var(--m-dur-sheet-out);
 }
 @starting-style {
   .m-sheet[open] {
@@ -294,5 +551,71 @@ h3 {
   .m-sheet:not([open]),
   .m-sheet[open] {
     transform: translateY(-50%);
+  }
+}
+
+/* ---------- arrivals, departures, selection (.claude/skills/michael-motion) ---------- */
+
+/*
+ * Something new arrives because of what the user just did (a chat bubble, an inserted row, a card
+ * Michael added). Scale from 0.96, never from 0, on the spring. Set --m-origin to where it comes
+ * from, for example the bottom right corner for the user's own chat bubble.
+ */
+.m-pop-in {
+  transform-origin: var(--m-origin, 50% 100%);
+  animation: m-pop-in var(--m-dur-spring) var(--m-spring) both;
+}
+@keyframes m-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(4px);
+  }
+}
+
+/* Something leaves (dismissed, removed): quicker than it came, no spring, then it unmounts. */
+.m-leave {
+  pointer-events: none;
+  animation: m-leave var(--m-dur-exit) var(--m-ease-out) both;
+}
+@keyframes m-leave {
+  to {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+/* A status line or value that just changed in place ("Done. Undo until 09:00."). */
+.m-swap {
+  animation: m-fade-in var(--m-dur-ui) var(--m-ease-out) both;
+}
+
+/* Segmented control: the selected pill slides between segments (components/form-controls.tsx). */
+.m-seg-thumb {
+  transition: transform var(--m-dur-smooth) var(--m-spring-smooth);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Opacity only, and quick: nothing moves, nothing scales. */
+  .m-pop-in,
+  .m-swap {
+    animation: m-fade-in var(--m-dur-ui) linear both;
+  }
+  .m-leave {
+    animation: m-leave-fade var(--m-dur-exit) linear both;
+  }
+  .m-seg-thumb,
+  .m-switch::after {
+    transition: none;
+  }
+  .m-switch:active:not(:disabled)::after {
+    transform: none;
+  }
+  .m-switch:checked:active:not(:disabled)::after {
+    transform: translateX(20px);
+  }
+}
+@keyframes m-leave-fade {
+  to {
+    opacity: 0;
   }
 }

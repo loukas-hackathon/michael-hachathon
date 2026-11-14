@@ -1,8 +1,10 @@
 import { Wordmark } from "@/components/brand";
-import { InstallApp } from "@/components/install-app";
 import { GoogleButton } from "./google-button";
 
 export const metadata = { title: "Sign in · Michael" };
+
+// No install hint here: before sign in it is noise. Michael asks for the Home Screen when nudges
+// need it, after onboarding or the first Do it (#207).
 
 // Reasons /auth/callback can send back, as one line each.
 const ERRORS: Record<string, string> = {
@@ -39,9 +41,6 @@ export default async function LoginPage({
           >
             See the demo week
           </a>
-          <div className="mt-4">
-            <InstallApp />
-          </div>
           <p className="mt-6 text-balance text-center text-footnote text-label-2">
             I work for you only. Your timeline is yours to see and delete.
           </p>

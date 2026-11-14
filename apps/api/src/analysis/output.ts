@@ -179,7 +179,7 @@ const iso = (ms: number) => new Date(ms).toISOString();
  * The model's action as something we may store, or the reason it is dropped. Michael acts only on
  * the person's own time: a block with a ref, or free time that touches nobody else's.
  */
-function checkAction(
+export function checkAction(
   a: ModelAction,
   ctx: BriefContext,
   goalId: string | null,
@@ -250,12 +250,19 @@ function checkAction(
       // A draft stays with the person. Michael never sends anything.
       return done({ text: a.text.trim() }, null);
     }
+    case "move_calendar_blocks":
+      // Only the travel planner moves several blocks at once (integrations/travel.ts).
+      return "move several blocks one at a time";
     case "reminder": {
       if (!a.text?.trim()) return "it has no reminder text";
       if (start === null) return "it has no valid day and time";
       if (start <= ctx.now) return "its time is in the past";
       return done({ at: iso(start), text: a.text.trim() }, start);
     }
+    case "change_goal":
+    case "plan_change":
+      // Proposed in chat only (#188), from what the user said; an analysis run does not make them.
+      return `"${a.kind}" is proposed in chat, not by the analysis`;
   }
 }
 

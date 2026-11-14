@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import type { EventInput, Goal } from "@michael/shared";
 import type { z } from "zod";
 import { addDays, at, athensMidnight, iso, localDate, weekday } from "./time";
+import { demoTravel } from "./travel";
 
 // The demo account's week: a believable seven days for a founder at a hackathon, ending now.
 //
@@ -163,6 +164,8 @@ interface Block {
   /** Number of other people; 0 means the user's own block. */
   attendees: number;
   location?: string;
+  /** Booked outside Michael's reach (a class): never moved, even though it is his own block. */
+  fixed?: boolean;
 }
 
 // His own recurring blocks come from the Build Hub ("goals-manolis"); meetings are made up and
@@ -170,13 +173,13 @@ interface Block {
 const CALENDAR: Record<number, Block[]> = {
   1: [
     { title: "Weekly sync", from: "09:30", to: "10:00", attendees: 1, location: "Google Meet" },
-    { title: "Φροντιστήριο", from: "17:00", to: "19:00", attendees: 0 },
-    { title: "Gym", from: "20:30", to: "22:30", attendees: 0 },
+    { title: "Φροντιστήριο", from: "17:00", to: "19:00", attendees: 0, location: "University", fixed: true },
+    { title: "Gym", from: "20:30", to: "22:30", attendees: 0, location: "Gym" },
   ],
   2: [
     { title: "Cold Outreach / Sales", from: "10:30", to: "12:00", attendees: 0 },
     { title: "Lecture: Pricing Strategy", from: "14:00", to: "16:00", attendees: 40, location: "University" },
-    { title: "Swimming", from: "20:00", to: "21:30", attendees: 0 },
+    { title: "Swimming", from: "20:00", to: "21:30", attendees: 0, location: "Gym" },
   ],
   3: [
     { title: "Weekly marketing material", from: "10:30", to: "12:00", attendees: 0 },
@@ -186,8 +189,8 @@ const CALENDAR: Record<number, Block[]> = {
   4: [
     { title: "Cold Outreach / Sales", from: "10:30", to: "12:00", attendees: 0 },
     { title: "Customer call", from: "15:00", to: "15:45", attendees: 3, location: "Google Meet" },
-    { title: "Φροντιστήριο", from: "17:00", to: "19:00", attendees: 0 },
-    { title: "Gym", from: "20:30", to: "22:30", attendees: 0 },
+    { title: "Φροντιστήριο", from: "17:00", to: "19:00", attendees: 0, location: "University", fixed: true },
+    { title: "Gym", from: "20:30", to: "22:30", attendees: 0, location: "Gym" },
   ],
   5: [
     { title: "Run", from: "08:30", to: "09:30", attendees: 0 },
@@ -224,10 +227,12 @@ function calendar(date: string): EventRow[] {
       calendar: "primary",
       attendees: b.attendees,
       ...(b.location ? { location: b.location } : {}),
+      ...(b.fixed ? { fixed: true } : {}),
       status: "confirmed",
       all_day: false,
     },
-    external_id: `${DEMO_PREFIX}${date}:calendar:${slug(b.title)}`,
+    // The place is part of the id, so a block that gains a location replaces the stored row.
+    external_id: `${DEMO_PREFIX}${date}:calendar:${slug(b.title)}${b.location ? `@${slug(b.location)}` : ""}`,
   }));
 }
 
@@ -594,7 +599,11 @@ export function buildDemoWeek(now: Date = new Date()): DemoWeek {
   const sunday = addDays(today, (7 - weekday(today)) % 7);
   const calendarDays = [...days];
   for (let d = addDays(today, 1); d <= sunday; d = addDays(d, 1)) calendarDays.push(d);
-  past.push(...calendarDays.flatMap(calendar));
+  // Drives between located events, precomputed (demo/travel.ts), planned like the calendar.
+  for (const d of calendarDays) {
+    const planned = calendar(d);
+    past.push(...planned, ...demoTravel(planned).rows);
+  }
 
   past.sort((a, b) => Date.parse(a.start_at) - Date.parse(b.start_at));
   return { days, events: past };

@@ -78,7 +78,11 @@ test("chat context reads older categories as the three, and carries the active s
     instructions: [rule("Keep Sundays clear", true), rule("No calls on Fridays", false)],
   });
   assert.match(text, /- The company \[business\] [^\n]*\n- 70\.3 \[health\] [^\n]*\n- Fun \[personal\] /);
-  assert.match(text, /Standing instructions \(never plan, move or suggest[^\n]*\):\n- Keep Sundays clear\n/);
+  // The mock rule carries its exception, in words.
+  assert.match(
+    text,
+    /Standing instructions \(never plan, move or suggest[^\n]*\):\n- Keep Sundays clear \(except: Rhefuel\)\n/,
+  );
   // A paused instruction is not handed over; with none, the section is not there at all.
   assert.doesNotMatch(text, /No calls on Fridays/);
   assert.doesNotMatch(buildChatContext(input), /Standing instructions/);
@@ -90,6 +94,7 @@ test("chat history always starts with the user's turn", () => {
     role,
     content,
     created_at: "2026-11-14T19:00:00+02:00",
+    action_ids: [],
   });
   assert.deepEqual(toTurns([line("assistant", "a"), line("user", "b"), line("assistant", "c")]), [
     { role: "user", content: "b" },

@@ -11,12 +11,15 @@ export function Tape({
   nowLabel,
   height = 30,
   label,
+  recordAt,
 }: {
   ticks: Tick[][];
   nowAt?: number | null;
   nowLabel?: string;
   height?: number;
   label: string;
+  /** Tick index of a personal best (#166): a black diamond above it. */
+  recordAt?: number | null;
 }) {
   let index = 0;
   const showNow = nowAt != null && nowLabel;
@@ -24,7 +27,12 @@ export function Tape({
   // Early in the day the time label sits right of the line, so it never leaves the screen.
   const labelRight = showNow && total > 0 && (nowAt ?? 0) / total < 0.25;
   return (
-    <div role="img" aria-label={label} className="relative w-full" style={{ paddingTop: showNow ? 16 : 0 }}>
+    <div
+      role="img"
+      aria-label={label}
+      className="relative w-full"
+      style={{ paddingTop: showNow || recordAt != null ? 16 : 0 }}
+    >
       <div className="flex w-full gap-[5px]" style={{ height }}>
         {ticks.map((block, bi) => (
           <div
@@ -37,7 +45,14 @@ export function Tape({
               const i = index++;
               const isNow = showNow && i === nowAt;
               return (
-                <span key={i} className="relative min-w-0 flex-1">
+                // data-live-key: a tick that changes state (ahead to spent) eases in after a live refresh.
+                <span key={i} data-live-key={`t${i}${t}`} className="m-tick relative min-w-0 flex-1">
+                  {i === recordAt ? (
+                    <span
+                      aria-hidden="true"
+                      className="absolute -top-[13px] left-1/2 size-[7px] -translate-x-1/2 rotate-45 rounded-[1px] bg-label"
+                    />
+                  ) : null}
                   {isNow ? (
                     <span className="absolute -top-4 -left-[2px] h-[calc(100%+16px)] w-[1.5px] bg-label">
                       <span

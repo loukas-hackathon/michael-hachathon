@@ -6,7 +6,7 @@ import { formatTime } from "@/lib/format";
 import { useOffTheRecord } from "@/lib/off-the-record";
 import { MiMark } from "./brand";
 
-/** The Mi button: top right on every tab. Opens the You sheet. Hollow while off the record. */
+/** The Mi button: top right on every tab. Opens the You sheet. Dimmed while off the record. */
 export function MiButton({ size = 30 }: { size?: number }) {
   const { on } = useOffTheRecord();
   return (
@@ -21,8 +21,8 @@ export function MiButton({ size = 30 }: { size?: number }) {
       }}
     >
       <span
-        className={`grid place-items-center rounded-full ${
-          on ? "text-label shadow-[inset_0_0_0_1.5px_var(--m-label)]" : "bg-label text-bg"
+        className={`grid place-items-center rounded-full transition-[background-color,color] duration-[var(--m-dur-ui)] ease-[var(--m-ease-out)] ${
+          on ? "bg-label-2 text-bg" : "bg-label text-bg"
         }`}
         style={{ width: size, height: size }}
       >

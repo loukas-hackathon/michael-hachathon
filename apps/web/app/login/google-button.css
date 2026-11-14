@@ -37,7 +37,19 @@
   border-radius: 999px;
   border: 2px solid color-mix(in srgb, currentColor 22%, transparent);
   border-top-color: currentColor;
-  animation: g-spin 700ms linear infinite;
+  /* No spinner before 300ms (michael-feedback R5): the label answers the tap first. */
+  animation:
+    g-appear 0ms linear 300ms both,
+    g-spin 700ms linear infinite;
+}
+
+@keyframes g-appear {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes g-spin {

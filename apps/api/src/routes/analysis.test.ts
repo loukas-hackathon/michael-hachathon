@@ -94,8 +94,12 @@ test("POST /v1/analysis/run hands the brief the active standing instructions, ne
     useModelClient(model);
     assert.equal((await post({})).status, 201);
     const brief = model.requests[0]?.user ?? "";
-    // The mock rule and the new one, in the person's own words, oldest first.
-    assert.match(brief, /"instructions": \[\s*"Keep Sundays clear",\s*"Home every day by 21:00"\s*\]/);
+    // The mock rule and the new one, in the person's own words, oldest first, with the mock's
+    // exception in words.
+    assert.match(
+      brief,
+      /"instructions": \[\s*"Keep Sundays clear \(except: Rhefuel\)",\s*"Home every day by 21:00"\s*\]/,
+    );
     assert.ok(!brief.includes("No calls on Friday afternoons"), "a paused instruction reached the brief");
 
     // Pausing takes an instruction out of the next run.
@@ -107,7 +111,10 @@ test("POST /v1/analysis/run hands the brief the active standing instructions, ne
     const next = new FakeModelClient([answer]);
     useModelClient(next);
     assert.equal((await post({})).status, 201);
-    assert.match(next.requests[0]?.user ?? "", /"instructions": \[\s*"Keep Sundays clear"\s*\]/);
+    assert.match(
+      next.requests[0]?.user ?? "",
+      /"instructions": \[\s*"Keep Sundays clear \(except: Rhefuel\)"\s*\]/,
+    );
   } finally {
     for (const id of [active, paused]) {
       await app.request(`/v1/instructions/${id}`, { method: "DELETE", headers: auth });
@@ -160,4 +167,30 @@ test("POST /v1/analysis/run rejects a bad body before calling the model", async 
     assert.equal(ApiError.parse(await res.json()).error.code, "bad_request");
   }
   assert.equal(model.requests.length, 0);
+});
+
+test("POST /v1/analysis/run?mode=specialists runs the specialists, and an unknown mode is a 400", async () => {
+  // Every specialist finds nothing; the coordinator answers as the single pass would.
+  const specialists = new FakeModelClient([JSON.stringify({ findings: [] })]);
+  const coordinator = new FakeModelClient([answer]);
+  useModelClient({
+    model: "fake-model",
+    complete: (request) =>
+      "findings" in ((request.schema.properties ?? {}) as object)
+        ? specialists.complete(request)
+        : coordinator.complete(request),
+  });
+  const run = (mode: string) =>
+    app.request(`/v1/analysis/run?mode=${mode}`, { method: "POST", headers: auth, body: "{}" });
+  const res = await run("specialists");
+  assert.equal(res.status, 201);
+  const body = AnalysisResult.parse(await res.json());
+  assert.equal(body.run.status, "succeeded");
+  assert.ok(specialists.requests.length >= 1, "at least one specialist was asked");
+  assert.ok(specialists.requests.every((r) => r.effort === "low"));
+  assert.match(coordinator.requests[0]?.system ?? "", /Working with specialists/);
+  // Its recommendation named no finding, so it has no specialist.
+  assert.equal(body.recommendations[0]?.specialist ?? null, null);
+
+  assert.equal((await run("committee")).status, 400);
 });

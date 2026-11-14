@@ -37,6 +37,23 @@ export const DEFAULT_QUIET: QuietHours = {
   deepWork: true,
 };
 
+const clockMinutes = (hhmm: string): number | null => {
+  const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(hhmm);
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+};
+
+/**
+ * The user's own night window (Profile.quiet_hours, "HH:MM") on top of the defaults. Dinner and
+ * deep work stay as they are. A missing or malformed window falls back to 22:00 to 07:00; an
+ * empty one (start equals end) means no night window at all, so it falls back too.
+ */
+export function quietFromProfile(window: { start: string; end: string } | null | undefined): QuietHours {
+  const start = window ? clockMinutes(window.start) : null;
+  const end = window ? clockMinutes(window.end) : null;
+  if (start === null || end === null || start === end) return DEFAULT_QUIET;
+  return { ...DEFAULT_QUIET, nightStart: start, nightEnd: end };
+}
+
 export const LIMITS = {
   perDay: 5,
   /** Nudge copy stays under this many words. */
@@ -87,6 +104,17 @@ export interface EngineInput {
    * it from GET /v1/moments/:kind; the engine only decides whether it goes out.
    */
   moment?: { kind: MomentKind; text: string; reason: string };
+  /**
+   * A recovery offer not yet nudged (recovery/offer.ts): a goal block slipped and Michael offers
+   * 25 minutes later today. The engine only decides whether it goes out, while its slot is ahead.
+   */
+  recovery?: {
+    recommendation_id: string;
+    goal_id: string | null;
+    text: string;
+    reason: string;
+    start_at: string;
+  };
 }
 
 export type MomentKind = "morning" | "evening";
@@ -97,6 +125,8 @@ export interface Candidate {
   goal_id: string | null;
   text: string;
   reason: string;
+  /** The recommendation the nudge is about (a recovery offer). */
+  recommendation_id?: string;
 }
 
 export type Decision =
@@ -107,7 +137,16 @@ export type Decision =
 // Most urgent first: a drift is happening now, a block is about to start, bedtime is close, and
 // a weekly gap can wait for the next check.
 // The Morning and Evening moments come after anything happening right now.
-const PRIORITY: NudgeKind[] = ["focus_drift", "block_soon", "morning", "evening", "wind_down", "goal_behind"];
+// A recovery offer is for a slot later today, so it goes before the moments.
+const PRIORITY: NudgeKind[] = [
+  "focus_drift",
+  "block_soon",
+  "recovery_block",
+  "morning",
+  "evening",
+  "wind_down",
+  "goal_behind",
+];
 
 // The three goal categories, and the four older names goals may still carry.
 const LABEL: Record<GoalCategory, string> = {
@@ -162,6 +201,7 @@ interface World {
   events: Event[];
   quiet: QuietHours;
   moment: EngineInput["moment"];
+  recovery: EngineInput["recovery"];
 }
 
 function world(input: EngineInput): World {
@@ -183,6 +223,7 @@ function world(input: EngineInput): World {
     events: input.events,
     quiet: input.quiet ?? DEFAULT_QUIET,
     moment: input.moment,
+    recovery: input.recovery,
   };
 }
 
@@ -403,9 +444,26 @@ function momentRule(kind: MomentKind) {
   };
 }
 
+// ---------- recovery block (#167) ----------
+
+/** The recovery offer, while its slot is still ahead. One nudge per offer (the key names it). */
+function recoveryBlock(w: World): Candidate | null {
+  const r = w.recovery;
+  if (!r || !(Date.parse(r.start_at) > w.now)) return null;
+  return {
+    kind: "recovery_block",
+    key: `recovery_block:${r.recommendation_id}`,
+    goal_id: r.goal_id,
+    recommendation_id: r.recommendation_id,
+    text: r.text,
+    reason: r.reason,
+  };
+}
+
 const RULES: Record<NudgeKind, (w: World) => Candidate | null> = {
   focus_drift: focusDrift,
   block_soon: blockSoon,
+  recovery_block: recoveryBlock,
   morning: momentRule("morning"),
   evening: momentRule("evening"),
   wind_down: windDown,

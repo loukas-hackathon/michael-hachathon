@@ -4,6 +4,14 @@ Runs on your own Mac. It reads what the Mac already knows about your day and pos
 timeline. It only reads: it never changes the files it looks at, and it sends nothing anywhere
 except the API address you give it.
 
+**On your own Mac, the easy way:** Michael, You, Mac, **Connect this Mac**. Paste the one
+line it shows into Terminal (or download and double-click `Michael.command`). It installs this
+collector into `~/.michael` without admin rights, connects it to your account with a setup token that
+works once, and starts it; `~/.michael/Michael.command` starts it again, and it opens at login.
+The installer is `GET /v1/setup/mac.sh` (`apps/api/src/setup/mac-script.ts`).
+
+From this repository:
+
 ```bash
 pnpm collect --list                # sources this Mac can read
 pnpm collect --dry-run             # read and count, send nothing
@@ -12,7 +20,8 @@ pnpm collect                       # backfill, then check for new data every min
 ```
 
 By default it posts to `http://localhost:8787` with the key `dev-key`. Point it elsewhere with
-`MICHAEL_API_URL` and `MICHAEL_API_KEY`. Positions are kept in `~/.michael/collector-state.json`,
+`MICHAEL_API_URL` and `MICHAEL_API_KEY` (your own device key from You > Devices in the web app, so the
+data lands in your account, not the demo week). Positions are kept in `~/.michael/collector-state.json`,
 so a restart continues where it stopped, and running a backfill twice never duplicates events.
 
 | Source         | What it reads                                                                                                | Needs                                                            |
@@ -31,6 +40,27 @@ the lock screen and other system surfaces are not counted as apps.
 These files are private to macOS and can change between versions. They are the fast route for the
 hackathon. The product replaces them with our own menu bar app, browser extension and phone app,
 which post the same events (see `docs/data-sources.md`).
+
+## Focus guards: muting distracting apps
+
+While it watches (not with `--once` or `--dry-run`), the collector also enforces focus guards: when
+you tap Do it on "Mute WhatsApp 14:00 to 16:00", ask Michael in chat, or ask Claude, the app is
+closed whenever it comes to the front during that window, and you see why: "WhatsApp is off until
+16:00. Back to Deep work." Undo in Michael and it can open again within a minute.
+
+- It checks `GET /v1/focus-guards/active` every 45 seconds and the app in front every 5 seconds,
+  only while a guard runs. Off the record, it does nothing.
+- The app in front comes from `lsappinfo` (part of macOS, no permission). Closing is AppleScript
+  `quit` (the same as Cmd+Q, so the app closes normally). The first time, macOS asks whether the
+  terminal may control that app; say OK. If you say no, Michael hides the app instead.
+- Only chat, social, music, video and game apps can ever be muted (the list is in
+  `packages/shared/src/mac-apps.ts`). Finder, the Dock, System Settings, terminals, Claude and
+  Michael are never touched. No admin rights are needed.
+- `--no-guard` turns it off.
+
+Try it: run `pnpm collect`, open WhatsApp, then in Michael's chat say "mute WhatsApp for 10
+minutes" (or ask Claude, which uses the `block_mac_app` tool). Bring WhatsApp to the front: it
+quits and the notification appears.
 
 ## What the Chrome source leaves out
 

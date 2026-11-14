@@ -1,14 +1,15 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { createClient } from "@supabase/supabase-js";
 import type { MiddlewareHandler } from "hono";
 import { agentsStore } from "./agents-store";
 import { type AuthMethod, runAsUser } from "./context";
-import { keepDemoWeekFresh } from "./demo/sync";
+import { demoWeekSeeded, keepDemoWeekFresh } from "./demo/sync";
+import { DEMO_VISITOR_HEADER, DEMO_VISITOR_MESSAGE, DemoVisitorId, demoVisitorMay } from "./demo/visitor";
 import { env } from "./env";
 import { errorResponse } from "./http";
 import { mcpResource, resourceMetadataUrl } from "./public-url";
 import { verifyAccessToken } from "./routes/oauth";
 import { store } from "./store";
+import { currentTiming, dbClient, untimed } from "./timing";
 import { isPersonalToken, userForPersonalToken } from "./tokens";
 
 const digest = (s: string) => createHash("sha256").update(s).digest();
@@ -17,36 +18,69 @@ const expected = digest(env.API_KEY);
 // Constant-time comparison (hashing first equalises lengths).
 const isApiKey = (token: string) => timingSafeEqual(digest(token), expected);
 
+// `e2e_<uuid>`: a test user, accepted only with E2E_TEST_AUTH=on (see env.ts).
+const E2E_TOKEN = /^e2e_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
 const supabase =
   env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY
-    ? createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } })
+    ? dbClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
     : null;
 
-// Verified Supabase access tokens, cached briefly so every request doesn't round-trip to Auth.
+// Verified Supabase access tokens, cached briefly (never past the token's own expiry).
 const tokenCache = new Map<string, { userId: string; until: number }>();
 const TOKEN_TTL_MS = 60_000;
 
+/**
+ * The signed-in user behind a Supabase access token. getClaims checks the signature locally
+ * against the project's signing keys (JWKS, fetched once and cached by supabase-js) and the
+ * expiry, so a fresh token costs no round trip to Auth (#234). Projects still on a shared HS256
+ * secret fall back to asking Auth (getUser) inside getClaims.
+ */
 async function userFromSupabaseToken(token: string): Promise<string | null> {
   if (!supabase) return null;
   const hit = tokenCache.get(token);
   if (hit && hit.until > Date.now()) return hit.userId;
-  const { data, error } = await supabase.auth.getUser(token);
-  if (error || !data.user) return null;
-  tokenCache.set(token, { userId: data.user.id, until: Date.now() + TOKEN_TTL_MS });
+  const { data, error } = await supabase.auth.getClaims(token);
+  const claims = data?.claims;
+  // Only end user sessions: never the anon or service role keys, which carry no user.
+  if (error || !claims?.sub || claims.role !== "authenticated") return null;
+  const expiresAt = typeof claims.exp === "number" ? claims.exp * 1000 : Date.now();
+  tokenCache.set(token, { userId: claims.sub, until: Math.min(Date.now() + TOKEN_TTL_MS, expiresAt) });
   if (tokenCache.size > 1000) tokenCache.clear();
-  return data.user.id;
+  return claims.sub;
+}
+
+/**
+ * Deletes the current sign in (Supabase Auth user) for DELETE /v1/me/data. False when Auth is not
+ * configured (in-memory store) or Supabase refused; the data is already gone either way.
+ */
+export async function deleteAuthUser(userId: string): Promise<boolean> {
+  for (const [token, hit] of tokenCache) if (hit.userId === userId) tokenCache.delete(token);
+  if (!supabase) return false;
+  const { error } = await supabase.auth.admin.deleteUser(userId);
+  if (error) console.error(`[auth] could not delete auth user ${userId}: ${error.message}`);
+  return !error;
 }
 
 /**
  * Resolves who the request acts for and runs the rest of the request as that user:
  * - a signed-in user's Supabase access token (`Authorization: Bearer <jwt>`) -> that user
  * - the shared API key -> the demo account (collectors, webhooks, our own tools)
+ * - the API key with X-Michael-Demo-Visitor -> the demo account for one anonymous web visitor:
+ *   read mostly, chat of their own (demo/visitor.ts)
  * - with `mcp`, an OAuth access token issued by routes/oauth.ts for this MCP resource -> the user
  *   who allowed it (the claude.ai connector). A 401 then carries the WWW-Authenticate pointer to
  *   the protected resource metadata, which is how claude.ai starts sign in.
  * `allowQueryKey` (implied by `mcp`) also accepts `?key=` for callers that cannot set headers
  * (webhook senders, older connector setups). URLs end up in logs, so only enable it where needed.
  */
+// The only routes a device key (mk_...) may call: sending data, and the one read the Mac collector
+// needs to enforce focus guards (#41). A leaked key can neither read the day nor change anything.
+export const deviceKeyMayCall = (method: string, path: string) =>
+  (method === "POST" &&
+    (path === "/v1/events" || path === "/v1/events/batch" || path.startsWith("/v1/webhooks/"))) ||
+  (method === "GET" && path === "/v1/focus-guards/active");
+
 export const requireUser =
   (opts: { allowQueryKey?: boolean; mcp?: boolean } = {}): MiddlewareHandler =>
   async (c, next) => {
@@ -62,13 +96,30 @@ export const requireUser =
       return errorResponse(c, "unauthorized", message);
     };
     if (!token) return deny("Sign in, or send the API key");
+    const authStart = performance.now();
 
     let userId: string | null;
     let via: AuthMethod;
     let agentId: string | null = null;
-    if (isApiKey(token)) {
+    let visitor: string | undefined;
+    if (env.E2E_TEST_AUTH === "on" && E2E_TOKEN.test(token)) {
+      // Test sign in for the end-to-end suite; env.ts refuses it outside the in-memory store.
+      userId = token.slice(4);
+      via = "session";
+    } else if (isApiKey(token)) {
       userId = env.DEMO_USER_ID;
       via = "api_key";
+      // The web app browsing the demo week for one anonymous visitor: read mostly, own chat.
+      const raw = c.req.header(DEMO_VISITOR_HEADER);
+      if (raw !== undefined) {
+        const id = DemoVisitorId.safeParse(raw.trim());
+        if (!id.success) return deny("Invalid demo visitor");
+        visitor = id.data;
+        via = "demo_visitor";
+        if (!demoVisitorMay(c.req.method, c.req.path)) {
+          return errorResponse(c, "forbidden", DEMO_VISITOR_MESSAGE, { demo: true });
+        }
+      }
     } else if (isPersonalToken(token)) {
       // Device keys (Mac collector, Health Auto Export) made by the person in the app.
       userId = await userForPersonalToken(token);
@@ -82,10 +133,22 @@ export const requireUser =
       userId = await userFromSupabaseToken(token);
       via = "session";
     }
+    const t = currentTiming();
+    if (t) t.authMs += performance.now() - authStart;
     if (!userId) return deny("Invalid or expired credentials");
+    // Device keys only send data (plus the focus guard read): no MCP, no settings, no credentials.
+    if (via === "personal_token" && !deviceKeyMayCall(c.req.method, c.req.path)) {
+      return errorResponse(c, "forbidden", "Device keys can only send data to Michael");
+    }
 
     // The demo account's generated week follows the clock (at most one refresh per 5 minutes).
-    if (userId === env.DEMO_USER_ID) await runAsUser(userId, () => keepDemoWeekFresh(store), via);
+    // Only the first refresh after a start holds the request (there is no week yet); later ones
+    // run in the background, so a demo request never waits for about 20 round trips of seeding.
+    if (userId === env.DEMO_USER_ID) {
+      const uid = userId;
+      const refresh = untimed(() => runAsUser(uid, () => keepDemoWeekFresh(store), via));
+      if (!demoWeekSeeded()) await refresh;
+    }
 
     if (agentId) {
       // The agent behind the token: its current scopes apply and every tool call is logged.
@@ -95,5 +158,5 @@ export const requireUser =
       await runAsUser(uid, () => next(), via, agent);
       return;
     }
-    await runAsUser(userId, () => next(), via);
+    await runAsUser(userId, () => next(), via, undefined, visitor);
   };

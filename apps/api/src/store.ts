@@ -2,10 +2,14 @@ import {
   type AnalysisRun,
   type ChatMessage,
   type ChatRole,
+  type CheckIn,
+  type CheckInValue,
   demoRecommendations,
   type Event,
   type EventInput,
+  type EventSummary,
   type EventType,
+  type FocusGuard,
   type Goal,
   type GoalCreate,
   type GoalUpdate,
@@ -21,19 +25,23 @@ import {
   mockRecommendations,
   type Nudge,
   type NudgeStatus,
+  type PersonalRecord,
   type Place,
   type Profile,
   type Recommendation,
   type RecommendationStatus,
   type Source,
   type SourceSetting,
+  type WeeklyTarget,
 } from "@michael/shared";
 import type { z } from "zod";
-import { currentUserId } from "./context";
+import { currentDemoVisitor, currentUserId } from "./context";
 import { stableUuid } from "./demo/week";
 import { env } from "./env";
+import { guardRecommendation, guardRecommendations } from "./instructions/guard";
 import type { GeocodeHit } from "./integrations/maps";
 import { type PrivacyBackend, type PrivacyRules, screenEvents } from "./privacy";
+import type { NewRecord } from "./score/records";
 import { SupabaseStore } from "./supabase-store";
 
 export interface TimelineFilter {
@@ -95,6 +103,25 @@ export interface RecommendationActionUpdate {
   execution?: unknown;
 }
 
+/** What DELETE /v1/me/data removes: the whole account, or the matching timeline events. */
+export interface DataDeleteScope {
+  everything: boolean;
+  source?: Source;
+  from?: string;
+  to?: string;
+}
+
+/** Rows deleted per table. */
+export type DeleteCounts = Record<string, number>;
+
+/** UTC days a summary row must fall in to match a [from, to) range. */
+export const summaryDayRange = (from?: string, to?: string) => ({
+  from: from ? new Date(from).toISOString().slice(0, 10) : undefined,
+  to: to ? new Date(Date.parse(to) - 1).toISOString().slice(0, 10) : undefined,
+});
+
+export type NewFocusGuard = Omit<FocusGuard, "id" | "created_at">;
+
 export type EventPatch = Partial<Pick<Event, "start_at" | "end_at" | "title" | "data">>;
 
 // JSON with sorted keys, so jsonb's own key order never reads as a change.
@@ -134,6 +161,8 @@ export interface Store extends PrivacyBackend {
   readonly kind: "memory" | "supabase";
   listEvents(filter: TimelineFilter): Promise<Event[]>;
   insertEvents(events: z.output<typeof EventInput>[]): Promise<InsertResult>;
+  /** When the newest event of each source arrived (created_at); sources never seen are left out. */
+  lastEventAtBySource(): Promise<Partial<Record<Source, string>>>;
   listGoals(): Promise<Goal[]>;
   getGoal(id: string): Promise<Goal | null>;
   createGoal(input: z.output<typeof GoalCreate>): Promise<Goal>;
@@ -161,6 +190,11 @@ export interface Store extends PrivacyBackend {
   saveAnalysis(input: NewAnalysis): Promise<{ run: AnalysisRun; recommendations: Recommendation[] }>;
   // Proposed by Michael's own rules (e.g. travel) or asked for in chat; status starts at proposed.
   createRecommendation(input: NewRecommendation): Promise<Recommendation>;
+  // Focus guards (block_mac_app): created by executing, deleted by undo (actions/mac-apps.ts).
+  createFocusGuard(input: NewFocusGuard): Promise<FocusGuard>;
+  deleteFocusGuard(id: string): Promise<boolean>;
+  /** Guards that end after `endsAfter` and start before `startsBefore`, soonest first. */
+  listFocusGuards(filter: { endsAfter: string; startsBefore: string }): Promise<FocusGuard[]>;
   // Saved places (home, work, gym). replacePlaces swaps the whole list.
   listPlaces(): Promise<Place[]>;
   replacePlaces(places: Omit<Place, "updated_at">[]): Promise<Place[]>;
@@ -169,9 +203,16 @@ export interface Store extends PrivacyBackend {
   saveGeocode(query: string, hit: GeocodeHit): Promise<void>;
   // Privacy (privacy.ts holds the rules; insertEvents applies them).
   setOffTheRecord(on: boolean): Promise<PrivacyRules>;
-  /** The most recent chat messages, oldest first. */
+  /**
+   * The most recent chat messages, oldest first. Chat is per demo visitor on the demo account
+   * (`currentDemoVisitor()`): a visitor sees only their own lines, everyone else only the
+   * account's own lines (visitor null).
+   */
   listChatMessages(limit: number): Promise<ChatMessage[]>;
-  addChatMessage(role: ChatRole, content: string): Promise<ChatMessage>;
+  /** `actionIds`: recommendations done or undone while writing an answer (ChatMessage.action_ids). */
+  addChatMessage(role: ChatRole, content: string, actionIds?: string[]): Promise<ChatMessage>;
+  /** Deletes the current user's demo visitor chat lines written at or before `before`. */
+  clearVisitorChat(before: string): Promise<number>;
 
   // ---- events mirrored from a provider (Google Calendar) ----
   getEvent(id: string): Promise<Event | null>;
@@ -211,6 +252,20 @@ export interface Store extends PrivacyBackend {
   unbindTelegramChat(): Promise<boolean>;
   /** NOT scoped: the webhook only knows the chat. Whose chat this is, or null. */
   telegramChatOwner(chatId: string): Promise<string | null>;
+
+  // ---- weekly targets (#165), one per Monday ----
+  /** Stored targets with `week_start` in [from, to] (local days), oldest first. */
+  listTargets(from: string, to: string): Promise<WeeklyTarget[]>;
+  /** Insert or replace the week's target; `created_at` stays from the first save. */
+  saveTarget(target: TargetInput): Promise<WeeklyTarget>;
+
+  // ---- personal records (#166) ----
+  /** Every record of the current user, oldest first. */
+  listRecords(): Promise<PersonalRecord[]>;
+  /** Stores new records; a `key` already stored is skipped, so a period sets a record once. */
+  insertRecords(records: NewRecord[]): Promise<PersonalRecord[]>;
+  /** Sets `announced_at` the first time; null when there is no such record. */
+  markRecordAnnounced(id: string): Promise<PersonalRecord | null>;
   /**
    * The one read that is NOT scoped to the current user: ids of users with events received since
    * `since`. Only the scheduler calls it, outside any request, and then runs each check as that user.
@@ -228,7 +283,50 @@ export interface Store extends PrivacyBackend {
   ): Promise<SeedResult>;
   // Writes goals with their fixed ids. `overwrite: false` only adds the missing ones.
   seedGoals(goals: Goal[], opts: { overwrite: boolean }): Promise<number>;
+
+  // ---- your data: deletion and retention (#47, retention.ts) ----
+  /**
+   * Really deletes the current user's rows. `everything`: every table that holds the user's data
+   * (device keys are deleted by tokens.ts, the auth user by auth.ts). Otherwise only the events and
+   * summaries matching source and [from, to).
+   */
+  deleteMyData(scope: DataDeleteScope): Promise<DeleteCounts>;
+  /** The current user's events that started before `before`, oldest first, at most `limit`. */
+  listEventsBefore(before: string, limit: number): Promise<Event[]>;
+  /** Adds these totals onto the current user's summaries (same day, source, type, category). */
+  addEventSummaries(rows: EventSummary[]): Promise<void>;
+  listEventSummaries(): Promise<EventSummary[]>;
+  /** NOT scoped: users with events that started before `before`. Only the retention job calls it. */
+  usersWithEventsBefore(before: string): Promise<string[]>;
+
+  // ---- check in (#187) ----
+  /** The current user's check in questions for days in [fromDay, toDay], oldest first. */
+  listCheckIns(filter: { fromDay: string; toDay: string }): Promise<StoredCheckIn[]>;
+  /** Stores new questions; a key the user already has is skipped. Returns the ones stored. */
+  createCheckIns(rows: NewCheckIn[]): Promise<StoredCheckIn[]>;
+  getCheckIn(id: string): Promise<StoredCheckIn | null>;
+  answerCheckIn(
+    id: string,
+    answer: { answer: CheckInValue; label: string | null },
+  ): Promise<StoredCheckIn | null>;
+  /** Really deletes one question and its answer (and its follow ups). */
+  deleteCheckIn(id: string): Promise<boolean>;
 }
+
+export type TargetInput = Omit<WeeklyTarget, "created_at" | "updated_at">;
+
+/** A check in question as stored: the public shape plus its per day key. */
+export type StoredCheckIn = CheckIn & { key: string };
+export type NewCheckIn = Omit<StoredCheckIn, "id" | "asked_at" | "answered_at" | "answer" | "label">;
+
+export const newCheckIn = (row: NewCheckIn): StoredCheckIn => ({
+  ...row,
+  id: crypto.randomUUID(),
+  answer: null,
+  label: null,
+  asked_at: new Date().toISOString(),
+  answered_at: null,
+});
 
 export interface AskedQuestion {
   question: string;
@@ -237,7 +335,10 @@ export interface AskedQuestion {
 
 export interface NewAnalysis {
   run: Omit<AnalysisRun, "id">;
-  recommendations: Pick<Recommendation, "goal_id" | "title" | "rationale" | "action" | "evidence">[];
+  recommendations: Pick<
+    Recommendation,
+    "goal_id" | "title" | "rationale" | "action" | "evidence" | "specialist"
+  >[];
 }
 
 export const emptyIntegration = (provider: IntegrationProvider): IntegrationRecord => ({
@@ -261,6 +362,7 @@ export const toInstruction = (r: {
   days?: number[] | null;
   time?: string | null;
   end_time?: string | null;
+  exceptions?: string[] | null;
   active: boolean;
   created_at: string;
   updated_at: string;
@@ -271,6 +373,7 @@ export const toInstruction = (r: {
   ...(r.days?.length ? { days: [...r.days].sort((a, b) => a - b) } : {}),
   ...(r.time ? { time: r.time } : {}),
   ...(r.end_time ? { end_time: r.end_time } : {}),
+  ...(r.exceptions?.length ? { exceptions: [...r.exceptions] } : {}),
   active: r.active,
   created_at: r.created_at,
   updated_at: r.updated_at,
@@ -296,7 +399,7 @@ export class MemoryStore implements Store {
       recommendations: Recommendation[];
       runs: AnalysisRun[];
       privacy: PrivacyRules;
-      chat: ChatMessage[];
+      chat: (ChatMessage & { visitor: string | null })[];
       integrations: IntegrationRecord[];
       nudges: Nudge[];
       push: PushDevice[];
@@ -304,29 +407,42 @@ export class MemoryStore implements Store {
       executions: Map<string, unknown>;
       places: Place[];
       geocodes: Map<string, GeocodeHit>;
+      summaries: EventSummary[];
+      guards: FocusGuard[];
+      targets: WeeklyTarget[];
+      records: (PersonalRecord & { key: string })[];
+      checkIns: StoredCheckIn[];
     }
   >();
+  private fresh(sample: boolean) {
+    return {
+      events: sample ? structuredClone(mockEvents) : [],
+      goals: sample ? structuredClone(mockGoals) : [],
+      instructions: sample ? structuredClone(mockInstructions) : [],
+      recommendations: sample ? [...structuredClone(mockRecommendations), ...demoRecommendations()] : [],
+      runs: sample ? [structuredClone(mockAnalysisRun)] : [],
+      privacy: { offTheRecord: false, since: null, sources: {} } as PrivacyRules,
+      chat: [] as (ChatMessage & { visitor: string | null })[],
+      integrations: [] as IntegrationRecord[],
+      nudges: [] as Nudge[],
+      push: [] as PushDevice[],
+      telegram: null as (Partial<TelegramChat> & { last_link?: string }) | null,
+      executions: new Map<string, unknown>(),
+      places: [] as Place[],
+      geocodes: new Map<string, GeocodeHit>(),
+      summaries: [] as EventSummary[],
+      guards: [] as FocusGuard[],
+      targets: [] as WeeklyTarget[],
+      records: [] as (PersonalRecord & { key: string })[],
+      checkIns: [] as StoredCheckIn[],
+    };
+  }
   private get d() {
     const userId = currentUserId();
     let x = this.data.get(userId);
     if (!x) {
       const demo = userId === env.DEMO_USER_ID && env.DEMO_WEEK === "on";
-      x = {
-        events: demo ? [] : structuredClone(mockEvents),
-        goals: demo ? [] : structuredClone(mockGoals),
-        instructions: structuredClone(mockInstructions),
-        recommendations: [...structuredClone(mockRecommendations), ...demoRecommendations()],
-        runs: [structuredClone(mockAnalysisRun)],
-        privacy: { offTheRecord: false, since: null, sources: {} },
-        chat: [],
-        integrations: [],
-        nudges: [],
-        push: [],
-        telegram: null,
-        executions: new Map(),
-        places: [],
-        geocodes: new Map(),
-      };
+      x = { ...this.fresh(true), ...(demo ? { events: [], goals: [] } : {}) };
       this.data.set(userId, x);
     }
     return x;
@@ -355,6 +471,15 @@ export class MemoryStore implements Store {
       .filter((e) => !f.source || f.source.includes(e.source))
       .filter((e) => !f.type || f.type.includes(e.type))
       .sort((a, b) => Date.parse(a.start_at) - Date.parse(b.start_at));
+  }
+
+  async lastEventAtBySource() {
+    const out: Partial<Record<Source, string>> = {};
+    for (const e of this.events) {
+      const was = out[e.source];
+      if (!was || Date.parse(e.created_at) > Date.parse(was)) out[e.source] = e.created_at;
+    }
+    return out;
   }
 
   async privacyRules() {
@@ -493,7 +618,9 @@ export class MemoryStore implements Store {
     return this.recommendations.find((r) => r.id === id) ?? null;
   }
 
-  async createRecommendation(i: NewRecommendation) {
+  async createRecommendation(input: NewRecommendation) {
+    // The choke point: nothing is proposed inside time a standing instruction protects.
+    const i = await guardRecommendation(input, this.guardDeps());
     const rec: Recommendation = {
       id: crypto.randomUUID(),
       analysis_run_id: i.analysis_run_id ?? null,
@@ -546,11 +673,17 @@ export class MemoryStore implements Store {
       .slice(0, limit);
   }
 
+  /** What instructions/guard.ts needs to check a new recommendation: the rules and the blocks. */
+  private guardDeps() {
+    return { instructions: this.d.instructions, getEvent: (id: string) => this.getEvent(id) };
+  }
+
   async saveAnalysis(input: NewAnalysis) {
     const run: AnalysisRun = { id: crypto.randomUUID(), ...input.run };
+    const guarded = await guardRecommendations(input.recommendations, this.guardDeps());
     this.runs.push(run);
     const at = run.finished_at ?? now();
-    const recommendations = input.recommendations.map(
+    const recommendations = guarded.map(
       (r): Recommendation => ({
         id: crypto.randomUUID(),
         analysis_run_id: run.id,
@@ -559,6 +692,7 @@ export class MemoryStore implements Store {
         rationale: r.rationale,
         action: r.action,
         evidence: r.evidence ?? [],
+        ...(r.specialist ? { specialist: r.specialist } : {}),
         status: "proposed",
         executed_at: null,
         undone_at: null,
@@ -571,13 +705,32 @@ export class MemoryStore implements Store {
   }
 
   async listChatMessages(limit: number) {
-    return this.d.chat.slice(-limit);
+    const visitor = currentDemoVisitor();
+    return this.d.chat
+      .filter((m) => m.visitor === visitor)
+      .slice(-limit)
+      .map(({ visitor: _v, ...m }): ChatMessage => m);
   }
 
-  async addChatMessage(role: ChatRole, content: string) {
-    const message: ChatMessage = { id: crypto.randomUUID(), role, content, created_at: now() };
-    this.d.chat.push(message);
+  async addChatMessage(role: ChatRole, content: string, actionIds: string[] = []) {
+    const message: ChatMessage = {
+      id: crypto.randomUUID(),
+      role,
+      content,
+      created_at: now(),
+      action_ids: [...actionIds],
+    };
+    this.d.chat.push({ ...message, visitor: currentDemoVisitor() });
     return message;
+  }
+
+  async clearVisitorChat(before: string) {
+    const d = this.d;
+    const cut = Date.parse(before);
+    const kept = d.chat.filter((m) => m.visitor === null || Date.parse(m.created_at) > cut);
+    const removed = d.chat.length - kept.length;
+    d.chat = kept;
+    return removed;
   }
 
   async getEvent(id: string) {
@@ -718,6 +871,73 @@ export class MemoryStore implements Store {
       .map(([userId]) => userId);
   }
 
+  async createFocusGuard(input: NewFocusGuard) {
+    const guard: FocusGuard = { ...structuredClone(input), id: crypto.randomUUID(), created_at: now() };
+    this.d.guards.push(guard);
+    return structuredClone(guard);
+  }
+
+  async deleteFocusGuard(id: string) {
+    const before = this.d.guards.length;
+    this.d.guards = this.d.guards.filter((g) => g.id !== id);
+    return this.d.guards.length < before;
+  }
+
+  async listFocusGuards(f: { endsAfter: string; startsBefore: string }) {
+    const after = Date.parse(f.endsAfter);
+    const before = Date.parse(f.startsBefore);
+    return structuredClone(
+      this.d.guards
+        .filter((g) => Date.parse(g.end_at) > after && Date.parse(g.start_at) < before)
+        .sort((a, b) => Date.parse(a.start_at) - Date.parse(b.start_at)),
+    );
+  }
+
+  async listTargets(from: string, to: string) {
+    return structuredClone(
+      this.d.targets
+        .filter((t) => t.week_start >= from && t.week_start <= to)
+        .sort((a, b) => (a.week_start < b.week_start ? -1 : 1)),
+    );
+  }
+
+  async saveTarget(input: TargetInput) {
+    const d = this.d;
+    const found = d.targets.find((t) => t.week_start === input.week_start);
+    const target: WeeklyTarget = {
+      ...structuredClone(input),
+      created_at: found?.created_at ?? now(),
+      updated_at: now(),
+    };
+    d.targets = [...d.targets.filter((t) => t.week_start !== input.week_start), target];
+    return structuredClone(target);
+  }
+
+  async listRecords() {
+    return this.d.records.map(({ key: _key, ...r }) => structuredClone(r));
+  }
+
+  async insertRecords(records: NewRecord[]) {
+    const d = this.d;
+    const out: PersonalRecord[] = [];
+    for (const r of records) {
+      if (d.records.some((x) => x.key === r.key)) continue;
+      const row = { ...structuredClone(r), id: crypto.randomUUID(), announced_at: null, created_at: now() };
+      d.records.push(row);
+      const { key: _key, ...record } = row;
+      out.push(record);
+    }
+    return out;
+  }
+
+  async markRecordAnnounced(id: string) {
+    const row = this.d.records.find((r) => r.id === id);
+    if (!row) return null;
+    row.announced_at ??= now();
+    const { key: _key, ...record } = row;
+    return structuredClone(record);
+  }
+
   async listPlaces() {
     return structuredClone(this.d.places);
   }
@@ -775,6 +995,125 @@ export class MemoryStore implements Store {
       inserted++;
     }
     return { inserted, removed, kept: existing.size };
+  }
+
+  async deleteMyData(scope: DataDeleteScope): Promise<DeleteCounts> {
+    const d = this.d;
+    if (scope.everything) {
+      const userId = currentUserId();
+      const counts: DeleteCounts = {
+        events: d.events.length,
+        event_summaries: d.summaries.length,
+        goals: d.goals.length,
+        focus_guards: d.guards.length,
+        recommendations: d.recommendations.length,
+        analysis_runs: d.runs.length,
+        chat_messages: d.chat.length,
+        check_ins: d.checkIns.length,
+        instructions: d.instructions.length,
+        telegram_chats: d.telegram?.chat_id ? 1 : 0,
+        nudges: d.nudges.length,
+        integrations: d.integrations.length,
+        push_subscriptions: d.push.length,
+        places: d.places.length,
+        geocode_cache: d.geocodes.size,
+        source_settings: Object.keys(d.privacy.sources).length,
+        privacy_state: d.privacy.offTheRecord || d.privacy.since ? 1 : 0,
+        user_profiles: this.profiles.has(userId) ? 1 : 0,
+        weekly_targets: d.targets.length,
+        records: d.records.length,
+      };
+      // An empty account, not the sample day a first visit gets.
+      this.data.set(userId, this.fresh(false));
+      this.profiles.delete(userId);
+      return counts;
+    }
+    const from = scope.from ? Date.parse(scope.from) : -Infinity;
+    const to = scope.to ? Date.parse(scope.to) : Infinity;
+    const days = summaryDayRange(scope.from, scope.to);
+    const eventHit = (e: Event) => {
+      const t = Date.parse(e.start_at);
+      return (!scope.source || e.source === scope.source) && t >= from && t < to;
+    };
+    const summaryHit = (s: EventSummary) =>
+      (!scope.source || s.source === scope.source) &&
+      (!days.from || s.day >= days.from) &&
+      (!days.to || s.day <= days.to);
+    const before = { events: d.events.length, event_summaries: d.summaries.length };
+    d.events = d.events.filter((e) => !eventHit(e));
+    d.summaries = d.summaries.filter((s) => !summaryHit(s));
+    return {
+      events: before.events - d.events.length,
+      event_summaries: before.event_summaries - d.summaries.length,
+    };
+  }
+
+  async listEventsBefore(before: string, limit: number) {
+    const t = Date.parse(before);
+    return this.events
+      .filter((e) => Date.parse(e.start_at) < t)
+      .sort((a, b) => Date.parse(a.start_at) - Date.parse(b.start_at))
+      .slice(0, limit);
+  }
+
+  async addEventSummaries(rows: EventSummary[]) {
+    const d = this.d;
+    for (const r of rows) {
+      const hit = d.summaries.find(
+        (s) => s.day === r.day && s.source === r.source && s.type === r.type && s.category === r.category,
+      );
+      if (hit) {
+        hit.events += r.events;
+        hit.seconds += r.seconds;
+      } else d.summaries.push({ ...r });
+    }
+  }
+
+  async listEventSummaries() {
+    return structuredClone(this.d.summaries).sort((a, b) => a.day.localeCompare(b.day));
+  }
+
+  async usersWithEventsBefore(before: string) {
+    const t = Date.parse(before);
+    return [...this.data.entries()]
+      .filter(([, x]) => x.events.some((e) => Date.parse(e.start_at) < t))
+      .map(([userId]) => userId);
+  }
+
+  async listCheckIns(f: { fromDay: string; toDay: string }) {
+    return structuredClone(
+      this.d.checkIns
+        .filter((c) => c.day >= f.fromDay && c.day <= f.toDay)
+        .sort((a, b) => a.asked_at.localeCompare(b.asked_at)),
+    );
+  }
+
+  async createCheckIns(rows: NewCheckIn[]) {
+    const out: StoredCheckIn[] = [];
+    for (const row of rows) {
+      if (this.d.checkIns.some((c) => c.key === row.key)) continue;
+      const stored = newCheckIn(row);
+      this.d.checkIns.push(stored);
+      out.push(structuredClone(stored));
+    }
+    return out;
+  }
+
+  async getCheckIn(id: string) {
+    return structuredClone(this.d.checkIns.find((c) => c.id === id) ?? null);
+  }
+
+  async answerCheckIn(id: string, a: { answer: CheckInValue; label: string | null }) {
+    const c = this.d.checkIns.find((x) => x.id === id);
+    if (!c) return null;
+    Object.assign(c, { answer: a.answer, label: a.label, answered_at: now() });
+    return structuredClone(c);
+  }
+
+  async deleteCheckIn(id: string) {
+    const before = this.d.checkIns.length;
+    this.d.checkIns = this.d.checkIns.filter((c) => c.id !== id && c.follow_up_of !== id);
+    return this.d.checkIns.length < before;
   }
 
   async seedGoals(goals: Goal[], opts: { overwrite: boolean }) {

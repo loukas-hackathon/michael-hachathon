@@ -62,7 +62,7 @@ Locked on the Build Hub ("Colour and type"). Use the CSS variables, never litera
 | `--m-context`   | `#D1D1D6` | `#3A3A3C` | Context bars in charts (days that are not today, other goals) |
 | `--m-spark`     | `#FF2E93` | `#FF2E93` | Goal time as a shape: ticks, fills, bars. Never small text    |
 | `--m-tint`      | `#E6007A` | `#E6007A` | Filled buttons (white text), selected tab                     |
-| `--m-tint-text` | `#E6007A` | `#FF4FA3` | Pink text and links                                           |
+| `--m-tint-text` | `#B80062` | `#FF4FA3` | Pink text and links (AA on `--m-fill` and tinted buttons)     |
 | `--m-danger`    | `#FF3B30` | `#FF453A` | Errors only                                                   |
 
 - Text on a pink fill is black (about 6:1). White on `--m-spark` fails contrast.
@@ -102,19 +102,19 @@ Inside the app, the system font. Outside the app (slides, film, website, brand p
 
 ## Components
 
-| Component      | Spec                                                                                                                                                                                                       |
-| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Screen header  | Date or context line (13, 600, `--m-label-2`) with the Mi button right; large title below                                                                                                                  |
-| Mi button      | 30px black circle with the white Mi monogram. Opens the You sheet. Off the record: hollow (1.5px ring)                                                                                                     |
-| Tab bar        | Floating capsule, 60px tall, 14px from the sides and 16px plus the safe area from the bottom. Four tabs: Today, Timeline, Goals, Agents. Our own icons at 24px. Selected uses `--m-tint-text`. Never hides |
-| Inset group    | `--m-fill`, radius 12, rows 11px by 16px, 0.5px separators inset 16px from the left                                                                                                                        |
-| Michael's card | `--m-fill`, radius 16, padding 14 by 16: Mi + "Michael" + time, insight, evidence, fix, one action                                                                                                         |
-| Buttons        | Capsule, 36px min height (44px hit area). Filled: `--m-tint` with white. Tinted: 14% tint background with `--m-tint-text`. Plain: text only. Press scales to 0.97                                          |
-| Scope chip     | Capsule on `--m-bg`, 13/18 600                                                                                                                                                                             |
-| Sheet          | Bottom sheet with grabber, one job, swipe to dismiss (Base UI Drawer)                                                                                                                                      |
-| Undo line      | Inline under the thing that changed, never a toast: "Moved. Undo until 19:00."                                                                                                                             |
+| Component      | Spec                                                                                                                                                                                                                                                                                   |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Screen header  | Date or context line (13, 600, `--m-label-2`) with the Mi button right; large title below                                                                                                                                                                                              |
+| Mi button      | 30px black circle with the white Mi monogram. Opens the You sheet. Off the record: hollow (1.5px ring)                                                                                                                                                                                 |
+| Tab bar        | Floating capsule, 60px tall, 14px from the sides and 16px plus the safe area from the bottom. Four tabs: Today, Timeline, Goals, Chat. Our own icons at 24px. Selected uses `--m-tint-text`. A quiet black dot on Chat while Michael's check in waits (no number, no red). Never hides |
+| Inset group    | `--m-fill`, radius 12, rows 11px by 16px, 0.5px separators inset 16px from the left                                                                                                                                                                                                    |
+| Michael's card | `--m-fill`, radius 16, padding 14 by 16: Mi + "Michael" + time, insight, evidence, fix, one action                                                                                                                                                                                     |
+| Buttons        | Capsule, 36px min height (44px hit area). Filled: `--m-tint` with white. Tinted: 14% tint background with `--m-tint-text`. Plain: text only. Press scales to 0.97                                                                                                                      |
+| Scope chip     | Capsule on `--m-bg`, 13/18 600                                                                                                                                                                                                                                                         |
+| Sheet          | Bottom sheet with grabber, one job, swipe to dismiss (Base UI Drawer)                                                                                                                                                                                                                  |
+| Undo line      | Inline under the thing that changed, never a toast: "Moved. Undo until 19:00."                                                                                                                                                                                                         |
 
-Icons: our own four tab icons (tape, timeline, notches, agents), then Phosphor regular for anything
+Icons: our own four tab icons (tape, timeline, notches, chat bubble), then Phosphor regular for anything
 else, at 17, 20 or 24px. No icons in tinted rounded squares.
 
 ## Screens
@@ -164,20 +164,30 @@ Title "Goals", context "Wednesday. 4 days to go.", sorted furthest behind first.
   have 12h free. Which one gives?") and a labelled split bar with a pink free time marker.
 - Sleep sits in its own group outside the score, with a dashed goal line.
 
-### Agents
+### Chat
 
-Title "Agents", line "Who asked about you today: Claude, twice. Availability and recovery only."
+Title "Chat". Michael's check in opens the screen when he has questions about the day (Brand's copy
+in #189): one question at a time, the time or the number first, quick answers as chips (1 to 5, or
+Yes and No) and an "Or in your own words" field. A no after a short night brings one follow up with
+its number, never a why. At most five questions. It ends on "Noted. I'll use it in tomorrow's
+plan." and "That's all for today. Sleep well." Below it, the free chat with Michael and push to
+talk. Michael's goal and plan proposals appear as a card with Accept and Undo (#188).
+
+### The You sheet (Mi button)
+
+Agents first (a row into /agents, with a back link to You), then off the record (one switch),
+standing instructions (quiet hours from the profile first, then the user's rules with a switch
+each), sources with one switch each, devices, settings. Off the record turns the Mi hollow and adds a grey line on every tab: "Off the
+record since 15:20."
+
+### Agents (under the Mi button)
+
+A back link to You, title "Agents", line "Who asked about you today: Claude, twice. Availability and recovery only."
 
 - A new agent's request on top in a card: "Cursor wants to know when you're in deep work", scope
   chips, then Allow once (filled), Always (tinted), No (plain).
 - "Allowed": one row per agent with its scopes and last question time.
 - "Today": every question, time, agent, the question in plain words, Shared or Not shared.
-
-### The You sheet (Mi button)
-
-Off the record (one switch, the first row), sources with one switch each, chat with Michael, dark
-mode, settings. Off the record turns the Mi hollow and adds a grey line on every tab: "Off the
-record since 15:20."
 
 ### Onboarding
 
@@ -206,14 +216,39 @@ Follow "Showing time on a phone" in `docs/interface-research.md`, plus:
 
 ## Motion
 
-| What                         | How                                          |
-| ---------------------------- | -------------------------------------------- |
-| Press on anything tappable   | `scale(.97)`, 120ms                          |
-| Interface changes            | 200ms, `cubic-bezier(.23, 1, .32, 1)`        |
-| Sheets                       | 500ms, `cubic-bezier(.32, .72, 0, 1)`        |
-| Tape fill and score count up | Once per day on first open, 700ms, no bounce |
-| Tab switches                 | None. The tab bar never moves                |
-| Reduced motion               | Instant, opacity only                        |
+Tokens live in `apps/web/app/globals.css` as CSS variables; use them, never literals. The full
+rules, the springs' derivation and a checklist are in the agent skill
+`.claude/skills/michael-motion/SKILL.md`.
+
+| Token                   | Value                                        | Use                                          |
+| ----------------------- | -------------------------------------------- | -------------------------------------------- |
+| `--m-ease-out`          | `cubic-bezier(.23, 1, .32, 1)`               | Default for anything without a spring        |
+| `--m-ease-sheet`        | `cubic-bezier(.32, .72, 0, 1)`               | Sheets                                       |
+| `--m-spring`            | SwiftUI response 0.4, damping 0.8 (~1.5%)    | Press release, pops, arrivals, sheet settle  |
+| `--m-spring-smooth`     | SwiftUI response 0.35, damping 1 (no bounce) | Things that slide: switch knob, segment pill |
+| `--m-dur-press`         | 120ms                                        | Press in                                     |
+| `--m-dur-ui`            | 200ms                                        | Interface changes, colour on small controls  |
+| `--m-dur-exit`          | 200ms                                        | Something leaving                            |
+| `--m-dur-enter`         | 420ms                                        | Something new arriving (live refresh)        |
+| `--m-dur-spring`        | 480ms                                        | Always with `--m-spring`                     |
+| `--m-dur-smooth`        | 430ms                                        | Always with `--m-spring-smooth`              |
+| `--m-dur-sheet`, `-out` | 500ms in, 360ms out                          | Sheets                                       |
+| `--m-dur-count`         | 700ms                                        | Score count up                               |
+
+| What                       | How                                                                                                       |
+| -------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Press on anything tappable | `.press`: `scale(.97)` in 120ms, back on `--m-spring`. Primary (filled) buttons also give a haptic tick   |
+| Tab bar press              | Icon to `scale(.86)` and the tab to 60% opacity; the newly selected icon settles on `--m-spring`          |
+| Tab switches               | None. The tab bar never moves                                                                             |
+| Interface changes          | 200ms, `--m-ease-out`; a status line that changes in place fades in (`.m-swap`)                           |
+| Arrivals                   | `.m-pop-in` from 0.96, from where it comes from (`--m-origin`); only items new since mount (`useArrival`) |
+| Departures                 | `.m-leave`, 200ms, then unmount                                                                           |
+| Switches, segmented        | Knob and pill slide on `--m-spring-smooth`; the knob stretches under the finger                           |
+| Sheets                     | 500ms in on `--m-ease-sheet`, 360ms out; a short drag settles back on `--m-spring`                        |
+| Score count up             | Once per session, 700ms, no bounce, after the splash. The real number is always in the DOM                |
+| Live refresh               | New blocks rise 6px and fade in; a tape tick that just filled grows from the baseline                     |
+| Loading                    | Skeleton in the final layout (`loading.tsx` per route): blank for 150ms, then a slow 1.6s breath          |
+| Reduced motion             | Instant, opacity only: no transforms, no count up, skeletons still                                        |
 
 Animate `transform` and `opacity` only. Content is visible by default; motion never gates it.
 

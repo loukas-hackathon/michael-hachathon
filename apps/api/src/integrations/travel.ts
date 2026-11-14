@@ -1,16 +1,19 @@
-import type {
-  Event,
-  MoveCalendarBlockPayload,
-  Place,
-  PlaceKey,
-  TravelData,
-  TravelOption,
-  TravelPlanResult,
+import {
+  type Event,
+  type MoveCalendarBlockPayload,
+  type Place,
+  type PlaceKey,
+  Profile,
+  type TravelData,
+  type TravelDayPlan,
+  type TravelOption,
+  type TravelPlanResult,
 } from "@michael/shared";
 import { DEFAULT_TIMEZONE } from "../patterns/context";
 import { MINUTE, Zone } from "../patterns/time";
-import { goalForEvent, isOwnBlock } from "../score/match";
+import { goalForEvent, isOwnBlock, normaliseTitle } from "../score/match";
 import type { NewRecommendation, Store } from "../store";
+import { type DriveFn, dayRules, type PlaceRef, planDay, type Stop } from "./day-plan";
 import {
   geocode,
   type LatLng,
@@ -49,6 +52,8 @@ export interface PlanOptions {
   to: string;
   timezone?: string;
   deps?: MapsDeps;
+  /** False: store the drives but propose nothing per block (the whole day plan proposes instead). */
+  propose?: boolean;
 }
 
 interface Resolved extends LatLng {
@@ -224,7 +229,7 @@ export async function planTravel(store: Store, opts: PlanOptions): Promise<Trave
       },
     ]);
     result.travel.push(...inserted.inserted);
-    if (proposedFor.has(e.id)) continue;
+    if (proposedFor.has(e.id) || opts.propose === false) continue;
 
     const goal = goalForEvent(e, goals)?.goal ?? null;
     let rec: NewRecommendation | null = null;
@@ -288,4 +293,217 @@ export async function planTravel(store: Store, opts: PlanOptions): Promise<Trave
     if (rec) result.recommendations.push(await store.createRecommendation(rec));
   }
   return result;
+}
+
+// ---------- the whole day (#155) ----------
+
+// Same threshold as one block at a time: propose only a change worth making.
+const MIN_WIN_DAY = 10;
+// Routes calls one day plan may make (each is billed). Arrangements needing more are not tried.
+const MAX_DAY_ROUTES = 60;
+
+export interface DayPlanOptions {
+  /** The local day to plan ("YYYY-MM-DD"). */
+  day: string;
+  timezone?: string;
+  deps?: MapsDeps;
+  /** The user's standing instructions, in their own words ("home by 21:00"). */
+  instructions?: string[];
+}
+
+const clockMinutes = (hhmm: string) => {
+  const [h = 0, m = 0] = hhmm.split(":").map(Number);
+  return h * 60 + m;
+};
+
+const placeKeyOf = (location: string) => `geo:${location.toLowerCase().replace(/\s+/g, " ").trim()}`;
+
+/** True when the user listed this title as fixed (profile.fixed_titles), or the event says so. */
+export function isFixed(e: Event, fixedTitles: string[]): boolean {
+  if (e.data.fixed === true) return true;
+  const title = normaliseTitle(e.title);
+  return fixedTitles.some((t) => {
+    const entry = normaliseTitle(t);
+    if (!entry || !title.startsWith(entry)) return false;
+    return title.length === entry.length || !/[\p{L}\p{N}]/u.test(title[entry.length] ?? "");
+  });
+}
+
+/**
+ * Plan the whole day around traffic: one recommendation that moves the user's own blocks out of
+ * the rush, meetings with other people fixed. Assumes maps are available and travel is on.
+ */
+export async function planWholeDay(store: Store, opts: DayPlanOptions): Promise<TravelDayPlan> {
+  const deps = opts.deps ?? {};
+  const now = (deps.now ?? Date.now)();
+  const zone = new Zone(opts.timezone ?? DEFAULT_TIMEZONE);
+  const dayStart = zone.startOfDay(opts.day);
+  const dayEnd = zone.startOfDay(zone.nextDay(opts.day));
+  const plan: TravelDayPlan = {
+    day: opts.day,
+    before_minutes: 0,
+    after_minutes: 0,
+    won_minutes: 0,
+    moves: [],
+    drives: [],
+    recommendation_id: null,
+    note: null,
+  };
+  const note = (text: string): TravelDayPlan => ({ ...plan, note: text });
+
+  const [calendar, places, goals, open, rawProfile] = await Promise.all([
+    store.listEvents({ from: iso(dayStart), to: iso(dayEnd), type: ["calendar_event"] }),
+    store.listPlaces(),
+    store.listGoals(),
+    store.listRecommendations({ status: "proposed" }),
+    store.getProfile(),
+  ]);
+  const profile = Profile.partial().safeParse(rawProfile ?? {});
+  const fixedTitles = (profile.success && profile.data.fixed_titles) || [];
+  const quiet = (profile.success && profile.data.quiet_hours) || { start: "22:00", end: "07:00" };
+  const weekday = new Date(`${opts.day}T12:00:00Z`).getUTCDay();
+  const rules = dayRules(opts.instructions ?? [], weekday);
+
+  const homePlace = places.find((p) => p.key === "home");
+  const home: PlaceRef | null =
+    homePlace && located(homePlace)
+      ? { key: "home", label: homePlace.label, lat: homePlace.lat, lng: homePlace.lng }
+      : null;
+  if (!home) return note("Save your home first, so I know where the day starts.");
+
+  const stops: Stop[] = [];
+  const byId = new Map<string, Event>();
+  for (const e of calendar) {
+    if (!e.end_at || e.data.all_day === true) continue;
+    const start = Date.parse(e.start_at);
+    if (zone.dayOf(start) !== opts.day) continue;
+    const location = locationOf(e);
+    const dest = location ? await resolve(store, location, places, deps) : null;
+    const place: PlaceRef | null = dest
+      ? { key: dest.place_key ?? placeKeyOf(location ?? ""), label: dest.label, lat: dest.lat, lng: dest.lng }
+      : null;
+    stops.push({
+      id: e.id,
+      title: e.title,
+      start,
+      end: Date.parse(e.end_at),
+      place,
+      movable: Boolean(place) && isOwnBlock(e) && !isFixed(e, fixedTitles) && start > now + 10 * MINUTE,
+    });
+    byId.set(e.id, e);
+  }
+  if (!stops.some((s) => s.place)) return note("No drives that day: nothing has a place.");
+  if (rules.keepClear) return note("You asked to keep this day clear, so I leave it as it is.");
+
+  const quietEnd = clockMinutes(quiet.end);
+  const quietStart = clockMinutes(quiet.start);
+  const window = {
+    from: Math.max(zone.at(opts.day, quietEnd), now + 10 * MINUTE),
+    to: zone.at(opts.day, quietStart > quietEnd ? quietStart : 1440 + quietStart),
+  };
+
+  let calls = 0;
+  const memo = new Map<string, Promise<number | null>>();
+  const drive: DriveFn = (from, to, departAt) => {
+    const key = `${from.key}|${to.key}|${departAt}`;
+    let hit = memo.get(key);
+    if (!hit) {
+      if (calls >= MAX_DAY_ROUTES) return Promise.resolve(null);
+      calls++;
+      hit = routeAt(from, to, departAt, deps).then((r) => (r ? minutes(r.seconds) : null));
+      memo.set(key, hit);
+    }
+    return hit;
+  };
+
+  const result = await planDay({
+    stops,
+    home,
+    window,
+    homeBy: rules.homeBy ? zone.at(opts.day, clockMinutes(rules.homeBy)) : null,
+    drive,
+  });
+  if (!result) return note("I could not get drive times for that day.");
+
+  const filled: TravelDayPlan = {
+    ...plan,
+    before_minutes: result.beforeMinutes,
+    after_minutes: result.afterMinutes,
+    won_minutes: result.wonMinutes,
+    moves: result.moves.map((m) => ({
+      event_id: m.id,
+      title: m.title,
+      from_start_at: iso(m.fromStart),
+      start_at: iso(m.start),
+      end_at: iso(m.end),
+    })),
+    drives: result.drives,
+  };
+  if (result.moves.length === 0 || result.wonMinutes < MIN_WIN_DAY) {
+    return { ...filled, note: "The day is already planned well around traffic." };
+  }
+
+  // One open day plan per set of blocks: never propose the same thing twice.
+  const ids = new Set(result.moves.map((m) => m.id));
+  const twin = open.find(
+    (r) =>
+      r.action?.kind === "move_calendar_blocks" &&
+      Array.isArray(r.action.payload.moves) &&
+      (r.action.payload.moves as { event_id?: string }[]).some((m) => m.event_id && ids.has(m.event_id)),
+  );
+  if (twin) return { ...filled, recommendation_id: twin.id };
+
+  const rec = await store.createRecommendation(dayRecommendation(filled, zone, now, byId, goals));
+  return { ...filled, recommendation_id: rec.id };
+}
+
+/** The one recommendation for a day plan: every move, the maths, one undo. */
+export function dayRecommendation(
+  plan: TravelDayPlan,
+  zone: Zone,
+  now: number,
+  events: Map<string, Event>,
+  goals: Awaited<ReturnType<Store["listGoals"]>>,
+): NewRecommendation {
+  const dayStart = zone.startOfDay(plan.day);
+  const dayName =
+    zone.dayOf(now) === plan.day
+      ? "today"
+      : new Intl.DateTimeFormat("en-GB", { weekday: "long", timeZone: zone.name }).format(
+          dayStart + 12 * 3600_000,
+        );
+  const words = plan.moves.map((m) => `${m.title} to ${zone.clock(Date.parse(m.start_at))}`);
+  const list = words.length > 1 ? `${words.slice(0, -1).join(", ")} and ${words.at(-1)}` : (words[0] ?? "");
+  const goal = plan.moves
+    .map((m) => events.get(m.event_id))
+    .map((e) => (e ? goalForEvent(e, goals)?.goal : undefined))
+    .find(Boolean);
+  const firstStart = Math.min(
+    ...plan.moves.flatMap((m) => [Date.parse(m.from_start_at), Date.parse(m.start_at)]),
+  );
+  return {
+    goal_id: goal?.id ?? null,
+    title: `Plan ${dayName} around traffic: win ${plan.won_minutes} minutes`,
+    rationale:
+      `Move ${list}. ${plan.before_minutes} minutes on the road becomes ${plan.after_minutes}; ` +
+      "meetings with other people stay where they are.",
+    action: {
+      kind: "move_calendar_blocks",
+      payload: {
+        moves: plan.moves.map((m) => ({
+          event_id: m.event_id,
+          start_at: m.start_at,
+          end_at: m.end_at,
+          from_start_at: m.from_start_at,
+          title: m.title,
+        })),
+        before_minutes: plan.before_minutes,
+        after_minutes: plan.after_minutes,
+        won_minutes: plan.won_minutes,
+        drives: plan.drives,
+      },
+      involves_others: false,
+      undo_until: iso(firstStart),
+    },
+  };
 }

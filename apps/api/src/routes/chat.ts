@@ -5,6 +5,7 @@ import {
   type ChatMessage,
   ChatRequest,
   type ChatResponse,
+  type CheckIn,
   type Event,
   type Goal,
   goalArea,
@@ -17,9 +18,12 @@ import {
 } from "@michael/shared";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
-import { CHAT_TOOLS, runChatTool, undoLine } from "../actions/chat-tools";
+import { CHAT_TOOLS, type ChatTurnState, runChatTool, undoLine } from "../actions/chat-tools";
+import { checkInContext, checkInLine } from "../checkin/service";
 import { env } from "../env";
 import { HttpError, jsonBody, parse } from "../http";
+import { instructionLine } from "../instructions/protected";
+import { listMemories, type Memory, memoryContext } from "../memory";
 import { DEFAULT_TIMEZONE } from "../patterns";
 import { Zone } from "../patterns/time";
 import { store } from "../store";
@@ -61,12 +65,25 @@ Facts:
 - Quote times and ids only from the context or from tool results.
 
 Acting:
-- You act only on the user's own time: you can add a block to their calendar (create_focus_block), move one of their own solo blocks (move_calendar_block) and take back something you did (undo_action). On everything else you advise.
+- You act only on the user's own time: you can add a block to their calendar (create_focus_block), move one of their own solo blocks (move_calendar_block), close distracting apps on their Mac for a while (block_mac_app) and take back something you did (undo_action). On everything else you advise.
 - Act when the user asks you to, or clearly agrees to a change you proposed. If the time or the block is unclear, ask first instead of guessing.
 - You never touch events with other people, never delete the user's events, and never send anything in the user's name. If a tool refuses, say why in one line and offer advice instead.
 - Never claim you did something unless a tool result says it is done.
 - After acting, say in one or two short sentences what you did, with times, and end with the undo line exactly as the tool gave it, e.g. "Undo until 15:00."
-- Times you pass to tools are ISO 8601 with the user's UTC offset, as in "Now (ISO)" below.`;
+- Times you pass to tools are ISO 8601 with the user's UTC offset, as in "Now (ISO)" below.
+
+Proposing:
+- When the user tells you something that changes their week (exams, an injury, travel, a deadline), propose one concrete change tied to a goal: a goal's weekly budget with propose_goal_change (with until for a temporary change), or this week's blocks with propose_plan_change. Show the maths ("University 4h to 8h a week until 22 December; Business 8h to 4h, so the week still adds up").
+- A proposal changes nothing until the user taps Accept. Never say it is done. Never change goals any other way. One proposal per answer. If a tool says the user declined it this week, do not propose it again.
+
+Memory:
+- "What the user told you before" below is what you remember from earlier conversations. Use it without being asked; it is why the user does not repeat themselves.
+- When the user tells you a lasting fact or preference about themselves, their routine or their goals ("I train best before 08:00", "Fridays are for family"), keep it with remember, in one short line in their words. Not one off plans, not other people's private details, not what is already in the goals.
+- When the user asks you to forget something, use forget_memory with its id.
+
+Check in:
+- "What you told me" below are the user's own answers to earlier check in questions. Use them, quote them, never invent them.
+- When the user answers one of today's open check in questions in chat, keep it with answer_check_in. If the result gives a follow up, ask it word for word.`;
 
 /** "2026-11-14T19:05:00+02:00": the instant as the user's wall clock with its UTC offset. */
 function isoIn(zone: Zone, ms: number): string {
@@ -95,6 +112,10 @@ export interface ChatContextInput {
   score?: Score | null;
   /** Things Michael did that can still be undone (status done, undo deadline ahead). */
   undoable?: Recommendation[];
+  /** Check in answers from the last week, and today's open questions (#187). */
+  checkIns?: { answered: CheckIn[]; open: CheckIn[] };
+  /** Facts the user asked Michael (or an agent) to keep, newest first. */
+  memories?: Memory[];
 }
 
 const pct = (p: number | null) => (p === null ? "no score yet" : `${Math.round(p)}%`);
@@ -178,7 +199,7 @@ export function buildChatContext(input: ChatContextInput): string {
   if (rules.length > 0) {
     parts.push(
       `Standing instructions (never plan, move or suggest anything inside the time they protect):\n${rules
-        .map((i) => `- ${i.text}`)
+        .map((i) => `- ${instructionLine(i)}`)
         .join("\n")}`,
     );
   }
@@ -256,6 +277,21 @@ export function buildChatContext(input: ChatContextInput): string {
   );
   if (undoable.length) parts.push(`Things I did that can still be undone:\n${undoable.join("\n")}`);
 
+  const told = input.checkIns?.answered ?? [];
+  if (told.length)
+    parts.push(
+      `What you told me (check in answers, the user's own words):\n${told.map(checkInLine).join("\n")}`,
+    );
+  const open = input.checkIns?.open ?? [];
+  if (open.length) {
+    parts.push(
+      `Open check in questions today:\n${open.map((c) => `- ${c.question} {check_in_id ${c.id}}`).join("\n")}`,
+    );
+  }
+
+  const remembered = memoryContext(input.memories ?? []);
+  if (remembered) parts.push(remembered);
+
   const headlines = (label: string, r: PatternReport | null) =>
     r?.headlines.length ? [`${label}:\n${r.headlines.map((h) => `- ${h}`).join("\n")}`] : [];
   parts.push(
@@ -274,7 +310,7 @@ async function contextForNow(): Promise<string> {
   const nowIso = new Date(now).toISOString();
   // Pattern reports are best effort: a detector failing must not take the chat down.
   const report = (from: string) => patternReportFor({ from, to: nowIso }).catch(() => null);
-  const [goals, instructions, events, today, week, score, undoable] = await Promise.all([
+  const [goals, instructions, events, today, week, score, undoable, checkIns, memories] = await Promise.all([
     store.listGoals(),
     store.listInstructions().catch(() => []),
     store.listEvents({
@@ -289,8 +325,21 @@ async function contextForNow(): Promise<string> {
       return null;
     }),
     store.listRecommendations({ status: "done" }).catch(() => []),
+    checkInContext(now),
+    listMemories().catch(() => []),
   ]);
-  return buildChatContext({ now, goals, instructions, events, today, week, score, undoable });
+  return buildChatContext({
+    now,
+    goals,
+    instructions,
+    events,
+    today,
+    week,
+    score,
+    undoable,
+    checkIns,
+    memories,
+  });
 }
 
 let client: Anthropic | null = null;
@@ -397,6 +446,7 @@ export async function askMichael(
       }
     : undefined;
 
+  const turn: ChatTurnState = { proposals: 0 };
   for (let round = 0; round < MAX_ROUNDS; round++) {
     wrote = false;
     const response = await callModel(messages, context, round === MAX_ROUNDS - 1, onText);
@@ -413,7 +463,7 @@ export async function askMichael(
     messages.push({ role: "assistant", content: response.content });
     const results: Anthropic.ToolResultBlockParam[] = [];
     for (const call of calls) {
-      const outcome = await runChatTool(call.name, call.input);
+      const outcome = await runChatTool(call.name, call.input, turn);
       if (outcome.action) {
         actions.push(outcome.action);
         await hooks.onAction?.(outcome.action);
@@ -440,6 +490,9 @@ export async function askMichael(
     await hooks.onText?.(answer ? ` ${tail}` : tail);
     answer = answer ? `${answer} ${tail}` : tail;
   }
+  const proposed = actions.filter((a) => a.status === "proposed");
+  if (!answer && proposed.length)
+    answer = `${proposed.map((a) => a.title).join("; ")}. Tap Accept to apply it.`;
   if (!answer) {
     if (actions.length) answer = `Undone: ${actions.map((a) => a.title).join("; ")}.`;
     else throw new HttpError("upstream_error", "Claude returned an empty answer");
@@ -459,8 +512,16 @@ async function prepare(body: unknown) {
 
 async function save(message: string, { answer, actions }: MichaelAnswer): Promise<ChatResponse> {
   const stored = await store.addChatMessage("user", message);
-  const reply = await store.addChatMessage("assistant", answer);
+  const ids = [...new Set(actions.map((a) => a.id))];
+  const reply = await store.addChatMessage("assistant", answer, ids);
   return { message: stored, reply, actions };
+}
+
+/** The recommendations the lines name, as they stand now. Missing ones (deleted data) are skipped. */
+async function actionsOf(messages: ChatMessage[]): Promise<Recommendation[]> {
+  const ids = [...new Set(messages.flatMap((m) => m.action_ids))];
+  const found = await Promise.all(ids.map((id) => store.getRecommendation(id).catch(() => null)));
+  return found.filter((r): r is Recommendation => r !== null);
 }
 
 /** Stored lines as model turns. The first turn must be the user's, so a leading answer is dropped. */
@@ -474,7 +535,8 @@ export const chat = new Hono()
   .get("/chat", async (c) => {
     const raw = Number(c.req.query("limit") ?? 50);
     const limit = Number.isFinite(raw) ? Math.min(Math.max(Math.trunc(raw), 1), HISTORY_MAX) : 50;
-    const body: ChatHistory = { messages: await store.listChatMessages(limit) };
+    const messages = await store.listChatMessages(limit);
+    const body: ChatHistory = { messages, actions: await actionsOf(messages) };
     return c.json(body);
   })
   // POST /v1/chat { message }  Michael answers from today's timeline, goals and patterns, and acts

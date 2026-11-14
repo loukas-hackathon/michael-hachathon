@@ -4,7 +4,41 @@ The live iPhone signal: a personal automation tells Michael when a chosen app op
 Michael pairs the two into one `app_usage` event with its duration. (History comes from the
 Biome reader in `apps/collector`, which lags about a day.)
 
-## Set up (per app, about two minutes each)
+## One tap set up: publish the Michael shortcut once (a human, about ten minutes)
+
+Apple lets no link or app create a personal automation, but a shared shortcut installs in one tap
+and `shortcuts://run-shortcut?name=Michael&input=text&text=<key>` runs it with the device key. So
+the app (You > Connections, iPhone screen time) does: **Add the shortcut** (iCloud link), **Connect the
+shortcut** (mints a key and runs it once), then the person makes the App automation and picks
+Michael (a few taps; no way around it). Until the shortcut is published the page falls back to the
+copy the URL steps below.
+
+To publish it, on an iPhone with the latest iOS:
+
+1. Shortcuts, **+**, name it exactly **Michael**. Set **Receive** to Text and Apps, so it takes
+   the key from a link and the app from an automation.
+2. **If** Shortcut Input **begins with** `mk_`:
+   - **Save File**: Shortcut Input, to `Shortcuts/Michael/key.txt`, "Ask Where to Save" off,
+     "Overwrite If File Exists" on.
+   - **Show Notification**: `Connected to Michael.`
+   - **Stop This Shortcut**.
+3. **Otherwise**:
+   - **Get File** `Shortcuts/Michael/key.txt` ("Error If Not Found" off). If it is empty, **Show
+     Notification** `Open Michael, You, iPhone screen time to connect.` and stop.
+   - **Get Contents of URL**
+     `https://api-production-16521a26.up.railway.app/v1/webhooks/ios-shortcuts`, Method **POST**,
+     Header `Authorization` = `Bearer ` followed by the file, Request Body **JSON**: `app` = Shortcut
+     Input (Name), `action` = `open`.
+4. Share, **Copy iCloud Link**. Check it installs on another phone without asking anything.
+5. Set `MICHAEL_SHORTCUT_URL` to that link in the web app's environment (Vercel, all
+   environments) and redeploy. The name must stay **Michael**: `apps/web/lib/one-tap.ts` runs it by
+   name.
+
+Opens alone are enough: opening the next app closes the one before, and a session over two hours is
+dropped. The person's automation: Automation, **+**, **App**, pick the apps, tick **Is Opened** and
+**Run Immediately**, then choose **Michael**.
+
+## Set up by hand (per app, about two minutes each)
 
 Do this for the apps that matter (Instagram, TikTok, YouTube, WhatsApp, ...). One automation can
 cover several apps.
@@ -22,7 +56,7 @@ cover several apps.
        arrival is used)
 3. Done. Open the app once and check Michael's timeline after you close it.
 
-Until per-user ingest tokens exist (#114) the key is the shared `API_KEY`.
+Use a device key from You > Connections > iPhone screen time (the copy button gives the whole URL).
 
 ## Body
 

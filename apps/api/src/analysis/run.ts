@@ -1,8 +1,9 @@
 import type { AnalysisResult, AnalysisRun, AnalysisTrigger, Event, EventType } from "@michael/shared";
+import { checkInContext, checkInLine } from "../checkin/service";
 import { HttpError } from "../http";
+import { instructionLine } from "../instructions/protected";
 import { DEFAULT_TIMEZONE } from "../patterns";
 import { DAY, Zone } from "../patterns/time";
-import { readAllEvents } from "../routes/score";
 import type { Store } from "../store";
 import { type BriefContext, briefWindow, buildBrief, renderUserMessage } from "./brief";
 import { COACH_INSTRUCTIONS } from "./coach";
@@ -53,8 +54,8 @@ const TYPES: EventType[] = [
 const WEEK_MS = 7 * DAY;
 
 /**
- * Every event the brief needs in the window, a week at a time side by side. `readAllEvents` pages
- * past the store's row cap, so a busy week never silently loses its most recent days.
+ * Every event the brief needs in the window, a week at a time side by side. The store returns
+ * every row of a window past PostgREST's row cap (#127), so a busy week keeps its latest days.
  */
 export async function loadEvents(
   store: Pick<Store, "listEvents">,
@@ -65,14 +66,18 @@ export async function loadEvents(
   const end = Date.parse(to);
   const chunks: Promise<Event[]>[] = [];
   for (let t = start; t < end; t += WEEK_MS) {
-    chunks.push(readAllEvents((filter) => store.listEvents(filter), t, Math.min(end, t + WEEK_MS), TYPES));
+    const window = {
+      from: new Date(t).toISOString(),
+      to: new Date(Math.min(end, t + WEEK_MS)).toISOString(),
+    };
+    chunks.push(store.listEvents({ ...window, type: TYPES }));
   }
   const byId = new Map<string, Event>();
   for (const chunk of await Promise.all(chunks)) for (const e of chunk) byId.set(e.id, e);
   return [...byId.values()].sort((a, b) => Date.parse(a.start_at) - Date.parse(b.start_at));
 }
 
-interface Checked {
+export interface Checked {
   enforced: Enforced;
   violations: CopyViolation[];
   /** Actions the code had to drop: the text may now describe a change that was not made. */
@@ -80,7 +85,7 @@ interface Checked {
   reply: ModelReply;
 }
 
-function check(reply: ModelReply, context: BriefContext): Checked {
+export function check(reply: ModelReply, context: BriefContext): Checked {
   const enforced = enforce(parseAnswer(reply.text), context);
   return {
     enforced,
@@ -90,10 +95,10 @@ function check(reply: ModelReply, context: BriefContext): Checked {
   };
 }
 
-const problems = (c: Checked) => c.violations.length + c.dropped.length;
+export const problems = (c: Checked) => c.violations.length + c.dropped.length;
 
 /** The second and last request: the same brief, the first answer, and exactly what was wrong. */
-function retryMessage(user: string, first: Checked): string {
+export function retryMessage(user: string, first: Checked): string {
   return [
     user,
     "",
@@ -112,9 +117,22 @@ function retryMessage(user: string, first: Checked): string {
   ].join("\n");
 }
 
-export async function runAnalysis(request: AnalysisRequest, deps: AnalysisDeps): Promise<AnalysisResult> {
-  const { store, model } = deps;
-  const log = deps.log ?? ((entry) => console.log(JSON.stringify(entry)));
+/** The brief for one run, and the range and trigger it was built for. */
+export interface PreparedBrief {
+  brief: ReturnType<typeof buildBrief>;
+  from: string;
+  to: string;
+  trigger: AnalysisTrigger;
+  /** The clock at the start of the run. */
+  started: Date;
+}
+
+/** Reads the user's data and writes the brief. A bad range is a 400. Shared by both modes. */
+export async function prepareBrief(
+  request: AnalysisRequest,
+  deps: Pick<AnalysisDeps, "store" | "now">,
+): Promise<PreparedBrief> {
+  const { store } = deps;
   const clock = (deps.now ?? (() => new Date()))();
   const zone = new Zone(DEFAULT_TIMEZONE);
   const trigger = request.trigger ?? "manual";
@@ -128,7 +146,7 @@ export async function runAnalysis(request: AnalysisRequest, deps: AnalysisDeps):
   let brief: ReturnType<typeof buildBrief>;
   try {
     const window = briefWindow({ from, to, now });
-    const [events, goals, recommendations, asked, instructions] = await Promise.all([
+    const [events, goals, recommendations, asked, instructions, checkIns] = await Promise.all([
       loadEvents(store, window.from, window.to),
       store.listGoals(),
       store.listRecommendations(),
@@ -136,6 +154,8 @@ export async function runAnalysis(request: AnalysisRequest, deps: AnalysisDeps):
       // The person's ground rules (/v1/instructions). A failed read must not stop the run: the
       // brief then carries an empty list, as it did before the table existed.
       store.listInstructions().catch(() => []),
+      // What the person told Michael in the check in (#187). Best effort, like the instructions.
+      checkInContext(Date.parse(now)),
     ]);
     brief = buildBrief({
       events,
@@ -145,8 +165,10 @@ export async function runAnalysis(request: AnalysisRequest, deps: AnalysisDeps):
       to,
       now,
       trigger,
-      // Active ones only, in the person's own words. A paused instruction protects nothing.
-      instructions: instructions.filter((i) => i.active).map((i) => i.text),
+      // Active ones only, in the person's own words, with their exceptions in words ("Keep
+      // Sundays clear (except: Rhefuel)"). A paused instruction protects nothing.
+      instructions: instructions.filter((i) => i.active).map(instructionLine),
+      toldMe: checkIns.answered.map(checkInLine),
       // Nothing is carried out on a run: every action waits for the person's tap (the execute
       // route). When a run starts applying actions itself, this becomes "applied".
       actionsAre: "offers",
@@ -156,6 +178,18 @@ export async function runAnalysis(request: AnalysisRequest, deps: AnalysisDeps):
     if (err instanceof RangeError) throw new HttpError("bad_request", `Bad range: ${err.message}`);
     throw err;
   }
+  return { brief, from, to, trigger, started: clock };
+}
+
+export async function runAnalysis(
+  request: AnalysisRequest,
+  deps: AnalysisDeps,
+  /** A brief already built for this request (the specialists' fallback), so it is not read twice. */
+  prepared?: PreparedBrief,
+): Promise<AnalysisResult> {
+  const { store, model } = deps;
+  const log = deps.log ?? ((entry) => console.log(JSON.stringify(entry)));
+  const { brief, from, to, trigger, started: clock } = prepared ?? (await prepareBrief(request, deps));
 
   const user = renderUserMessage(brief.brief);
   const base = {

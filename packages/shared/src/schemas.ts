@@ -106,10 +106,17 @@ export type RecommendationStatus = z.infer<typeof RecommendationStatus>;
 // with other people, never deletes, and never sends in the user's name. Undo until the event starts.
 export const ActionKind = z.enum([
   "move_calendar_block",
+  // Several of the user's own blocks moved together (the whole day planned around traffic): one
+  // tap carries out every move, one Undo puts every block back.
+  "move_calendar_blocks",
   "create_focus_block",
   "block_mac_app",
   "draft_follow_up",
   "reminder",
+  // Proposed in chat (#188), applied only when the user accepts: goal budgets, and a set of moves
+  // or new blocks on the user's own calendar. Payloads below.
+  "change_goal",
+  "plan_change",
 ]);
 export type ActionKind = z.infer<typeof ActionKind>;
 
@@ -263,12 +270,17 @@ export type GoalUpdate = z.input<typeof GoalUpdate>;
 // setup, changed any time. Michael never plans into the time they protect.
 
 // clear_day: nothing planned on `days`. home_by: nothing planned after `time` (on `days`, or every
-// day). quiet_hours: nothing between `time` and `end_time`. custom: text for the coach only.
+// day), until 05:00 the next morning. quiet_hours: nothing between `time` and `end_time`. custom:
+// text for the coach only.
 export const InstructionKind = z.enum(["clear_day", "home_by", "quiet_hours", "custom"]);
 export type InstructionKind = z.infer<typeof InstructionKind>;
 
 // 0 = Sunday .. 6 = Saturday, as in JavaScript's getDay().
 const Weekdays = z.array(z.number().int().min(0).max(6)).min(1).max(7);
+
+// Calendar titles allowed inside the protected time ("Rhefuel" on a clear Sunday), matched like a
+// goal's `calendar_titles`: equal or starting with the entry, ignoring case and accents.
+const ExceptionTitles = z.array(z.string().trim().min(1, "An exception must not be blank").max(200)).max(50);
 
 export const Instruction = z.object({
   id: z.uuid(),
@@ -278,6 +290,8 @@ export const Instruction = z.object({
   days: Weekdays.optional(),
   time: ClockTime.optional(),
   end_time: ClockTime.optional(),
+  // Left out when there are none.
+  exceptions: ExceptionTitles.optional(),
   active: z.boolean(),
   created_at: IsoDateTime,
   updated_at: IsoDateTime,
@@ -309,6 +323,7 @@ export const InstructionCreate = z
     days: Weekdays.nullish(),
     time: ClockTime.nullish(),
     end_time: ClockTime.nullish(),
+    exceptions: ExceptionTitles.nullish(),
     active: z.boolean().default(true),
   })
   .superRefine((i, ctx) => {
@@ -317,14 +332,15 @@ export const InstructionCreate = z
   });
 export type InstructionCreate = z.input<typeof InstructionCreate>;
 
-// Every field optional; null clears `days`, `time` or `end_time`. The API checks the shape of the
-// result (the stored instruction with the change applied), not of the change alone.
+// Every field optional; null clears `days`, `time`, `end_time` or `exceptions`. The API checks the
+// shape of the result (the stored instruction with the change applied), not of the change alone.
 export const InstructionUpdate = z.object({
   text: instructionText.optional(),
   kind: InstructionKind.optional(),
   days: Weekdays.nullish(),
   time: ClockTime.nullish(),
   end_time: ClockTime.nullish(),
+  exceptions: ExceptionTitles.nullish(),
   active: z.boolean().optional(),
 });
 export type InstructionUpdate = z.input<typeof InstructionUpdate>;
@@ -344,6 +360,13 @@ export const MoveCalendarBlockPayload = z
   .refine((p) => p.start_at || p.end_at || p.new_title, { message: "Give start_at, end_at or new_title" });
 export type MoveCalendarBlockPayload = z.infer<typeof MoveCalendarBlockPayload>;
 
+// move_calendar_blocks: every move is a move_calendar_block, carried out all or nothing and undone
+// together. Extra fields (the travel maths) ride along for the app.
+export const MoveCalendarBlocksPayload = z.object({
+  moves: z.array(MoveCalendarBlockPayload).min(1).max(10),
+});
+export type MoveCalendarBlocksPayload = z.infer<typeof MoveCalendarBlocksPayload>;
+
 // create_focus_block: a new block on the user's calendar, tagged as Michael's.
 export const CreateFocusBlockPayload = z
   .object({
@@ -353,6 +376,110 @@ export const CreateFocusBlockPayload = z
   })
   .refine((p) => Date.parse(p.end_at) > Date.parse(p.start_at), { message: "end_at must be after start_at" });
 export type CreateFocusBlockPayload = z.infer<typeof CreateFocusBlockPayload>;
+
+// change_goal (#188): Michael proposes, the user accepts with one tap (execute). Each change patches
+// one goal; undo puts the old values back. `until` marks a temporary change ("8h a week for 3
+// weeks"): undo stays open until then, and the API puts the old values back when it passes.
+export const GoalChange = z
+  .object({
+    goal_id: z.uuid(),
+    weekly_budget_minutes: z
+      .number()
+      .int()
+      .nonnegative()
+      .max(7 * 24 * 60)
+      .nullable()
+      .optional(),
+    target: GoalTarget.nullable().optional(),
+    active: z.boolean().optional(),
+  })
+  .refine((c) => c.weekly_budget_minutes !== undefined || c.target !== undefined || c.active !== undefined, {
+    message: "Change weekly_budget_minutes, target or active",
+  });
+export type GoalChange = z.infer<typeof GoalChange>;
+
+export const ChangeGoalPayload = z.object({
+  changes: z.array(GoalChange).min(1).max(5),
+  until: IsoDateTime.nullish(),
+  // In the user's words or Michael's: "Exams from 1 December."
+  reason: z.string().min(1).max(500),
+});
+export type ChangeGoalPayload = z.infer<typeof ChangeGoalPayload>;
+
+// plan_change (#188): several moves or new blocks on the user's own calendar, accepted together.
+// Every step keeps the guard rails of its own kind; undo reverts them all, until the first starts.
+export const PlanStep = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("move_calendar_block"),
+    event_id: z.uuid(),
+    start_at: IsoDateTime.optional(),
+    end_at: IsoDateTime.optional(),
+    new_title: z.string().min(1).max(200).optional(),
+  }),
+  z.object({
+    kind: z.literal("create_focus_block"),
+    start_at: IsoDateTime,
+    end_at: IsoDateTime,
+    title: z.string().min(1).max(200).optional(),
+  }),
+]);
+export type PlanStep = z.infer<typeof PlanStep>;
+
+export const PlanChangePayload = z.object({
+  steps: z.array(PlanStep).min(1).max(10),
+  reason: z.string().min(1).max(500),
+});
+export type PlanChangePayload = z.infer<typeof PlanChangePayload>;
+
+// block_mac_app: close distracting Mac apps from start_at to end_at (a focus guard). Name the apps
+// with `app` (one) or `apps` (several), by name ("WhatsApp") or bundle id; `bundle_ids` adds more
+// by id. Only apps on the allowlist (BLOCKABLE_MAC_APPS in mac-apps.ts) can be named. `back_to` is
+// what the notification sends the person back to ("Back to Deep work."); it defaults to the goal
+// or the block's title.
+export const BlockMacAppPayload = z
+  .object({
+    app: z.string().trim().min(1).max(80).optional(),
+    apps: z.array(z.string().trim().min(1).max(80)).max(10).optional(),
+    bundle_ids: z.array(z.string().trim().min(1).max(200)).max(10).optional(),
+    start_at: IsoDateTime,
+    end_at: IsoDateTime,
+    goal_id: z.uuid().optional(),
+    block_event_id: z.uuid().optional(),
+    back_to: z.string().trim().min(1).max(80).optional(),
+  })
+  .refine((p) => p.app || p.apps?.length || p.bundle_ids?.length, {
+    message: "Name at least one app",
+  })
+  .refine((p) => Date.parse(p.end_at) > Date.parse(p.start_at), { message: "end_at must be after start_at" });
+export type BlockMacAppPayload = z.infer<typeof BlockMacAppPayload>;
+
+// ---------- focus guards (GET /v1/focus-guards/active) ----------
+
+// What executing block_mac_app creates: while it runs, the Mac collector closes these apps when
+// they come to the front. Undoing the recommendation removes it at once.
+export const FocusGuard = z.object({
+  id: z.uuid(),
+  recommendation_id: z.uuid().nullable(),
+  // Allowlisted names ("WhatsApp") and every bundle id they map to.
+  apps: z.array(z.string()),
+  bundle_ids: z.array(z.string()),
+  start_at: IsoDateTime,
+  end_at: IsoDateTime,
+  goal_id: z.uuid().nullable(),
+  // "Back to Deep work." in the notification; null when there is nothing to name.
+  back_to: z.string().nullable(),
+  created_at: IsoDateTime,
+});
+export type FocusGuard = z.infer<typeof FocusGuard>;
+
+export const FocusGuardsResponse = z.object({
+  now: IsoDateTime,
+  // While off the record the collector does nothing, and `guards` is empty.
+  off_the_record: z.boolean(),
+  // Running now, or starting within the next 10 minutes (the collector checks the times itself).
+  guards: z.array(FocusGuard),
+});
+export type FocusGuardsResponse = z.infer<typeof FocusGuardsResponse>;
 
 export const RecommendationAction = z.object({
   kind: ActionKind,
@@ -370,6 +497,15 @@ export type RecommendationAction = z.infer<typeof RecommendationAction>;
 export const RecommendationSource = z.enum(["analysis", "chat"]);
 export type RecommendationSource = z.infer<typeof RecommendationSource>;
 
+// The specialist of the analysis (mode `specialists`) whose finding a recommendation came from.
+export const AnalysisSpecialist = z.enum(["work", "training", "rest", "food"]);
+export type AnalysisSpecialist = z.infer<typeof AnalysisSpecialist>;
+
+// How POST /v1/analysis/run thinks: one pass with the whole brief (the default), or four
+// specialists in parallel and a coordinator that merges them.
+export const AnalysisMode = z.enum(["single", "specialists"]);
+export type AnalysisMode = z.infer<typeof AnalysisMode>;
+
 export const Recommendation = z.object({
   id: z.uuid(),
   analysis_run_id: z.uuid().nullable(),
@@ -386,6 +522,8 @@ export const Recommendation = z.object({
   undone_at: IsoDateTime.nullable(),
   // Absent on older rows: read as "analysis".
   source: RecommendationSource.optional(),
+  // Which specialist found it, on runs in mode `specialists`. Null or absent otherwise.
+  specialist: AnalysisSpecialist.nullable().optional(),
   created_at: IsoDateTime,
   updated_at: IsoDateTime,
 });
@@ -449,6 +587,18 @@ export type IntegrationsResponse = z.infer<typeof IntegrationsResponse>;
 export const OAuthConnectResponse = z.object({ url: z.url() });
 export type OAuthConnectResponse = z.infer<typeof OAuthConnectResponse>;
 
+// Where the web app lands after the callback: a path on the web app itself, never another site.
+// "/onboarding?step=done" is fine; "//evil.example", "/\\evil", "https://..." are not.
+export const ReturnPath = z
+  .string()
+  .max(200)
+  .regex(/^\/(?![/\\])[A-Za-z0-9\-._~/?=&%]*$/, "Expected a path on this site");
+export type ReturnPath = z.infer<typeof ReturnPath>;
+
+// Optional body of POST /v1/integrations/:provider/connect. Default return: /you.
+export const OAuthConnectRequest = z.object({ return_to: ReturnPath.optional() });
+export type OAuthConnectRequest = z.infer<typeof OAuthConnectRequest>;
+
 // POST /v1/integrations/google_calendar/sync and the sync that runs after connecting.
 export const CalendarSyncResult = z.object({
   from: IsoDateTime,
@@ -507,12 +657,72 @@ export type PrivacyState = z.infer<typeof PrivacyState>;
 export const OffTheRecordUpdate = z.object({ off_the_record: z.boolean() });
 export type OffTheRecordUpdate = z.infer<typeof OffTheRecordUpdate>;
 
+// GET /v1/sources/status: per source, is it switched on and when did its last event arrive.
+// Powers the Connections rows on You ("Last data 12 min ago").
+export const SourceStatus = z.object({
+  source: Source,
+  // The privacy switch as GET /v1/privacy shows it (off until opted in).
+  enabled: z.boolean(),
+  // Would an event from this source be stored right now: false while off the record or once the
+  // user switched it off. A source never decided on still collects (its first event opts it in).
+  collecting: z.boolean(),
+  // When Michael last received an event from this source (created_at), or null if never.
+  last_event_at: IsoDateTime.nullable(),
+});
+export type SourceStatus = z.infer<typeof SourceStatus>;
+
+export const SourcesStatusResponse = z.object({
+  off_the_record: z.boolean(),
+  sources: z.array(SourceStatus),
+});
+export type SourcesStatusResponse = z.infer<typeof SourcesStatusResponse>;
+
 // ---------- profile: the onboarding answers (GET/PUT /v1/profile) ----------
 
 // `ClockTime` ("HH:MM", 24 hour, Europe/Athens wall clock) is defined with the goals above.
 
 export const Weekday = z.enum(["mon", "tue", "wed", "thu", "fri", "sat", "sun"]);
 export type Weekday = z.infer<typeof Weekday>;
+
+// ---------- goal suggestions (#134): goals Michael reads off the user's own calendar ----------
+
+// One goal the user already lives by: recurring own calendar blocks (nobody else in them) grouped
+// into a goal, with the weekly hours they add up to and the calendar titles that would count.
+// The shape is a GoalCreate plus why: POST it to /v1/goals as it is, or accept it by id.
+export const GoalSuggestion = z.object({
+  // Stable for the same calendar ("training", "study", "title:guitar"), so accept can name it.
+  id: z.string().min(1).max(120),
+  title: z.string().min(1),
+  // Always one of the three areas for a new goal (#131); `area` repeats it for clarity.
+  category: GoalCategory,
+  area: GoalArea,
+  weekly_budget_minutes: z.number().int().positive(),
+  target: z.object({
+    kind: z.literal("time"),
+    calendar_titles: z.array(z.string().min(1)).min(1),
+  }),
+  // In Michael's voice: "Gym, Swimming and Yoga, Mon to Thu, 6h 30 a week."
+  evidence: z.string().min(1),
+  // Blocks a week on average and the weekdays they fall on.
+  sessions_per_week: z.number().nonnegative(),
+  days: z.array(Weekday),
+});
+export type GoalSuggestion = z.infer<typeof GoalSuggestion>;
+
+export const GoalSuggestionsResponse = z.object({
+  from: IsoDateTime,
+  to: IsoDateTime,
+  suggestions: z.array(GoalSuggestion),
+});
+export type GoalSuggestionsResponse = z.infer<typeof GoalSuggestionsResponse>;
+
+// Optional edits when accepting by id; anything left out keeps the suggestion's value.
+export const GoalSuggestionAccept = z.object({
+  title: z.string().min(1).max(120).optional(),
+  weekly_budget_minutes: z.number().int().min(0).max(10080).optional(),
+  calendar_titles: z.array(z.string().min(1).max(200)).min(1).max(20).optional(),
+});
+export type GoalSuggestionAccept = z.input<typeof GoalSuggestionAccept>;
 
 // Where the user says their time leaks. Analysis and nudges can look for these first.
 export const WeakSpot = z.enum([
@@ -538,6 +748,9 @@ export const Profile = z.object({
   work_days: z.array(Weekday),
   gym_days: z.array(Weekday),
   weak_spots: z.array(WeakSpot),
+  // Calendar titles Michael never moves, even though they are the user's own blocks ("PT session",
+  // booked outside the calendar). Matched like goal calendar titles: equal, or the title starts with it.
+  fixed_titles: z.array(z.string().min(1).max(200)).max(50),
   // Set when onboarding is finished or skipped; null means Today should offer onboarding.
   onboarded_at: IsoDateTime.nullable(),
   // null until the user saves anything (the response is then the defaults).
@@ -555,6 +768,7 @@ export const DEFAULT_PROFILE: Profile = {
   work_days: ["mon", "tue", "wed", "thu", "fri"],
   gym_days: [],
   weak_spots: [],
+  fixed_titles: [],
   onboarded_at: null,
   updated_at: null,
 };
@@ -605,6 +819,20 @@ export const PlacesResponse = z.object({
 });
 export type PlacesResponse = z.infer<typeof PlacesResponse>;
 
+// GET /v1/places/search?q=: address matches for the Places screen, geocoded on the server.
+export const AddressMatch = z.object({
+  formatted_address: z.string(),
+  place_id: z.string().nullable(),
+  lat: z.number(),
+  lng: z.number(),
+});
+export type AddressMatch = z.infer<typeof AddressMatch>;
+export const AddressSearchResponse = z.object({
+  results: z.array(AddressMatch),
+  maps_available: z.boolean(),
+});
+export type AddressSearchResponse = z.infer<typeof AddressSearchResponse>;
+
 // One sampled departure for a trip.
 export const TravelOption = z.object({
   depart_at: IsoDateTime,
@@ -632,14 +860,95 @@ export const TravelData = z.object({
 });
 export type TravelData = z.infer<typeof TravelData>;
 
+// ---------- Google Maps searches (data.maps of a chrome search event) ----------
+
+// One end of a Maps search: a name the user typed or clicked, and coordinates when the address
+// carried them. Coordinates are kept only while source maps is switched on; otherwise the API
+// stores them as null.
+export const MapsStop = z.object({
+  name: z.string().max(200).nullable(),
+  lat: z.number().min(-90).max(90).nullable(),
+  lng: z.number().min(-180).max(180).nullable(),
+});
+export type MapsStop = z.infer<typeof MapsStop>;
+
+// What a Google Maps address said: a search ("gyms near me"), a place that was opened, or
+// directions between two stops. `place` is set for search and place, `from`/`to` for directions.
+export const MapsQuery = z.object({
+  kind: z.enum(["search", "place", "directions"]),
+  place: MapsStop.nullable(),
+  from: MapsStop.nullable(),
+  to: MapsStop.nullable(),
+});
+export type MapsQuery = z.infer<typeof MapsQuery>;
+
+// GET /v1/places/suggestions: places the user often looks up in Maps, offered as saved places.
+// Never saved on their own; the user picks one and saves it with PUT /v1/places.
+export const PlaceSuggestion = z.object({
+  // A key to save it under when the name says what it is ("gym", "work"), else null.
+  key: PlaceKey.nullable(),
+  label: z.string().min(1).max(80),
+  lat: z.number().min(-90).max(90).nullable(),
+  lng: z.number().min(-180).max(180).nullable(),
+  // How many Maps searches, places or directions mentioned it in the window.
+  count: z.number().int().positive(),
+  last_seen_at: IsoDateTime,
+});
+export type PlaceSuggestion = z.infer<typeof PlaceSuggestion>;
+
+export const PlaceSuggestionsResponse = z.object({
+  // False while source maps is switched off: then there are no suggestions.
+  enabled: z.boolean(),
+  suggestions: z.array(PlaceSuggestion),
+});
+export type PlaceSuggestionsResponse = z.infer<typeof PlaceSuggestionsResponse>;
+
 export const TravelPlanInput = z.object({
   from: IsoDateTime.optional(),
   to: IsoDateTime.optional(),
+  // Plan the whole day together: move the user's own blocks out of the rush, meetings stay fixed.
+  // Plans the day `from` falls on (default today); per block suggestions are then left out.
+  whole_day: z.boolean().optional(),
 });
 export type TravelPlanInput = z.infer<typeof TravelPlanInput>;
 
 export const TravelPlanStatus = z.enum(["ok", "maps_unavailable", "travel_off"]);
 export type TravelPlanStatus = z.infer<typeof TravelPlanStatus>;
+
+// One drive of the day, as planned now and as Michael would plan it. `to_event_id` null is home.
+export const TravelLeg = z.object({ depart_at: IsoDateTime, minutes: z.number().int().nonnegative() });
+export type TravelLeg = z.infer<typeof TravelLeg>;
+export const TravelDayDrive = z.object({
+  from: z.string(),
+  to: z.string(),
+  to_event_id: z.string().nullable(),
+  before: TravelLeg.nullable(),
+  after: TravelLeg.nullable(),
+});
+export type TravelDayDrive = z.infer<typeof TravelDayDrive>;
+
+export const TravelDayMove = z.object({
+  event_id: z.string(),
+  title: z.string(),
+  from_start_at: IsoDateTime,
+  start_at: IsoDateTime,
+  end_at: IsoDateTime,
+});
+export type TravelDayMove = z.infer<typeof TravelDayMove>;
+
+// The whole day plan (whole_day: true). `won_minutes` is before minus after; Michael proposes it
+// only at 10 minutes or more. `note` says why there is nothing to propose.
+export const TravelDayPlan = z.object({
+  day: LocalDay,
+  before_minutes: z.number().int().nonnegative(),
+  after_minutes: z.number().int().nonnegative(),
+  won_minutes: z.number().int().nonnegative(),
+  moves: z.array(TravelDayMove),
+  drives: z.array(TravelDayDrive),
+  recommendation_id: z.uuid().nullable(),
+  note: z.string().nullable(),
+});
+export type TravelDayPlan = z.infer<typeof TravelDayPlan>;
 
 export const TravelPlanResult = z.object({
   status: TravelPlanStatus,
@@ -649,6 +958,8 @@ export const TravelPlanResult = z.object({
   recommendations: z.array(Recommendation),
   // Calendar events with a location that got no trip, and why.
   skipped: z.array(z.object({ calendar_event_id: z.string(), reason: z.string() })),
+  // Only with whole_day: true.
+  day: TravelDayPlan.nullable().optional(),
 });
 export type TravelPlanResult = z.infer<typeof TravelPlanResult>;
 
@@ -684,6 +995,10 @@ export const AgentQuery = z.object({
   summary: z.string(),
   allowed: z.boolean(),
   created_at: IsoDateTime,
+  // A change the agent made (booked a block, muted an app): the recommendation that carries it,
+  // and until when Undo still works (null once it started, was undone, or is not undoable).
+  recommendation_id: z.uuid().nullable().optional(),
+  undo_until: IsoDateTime.nullable().optional(),
 });
 export type AgentQuery = z.infer<typeof AgentQuery>;
 
@@ -719,6 +1034,7 @@ export const countsTowardsCap = (status: NudgeStatus) => status !== "suppressed"
 
 // What a nudge is about. Each kind is one rule of the engine (apps/api/src/nudges).
 // morning and evening carry the Morning and Evening moments (GET /v1/moments/:kind), once each a day.
+// recovery_block carries a recovery offer (#167): a goal block slipped, 25 minutes later today.
 export const NudgeKind = z.enum([
   "focus_drift",
   "block_soon",
@@ -726,6 +1042,7 @@ export const NudgeKind = z.enum([
   "goal_behind",
   "morning",
   "evening",
+  "recovery_block",
 ]);
 export type NudgeKind = z.infer<typeof NudgeKind>;
 
@@ -1305,6 +1622,9 @@ export const ScoreBlock = z.object({
   matched_by: z.enum(["goal_id", "calendar_titles", "goal_category", "goal_title", "category_word"]),
   start_at: IsoDateTime,
   end_at: IsoDateTime,
+  // The personal record set in this block (`longest_block`, not a baseline), so the tape can draw
+  // the mark at its `tick_index`. Null when the block set none.
+  record_id: z.uuid().nullable(),
   ...scoreTotals,
   // One per 5 minutes from start_at; the last one is shorter when the block is not a multiple of 5.
   ticks: z.array(ScoreTick),
@@ -1324,6 +1644,18 @@ export const ScoreArea = z.object({
   ...scoreTotals,
 });
 export type ScoreArea = z.infer<typeof ScoreArea>;
+
+// The week's entry per category also carries the target and the floor (#165): the balanced week.
+export const ScoreWeekArea = ScoreArea.extend({
+  // This week's target for the category; null without a target or when it has no time goals.
+  target_pct: z.number().int().min(0).max(100).nullable(),
+  // The least the category must score for the week to count (default 50, editable per week).
+  floor_pct: z.number().int().min(0).max(100),
+  // Null when the category has no time goals or nothing has elapsed this week. A category with
+  // time goals and nothing elapsed in it does not meet its floor.
+  meets_floor: z.boolean().nullable(),
+});
+export type ScoreWeekArea = z.infer<typeof ScoreWeekArea>;
 
 export const ScoreDay = z.object({
   date: LocalDay,
@@ -1371,8 +1703,148 @@ export const ScoreGoal = GoalScore.extend({
   score_pct: ScorePct,
   // Monday to Sunday.
   daily: z.array(z.object({ date: LocalDay, planned_minutes: Minutes, spent_minutes: Minutes })),
+  // Budget minus spent, never below 0 ("4h 10 left of 6h"). 0 for a goal outside the score.
+  minutes_left: Minutes,
+  // The goal's calendar blocks this week that have not ended yet ("two blocks still open").
+  open_blocks: z.number().int().nonnegative(),
 });
 export type ScoreGoal = z.infer<typeof ScoreGoal>;
+
+// ---------- weekly target and the balanced week (#165) ----------
+
+export const AreaNumbers = z.object({
+  business: z.number().int().min(0).max(100),
+  health: z.number().int().min(0).max(100),
+  personal: z.number().int().min(0).max(100),
+});
+export type AreaNumbers = z.infer<typeof AreaNumbers>;
+
+// A target per category; null when the category has no time goals.
+export const AreaTargets = z.object({
+  business: z.number().int().min(0).max(100).nullable(),
+  health: z.number().int().min(0).max(100).nullable(),
+  personal: z.number().int().min(0).max(100).nullable(),
+});
+export type AreaTargets = z.infer<typeof AreaTargets>;
+
+export const DEFAULT_FLOOR_PCT = 50;
+
+export const WeeklyTarget = z.object({
+  // Monday, Europe/Athens.
+  week_start: LocalDay,
+  overall_pct: z.number().int().min(0).max(100),
+  areas: AreaTargets,
+  floors: AreaNumbers,
+  // proposed: Michael's proposal, not stored until accepted. accepted: in force.
+  status: z.enum(["proposed", "accepted"]),
+  // Only accepting the proposal keeps "michael"; any number the user sends makes it "user".
+  set_by: z.enum(["michael", "user"]),
+  // One line in Michael's voice, with the maths.
+  reason: z.string(),
+  basis: z.object({
+    // Full weeks of history used, at most 4.
+    weeks_used: z.number().int().min(0).max(4),
+    median_pct: z.number().int().min(0).max(100).nullable(),
+    step: z.enum(["up", "hold", "down"]).nullable(),
+    // Of the last 4 full weeks, how many were on target.
+    on_target_weeks: z.number().int().min(0).max(4),
+    // The calendar already shows a heavy week.
+    heavy_week: z.boolean(),
+  }),
+  created_at: IsoDateTime,
+  updated_at: IsoDateTime,
+});
+export type WeeklyTarget = z.infer<typeof WeeklyTarget>;
+
+export const TARGET_BASELINE_WEEKS = 2;
+
+export const TargetBaseline = z.object({
+  // True once two full weeks of scores exist before the week.
+  ready: z.boolean(),
+  full_weeks: z.number().int().nonnegative(),
+  needed: z.literal(TARGET_BASELINE_WEEKS),
+  // Why there is no proposal yet, one line; null when ready.
+  reason: z.string().nullable(),
+});
+export type TargetBaseline = z.infer<typeof TargetBaseline>;
+
+// GET /v1/targets/current?week=YYYY-MM-DD
+export const TargetQuery = z.object({ week: LocalDay.optional(), now: IsoDateTime.optional() });
+export type TargetQuery = z.infer<typeof TargetQuery>;
+
+export const TargetResponse = z.object({
+  // The stored target for the week, or a fresh proposal (status "proposed") once the baseline is ready.
+  target: WeeklyTarget.nullable(),
+  baseline: TargetBaseline,
+});
+export type TargetResponse = z.infer<typeof TargetResponse>;
+
+// PUT /v1/targets/:week_start. `accept` alone takes Michael's proposal; any number is the user's.
+export const TargetUpdate = z
+  .object({
+    accept: z.literal(true).optional(),
+    overall_pct: z.number().int().min(0).max(100).optional(),
+    areas: AreaTargets.partial().optional(),
+    floors: AreaNumbers.partial().optional(),
+  })
+  .strict()
+  .refine((u) => Object.values(u).some((v) => v !== undefined), {
+    message: "Send `accept: true` or at least one number",
+  });
+export type TargetUpdate = z.input<typeof TargetUpdate>;
+
+// The week's target as the score carries it.
+export const ScoreTarget = WeeklyTarget.pick({
+  overall_pct: true,
+  areas: true,
+  floors: true,
+  status: true,
+  set_by: true,
+});
+export type ScoreTarget = z.infer<typeof ScoreTarget>;
+
+// ---------- personal records (#166) ----------
+
+export const PersonalRecordType = z.enum(["best_week", "best_week_area", "longest_block"]);
+export type PersonalRecordType = z.infer<typeof PersonalRecordType>;
+
+export const PersonalRecord = z.object({
+  id: z.uuid(),
+  type: PersonalRecordType,
+  // Set for best_week_area, and for longest_block (the block's goal area).
+  area: GoalArea.nullable(),
+  // longest_block only.
+  goal_id: z.uuid().nullable(),
+  value: z.number().int().nonnegative(),
+  unit: z.enum(["pct", "minutes"]),
+  // Null for the first one, which is a baseline and is never announced.
+  previous_value: z.number().int().nonnegative().nullable(),
+  // week_start for the week records, the local day for a block.
+  achieved_on: LocalDay,
+  // longest_block: the calendar block it happened in.
+  event_id: z.string().nullable(),
+  // longest_block: the 5 minute tick in that block where the old best was passed.
+  tick_index: z.number().int().nonnegative().nullable(),
+  // Michael's one line, under 15 words; null for a baseline.
+  line: z.string().nullable(),
+  // Set once it has gone out as a nudge.
+  announced_at: IsoDateTime.nullable(),
+  created_at: IsoDateTime,
+});
+export type PersonalRecord = z.infer<typeof PersonalRecord>;
+
+export const RecordsResponse = z.object({ records: z.array(PersonalRecord) });
+export type RecordsResponse = z.infer<typeof RecordsResponse>;
+
+// Sleep this week, outside the score (#117).
+export const ScoreSleep = z.object({
+  // The nightly goal in minutes (sleep_hours x 60).
+  goal_minutes: Minutes,
+  // Seven entries, Monday first: minutes slept in the night that ended that day. Null for a night
+  // with no sleep data and for nights to come.
+  nightly: z.array(Minutes.nullable()),
+});
+export type ScoreSleep = z.infer<typeof ScoreSleep>;
 
 // GET /v1/score. The week has the WeeklyScore fields (score_pct may be null here), then the day.
 export const Score = WeeklyScore.extend({
@@ -1386,14 +1858,26 @@ export const Score = WeeklyScore.extend({
   lost_minutes: Minutes,
   ahead_minutes: Minutes,
   unverified_minutes: Minutes,
-  // The week per category. The three add up to the week.
-  areas: z.array(ScoreArea),
+  // The week per category, with its target and floor. The three add up to the week.
+  areas: z.array(ScoreWeekArea),
   // Monday to Sunday of the week that holds `date`.
   days: z.array(ScoreDay),
   day: ScoreDayDetail,
   // The last instant each device reported anything, up to the end of the week (null: nothing).
   // Lost time after that instant is not known yet: phone data can arrive hours late.
   data_until: z.object({ mac: IsoDateTime.nullable(), iphone: IsoDateTime.nullable() }),
+  // The week's target (#165): stored, or Michael's proposal; null until the baseline is ready.
+  target: ScoreTarget.nullable(),
+  // True only when the overall score meets the target AND every category with time goals meets
+  // its floor. Null without a target or before anything has elapsed.
+  on_target: z.boolean().nullable(),
+  // Personal records set in this week (#166), baselines included (their `line` is null).
+  records: z.array(PersonalRecord),
+  // Waking time left this week outside fixed calendar commitments and sleep (#117). Goal blocks
+  // count as free: they are where goal time goes.
+  free_minutes_left: Minutes,
+  // Null until there is a sleep goal and sleep data this week.
+  sleep: ScoreSleep.nullable(),
 });
 export type Score = z.infer<typeof Score>;
 
@@ -1408,6 +1892,9 @@ export const ChatMessage = z.object({
   role: ChatRole,
   content: z.string().min(1),
   created_at: IsoDateTime,
+  // On Michael's answers: the recommendations he did or undid while writing it (source "chat"), so
+  // the Undo chips come back under the same answer after a reload. Empty on the user's lines.
+  action_ids: z.array(z.uuid()).default([]),
 });
 export type ChatMessage = z.infer<typeof ChatMessage>;
 
@@ -1422,6 +1909,8 @@ export const ChatResponse = z.object({
   reply: ChatMessage,
   // What Michael did on the user's own calendar while answering (source "chat"): status "done"
   // with `action.undo_until` as the undo deadline, or "undone" when the user asked to take one back.
+  // Status "proposed" (kinds change_goal and plan_change, #188): a proposal waiting for the user's
+  // tap (POST /v1/recommendations/:id/execute accepts, PATCH status "dismissed" declines).
   actions: z.array(Recommendation).default([]),
 });
 export type ChatResponse = z.infer<typeof ChatResponse>;
@@ -1429,6 +1918,8 @@ export type ChatResponse = z.infer<typeof ChatResponse>;
 export const ChatHistory = z.object({
   // Oldest first.
   messages: z.array(ChatMessage),
+  // The recommendations named in the messages' action_ids, as they stand now (done or undone).
+  actions: z.array(Recommendation).default([]),
 });
 export type ChatHistory = z.infer<typeof ChatHistory>;
 
@@ -1449,6 +1940,97 @@ export type PersonalTokenCreate = z.infer<typeof PersonalTokenCreate>;
 
 export const PersonalTokenCreated = z.object({ token: PersonalToken, secret: z.string() });
 export type PersonalTokenCreated = z.infer<typeof PersonalTokenCreated>;
+
+// ---------- one tap setup (setup tokens, #120) ----------
+// A setup token ("ms_...") is short lived (30 minutes), single use and can do one thing: be
+// exchanged for a device key for one connection. It is what goes into a QR code, an install
+// command or a downloaded file, so the long lived device key never sits in a URL or a shell history.
+
+export const SetupConnection = z.enum(["mac", "apple-watch", "iphone"]);
+export type SetupConnection = z.infer<typeof SetupConnection>;
+
+/** The device key name each connection gets, as listed on the Connections pages. */
+export const SETUP_KEY_NAMES: Record<SetupConnection, string> = {
+  mac: "Mac collector",
+  "apple-watch": "Health Auto Export",
+  iphone: "iPhone Shortcuts",
+};
+
+export const SetupTokenCreate = z.object({ connection: SetupConnection });
+export type SetupTokenCreate = z.infer<typeof SetupTokenCreate>;
+
+export const SetupTokenCreated = z.object({
+  token: z.string(), // "ms_..."; shown once
+  connection: SetupConnection,
+  expires_at: IsoDateTime,
+  // The web page that finishes setup on another device (the QR code opens it on the iPhone).
+  setup_url: z.string(),
+  // Mac only: the one line for Terminal. Fetches the public installer and passes the token to it.
+  install_command: z.string().nullable(),
+});
+export type SetupTokenCreated = z.infer<typeof SetupTokenCreated>;
+
+export const SetupTokenExchange = z.object({ token: z.string().min(10).max(200) });
+export type SetupTokenExchange = z.infer<typeof SetupTokenExchange>;
+
+export const SetupTokenExchanged = z.object({
+  connection: SetupConnection,
+  secret: z.string(), // the new device key ("mk_..."), ingest only
+  api_url: z.string(), // where the device sends data
+});
+export type SetupTokenExchanged = z.infer<typeof SetupTokenExchanged>;
+// ---------- voice (POST /v1/voice/speak) ----------
+// Michael's reply read aloud by ElevenLabs. Text in, audio/mpeg out; nothing is stored.
+
+export const VoiceSpeakRequest = z.object({
+  text: z.string().trim().min(1).max(1000),
+});
+export type VoiceSpeakRequest = z.input<typeof VoiceSpeakRequest>;
+
+// ---------- your data: deletion and retention (DELETE /v1/me/data) ----------
+
+// Full detail is kept this many days; older events become daily summaries (EventSummary).
+export const RETENTION_DAYS = 90;
+
+// DELETE /v1/me/data?source=&from=&to=. No parameters deletes everything, the account included.
+// Any parameter narrows it to the timeline: events (and their summaries) of that source, in that range.
+export const DataDeleteQuery = z
+  .object({
+    source: Source.optional(),
+    from: IsoDateTime.optional(),
+    to: IsoDateTime.optional(),
+  })
+  .refine((q) => !q.from || !q.to || Date.parse(q.from) < Date.parse(q.to), {
+    message: "from must be before to",
+    path: ["from"],
+  });
+export type DataDeleteQuery = z.infer<typeof DataDeleteQuery>;
+
+export const DataDeleteResult = z.object({
+  // "everything": every row of the account; "timeline": only the events the query matched.
+  scope: z.enum(["everything", "timeline"]),
+  // Rows really deleted, per table (tables with nothing to delete show 0).
+  deleted: z.record(z.string(), z.number().int().nonnegative()),
+  total: z.number().int().nonnegative(),
+  // Google was told to forget Michael's calendar access.
+  google_revoked: z.boolean(),
+  // The sign in itself (Supabase Auth user) is gone too. Only for "everything".
+  account_deleted: z.boolean(),
+});
+export type DataDeleteResult = z.infer<typeof DataDeleteResult>;
+
+// What remains of events older than RETENTION_DAYS: one row per UTC day, source, type and category.
+// No titles and no data, only counts and time.
+export const EventSummary = z.object({
+  day: LocalDay, // UTC day of the events' start
+  source: Source,
+  type: EventType,
+  // App or site category when the event had one (AppCategory or the collector's site category), else "".
+  category: z.string(),
+  events: z.number().int().nonnegative(),
+  seconds: z.number().int().nonnegative(),
+});
+export type EventSummary = z.infer<typeof EventSummary>;
 
 // ---------- demo account ----------
 
@@ -1513,6 +2095,11 @@ export const MomentGoal = z.object({
   goal_id: z.uuid(),
   title: z.string(),
   category: GoalCategory,
+  // business | health | personal for any category (goalArea), and how the goal is measured.
+  area: GoalArea.optional(),
+  kind: GoalKind.optional(),
+  // True for the sleep goal (isSleepGoal): screens hide it from time lines.
+  sleep: z.boolean().optional(),
   budget_minutes: z.number().int().nonnegative().nullable(),
   // This week (Monday 00:00 local) until now.
   spent_week_minutes: z.number().int().nonnegative(),
@@ -1579,3 +2166,85 @@ export const Moment = z.object({
   first_move: MomentMove.nullable(),
 });
 export type Moment = z.infer<typeof Moment>;
+
+// ---------- check in (#187) ----------
+// Michael asks a few questions about the day, drawn from the timeline, and keeps the answers as
+// structured notes that feed the chat, the analysis and later questions. At most two rounds a day:
+// one after a missed goal block, one at the Evening moment.
+
+export const CheckInKind = z.enum([
+  // A goal block that should have had a workout, and none was recorded.
+  "missed_block",
+  // A stretch of the working day with nothing on the timeline and no Mac activity.
+  "unaccounted",
+  // A training block that ended.
+  "training",
+  // A meeting with other people that ended.
+  "meeting",
+  // Last night was short.
+  "short_night",
+  // Asked only because of an earlier answer.
+  "follow_up",
+]);
+export type CheckInKind = z.infer<typeof CheckInKind>;
+
+export const CheckInAnswerType = z.enum(["yes_no", "scale", "text"]);
+export type CheckInAnswerType = z.infer<typeof CheckInAnswerType>;
+
+export const CheckInMoment = z.enum(["missed_block", "evening"]);
+export type CheckInMoment = z.infer<typeof CheckInMoment>;
+
+// "yes" or "no" for yes_no, 1 to 5 for scale, the user's own words for text (any type takes words).
+export const CheckInValue = z.union([
+  z.literal("yes"),
+  z.literal("no"),
+  z.number().int().min(1).max(5),
+  z.string().trim().min(1).max(500),
+]);
+export type CheckInValue = z.infer<typeof CheckInValue>;
+
+export const CheckIn = z.object({
+  id: z.uuid(),
+  // Local day (YYYY-MM-DD) the question is about.
+  day: z.string(),
+  kind: CheckInKind,
+  question: z.string().min(1),
+  answer_type: CheckInAnswerType,
+  moment: CheckInMoment,
+  // The timeline event, goal and time span the question is about, when there is one.
+  event_id: z.uuid().nullable(),
+  goal_id: z.uuid().nullable(),
+  start_at: IsoDateTime.nullable(),
+  end_at: IsoDateTime.nullable(),
+  // The question this one follows up, when kind is follow_up.
+  follow_up_of: z.uuid().nullable(),
+  answer: CheckInValue.nullable(),
+  // What the answer settles, in a word, for later use: an unaccounted stretch that was a
+  // "meeting", a block that was "skipped", a short night that "played_a_part". Null otherwise.
+  label: z.string().nullable(),
+  asked_at: IsoDateTime,
+  answered_at: IsoDateTime.nullable(),
+});
+export type CheckIn = z.infer<typeof CheckIn>;
+
+// GET /v1/check-in: today's questions, answered and open, in the order to ask them.
+export const CheckInToday = z.object({
+  day: z.string(),
+  // True while a question is still open.
+  open: z.boolean(),
+  // The round the open questions belong to, null when none is open.
+  moment: CheckInMoment.nullable(),
+  questions: z.array(CheckIn),
+});
+export type CheckInToday = z.infer<typeof CheckInToday>;
+
+export const CheckInAnswer = z.object({ value: CheckInValue });
+export type CheckInAnswer = z.infer<typeof CheckInAnswer>;
+
+// POST /v1/check-in/:id/answer
+export const CheckInAnswerResponse = z.object({
+  check_in: CheckIn,
+  // Asked only when the answer calls for one ("You slept 5h 10. Did that play a part?").
+  follow_up: CheckIn.nullable(),
+});
+export type CheckInAnswerResponse = z.infer<typeof CheckInAnswerResponse>;

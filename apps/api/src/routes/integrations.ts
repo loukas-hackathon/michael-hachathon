@@ -2,12 +2,15 @@ import {
   type CalendarSyncResult,
   IntegrationProvider,
   type IntegrationsResponse,
+  OAuthConnectRequest,
   type OAuthConnectResponse,
 } from "@michael/shared";
 import { Hono } from "hono";
 import { z } from "zod";
 import { currentUserId, runAsUser } from "../context";
 import { webUrl } from "../env";
+import { PAST_DAYS } from "../goals/suggest";
+import { currentSuggestions } from "../goals/suggestions";
 import { HttpError, parse } from "../http";
 import { syncGoogleCalendar } from "../integrations/calendar-sync";
 import { authUrl, emailFromIdToken, exchangeCode, revokeToken } from "../integrations/google";
@@ -35,7 +38,18 @@ export const integrations = new Hono()
   .post("/integrations/:provider/connect", async (c) => {
     const provider = parse(IntegrationProvider, c.req.param("provider"));
     onlyGoogle(provider);
-    const body: OAuthConnectResponse = { url: authUrl(signState(currentUserId(), provider)) };
+    // The body is optional: `{ return_to }` sends the user back somewhere other than /you.
+    const raw = await c.req.text();
+    let input: unknown = {};
+    try {
+      input = raw.trim() ? JSON.parse(raw) : {};
+    } catch {
+      throw new HttpError("bad_request", "Body must be valid JSON");
+    }
+    const { return_to } = parse(OAuthConnectRequest, input);
+    const body: OAuthConnectResponse = {
+      url: authUrl(signState(currentUserId(), provider, Date.now(), return_to)),
+    };
     return c.json(body);
   })
   .post("/integrations/:provider/sync", async (c) => {
@@ -68,7 +82,12 @@ const CallbackQuery = z.object({
   error: z.string().max(200).optional(),
 });
 
-const backToWeb = (params: Record<string, string>) => `${webUrl()}/you?${new URLSearchParams(params)}`;
+// Back to the web app: /you, or the signed return path (a path on the web app, never another site).
+const backToWeb = (params: Record<string, string>, returnTo = "/you") => {
+  const u = new URL(returnTo, `${webUrl()}/`);
+  for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
+  return u.toString();
+};
 
 // Browser redirect from Google, mounted at /oauth/google/callback (the redirect URI registered in
 // Google Cloud). No auth header, so the signed `state` says who it is for.
@@ -81,7 +100,7 @@ export const oauth = new Hono().get("/oauth/google/callback", async (c) => {
   }
   if (q.data.error || !q.data.code) {
     // The user said no on Google's screen.
-    return c.redirect(backToWeb({ integration_error: provider, reason: "declined" }));
+    return c.redirect(backToWeb({ integration_error: provider, reason: "declined" }, state.returnTo));
   }
   const code = q.data.code;
 
@@ -101,14 +120,18 @@ export const oauth = new Hono().get("/oauth/google/callback", async (c) => {
       });
     } catch (err) {
       console.error("oauth callback", err);
-      return c.redirect(backToWeb({ integration_error: provider, reason: "token" }));
+      return c.redirect(backToWeb({ integration_error: provider, reason: "token" }, state.returnTo));
     }
-    // First sync now, so the timeline fills while the user is still looking.
+    // First sync now, so the timeline fills while the user is still looking. Four weeks back, so
+    // Michael can read the user's habits and suggest goals straight away (#134).
+    const back: Record<string, string> = { connected: provider };
     try {
-      await syncGoogleCalendar();
+      await syncGoogleCalendar(Date.now(), PAST_DAYS);
+      const { suggestions } = await currentSuggestions();
+      if (suggestions.length > 0) back.goal_suggestions = String(suggestions.length);
     } catch (err) {
       console.error("first calendar sync", err);
     }
-    return c.redirect(backToWeb({ connected: provider }));
+    return c.redirect(backToWeb(back, state.returnTo));
   });
 });

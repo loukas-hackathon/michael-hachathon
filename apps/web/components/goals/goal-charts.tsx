@@ -1,4 +1,5 @@
 import { hm } from "@/lib/format";
+import type { CloseState } from "@/lib/goals-view";
 
 const NOTCH_MINUTES = 30;
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -11,30 +12,64 @@ export function NotchTrack({
   budget,
   spent,
   unverified = 0,
+  planned,
   pace,
   label,
+  close = "open",
 }: {
+  /** Near the end the next notch breathes; closed, the tape goes solid and a check lands. */
+  close?: CloseState;
   budget: number;
   spent: number;
   unverified?: number;
+  /** Minutes planned in blocks: those notches are dashed until filled. */
+  planned?: number;
   pace: number;
   label: string;
 }) {
   const n = Math.max(1, Math.round(budget / NOTCH_MINUTES));
   const filled = spent / NOTCH_MINUTES;
   const firm = (spent - unverified) / NOTCH_MINUTES;
+  const plannedN = (planned ?? 0) / NOTCH_MINUTES;
   const notches = Array.from({ length: n }, (_, i) => ({
     id: `n${i}`,
     fill: Math.max(0, Math.min(1, filled - i)),
     firm: Math.max(0, Math.min(1, firm - i)),
+    dashed: i < Math.round(plannedN),
   }));
+  // The first notch not yet full: the one that pulls you on.
+  const next = close === "near" || close === "last" ? notches.findIndex((x) => x.fill < 1) : -1;
+  if (close === "closed") {
+    return (
+      <div role="img" aria-label={label} className="relative flex items-center gap-2 pt-1.5">
+        <div className="m-track-closed h-3 flex-1 rounded-[3px] bg-spark" />
+        <svg viewBox="0 0 20 20" aria-hidden="true" className="m-check-pop -my-1 size-5 shrink-0">
+          <circle cx="10" cy="10" r="10" fill="var(--m-spark)" />
+          <path
+            d="M6 10.4l2.6 2.6L14 7.6"
+            fill="none"
+            stroke="var(--m-bg)"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </div>
+    );
+  }
   return (
     <div role="img" aria-label={label} className="relative pt-1.5">
       <div className="flex h-3 gap-[2px]">
-        {notches.map(({ id, fill, firm }) => (
+        {notches.map(({ id, fill, firm, dashed }, i) => (
           <span
             key={id}
-            className="relative min-w-0 flex-1 overflow-hidden rounded-[3px] shadow-[inset_0_0_0_1px_var(--m-context)]"
+            className={`relative min-w-0 flex-1 overflow-hidden rounded-[3px] ${i === next ? "m-notch-next " : ""}${
+              dashed
+                ? n <= 18
+                  ? "border border-dashed border-label-2"
+                  : "shadow-[inset_0_0_0_1px_var(--m-label-2)]"
+                : "shadow-[inset_0_0_0_1px_var(--m-context)]"
+            }`}
           >
             {fill > 0 ? (
               <span

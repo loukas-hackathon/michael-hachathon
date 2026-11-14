@@ -45,3 +45,7 @@ test("a device key acts for its owner, cannot mint keys, and stops working when 
 test("unknown device keys are rejected", async () => {
   assert.equal((await call("/v1/goals", "mk_not_a_real_key")).status, 401);
 });
+
+test("the end-to-end test sign in is refused unless E2E_TEST_AUTH=on", async () => {
+  assert.equal((await call("/v1/goals", `e2e_${OWNER}`)).status, 401);
+});

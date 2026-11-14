@@ -20,6 +20,16 @@ export type RecCard = {
   status: Recommendation["status"];
   /** Undo is allowed until then (ISO), for a done recommendation. */
   undoUntil: string | null;
+  /** What the card says once undone. */
+  undoneNote: string;
+  /** Drives this suggestion changes, before and after, for the bars (travel suggestions only). */
+  drives?: TravelDriveRow[];
+};
+
+export type TravelDriveRow = {
+  to: string;
+  before: { at: string; minutes: number };
+  after: { at: string; minutes: number };
 };
 
 const TZ = "Europe/Athens";
@@ -52,14 +62,87 @@ function actionTimes(rec: Recommendation) {
   return { start: str(p.start_at), end: str(p.end_at) };
 }
 
+// A Mac app guard keeps working until its window ends, so it can be undone (and is still worth
+// doing) until then; a calendar change only until the block starts.
+const isGuard = (rec: Recommendation) => rec.action?.kind === "block_mac_app";
+
+/** The apps a block_mac_app suggestion names ("WhatsApp and Slack"). */
+export function guardedApps(rec: Recommendation): string {
+  const p = rec.action?.payload ?? {};
+  const names = [p.app, ...(Array.isArray(p.apps) ? p.apps : [])].filter(
+    (x): x is string => typeof x === "string" && x.length > 0,
+  );
+  const unique = [...new Set(names)];
+  if (unique.length <= 1) return unique[0] ?? "those apps";
+  return `${unique.slice(0, -1).join(", ")} and ${unique.at(-1)}`;
+}
+
 export function undoDeadline(rec: Recommendation): string | null {
-  const { start } = actionTimes(rec);
+  const { start, end } = actionTimes(rec);
+  if (isGuard(rec)) return end ?? rec.action?.undo_until ?? null;
   const until = [rec.action?.undo_until ?? null, start].filter((x): x is string => Boolean(x));
   if (until.length === 0) return null;
   return new Date(Math.min(...until.map((x) => Date.parse(x)))).toISOString();
 }
 
-const EXECUTABLE = new Set(["create_focus_block", "move_calendar_block"]);
+const EXECUTABLE = new Set([
+  "create_focus_block",
+  "move_calendar_block",
+  "move_calendar_blocks",
+  "block_mac_app",
+]);
+
+const leg = (v: unknown): { at: string; minutes: number } | null => {
+  const l = v as { depart_at?: unknown; minutes?: unknown } | null;
+  const at = str(l?.depart_at);
+  return at && typeof l?.minutes === "number" ? { at, minutes: l.minutes } : null;
+};
+
+/**
+ * The travel side of a suggestion: the whole day plan (move_calendar_blocks, #155) or a leave
+ * later reminder (#115). Null for anything else.
+ */
+export function travelCard(rec: Recommendation, now: Date): Partial<RecCard> | null {
+  const a = rec.action;
+  if (!a) return null;
+  const won = /win (\d+) minutes?/i.exec(rec.title);
+  const wonMinutes =
+    typeof a.payload.won_minutes === "number" ? a.payload.won_minutes : won ? Number(won[1]) : 0;
+  if (a.kind === "move_calendar_blocks") {
+    const moves = Array.isArray(a.payload.moves) ? (a.payload.moves as Record<string, unknown>[]) : [];
+    const first = moves.map((m) => str(m.start_at)).find(Boolean);
+    const drives = (Array.isArray(a.payload.drives) ? (a.payload.drives as Record<string, unknown>[]) : [])
+      .map((d) => ({ to: String(d.to ?? ""), before: leg(d.before), after: leg(d.after) }))
+      .filter(
+        (d): d is TravelDriveRow =>
+          Boolean(d.before && d.after) &&
+          (d.before?.minutes !== d.after?.minutes || d.before?.at !== d.after?.at),
+      );
+    const before = typeof a.payload.before_minutes === "number" ? a.payload.before_minutes : null;
+    const after = typeof a.payload.after_minutes === "number" ? a.payload.after_minutes : null;
+    return {
+      when: first
+        ? `${dayWord(first, now)}, ${moves.length === 1 ? "1 block moves" : `${moves.length} blocks move`}`
+        : null,
+      maths:
+        before !== null && after !== null
+          ? `${before} min on the road becomes ${after}. Wins ${wonMinutes} min.`
+          : wonMinutes > 0
+            ? `Wins ${wonMinutes} min on the road.`
+            : null,
+      drives,
+      undoneNote: "Undone. Every block is back where it was.",
+    };
+  }
+  if (a.kind === "reminder" && /^leave at/i.test(rec.title)) {
+    const at = str(a.payload.at);
+    return {
+      when: at ? `${dayWord(at, now)}, leave at ${formatTime(at)}` : null,
+      maths: wonMinutes > 0 ? `Wins ${wonMinutes} min on the road.` : null,
+    };
+  }
+  return null;
+}
 
 export function toCard(rec: Recommendation, goals: Goal[], now: Date): RecCard {
   const goal = goalName(goals.find((g) => g.id === rec.goal_id));
@@ -77,15 +160,22 @@ export function toCard(rec: Recommendation, goals: Goal[], now: Date): RecCard {
     rationale: rec.rationale,
     goal,
     maths,
+    // The title often says the times already ("Block 09:30 to 11:00 for ..."): then only the day.
     when: start
-      ? creates
-        ? `${day}, ${span}`
-        : `Moves to ${/^To/.test(day) ? day.toLowerCase() : day}, ${span}`
+      ? creates || isGuard(rec)
+        ? rec.title.includes(span)
+          ? day
+          : `${day}, ${span}`
+        : `Moves to ${/^To/.test(day) ? day.toLowerCase() : day}${rec.title.includes(span) ? "" : `, ${span}`}`
       : null,
     executable: Boolean(rec.action && EXECUTABLE.has(rec.action.kind) && !involvesOthers),
     involvesOthers,
     status: rec.status,
     undoUntil: undoDeadline(rec),
+    undoneNote: isGuard(rec)
+      ? `Undone. ${guardedApps(rec)} can open again.`
+      : "Undone. Your calendar is back as it was.",
+    ...travelCard(rec, now),
   };
 }
 
@@ -99,7 +189,8 @@ export function openRecommendations(recs: Recommendation[], now: Date, limit = 3
     .filter((r) => {
       if (r.status === "done") return ahead(undoDeadline(r));
       if (r.status === "dismissed") return false;
-      return ahead(actionTimes(r).start ?? r.action?.undo_until ?? null);
+      const t = actionTimes(r);
+      return ahead((isGuard(r) ? t.end : t.start) ?? r.action?.undo_until ?? null);
     })
     .sort((a, b) => {
       const ex = (r: Recommendation) => (r.action && !r.action.involves_others ? 0 : 1);

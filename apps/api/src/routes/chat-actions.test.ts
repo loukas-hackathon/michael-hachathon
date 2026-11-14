@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 import type Anthropic from "@anthropic-ai/sdk";
-import { ChatResponse, Recommendation } from "@michael/shared";
+import { ChatHistory, ChatResponse, Recommendation } from "@michael/shared";
 import { app } from "../app";
 import { runAsUser } from "../context";
+import { env } from "../env";
+import { withoutInstructions } from "../instructions/testkit";
 import { DEFAULT_TIMEZONE } from "../patterns";
 import { Zone } from "../patterns/time";
 import { store } from "../store";
@@ -14,7 +16,13 @@ const HOUR = 3600_000;
 const auth = { Authorization: "Bearer dev-key", "content-type": "application/json" };
 const iso = (ms: number) => new Date(ms).toISOString();
 const clock = (ms: number) => new Zone(DEFAULT_TIMEZONE).clock(ms);
-const asNewUser = <T>(fn: () => Promise<T>) => runAsUser(randomUUID(), fn);
+// A fresh user without standing instructions: these tests book relative to now, and on a Saturday
+// "tomorrow" is the mock's clear Sunday (instructions/guard.test.ts covers the guard).
+const asNewUser = <T>(fn: () => Promise<T>) =>
+  runAsUser(randomUUID(), async () => {
+    await withoutInstructions(store);
+    return fn();
+  });
 
 type Reply = { text?: string; tool?: { name: string; input: unknown } };
 
@@ -222,6 +230,9 @@ test("chat never creates a block that has already started", () =>
   ));
 
 test("POST /v1/chat/stream sends an action event, then the reply with its actions", async () => {
+  // The demo account (the API key) starts with the mock "Keep Sundays clear", and six hours from
+  // a Saturday evening is Sunday: this test is about streaming, so it starts without it.
+  await runAsUser(env.DEMO_USER_ID, () => withoutInstructions(store));
   const start = Date.now() + 6 * HOUR;
   await withClaude(
     [
@@ -262,6 +273,13 @@ test("POST /v1/chat/stream sends an action event, then the reply with its action
         .map((e) => e.data.text)
         .join("");
       assert.equal(streamed, expected);
+      // The answer remembers what it did, so the Undo chip comes back after a reload.
+      assert.deepEqual(body.reply.action_ids, [action.id]);
+      const history = ChatHistory.parse(await (await app.request("/v1/chat", { headers: auth })).json());
+      const stored = history.messages.find((m) => m.id === body.reply.id);
+      assert.deepEqual(stored?.action_ids, [action.id]);
+      assert.equal(history.messages.find((m) => m.id === body.message.id)?.action_ids.length, 0);
+      assert.equal(history.actions.find((a) => a.id === action.id)?.status, "done");
     },
   );
 });

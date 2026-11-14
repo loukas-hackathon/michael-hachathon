@@ -1,4 +1,5 @@
 import {
+  CheckInValue,
   type Event,
   EventInput,
   EventType,
@@ -10,6 +11,7 @@ import {
   goalKind,
   type Moment,
   MomentKind,
+  type PersonalRecord,
   type Recommendation,
   RecommendationStatus,
   type Score,
@@ -20,7 +22,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 import { bookFocusBlock, executeRecommendation, undoDeadline, undoRecommendation } from "./actions/calendar";
+import { guardMacApps, suggestAppGuard } from "./actions/mac-apps";
+import { answerCheckIn, checkInToday } from "./checkin/service";
 import { currentAgent } from "./context";
+import { currentSuggestions } from "./goals/suggestions";
 import { HttpError, parse } from "./http";
 import {
   dayLabel,
@@ -36,10 +41,12 @@ import {
   zone,
 } from "./mcp-format";
 import { guardTools } from "./mcp-guard";
+import { listMemories, remember } from "./memory";
 import { momentFor } from "./routes/moments";
 import { patternReportFor } from "./routes/patterns";
 import { travelPlanFor } from "./routes/places";
 import { scoreFor } from "./routes/score";
+import { recordsFor } from "./routes/targets";
 import { store } from "./store";
 
 // The claude.ai connector's tool set. Every tool answers with short text in the user's local time
@@ -111,13 +118,31 @@ function scoreText(s: Score): string {
   const lines = [
     `Week from ${dayLabel(Date.parse(s.week_start))}: ${pct(s.score_pct)} of planned goal time spent (${dur(s.spent_minutes)} of ${dur(s.elapsed_minutes)} so far; ${dur(s.lost_minutes)} lost, ${dur(s.ahead_minutes)} still ahead, ${dur(s.planned_minutes)} planned).`,
     `${dayLabel(zone.startOfDay(s.date) + 12 * 3600_000)}: ${pct(s.day.score_pct)} (${dur(s.day.spent_minutes)} of ${dur(s.day.elapsed_minutes)}; ${dur(s.day.lost_minutes)} lost, ${dur(s.day.unverified_minutes)} unverified). Time won back: ${dur(s.day.time_won_back_minutes)}${s.day.time_won_back.reason ? ` (${s.day.time_won_back.reason})` : ""}.`,
+    targetText(s),
+    `Balance: ${s.areas
+      .map(
+        (a) =>
+          `${a.area} ${pct(a.score_pct)} (floor ${a.floor_pct}%${a.target_pct == null ? "" : `, target ${a.target_pct}%`}${a.meets_floor == null ? "" : a.meets_floor ? ", met" : ", not met"})`,
+      )
+      .join("; ")}.`,
+    `Free time left this week, outside fixed commitments and sleep: ${dur(s.free_minutes_left)}.`,
     "Goals this week:",
     ...s.goals.map((g) =>
       g.scored
-        ? `- ${g.area} "${g.title}": budget ${dur(g.budget_minutes)}, planned ${dur(g.planned_minutes)}, spent ${dur(g.spent_minutes)}, lost ${dur(g.lost_minutes)}, ${pct(g.score_pct)}`
+        ? `- ${g.area} "${g.title}": budget ${dur(g.budget_minutes)}, planned ${dur(g.planned_minutes)}, spent ${dur(g.spent_minutes)}, lost ${dur(g.lost_minutes)}, ${pct(g.score_pct)}; ${dur(g.minutes_left)} left, ${g.open_blocks} ${g.open_blocks === 1 ? "block" : "blocks"} still open`
         : `- ${g.area} "${g.title}": a ${g.kind} goal, outside the time score`,
     ),
   ];
+  if (s.sleep) {
+    const nights = s.sleep.nightly.map((n) => (n == null ? "none" : dur(n))).join(", ");
+    lines.push(
+      `Sleep (outside the score): goal ${dur(s.sleep.goal_minutes)} a night; Monday to Sunday ${nights}.`,
+    );
+  }
+  if (s.records.length) {
+    lines.push("Personal records set this week:");
+    for (const r of s.records) lines.push(`- ${recordText(r)}`);
+  }
   if (s.day.blocks.length) {
     lines.push("Blocks that day:");
     for (const b of s.day.blocks) {
@@ -131,6 +156,34 @@ function scoreText(s: Score): string {
     }
   }
   return lines.join("\n");
+}
+
+function targetText(s: Score): string {
+  if (!s.target) return "Target: none yet (Michael proposes one once two full weeks of scores exist).";
+  const t = s.target;
+  const who =
+    t.status === "proposed"
+      ? "proposed by Michael, not accepted yet"
+      : `set by ${t.set_by === "user" ? "the user" : "Michael"}`;
+  const verdict =
+    s.on_target == null ? "nothing elapsed yet" : s.on_target ? "on target so far" : "not on target so far";
+  return `Target this week: ${t.overall_pct}% overall (${who}); ${verdict}. On target needs the overall score at the target and every category with time goals at its floor.`;
+}
+
+function recordText(r: PersonalRecord): string {
+  const what =
+    r.type === "best_week"
+      ? `best week ${r.value}%`
+      : r.type === "best_week_area"
+        ? `best ${r.area} week ${r.value}%`
+        : `longest unbroken goal block ${dur(r.value)}`;
+  const since =
+    r.previous_value == null
+      ? "baseline, not announced"
+      : `previous best ${r.unit === "pct" ? `${r.previous_value}%` : dur(r.previous_value)}`;
+  const line = r.line ? ` Line: "${r.line}"` : "";
+  const sent = r.line ? (r.announced_at ? " Announced." : " Not announced yet.") : "";
+  return `${what} on ${r.achieved_on} (${since}).${line}${sent} id ${r.id}`;
 }
 
 function momentText(m: Moment): string {
@@ -263,11 +316,35 @@ export function createMcpServer(): McpServer {
   );
 
   server.registerTool(
+    "propose_goals",
+    {
+      title: "Propose goals from the calendar",
+      description:
+        "Goals the user already lives by, read from their own recurring calendar blocks (nobody else in them) over the last four weeks and the week ahead: each with a title, category, weekly budget in minutes, the calendar titles that would count towards it and the evidence. Titles an existing goal already counts are left out. Show them to the user and ask which to keep; add each one they keep with add_goal, passing category, title, weekly_budget_minutes and target exactly as given (edits welcome).",
+      annotations: { readOnlyHint: true },
+    },
+    safe(async () => {
+      const { suggestions } = await currentSuggestions();
+      const text = suggestions.length
+        ? [
+            `From the calendar I see ${suggestions.length} goal${suggestions.length === 1 ? "" : "s"}:`,
+            ...suggestions.map(
+              (s) =>
+                `- ${s.title} [${s.category}], ${dur(s.weekly_budget_minutes)} a week. ${s.evidence} Counts: ${s.target.calendar_titles.join(", ")}.`,
+            ),
+            "Ask which to keep, then add each with add_goal.",
+          ].join("\n")
+        : "No recurring own blocks that a goal does not already cover. Ask the user what this week should hold.";
+      return reply(text, { suggestions });
+    }),
+  );
+
+  server.registerTool(
     "get_score",
     {
       title: "Get score",
       description:
-        "The headline score: the share of planned goal time actually spent on the goals, for the week (Monday to Sunday) and for one day, with time won back, each goal's budget against what was planned and spent, and the day's blocks with what took the lost time. Use it to answer \"how is my day or week going\". Minutes throughout; `unverified` is spent time the data cannot prove. Default day is today in Europe/Athens.",
+        "The headline score: the share of planned goal time actually spent on the goals, for the week (Monday to Sunday) and for one day, with time won back, each goal's budget against what was planned and spent (minutes left, blocks still open), and the day's blocks with what took the lost time. Also the week's target and whether it is on target (the overall score at the target AND every category at its floor), free time left this week, sleep per night, and personal records set this week. Use it to answer \"how is my day or week going\". Minutes throughout; `unverified` is spent time the data cannot prove. Default day is today in Europe/Athens.",
       inputSchema: { date: LocalDayInput.optional().describe("Local day, YYYY-MM-DD. Default today") },
       annotations: { readOnlyHint: true },
     },
@@ -276,6 +353,24 @@ export function createMcpServer(): McpServer {
       // The 5 minute ticks are for drawing the Today screen; models do not need them.
       const day = { ...s.day, blocks: s.day.blocks.map(({ ticks: _ticks, ...b }) => b) };
       return reply(scoreText(s), { ...s, day });
+    }),
+  );
+
+  server.registerTool(
+    "get_records",
+    {
+      title: "Get personal records",
+      description:
+        "The user's personal records: best week overall, best week per category (business, health, personal) and the longest uninterrupted goal block, each with the previous best, the day or week it was set and Michael's one line. The first value of each is a baseline and is never announced. Use it for \"what are my bests\" or to celebrate a new one with real numbers.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+    },
+    safe(async () => {
+      const { records } = await recordsFor();
+      const text = records.length
+        ? ["Personal records:", ...records.map((r) => `- ${recordText(r)}`)].join("\n")
+        : "No personal records yet: a week has to end, or a goal block has to finish, first.";
+      return reply(text, { records });
     }),
   );
 
@@ -367,7 +462,43 @@ export function createMcpServer(): McpServer {
     }),
   );
 
+  server.registerTool(
+    "get_memories",
+    {
+      title: "Get memories",
+      description:
+        'What the user told Michael, or an agent, to remember about them across conversations: lasting facts and preferences such as "trains best before 08:00" or "Fridays are for family". Read it at the start of a conversation about the user\'s day or plans, so they never have to repeat themselves. Newest first.',
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+    },
+    safe(async () => {
+      const memories = await listMemories();
+      const text = memories.length
+        ? memories.map((m) => `- ${m.text} (${m.from}, ${dayLabel(Date.parse(m.at))})`).join("\n")
+        : "Nothing remembered yet.";
+      return reply(text, { memories });
+    }),
+  );
+
   // ---------- write ----------
+
+  server.registerTool(
+    "remember",
+    {
+      title: "Remember",
+      description:
+        "Keep one lasting fact or preference the user told you about themselves, their routine or their goals, so Michael and every connected agent know it next time. One short line in the user's words. Not one off plans, not other people's details, nothing already in their goals.",
+      inputSchema: {
+        fact: z.string().min(1).max(280).describe("One short line, e.g. 'Trains best before 08:00'"),
+      },
+    },
+    safe(async ({ fact }) => {
+      const m = await remember(fact, "agent");
+      return m
+        ? reply(`Remembered: ${m.text}`, { memory: m })
+        : reply("Not kept: the user is off the record.", { memory: null });
+    }),
+  );
 
   server.registerTool(
     "add_event",
@@ -463,11 +594,54 @@ export function createMcpServer(): McpServer {
   );
 
   server.registerTool(
+    "get_check_in",
+    {
+      title: "Get today's check in",
+      description:
+        "Michael's check in questions about today, drawn from the timeline (a missed training block, an unaccounted stretch on the Mac, a meeting, a short night), with the user's answers so far and each question's id. Use it to ask the user the open questions one at a time, then keep each answer with answer_check_in.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+    },
+    safe(async () => {
+      const today = await checkInToday();
+      const lines = today.questions.map(
+        (q) => `- ${q.question} ${q.answer === null ? "(open)" : `Answer: ${String(q.answer)}`} {id ${q.id}}`,
+      );
+      return reply(
+        lines.length ? `Check in, ${today.day}:\n${lines.join("\n")}` : "No check in questions today.",
+        today,
+      );
+    }),
+  );
+
+  server.registerTool(
+    "answer_check_in",
+    {
+      title: "Answer a check in question",
+      description:
+        "Keep the user's answer to one of today's check in questions (ids from get_check_in), in their own words: 'yes' or 'no', 1 to 5 for a scale question, or a short text. Each question is answered once. When the answer calls for a follow up, the result gives it; ask it next.",
+      inputSchema: {
+        id: Id.describe("Check in question id from get_check_in"),
+        value: z
+          .union([z.number().int().min(1).max(5), z.string().min(1).max(500)])
+          .describe("yes, no, 1 to 5, or words"),
+      },
+    },
+    safe(async ({ id, value }) => {
+      const out = await answerCheckIn(id, parse(CheckInValue, value));
+      return reply(
+        `Kept: ${out.check_in.question} Answer: ${String(out.check_in.answer)}.${out.follow_up ? ` Follow up: ${out.follow_up.question} {id ${out.follow_up.id}}` : ""}`,
+        out,
+      );
+    }),
+  );
+
+  server.registerTool(
     "execute_recommendation",
     {
       title: "Carry out a recommendation",
       description:
-        "Carry out one of Michael's recommendations on the user's own calendar: book a focus block or move one of their solo blocks. Use it once the user says yes. Refused when it involves other people, has already started, or has nothing to carry out. Never deletes the user's events and never sends anything. The change can be undone with undo_recommendation until the block starts.",
+        "Carry out one of Michael's recommendations on the user's own time: book a focus block, move one of their solo blocks, or mute distracting Mac apps (block_mac_app). Use it once the user says yes. Refused when it involves other people, has already started, or has nothing to carry out. Never deletes the user's events and never sends anything. The change can be undone with undo_recommendation until the block starts.",
       inputSchema: { id: Id.describe("Recommendation id from list_recommendations") },
     },
     safe(async ({ id }) => {
@@ -481,7 +655,7 @@ export function createMcpServer(): McpServer {
     {
       title: "Undo a recommendation",
       description:
-        "Put back what execute_recommendation or create_focus_block changed: removes the block Michael booked, or moves a moved block back. Works until the block starts. Only ever removes a block Michael created himself.",
+        "Put back what execute_recommendation, create_focus_block or block_mac_app changed: removes the block Michael booked, moves a moved block back, or lets muted apps open again. Works until the block starts (a mute: until it ends). Only ever removes a block Michael created himself.",
       inputSchema: { id: Id.describe("Recommendation id") },
     },
     safe(async ({ id }) => {
@@ -523,11 +697,53 @@ export function createMcpServer(): McpServer {
   );
 
   server.registerTool(
+    "block_mac_app",
+    {
+      title: "Mute distracting Mac apps",
+      description: `Close distracting apps on the user's Mac for a stretch of time, straight away, for example WhatsApp and Slack during a focus block. While it runs, Michael's Mac helper closes the app when it comes to the front and tells the user why. Only chat, social, music, video and game apps can be named (WhatsApp, Telegram, Messages, Slack, Discord, Mail, Instagram, X, Spotify, Music, TV, Netflix, Steam and similar); anything else is refused. 5 minutes to 12 hours. Use it when the user asks you to protect focus time. Undo with undo_recommendation until it ends. ${TZ_NOTE}`,
+      inputSchema: {
+        apps: z.array(z.string().min(1).max(80)).min(1).max(10).describe('App names, e.g. ["WhatsApp"]'),
+        start: TimeInput.optional().describe("Start, e.g. 2026-11-14T14:00. Default now"),
+        end: TimeInput.describe("End, e.g. 2026-11-14T16:00"),
+        goal_id: Id.optional().describe("The goal it protects, from get_goals"),
+      },
+    },
+    safe(async ({ apps, start, end, goal_id }) => {
+      const rec = await guardMacApps({
+        apps,
+        start_at: start ? toInstant(start) : new Date().toISOString(),
+        end_at: toInstant(end),
+        goal_id,
+        requested_by: currentAgent()?.name ?? "an AI tool",
+      });
+      return reply(await doneText(rec, "Muted:"), {
+        recommendation: rec,
+        undo_until: await undoDeadline(rec.id),
+      });
+    }),
+  );
+
+  server.registerTool(
+    "suggest_app_mute",
+    {
+      title: "Suggest muting the worst offender",
+      description:
+        "Look at the week's patterns and propose muting the Mac app that broke the user's focus most, during today's next work block. It only proposes: the suggestion shows in Michael and in list_recommendations, and nothing happens until the user (or you, once they say yes) runs execute_recommendation.",
+      inputSchema: {},
+    },
+    safe(async () => {
+      const rec = await suggestAppGuard();
+      if (!rec) return reply("Nothing to suggest: no Mac app stands out, or it is already muted.", {});
+      return reply(`Suggested: "${rec.title}". ${rec.rationale} Id ${rec.id}.`, { recommendation: rec });
+    }),
+  );
+
+  server.registerTool(
     "plan_travel",
     {
       title: "Plan travel",
       description:
-        "Work out the drives between the user's calendar events with live traffic (Google Maps), put them on the timeline and propose leaving later or moving the user's own block past the rush. Defaults to today (Europe/Athens). Status maps_unavailable or travel_off means nothing was computed.",
+        "Work out the drives between the user's calendar events with live traffic (Google Maps), put them on the timeline and propose leaving later or moving the user's own block past the rush. With whole_day: true, plan the whole day together: one recommendation that moves the user's own blocks out of the rush while meetings with other people stay fixed. Defaults to today (Europe/Athens). Status maps_unavailable or travel_off means nothing was computed.",
       inputSchema: TravelPlanInput.shape,
     },
     safe(async (input) => {

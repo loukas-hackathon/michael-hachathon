@@ -1,18 +1,26 @@
 import "server-only";
 import {
+  type AddressSearchResponse,
   ApiError,
   type ChatHistory,
-  type ChatMessage,
   type ChatResponse,
+  type CheckInAnswerResponse,
+  type CheckInToday,
+  type CheckInValue,
   DEFAULT_PROFILE,
   demoRecommendations,
   type Goal,
   type GoalCreate,
+  type GoalSuggestion,
+  type GoalSuggestionAccept,
   type GoalUpdate,
   mockEvents,
   mockGoals,
   mockRecommendations,
   type NudgeTestResult,
+  type PlaceSuggestionsResponse,
+  type PlacesResponse,
+  type PlacesUpdate,
   type PrivacyState,
   type Profile,
   type ProfileUpdate,
@@ -22,37 +30,39 @@ import {
   type Score,
   Source,
   type SourceSetting,
+  type TargetResponse,
+  type TargetUpdate,
   type TimelineResponse,
 } from "@michael/shared";
-import { cookies } from "next/headers";
+import { authHeaders } from "./caller";
 import { categoryOf } from "./categories";
+import type { ChecklistDay, ChecklistItem } from "./checklist";
 import type { DayView } from "./day";
 import type { GoalsView } from "./goals-view";
 import type { Instruction, InstructionInput } from "./instructions";
-import { sampleDay, sampleEarly, sampleEmpty, sampleEvening, sampleMorning } from "./sample/day";
-import { sampleGoals, sampleGoalsEmpty } from "./sample/goals";
+import { API_URL, USE_MOCKS } from "./mode";
+import { sampleChecklist } from "./sample/checklist";
+import {
+  sampleDay,
+  sampleEarly,
+  sampleEmpty,
+  sampleEvening,
+  sampleMissed,
+  sampleMorning,
+} from "./sample/day";
+import { sampleGoals, sampleGoalsBaseline, sampleGoalsEmpty, sampleGoalsMonday } from "./sample/goals";
 import { dayFromScore, goalsFromScore, leadFromPatterns } from "./score-map";
-import { authEnabled, DEMO_COOKIE, supabaseServer } from "./supabase/server";
 
 // Server-side data access. The browser never sees API_KEY and never talks to the DB. Each request
 // carries the signed-in user's Supabase token, so the API returns only that user's data.
-// USE_MOCKS=true (default) serves fixtures from @michael/shared until the real endpoint exists.
-const USE_MOCKS = process.env.USE_MOCKS !== "false";
-export const API_URL = process.env.API_URL ?? "http://localhost:8787";
-const API_KEY = process.env.API_KEY ?? "dev-key";
+// Fixtures only with USE_MOCKS (lib/mode.ts): real data is the default, ?demo=sample previews.
+export { API_URL };
 
-// Whose data to fetch: the signed-in user's own token, or the API key for the demo week.
-export async function bearer(): Promise<string> {
-  if (!authEnabled) return API_KEY;
-  if ((await cookies()).get(DEMO_COOKIE)?.value === "1") return API_KEY;
-  const { data } = await (await supabaseServer()).auth.getSession();
-  if (!data.session) throw new Error("Not signed in");
-  return data.session.access_token;
-}
+// Whose data to fetch (a session always beats the demo cookie): authHeaders in lib/caller.ts.
 
 export async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
-    headers: { authorization: `Bearer ${await bearer()}` },
+    headers: await authHeaders(),
     cache: "no-store",
   });
   if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
@@ -62,7 +72,7 @@ export async function get<T>(path: string): Promise<T> {
 async function send<T>(method: "PUT" | "PATCH" | "POST", path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     method,
-    headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
+    headers: { ...(await authHeaders()), "content-type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
     cache: "no-store",
   });
@@ -77,15 +87,30 @@ async function send<T>(method: "PUT" | "PATCH" | "POST", path: string, body?: un
 export async function openChatStream(message: string): Promise<Response> {
   return fetch(`${API_URL}/v1/chat/stream`, {
     method: "POST",
-    headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
+    headers: { ...(await authHeaders()), "content-type": "application/json" },
     body: JSON.stringify({ message }),
     cache: "no-store",
   });
 }
 
+/** GET /v1/check-in (#187): today's questions; the API opens a round when one is due. */
+export async function getCheckIn(): Promise<CheckInToday> {
+  return get<CheckInToday>("/v1/check-in");
+}
+
+/** POST /v1/check-in/:id/answer: the answer, and the follow up it calls for. */
+export async function answerCheckIn(id: string, value: CheckInValue): Promise<CheckInAnswerResponse> {
+  return send<CheckInAnswerResponse>("POST", `/v1/check-in/${encodeURIComponent(id)}/answer`, { value });
+}
+
 /** Chat always talks to the API: there is no fixture for a conversation. */
-export async function getChatHistory(): Promise<ChatMessage[]> {
-  return (await get<ChatHistory>("/v1/chat?limit=50")).messages;
+export async function getChatHistory(): Promise<ChatHistory> {
+  const body = await get<ChatHistory>("/v1/chat?limit=50");
+  // An API from before action_ids still answers: no chips come back, the lines do.
+  return {
+    messages: body.messages.map((m) => ({ ...m, action_ids: m.action_ids ?? [] })),
+    actions: body.actions ?? [],
+  };
 }
 
 export type ChatResult = { ok: true; data: ChatResponse } | { ok: false; code: string; message: string };
@@ -95,7 +120,7 @@ export async function sendChat(message: string): Promise<ChatResult> {
   try {
     res = await fetch(`${API_URL}/v1/chat`, {
       method: "POST",
-      headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
+      headers: { ...(await authHeaders()), "content-type": "application/json" },
       body: JSON.stringify({ message }),
       cache: "no-store",
     });
@@ -108,6 +133,33 @@ export async function sendChat(message: string): Promise<ChatResult> {
   return err.success
     ? { ok: false, code: err.data.error.code, message: err.data.error.message }
     : { ok: false, code: "internal", message: `POST /v1/chat failed: ${res.status}` };
+}
+
+/** Whether the API can speak with ElevenLabs. False when it cannot say: the browser voice is fine. */
+export async function getVoiceEnabled(): Promise<boolean> {
+  try {
+    return (await get<{ elevenlabs: boolean }>("/v1/voice")).elevenlabs;
+  } catch {
+    return false;
+  }
+}
+
+/** Michael's reply as audio/mpeg from POST /v1/voice/speak, or null so the browser speaks instead. */
+export async function speak(text: string): Promise<Response | null> {
+  try {
+    const res = await fetch(`${API_URL}/v1/voice/speak`, {
+      method: "POST",
+      headers: { ...(await authHeaders()), "content-type": "application/json" },
+      body: JSON.stringify({ text }),
+      cache: "no-store",
+    });
+    if (res.ok && res.body) return res;
+    console.error(`voice: POST /v1/voice/speak failed: ${res.status}`);
+    return null;
+  } catch (err) {
+    console.error("voice:", err);
+    return null;
+  }
 }
 
 export async function getTimeline(from: string, to: string): Promise<TimelineResponse> {
@@ -129,6 +181,21 @@ const mockGoalStore: Goal[] = sampleGoals.goals.map((g) => ({
   created_at: now0,
   updated_at: now0,
 }));
+// The sample checklist and count goals (#238), so the edit sheet and Today's list find them.
+for (const g of sampleGoals.extras ?? []) {
+  mockGoalStore.push({
+    id: g.id,
+    category: g.category === "business" ? "work" : "gym",
+    title: g.title,
+    description: null,
+    target:
+      g.kind === "count" ? { kind: "count", per_week: g.count?.target ?? 1 } : { kind: g.kind ?? "time" },
+    weekly_budget_minutes: 0,
+    active: true,
+    created_at: now0,
+    updated_at: now0,
+  });
+}
 void mockGoals;
 
 export async function getGoals(): Promise<Goal[]> {
@@ -146,7 +213,7 @@ async function write(
   try {
     const res = await fetch(`${API_URL}${path}`, {
       method,
-      headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
+      headers: { ...(await authHeaders()), "content-type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
       cache: "no-store",
     });
@@ -198,6 +265,24 @@ export async function removeGoalById(id: string): Promise<WriteResult> {
   }
   return write("DELETE", `/v1/goals/${id}`);
 }
+
+/** Goals Michael reads off the user's own calendar (#134). Empty with mocks or when the API is down. */
+export async function getGoalSuggestions(): Promise<GoalSuggestion[]> {
+  if (USE_MOCKS) return [];
+  try {
+    return (await get<{ suggestions: GoalSuggestion[] }>("/v1/goals/suggestions")).suggestions;
+  } catch {
+    return [];
+  }
+}
+
+export async function acceptGoalSuggestion(
+  id: string,
+  edits: GoalSuggestionAccept = {},
+): Promise<WriteResult> {
+  if (USE_MOCKS) return { ok: false, message: "Suggestions need the live API." };
+  return write("POST", `/v1/goals/suggestions/${encodeURIComponent(id)}/accept`, edits);
+}
 // With mocks, one in-process list so Do it, Undo and Not now still hold while the server runs.
 let mockRecs: Recommendation[] | null = null;
 const mockRecList = () => {
@@ -247,7 +332,7 @@ async function recCall(method: "POST" | "PATCH", path: string, body?: unknown): 
   try {
     res = await fetch(`${API_URL}${path}`, {
       method,
-      headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
+      headers: { ...(await authHeaders()), "content-type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
       cache: "no-store",
     });
@@ -333,6 +418,7 @@ const SAMPLE_DAYS: Record<string, DayView> = {
   early: sampleEarly,
   evening: sampleEvening,
   empty: sampleEmpty,
+  missed: sampleMissed,
 };
 
 const athensDay = (d = new Date()) =>
@@ -368,9 +454,12 @@ export async function getToday(variant?: string): Promise<DayView> {
 export async function getGoalsWeek(variant?: string): Promise<GoalsView> {
   if (variant === "error") throw new Error("Preview of the error state");
   if (variant === "empty") return sampleGoalsEmpty;
+  if (variant === "monday") return sampleGoalsMonday;
+  if (variant === "baseline") return sampleGoalsBaseline;
   if (variant === "sample") return sampleGoals;
   if (USE_MOCKS) return sampleWeekFromStore();
-  return goalsFromScore(await getScore());
+  const [score, targets] = await Promise.all([getScore(), getTargets().catch(() => null)]);
+  return goalsFromScore(score, targets);
 }
 
 /** The sample week, following the in-process goal list: edits, new goals and pauses show. */
@@ -386,6 +475,8 @@ function sampleWeekFromStore(): GoalsView {
         budgetMinutes: g.weekly_budget_minutes ?? 0,
         spentMinutes: known?.spentMinutes ?? 0,
         unverifiedMinutes: known?.unverifiedMinutes ?? 0,
+        plannedMinutes: known?.plannedMinutes,
+        openBlocks: known?.openBlocks,
         daily: known?.daily ?? [0, 0, 0, null, null, null, null],
       };
     });
@@ -414,7 +505,7 @@ export async function createGoal(input: GoalCreate): Promise<Goal | null> {
   if (USE_MOCKS) return null;
   const res = await fetch(`${API_URL}/v1/goals`, {
     method: "POST",
-    headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
+    headers: { ...(await authHeaders()), "content-type": "application/json" },
     body: JSON.stringify(input),
     cache: "no-store",
   });
@@ -453,7 +544,7 @@ export type InstructionsResult = { available: true; items: Instruction[] } | { a
 export async function getInstructions(): Promise<InstructionsResult> {
   if (USE_MOCKS) return { available: true, items: structuredClone(mockInstructions) };
   const res = await fetch(`${API_URL}/v1/instructions`, {
-    headers: { authorization: `Bearer ${await bearer()}` },
+    headers: await authHeaders(),
     cache: "no-store",
   }).catch(() => null);
   if (!res || res.status === 404 || res.status === 501) return { available: false };
@@ -488,4 +579,161 @@ export async function deleteInstruction(id: string): Promise<WriteResult> {
     return { ok: true };
   }
   return write("DELETE", `/v1/instructions/${id}`);
+}
+
+// ---------- places (GET/PUT /v1/places, #115) ----------
+
+const mockPlaces: PlacesResponse = { places: [], maps_available: false, travel_enabled: false };
+
+export async function getPlaces(): Promise<PlacesResponse> {
+  if (USE_MOCKS) return structuredClone(mockPlaces);
+  return get<PlacesResponse>("/v1/places");
+}
+
+/** Address matches for the Places screen, geocoded by the API (the browser never holds a maps key). */
+export async function searchPlaces(q: string): Promise<AddressSearchResponse> {
+  if (USE_MOCKS) return { results: [], maps_available: false };
+  return get<AddressSearchResponse>(`/v1/places/search?${new URLSearchParams({ q })}`);
+}
+
+/** Places the user often looks up in Google Maps, offered for saving (#223). Empty while maps is off. */
+export async function getPlaceSuggestions(): Promise<PlaceSuggestionsResponse> {
+  if (USE_MOCKS) return { enabled: false, suggestions: [] };
+  return get<PlaceSuggestionsResponse>("/v1/places/suggestions");
+}
+
+/** PUT replaces the whole list; saving places is the user's opt in to travel times. */
+export async function putPlaces(update: PlacesUpdate): Promise<WriteResult> {
+  if (USE_MOCKS) {
+    const t = new Date().toISOString();
+    mockPlaces.places = update.places.map((p) => ({
+      key: p.key,
+      label: p.label ?? p.key,
+      address: p.address ?? null,
+      lat: p.lat ?? null,
+      lng: p.lng ?? null,
+      updated_at: t,
+    }));
+    return { ok: true };
+  }
+  try {
+    const res = await fetch(`${API_URL}/v1/places`, {
+      method: "PUT",
+      headers: { ...(await authHeaders()), "content-type": "application/json" },
+      body: JSON.stringify(update),
+      cache: "no-store",
+    });
+    if (res.ok) return { ok: true };
+    const err = ApiError.safeParse(await res.json().catch(() => null));
+    return {
+      ok: false,
+      message: err.success ? err.data.error.message : `PUT /v1/places failed: ${res.status}`,
+    };
+  } catch {
+    return { ok: false, message: "Michael's server can't be reached." };
+  }
+}
+
+// ---------- weekly targets (#165) ----------
+
+export async function getTargets(): Promise<TargetResponse> {
+  return get<TargetResponse>("/v1/targets/current");
+}
+
+/** Accept Michael's proposal ({ accept: true }) or set the user's own numbers. */
+export async function putTarget(weekStart: string, update: TargetUpdate): Promise<WriteResult> {
+  if (USE_MOCKS) return { ok: true };
+  try {
+    const res = await fetch(`${API_URL}/v1/targets/${weekStart}`, {
+      method: "PUT",
+      headers: { ...(await authHeaders()), "content-type": "application/json" },
+      body: JSON.stringify(update),
+      cache: "no-store",
+    });
+    if (res.ok) return { ok: true };
+    const err = ApiError.safeParse(await res.json().catch(() => null));
+    return {
+      ok: false,
+      message: err.success ? err.data.error.message : `PUT /v1/targets failed: ${res.status}`,
+    };
+  } catch {
+    return { ok: false, message: "Michael's server can't be reached." };
+  }
+}
+
+// ---------- the day's checklist (/v1/checklist, #238) ----------
+
+const mockChecklist: ChecklistDay = structuredClone(sampleChecklist);
+
+/** Null while the endpoint is not live (404), so Today simply leaves the list out. */
+export async function getChecklist(date?: string): Promise<ChecklistDay | null> {
+  if (USE_MOCKS) return structuredClone(mockChecklist);
+  const qs = date ? `?date=${date}` : "";
+  const res = await fetch(`${API_URL}/v1/checklist${qs}`, {
+    headers: await authHeaders(),
+    cache: "no-store",
+  }).catch(() => null);
+  if (!res || res.status === 404 || res.status === 501) return null;
+  if (!res.ok) throw new Error(`GET /v1/checklist failed: ${res.status}`);
+  return (await res.json()) as ChecklistDay;
+}
+
+export async function addChecklistItem(goalId: string, text: string): Promise<WriteResult> {
+  if (USE_MOCKS) {
+    const open = mockChecklist.items.filter((i) => i.goal_id === goalId && i.status === "open").length;
+    if (open >= 3) return { ok: false, message: "Three is the most for one day." };
+    const t = new Date().toISOString();
+    mockChecklist.items.push({
+      id: crypto.randomUUID(),
+      goal_id: goalId,
+      date: mockChecklist.date,
+      text,
+      position: mockChecklist.items.length,
+      status: "open",
+      settled_at: null,
+      settled_by: null,
+      carried_from: null,
+      created_at: t,
+      updated_at: t,
+    });
+    return { ok: true };
+  }
+  return write("POST", "/v1/checklist", { goal_id: goalId, text });
+}
+
+export async function setChecklistStatus(id: string, status: ChecklistItem["status"]): Promise<WriteResult> {
+  if (USE_MOCKS) {
+    const i = mockChecklist.items.find((x) => x.id === id);
+    if (!i) return { ok: false, message: "That item no longer exists." };
+    const t = new Date().toISOString();
+    Object.assign(i, {
+      status,
+      settled_at: status === "open" ? null : t,
+      settled_by: status === "open" ? null : "user",
+      updated_at: t,
+    });
+    return { ok: true };
+  }
+  return write("PATCH", `/v1/checklist/${id}`, { status });
+}
+
+/** Yesterday's open item continues today (POST /v1/checklist/:id/carry). */
+export async function carryChecklistItem(id: string): Promise<WriteResult> {
+  if (USE_MOCKS) {
+    const at = mockChecklist.suggestions.findIndex((x) => x.id === id);
+    const s = mockChecklist.suggestions[at];
+    if (!s) return { ok: false, message: "That item no longer exists." };
+    mockChecklist.suggestions.splice(at, 1);
+    const t = new Date().toISOString();
+    mockChecklist.items.push({
+      ...s,
+      id: crypto.randomUUID(),
+      date: mockChecklist.date,
+      carried_from: s.id,
+      created_at: t,
+      updated_at: t,
+    });
+    return { ok: true };
+  }
+  return write("POST", `/v1/checklist/${id}/carry`);
 }

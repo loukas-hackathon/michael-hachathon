@@ -15,6 +15,7 @@
     "check": "pnpm typecheck && pnpm lint",
     "test": "pnpm -r --if-present test",
     "format": "biome check --write .",
+    "e2e": "NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:9 NEXT_PUBLIC_SUPABASE_ANON_KEY=e2e-anon-key pnpm --filter @michael/web build && pnpm --filter @michael/e2e e2e",
     "env:copy": "node scripts/copy-env.mjs",
     "collect": "pnpm --silent --filter @michael/collector start",
     "start": "pnpm --filter @michael/api start"

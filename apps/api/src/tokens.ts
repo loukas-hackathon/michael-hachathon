@@ -1,9 +1,10 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { PersonalToken } from "@michael/shared";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { currentUserId } from "./context";
 import { env } from "./env";
 import { HttpError } from "./http";
+import { dbClient } from "./timing";
 
 // Personal tokens act for one user: collectors, webhooks and the Claude connector use them.
 // Format "mk_<43 url-safe chars>"; only the sha256 is stored.
@@ -36,6 +37,8 @@ interface TokenBackend {
   list(userId: string): Promise<Row[]>;
   revoke(userId: string, id: string): Promise<boolean>;
   touch(id: string): Promise<void>;
+  /** Really deletes every key of the user, revoked ones included. Returns how many. */
+  deleteAll(userId: string): Promise<number>;
 }
 
 class MemoryTokens implements TokenBackend {
@@ -65,6 +68,11 @@ class MemoryTokens implements TokenBackend {
   async touch(id: string) {
     const r = this.rows.find((x) => x.id === id);
     if (r) r.last_used_at = new Date().toISOString();
+  }
+  async deleteAll(userId: string) {
+    const before = this.rows.length;
+    this.rows = this.rows.filter((r) => r.user_id !== userId);
+    return before - this.rows.length;
   }
 }
 
@@ -112,13 +120,16 @@ class SupabaseTokens implements TokenBackend {
   async touch(id: string) {
     await this.db.from("personal_tokens").update({ last_used_at: new Date().toISOString() }).eq("id", id);
   }
+  async deleteAll(userId: string) {
+    const res = await this.db.from("personal_tokens").delete({ count: "exact" }).eq("user_id", userId);
+    this.ok(res);
+    return res.count ?? 0;
+  }
 }
 
 const backend: TokenBackend =
   env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY
-    ? new SupabaseTokens(
-        createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } }),
-      )
+    ? new SupabaseTokens(dbClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY))
     : new MemoryTokens();
 
 // Resolved tokens are cached briefly; revocation takes effect within the TTL.
@@ -156,4 +167,10 @@ export async function listPersonalTokens() {
 export async function revokePersonalToken(id: string) {
   cache.clear();
   return backend.revoke(currentUserId(), id);
+}
+
+/** Deletes every device key of the current user (DELETE /v1/me/data); they stop working at once. */
+export async function deleteAllPersonalTokens() {
+  cache.clear();
+  return backend.deleteAll(currentUserId());
 }

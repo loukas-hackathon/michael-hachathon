@@ -1,19 +1,26 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import type { ActionResult } from "@/components/action-button";
 import { postTestNudge } from "@/lib/api";
 import { disconnectTelegram } from "@/lib/integrations";
 
-export async function disconnectTelegramChat() {
-  await disconnectTelegram();
-  revalidatePath("/you");
+export async function disconnectTelegramChat(): Promise<ActionResult> {
+  try {
+    await disconnectTelegram();
+  } catch {
+    return { ok: false, message: "I could not disconnect. Nothing changed." };
+  }
+  revalidatePath("/you", "layout");
+  return { ok: true, message: "Disconnected." };
 }
 
-/** The test nudge goes to every device and the chat; the message arriving is the feedback. */
-export async function sendTelegramTest() {
+/** The test nudge goes to every device and the chat. */
+export async function sendTelegramTest(): Promise<ActionResult> {
   try {
     await postTestNudge();
+    return { ok: true, message: "Sent. Check Telegram." };
   } catch {
-    // Nothing to show: the row stays as it is.
+    return { ok: false, message: "I could not send it. Try again in a minute." };
   }
 }

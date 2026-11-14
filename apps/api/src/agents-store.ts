@@ -1,15 +1,18 @@
 import type { AgentClient, AgentClientUpdate, AgentQuery, AgentScope } from "@michael/shared";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { z } from "zod";
 import { currentUserId } from "./context";
 import { env } from "./env";
 import { HttpError } from "./http";
+import { dbClient } from "./timing";
 
 // Michael for agents (#38): the agents a user allowed and every question they asked. Kept apart
 // from store.ts so it can grow without touching the shared Store, but scoped the same way:
 // every query filters by currentUserId(), never by an id from the request.
 
-export type QueryLog = Pick<AgentQuery, "agent_id" | "tool" | "summary" | "allowed">;
+export type QueryLog = Pick<AgentQuery, "agent_id" | "tool" | "summary" | "allowed"> & {
+  recommendation_id?: string | null;
+};
 
 export interface AgentsStore {
   listAgents(): Promise<AgentClient[]>;
@@ -72,7 +75,12 @@ export class MemoryAgentsStore implements AgentsStore {
   }
   async logQuery(q: QueryLog) {
     const created_at = now();
-    this.myQueries.push({ id: crypto.randomUUID(), ...q, created_at });
+    this.myQueries.push({
+      id: crypto.randomUUID(),
+      ...q,
+      recommendation_id: q.recommendation_id ?? null,
+      created_at,
+    });
     const a = this.mine.find((x) => x.id === q.agent_id);
     if (a) a.last_seen_at = created_at;
   }
@@ -101,6 +109,7 @@ const toQuery = (r: Record<string, unknown>): AgentQuery => ({
   summary: (r.summary as string) ?? "",
   allowed: r.allowed as boolean,
   created_at: iso(r.created_at) as string,
+  recommendation_id: (r.recommendation_id as string | null | undefined) ?? null,
 });
 const AGENT_COLUMNS = "id, name, status, scopes, created_at, last_seen_at";
 
@@ -109,10 +118,15 @@ function check<T>(res: { data: T; error: { message: string } | null }): T {
   return res.data;
 }
 
+// Agents looked up on every MCP call (auth.ts), cached briefly per user and id. Writes go through
+// this store (one API process), which drops the entry, so a revoke applies at once.
+const AGENT_TTL_MS = 30_000;
+
 export class SupabaseAgentsStore implements AgentsStore {
   private db: SupabaseClient;
+  private agentCache = new Map<string, { agent: AgentClient | null; until: number }>();
   constructor(url: string, serviceRoleKey: string) {
-    this.db = createClient(url, serviceRoleKey, { auth: { persistSession: false } });
+    this.db = dbClient(url, serviceRoleKey);
   }
 
   async listAgents() {
@@ -126,6 +140,9 @@ export class SupabaseAgentsStore implements AgentsStore {
     return (rows ?? []).map(toAgent);
   }
   async getAgent(id: string) {
+    const key = `${currentUserId()}:${id}`;
+    const hit = this.agentCache.get(key);
+    if (hit && hit.until > Date.now()) return hit.agent;
     const row = check(
       await this.db
         .from("agent_clients")
@@ -134,10 +151,14 @@ export class SupabaseAgentsStore implements AgentsStore {
         .eq("id", id)
         .maybeSingle(),
     );
-    return row ? toAgent(row) : null;
+    const agent = row ? toAgent(row) : null;
+    if (this.agentCache.size > 1000) this.agentCache.clear();
+    this.agentCache.set(key, { agent, until: Date.now() + AGENT_TTL_MS });
+    return agent;
   }
   async approveAgent(name: string, oauthClientId: string, scopes: AgentScope[]) {
     const userId = currentUserId();
+    this.agentCache.clear();
     // One row per user and name (unique on lower(name)); PostgREST cannot upsert on an
     // expression index, so look first.
     const existing = check(
@@ -173,6 +194,7 @@ export class SupabaseAgentsStore implements AgentsStore {
     if (patch.status) values.status = patch.status;
     if (patch.scopes) values.scopes = [...new Set(patch.scopes)];
     if (!Object.keys(values).length) return this.getAgent(id);
+    this.agentCache.delete(`${currentUserId()}:${id}`);
     const rows = check(
       await this.db
         .from("agent_clients")
@@ -187,7 +209,16 @@ export class SupabaseAgentsStore implements AgentsStore {
     const userId = currentUserId();
     const created_at = now();
     const [ins, upd] = await Promise.all([
-      this.db.from("agent_queries").insert({ ...q, user_id: userId, created_at }),
+      // recommendation_id only when there is one, so plain reads never depend on the column.
+      this.db.from("agent_queries").insert({
+        agent_id: q.agent_id,
+        tool: q.tool,
+        summary: q.summary,
+        allowed: q.allowed,
+        ...(q.recommendation_id ? { recommendation_id: q.recommendation_id } : {}),
+        user_id: userId,
+        created_at,
+      }),
       this.db
         .from("agent_clients")
         .update({ last_seen_at: created_at })
@@ -198,16 +229,20 @@ export class SupabaseAgentsStore implements AgentsStore {
     check(upd);
   }
   async listQueries({ from, to }: { from: string; to: string }) {
-    const rows = check(
-      await this.db
+    const read = (columns: string) =>
+      this.db
         .from("agent_queries")
-        .select("id, agent_id, tool, summary, allowed, created_at")
+        .select(columns)
         .eq("user_id", currentUserId())
         .gte("created_at", from)
         .lte("created_at", to)
         .order("created_at", { ascending: false })
-        .limit(500),
-    );
+        .limit(500);
+    const base = "id, agent_id, tool, summary, allowed, created_at";
+    let res = await read(`${base}, recommendation_id`);
+    // Until the recommendation_id migration has run, read the log without it.
+    if (res.error?.message.includes("recommendation_id")) res = await read(base);
+    const rows = check(res) as unknown as Record<string, unknown>[] | null;
     return (rows ?? []).map(toQuery);
   }
 }
