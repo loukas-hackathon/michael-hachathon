@@ -124,6 +124,7 @@ export function DayTimeline({ day }: { day: TimelineDay }) {
         return (
           <div key={`b${b.start}`}>
             <div
+              data-live-key={`b${b.kind}${b.start}-${b.end}`}
               className={`absolute right-4 left-[50px] overflow-hidden rounded-block ${fill}`}
               style={{ top, height: h }}
               title={`${b.label}, ${formatTime(iso(b.start))} to ${formatTime(iso(b.end))}`}

@@ -216,14 +216,30 @@ Follow "Showing time on a phone" in `docs/interface-research.md`, plus:
 
 ## Motion
 
-| What                         | How                                          |
-| ---------------------------- | -------------------------------------------- |
-| Press on anything tappable   | `scale(.97)`, 120ms                          |
-| Interface changes            | 200ms, `cubic-bezier(.23, 1, .32, 1)`        |
-| Sheets                       | 500ms, `cubic-bezier(.32, .72, 0, 1)`        |
-| Tape fill and score count up | Once per day on first open, 700ms, no bounce |
-| Tab switches                 | None. The tab bar never moves                |
-| Reduced motion               | Instant, opacity only                        |
+Tokens live in `apps/web/app/globals.css` as CSS variables; use them, never literals.
+
+| Token            | Value                           | Use                                   |
+| ---------------- | ------------------------------- | ------------------------------------- |
+| `--m-ease-out`   | `cubic-bezier(.23, 1, .32, 1)`  | Everything by default                 |
+| `--m-ease-sheet` | `cubic-bezier(.32, .72, 0, 1)`  | Sheets                                |
+| `--m-spring`     | `linear(...)`, one 6% overshoot | Selection pops only (the tab icon)    |
+| `--m-dur-press`  | 120ms                           | Press feedback                        |
+| `--m-dur-ui`     | 200ms                           | Interface changes, switches           |
+| `--m-dur-enter`  | 420ms                           | Something new arriving (live refresh) |
+| `--m-dur-sheet`  | 500ms                           | Sheets                                |
+| `--m-dur-count`  | 700ms                           | Score count up                        |
+
+| What                       | How                                                                                              |
+| -------------------------- | ------------------------------------------------------------------------------------------------ |
+| Press on anything tappable | `.press`: `scale(.97)`, 120ms. Primary (filled) buttons also give a light haptic tick            |
+| Tab bar press              | Icon to `scale(.86)` and the tab to 60% opacity; the newly selected icon settles on `--m-spring` |
+| Tab switches               | None. The tab bar never moves                                                                    |
+| Interface changes          | 200ms, `--m-ease-out`                                                                            |
+| Sheets                     | 500ms, `--m-ease-sheet`                                                                          |
+| Score count up             | Once per session, 700ms, no bounce, after the splash. The real number is always in the DOM       |
+| Live refresh               | New blocks rise 6px and fade in; a tape tick that just filled grows from the baseline            |
+| Loading                    | Skeleton in the final layout (`loading.tsx` per route): blank for 150ms, then a slow 1.6s breath |
+| Reduced motion             | Instant, opacity only: no transforms, no count up, skeletons still                               |
 
 Animate `transform` and `opacity` only. Content is visible by default; motion never gates it.
 

@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
+import { CountUp } from "@/components/count-up";
 import { EmptyState } from "@/components/empty-state";
+import { LiveRefresh } from "@/components/live-refresh";
 import { ScreenHeader } from "@/components/screen";
 import { Tape, TapeKey } from "@/components/tape";
 import { BriefCard } from "@/components/today/brief-card";
@@ -26,7 +28,15 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
 
   return (
     <main className="screen">
-      <ScreenHeader context={formatDay(day.now)} title={TITLE[day.moment]} />
+      <ScreenHeader
+        context={
+          <>
+            {formatDay(day.now)}
+            {day.sample ? null : <LiveRefresh />}
+          </>
+        }
+        title={TITLE[day.moment]}
+      />
 
       {day.blocks.length === 0 ? (
         <>
@@ -56,7 +66,7 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
             ) : (
               <h2 className="flex flex-col">
                 <span className="font-num text-score font-extrabold tracking-[-0.02em] tnum">
-                  {t.scorePct}%
+                  <CountUp value={t.scorePct ?? 0} suffix="%" />
                 </span>
                 <span className="text-title3 font-semibold">
                   of your goal time {day.moment === "evening" ? "today" : "so far"}.

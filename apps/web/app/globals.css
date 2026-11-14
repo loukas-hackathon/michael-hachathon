@@ -21,6 +21,17 @@
   --m-hatch: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='6'%3E%3Cpath d='M-1 7 7 -1M-1 1 1 -1M5 7 7 5' stroke='%236C6C70' stroke-width='1'/%3E%3C/svg%3E");
   --m-dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='6'%3E%3Ccircle cx='3' cy='3' r='0.8' fill='%23AEAEB2'/%3E%3C/svg%3E");
   --m-tabbar-h: 60px;
+
+  /* Motion tokens (docs/design-guide.md, "Motion"). Animate transform and opacity only. */
+  --m-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --m-ease-sheet: cubic-bezier(0.32, 0.72, 0, 1);
+  /* A critically damped spring with one small overshoot, for selection pops. */
+  --m-spring: linear(0, 0.18 7%, 0.6 18%, 0.95 30%, 1.06 40%, 1.04 52%, 1 66%, 0.995 80%, 1);
+  --m-dur-press: 120ms;
+  --m-dur-ui: 200ms;
+  --m-dur-enter: 420ms;
+  --m-dur-sheet: 500ms;
+  --m-dur-count: 700ms;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -158,7 +169,7 @@ h3 {
 
 /* Press feedback for anything tappable. */
 .press {
-  transition: transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition: transform var(--m-dur-press) var(--m-ease-out);
 }
 .press:active {
   transform: scale(0.97);
@@ -223,6 +234,125 @@ h3 {
   }
 }
 
+/* ---------- motion (docs/design-guide.md, "Motion") ---------- */
+
+/* Tab bar: the icon gives under the finger and the newly selected one settles with a small spring. */
+.m-tab {
+  transition: opacity var(--m-dur-press) var(--m-ease-out);
+}
+.m-tab:active {
+  opacity: 0.6;
+}
+.m-tab-icon {
+  transition: transform var(--m-dur-press) var(--m-ease-out);
+}
+.m-tab:active .m-tab-icon {
+  transform: scale(0.86);
+}
+.m-tab[aria-current="page"] .m-tab-icon {
+  animation: m-tab-pop 380ms var(--m-spring) both;
+}
+@keyframes m-tab-pop {
+  from {
+    transform: scale(0.86);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+@keyframes m-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* Live refresh (components/live-refresh.tsx): what arrived since the last look eases in. */
+.m-live-enter {
+  animation: m-rise-in var(--m-dur-enter) var(--m-ease-out) both;
+}
+.m-tick.m-live-enter {
+  transform-origin: 50% 100%;
+  animation-name: m-tick-in;
+}
+@keyframes m-tick-in {
+  from {
+    opacity: 0;
+    transform: scaleY(0.2);
+  }
+}
+.m-live-stamp {
+  animation: m-fade-in var(--m-dur-enter) var(--m-ease-out) both;
+}
+@keyframes m-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Score count up (components/count-up.tsx): once per session, 700ms, no bounce, after the splash. */
+@property --m-count {
+  syntax: "<integer>";
+  inherits: false;
+  initial-value: 0;
+}
+.m-count {
+  --m-count: var(--m-count-to);
+  counter-reset: m-count var(--m-count);
+}
+.m-count::before {
+  content: counter(m-count);
+}
+:root:not([data-counted]) .m-count {
+  animation: m-count-up var(--m-dur-count) var(--m-ease-out) both;
+}
+:root[data-splashing]:not([data-counted]) .m-count {
+  animation-delay: 1050ms;
+}
+@keyframes m-count-up {
+  from {
+    --m-count: 0;
+  }
+  to {
+    --m-count: var(--m-count-to);
+  }
+}
+
+/* Skeletons (components/skeleton.tsx): nothing for 150ms, then a slow breath. No gradients. */
+.m-skeleton {
+  animation: m-fade-in var(--m-dur-ui) var(--m-ease-out) 150ms both;
+}
+.m-bone {
+  background: var(--m-fill);
+  animation: m-breathe 1.6s ease-in-out 350ms infinite;
+}
+@keyframes m-breathe {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .m-tab,
+  .m-tab-icon,
+  .m-tab:active .m-tab-icon {
+    transition: none;
+    transform: none;
+  }
+  .m-tab[aria-current="page"] .m-tab-icon,
+  .m-live-enter,
+  .m-live-stamp,
+  .m-bone,
+  :root:not([data-counted]) .m-count {
+    animation: none;
+  }
+  .m-skeleton {
+    animation-name: m-fade-in;
+    animation-duration: 1ms;
+  }
+}
+
 /* The iOS switch, drawn for browsers without <input switch>. Tinted when on. */
 .m-switch {
   appearance: none;
@@ -231,7 +361,7 @@ h3 {
   height: 31px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--m-label-2) 32%, transparent);
-  transition: background-color 200ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition: background-color var(--m-dur-ui) var(--m-ease-out);
   cursor: pointer;
 }
 .m-switch::after {
@@ -246,7 +376,7 @@ h3 {
   box-shadow:
     0 3px 8px rgb(0 0 0 / 0.15),
     0 1px 1px rgb(0 0 0 / 0.16);
-  transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition: transform var(--m-dur-ui) var(--m-ease-out);
 }
 .m-switch:checked {
   background: var(--m-tint);
@@ -271,7 +401,7 @@ h3 {
   box-shadow: 0 -8px 30px -12px rgb(0 0 0 / 0.3);
   transform: translateY(0);
   transition:
-    transform 500ms cubic-bezier(0.32, 0.72, 0, 1),
+    transform var(--m-dur-sheet) var(--m-ease-sheet),
     overlay 500ms allow-discrete,
     display 500ms allow-discrete;
 }
