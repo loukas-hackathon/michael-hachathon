@@ -3,7 +3,6 @@ import {
   type AddressSearchResponse,
   ApiError,
   type ChatHistory,
-  type ChatMessage,
   type ChatResponse,
   DEFAULT_PROFILE,
   demoRecommendations,
@@ -101,8 +100,13 @@ export async function openChatStream(message: string): Promise<Response> {
 }
 
 /** Chat always talks to the API: there is no fixture for a conversation. */
-export async function getChatHistory(): Promise<ChatMessage[]> {
-  return (await get<ChatHistory>("/v1/chat?limit=50")).messages;
+export async function getChatHistory(): Promise<ChatHistory> {
+  const body = await get<ChatHistory>("/v1/chat?limit=50");
+  // An API from before action_ids still answers: no chips come back, the lines do.
+  return {
+    messages: body.messages.map((m) => ({ ...m, action_ids: m.action_ids ?? [] })),
+    actions: body.actions ?? [],
+  };
 }
 
 export type ChatResult = { ok: true; data: ChatResponse } | { ok: false; code: string; message: string };

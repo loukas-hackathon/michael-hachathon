@@ -1816,6 +1816,9 @@ export const ChatMessage = z.object({
   role: ChatRole,
   content: z.string().min(1),
   created_at: IsoDateTime,
+  // On Michael's answers: the recommendations he did or undid while writing it (source "chat"), so
+  // the Undo chips come back under the same answer after a reload. Empty on the user's lines.
+  action_ids: z.array(z.uuid()).default([]),
 });
 export type ChatMessage = z.infer<typeof ChatMessage>;
 
@@ -1837,6 +1840,8 @@ export type ChatResponse = z.infer<typeof ChatResponse>;
 export const ChatHistory = z.object({
   // Oldest first.
   messages: z.array(ChatMessage),
+  // The recommendations named in the messages' action_ids, as they stand now (done or undone).
+  actions: z.array(Recommendation).default([]),
 });
 export type ChatHistory = z.infer<typeof ChatHistory>;
 

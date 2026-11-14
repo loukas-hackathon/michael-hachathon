@@ -94,6 +94,7 @@ test("chat history always starts with the user's turn", () => {
     role,
     content,
     created_at: "2026-11-14T19:00:00+02:00",
+    action_ids: [],
   });
   assert.deepEqual(toTurns([line("assistant", "a"), line("user", "b"), line("assistant", "c")]), [
     { role: "user", content: "b" },
