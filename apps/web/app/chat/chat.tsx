@@ -2,6 +2,7 @@
 
 import type { ChatMessage, Recommendation } from "@michael/shared";
 import { type FormEvent, useEffect, useRef, useState, useTransition } from "react";
+import { useArrival } from "@/components/motion";
 import { PushToTalk } from "@/components/voice/push-to-talk";
 import { speakReply } from "@/components/voice/speech";
 import { formatTime } from "@/lib/format";
@@ -29,6 +30,8 @@ export function Chat({ initial, elevenlabs = false }: { initial: ChatMessage[]; 
   const [listening, setListening] = useState(false);
   // Set when the line came from push to talk, so the reply is spoken back.
   const spoken = useRef(false);
+  // New bubbles grow from their own corner, as in Messages; the history already there stays still.
+  const arriving = useArrival();
 
   // Keep the newest line (or the thinking bubble) in view, as in Messages.
   const tail = lines.length + (pending ? 1 : 0);
@@ -111,7 +114,7 @@ export function Chat({ initial, elevenlabs = false }: { initial: ChatMessage[]; 
                 <p
                   className={`max-w-[85%] whitespace-pre-wrap rounded-card px-3.5 py-2 text-body ${
                     m.role === "user" ? "bg-tint text-on-tint" : "bg-fill text-label"
-                  }`}
+                  } ${arriving(m.id) ? (m.role === "user" ? "m-pop-in [--m-origin:100%_100%]" : "m-pop-in [--m-origin:0_100%]") : ""}`}
                 >
                   {m.content}
                 </p>
@@ -125,7 +128,7 @@ export function Chat({ initial, elevenlabs = false }: { initial: ChatMessage[]; 
             ))}
             {pending && lines.at(-1)?.role === "user" ? (
               <li className="flex items-start">
-                <p className="rounded-card bg-fill px-3.5 py-2 text-body text-label-2">
+                <p className="m-pop-in rounded-card bg-fill px-3.5 py-2 text-body text-label-2 [--m-origin:0_100%]">
                   Looking at your day…
                 </p>
               </li>

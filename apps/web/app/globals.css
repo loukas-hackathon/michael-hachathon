@@ -25,13 +25,32 @@
   /* Motion tokens (docs/design-guide.md, "Motion"). Animate transform and opacity only. */
   --m-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --m-ease-sheet: cubic-bezier(0.32, 0.72, 0, 1);
-  /* A critically damped spring with one small overshoot, for selection pops. */
-  --m-spring: linear(0, 0.18 7%, 0.6 18%, 0.95 30%, 1.06 40%, 1.04 52%, 1 66%, 0.995 80%, 1);
+  /*
+   * Springs, sampled from SwiftUI's spring(response:dampingFraction:) into linear(). Rules and the
+   * generator: .claude/skills/michael-motion/SKILL.md. Each spring has a matching duration token.
+   * --m-spring: response 0.4, damping 0.8 (about 1.5% overshoot). Releases, pops, arrivals.
+   * --m-spring-smooth: response 0.35, critically damped, no overshoot. Things that move across.
+   * Browsers without linear() fall back to the ease out curve (see @supports below).
+   */
+  --m-spring: var(--m-ease-out);
+  --m-spring-smooth: var(--m-ease-out);
   --m-dur-press: 120ms;
   --m-dur-ui: 200ms;
+  --m-dur-exit: 200ms;
   --m-dur-enter: 420ms;
+  --m-dur-spring: 480ms;
+  --m-dur-smooth: 430ms;
   --m-dur-sheet: 500ms;
+  --m-dur-sheet-out: 360ms;
   --m-dur-count: 700ms;
+}
+@supports (transition-timing-function: linear(0, 1)) {
+  :root {
+    /* biome-ignore format: one spring per line reads better than 25 lines of numbers */
+    --m-spring: linear(0, 0.042, 0.141, 0.267, 0.399, 0.526, 0.639, 0.735, 0.813, 0.875, 0.922, 0.957, 0.981, 0.997, 1.007, 1.012, 1.015, 1.015, 1.014, 1.012, 1.01, 1.008, 1.007, 1.005, 1);
+    /* biome-ignore format: one spring per line reads better than 25 lines of numbers */
+    --m-spring-smooth: linear(0, 0.042, 0.136, 0.251, 0.368, 0.478, 0.575, 0.658, 0.727, 0.785, 0.831, 0.868, 0.898, 0.921, 0.939, 0.953, 0.964, 0.973, 0.979, 0.984, 0.988, 0.991, 0.993, 0.995, 1);
+  }
 }
 
 @media (prefers-color-scheme: dark) {
@@ -167,12 +186,17 @@ h3 {
   text-wrap: balance;
 }
 
-/* Press feedback for anything tappable. */
+/*
+ * Press feedback for anything tappable: in fast under the finger, back out on a spring, as UIKit
+ * buttons do. A tap that is released early reverses from where it is (CSS transitions retarget).
+ */
 .press {
-  transition: transform var(--m-dur-press) var(--m-ease-out);
+  transition: transform var(--m-dur-spring) var(--m-spring);
 }
-.press:active {
+.press:active:not(:disabled) {
   transform: scale(0.97);
+  transition-duration: var(--m-dur-press);
+  transition-timing-function: var(--m-ease-out);
 }
 
 .tnum {
@@ -226,7 +250,7 @@ h3 {
     opacity: 0.25;
   }
   .press,
-  .press:active,
+  .press:active:not(:disabled),
   .m-switch,
   .m-switch::after {
     transition: none;
@@ -250,7 +274,7 @@ h3 {
   transform: scale(0.86);
 }
 .m-tab[aria-current="page"] .m-tab-icon {
-  animation: m-tab-pop 380ms var(--m-spring) both;
+  animation: m-tab-pop var(--m-dur-spring) var(--m-spring) both;
 }
 @keyframes m-tab-pop {
   from {
@@ -376,13 +400,22 @@ h3 {
   box-shadow:
     0 3px 8px rgb(0 0 0 / 0.15),
     0 1px 1px rgb(0 0 0 / 0.16);
-  transition: transform var(--m-dur-ui) var(--m-ease-out);
+  transform-origin: left center;
+  transition: transform var(--m-dur-smooth) var(--m-spring-smooth);
 }
 .m-switch:checked {
   background: var(--m-tint);
 }
 .m-switch:checked::after {
   transform: translateX(20px);
+  transform-origin: right center;
+}
+/* Under the finger the knob stretches towards where it will go, as the iOS switch does. */
+.m-switch:active:not(:disabled)::after {
+  transform: scaleX(1.22);
+}
+.m-switch:checked:active:not(:disabled)::after {
+  transform: translateX(20px) scaleX(1.22);
 }
 
 /* Bottom sheet (components/sheet.tsx): slides up on the iOS curve, the page dims behind it. */
@@ -407,6 +440,8 @@ h3 {
 }
 .m-sheet:not([open]) {
   transform: translateY(100%);
+  /* Dismissal is quicker than presentation: the user already decided. */
+  transition-duration: var(--m-dur-sheet-out);
 }
 @starting-style {
   .m-sheet[open] {
@@ -445,5 +480,71 @@ h3 {
   .m-sheet:not([open]),
   .m-sheet[open] {
     transform: translateY(-50%);
+  }
+}
+
+/* ---------- arrivals, departures, selection (.claude/skills/michael-motion) ---------- */
+
+/*
+ * Something new arrives because of what the user just did (a chat bubble, an inserted row, a card
+ * Michael added). Scale from 0.96, never from 0, on the spring. Set --m-origin to where it comes
+ * from, for example the bottom right corner for the user's own chat bubble.
+ */
+.m-pop-in {
+  transform-origin: var(--m-origin, 50% 100%);
+  animation: m-pop-in var(--m-dur-spring) var(--m-spring) both;
+}
+@keyframes m-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(4px);
+  }
+}
+
+/* Something leaves (dismissed, removed): quicker than it came, no spring, then it unmounts. */
+.m-leave {
+  pointer-events: none;
+  animation: m-leave var(--m-dur-exit) var(--m-ease-out) both;
+}
+@keyframes m-leave {
+  to {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+/* A status line or value that just changed in place ("Done. Undo until 09:00."). */
+.m-swap {
+  animation: m-fade-in var(--m-dur-ui) var(--m-ease-out) both;
+}
+
+/* Segmented control: the selected pill slides between segments (components/form-controls.tsx). */
+.m-seg-thumb {
+  transition: transform var(--m-dur-smooth) var(--m-spring-smooth);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Opacity only, and quick: nothing moves, nothing scales. */
+  .m-pop-in,
+  .m-swap {
+    animation: m-fade-in var(--m-dur-ui) linear both;
+  }
+  .m-leave {
+    animation: m-leave-fade var(--m-dur-exit) linear both;
+  }
+  .m-seg-thumb,
+  .m-switch::after {
+    transition: none;
+  }
+  .m-switch:active:not(:disabled)::after {
+    transform: none;
+  }
+  .m-switch:checked:active:not(:disabled)::after {
+    transform: translateX(20px);
+  }
+}
+@keyframes m-leave-fade {
+  to {
+    opacity: 0;
   }
 }

@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { useArrival } from "@/components/motion";
 import { formatTime } from "@/lib/format";
 import {
   dismissRecommendationAction,
@@ -12,7 +13,15 @@ import {
 import type { RecCard } from "@/lib/recommendations";
 
 type Op = "do" | "undo" | "dismiss";
-type Local = { status?: RecCard["status"]; busy?: Op; error?: string; note?: string; hidden?: boolean };
+// hidden: on its way out (fades and shrinks a touch); removed: gone from the list once that ends.
+type Local = {
+  status?: RecCard["status"];
+  busy?: Op;
+  error?: string;
+  note?: string;
+  hidden?: boolean;
+  removed?: boolean;
+};
 
 const ACTIONS: Record<Op, (id: string) => Promise<RecActionResult>> = {
   do: doRecommendation,
@@ -33,14 +42,34 @@ const tinted =
 const plain = "press min-h-9 rounded-full px-3 text-subhead font-semibold text-tint-text disabled:opacity-60";
 
 /** One suggestion: what, why, the maths, and one tap to do it or put it aside. Feedback stays in place. */
-function Card({ card, local, act }: { card: RecCard; local: Local; act: (op: Op) => void }) {
+function Card({
+  card,
+  local,
+  act,
+  swapped,
+  onGone,
+}: {
+  card: RecCard;
+  local: Local;
+  act: (op: Op) => void;
+  /** True right after the status changed here, so the new line eases in. */
+  swapped: (status: string) => boolean;
+  onGone: () => void;
+}) {
   const status = local.status ?? card.status;
   const done = status === "done";
   const canUndo = done && (card.undoUntil === null || Date.parse(card.undoUntil) > Date.now());
   const busy = Boolean(local.busy);
 
   return (
-    <li className="flex flex-col gap-1.5 rounded-group bg-fill px-4 pt-3 pb-3.5" aria-busy={busy}>
+    <li
+      className={`flex flex-col gap-1.5 rounded-group bg-fill px-4 pt-3 pb-3.5 ${local.hidden ? "m-leave" : ""}`}
+      aria-busy={busy}
+      aria-hidden={local.hidden || undefined}
+      onAnimationEnd={(e) => {
+        if (local.hidden && e.target === e.currentTarget) onGone();
+      }}
+    >
       {card.when ? <p className="text-footnote font-semibold text-label-2 tnum">{card.when}</p> : null}
       <p className="text-body font-semibold">{/[.!?]$/.test(card.title) ? card.title : `${card.title}.`}</p>
       <p className="text-subhead text-label-2">{card.rationale}</p>
@@ -55,7 +84,10 @@ function Card({ card, local, act }: { card: RecCard; local: Local; act: (op: Op)
       <div className="mt-1 flex flex-wrap items-center gap-2">
         {done ? (
           <>
-            <p role="status" className="mr-1 text-subhead text-label tnum">
+            <p
+              role="status"
+              className={`mr-1 text-subhead text-label tnum ${swapped(status) ? "m-swap" : ""}`}
+            >
               {canUndo && card.undoUntil ? `Done. Undo until ${formatTime(card.undoUntil)}.` : "Done."}
             </p>
             {canUndo ? (
@@ -95,7 +127,9 @@ function Card({ card, local, act }: { card: RecCard; local: Local; act: (op: Op)
 export function RecommendationList({ cards }: { cards: RecCard[] }) {
   const router = useRouter();
   const [local, setLocal] = useState<Record<string, Local>>({});
-  const patch = (id: string, next: Local) => setLocal((s) => ({ ...s, [id]: next }));
+  // A card that already finished leaving stays gone while it is still hidden.
+  const patch = (id: string, next: Local) =>
+    setLocal((s) => ({ ...s, [id]: { ...next, removed: next.hidden ? s[id]?.removed : undefined } }));
 
   async function act(card: RecCard, op: Op) {
     const before = local[card.id] ?? {};
@@ -119,14 +153,22 @@ export function RecommendationList({ cards }: { cards: RecCard[] }) {
     }
   }
 
-  const visible = cards.filter((c) => !local[c.id]?.hidden);
+  const arriving = useArrival();
+  const visible = cards.filter((c) => !local[c.id]?.removed);
   if (visible.length === 0) return null;
   return (
     <section className="mt-6" aria-label="Michael suggests">
       <h2 className="mb-2 text-title3 font-bold">Michael suggests</h2>
       <ul className="flex flex-col gap-2.5">
         {visible.map((c) => (
-          <Card key={c.id} card={c} local={local[c.id] ?? {}} act={(op) => act(c, op)} />
+          <Card
+            key={c.id}
+            card={c}
+            local={local[c.id] ?? {}}
+            act={(op) => act(c, op)}
+            swapped={(status) => arriving(`${c.id}:${status}`)}
+            onGone={() => setLocal((s) => ({ ...s, [c.id]: { ...s[c.id], removed: true } }))}
+          />
         ))}
       </ul>
     </section>

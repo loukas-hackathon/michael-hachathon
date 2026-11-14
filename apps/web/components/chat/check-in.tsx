@@ -1,16 +1,27 @@
 "use client";
 
 import { type FormEvent, useEffect, useState } from "react";
+import { useArrival } from "@/components/motion";
 import { answer, finish, useCheckIn } from "@/lib/check-in";
 import { AFTER, type Answer, DONE, OPENING, type Question, queue } from "@/lib/check-in-data";
 
-function Bubble({ from, children }: { from: "michael" | "you"; children: React.ReactNode }) {
+function Bubble({
+  from,
+  arrive = false,
+  children,
+}: {
+  from: "michael" | "you";
+  /** True when it just appeared because of an answer: it grows from its own corner. */
+  arrive?: boolean;
+  children: React.ReactNode;
+}) {
+  const pop = from === "you" ? "m-pop-in [--m-origin:100%_100%]" : "m-pop-in [--m-origin:0_100%]";
   return (
     <li className={`flex ${from === "you" ? "justify-end" : "justify-start"}`}>
       <p
         className={`max-w-[85%] rounded-card px-3.5 py-2 text-body ${
           from === "you" ? "bg-tint text-on-tint" : "bg-fill text-label"
-        }`}
+        } ${arrive ? pop : ""}`}
       >
         {children}
       </p>
@@ -24,6 +35,7 @@ const label = (a: Answer) => (a === "yes" ? "Yes" : a === "no" ? "No" : String(a
 export function CheckIn({ questions, sample }: { questions: Question[]; sample: boolean }) {
   const { answers, done } = useCheckIn();
   const [text, setText] = useState("");
+  const arriving = useArrival();
   const list = queue(questions, answers);
   const current = list.find((q) => answers[q.id] === undefined);
   const asked = list.filter((q) => answers[q.id] !== undefined);
@@ -51,16 +63,28 @@ export function CheckIn({ questions, sample }: { questions: Question[]; sample: 
         {asked.map((q) => (
           <li key={q.id} className="flex flex-col gap-2">
             <ol className="flex flex-col gap-2">
-              <Bubble from="michael">{q.text}</Bubble>
-              <Bubble from="you">{label(answers[q.id] as Answer)}</Bubble>
+              <Bubble from="michael" arrive={arriving(`q:${q.id}`)}>
+                {q.text}
+              </Bubble>
+              <Bubble from="you" arrive={arriving(`a:${q.id}`)}>
+                {label(answers[q.id] as Answer)}
+              </Bubble>
             </ol>
           </li>
         ))}
-        {current ? <Bubble from="michael">{current.text}</Bubble> : null}
+        {current ? (
+          <Bubble from="michael" arrive={arriving(`q:${current.id}`)}>
+            {current.text}
+          </Bubble>
+        ) : null}
         {!current ? (
           <>
-            <Bubble from="michael">{AFTER}</Bubble>
-            <Bubble from="michael">{DONE}</Bubble>
+            <Bubble from="michael" arrive={arriving("after")}>
+              {AFTER}
+            </Bubble>
+            <Bubble from="michael" arrive={arriving("done")}>
+              {DONE}
+            </Bubble>
           </>
         ) : null}
       </ol>

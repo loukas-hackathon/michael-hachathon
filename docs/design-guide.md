@@ -216,30 +216,39 @@ Follow "Showing time on a phone" in `docs/interface-research.md`, plus:
 
 ## Motion
 
-Tokens live in `apps/web/app/globals.css` as CSS variables; use them, never literals.
+Tokens live in `apps/web/app/globals.css` as CSS variables; use them, never literals. The full
+rules, the springs' derivation and a checklist are in the agent skill
+`.claude/skills/michael-motion/SKILL.md`.
 
-| Token            | Value                           | Use                                   |
-| ---------------- | ------------------------------- | ------------------------------------- |
-| `--m-ease-out`   | `cubic-bezier(.23, 1, .32, 1)`  | Everything by default                 |
-| `--m-ease-sheet` | `cubic-bezier(.32, .72, 0, 1)`  | Sheets                                |
-| `--m-spring`     | `linear(...)`, one 6% overshoot | Selection pops only (the tab icon)    |
-| `--m-dur-press`  | 120ms                           | Press feedback                        |
-| `--m-dur-ui`     | 200ms                           | Interface changes, switches           |
-| `--m-dur-enter`  | 420ms                           | Something new arriving (live refresh) |
-| `--m-dur-sheet`  | 500ms                           | Sheets                                |
-| `--m-dur-count`  | 700ms                           | Score count up                        |
+| Token                   | Value                                        | Use                                          |
+| ----------------------- | -------------------------------------------- | -------------------------------------------- |
+| `--m-ease-out`          | `cubic-bezier(.23, 1, .32, 1)`               | Default for anything without a spring        |
+| `--m-ease-sheet`        | `cubic-bezier(.32, .72, 0, 1)`               | Sheets                                       |
+| `--m-spring`            | SwiftUI response 0.4, damping 0.8 (~1.5%)    | Press release, pops, arrivals, sheet settle  |
+| `--m-spring-smooth`     | SwiftUI response 0.35, damping 1 (no bounce) | Things that slide: switch knob, segment pill |
+| `--m-dur-press`         | 120ms                                        | Press in                                     |
+| `--m-dur-ui`            | 200ms                                        | Interface changes, colour on small controls  |
+| `--m-dur-exit`          | 200ms                                        | Something leaving                            |
+| `--m-dur-enter`         | 420ms                                        | Something new arriving (live refresh)        |
+| `--m-dur-spring`        | 480ms                                        | Always with `--m-spring`                     |
+| `--m-dur-smooth`        | 430ms                                        | Always with `--m-spring-smooth`              |
+| `--m-dur-sheet`, `-out` | 500ms in, 360ms out                          | Sheets                                       |
+| `--m-dur-count`         | 700ms                                        | Score count up                               |
 
-| What                       | How                                                                                              |
-| -------------------------- | ------------------------------------------------------------------------------------------------ |
-| Press on anything tappable | `.press`: `scale(.97)`, 120ms. Primary (filled) buttons also give a light haptic tick            |
-| Tab bar press              | Icon to `scale(.86)` and the tab to 60% opacity; the newly selected icon settles on `--m-spring` |
-| Tab switches               | None. The tab bar never moves                                                                    |
-| Interface changes          | 200ms, `--m-ease-out`                                                                            |
-| Sheets                     | 500ms, `--m-ease-sheet`                                                                          |
-| Score count up             | Once per session, 700ms, no bounce, after the splash. The real number is always in the DOM       |
-| Live refresh               | New blocks rise 6px and fade in; a tape tick that just filled grows from the baseline            |
-| Loading                    | Skeleton in the final layout (`loading.tsx` per route): blank for 150ms, then a slow 1.6s breath |
-| Reduced motion             | Instant, opacity only: no transforms, no count up, skeletons still                               |
+| What                       | How                                                                                                       |
+| -------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Press on anything tappable | `.press`: `scale(.97)` in 120ms, back on `--m-spring`. Primary (filled) buttons also give a haptic tick   |
+| Tab bar press              | Icon to `scale(.86)` and the tab to 60% opacity; the newly selected icon settles on `--m-spring`          |
+| Tab switches               | None. The tab bar never moves                                                                             |
+| Interface changes          | 200ms, `--m-ease-out`; a status line that changes in place fades in (`.m-swap`)                           |
+| Arrivals                   | `.m-pop-in` from 0.96, from where it comes from (`--m-origin`); only items new since mount (`useArrival`) |
+| Departures                 | `.m-leave`, 200ms, then unmount                                                                           |
+| Switches, segmented        | Knob and pill slide on `--m-spring-smooth`; the knob stretches under the finger                           |
+| Sheets                     | 500ms in on `--m-ease-sheet`, 360ms out; a short drag settles back on `--m-spring`                        |
+| Score count up             | Once per session, 700ms, no bounce, after the splash. The real number is always in the DOM                |
+| Live refresh               | New blocks rise 6px and fade in; a tape tick that just filled grows from the baseline                     |
+| Loading                    | Skeleton in the final layout (`loading.tsx` per route): blank for 150ms, then a slow 1.6s breath          |
+| Reduced motion             | Instant, opacity only: no transforms, no count up, skeletons still                                        |
 
 Animate `transform` and `opacity` only. Content is visible by default; motion never gates it.
 

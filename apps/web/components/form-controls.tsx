@@ -18,18 +18,29 @@ export function Segmented<T extends string>({
   onChange: (v: T) => void;
   disabled?: T[];
 }) {
+  const n = options.length;
+  const index = options.findIndex((o) => o.value === value);
   return (
     <div
       role="radiogroup"
-      className="grid gap-[2px] rounded-[9px] bg-fill p-[2px]"
-      style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
+      className="relative grid gap-[2px] rounded-[9px] bg-fill p-[2px]"
+      style={{ gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))` }}
     >
+      {/* One pill that slides to the chosen segment, as UISegmentedControl does. */}
+      {index >= 0 ? (
+        <span
+          aria-hidden="true"
+          className="m-seg-thumb absolute top-[2px] bottom-[2px] left-[2px] rounded-[7px] bg-bg shadow-[0_1px_3px_rgb(0_0_0/0.12)]"
+          style={{
+            width: `calc((100% - 4px - ${(n - 1) * 2}px) / ${n})`,
+            transform: `translateX(calc(${index} * (100% + 2px)))`,
+          }}
+        />
+      ) : null}
       {options.map((o) => (
         <label
           key={o.value}
-          className={`press relative flex min-h-9 items-center justify-center rounded-[7px] px-1 text-center text-footnote font-semibold ${
-            value === o.value ? "bg-bg shadow-[0_1px_3px_rgb(0_0_0/0.12)]" : "text-label"
-          } ${disabled.includes(o.value) ? "opacity-40" : ""}`}
+          className={`relative flex min-h-9 items-center justify-center rounded-[7px] active:opacity-60 px-1 text-center text-footnote font-semibold text-label ${disabled.includes(o.value) ? "opacity-40" : ""}`}
         >
           <input
             type="radio"
