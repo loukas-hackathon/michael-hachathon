@@ -12,7 +12,7 @@ import type {
 import { GoalCategory } from "@michael/shared";
 import { type Ctx, countedDays, daysTouched, RULES } from "./context";
 import { type Detector, found, notEnough } from "./detector";
-import { count, days as dayCount, duration, label, rate } from "./format";
+import { count, days as dayCount, duration, label, pct, rate } from "./format";
 import { MINUTE } from "./time";
 import { notifiedBefore, type Segment, subjectOf } from "./timeline";
 import {
@@ -23,6 +23,7 @@ import {
   mins,
   ratio,
   round1,
+  round2,
   type Span,
   subjectId,
   subtractSpans,
@@ -57,7 +58,7 @@ export interface RawDisruption extends Span {
   trigger: Segment;
   left: Segment | null;
   lostMs: number;
-  /** From leaving `left` until it is in front again. */
+  /** From the moment the distractor came up until `left` is in front again. */
   backMs: number | null;
   ended: boolean;
   blockEventId: string | null;
@@ -152,7 +153,7 @@ function buildStretch(segs: Segment[], from: number, lastWork: number, stop: num
       for (let b = k; b <= lastWork; b++) {
         const candidate = segs[b];
         if (candidate && sameThing(candidate, left)) {
-          backMs = candidate.start - left.end;
+          backMs = candidate.start - trigger.start;
           break;
         }
       }
@@ -297,7 +298,7 @@ function analyseBlock(block: GoalBlock, attention: Segment[]) {
       for (let b = nextIndex; b < segs.length; b++) {
         const candidate = segs[b];
         if (candidate && sameThing(candidate, left)) {
-          backMs = candidate.start - left.end;
+          backMs = candidate.start - trigger.start;
           break;
         }
       }
@@ -355,6 +356,9 @@ function analyseBlock(block: GoalBlock, attention: Segment[]) {
 // ---------- both modes together ----------
 
 export function analyseFocus(ctx: Ctx): FocusAnalysis {
+  // An app in front for under 3 seconds is passing through (Cmd Tab, a window closing). It is
+  // neither a return to work nor a visit to a distractor, so the focus rules do not see it.
+  const attention = ctx.tl.attention.filter((s) => s.end - s.start >= RULES.minVisitMs);
   const blocks = goalBlocks(ctx.events, ctx.goals, ctx.from, ctx.to);
   const blockSpans = union(blocks.map((b) => ({ start: b.start, end: b.end })));
 
@@ -364,7 +368,7 @@ export function analyseFocus(ctx: Ctx): FocusAnalysis {
   const windows: FocusWindow[] = [];
 
   for (const block of blocks) {
-    const result = analyseBlock(block, ctx.tl.attention);
+    const result = analyseBlock(block, attention);
     disruptions.push(...result.disruptions);
     runs.push(...result.runs);
     focusSpans.push(...result.onSpans);
@@ -373,10 +377,10 @@ export function analyseFocus(ctx: Ctx): FocusAnalysis {
   }
 
   // Planned blocks own their time. Stretches are inferred from what is left.
-  let free = ctx.tl.attention;
+  let free = attention;
   if (blockSpans.length > 0) {
     free = [];
-    for (const s of ctx.tl.attention) {
+    for (const s of attention) {
       for (const piece of subtractSpans(s, blockSpans))
         free.push({ ...s, start: piece.start, end: piece.end });
     }
@@ -487,9 +491,20 @@ export function focusDisruptions(ctx: Ctx, focus: FocusAnalysis): Detector<Focus
   const hasInferred = focus.stretches.length > 0;
   const hasCalendar = focus.blocks.length > 0;
 
+  // How blind the detector is: time in apps and sites with no category can be neither work nor
+  // distraction, so a day spent in an unknown browser shows little focus.
+  let activeMs = 0;
+  let otherMs = 0;
+  for (const s of ctx.tl.attention) {
+    activeMs += s.end - s.start;
+    if (s.category === "other") otherMs += s.end - s.start;
+  }
+  const uncategorised = round2(ratio(otherMs, activeMs));
+
   const data: FocusDisruptions = {
     mode: hasInferred && hasCalendar ? "mixed" : hasCalendar ? "calendar" : "inferred",
     days_with_data: withData.size,
+    uncategorised_share: uncategorised,
     blocks: focus.blocks.length,
     stretches: focus.stretches.length,
     focus_minutes: mins(unionLength(focus.focusSpans)),
@@ -519,10 +534,16 @@ export function focusDisruptions(ctx: Ctx, focus: FocusAnalysis): Detector<Focus
   };
 
   const where = hasCalendar && !hasInferred ? "planned blocks" : "focus";
-  const summary = [
+  const parts = [
     `${rate(data.disruptions_per_day)} disruptions a day during ${where}, ${duration(data.minutes_lost_per_day)} a day in the apps that caused them.`,
-    `Longest uninterrupted stretch: ${duration(data.median_daily_longest_uninterrupted_minutes)} on a typical day, ${duration(longest)} at best.`,
-  ].join(" ");
+    `Longest uninterrupted stretch: ${duration(data.median_daily_longest_uninterrupted_minutes)} on a typical day with focus, ${duration(longest)} at best.`,
+  ];
+  if (uncategorised >= RULES.blindShare) {
+    parts.push(
+      `${pct(uncategorised)} of screen time is in apps and sites with no category (a browser without page data counts as unknown), so focus is under counted.`,
+    );
+  }
+  const summary = parts.join(" ");
   const evidence = focus.disruptions
     .slice(-RULES.evidenceCap)
     .reverse()
@@ -545,10 +566,7 @@ export function recoveryCost(ctx: Ctx, focus: FocusAnalysis): Detector<RecoveryC
       `needs at least ${RULES.minRecoverySample} disruptions with a return to the app that was left, found ${measured.length}`,
     );
   }
-  const awaySpan = (d: RawDisruption): Span => {
-    const start = d.left?.end ?? d.start;
-    return { start, end: start + (d.backMs ?? 0) };
-  };
+  const awaySpan = (d: RawDisruption): Span => ({ start: d.start, end: d.start + (d.backMs ?? 0) });
   const medianLost = median(measured.map((d) => d.lostMs / MINUTE));
   const medianBack = median(measured.map((d) => (d.backMs ?? 0) / MINUTE));
 

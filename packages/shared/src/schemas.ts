@@ -478,8 +478,8 @@ export const Disruption = z.object({
   left: PatternSubject.nullable(),
   // Time in off purpose apps and sites during this disruption.
   minutes_lost: z.number().nonnegative(),
-  // From leaving `left` until it is in front again. Null when that did not happen in the same
-  // stretch or block.
+  // From the moment the distractor came up until `left` is in front again. Null when that did
+  // not happen in the same stretch or block.
   minutes_until_back: z.number().nonnegative().nullable(),
   // True when the user did not return to work within the limit: the distractor ended the stretch.
   ended_stretch: z.boolean(),
@@ -492,6 +492,9 @@ export type Disruption = z.infer<typeof Disruption>;
 export const FocusDisruptions = z.object({
   mode: z.enum(["calendar", "inferred", "mixed"]),
   days_with_data: z.number().int().nonnegative(),
+  // Share of screen time in apps and sites with no category. They can be neither work nor a
+  // distraction, so the higher this is, the more focus goes unseen.
+  uncategorised_share: z.number().min(0).max(1),
   blocks: z.number().int().nonnegative(),
   stretches: z.number().int().nonnegative(),
   focus_minutes: z.number().nonnegative(),

@@ -425,11 +425,12 @@ test("drift: travel browsing inside a focus stretch, with the search that starte
   assert.equal(text.includes(term), false);
   assert.equal(text.includes("A page title"), false);
 
-  // The same visit is also a disruption: 7 minutes on the site, 8 minutes until the editor is back.
+  // The same visit is also a disruption: 7 minutes on the site, and 7.5 minutes from the moment
+  // the site came up (09:30:30) until the editor is back (09:38).
   const [item] = dataOf(r.focus_disruptions).items;
   assert.equal(item?.trigger.key, "skyscanner.net");
   assert.equal(item?.minutes_lost, 7);
-  assert.equal(item?.minutes_until_back, 8);
+  assert.equal(item?.minutes_until_back, 7.5);
 });
 
 test("drift: work browsing is not drift, and no browsing data means no answer", () => {
@@ -472,4 +473,43 @@ test("drift inside a planned work block", () => {
   assert.equal(d.minutes, 12);
   assert.equal(d.items[0]?.during, "work_block");
   assert.equal(d.items.length, 1);
+});
+
+test("passing through an app for under 3 seconds is neither a disruption nor a return to work", () => {
+  const d = dataOf(
+    report(
+      [
+        mac(APPS.editor, T("2026-11-10 09:00:00"), T("2026-11-10 09:20:00")),
+        mac(APPS.chat, T("2026-11-10 09:20:00"), T("2026-11-10 09:20:02")), // 2 s on the way past
+        mac(APPS.editor, T("2026-11-10 09:20:02"), T("2026-11-10 09:40:00")),
+        // A real check, then a 1 s flash of the terminal, then the finder, then the editor.
+        mac(APPS.chat, T("2026-11-10 09:40:00"), T("2026-11-10 09:41:00")),
+        mac(APPS.terminal, T("2026-11-10 09:41:00"), T("2026-11-10 09:41:01")),
+        mac(APPS.finder, T("2026-11-10 09:41:01"), T("2026-11-10 09:43:00")),
+        mac(APPS.editor, T("2026-11-10 09:43:00"), T("2026-11-10 10:00:00")),
+      ],
+      "2026-11-10 00:00",
+      "2026-11-11 00:00",
+    ).focus_disruptions,
+  );
+  assert.equal(d.disruptions, 1);
+  const [item] = d.items;
+  assert.equal(item?.minutes_lost, 1);
+  // The 1 second in the terminal does not end the disruption: work resumes at 09:43.
+  assert.equal(item?.end_at, "2026-11-10T07:43:00.000Z");
+  assert.equal(item?.minutes_until_back, 3);
+  assert.equal(d.longest_uninterrupted_minutes, 40);
+});
+
+test("the focus summary says so when most screen time has no category", () => {
+  const events = [
+    mac(APPS.editor, T("2026-11-10 09:00"), T("2026-11-10 09:30")),
+    mac(APPS.browser, T("2026-11-10 12:00"), T("2026-11-10 13:00")), // no page data: unknown
+  ];
+  const r = report(events, "2026-11-10 00:00", "2026-11-11 00:00");
+  assert.equal(dataOf(r.focus_disruptions).uncategorised_share, 0.67);
+  assert.equal(
+    r.focus_disruptions.summary,
+    "0 disruptions a day during focus, 0 seconds a day in the apps that caused them. Longest uninterrupted stretch: 30 minutes on a typical day with focus, 30 minutes at best. 67% of screen time is in apps and sites with no category (a browser without page data counts as unknown), so focus is under counted.",
+  );
 });

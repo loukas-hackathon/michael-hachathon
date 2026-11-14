@@ -32,6 +32,8 @@ export const RULES = {
   minWorkShare: 0.5,
   // A distractor that comes up within this time after the last work app ended the stretch.
   endingWindowMs: 60 * SECOND,
+  // From this share of uncategorised screen time the focus summary says it is under counting.
+  blindShare: 0.4,
   minRecoverySample: 5,
   minDayRecoverySample: 3,
   minOffenderDays: 2,
