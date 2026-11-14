@@ -80,3 +80,20 @@ export function AgentsIcon({ className }: IconProps) {
     </svg>
   );
 }
+
+export function ChatIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+      <path
+        d="M5.5 4.5h13a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H11l-4.2 3.2c-.4.3-.8 0-.8-.4v-2.8h-.5a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <rect x="7.5" y="9.5" width="2.2" height="2.2" rx="1.1" fill="currentColor" />
+      <rect x="11" y="9.5" width="2.2" height="2.2" rx="1.1" fill="currentColor" />
+      <rect x="14.5" y="9.5" width="2.2" height="2.2" rx="1.1" fill="currentColor" />
+    </svg>
+  );
+}

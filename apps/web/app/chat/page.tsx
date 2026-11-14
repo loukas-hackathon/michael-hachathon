@@ -1,7 +1,9 @@
 import type { ChatMessage } from "@michael/shared";
 import { connection } from "next/server";
+import { CheckIn } from "@/components/chat/check-in";
 import { ScreenHeader } from "@/components/screen";
 import { getChatHistory } from "@/lib/api";
+import { SAMPLE_QUESTIONS } from "@/lib/check-in-data";
 import { Chat } from "./chat";
 
 export const metadata = { title: "Chat with Michael" };
@@ -19,7 +21,8 @@ export default async function ChatPage() {
 
   return (
     <main className="screen flex min-h-dvh flex-col">
-      <ScreenHeader context="Ask about your day and your goals" title="Michael" />
+      <ScreenHeader context="Ask about your day and your goals" title="Chat" />
+      <CheckIn questions={SAMPLE_QUESTIONS} sample />
       <Chat initial={history} />
     </main>
   );

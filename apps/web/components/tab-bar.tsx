@@ -3,14 +3,15 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ComponentType } from "react";
+import { useCheckIn } from "@/lib/check-in";
 import { Wordmark } from "./brand";
-import { AgentsIcon, GoalsIcon, TimelineIcon, TodayIcon } from "./icons";
+import { ChatIcon, GoalsIcon, TimelineIcon, TodayIcon } from "./icons";
 
 const TABS: { href: string; label: string; Icon: ComponentType<{ className?: string }> }[] = [
   { href: "/", label: "Today", Icon: TodayIcon },
   { href: "/timeline", label: "Timeline", Icon: TimelineIcon },
   { href: "/goals", label: "Goals", Icon: GoalsIcon },
-  { href: "/agents", label: "Agents", Icon: AgentsIcon },
+  { href: "/chat", label: "Chat", Icon: ChatIcon },
 ];
 
 function isActive(pathname: string, href: string) {
@@ -23,6 +24,8 @@ function isActive(pathname: string, href: string) {
  */
 export function TabBar() {
   const pathname = usePathname();
+  // A quiet dot on Chat while Michael's check in waits: no number, no red.
+  const waiting = !useCheckIn().done;
   if (["/onboarding", "/connect", "/stage"].some((p) => pathname.startsWith(p))) return null;
 
   return (
@@ -46,7 +49,16 @@ export function TabBar() {
                   active ? "text-tint-text lg:bg-fill" : "text-label"
                 }`}
               >
-                <Icon className="size-6" />
+                <span className="relative">
+                  <Icon className="size-6" />
+                  {href === "/chat" && waiting && !active ? (
+                    <span
+                      role="img"
+                      aria-label="Questions waiting"
+                      className="absolute -top-0.5 -right-1 size-2 rounded-full bg-label ring-2 ring-[var(--m-bg)]"
+                    />
+                  ) : null}
+                </span>
                 <span>{label}</span>
               </Link>
             </li>

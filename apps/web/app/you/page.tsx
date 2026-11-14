@@ -36,10 +36,13 @@ export default async function YouPage() {
       <h1 className="text-large-title font-bold tracking-[0.01em]">You</h1>
 
       <Link
-        href="/chat"
-        className="press mt-6 flex h-12 items-center justify-between rounded-group bg-fill px-4 text-body font-semibold"
+        href="/agents"
+        className="press mt-6 flex min-h-14 items-center justify-between gap-3 rounded-group bg-fill px-4 py-2"
       >
-        Chat with Michael
+        <span className="flex flex-col">
+          <span className="text-body font-semibold">Agents</span>
+          <span className="text-footnote text-label-2">Who asks about you, and what they may see</span>
+        </span>
         <span className="text-label-2">›</span>
       </Link>
 
