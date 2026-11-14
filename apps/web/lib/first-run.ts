@@ -1,5 +1,5 @@
 import "server-only";
-import type { AgentClient, PersonalToken } from "@michael/shared";
+import { type AgentClient, type ConnectorId, isLive, type PersonalToken } from "@michael/shared";
 import { cookies } from "next/headers";
 import { cache } from "react";
 import { get, getGoals, getPushConfig } from "./api";
@@ -16,9 +16,9 @@ export type SetupKey = "goals" | "calendar" | "watch" | "mac" | "nudges" | "clau
 export const SETUP_LINKS: Record<SetupKey, string> = {
   goals: "/onboarding",
   calendar: "/integrations/google/connect",
-  watch: "/you/devices",
-  mac: "/you/devices",
-  nudges: "/you",
+  watch: "/you/connections/apple-watch",
+  mac: "/you/connections/mac",
+  nudges: "/you/connections/nudges",
   claude: "/agents",
 };
 
@@ -50,6 +50,20 @@ const CTA: Record<SetupKey, string> = {
 };
 
 const ORDER: SetupKey[] = ["goals", "calendar", "watch", "mac", "nudges", "claude"];
+
+/** The connection behind each step: a step whose connection is Coming soon is left out (#295). */
+const CONNECTOR: Partial<Record<SetupKey, ConnectorId>> = {
+  calendar: "google-calendar",
+  watch: "apple-watch",
+  mac: "mac",
+  nudges: "nudges",
+  claude: "claude",
+};
+
+const offered = (key: SetupKey) => {
+  const id = CONNECTOR[key];
+  return id === undefined || isLive(id);
+};
 
 /** The names You > Devices gives each device key (app/you/devices/page.tsx). */
 const KEY_NAMES = { watch: "Health Auto Export", mac: "Mac collector" } as const;
@@ -104,7 +118,7 @@ export const getSetup = cache(async (demo?: string): Promise<Setup | null> => {
     claude: agents.some((a) => a.status === "approved"),
   };
 
-  const steps = ORDER.map((key) => ({
+  const steps = ORDER.filter(offered).map((key) => ({
     key,
     title: TITLES[key],
     why: WHY[key],

@@ -32,7 +32,10 @@ export const GOALS_PATH = "/onboarding?step=goals";
 const CONNECT_PATH = "/onboarding?step=connect";
 const calendarHref = (back: string) => `/integrations/google/connect?return_to=${encodeURIComponent(back)}`;
 
-/** What screen 2 offers, in order of value. Nudges and Telegram wait for a moment that needs them. */
+/**
+ * What screen 2 offers, in order of value. Nudges and Telegram wait for a moment that needs them.
+ * Only connections proven on production appear (#295): a Coming soon one is not offered here at all.
+ */
 const OFFER: ConnectionId[] = ["google-calendar", "apple-watch", "mac", "iphone", "travel", "claude"];
 
 /** Setup pages opened from here come back here (components/you/connection-page.tsx). */
@@ -103,7 +106,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
   ]);
   const rows = OFFER.flatMap((id) => {
     const row = view?.rows.find((r) => r.id === id);
-    return row ? [fromOnboarding(row)] : [];
+    return row?.live ? [fromOnboarding(row)] : [];
   });
 
   return (
@@ -115,7 +118,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
           ? undefined
           : failed
             ? "Google Calendar did not connect. Try once more below."
-            : "Each one is optional. One tap, then open it on that device."
+            : "Each one is optional. One tap each."
       }
       left={
         <Link

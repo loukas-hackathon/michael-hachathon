@@ -30,7 +30,9 @@ test("onboarding completes for a fresh user", async ({ page, context, baseURL })
   await tap(page.getByRole("button", { name: "Keep these two" }));
 
   await expect(page.getByRole("heading", { name: "Now, your days." })).toBeVisible();
-  await expect(page.getByText("Apple Watch")).toBeVisible();
+  // Only connections proven on production are offered (#295); Coming soon ones are not here at all.
+  await expect(page.getByText("Google Calendar")).toBeVisible();
+  await expect(page.getByText("Apple Watch")).toHaveCount(0);
   await tap(page.getByRole("link", { name: "Go to Today" }));
 
   await expect(page).toHaveURL(/\/$/);
@@ -54,4 +56,16 @@ test("a demo visitor can walk onboarding to the end", async ({ page }) => {
   await tap(page.getByRole("button", { name: /^(Keep (this goal|these .+)|Next)$/ }));
   await expect(page.getByRole("heading", { name: /^(Here's your week\.|Now, your days\.)$/ })).toBeVisible();
   await expect(page.getByRole("link", { name: "Go to Today" })).toBeVisible();
+});
+
+// Connections not proven on production say Coming soon and offer nothing to tap (#295).
+test("You shows unproven connections as Coming soon, with nothing to tap", async ({ page }) => {
+  await enterDemo(page);
+  await page.goto("/you");
+  const list = page.locator("#connections");
+  await expect(list.getByText("Apple Watch")).toBeVisible();
+  await expect(list.getByText("Coming soon").first()).toBeVisible();
+  await expect(list.getByRole("link", { name: /Apple Watch/ })).toHaveCount(0);
+  await page.goto("/you/connections/apple-watch");
+  await expect(page.getByText("Coming soon. I will tell you when it is ready.")).toBeVisible();
 });
