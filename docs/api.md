@@ -1265,7 +1265,7 @@ const RETENTION_DAYS = 90;
 
 Deletion really deletes: rows are removed from the database, not hidden. `DELETE /v1/me/data` with
 no parameters removes every row of the account: events, event summaries, goals, recommendations,
-analysis runs, nudges, chat messages, integrations (Google is revoked first), push subscriptions,
+analysis runs, nudges, chat messages, standing instructions, the Telegram chat, integrations (Google is revoked first), push subscriptions,
 device keys, agents with their query log, OAuth grants and tokens, places, the geocode cache, source
 switches, the off the record state and the profile. Then the Supabase Auth user itself is deleted,
 so the next sign in starts a new, empty account. With any of `source`, `from`, `to` (ISO date times,
