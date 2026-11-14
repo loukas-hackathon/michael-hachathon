@@ -1,108 +1,102 @@
-import type { Event, Goal, Recommendation, Source } from "@michael/shared";
-import { getGoals, getRecommendations, getTimeline } from "@/lib/api";
+import { EmptyState } from "@/components/empty-state";
+import { ScreenHeader } from "@/components/screen";
+import { Tape, TapeKey } from "@/components/tape";
+import { MichaelCard } from "@/components/today/michael-card";
+import { getToday } from "@/lib/api";
+import { type DayView, nowIndex, tape, totals } from "@/lib/day";
+import { formatDay, formatTime, hm, minutesPhrase } from "@/lib/format";
 
-const SOURCE_LABEL: Record<Source, string> = {
-  omi: "Omi",
-  whoop: "WHOOP",
-  health_auto_export: "Apple Health",
-  ios_shortcuts: "iPhone",
-  activitywatch: "Mac",
-  google_calendar: "Calendar",
-  owntracks: "Location",
-  manual: "Manual",
-  agent: "Agent",
-  macos_usage: "Mac",
-  iphone_usage: "iPhone",
-  chrome: "Chrome",
-  claude_code: "Claude Code",
-};
+const TITLE: Record<DayView["moment"], string> = { morning: "Morning", today: "Today", evening: "Evening" };
 
-const time = (iso: string) =>
-  new Intl.DateTimeFormat("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "Europe/Athens",
-  }).format(new Date(iso));
-
-export default async function Home() {
-  const from = "2026-11-14T00:00:00+02:00";
-  const to = "2026-11-14T23:59:59+02:00";
-  const [timeline, goals, recommendations] = await Promise.all([
-    getTimeline(from, to),
-    getGoals(),
-    getRecommendations(),
-  ]);
-  const events = [...timeline.events].sort((a, b) => a.start_at.localeCompare(b.start_at));
+export default async function TodayPage({ searchParams }: { searchParams: Promise<{ demo?: string }> }) {
+  const { demo } = await searchParams;
+  const day = await getToday(demo);
+  const ticks = tape(day);
+  const t = totals(day);
+  const firstBlock = day.blocks[0];
 
   return (
-    <main className="mx-auto grid max-w-6xl gap-10 px-4 py-10 md:grid-cols-[1fr_340px]">
-      <section>
-        <header className="mb-8">
-          <p className="text-sm text-zinc-500">Saturday 14 November</p>
-          <h1 className="text-3xl font-semibold tracking-tight">Today</h1>
-        </header>
-        <ol className="relative border-l border-zinc-800">
-          {events.map((e) => (
-            <TimelineItem key={e.id} event={e} />
-          ))}
-        </ol>
-      </section>
-      <aside className="space-y-10">
-        <Goals goals={goals} />
-        <Recommendations items={recommendations} goals={goals} />
-      </aside>
-    </main>
-  );
-}
+    <main className="screen">
+      <ScreenHeader context={formatDay(day.now)} title={TITLE[day.moment]} />
 
-function TimelineItem({ event }: { event: Event }) {
-  return (
-    <li className="mb-6 ml-6">
-      <span className="absolute -left-1.5 mt-1.5 h-3 w-3 rounded-full border-2 border-zinc-950 bg-zinc-400" />
-      <div className="flex items-baseline gap-3 font-mono text-xs text-zinc-500">
-        <span>
-          {time(event.start_at)}
-          {event.end_at ? ` - ${time(event.end_at)}` : ""}
-        </span>
-        <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-zinc-400">{SOURCE_LABEL[event.source]}</span>
-      </div>
-      <p className="mt-1 text-zinc-100">{event.title}</p>
-    </li>
-  );
-}
+      {day.blocks.length === 0 ? (
+        <EmptyState title="Nothing yet.">
+          Wear the watch tonight and your first brief arrives in the morning.
+        </EmptyState>
+      ) : (
+        <>
+          <p className="mt-1.5 text-subhead text-label-2">
+            We're at <b className="font-semibold text-label tnum">{day.week.scorePct}%</b> of goal time this
+            week. {day.week.line}
+          </p>
 
-function Goals({ goals }: { goals: Goal[] }) {
-  return (
-    <section>
-      <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-zinc-500">Goals</h2>
-      <ul className="space-y-2">
-        {goals.map((g) => (
-          <li key={g.id} className="rounded-lg border border-zinc-800 px-3 py-2">
-            <span className="mr-2 text-xs text-zinc-500">{g.category}</span>
-            {g.title}
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-function Recommendations({ items, goals }: { items: Recommendation[]; goals: Goal[] }) {
-  const goalTitle = (id: string | null) => goals.find((g) => g.id === id)?.title;
-  return (
-    <section>
-      <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-zinc-500">Recommendations</h2>
-      <ul className="space-y-3">
-        {items.map((r) => (
-          <li key={r.id} className="rounded-lg border border-zinc-800 p-3">
-            <p className="font-medium">{r.title}</p>
-            <p className="mt-1 text-sm text-zinc-400">{r.rationale}</p>
-            {goalTitle(r.goal_id) && (
-              <p className="mt-2 text-xs text-zinc-500">Goal: {goalTitle(r.goal_id)}</p>
+          <section aria-label="Goal time today" className="mt-5">
+            {t.scorePct === null && firstBlock ? (
+              <p className="text-title3 font-semibold">
+                Your first block starts at <span className="tnum">{formatTime(firstBlock.start)}</span>.
+              </p>
+            ) : (
+              <h2 className="flex flex-col">
+                <span className="font-num text-score font-extrabold tracking-[-0.02em] tnum">
+                  {t.scorePct}%
+                </span>
+                <span className="text-title3 font-semibold">
+                  of your goal time {day.moment === "evening" ? "today" : "so far"}.
+                </span>
+              </h2>
             )}
-          </li>
-        ))}
-      </ul>
-    </section>
+            <div className="mt-3">
+              <Tape
+                ticks={ticks}
+                nowAt={day.moment === "evening" || t.scorePct === null ? null : nowIndex(ticks)}
+                nowLabel={formatTime(day.now)}
+                label={`${hm(t.spent)} spent, ${hm(t.lost)} lost, ${hm(t.ahead)} still ahead`}
+              />
+            </div>
+            <TapeKey
+              items={[
+                t.scorePct === null
+                  ? { kind: "ahead" as const, text: `${hm(t.planned)} planned` }
+                  : { kind: "spent" as const, text: `${hm(t.spent)} spent` },
+                ...(t.lost > 0 ? [{ kind: "lost" as const, text: `${hm(t.lost)} lost` }] : []),
+                ...(t.ahead > 0 && t.scorePct !== null
+                  ? [{ kind: "ahead" as const, text: `${hm(t.ahead)} ahead` }]
+                  : []),
+              ]}
+            />
+          </section>
+
+          {day.wonBackMinutes > 0 ? (
+            <p className="mt-4 text-body">
+              <b className="font-num font-bold text-tint-text">{minutesPhrase(day.wonBackMinutes)}</b> won
+              back today.
+            </p>
+          ) : null}
+
+          {day.lead ? <MichaelCard lead={day.lead} /> : null}
+
+          {day.nudge ? (
+            <section className="mt-6">
+              <h2 className="mb-2 text-title3 font-bold">Latest nudge</h2>
+              <div className="grid grid-cols-[auto_1fr] gap-x-3 rounded-group bg-fill px-4 py-3">
+                <time
+                  className="text-footnote leading-5 font-semibold text-label-2 tnum"
+                  dateTime={day.nudge.at}
+                >
+                  {formatTime(day.nudge.at)}
+                </time>
+                <p className="text-subhead">{day.nudge.text}</p>
+              </div>
+            </section>
+          ) : null}
+        </>
+      )}
+
+      {day.sample ? (
+        <p className="mt-8 text-footnote text-label-2">
+          Sample day. Your own day appears here once your sources are connected.
+        </p>
+      ) : null}
+    </main>
   );
 }
