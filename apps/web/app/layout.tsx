@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Figtree } from "next/font/google";
 import type { ReactNode } from "react";
+import { Splash } from "@/components/splash";
 import { TabBar } from "@/components/tab-bar";
 import "./globals.css";
 
@@ -29,6 +30,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en-GB" className={figtree.variable}>
       <body>
+        <Splash />
         <div className="min-h-dvh lg:pl-64">
           <div className="mx-auto w-full max-w-[560px] lg:max-w-[720px]">{children}</div>
         </div>
