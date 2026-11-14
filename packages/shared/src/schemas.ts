@@ -1234,6 +1234,21 @@ export type PersonalTokenCreate = z.infer<typeof PersonalTokenCreate>;
 export const PersonalTokenCreated = z.object({ token: PersonalToken, secret: z.string() });
 export type PersonalTokenCreated = z.infer<typeof PersonalTokenCreated>;
 
+// ---------- demo account ----------
+
+// POST /v1/demo/reseed: what bringing the demo week up to now changed.
+export const DemoSeedResult = z.object({
+  // Athens local dates covered, oldest first; the last one is today.
+  days: z.array(LocalDay),
+  events: z.object({
+    inserted: z.number().int().nonnegative(),
+    removed: z.number().int().nonnegative(),
+    kept: z.number().int().nonnegative(),
+  }),
+  goals_written: z.number().int().nonnegative(),
+});
+export type DemoSeedResult = z.infer<typeof DemoSeedResult>;
+
 // ---------- errors ----------
 
 export const ErrorCode = z.enum([

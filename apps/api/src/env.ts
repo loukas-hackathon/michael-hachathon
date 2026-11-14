@@ -6,6 +6,8 @@ const Env = z.object({
   API_KEY: z.string().min(1).default("dev-key"),
   // The demo account (Supabase Auth user) that API-key requests act for.
   DEMO_USER_ID: z.uuid().default("2ee12960-e594-456d-85cb-a672d0ff3ac3"),
+  // "on": the demo account carries the generated demo week (src/demo), kept up to now. "off": not.
+  DEMO_WEEK: z.enum(["on", "off"]).default("on"),
   // Comma-separated origins allowed by CORS (the web app).
   WEB_ORIGIN: z.string().default("http://localhost:3000"),
   // Public base URL of this API, used for OAuth redirect URIs.
