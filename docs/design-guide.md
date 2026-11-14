@@ -38,12 +38,12 @@ at its smallest scale.
 
 Where the tape appears:
 
-| Place          | Form                                                                                  |
-| -------------- | ------------------------------------------------------------------------------------- |
-| Today          | One horizontal strip under the score, full content width, ticks 30px tall              |
-| Timeline       | Vertical: planned blocks are dashed outlines, spent time fills them pink, interruptions cut the block's right edge, lost stretches are hatched |
-| Goals          | Coarser: one notch per 30 minutes of the weekly budget, with a black pace tick         |
-| Watch, stage   | The Today strip, small, under the number                                              |
+| Place        | Form                                                                                                                                           |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Today        | One horizontal strip under the score, full content width, ticks 30px tall                                                                      |
+| Timeline     | Vertical: planned blocks are dashed outlines, spent time fills them pink, interruptions cut the block's right edge, lost stretches are hatched |
+| Goals        | Coarser: one notch per 30 minutes of the weekly budget, with a black pace tick                                                                 |
+| Watch, stage | The Today strip, small, under the number                                                                                                       |
 
 Never draw goal time as rings, donuts or dials. They read as Apple's Activity rings and hide when the
 time went.
@@ -52,18 +52,18 @@ time went.
 
 Locked on the Build Hub ("Colour and type"). Use the CSS variables, never literals.
 
-| Token            | Light     | Dark      | Use                                                                   |
-| ---------------- | --------- | --------- | --------------------------------------------------------------------- |
-| `--m-bg`         | `#FFFFFF` | `#000000` | Every screen                                                          |
-| `--m-fill`       | `#F2F2F7` | `#1C1C1E` | Inset groups, Michael's card, fields                                   |
-| `--m-separator`  | `#C6C6C8` | `#38383A` | Hairlines between rows (0.5px)                                         |
-| `--m-label`      | `#000000` | `#FFFFFF` | Text, logo, the `now` marker                                          |
-| `--m-label-2`    | `#6C6C70` | `#98989F` | Secondary text, units, lost time, outlines                             |
-| `--m-context`    | `#D1D1D6` | `#3A3A3C` | Context bars in charts (days that are not today, other goals)          |
-| `--m-spark`      | `#FF2E93` | `#FF2E93` | Goal time as a shape: ticks, fills, bars. Never small text             |
-| `--m-tint`       | `#E6007A` | `#E6007A` | Filled buttons (white text), selected tab                              |
-| `--m-tint-text`  | `#E6007A` | `#FF4FA3` | Pink text and links                                                    |
-| `--m-danger`     | `#FF3B30` | `#FF453A` | Errors only                                                            |
+| Token           | Light     | Dark      | Use                                                           |
+| --------------- | --------- | --------- | ------------------------------------------------------------- |
+| `--m-bg`        | `#FFFFFF` | `#000000` | Every screen                                                  |
+| `--m-fill`      | `#F2F2F7` | `#1C1C1E` | Inset groups, Michael's card, fields                          |
+| `--m-separator` | `#C6C6C8` | `#38383A` | Hairlines between rows (0.5px)                                |
+| `--m-label`     | `#000000` | `#FFFFFF` | Text, logo, the `now` marker                                  |
+| `--m-label-2`   | `#6C6C70` | `#98989F` | Secondary text, units, lost time, outlines                    |
+| `--m-context`   | `#D1D1D6` | `#3A3A3C` | Context bars in charts (days that are not today, other goals) |
+| `--m-spark`     | `#FF2E93` | `#FF2E93` | Goal time as a shape: ticks, fills, bars. Never small text    |
+| `--m-tint`      | `#E6007A` | `#E6007A` | Filled buttons (white text), selected tab                     |
+| `--m-tint-text` | `#E6007A` | `#FF4FA3` | Pink text and links                                           |
+| `--m-danger`    | `#FF3B30` | `#FF453A` | Errors only                                                   |
 
 - Text on a pink fill is black (about 6:1). White on `--m-spark` fails contrast.
 - At most one pink element competes for attention on a screen; the tape counts as one.
@@ -73,17 +73,17 @@ Locked on the Build Hub ("Colour and type"). Use the CSS variables, never litera
 
 Inside the app, the system font. Outside the app (slides, film, website, brand pages), Mulish.
 
-| Role         | Face                      | Size / line | Weight | Notes                               |
-| ------------ | ------------------------- | ----------- | ------ | ----------------------------------- |
-| Score        | `ui-rounded`              | 76 / 70     | 800    | Tabular, tracking -0.02em            |
-| Large title  | system                    | 34 / 41     | 700    | The screen title                     |
-| Insight      | system                    | 22 / 27     | 400    | Grey, numbers in 600 and `--m-label` |
-| Title 3      | system                    | 20 / 25     | 700    | Section headings                     |
-| Headline     | system                    | 17 / 22     | 600    | Row titles                           |
-| Body         | system                    | 17 / 22     | 400    |                                      |
-| Subhead      | system                    | 15 / 20     | 400    | Michael's fix, nudges                |
-| Footnote     | system                    | 13 / 18     | 400    | Meta lines                           |
-| Chart label  | system                    | 11 / 13     | 500    | Tabular, `--m-label-2`               |
+| Role        | Face         | Size / line | Weight | Notes                                |
+| ----------- | ------------ | ----------- | ------ | ------------------------------------ |
+| Score       | `ui-rounded` | 76 / 70     | 800    | Tabular, tracking -0.02em            |
+| Large title | system       | 34 / 41     | 700    | The screen title                     |
+| Insight     | system       | 22 / 27     | 400    | Grey, numbers in 600 and `--m-label` |
+| Title 3     | system       | 20 / 25     | 700    | Section headings                     |
+| Headline    | system       | 17 / 22     | 600    | Row titles                           |
+| Body        | system       | 17 / 22     | 400    |                                      |
+| Subhead     | system       | 15 / 20     | 400    | Michael's fix, nudges                |
+| Footnote    | system       | 13 / 18     | 400    | Meta lines                           |
+| Chart label | system       | 11 / 13     | 500    | Tabular, `--m-label-2`               |
 
 - System stack: `-apple-system, BlinkMacSystemFont, "SF Pro Text", var(--font-figtree), system-ui, sans-serif`.
   Figtree (via `next/font`) is only the fallback for devices without SF Pro.
@@ -102,17 +102,17 @@ Inside the app, the system font. Outside the app (slides, film, website, brand p
 
 ## Components
 
-| Component        | Spec                                                                                                    |
-| ---------------- | ------------------------------------------------------------------------------------------------------- |
-| Screen header    | Date or context line (13, 600, `--m-label-2`) with the Mi button right; large title below               |
-| Mi button        | 30px black circle with the white Mi monogram. Opens the You sheet. Off the record: hollow (1.5px ring)  |
-| Tab bar          | Floating capsule, 60px tall, 14px from the sides and 16px plus the safe area from the bottom. Four tabs: Today, Timeline, Goals, Agents. Our own icons at 24px. Selected uses `--m-tint-text`. Never hides |
-| Inset group      | `--m-fill`, radius 12, rows 11px by 16px, 0.5px separators inset 16px from the left                     |
-| Michael's card   | `--m-fill`, radius 16, padding 14 by 16: Mi + "Michael" + time, insight, evidence, fix, one action      |
-| Buttons          | Capsule, 36px min height (44px hit area). Filled: `--m-tint` with white. Tinted: 14% tint background with `--m-tint-text`. Plain: text only. Press scales to 0.97 |
-| Scope chip       | Capsule on `--m-bg`, 13/18 600                                                                           |
-| Sheet            | Bottom sheet with grabber, one job, swipe to dismiss (Base UI Drawer)                                   |
-| Undo line        | Inline under the thing that changed, never a toast: "Moved. Undo until 19:00."                          |
+| Component      | Spec                                                                                                                                                                                                       |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Screen header  | Date or context line (13, 600, `--m-label-2`) with the Mi button right; large title below                                                                                                                  |
+| Mi button      | 30px black circle with the white Mi monogram. Opens the You sheet. Off the record: hollow (1.5px ring)                                                                                                     |
+| Tab bar        | Floating capsule, 60px tall, 14px from the sides and 16px plus the safe area from the bottom. Four tabs: Today, Timeline, Goals, Agents. Our own icons at 24px. Selected uses `--m-tint-text`. Never hides |
+| Inset group    | `--m-fill`, radius 12, rows 11px by 16px, 0.5px separators inset 16px from the left                                                                                                                        |
+| Michael's card | `--m-fill`, radius 16, padding 14 by 16: Mi + "Michael" + time, insight, evidence, fix, one action                                                                                                         |
+| Buttons        | Capsule, 36px min height (44px hit area). Filled: `--m-tint` with white. Tinted: 14% tint background with `--m-tint-text`. Plain: text only. Press scales to 0.97                                          |
+| Scope chip     | Capsule on `--m-bg`, 13/18 600                                                                                                                                                                             |
+| Sheet          | Bottom sheet with grabber, one job, swipe to dismiss (Base UI Drawer)                                                                                                                                      |
+| Undo line      | Inline under the thing that changed, never a toast: "Moved. Undo until 19:00."                                                                                                                             |
 
 Icons: our own four tab icons (tape, timeline, notches, agents), then Phosphor regular for anything
 else, at 17, 20 or 24px. No icons in tinted rounded squares.
@@ -206,14 +206,14 @@ Follow "Showing time on a phone" in `docs/interface-research.md`, plus:
 
 ## Motion
 
-| What                               | How                                              |
-| ---------------------------------- | ------------------------------------------------ |
-| Press on anything tappable         | `scale(.97)`, 120ms                               |
-| Interface changes                  | 200ms, `cubic-bezier(.23, 1, .32, 1)`             |
-| Sheets                             | 500ms, `cubic-bezier(.32, .72, 0, 1)`             |
-| Tape fill and score count up       | Once per day on first open, 700ms, no bounce      |
-| Tab switches                       | None. The tab bar never moves                     |
-| Reduced motion                     | Instant, opacity only                             |
+| What                         | How                                          |
+| ---------------------------- | -------------------------------------------- |
+| Press on anything tappable   | `scale(.97)`, 120ms                          |
+| Interface changes            | 200ms, `cubic-bezier(.23, 1, .32, 1)`        |
+| Sheets                       | 500ms, `cubic-bezier(.32, .72, 0, 1)`        |
+| Tape fill and score count up | Once per day on first open, 700ms, no bounce |
+| Tab switches                 | None. The tab bar never moves                |
+| Reduced motion               | Instant, opacity only                        |
 
 Animate `transform` and `opacity` only. Content is visible by default; motion never gates it.
 
