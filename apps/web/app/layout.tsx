@@ -3,7 +3,6 @@ import { Figtree } from "next/font/google";
 import type { ReactNode } from "react";
 import { MotionScript } from "@/components/count-up";
 import { Haptics } from "@/components/haptics";
-import { PageTransition } from "@/components/page-transition";
 import { Splash } from "@/components/splash";
 import { TabBar } from "@/components/tab-bar";
 import "./globals.css";
@@ -38,9 +37,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <MotionScript />
         <Haptics />
         <div className="min-h-dvh lg:pl-64">
-          <div className="mx-auto w-full max-w-[560px] lg:max-w-[720px]">
-            <PageTransition>{children}</PageTransition>
-          </div>
+          <div className="mx-auto w-full max-w-[560px] lg:max-w-[720px]">{children}</div>
         </div>
         <TabBar />
       </body>
