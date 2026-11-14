@@ -336,6 +336,410 @@ export const WeeklyScore = z.object({
 });
 export type WeeklyScore = z.infer<typeof WeeklyScore>;
 
+// ---------- patterns (GET /v1/patterns) ----------
+// Computed with plain rules by apps/api/src/patterns. Durations are minutes with one decimal unless
+// the field name says seconds. Shares are 0..1. Days are local days in the report's timezone.
+
+// One shared vocabulary for apps and sites. Unknown ids stay "other": the categoriser never guesses.
+export const AppCategory = z.enum([
+  "work",
+  "communication",
+  "social",
+  "video",
+  "news",
+  "shopping",
+  "travel",
+  "ai",
+  "music",
+  "system",
+  "other",
+]);
+export type AppCategory = z.infer<typeof AppCategory>;
+
+export const PatternDevice = z.enum(["mac", "iphone"]);
+export type PatternDevice = z.infer<typeof PatternDevice>;
+
+export const LocalDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+// What was in front: an app (key = bundle id) or a site (key = host, never a full address).
+export const PatternSubject = z.object({
+  kind: z.enum(["app", "site"]),
+  key: z.string(),
+  name: z.string(),
+  category: AppCategory,
+});
+export type PatternSubject = z.infer<typeof PatternSubject>;
+
+// Every detector answers in the same envelope. With too little data `data` and `summary` are null
+// and `reason` says what is missing; a number is never made up. `evidence` is a capped list of
+// event ids so the app can show the proof.
+export const patternDetector = <T extends z.ZodType>(data: T) =>
+  z.object({
+    status: z.enum(["ok", "not_enough_data"]),
+    reason: z.string().nullable(),
+    minimum: z.string(),
+    summary: z.string().nullable(),
+    evidence: z.array(z.string()).max(20),
+    data: data.nullable(),
+  });
+
+export const PhoneCadence = z.object({
+  days_with_data: z.number().int().nonnegative(),
+  sessions: z.number().int().nonnegative(),
+  sessions_per_day: z.number().nonnegative(),
+  // Sessions shorter than 30 seconds.
+  checks_share: z.number().min(0).max(1),
+  median_session_seconds: z.number().nonnegative(),
+  // Waking gaps between sessions (sleep and gaps over 3 hours are left out).
+  gaps: z.number().int().nonnegative(),
+  median_gap_minutes: z.number().nonnegative(),
+  typical_gap_minutes: z.object({ p25: z.number().nonnegative(), p75: z.number().nonnegative() }),
+  // The working window (default 09:00 to 18:00). `median_gap_minutes` is null under 20 gaps.
+  window: z.object({
+    start_hour: z.number().int().min(0).max(23),
+    end_hour: z.number().int().min(1).max(24),
+    sessions_per_day: z.number().nonnegative(),
+    gaps: z.number().int().nonnegative(),
+    median_gap_minutes: z.number().nonnegative().nullable(),
+  }),
+  opened: z.object({
+    notification: z.number().int().nonnegative(),
+    own_hand: z.number().int().nonnegative(),
+    unknown: z.number().int().nonnegative(),
+    // notification / (notification + own_hand); null when neither is known.
+    notification_share: z.number().min(0).max(1).nullable(),
+  }),
+  first_apps: z.array(
+    z.object({
+      app: PatternSubject,
+      sessions: z.number().int().nonnegative(),
+      share: z.number().min(0).max(1),
+    }),
+  ),
+  by_hour: z.array(
+    z.object({
+      hour: z.number().int().min(0).max(23),
+      sessions: z.number().int().nonnegative(),
+      sessions_per_day: z.number().nonnegative(),
+      // Null under 5 gaps starting in this hour.
+      median_gap_minutes: z.number().nonnegative().nullable(),
+    }),
+  ),
+  daily: z.array(
+    z.object({
+      day: LocalDay,
+      complete: z.boolean(),
+      sessions: z.number().int().nonnegative(),
+      checks: z.number().int().nonnegative(),
+      minutes: z.number().nonnegative(),
+      median_gap_minutes: z.number().nonnegative().nullable(),
+    }),
+  ),
+});
+export type PhoneCadence = z.infer<typeof PhoneCadence>;
+
+export const MacAppCadence = z.object({
+  days_with_data: z.number().int().nonnegative(),
+  apps: z.array(
+    z.object({
+      app: PatternSubject,
+      activations: z.number().int().nonnegative(),
+      days: z.number().int().nonnegative(),
+      activations_per_day: z.number().nonnegative(),
+      // Minutes of Mac use between leaving the app and bringing it back. Null under 5 gaps.
+      median_gap_active_minutes: z.number().nonnegative().nullable(),
+      checks_share: z.number().min(0).max(1),
+      median_visit_seconds: z.number().nonnegative(),
+      // Share of activations within 60 seconds after a Mac notification from the same app.
+      after_notification_share: z.number().min(0).max(1).nullable(),
+    }),
+  ),
+});
+export type MacAppCadence = z.infer<typeof MacAppCadence>;
+
+export const Disruption = z.object({
+  // calendar = inside a planned block that belongs to a goal; inferred = inside a focus stretch
+  // found from the data itself.
+  mode: z.enum(["calendar", "inferred"]),
+  day: LocalDay,
+  start_at: IsoDateTime,
+  end_at: IsoDateTime,
+  device: PatternDevice,
+  trigger: PatternSubject,
+  // True when a notification opened it (iPhone: the open reason; Mac: a notification from the same
+  // app in the 60 seconds before). Null when unknown.
+  opened_by_notification: z.boolean().nullable(),
+  // The work app that was in front before, when there was one.
+  left: PatternSubject.nullable(),
+  // Time in off purpose apps and sites during this disruption.
+  minutes_lost: z.number().nonnegative(),
+  // From leaving `left` until it is in front again. Null when that did not happen in the same
+  // stretch or block.
+  minutes_until_back: z.number().nonnegative().nullable(),
+  // True when the user did not return to work within the limit: the distractor ended the stretch.
+  ended_stretch: z.boolean(),
+  block_event_id: z.string().nullable(),
+  goal_id: z.string().nullable(),
+  event_ids: z.array(z.string()).max(5),
+});
+export type Disruption = z.infer<typeof Disruption>;
+
+export const FocusDisruptions = z.object({
+  mode: z.enum(["calendar", "inferred", "mixed"]),
+  days_with_data: z.number().int().nonnegative(),
+  blocks: z.number().int().nonnegative(),
+  stretches: z.number().int().nonnegative(),
+  focus_minutes: z.number().nonnegative(),
+  disruptions: z.number().int().nonnegative(),
+  disruptions_per_day: z.number().nonnegative(),
+  minutes_lost: z.number().nonnegative(),
+  minutes_lost_per_day: z.number().nonnegative(),
+  longest_uninterrupted_minutes: z.number().nonnegative(),
+  median_daily_longest_uninterrupted_minutes: z.number().nonnegative(),
+  daily: z.array(
+    z.object({
+      day: LocalDay,
+      complete: z.boolean(),
+      focus_minutes: z.number().nonnegative(),
+      stretches: z.number().int().nonnegative(),
+      disruptions: z.number().int().nonnegative(),
+      // Of `disruptions`, the ones that ended a stretch.
+      ended_stretches: z.number().int().nonnegative(),
+      minutes_lost: z.number().nonnegative(),
+      longest_uninterrupted_minutes: z.number().nonnegative(),
+    }),
+  ),
+  // The most recent disruptions, newest first, capped at 100.
+  items: z.array(Disruption).max(100),
+});
+export type FocusDisruptions = z.infer<typeof FocusDisruptions>;
+
+export const RecoveryCost = z.object({
+  // Disruptions after which the user got back to the app they left.
+  measured: z.number().int().nonnegative(),
+  not_returned: z.number().int().nonnegative(),
+  median_minutes_lost: z.number().nonnegative(),
+  median_minutes_until_back: z.number().nonnegative(),
+  // median_minutes_until_back / median_minutes_lost; null when the divisor is 0.
+  multiplier: z.number().nonnegative().nullable(),
+  // Union of the away spans, so nested disruptions are not counted twice.
+  total_minutes_until_back: z.number().nonnegative(),
+  minutes_until_back_per_day: z.number().nonnegative(),
+  daily: z.array(
+    z.object({
+      day: LocalDay,
+      measured: z.number().int().nonnegative(),
+      total_minutes_until_back: z.number().nonnegative(),
+      // Null under 3 measured disruptions that day.
+      median_minutes_until_back: z.number().nonnegative().nullable(),
+    }),
+  ),
+});
+export type RecoveryCost = z.infer<typeof RecoveryCost>;
+
+export const RepeatOffenders = z.object({
+  days_with_focus: z.number().int().nonnegative(),
+  offenders: z.array(
+    z.object({
+      subject: PatternSubject,
+      devices: z.array(PatternDevice),
+      disruptions: z.number().int().nonnegative(),
+      minutes_lost: z.number().nonnegative(),
+      days: z.number().int().nonnegative(),
+      ended_stretches: z.number().int().nonnegative(),
+    }),
+  ),
+});
+export type RepeatOffenders = z.infer<typeof RepeatOffenders>;
+
+export const Drift = z.object({
+  minutes: z.number().nonnegative(),
+  by_category: z.array(
+    z.object({
+      category: AppCategory,
+      minutes: z.number().nonnegative(),
+      visits: z.number().int().nonnegative(),
+      days: z.number().int().nonnegative(),
+    }),
+  ),
+  daily: z.array(z.object({ day: LocalDay, minutes: z.number().nonnegative() })),
+  // Largest first, capped at 50. `search_event_id` points at the search that came just before;
+  // the term itself is never copied into the report.
+  items: z.array(
+    z.object({
+      day: LocalDay,
+      start_at: IsoDateTime,
+      site: PatternSubject,
+      minutes: z.number().nonnegative(),
+      during: z.enum(["focus_stretch", "work_block"]),
+      search_event_id: z.string().nullable(),
+      event_id: z.string(),
+    }),
+  ),
+});
+export type Drift = z.infer<typeof Drift>;
+
+export const LateScreens = z.object({
+  // Local wall time, "HH:MM".
+  cutoff: z.string(),
+  cutoff_source: z.enum(["default", "usual_bedtime"]),
+  usual_bedtime: z.string().nullable(),
+  nights_observed: z.number().int().nonnegative(),
+  // Nights with at least 5 minutes of use after the cut off.
+  late_nights: z.number().int().nonnegative(),
+  median_late_minutes: z.number().nonnegative().nullable(),
+  nights: z.array(
+    z.object({
+      // The local day the evening belongs to.
+      night: LocalDay,
+      minutes: z.number().nonnegative(),
+      mac_minutes: z.number().nonnegative(),
+      iphone_minutes: z.number().nonnegative(),
+      top: PatternSubject.nullable(),
+      top_minutes: z.number().nonnegative(),
+      last_seen_at: IsoDateTime.nullable(),
+      next_recovery_pct: z.number().nullable(),
+      next_sleep_minutes: z.number().nullable(),
+    }),
+  ),
+  // Average next morning recovery after late nights against the other nights. Null under 3 of each.
+  recovery_comparison: z
+    .object({
+      late_nights: z.number().int().nonnegative(),
+      late_avg_recovery_pct: z.number(),
+      other_nights: z.number().int().nonnegative(),
+      other_avg_recovery_pct: z.number(),
+    })
+    .nullable(),
+});
+export type LateScreens = z.infer<typeof LateScreens>;
+
+export const ContextSwitching = z.object({
+  days_with_data: z.number().int().nonnegative(),
+  active_minutes: z.number().nonnegative(),
+  switches: z.number().int().nonnegative(),
+  switches_per_active_hour: z.number().nonnegative(),
+  // Share of active time spent in stays shorter than 2 minutes.
+  fragment_share: z.number().min(0).max(1),
+  median_stay_seconds: z.number().nonnegative(),
+  daily: z.array(
+    z.object({
+      day: LocalDay,
+      complete: z.boolean(),
+      active_minutes: z.number().nonnegative(),
+      switches: z.number().int().nonnegative(),
+      // Null under 30 active minutes that day.
+      switches_per_active_hour: z.number().nonnegative().nullable(),
+      fragment_share: z.number().min(0).max(1).nullable(),
+    }),
+  ),
+});
+export type ContextSwitching = z.infer<typeof ContextSwitching>;
+
+export const TimeSlice = z.object({
+  subject: PatternSubject,
+  device: PatternDevice,
+  seconds: z.number().int().nonnegative(),
+});
+export type TimeSlice = z.infer<typeof TimeSlice>;
+
+export const CategoryTime = z.object({ category: AppCategory, seconds: z.number().int().nonnegative() });
+export type CategoryTime = z.infer<typeof CategoryTime>;
+
+// The simple totals every other number is checked against. Seconds are exact: per day,
+// active_seconds = mac_seconds + iphone_seconds = sum(by_category) = sum(apps) + other_apps_seconds.
+export const TimeTotals = z.object({
+  active_seconds: z.number().int().nonnegative(),
+  // Time counted once per person, not once per device: when the phone and the Mac overlap the
+  // phone wins and the Mac time under it is reported here, not in mac_seconds.
+  mac_seconds: z.number().int().nonnegative(),
+  iphone_seconds: z.number().int().nonnegative(),
+  overlap_seconds: z.number().int().nonnegative(),
+  by_category: z.array(CategoryTime),
+  apps: z.array(TimeSlice),
+  other_apps_seconds: z.number().int().nonnegative(),
+});
+export type TimeTotals = z.infer<typeof TimeTotals>;
+
+export const TimeByApp = z.object({
+  days_with_data: z.number().int().nonnegative(),
+  active_minutes_per_day: z.number().nonnegative(),
+  totals: TimeTotals,
+  daily: z.array(TimeTotals.extend({ day: LocalDay, complete: z.boolean() })),
+});
+export type TimeByApp = z.infer<typeof TimeByApp>;
+
+export const AiToolUse = z.object({
+  days_with_data: z.number().int().nonnegative(),
+  sessions: z.number().int().nonnegative(),
+  sessions_per_day: z.number().nonnegative(),
+  // Sum of session lengths. Sessions that run side by side are counted once each.
+  session_minutes: z.number().nonnegative(),
+  // Time with at least one session open (overlaps counted once).
+  wall_minutes: z.number().nonnegative(),
+  waiting_minutes: z.number().nonnegative().nullable(),
+  // waiting / session time, over sessions that report waiting. Null when none does.
+  waiting_share: z.number().min(0).max(1).nullable(),
+  by_tool: z.array(
+    z.object({
+      tool: z.string(),
+      sessions: z.number().int().nonnegative(),
+      session_minutes: z.number().nonnegative(),
+      waiting_share: z.number().min(0).max(1).nullable(),
+    }),
+  ),
+  daily: z.array(
+    z.object({
+      day: LocalDay,
+      sessions: z.number().int().nonnegative(),
+      session_minutes: z.number().nonnegative(),
+      wall_minutes: z.number().nonnegative(),
+    }),
+  ),
+});
+export type AiToolUse = z.infer<typeof AiToolUse>;
+
+export const PatternsQuery = z.object({
+  from: IsoDateTime,
+  to: IsoDateTime,
+});
+export type PatternsQuery = z.infer<typeof PatternsQuery>;
+
+export const PatternReport = z.object({
+  from: IsoDateTime,
+  to: IsoDateTime,
+  timezone: z.string(),
+  generated_at: IsoDateTime,
+  // Local days touched by the range. `complete` is false when the range cuts the day short.
+  days: z.array(z.object({ day: LocalDay, complete: z.boolean() })),
+  // How many events of each kind the report was built from.
+  inputs: z.object({
+    mac_app_usage: z.number().int().nonnegative(),
+    iphone_app_usage: z.number().int().nonnegative(),
+    web_visits: z.number().int().nonnegative(),
+    // History visits left out because the extension covered the same window.
+    web_visits_superseded: z.number().int().nonnegative(),
+    searches: z.number().int().nonnegative(),
+    goal_blocks: z.number().int().nonnegative(),
+    sleeps: z.number().int().nonnegative(),
+    ai_sessions: z.number().int().nonnegative(),
+  }),
+  // The summaries of every detector that had enough data, most important first. This is what the
+  // analysis prompt gets instead of raw events.
+  headlines: z.array(z.string()),
+  phone_cadence: patternDetector(PhoneCadence),
+  mac_app_cadence: patternDetector(MacAppCadence),
+  focus_disruptions: patternDetector(FocusDisruptions),
+  recovery_cost: patternDetector(RecoveryCost),
+  repeat_offenders: patternDetector(RepeatOffenders),
+  drift: patternDetector(Drift),
+  late_screens: patternDetector(LateScreens),
+  context_switching: patternDetector(ContextSwitching),
+  time_by_app: patternDetector(TimeByApp),
+  ai_tool_use: patternDetector(AiToolUse),
+});
+export type PatternReport = z.infer<typeof PatternReport>;
+
 // ---------- errors ----------
 
 export const ErrorCode = z.enum([
