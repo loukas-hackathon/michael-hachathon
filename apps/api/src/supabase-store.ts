@@ -5,6 +5,7 @@ import type {
   CheckInValue,
   Draft,
   DraftStatus,
+  ChecklistItem,
   Event,
   EventInput,
   EventSummary,
@@ -38,6 +39,8 @@ import { type PrivacyRules, screenEvents } from "./privacy";
 import type { NewRecord } from "./score/records";
 import {
   type AskedQuestion,
+  type ChecklistPatch,
+  checklistOrder,
   type DataDeleteScope,
   type DeleteCounts,
   type EventPatch,
@@ -47,6 +50,7 @@ import {
   type NewAnalysis,
   type NewCheckIn,
   type NewDraft,
+  type NewChecklistItem,
   type NewFocusGuard,
   type NewRecommendation,
   type NudgeCreate,
@@ -253,6 +257,20 @@ const toTarget = (r: Record<string, unknown>): WeeklyTarget => ({
   updated_at: iso(r.updated_at as string) as string,
 });
 
+const toChecklistItem = (r: Record<string, unknown>): ChecklistItem => ({
+  id: r.id as string,
+  goal_id: r.goal_id as string,
+  date: String(r.date).slice(0, 10),
+  text: r.text as string,
+  position: Number(r.position),
+  status: r.status as ChecklistItem["status"],
+  settled_at: iso((r.settled_at as string | null) ?? null),
+  settled_by: (r.settled_by as ChecklistItem["settled_by"]) ?? null,
+  carried_from: (r.carried_from as string | null) ?? null,
+  created_at: iso(r.created_at as string) as string,
+  updated_at: iso(r.updated_at as string) as string,
+});
+
 const toRecord = (r: Record<string, unknown>): PersonalRecord => ({
   id: r.id as string,
   type: r.type as PersonalRecord["type"],
@@ -303,6 +321,7 @@ export const USER_TABLES = [
   "drafts",
   "recommendations",
   "analysis_runs",
+  "checklist_items",
   "goals",
   "events",
   "event_summaries",
@@ -1356,6 +1375,67 @@ export class SupabaseStore implements Store {
       await this.db.from("telegram_chats").select("user_id").eq("chat_id", chatId).maybeSingle(),
     );
     return row?.user_id ?? null;
+  }
+
+  async listChecklist(f: { from: string; to: string }) {
+    const rows = check(
+      await this.db
+        .from("checklist_items")
+        .select("*")
+        .eq("user_id", currentUserId())
+        .gte("date", f.from)
+        .lte("date", f.to),
+    );
+    return (rows ?? []).map(toChecklistItem).sort(checklistOrder);
+  }
+
+  async getChecklistItem(id: string) {
+    const row = check(
+      await this.db
+        .from("checklist_items")
+        .select("*")
+        .eq("user_id", currentUserId())
+        .eq("id", id)
+        .maybeSingle(),
+    );
+    return row ? toChecklistItem(row) : null;
+  }
+
+  async createChecklistItem(input: NewChecklistItem) {
+    const res = await this.db
+      .from("checklist_items")
+      .insert({
+        user_id: currentUserId(),
+        goal_id: input.goal_id,
+        date: input.date,
+        text: input.text,
+        position: input.position,
+        carried_from: input.carried_from ?? null,
+      })
+      .select("*")
+      .single();
+    // The unique index on open items: two adds at once for the same slot.
+    if (res.error?.code === "23505") throw new HttpError("conflict", "That slot of the day is taken");
+    return toChecklistItem(check(res));
+  }
+
+  async updateChecklistItem(id: string, patch: ChecklistPatch) {
+    const changes = withoutUndefined(patch as Record<string, unknown>);
+    const q = this.db.from("checklist_items");
+    const res =
+      Object.keys(changes).length === 0
+        ? await q.select("*").eq("user_id", currentUserId()).eq("id", id).maybeSingle()
+        : await q.update(changes).eq("user_id", currentUserId()).eq("id", id).select("*").maybeSingle();
+    if (res.error?.code === "23505") throw new HttpError("conflict", "That slot of the day is taken");
+    const row = check(res);
+    return row ? toChecklistItem(row) : null;
+  }
+
+  async deleteChecklistItem(id: string) {
+    const rows = check(
+      await this.db.from("checklist_items").delete().eq("user_id", currentUserId()).eq("id", id).select("id"),
+    );
+    return (rows ?? []).length > 0;
   }
 
   async listTargets(from: string, to: string) {
