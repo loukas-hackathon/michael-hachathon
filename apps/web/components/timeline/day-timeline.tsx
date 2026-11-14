@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useState } from "react";
 import { Sheet } from "@/components/sheet";
 import { formatTime, hm, minutesPhrase } from "@/lib/format";
 import { type HeartPoint, type Night, sleepAgainstGoal, workoutParts } from "@/lib/health";
@@ -561,104 +561,18 @@ function HeartLane({
   );
 }
 
-const KEY_STORE = "michael.timeline.key";
-
-/** Key for the lanes: one line above the day, hidden with one tap and remembered on this device. */
-export function TimelineKey({
-  hasAi,
-  goalTime = false,
-  hasDrives = false,
-  day,
-  heartHidden = false,
-}: {
-  /** The day, for the watch's entries (workouts, heart rate). */
-  day?: TimelineDay;
-  heartHidden?: boolean;
-  hasAi: boolean;
-  /** Planned drives on the day (travel events). */
-  hasDrives?: boolean;
-  /** Pink means goal time against a plan (the sample day); otherwise it is time in work apps. */
-  goalTime?: boolean;
-}) {
-  const [open, setOpen] = useState(true);
-  useEffect(() => {
-    try {
-      if (window.localStorage.getItem(KEY_STORE) === "hidden") setOpen(false);
-    } catch {}
-  }, []);
-  const toggle = () => {
-    const next = !open;
-    setOpen(next);
-    try {
-      window.localStorage.setItem(KEY_STORE, next ? "shown" : "hidden");
-    } catch {}
-  };
-
-  const hasWorkouts = (day?.health?.workouts.length ?? 0) > 0;
-  const heart = day?.health?.heart ?? [];
-  const lo = heart.length > 1 ? Math.round(Math.min(...heart.map((p) => p.avg))) : 0;
-  const hi = heart.length > 1 ? Math.round(Math.max(...heart.map((p) => p.avg))) : 0;
-  // The key scrolls sideways; it is `relative` so its absolute sr-only labels stay inside the
-  // scroller instead of widening the whole page (which zoomed phones out and pushed the tab bar).
-  const item = "inline-flex shrink-0 items-center gap-1";
-  const swatch = "h-2.5 w-3 rounded-[3px]";
+/**
+ * The heart rate switch above the day, only on days with watch readings. The lanes need no key:
+ * pink is goal time, hatched is lost, outlines are planned, and a tap on any block says the rest.
+ */
+export function HeartRow({ day, heartHidden = false }: { day: TimelineDay; heartHidden?: boolean }) {
+  const heart = day.health?.heart ?? [];
+  if (heart.length < 2) return null;
+  const lo = Math.round(Math.min(...heart.map((p) => p.avg)));
+  const hi = Math.round(Math.max(...heart.map((p) => p.avg)));
   return (
-    <div className="mt-3 flex min-h-6 items-center gap-2 text-caption font-medium text-label-2">
-      {open ? (
-        <ul
-          aria-label="Key"
-          className="relative flex min-w-0 flex-1 gap-x-2 overflow-x-auto whitespace-nowrap"
-        >
-          <li className={item}>
-            <span className={`${swatch} bg-spark`} />
-            {goalTime ? "Goal time" : hasWorkouts ? "Work apps, workouts" : "Work apps"}
-          </li>
-          <li className={item}>
-            <span className={`${swatch} hatch shadow-[inset_0_0_0_1px_var(--m-label-2)]`} />
-            Lost
-          </li>
-          <li className={item}>
-            <span className="h-2.5 w-1.5 rounded-[1px] bg-label-2" />
-            Phone
-          </li>
-          <li className={item}>
-            <span className={`${swatch} border-[1.5px] border-dashed border-label-2`} />
-            Planned
-          </li>
-          <li className={item}>
-            <span className={`${swatch} border-[1.5px] border-dashed border-tint`} />
-            <span aria-hidden="true">By Michael</span>
-            <span className="sr-only">Booked by Michael</span>
-          </li>
-          {hasDrives ? (
-            <li className={item}>
-              <span className={`${swatch} bg-fill shadow-[inset_0_0_0_0.5px_var(--m-separator)]`} />
-              Drive
-            </li>
-          ) : null}
-          {hasAi ? (
-            <li className={item}>
-              <span className="h-2.5 w-[3px] rounded-full bg-label opacity-40" />
-              Claude Code
-            </li>
-          ) : null}
-          {heart.length > 1 ? (
-            <li className={item}>
-              <HeartToggle target={TIMELINE_ID} hidden={heartHidden} range={`${lo} to ${hi}`} />
-            </li>
-          ) : null}
-        </ul>
-      ) : (
-        <span className="flex-1" />
-      )}
-      <button
-        type="button"
-        onClick={toggle}
-        aria-expanded={open}
-        className="press -my-2 -mr-1 shrink-0 px-1 py-2 font-semibold text-tint-text"
-      >
-        {open ? "Hide" : "Show key"}
-      </button>
+    <div className="mt-3 flex min-h-6 items-center justify-end text-caption font-medium text-label-2">
+      <HeartToggle target={TIMELINE_ID} hidden={heartHidden} range={`${lo} to ${hi}`} />
     </div>
   );
 }

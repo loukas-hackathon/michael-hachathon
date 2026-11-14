@@ -3,7 +3,7 @@ import Link from "next/link";
 import { EmptyState } from "@/components/empty-state";
 import { LiveRefresh } from "@/components/live-refresh";
 import { ScreenHeader } from "@/components/screen";
-import { DayTimeline, SleepBand, TimelineKey } from "@/components/timeline/day-timeline";
+import { DayTimeline, HeartRow, SleepBand } from "@/components/timeline/day-timeline";
 import { WeekStrip } from "@/components/timeline/week-strip";
 import { addDays } from "@/lib/athens";
 import { formatDay, formatMonth, formatWeekday, hm, minutesPhrase } from "@/lib/format";
@@ -93,27 +93,12 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
               </>
             )}
           </p>
-          <TimelineKey
-            hasAi={day.ai.length > 0}
-            goalTime={Boolean(day.sample)}
-            hasDrives={(day.drives ?? []).length > 0}
-            day={day}
-            heartHidden={heartHidden}
-          />
+          <HeartRow day={day} heartHidden={heartHidden} />
           {day.health?.lastNight ? <SleepBand night={day.health.lastNight} goal={screen.sleepGoal} /> : null}
           <DayTimeline day={day} heartHidden={heartHidden} />
           {day.health?.tonight ? (
             <SleepBand night={day.health.tonight} goal={screen.sleepGoal} tonight />
           ) : null}
-          <p className="mt-6 text-footnote text-label-2">
-            {screen.source === "sample"
-              ? day.sample
-                ? "Your own days appear here once your sources are connected."
-                : "A real day from the demo account, bundled with the app. Tap any block for the detail."
-              : plans.length > 0
-                ? "Outlines are your calendar. Blocks I booked carry my name, and you can undo them in Today until they start."
-                : "No calendar on this day, so goal time is time in work apps. Connect the calendar and planned blocks appear as outlines."}
-          </p>
         </>
       ) : (
         <EmptyState
