@@ -1289,8 +1289,8 @@ Changing status never executes `action`; use the routes below.
 | POST   | `/v1/recommendations/:id/execute` | `200 Recommendation` (`status: done`, `executed_at` set). `409` see below | live   |
 | POST   | `/v1/recommendations/:id/undo`    | `200 Recommendation` (`status: undone`, `undone_at` set). `409` see below | live   |
 
-Kinds carried out: `move_calendar_block`, `create_focus_block` and `block_mac_app`; other kinds
-answer `501`.
+Kinds carried out: `move_calendar_block`, `move_calendar_blocks`, `create_focus_block` and
+`block_mac_app`; other kinds answer `501`.
 
 ```ts
 // move_calendar_block: one of the user's own solo blocks (a timeline event id). A new start keeps
@@ -1310,6 +1310,10 @@ type BlockMacAppPayload = {
   block_event_id?: string; // the planned block it sits in (analysis sets it)
   back_to?: string; // "Back to <this>." in the notification; default the goal or block title
 };
+// move_calendar_blocks: several moves carried out together (the whole day around traffic). All or
+// nothing: when one move is refused, the ones already made go back first. One undo puts every
+// block back. Extra fields (the travel maths, see Places and travel) ride along for the app.
+type MoveCalendarBlocksPayload = { moves: MoveCalendarBlockPayload[] }; // 1 to 10
 ```
 
 Rules: act only on the user's own calendar blocks and Mac; never touch events with other people;
@@ -1575,6 +1579,7 @@ type Profile = {
   work_days: Weekday[]; // default mon to fri
   gym_days: Weekday[]; // default []
   weak_spots: WeakSpot[]; // default []
+  fixed_titles: string[]; // calendar titles Michael never moves ("PT session"); default []
   onboarded_at: string | null; // set when onboarding is finished or skipped
   updated_at: string | null; // null until first saved
 };
@@ -1637,15 +1642,37 @@ type TravelPlanResult = {
   travel: Event[]; // newly stored travel events
   recommendations: Recommendation[]; // newly proposed
   skipped: { calendar_event_id: string; reason: string }[];
+  day?: TravelDayPlan | null; // only with whole_day: true
 };
+type TravelLeg = { depart_at: string; minutes: number };
+type TravelDayDrive = {
+  from: string;
+  to: string;
+  to_event_id: string | null; // null: the drive home at the end of the day
+  before: TravelLeg | null; // the day as it stands
+  after: TravelLeg | null; // with Michael's moves
+};
+type TravelDayPlan = {
+  day: string; // "YYYY-MM-DD", Europe/Athens
+  before_minutes: number; // on the road as the day stands
+  after_minutes: number; // with the moves
+  won_minutes: number;
+  moves: { event_id: string; title: string; from_start_at: string; start_at: string; end_at: string }[];
+  drives: TravelDayDrive[];
+  recommendation_id: string | null; // the one recommendation, when the day wins 10 minutes or more
+  note: string | null; // why there is nothing to propose ("Save your home first, ...")
+};
+type AddressMatch = { formatted_address: string; place_id: string | null; lat: number; lng: number };
+type AddressSearchResponse = { results: AddressMatch[]; maps_available: boolean };
 ```
 
-| Method | Path                     | Body                                | Response                       | Status |
-| ------ | ------------------------ | ----------------------------------- | ------------------------------ | ------ |
-| GET    | `/v1/places`             |                                     | `200 PlacesResponse`           | live   |
-| PUT    | `/v1/places`             | `{ places: PlaceInput[] }` (max 20) | `200 PlacesResponse`           | live   |
-| GET    | `/v1/places/suggestions` |                                     | `200 PlaceSuggestionsResponse` | live   |
-| POST   | `/v1/travel/plan`        | optional `{ from?, to? }` (ISO)     | `200 TravelPlanResult`         | live   |
+| Method | Path                     | Body                                  | Response                       | Status |
+| ------ | ------------------------ | ------------------------------------- | ------------------------------ | ------ |
+| GET    | `/v1/places`             |                                       | `200 PlacesResponse`           | live   |
+| PUT    | `/v1/places`             | `{ places: PlaceInput[] }` (max 20)   | `200 PlacesResponse`           | live   |
+| GET    | `/v1/places/search?q=`   |                                       | `200 AddressSearchResponse`    | live   |
+| GET    | `/v1/places/suggestions` |                                       | `200 PlaceSuggestionsResponse` | live   |
+| POST   | `/v1/travel/plan`        | optional `{ from?, to?, whole_day? }` | `200 TravelPlanResult`         | live   |
 
 ```ts
 type PlaceSuggestion = {
@@ -1683,8 +1710,25 @@ type PlaceSuggestionsResponse = { enabled: boolean; suggestions: PlaceSuggestion
     event: `move_calendar_block` with `{ event_id, start_at, end_at, from_start_at }` (`MoveCalendarBlockPayload`),
     `undo_until` = the original start. Meetings with other people are never moved.
     Recommendations carry the goal the block serves (`apps/api/src/score/match.ts`).
-- Without `GOOGLE_MAPS_API_KEY` the status is `maps_unavailable` and nothing is computed; without
-  the opt in it is `travel_off`. Code: `apps/api/src/integrations/maps.ts` (Geocoding, Routes
+- `GET /v1/places/search?q=` geocodes what the user types on the server (up to five matches; under
+  three characters, none). Without a key: `{ results: [], maps_available: false }`, and places are
+  still saved from the typed address.
+- `POST /v1/travel/plan` with `whole_day: true` plans the day `from` falls on (default today) as a
+  whole (#155). The drives go on the timeline as above, without per block suggestions. Then, from
+  home at the start to home at the end, it searches new start times for the movable blocks (two
+  hours earlier to three hours later, in 30 minute steps; every combination up to 1,500, else one
+  block at a time) that spend the fewest minutes on the road. A block is movable only when it is
+  the user's own (no other attendees), has a physical location, has not started, is not marked
+  `data.fixed: true` and its title is not in `profile.fixed_titles`. Meetings with other people never
+  move. A moved block keeps its length, never overlaps another event and stays outside quiet hours;
+  standing instructions "home by 21:00" and "keep Sundays clear" are respected. At most 60 Routes
+  calls per plan. When the day wins 10 minutes or more it proposes ONE recommendation, "Plan today
+  around traffic: win 35 minutes", with a `move_calendar_blocks` action (`{ moves: [{ event_id,
+  start_at, end_at, from_start_at, title }], before_minutes, after_minutes, won_minutes, drives }`),
+  `undo_until` the earliest original or new start, tied to the goal of the first moved block. The
+  MCP tool `plan_travel` takes `whole_day` too. Code: `integrations/day-plan.ts` (pure planner).
+- Without `GOOGLE_MAPS_API_KEY` the status is `maps_unavailable` and nothing is computed (with
+  `whole_day`, `day.note` says maps need setting up); without the opt in it is `travel_off`. Code: `apps/api/src/integrations/maps.ts` (Geocoding, Routes
   `computeRoutes` with `TRAFFIC_AWARE` and `departureTime`) and `integrations/travel.ts`.
 
 ### Michael for agents
@@ -2236,6 +2280,13 @@ sleep, workouts and hourly `heart_rate`, `step_count`, `heart_rate_variability`,
 webhook mappers. Calendar events carry `attendees` (the number of other people, 0 for the user's
 own blocks), `calendar`, `location?`, `status`, `all_day`. Meals are `manual` `meal` events with
 `estimated_kcal`, `protein_g`; typed notes are `manual` `note` events with `category`.
+
+Travel in the demo is precomputed (`apps/api/src/demo/travel.ts`), never asked of Google: five
+neighbourhood level places (saved when the account has none), some blocks with a location (the
+place is part of the calendar event's `external_id`), a `maps` `travel` event per drive with a
+simple Athens rush hour model (in `TravelData.calendar_event_id` the calendar event's external id),
+and one "Leave at 19:15 instead of 18:30, win 20 minutes" style `reminder` recommendation for the
+next drive today or tomorrow that leaving later makes shorter.
 
 ## MCP server
 

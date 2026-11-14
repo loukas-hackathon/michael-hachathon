@@ -661,7 +661,7 @@ export function createMcpServer(): McpServer {
     {
       title: "Plan travel",
       description:
-        "Work out the drives between the user's calendar events with live traffic (Google Maps), put them on the timeline and propose leaving later or moving the user's own block past the rush. Defaults to today (Europe/Athens). Status maps_unavailable or travel_off means nothing was computed.",
+        "Work out the drives between the user's calendar events with live traffic (Google Maps), put them on the timeline and propose leaving later or moving the user's own block past the rush. With whole_day: true, plan the whole day together: one recommendation that moves the user's own blocks out of the rush while meetings with other people stay fixed. Defaults to today (Europe/Athens). Status maps_unavailable or travel_off means nothing was computed.",
       inputSchema: TravelPlanInput.shape,
     },
     safe(async (input) => {

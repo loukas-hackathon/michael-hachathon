@@ -1,15 +1,18 @@
 import {
+  type AddressSearchResponse,
   type Place,
   type PlaceSuggestionsResponse,
   type PlacesResponse,
   PlacesUpdate,
   TravelPlanInput,
+  type TravelPlanResult,
 } from "@michael/shared";
 import { Hono } from "hono";
+import { z } from "zod";
 import { jsonBody, parse } from "../http";
-import { geocode, mapsAvailable } from "../integrations/maps";
+import { geocode, mapsAvailable, searchAddress } from "../integrations/maps";
 import { suggestPlaces } from "../integrations/place-suggestions";
-import { planTravel } from "../integrations/travel";
+import { planTravel, planWholeDay } from "../integrations/travel";
 import { DEFAULT_TIMEZONE } from "../patterns/context";
 import { Zone } from "../patterns/time";
 import { store } from "../store";
@@ -60,6 +63,14 @@ export const places = new Hono()
       suggestions: suggestPlaces(events, saved),
     } satisfies PlaceSuggestionsResponse);
   })
+  // Address search for the Places screen. Without a maps key: no results, and it says so.
+  .get("/places/search", async (c) => {
+    const q = parse(z.string().max(200), c.req.query("q") ?? "");
+    const body: AddressSearchResponse = mapsAvailable()
+      ? { results: await searchAddress(q), maps_available: true }
+      : { results: [], maps_available: false };
+    return c.json(body);
+  })
   .put("/places", async (c) => {
     const body = parse(PlacesUpdate, await jsonBody(c));
     const existing = new Map((await store.listPlaces()).map((p) => [p.key, p]));
@@ -100,5 +111,30 @@ export async function travelPlanFor(input: TravelPlanInput) {
   const today = zone.dayOf(Date.now());
   const from = input.from ?? new Date(zone.startOfDay(today)).toISOString();
   const to = input.to ?? new Date(zone.startOfDay(zone.nextDay(today))).toISOString();
-  return planTravel(store, { from, to });
+  if (!input.whole_day) return planTravel(store, { from, to });
+
+  // The whole day: the drives go on the timeline, then one plan moves the user's own blocks.
+  const day = zone.dayOf(Date.parse(from));
+  const dayFrom = new Date(zone.startOfDay(day)).toISOString();
+  const dayTo = new Date(zone.startOfDay(zone.nextDay(day))).toISOString();
+  const result: TravelPlanResult = await planTravel(store, { from: dayFrom, to: dayTo, propose: false });
+  const empty = { day, before_minutes: 0, after_minutes: 0, won_minutes: 0, moves: [], drives: [] };
+  if (result.status === "maps_unavailable") {
+    return {
+      ...result,
+      day: { ...empty, recommendation_id: null, note: "Travel times need maps set up on the server." },
+    };
+  }
+  if (result.status === "travel_off") {
+    return {
+      ...result,
+      day: { ...empty, recommendation_id: null, note: "Travel times are off. Turn them on in Places." },
+    };
+  }
+  const plan = await planWholeDay(store, { day });
+  if (plan.recommendation_id) {
+    const rec = await store.getRecommendation(plan.recommendation_id);
+    if (rec && !result.recommendations.some((r) => r.id === rec.id)) result.recommendations.push(rec);
+  }
+  return { ...result, day: plan };
 }

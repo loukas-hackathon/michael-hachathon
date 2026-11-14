@@ -250,6 +250,9 @@ export function checkAction(
       // A draft stays with the person. Michael never sends anything.
       return done({ text: a.text.trim() }, null);
     }
+    case "move_calendar_blocks":
+      // Only the travel planner moves several blocks at once (integrations/travel.ts).
+      return "move several blocks one at a time";
     case "reminder": {
       if (!a.text?.trim()) return "it has no reminder text";
       if (start === null) return "it has no valid day and time";
