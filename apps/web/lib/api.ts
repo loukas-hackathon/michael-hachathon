@@ -62,6 +62,19 @@ async function send<T>(method: "PUT" | "PATCH" | "POST", path: string, body?: un
   return (await res.json()) as T;
 }
 
+/**
+ * The raw server-sent event stream of POST /v1/chat/stream, for the /chat/stream route to pass on.
+ * Throws when signed out or the API cannot be reached.
+ */
+export async function openChatStream(message: string): Promise<Response> {
+  return fetch(`${API_URL}/v1/chat/stream`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
+    body: JSON.stringify({ message }),
+    cache: "no-store",
+  });
+}
+
 /** Chat always talks to the API: there is no fixture for a conversation. */
 export async function getChatHistory(): Promise<ChatMessage[]> {
   return (await get<ChatHistory>("/v1/chat?limit=50")).messages;
