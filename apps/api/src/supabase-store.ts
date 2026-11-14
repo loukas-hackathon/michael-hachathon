@@ -4,6 +4,7 @@ import type {
   ChatRole,
   Event,
   EventInput,
+  EventSummary,
   Goal,
   GoalCreate,
   GoalUpdate,
@@ -28,6 +29,8 @@ import type { GeocodeHit } from "./integrations/maps";
 import { type PrivacyRules, screenEvents } from "./privacy";
 import {
   type AskedQuestion,
+  type DataDeleteScope,
+  type DeleteCounts,
   type EventPatch,
   type InsertResult,
   type IntegrationPatch,
@@ -40,11 +43,13 @@ import {
   type SeedResult,
   type Store,
   sameEvent,
+  summaryDayRange,
   type TelegramChat,
   type TimelineFilter,
   toInstruction,
   type UpsertResult,
 } from "./store";
+import { mergeSummaries } from "./summaries";
 
 type EventRow = z.output<typeof EventInput>;
 
@@ -170,6 +175,35 @@ function check<T>(res: { data: T; error: { message: string; code?: string } | nu
   if (res.error) throw new HttpError("upstream_error", `Database error: ${res.error.message}`);
   return res.data;
 }
+
+// Every table holding a user's rows (enumerated from supabase/migrations), children before parents
+// so cascades never hide a count. personal_tokens is deleted by tokens.ts (it also drops its cache);
+// oauth_clients are shared by every user of a client, so they stay. Keep this list in sync with new
+// migrations: a test in retention.test.ts checks it against the migration files.
+export const USER_TABLES = [
+  "agent_queries",
+  "oauth_tokens",
+  "oauth_grants",
+  "agent_clients",
+  "nudges",
+  "recommendations",
+  "analysis_runs",
+  "goals",
+  "events",
+  "event_summaries",
+  "chat_messages",
+  "instructions",
+  "telegram_chats",
+  "integrations",
+  "push_subscriptions",
+  "places",
+  "geocode_cache",
+  "source_settings",
+  "privacy_state",
+  "user_profiles",
+] as const;
+
+const SUMMARY_KEYS = "user_id,day,source,type,category";
 
 const withoutUndefined = (o: Record<string, unknown>) =>
   Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
@@ -814,11 +848,19 @@ export class SupabaseStore implements Store {
   }
 
   async deleteEvents(ids: string[]) {
-    if (!ids.length) return 0;
-    const rows = check(
-      await this.db.from("events").delete().eq("user_id", currentUserId()).in("id", ids).select("id"),
-    );
-    return (rows ?? []).length;
+    // Chunks keep the id list inside PostgREST's URL limit (the retention job deletes hundreds).
+    const userId = currentUserId();
+    let deleted = 0;
+    for (let i = 0; i < ids.length; i += 150) {
+      const res = await this.db
+        .from("events")
+        .delete({ count: "exact" })
+        .eq("user_id", userId)
+        .in("id", ids.slice(i, i + 150));
+      check(res);
+      deleted += res.count ?? 0;
+    }
+    return deleted;
   }
 
   async listIntegrations() {
@@ -999,6 +1041,92 @@ export class SupabaseStore implements Store {
     const rows = check(await this.db.rpc("active_user_ids", { since }));
     return ((rows ?? []) as unknown[]).map((r) =>
       typeof r === "string" ? r : String((r as Record<string, unknown>).active_user_ids),
+    );
+  }
+
+  async deleteMyData(scope: DataDeleteScope): Promise<DeleteCounts> {
+    const userId = currentUserId();
+    const counts: DeleteCounts = {};
+    if (scope.everything) {
+      for (const table of USER_TABLES) {
+        const res = await this.db.from(table).delete({ count: "exact" }).eq("user_id", userId);
+        check(res);
+        counts[table] = res.count ?? 0;
+      }
+      return counts;
+    }
+    let events = this.db.from("events").delete({ count: "exact" }).eq("user_id", userId);
+    if (scope.source) events = events.eq("source", scope.source);
+    if (scope.from) events = events.gte("start_at", scope.from);
+    if (scope.to) events = events.lt("start_at", scope.to);
+    const e = await events;
+    check(e);
+    counts.events = e.count ?? 0;
+
+    const days = summaryDayRange(scope.from, scope.to);
+    let summaries = this.db.from("event_summaries").delete({ count: "exact" }).eq("user_id", userId);
+    if (scope.source) summaries = summaries.eq("source", scope.source);
+    if (days.from) summaries = summaries.gte("day", days.from);
+    if (days.to) summaries = summaries.lte("day", days.to);
+    const s = await summaries;
+    check(s);
+    counts.event_summaries = s.count ?? 0;
+    return counts;
+  }
+
+  async listEventsBefore(before: string, limit: number) {
+    const rows = check(
+      await this.db
+        .from("events")
+        .select("*")
+        .eq("user_id", currentUserId())
+        .lt("start_at", before)
+        .order("start_at")
+        .order("id")
+        .limit(limit),
+    );
+    return (rows ?? []).map(toEvent);
+  }
+
+  async addEventSummaries(rows: EventSummary[]) {
+    if (!rows.length) return;
+    const userId = currentUserId();
+    const days = [...new Set(rows.map((r) => r.day))];
+    const existing = (
+      check(
+        await this.db
+          .from("event_summaries")
+          .select("day, source, type, category, events, seconds")
+          .eq("user_id", userId)
+          .in("day", days),
+      ) ?? []
+    ).map((r) => ({ ...r, events: Number(r.events), seconds: Number(r.seconds) }) as EventSummary);
+    const merged = mergeSummaries(existing, rows).map((r) => ({
+      ...r,
+      user_id: userId,
+      updated_at: new Date().toISOString(),
+    }));
+    check(await this.db.from("event_summaries").upsert(merged, { onConflict: SUMMARY_KEYS }));
+  }
+
+  async listEventSummaries() {
+    const rows = check(
+      await this.db
+        .from("event_summaries")
+        .select("day, source, type, category, events, seconds")
+        .eq("user_id", currentUserId())
+        .order("day")
+        .limit(5000),
+    );
+    return (rows ?? []).map(
+      (r) => ({ ...r, events: Number(r.events), seconds: Number(r.seconds) }) as EventSummary,
+    );
+  }
+
+  async usersWithEventsBefore(before: string) {
+    const rows = check(await this.db.rpc("users_with_events_before", { before }));
+    return ((rows ?? []) as unknown[]).map((r) =>
+      typeof r === "string" ? r : String((r as Record<string, unknown>).users_with_events_before),
     );
   }
 }

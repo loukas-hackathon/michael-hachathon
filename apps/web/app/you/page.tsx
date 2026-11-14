@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { StandingInstructions } from "@/components/you/instructions";
 import { getInstructions, getPrivacy, getProfile } from "@/lib/api";
+import { DeleteDataRow } from "./delete-data-row";
 import { GoogleCalendarRow } from "./google-calendar";
 import { NudgesButton } from "./nudges-button";
 import { OffTheRecordSwitch } from "./off-the-record-switch";
@@ -96,6 +97,7 @@ export default async function YouPage() {
         Devices
         <span className="text-label-2">›</span>
       </Link>
+      <DeleteDataRow />
 
       <a
         href="/auth/signout"

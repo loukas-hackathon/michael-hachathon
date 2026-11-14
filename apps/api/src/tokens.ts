@@ -36,6 +36,8 @@ interface TokenBackend {
   list(userId: string): Promise<Row[]>;
   revoke(userId: string, id: string): Promise<boolean>;
   touch(id: string): Promise<void>;
+  /** Really deletes every key of the user, revoked ones included. Returns how many. */
+  deleteAll(userId: string): Promise<number>;
 }
 
 class MemoryTokens implements TokenBackend {
@@ -65,6 +67,11 @@ class MemoryTokens implements TokenBackend {
   async touch(id: string) {
     const r = this.rows.find((x) => x.id === id);
     if (r) r.last_used_at = new Date().toISOString();
+  }
+  async deleteAll(userId: string) {
+    const before = this.rows.length;
+    this.rows = this.rows.filter((r) => r.user_id !== userId);
+    return before - this.rows.length;
   }
 }
 
@@ -112,6 +119,11 @@ class SupabaseTokens implements TokenBackend {
   async touch(id: string) {
     await this.db.from("personal_tokens").update({ last_used_at: new Date().toISOString() }).eq("id", id);
   }
+  async deleteAll(userId: string) {
+    const res = await this.db.from("personal_tokens").delete({ count: "exact" }).eq("user_id", userId);
+    this.ok(res);
+    return res.count ?? 0;
+  }
 }
 
 const backend: TokenBackend =
@@ -156,4 +168,10 @@ export async function listPersonalTokens() {
 export async function revokePersonalToken(id: string) {
   cache.clear();
   return backend.revoke(currentUserId(), id);
+}
+
+/** Deletes every device key of the current user (DELETE /v1/me/data); they stop working at once. */
+export async function deleteAllPersonalTokens() {
+  cache.clear();
+  return backend.deleteAll(currentUserId());
 }

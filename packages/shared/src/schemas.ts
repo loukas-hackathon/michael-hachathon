@@ -1450,6 +1450,51 @@ export type PersonalTokenCreate = z.infer<typeof PersonalTokenCreate>;
 export const PersonalTokenCreated = z.object({ token: PersonalToken, secret: z.string() });
 export type PersonalTokenCreated = z.infer<typeof PersonalTokenCreated>;
 
+// ---------- your data: deletion and retention (DELETE /v1/me/data) ----------
+
+// Full detail is kept this many days; older events become daily summaries (EventSummary).
+export const RETENTION_DAYS = 90;
+
+// DELETE /v1/me/data?source=&from=&to=. No parameters deletes everything, the account included.
+// Any parameter narrows it to the timeline: events (and their summaries) of that source, in that range.
+export const DataDeleteQuery = z
+  .object({
+    source: Source.optional(),
+    from: IsoDateTime.optional(),
+    to: IsoDateTime.optional(),
+  })
+  .refine((q) => !q.from || !q.to || Date.parse(q.from) < Date.parse(q.to), {
+    message: "from must be before to",
+    path: ["from"],
+  });
+export type DataDeleteQuery = z.infer<typeof DataDeleteQuery>;
+
+export const DataDeleteResult = z.object({
+  // "everything": every row of the account; "timeline": only the events the query matched.
+  scope: z.enum(["everything", "timeline"]),
+  // Rows really deleted, per table (tables with nothing to delete show 0).
+  deleted: z.record(z.string(), z.number().int().nonnegative()),
+  total: z.number().int().nonnegative(),
+  // Google was told to forget Michael's calendar access.
+  google_revoked: z.boolean(),
+  // The sign in itself (Supabase Auth user) is gone too. Only for "everything".
+  account_deleted: z.boolean(),
+});
+export type DataDeleteResult = z.infer<typeof DataDeleteResult>;
+
+// What remains of events older than RETENTION_DAYS: one row per UTC day, source, type and category.
+// No titles and no data, only counts and time.
+export const EventSummary = z.object({
+  day: LocalDay, // UTC day of the events' start
+  source: Source,
+  type: EventType,
+  // App or site category when the event had one (AppCategory or the collector's site category), else "".
+  category: z.string(),
+  events: z.number().int().nonnegative(),
+  seconds: z.number().int().nonnegative(),
+});
+export type EventSummary = z.infer<typeof EventSummary>;
+
 // ---------- demo account ----------
 
 // POST /v1/demo/reseed: what bringing the demo week up to now changed.

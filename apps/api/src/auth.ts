@@ -38,6 +38,18 @@ async function userFromSupabaseToken(token: string): Promise<string | null> {
 }
 
 /**
+ * Deletes the current sign in (Supabase Auth user) for DELETE /v1/me/data. False when Auth is not
+ * configured (in-memory store) or Supabase refused; the data is already gone either way.
+ */
+export async function deleteAuthUser(userId: string): Promise<boolean> {
+  for (const [token, hit] of tokenCache) if (hit.userId === userId) tokenCache.delete(token);
+  if (!supabase) return false;
+  const { error } = await supabase.auth.admin.deleteUser(userId);
+  if (error) console.error(`[auth] could not delete auth user ${userId}: ${error.message}`);
+  return !error;
+}
+
+/**
  * Resolves who the request acts for and runs the rest of the request as that user:
  * - a signed-in user's Supabase access token (`Authorization: Bearer <jwt>`) -> that user
  * - the shared API key -> the demo account (collectors, webhooks, our own tools)
