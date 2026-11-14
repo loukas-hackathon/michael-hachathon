@@ -6,6 +6,7 @@ import { requireUser } from "./auth";
 import { env } from "./env";
 import { errorResponse, HttpError } from "./http";
 import { handleMcpRequest } from "./mcp";
+import { actions } from "./routes/actions";
 import { analysis } from "./routes/analysis";
 import { chat } from "./routes/chat";
 import { events } from "./routes/events";
@@ -44,6 +45,7 @@ const v1 = new Hono()
   .route("/", privacy)
   .route("/", nudges)
   .route("/", push)
+  .route("/", actions)
   .route("/", product)
   .route("/", tokens)
   .route("/", connect);

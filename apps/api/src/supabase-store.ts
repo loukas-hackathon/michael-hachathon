@@ -27,6 +27,7 @@ import {
   type IntegrationRecord,
   type NudgeCreate,
   type PushDevice,
+  type RecommendationActionUpdate,
   type Store,
   sameEvent,
   type TimelineFilter,
@@ -324,6 +325,43 @@ export class SupabaseStore implements Store {
       .order("created_at", { ascending: false });
     if (filter?.status) q = q.eq("status", filter.status);
     return (check(await q) ?? []).map(toRecommendation);
+  }
+
+  async getRecommendation(id: string) {
+    const row = check(
+      await this.db
+        .from("recommendations")
+        .select("*")
+        .eq("user_id", currentUserId())
+        .eq("id", id)
+        .maybeSingle(),
+    );
+    return row ? toRecommendation(row) : null;
+  }
+
+  async getRecommendationExecution(id: string) {
+    const row = check(
+      await this.db
+        .from("recommendations")
+        .select("execution")
+        .eq("user_id", currentUserId())
+        .eq("id", id)
+        .maybeSingle(),
+    );
+    return (row?.execution as unknown) ?? null;
+  }
+
+  async recordRecommendationAction(id: string, u: RecommendationActionUpdate) {
+    const row = check(
+      await this.db
+        .from("recommendations")
+        .update(withoutUndefined({ ...u }))
+        .eq("user_id", currentUserId())
+        .eq("id", id)
+        .select("*")
+        .maybeSingle(),
+    );
+    return row ? toRecommendation(row) : null;
   }
 
   async updateRecommendationStatus(id: string, status: RecommendationStatus) {
