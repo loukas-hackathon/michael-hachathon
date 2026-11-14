@@ -11,6 +11,7 @@ const STATUS: Record<ErrorCode, ContentfulStatusCode> = {
   conflict: 409,
   upstream_error: 502,
   not_implemented: 501,
+  unavailable: 503,
   internal: 500,
 };
 

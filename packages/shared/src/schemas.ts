@@ -899,6 +899,38 @@ export const Score = WeeklyScore.extend({
 });
 export type Score = z.infer<typeof Score>;
 
+// ---------- chat (POST /v1/chat, GET /v1/chat) ----------
+// Typed chat with Michael. The API keeps the history per user; the client sends only the new line.
+
+export const ChatRole = z.enum(["user", "assistant"]);
+export type ChatRole = z.infer<typeof ChatRole>;
+
+export const ChatMessage = z.object({
+  id: z.uuid(),
+  role: ChatRole,
+  content: z.string().min(1),
+  created_at: IsoDateTime,
+});
+export type ChatMessage = z.infer<typeof ChatMessage>;
+
+export const ChatRequest = z.object({
+  message: z.string().trim().min(1).max(2000),
+});
+export type ChatRequest = z.input<typeof ChatRequest>;
+
+export const ChatResponse = z.object({
+  // The user's line as stored, then Michael's answer.
+  message: ChatMessage,
+  reply: ChatMessage,
+});
+export type ChatResponse = z.infer<typeof ChatResponse>;
+
+export const ChatHistory = z.object({
+  // Oldest first.
+  messages: z.array(ChatMessage),
+});
+export type ChatHistory = z.infer<typeof ChatHistory>;
+
 // ---------- errors ----------
 
 export const ErrorCode = z.enum([
@@ -909,6 +941,8 @@ export const ErrorCode = z.enum([
   "conflict",
   "upstream_error",
   "not_implemented",
+  // A dependency is not configured (for example no model key): try again once it is set up.
+  "unavailable",
   "internal",
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;

@@ -1,5 +1,9 @@
 import "server-only";
 import {
+  ApiError,
+  type ChatHistory,
+  type ChatMessage,
+  type ChatResponse,
   type Goal,
   mockEvents,
   mockGoals,
@@ -51,6 +55,33 @@ async function send<T>(method: "PUT" | "PATCH", path: string, body: unknown): Pr
   });
   if (!res.ok) throw new Error(`${method} ${path} failed: ${res.status}`);
   return (await res.json()) as T;
+}
+
+/** Chat always talks to the API: there is no fixture for a conversation. */
+export async function getChatHistory(): Promise<ChatMessage[]> {
+  return (await get<ChatHistory>("/v1/chat?limit=50")).messages;
+}
+
+export type ChatResult = { ok: true; data: ChatResponse } | { ok: false; code: string; message: string };
+
+export async function sendChat(message: string): Promise<ChatResult> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/v1/chat`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
+      body: JSON.stringify({ message }),
+      cache: "no-store",
+    });
+  } catch {
+    return { ok: false, code: "network", message: "Could not reach the API" };
+  }
+  const body: unknown = await res.json().catch(() => null);
+  if (res.ok) return { ok: true, data: body as ChatResponse };
+  const err = ApiError.safeParse(body);
+  return err.success
+    ? { ok: false, code: err.data.error.code, message: err.data.error.message }
+    : { ok: false, code: "internal", message: `POST /v1/chat failed: ${res.status}` };
 }
 
 export async function getTimeline(from: string, to: string): Promise<TimelineResponse> {

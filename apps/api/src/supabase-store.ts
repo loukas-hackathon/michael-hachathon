@@ -1,5 +1,7 @@
 import type {
   AnalysisRun,
+  ChatMessage,
+  ChatRole,
   Event,
   EventInput,
   Goal,
@@ -72,6 +74,13 @@ const toRun = (r: Record<string, unknown>): AnalysisRun => ({
   error: (r.error as string | null) ?? null,
   started_at: iso(r.started_at as string) as string,
   finished_at: iso(r.finished_at as string | null),
+});
+
+const toChatMessage = (r: Record<string, unknown>): ChatMessage => ({
+  id: r.id as string,
+  role: r.role as ChatRole,
+  content: r.content as string,
+  created_at: iso(r.created_at as string) as string,
 });
 
 function check<T>(res: { data: T; error: { message: string; code?: string } | null }): T {
@@ -299,5 +308,28 @@ export class SupabaseStore implements Store {
         .maybeSingle(),
     );
     return row ? toRun(row) : null;
+  }
+
+  async listChatMessages(limit: number) {
+    const rows = check(
+      await this.db
+        .from("chat_messages")
+        .select("*")
+        .eq("user_id", currentUserId())
+        .order("created_at", { ascending: false })
+        .limit(limit),
+    );
+    return (rows ?? []).map(toChatMessage).reverse();
+  }
+
+  async addChatMessage(role: ChatRole, content: string) {
+    const row = check(
+      await this.db
+        .from("chat_messages")
+        .insert({ user_id: currentUserId(), role, content })
+        .select("*")
+        .single(),
+    );
+    return toChatMessage(row);
   }
 }

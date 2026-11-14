@@ -75,6 +75,7 @@ curl -H "Authorization: Bearer dev-key" "localhost:8787/v1/timeline?from=2026-11
 | `PUBLIC_API_URL`                                    | public URL of the API, used for OAuth redirect URIs                  |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`         | database; empty = in-memory store                                    |
 | `GEMINI_API_KEY`, `GEMINI_MODEL`                    | analysis                                                             |
+| `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`              | chat with Michael (`POST /v1/chat`); without a key chat answers 503  |
 | `GOOGLE_CLIENT_ID/SECRET`, `WHOOP_CLIENT_ID/SECRET` | OAuth integrations                                                   |
 
 `apps/web` (`apps/web/.env.example`), all server-side:

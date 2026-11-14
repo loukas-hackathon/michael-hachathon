@@ -7,6 +7,7 @@ import { env } from "./env";
 import { errorResponse, HttpError } from "./http";
 import { handleMcpRequest } from "./mcp";
 import { analysis } from "./routes/analysis";
+import { chat } from "./routes/chat";
 import { events } from "./routes/events";
 import { goals } from "./routes/goals";
 import { integrations, oauth } from "./routes/integrations";
@@ -33,6 +34,7 @@ const v1 = new Hono()
   .route("/", analysis)
   .route("/", patterns)
   .route("/", score)
+  .route("/", chat)
   .route("/", integrations)
   .route("/", privacy)
   .route("/", product)

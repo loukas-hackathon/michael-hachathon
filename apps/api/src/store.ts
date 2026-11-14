@@ -1,5 +1,7 @@
 import {
   type AnalysisRun,
+  type ChatMessage,
+  type ChatRole,
   type Event,
   type EventInput,
   type EventType,
@@ -51,6 +53,9 @@ export interface Store extends PrivacyBackend {
   latestAnalysisRun(): Promise<AnalysisRun | null>;
   // Privacy (privacy.ts holds the rules; insertEvents applies them).
   setOffTheRecord(on: boolean): Promise<PrivacyRules>;
+  /** The most recent chat messages, oldest first. */
+  listChatMessages(limit: number): Promise<ChatMessage[]>;
+  addChatMessage(role: ChatRole, content: string): Promise<ChatMessage>;
 }
 
 const now = () => new Date().toISOString();
@@ -71,6 +76,7 @@ export class MemoryStore implements Store {
       recommendations: Recommendation[];
       runs: AnalysisRun[];
       privacy: PrivacyRules;
+      chat: ChatMessage[];
     }
   >();
   private get d() {
@@ -83,6 +89,7 @@ export class MemoryStore implements Store {
         recommendations: structuredClone(mockRecommendations),
         runs: [structuredClone(mockAnalysisRun)],
         privacy: { offTheRecord: false, since: null, sources: {} },
+        chat: [],
       };
       this.data.set(userId, x);
     }
@@ -212,6 +219,16 @@ export class MemoryStore implements Store {
 
   async latestAnalysisRun() {
     return this.runs.at(-1) ?? null;
+  }
+
+  async listChatMessages(limit: number) {
+    return this.d.chat.slice(-limit);
+  }
+
+  async addChatMessage(role: ChatRole, content: string) {
+    const message: ChatMessage = { id: crypto.randomUUID(), role, content, created_at: now() };
+    this.d.chat.push(message);
+    return message;
   }
 }
 
