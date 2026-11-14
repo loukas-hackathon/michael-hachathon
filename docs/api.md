@@ -755,4 +755,4 @@ Streamable HTTP at `POST /mcp` (stateless, JSON responses). Auth: `Authorization
 | `get_patterns`        | `{ from?, to? }` (default: the last 7 days)             | `PatternReport`                                                              |
 | `add_event`           | `EventInput`                                            | `{ inserted: number, duplicates: number, ignored: number, events: Event[] }` |
 
-Status: all `live` (in-memory store).
+Status: all `live` (Supabase in production, in-memory locally without Supabase keys).

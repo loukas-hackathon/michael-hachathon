@@ -15,6 +15,8 @@ import {
   type Source,
 } from "@michael/shared";
 import type { z } from "zod";
+import { env } from "./env";
+import { SupabaseStore } from "./supabase-store";
 
 export interface TimelineFilter {
   from: string;
@@ -31,7 +33,7 @@ export interface InsertResult {
 }
 
 // Storage boundary. Routes and MCP tools depend only on this interface.
-// MemoryStore is used when Supabase env vars are missing; SupabaseStore is added in its own issue.
+// MemoryStore is used when Supabase env vars are missing; SupabaseStore (supabase-store.ts) otherwise.
 export interface Store {
   readonly kind: "memory" | "supabase";
   listEvents(filter: TimelineFilter): Promise<Event[]>;
@@ -151,4 +153,8 @@ export class MemoryStore implements Store {
   }
 }
 
-export const store: Store = new MemoryStore();
+// Supabase when configured (production, or local with keys), otherwise the in-memory mock day.
+export const store: Store =
+  env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY
+    ? new SupabaseStore(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
+    : new MemoryStore();
