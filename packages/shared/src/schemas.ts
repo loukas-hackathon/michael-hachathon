@@ -925,6 +925,10 @@ export const AgentQuery = z.object({
   summary: z.string(),
   allowed: z.boolean(),
   created_at: IsoDateTime,
+  // A change the agent made (booked a block, muted an app): the recommendation that carries it,
+  // and until when Undo still works (null once it started, was undone, or is not undoable).
+  recommendation_id: z.uuid().nullable().optional(),
+  undo_until: IsoDateTime.nullable().optional(),
 });
 export type AgentQuery = z.infer<typeof AgentQuery>;
 

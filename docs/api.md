@@ -1751,6 +1751,8 @@ type AgentQuery = {
   summary: string;
   allowed: boolean;
   created_at: string;
+  recommendation_id?: string | null; // a change the agent made, carried by this recommendation
+  undo_until?: string | null; // until when POST /v1/recommendations/:id/undo still works
 };
 ```
 
@@ -1778,6 +1780,10 @@ type AgentQuery = {
   list needs `timeline` if it is read only, else `write_events` (`apps/api/src/mcp-guard.ts`).
 - `queries`: `from` defaults to local midnight today (Europe/Athens), `to` to now; newest first,
   at most 500.
+- A change an agent made (`execute_recommendation`, `create_focus_block`, `block_mac_app`) carries
+  `recommendation_id`. `undo_until` is set while that change can still be undone (the
+  recommendation is `done` and its block has not started; a mute: has not ended), else `null`. The
+  Agents screen shows Undo next to the line and calls `POST /v1/recommendations/:id/undo`.
 
 ### Nudges
 

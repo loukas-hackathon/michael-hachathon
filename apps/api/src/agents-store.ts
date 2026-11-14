@@ -9,7 +9,9 @@ import { HttpError } from "./http";
 // from store.ts so it can grow without touching the shared Store, but scoped the same way:
 // every query filters by currentUserId(), never by an id from the request.
 
-export type QueryLog = Pick<AgentQuery, "agent_id" | "tool" | "summary" | "allowed">;
+export type QueryLog = Pick<AgentQuery, "agent_id" | "tool" | "summary" | "allowed"> & {
+  recommendation_id?: string | null;
+};
 
 export interface AgentsStore {
   listAgents(): Promise<AgentClient[]>;
@@ -72,7 +74,12 @@ export class MemoryAgentsStore implements AgentsStore {
   }
   async logQuery(q: QueryLog) {
     const created_at = now();
-    this.myQueries.push({ id: crypto.randomUUID(), ...q, created_at });
+    this.myQueries.push({
+      id: crypto.randomUUID(),
+      ...q,
+      recommendation_id: q.recommendation_id ?? null,
+      created_at,
+    });
     const a = this.mine.find((x) => x.id === q.agent_id);
     if (a) a.last_seen_at = created_at;
   }
@@ -101,6 +108,7 @@ const toQuery = (r: Record<string, unknown>): AgentQuery => ({
   summary: (r.summary as string) ?? "",
   allowed: r.allowed as boolean,
   created_at: iso(r.created_at) as string,
+  recommendation_id: (r.recommendation_id as string | null | undefined) ?? null,
 });
 const AGENT_COLUMNS = "id, name, status, scopes, created_at, last_seen_at";
 
@@ -187,7 +195,16 @@ export class SupabaseAgentsStore implements AgentsStore {
     const userId = currentUserId();
     const created_at = now();
     const [ins, upd] = await Promise.all([
-      this.db.from("agent_queries").insert({ ...q, user_id: userId, created_at }),
+      // recommendation_id only when there is one, so plain reads never depend on the column.
+      this.db.from("agent_queries").insert({
+        agent_id: q.agent_id,
+        tool: q.tool,
+        summary: q.summary,
+        allowed: q.allowed,
+        ...(q.recommendation_id ? { recommendation_id: q.recommendation_id } : {}),
+        user_id: userId,
+        created_at,
+      }),
       this.db
         .from("agent_clients")
         .update({ last_seen_at: created_at })
@@ -198,16 +215,20 @@ export class SupabaseAgentsStore implements AgentsStore {
     check(upd);
   }
   async listQueries({ from, to }: { from: string; to: string }) {
-    const rows = check(
-      await this.db
+    const read = (columns: string) =>
+      this.db
         .from("agent_queries")
-        .select("id, agent_id, tool, summary, allowed, created_at")
+        .select(columns)
         .eq("user_id", currentUserId())
         .gte("created_at", from)
         .lte("created_at", to)
         .order("created_at", { ascending: false })
-        .limit(500),
-    );
+        .limit(500);
+    const base = "id, agent_id, tool, summary, allowed, created_at";
+    let res = await read(`${base}, recommendation_id`);
+    // Until the recommendation_id migration has run, read the log without it.
+    if (res.error?.message.includes("recommendation_id")) res = await read(base);
+    const rows = check(res) as unknown as Record<string, unknown>[] | null;
     return (rows ?? []).map(toQuery);
   }
 }
