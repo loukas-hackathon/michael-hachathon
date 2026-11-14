@@ -1467,6 +1467,9 @@ export const ScoreBlock = z.object({
   matched_by: z.enum(["goal_id", "calendar_titles", "goal_category", "goal_title", "category_word"]),
   start_at: IsoDateTime,
   end_at: IsoDateTime,
+  // The personal record set in this block (`longest_block`, not a baseline), so the tape can draw
+  // the mark at its `tick_index`. Null when the block set none.
+  record_id: z.uuid().nullable(),
   ...scoreTotals,
   // One per 5 minutes from start_at; the last one is shorter when the block is not a multiple of 5.
   ticks: z.array(ScoreTick),
@@ -1486,6 +1489,18 @@ export const ScoreArea = z.object({
   ...scoreTotals,
 });
 export type ScoreArea = z.infer<typeof ScoreArea>;
+
+// The week's entry per category also carries the target and the floor (#165): the balanced week.
+export const ScoreWeekArea = ScoreArea.extend({
+  // This week's target for the category; null without a target or when it has no time goals.
+  target_pct: z.number().int().min(0).max(100).nullable(),
+  // The least the category must score for the week to count (default 50, editable per week).
+  floor_pct: z.number().int().min(0).max(100),
+  // Null when the category has no time goals or nothing has elapsed this week. A category with
+  // time goals and nothing elapsed in it does not meet its floor.
+  meets_floor: z.boolean().nullable(),
+});
+export type ScoreWeekArea = z.infer<typeof ScoreWeekArea>;
 
 export const ScoreDay = z.object({
   date: LocalDay,
@@ -1533,8 +1548,148 @@ export const ScoreGoal = GoalScore.extend({
   score_pct: ScorePct,
   // Monday to Sunday.
   daily: z.array(z.object({ date: LocalDay, planned_minutes: Minutes, spent_minutes: Minutes })),
+  // Budget minus spent, never below 0 ("4h 10 left of 6h"). 0 for a goal outside the score.
+  minutes_left: Minutes,
+  // The goal's calendar blocks this week that have not ended yet ("two blocks still open").
+  open_blocks: z.number().int().nonnegative(),
 });
 export type ScoreGoal = z.infer<typeof ScoreGoal>;
+
+// ---------- weekly target and the balanced week (#165) ----------
+
+export const AreaNumbers = z.object({
+  business: z.number().int().min(0).max(100),
+  health: z.number().int().min(0).max(100),
+  personal: z.number().int().min(0).max(100),
+});
+export type AreaNumbers = z.infer<typeof AreaNumbers>;
+
+// A target per category; null when the category has no time goals.
+export const AreaTargets = z.object({
+  business: z.number().int().min(0).max(100).nullable(),
+  health: z.number().int().min(0).max(100).nullable(),
+  personal: z.number().int().min(0).max(100).nullable(),
+});
+export type AreaTargets = z.infer<typeof AreaTargets>;
+
+export const DEFAULT_FLOOR_PCT = 50;
+
+export const WeeklyTarget = z.object({
+  // Monday, Europe/Athens.
+  week_start: LocalDay,
+  overall_pct: z.number().int().min(0).max(100),
+  areas: AreaTargets,
+  floors: AreaNumbers,
+  // proposed: Michael's proposal, not stored until accepted. accepted: in force.
+  status: z.enum(["proposed", "accepted"]),
+  // Only accepting the proposal keeps "michael"; any number the user sends makes it "user".
+  set_by: z.enum(["michael", "user"]),
+  // One line in Michael's voice, with the maths.
+  reason: z.string(),
+  basis: z.object({
+    // Full weeks of history used, at most 4.
+    weeks_used: z.number().int().min(0).max(4),
+    median_pct: z.number().int().min(0).max(100).nullable(),
+    step: z.enum(["up", "hold", "down"]).nullable(),
+    // Of the last 4 full weeks, how many were on target.
+    on_target_weeks: z.number().int().min(0).max(4),
+    // The calendar already shows a heavy week.
+    heavy_week: z.boolean(),
+  }),
+  created_at: IsoDateTime,
+  updated_at: IsoDateTime,
+});
+export type WeeklyTarget = z.infer<typeof WeeklyTarget>;
+
+export const TARGET_BASELINE_WEEKS = 2;
+
+export const TargetBaseline = z.object({
+  // True once two full weeks of scores exist before the week.
+  ready: z.boolean(),
+  full_weeks: z.number().int().nonnegative(),
+  needed: z.literal(TARGET_BASELINE_WEEKS),
+  // Why there is no proposal yet, one line; null when ready.
+  reason: z.string().nullable(),
+});
+export type TargetBaseline = z.infer<typeof TargetBaseline>;
+
+// GET /v1/targets/current?week=YYYY-MM-DD
+export const TargetQuery = z.object({ week: LocalDay.optional(), now: IsoDateTime.optional() });
+export type TargetQuery = z.infer<typeof TargetQuery>;
+
+export const TargetResponse = z.object({
+  // The stored target for the week, or a fresh proposal (status "proposed") once the baseline is ready.
+  target: WeeklyTarget.nullable(),
+  baseline: TargetBaseline,
+});
+export type TargetResponse = z.infer<typeof TargetResponse>;
+
+// PUT /v1/targets/:week_start. `accept` alone takes Michael's proposal; any number is the user's.
+export const TargetUpdate = z
+  .object({
+    accept: z.literal(true).optional(),
+    overall_pct: z.number().int().min(0).max(100).optional(),
+    areas: AreaTargets.partial().optional(),
+    floors: AreaNumbers.partial().optional(),
+  })
+  .strict()
+  .refine((u) => Object.values(u).some((v) => v !== undefined), {
+    message: "Send `accept: true` or at least one number",
+  });
+export type TargetUpdate = z.input<typeof TargetUpdate>;
+
+// The week's target as the score carries it.
+export const ScoreTarget = WeeklyTarget.pick({
+  overall_pct: true,
+  areas: true,
+  floors: true,
+  status: true,
+  set_by: true,
+});
+export type ScoreTarget = z.infer<typeof ScoreTarget>;
+
+// ---------- personal records (#166) ----------
+
+export const PersonalRecordType = z.enum(["best_week", "best_week_area", "longest_block"]);
+export type PersonalRecordType = z.infer<typeof PersonalRecordType>;
+
+export const PersonalRecord = z.object({
+  id: z.uuid(),
+  type: PersonalRecordType,
+  // Set for best_week_area, and for longest_block (the block's goal area).
+  area: GoalArea.nullable(),
+  // longest_block only.
+  goal_id: z.uuid().nullable(),
+  value: z.number().int().nonnegative(),
+  unit: z.enum(["pct", "minutes"]),
+  // Null for the first one, which is a baseline and is never announced.
+  previous_value: z.number().int().nonnegative().nullable(),
+  // week_start for the week records, the local day for a block.
+  achieved_on: LocalDay,
+  // longest_block: the calendar block it happened in.
+  event_id: z.string().nullable(),
+  // longest_block: the 5 minute tick in that block where the old best was passed.
+  tick_index: z.number().int().nonnegative().nullable(),
+  // Michael's one line, under 15 words; null for a baseline.
+  line: z.string().nullable(),
+  // Set once it has gone out as a nudge.
+  announced_at: IsoDateTime.nullable(),
+  created_at: IsoDateTime,
+});
+export type PersonalRecord = z.infer<typeof PersonalRecord>;
+
+export const RecordsResponse = z.object({ records: z.array(PersonalRecord) });
+export type RecordsResponse = z.infer<typeof RecordsResponse>;
+
+// Sleep this week, outside the score (#117).
+export const ScoreSleep = z.object({
+  // The nightly goal in minutes (sleep_hours x 60).
+  goal_minutes: Minutes,
+  // Seven entries, Monday first: minutes slept in the night that ended that day. Null for a night
+  // with no sleep data and for nights to come.
+  nightly: z.array(Minutes.nullable()),
+});
+export type ScoreSleep = z.infer<typeof ScoreSleep>;
 
 // GET /v1/score. The week has the WeeklyScore fields (score_pct may be null here), then the day.
 export const Score = WeeklyScore.extend({
@@ -1548,14 +1703,26 @@ export const Score = WeeklyScore.extend({
   lost_minutes: Minutes,
   ahead_minutes: Minutes,
   unverified_minutes: Minutes,
-  // The week per category. The three add up to the week.
-  areas: z.array(ScoreArea),
+  // The week per category, with its target and floor. The three add up to the week.
+  areas: z.array(ScoreWeekArea),
   // Monday to Sunday of the week that holds `date`.
   days: z.array(ScoreDay),
   day: ScoreDayDetail,
   // The last instant each device reported anything, up to the end of the week (null: nothing).
   // Lost time after that instant is not known yet: phone data can arrive hours late.
   data_until: z.object({ mac: IsoDateTime.nullable(), iphone: IsoDateTime.nullable() }),
+  // The week's target (#165): stored, or Michael's proposal; null until the baseline is ready.
+  target: ScoreTarget.nullable(),
+  // True only when the overall score meets the target AND every category with time goals meets
+  // its floor. Null without a target or before anything has elapsed.
+  on_target: z.boolean().nullable(),
+  // Personal records set in this week (#166), baselines included (their `line` is null).
+  records: z.array(PersonalRecord),
+  // Waking time left this week outside fixed calendar commitments and sleep (#117). Goal blocks
+  // count as free: they are where goal time goes.
+  free_minutes_left: Minutes,
+  // Null until there is a sleep goal and sleep data this week.
+  sleep: ScoreSleep.nullable(),
 });
 export type Score = z.infer<typeof Score>;
 

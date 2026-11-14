@@ -10,6 +10,7 @@ import {
   goalKind,
   type Moment,
   MomentKind,
+  type PersonalRecord,
   type Recommendation,
   RecommendationStatus,
   type Score,
@@ -42,6 +43,7 @@ import { momentFor } from "./routes/moments";
 import { patternReportFor } from "./routes/patterns";
 import { travelPlanFor } from "./routes/places";
 import { scoreFor } from "./routes/score";
+import { recordsFor } from "./routes/targets";
 import { store } from "./store";
 
 // The claude.ai connector's tool set. Every tool answers with short text in the user's local time
@@ -113,13 +115,31 @@ function scoreText(s: Score): string {
   const lines = [
     `Week from ${dayLabel(Date.parse(s.week_start))}: ${pct(s.score_pct)} of planned goal time spent (${dur(s.spent_minutes)} of ${dur(s.elapsed_minutes)} so far; ${dur(s.lost_minutes)} lost, ${dur(s.ahead_minutes)} still ahead, ${dur(s.planned_minutes)} planned).`,
     `${dayLabel(zone.startOfDay(s.date) + 12 * 3600_000)}: ${pct(s.day.score_pct)} (${dur(s.day.spent_minutes)} of ${dur(s.day.elapsed_minutes)}; ${dur(s.day.lost_minutes)} lost, ${dur(s.day.unverified_minutes)} unverified). Time won back: ${dur(s.day.time_won_back_minutes)}${s.day.time_won_back.reason ? ` (${s.day.time_won_back.reason})` : ""}.`,
+    targetText(s),
+    `Balance: ${s.areas
+      .map(
+        (a) =>
+          `${a.area} ${pct(a.score_pct)} (floor ${a.floor_pct}%${a.target_pct == null ? "" : `, target ${a.target_pct}%`}${a.meets_floor == null ? "" : a.meets_floor ? ", met" : ", not met"})`,
+      )
+      .join("; ")}.`,
+    `Free time left this week, outside fixed commitments and sleep: ${dur(s.free_minutes_left)}.`,
     "Goals this week:",
     ...s.goals.map((g) =>
       g.scored
-        ? `- ${g.area} "${g.title}": budget ${dur(g.budget_minutes)}, planned ${dur(g.planned_minutes)}, spent ${dur(g.spent_minutes)}, lost ${dur(g.lost_minutes)}, ${pct(g.score_pct)}`
+        ? `- ${g.area} "${g.title}": budget ${dur(g.budget_minutes)}, planned ${dur(g.planned_minutes)}, spent ${dur(g.spent_minutes)}, lost ${dur(g.lost_minutes)}, ${pct(g.score_pct)}; ${dur(g.minutes_left)} left, ${g.open_blocks} ${g.open_blocks === 1 ? "block" : "blocks"} still open`
         : `- ${g.area} "${g.title}": a ${g.kind} goal, outside the time score`,
     ),
   ];
+  if (s.sleep) {
+    const nights = s.sleep.nightly.map((n) => (n == null ? "none" : dur(n))).join(", ");
+    lines.push(
+      `Sleep (outside the score): goal ${dur(s.sleep.goal_minutes)} a night; Monday to Sunday ${nights}.`,
+    );
+  }
+  if (s.records.length) {
+    lines.push("Personal records set this week:");
+    for (const r of s.records) lines.push(`- ${recordText(r)}`);
+  }
   if (s.day.blocks.length) {
     lines.push("Blocks that day:");
     for (const b of s.day.blocks) {
@@ -133,6 +153,34 @@ function scoreText(s: Score): string {
     }
   }
   return lines.join("\n");
+}
+
+function targetText(s: Score): string {
+  if (!s.target) return "Target: none yet (Michael proposes one once two full weeks of scores exist).";
+  const t = s.target;
+  const who =
+    t.status === "proposed"
+      ? "proposed by Michael, not accepted yet"
+      : `set by ${t.set_by === "user" ? "the user" : "Michael"}`;
+  const verdict =
+    s.on_target == null ? "nothing elapsed yet" : s.on_target ? "on target so far" : "not on target so far";
+  return `Target this week: ${t.overall_pct}% overall (${who}); ${verdict}. On target needs the overall score at the target and every category with time goals at its floor.`;
+}
+
+function recordText(r: PersonalRecord): string {
+  const what =
+    r.type === "best_week"
+      ? `best week ${r.value}%`
+      : r.type === "best_week_area"
+        ? `best ${r.area} week ${r.value}%`
+        : `longest unbroken goal block ${dur(r.value)}`;
+  const since =
+    r.previous_value == null
+      ? "baseline, not announced"
+      : `previous best ${r.unit === "pct" ? `${r.previous_value}%` : dur(r.previous_value)}`;
+  const line = r.line ? ` Line: "${r.line}"` : "";
+  const sent = r.line ? (r.announced_at ? " Announced." : " Not announced yet.") : "";
+  return `${what} on ${r.achieved_on} (${since}).${line}${sent} id ${r.id}`;
 }
 
 function momentText(m: Moment): string {
@@ -293,7 +341,7 @@ export function createMcpServer(): McpServer {
     {
       title: "Get score",
       description:
-        "The headline score: the share of planned goal time actually spent on the goals, for the week (Monday to Sunday) and for one day, with time won back, each goal's budget against what was planned and spent, and the day's blocks with what took the lost time. Use it to answer \"how is my day or week going\". Minutes throughout; `unverified` is spent time the data cannot prove. Default day is today in Europe/Athens.",
+        "The headline score: the share of planned goal time actually spent on the goals, for the week (Monday to Sunday) and for one day, with time won back, each goal's budget against what was planned and spent (minutes left, blocks still open), and the day's blocks with what took the lost time. Also the week's target and whether it is on target (the overall score at the target AND every category at its floor), free time left this week, sleep per night, and personal records set this week. Use it to answer \"how is my day or week going\". Minutes throughout; `unverified` is spent time the data cannot prove. Default day is today in Europe/Athens.",
       inputSchema: { date: LocalDayInput.optional().describe("Local day, YYYY-MM-DD. Default today") },
       annotations: { readOnlyHint: true },
     },
@@ -302,6 +350,24 @@ export function createMcpServer(): McpServer {
       // The 5 minute ticks are for drawing the Today screen; models do not need them.
       const day = { ...s.day, blocks: s.day.blocks.map(({ ticks: _ticks, ...b }) => b) };
       return reply(scoreText(s), { ...s, day });
+    }),
+  );
+
+  server.registerTool(
+    "get_records",
+    {
+      title: "Get personal records",
+      description:
+        "The user's personal records: best week overall, best week per category (business, health, personal) and the longest uninterrupted goal block, each with the previous best, the day or week it was set and Michael's one line. The first value of each is a baseline and is never announced. Use it for \"what are my bests\" or to celebrate a new one with real numbers.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+    },
+    safe(async () => {
+      const { records } = await recordsFor();
+      const text = records.length
+        ? ["Personal records:", ...records.map((r) => `- ${recordText(r)}`)].join("\n")
+        : "No personal records yet: a week has to end, or a goal block has to finish, first.";
+      return reply(text, { records });
     }),
   );
 

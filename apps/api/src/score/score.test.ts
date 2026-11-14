@@ -1,8 +1,20 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { type Event, type Goal, type Instruction, Score } from "@michael/shared";
-import { APPS, calendar, goal, mac, phone, syntheticMonth, T, web, workout } from "../patterns/testkit";
-import { buildScore, isSleepGoal, scoreRange } from "./score";
+import {
+  APPS,
+  calendar,
+  goal,
+  mac,
+  phone,
+  sleep,
+  syntheticMonth,
+  T,
+  web,
+  workout,
+} from "../patterns/testkit";
+import { detectRecords } from "./records";
+import { buildScore, isSleepGoal, scoreRange, scoreWithHistory } from "./score";
 
 // Small synthetic timelines whose answer can be worked out by hand. Every title, app and time
 // here is made up.
@@ -364,7 +376,7 @@ test("areas: the same totals per category, and they add up to the week and to th
   const goals = [BUSINESS, STUDY, TRAINING, FUN, SLEEP];
   const s = score(events, "2026-11-10", "2026-11-11 08:30", goals);
 
-  const row = (a: (typeof s.areas)[number]) => [a.area, ...seven(a)];
+  const row = (a: (typeof s.day.areas)[number]) => [a.area, ...seven(a)];
   //                       planned elapsed spent lost ahead unverified score
   assert.deepEqual(s.day.areas.map(row), [
     ["business", 120, 120, 95, 25, 0, 50, 79], // 45 of the editor verified; the study hour is not
@@ -788,4 +800,131 @@ test("every total is the sum of its parts, on a busy synthetic month", () => {
   assert.ok(s.lost_minutes > 0);
   assert.ok(s.score_pct !== null && s.score_pct > 0 && s.score_pct < 100);
   assert.ok(s.data_until.mac !== null && s.data_until.iphone !== null);
+});
+
+// ---------- the week around the score (#117, #165, #166) ----------
+
+test("minutes left and open blocks per goal: budget minus spent, blocks that have not ended", () => {
+  const events = [
+    calendar("Cold Outreach", T("2026-11-09 10:00"), T("2026-11-09 11:00")),
+    // In progress at noon: 60 minutes spent so far, still open.
+    calendar("Cold Outreach", T("2026-11-11 11:00"), T("2026-11-11 13:00")),
+    calendar("Cold Outreach", T("2026-11-12 10:00"), T("2026-11-12 11:00")),
+    calendar("Run", T("2026-11-10 08:00"), T("2026-11-10 09:00")),
+    // Crosses midnight: two parts, one block.
+    calendar("Gym", T("2026-11-12 23:00"), T("2026-11-13 01:00")),
+  ];
+  const s = score(events, "2026-11-11", "2026-11-11 12:00");
+  const row = (id: string) => s.goals.find((g) => g.goal_id === id);
+  assert.deepEqual(
+    [row(COMPANY.id)?.spent_minutes, row(COMPANY.id)?.minutes_left, row(COMPANY.id)?.open_blocks],
+    [120, 360, 2],
+  );
+  assert.deepEqual(
+    [row(TRI.id)?.spent_minutes, row(TRI.id)?.minutes_left, row(TRI.id)?.open_blocks],
+    [60, 480, 1],
+  );
+  // Sleep is outside the score: nothing left to count, no blocks.
+  assert.deepEqual([row(SLEEP.id)?.minutes_left, row(SLEEP.id)?.open_blocks], [0, 0]);
+  // Spent past the budget: never below 0.
+  const small = score(events, "2026-11-11", "2026-11-11 12:00", [{ ...COMPANY, weekly_budget_minutes: 90 }]);
+  assert.equal(small.goals[0]?.minutes_left, 0);
+  // At the end of the week nothing is open.
+  const done = score(events, "2026-11-15", "2026-11-16 00:00");
+  assert.deepEqual(
+    done.goals.map((g) => g.open_blocks),
+    [0, 0, 0],
+  );
+});
+
+test("free minutes left: the waking day from now to Sunday, minus fixed commitments", () => {
+  const events = [
+    // With other people: busy.
+    calendar("Board call", T("2026-11-14 14:00"), T("2026-11-14 15:00"), { attendees: 3 }),
+    // The user's own entry with no goal: also fixed.
+    calendar("Dentist", T("2026-11-15 10:00"), T("2026-11-15 11:00")),
+    // A goal block is where goal time goes: it stays free.
+    calendar("Cold Outreach", T("2026-11-15 16:00"), T("2026-11-15 17:00")),
+    // All day markers and anything while asleep take nothing.
+    calendar("Name day", T("2026-11-15 00:00"), T("2026-11-16 00:00"), { all_day: true }),
+    calendar("Late call", T("2026-11-14 23:15"), T("2026-11-14 23:45"), { attendees: 1 }),
+  ];
+  // The sleep goal is 7.5 hours from 23:00: the waking day is 06:30 to 23:00.
+  // Saturday 12:00 to 23:00 (660) + Sunday 06:30 to 23:00 (990) - 60 - 60.
+  const s = score(events, "2026-11-14", "2026-11-14 12:00");
+  assert.equal(s.free_minutes_left, 660 + 990 - 120);
+  // Screens off at 22:30 and 8 hours: 06:30 to 22:30 on Sunday, 12:00 to 22:30 on Saturday.
+  const early = withTarget(SLEEP, { sleep_hours: 8, screens_off: "22:30" }, 3360);
+  assert.equal(
+    score(events, "2026-11-14", "2026-11-14 12:00", [COMPANY, early]).free_minutes_left,
+    630 + 960 - 120,
+  );
+  // A week that has ended has none left; a week to come has all of it.
+  assert.equal(score(events, "2026-11-02", "2026-11-14 12:00").free_minutes_left, 0);
+  assert.equal(score([], "2026-11-23", "2026-11-14 12:00").free_minutes_left, 7 * 990);
+});
+
+test("sleep: minutes per night against the goal, null until there is data", () => {
+  const nights = [
+    sleep(T("2026-11-08 23:30"), T("2026-11-09 07:00")),
+    sleep(T("2026-11-10 00:00"), T("2026-11-10 06:00")),
+  ];
+  const s = score(nights, "2026-11-11", "2026-11-11 12:00");
+  assert.deepEqual(s.sleep, { goal_minutes: 450, nightly: [450, 360, null, null, null, null, null] });
+  assert.equal(score([], "2026-11-11", "2026-11-11 12:00").sleep, null);
+  assert.equal(score(nights, "2026-11-11", "2026-11-11 12:00", [COMPANY]).sleep, null);
+});
+
+test("history: the weeks before and the longest verified run in each ended block", () => {
+  const events = [
+    // 10:00 to 11:30 with the phone from 10:30 to 10:40: 30 minutes, 2 lost ticks, then 50 minutes.
+    calendar("Cold Outreach", T("2026-11-03 10:00"), T("2026-11-03 11:30")),
+    mac(APPS.editor, T("2026-11-03 10:00"), T("2026-11-03 11:30")),
+    phone(APPS.social, T("2026-11-03 10:30"), T("2026-11-03 10:40")),
+    // Not ended yet: no run.
+    calendar("Cold Outreach", T("2026-11-11 11:00"), T("2026-11-11 13:00")),
+  ];
+  const { history } = scoreWithHistory(events, GOALS, { date: "2026-11-11", now: T("2026-11-11 12:00") });
+  assert.deepEqual(
+    history.weeks.map((w) => [w.week_start, w.complete, w.score_pct]),
+    [
+      ["2026-10-12", true, null],
+      ["2026-10-19", true, null],
+      ["2026-10-26", true, null],
+      ["2026-11-02", true, 89],
+      ["2026-11-09", false, 100],
+    ],
+  );
+  assert.deepEqual(history.weeks[3]?.areas.business, { score_pct: 89, elapsed_minutes: 90 });
+  assert.deepEqual(
+    history.runs.map((r) => [r.day, r.minutes, r.first_tick, r.tick_minutes.length, r.area]),
+    [["2026-11-03", 50, 8, 10, "business"]],
+  );
+});
+
+test("the longest block counts verified ticks only: 120 unseen minutes do not beat 50 proven ones", () => {
+  const events = [
+    // Two hours with no device data at all: spent, but all of it unverified.
+    calendar("Gym", T("2026-11-03 18:00"), T("2026-11-03 20:00")),
+    // 50 minutes in the editor inside a sales block: verified.
+    calendar("Cold Outreach", T("2026-11-04 10:00"), T("2026-11-04 10:50")),
+    mac(APPS.editor, T("2026-11-04 10:00"), T("2026-11-04 10:50")),
+    // Verified, then 20 minutes with no data, then verified again: the gap breaks the run.
+    calendar("Cold Outreach", T("2026-11-05 10:00"), T("2026-11-05 11:00")),
+    mac(APPS.editor, T("2026-11-05 10:00"), T("2026-11-05 10:20")),
+    mac(APPS.editor, T("2026-11-05 10:40"), T("2026-11-05 11:00")),
+  ];
+  const { history } = scoreWithHistory(events, GOALS, { date: "2026-11-11", now: T("2026-11-11 12:00") });
+  assert.deepEqual(
+    history.runs.map((r) => [r.day, r.minutes, r.first_tick]),
+    [
+      ["2026-11-04", 50, 0],
+      ["2026-11-05", 20, 0],
+    ],
+  );
+  const [baseline] = detectRecords({ weeks: [], runs: history.runs, stored: [] });
+  assert.deepEqual(
+    [baseline?.type, baseline?.value, baseline?.achieved_on],
+    ["longest_block", 50, "2026-11-04"],
+  );
 });

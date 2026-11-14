@@ -1695,7 +1695,7 @@ type AgentQuery = {
   tool result with `isError: true` ("Not allowed. ...") and is logged with `allowed: false`.
 - Scope per tool: `get_timeline`, `get_patterns` = `timeline`; `get_goals`, `add_goal`,
   `update_goal`, `propose_goals` = `goals`; `list_recommendations`, `update_recommendation`, `get_nudges` =
-  `recommendations`; `get_score`, `get_moments` = `score`; `add_event`, `execute_recommendation`,
+  `recommendations`; `get_score`, `get_records`, `get_moments` = `score`; `add_event`, `execute_recommendation`,
   `undo_recommendation`, `create_focus_block`, `block_mac_app`, `plan_travel` = `write_events`;
   `suggest_app_mute` = `recommendations`. A tool not in that
   list needs `timeline` if it is read only, else `write_events` (`apps/api/src/mcp-guard.ts`).
@@ -1869,12 +1869,36 @@ type Score = ScoreTotals & {
   timezone: string; // "Europe/Athens"
   generated_at: string; // the instant it was scored at
   date: string; // the local day asked for
-  areas: ScoreArea[]; // the week per category; they add up to the week
+  areas: ScoreWeekArea[]; // the week per category, with target and floor; they add up to the week
   days: ScoreDay[]; // Monday to Sunday
   day: ScoreDayDetail; // `date` in detail
   // The last instant each device reported anything. Lost time after it is not known yet (phone
   // data can arrive hours late), so a fresh score can still drop.
   data_until: { mac: string | null; iphone: string | null };
+  // The week's target (see Targets): the stored one, else Michael's proposal; null until the
+  // baseline is ready and nothing is stored.
+  target: {
+    overall_pct: number;
+    areas: Record<GoalArea, number | null>;
+    floors: Record<GoalArea, number>;
+    status: "proposed" | "accepted";
+    set_by: "michael" | "user";
+  } | null;
+  // True only when score_pct meets target.overall_pct AND every category with time goals meets
+  // its floor. Null without a target or before anything has elapsed.
+  on_target: boolean | null;
+  records: PersonalRecord[]; // set in this week (achieved_on inside it), baselines included
+  // Waking time left this week outside fixed calendar commitments and sleep (see below).
+  free_minutes_left: number;
+  // Null until there is a sleep goal and sleep data this week. Sleep stays outside the score.
+  sleep: { goal_minutes: number; nightly: (number | null)[] } | null; // 7 nights, Monday first
+};
+
+// The week's entry per category (Score.areas). day.areas stay plain ScoreArea.
+type ScoreWeekArea = ScoreArea & {
+  target_pct: number | null; // the week's target for the category; null without one or without time goals
+  floor_pct: number; // default 50, editable per week
+  meets_floor: boolean | null; // null without time goals or before anything elapsed; nothing elapsed in it = false
 };
 
 // One of the three categories. Always three entries, in the order business, health, personal.
@@ -1892,6 +1916,8 @@ type ScoreGoal = ScoreTotals & {
   scored: boolean; // true only for kind "time"; a target (sleep), count or checklist is listed, outside the score
   budget_minutes: number; // weekly_budget_minutes, 0 when the goal has none
   daily: { date: string; planned_minutes: number; spent_minutes: number }[]; // Monday to Sunday
+  minutes_left: number; // budget - spent, never below 0; 0 for a goal outside the score
+  open_blocks: number; // the goal's blocks this week that have not ended (one block across midnight counts once)
 };
 
 type ScoreDay = ScoreTotals & { date: string; time_won_back_minutes: number };
@@ -1916,6 +1942,9 @@ type ScoreBlock = ScoreTotals & {
   matched_by: "goal_id" | "calendar_titles" | "goal_category" | "goal_title" | "category_word";
   start_at: string;
   end_at: string;
+  // The longest_block record set in this block (not a baseline): the tape draws the mark at its
+  // tick_index. Null when the block set none.
+  record_id: string | null;
   ticks: ("spent" | "lost" | "ahead" | "unverified")[]; // one per 5 minutes, from start_at
   lost: {
     start_at: string;
@@ -1934,7 +1963,8 @@ type ScoreBlock = ScoreTotals & {
 ```
 
 The zod schemas of the same names are in `packages/shared/src/schemas.ts`; `mockScore` in
-`mocks.ts` is a full example (a made up Wednesday at 15:20). `WeeklyScore` and `GoalScore` stay
+`mocks.ts` is a full example (a made up Wednesday at 15:20, with a meeting, three nights of sleep and no
+target yet). `WeeklyScore` and `GoalScore` stay
 exported: they are the week's part of `Score` with a `score_pct` that is never null.
 
 #### The attribution rule
@@ -2004,6 +2034,144 @@ Stated here and at the top of `apps/api/src/score/score.ts`; the two change toge
   whatever held most of it. An app goes by its name; a site by its host only when the host is on
   the shared public list, otherwise by its category ("a travel site"). `minutes` is the time lost
   inside the stretch.
+
+#### Free time and sleep (#117)
+
+- **Waking day:** from the sleep goal (a health goal of kind `target`): it ends at `screens_off`
+  (default 23:00) and starts `sleep_hours` later (23:00 and 7.5 hours: 06:30 to 23:00). Without a
+  sleep goal with hours, 07:00 to 23:00.
+- **Fixed commitments:** calendar events that are not goal blocks (anything with other people,
+  and the user's own entries with no goal), inside the waking day. All day entries are left out.
+- **`free_minutes_left`:** the waking day from `now` to Sunday night, minus the fixed commitments.
+  Goal blocks count as free: they are where goal time goes. 0 for a week that has ended. With
+  `goals[].minutes_left` this is the "The 70.3 and the degree need 23 hours this week. You have
+  17." maths. The per day numbers for the Goals tab are `goals[].daily`.
+- **`sleep.nightly`:** minutes slept in the night that ended on each day (`data.duration_min` when
+  the source gives it), null for a night with no data and nights to come; `goal_minutes` is
+  `sleep_hours x 60` (else the weekly budget over 7).
+
+### Targets
+
+| Method | Path                                            | Response             | Status |
+| ------ | ----------------------------------------------- | -------------------- | ------ |
+| GET    | `/v1/targets/current?week=YYYY-MM-DD&now=<iso>` | `200 TargetResponse` | live   |
+| PUT    | `/v1/targets/:week_start`                       | `200 WeeklyTarget`   | live   |
+
+Every Monday Michael proposes the week's score target from the user's history, overall and per
+category, with the maths. The user accepts it or sets their own numbers.
+
+```ts
+type WeeklyTarget = {
+  week_start: string; // Monday, Europe/Athens, YYYY-MM-DD
+  overall_pct: number; // 0..100
+  areas: Record<GoalArea, number | null>; // target per category; null when it has no time goals
+  floors: Record<GoalArea, number>; // default 50 each
+  status: "proposed" | "accepted";
+  set_by: "michael" | "user";
+  reason: string; // one line in Michael's voice, with the maths
+  basis: {
+    weeks_used: number; // full weeks of history, at most 4
+    median_pct: number | null;
+    step: "up" | "hold" | "down" | null;
+    on_target_weeks: number; // of the last 4
+    heavy_week: boolean; // the calendar already shows a heavy week
+  };
+  created_at: string;
+  updated_at: string;
+};
+type TargetResponse = {
+  target: WeeklyTarget | null; // stored, else a fresh proposal (status "proposed", not stored)
+  baseline: { ready: boolean; full_weeks: number; needed: 2; reason: string | null };
+};
+type TargetUpdate = {
+  accept?: true;
+  overall_pct?: number;
+  areas?: Partial<Record<GoalArea, number | null>>;
+  floors?: Partial<Record<GoalArea, number>>;
+};
+```
+
+- `GET` `week` is any day of the week (default this week); `now` replays the proposal as it stood
+  then. `400` on a day that is not real.
+- `PUT` `week_start` must be a Monday (`400` otherwise). `{ accept: true }` stores Michael's
+  proposal (or the stored target) as `accepted` and keeps `set_by`; `409` while there is nothing to
+  accept. Any number makes it `set_by: "user"`, merged onto the proposal or the stored target;
+  `reason` then reads "You set 75%. I proposed 83%.". `overall_pct` is required while there is no
+  proposal. Stored in `weekly_targets` (one row per user and Monday, RLS on).
+
+**The target rule** (`apps/api/src/score/targets.ts`, pure; the two change together):
+
+- **History:** the full weeks before the target week, at most the last 4. A week is full when it
+  has ended and has a score. No proposal until 2 exist; `baseline.reason` says the baseline is
+  still being built ("I need two full weeks of scores before I set a target. I have one.").
+- **Median** of their scores, rounded. **On target:** a past week met its stored target (overall,
+  and every category with time goals at its floor); a week with no stored target is judged
+  against the median (at or above your usual counts).
+- **Step:** of the last 4 full weeks on target, 3 or 4 step up 5 points (3 from a median of 70,
+  never over 100), 2 hold, 1 or none step down 3. The last two full weeks both missed step down 3
+  whatever the count; when both had stored targets the reason starts "My target was too high."
+- **Heavy week:** the week's fixed commitments (above) are at least 20% and 3 hours over the
+  median of the full weeks: 3 more points off, said in the reason.
+- **Categories:** the same rule on each category's own scores. A category with time goals but
+  fewer than 2 full weeks of its own takes the overall proposal; one without time goals is null.
+  Floors carry over from the latest stored target, else 50.
+- **The balanced week:** `on_target` on the score is true only when the overall score meets the
+  target AND every category with time goals meets its floor. A category with time goals and
+  nothing elapsed in it does not meet its floor: business 91 and personal 12 is not a win.
+- Example reason: "Usual week 63%. You hit 4 of the last 4, so up 5. Your week already holds 31h of
+  fixed time, 11h over usual, so down 3 more. Target 65%."
+
+### Records
+
+| Method | Path                        | Response                                    | Status |
+| ------ | --------------------------- | ------------------------------------------- | ------ |
+| GET    | `/v1/records`               | `200 { records: PersonalRecord[] }`         | live   |
+| POST   | `/v1/records/:id/announced` | `200 PersonalRecord` (`404` when not found) | live   |
+
+```ts
+type PersonalRecord = {
+  id: string;
+  type: "best_week" | "best_week_area" | "longest_block";
+  area: GoalArea | null; // set for best_week_area, and for longest_block (the block's goal area)
+  goal_id: string | null; // longest_block only
+  value: number;
+  unit: "pct" | "minutes";
+  previous_value: number | null; // null for the first one, a baseline that is never announced
+  achieved_on: string; // week_start for the week records, the local day for a block
+  event_id: string | null; // longest_block: the calendar block it happened in
+  tick_index: number | null; // longest_block: the 5 minute tick in that block where the old best was passed
+  line: string | null; // Michael's one line, under 15 words; null for a baseline
+  announced_at: string | null; // set once it has gone out as a nudge
+  created_at: string;
+};
+```
+
+- `GET /v1/records` lists the current best of each type and scope plus any not yet announced.
+  `GET /v1/score` carries the records set in its week, and `record_id` on the day block where a
+  block record was set.
+- `POST /v1/records/:id/announced` marks one as sent (the first time only), so the nudge engine
+  can deliver it once and count it as one of the day's five.
+- Lines: "Best Health week since you started. 71%. Do it again.", "2h 15 on 70.3 without a break.
+  Your longest block yet."
+
+**The record rule** (`apps/api/src/score/records.ts`, pure; the two change together):
+
+- **Kinds:** best week (the week's score), best week per category, and the longest run of verified
+  5 minute ticks (`spent`) inside one goal block (minutes, across all goals). A `lost` or an
+  `unverified` tick breaks the run: a block with no device data or workout to prove it (a class
+  with the phone away) never sets or holds the record. Week records stay scores, where unverified
+  time is already reported apart.
+- **What counts:** only a week that has ended, with at least 2 hours elapsed in that scope, sets a
+  week record (30 minutes at 100% would otherwise stand forever). Only a block that has ended, with
+  a run of at least 15 minutes, sets a block record.
+- **The first value** of a kind and scope is a baseline: the best of the history then available,
+  `previous_value: null`, `line: null`, never announced.
+- **A new best** is strictly greater than the stored best, on or after its day. Equal is not a
+  record.
+- **Where:** computed when the score is read (`GET /v1/score`, `get_score`, `GET /v1/records`), from
+  the five weeks the score already holds, and written with a unique key per period and scope
+  (`records.key`, insert ignoring duplicates), so a record is created once however often the
+  score is read. A replay with `now` in the future never writes. Stored in `records` (RLS on).
 
 ### Demo account
 
@@ -2090,27 +2258,28 @@ model writes (`TimeInput`) are `YYYY-MM-DDTHH:MM` in Europe/Athens wall time, or
 offset. A refused or failed call returns `isError: true` with one plain sentence saying why
 (`HttpError` messages, validation issues listed). Scope per tool: see "Michael for agents".
 
-| Tool                     | Scope             | Input                                                                                   | `structuredContent`                                       |
-| ------------------------ | ----------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| `get_timeline`           | `timeline`        | `{ date?: LocalDay, from?: TimeInput, to?: TimeInput, source?, type? }` (default: 24 h) | `{ from, to, count, truncated, events: Event[] }` (≤ 500) |
-| `get_goals`              | `goals`           | `{ active_only?: boolean }` (default true)                                              | `{ goals: Goal[] }`                                       |
-| `get_instructions`       | `goals`           | `{ active_only?: boolean }` (default true)                                              | `{ instructions: Instruction[] }` (standing instructions) |
-| `propose_goals`          | `goals`           | `{}`                                                                                    | `{ suggestions: GoalSuggestion[] }`                       |
-| `get_score`              | `score`           | `{ date?: LocalDay }` (default today)                                                   | `Score` without `day.blocks[].ticks`                      |
-| `get_patterns`           | `timeline`        | `{ from?: TimeInput, to?: TimeInput }` (default: the last 7 days)                       | `PatternReport`                                           |
-| `list_recommendations`   | `recommendations` | `{ status?: RecommendationStatus }`                                                     | `{ recommendations: Recommendation[] }`                   |
-| `get_nudges`             | `recommendations` | `{ date?: LocalDay }` (default today)                                                   | `{ day, nudges: Nudge[] }`                                |
-| `get_moments`            | `score`           | `{ kind?: MomentKind }` (default morning before 15:00 local, evening after)             | `Moment`                                                  |
-| `add_event`              | `write_events`    | `EventInput`                                                                            | `{ inserted, duplicates, ignored, events: Event[] }`      |
-| `add_goal`               | `goals`           | `{ category, title, description?, weekly_budget_minutes?, target? }`                    | `{ goal: Goal }`                                          |
-| `update_goal`            | `goals`           | `{ id, category?, title?, description?, weekly_budget_minutes?, target?, active? }`     | `{ goal: Goal }`, error when not found                    |
-| `update_recommendation`  | `recommendations` | `{ id, status: "accepted" \| "dismissed" }`                                             | `{ recommendation }`; a `done` one is refused (undo it)   |
-| `execute_recommendation` | `write_events`    | `{ id }`                                                                                | `{ recommendation, undo_until }`                          |
-| `undo_recommendation`    | `write_events`    | `{ id }`                                                                                | `{ recommendation }`                                      |
-| `create_focus_block`     | `write_events`    | `{ start: TimeInput, end: TimeInput, title?, goal_id? }`                                | `{ recommendation, undo_until }`                          |
-| `block_mac_app`          | `write_events`    | `{ apps: string[], start?: TimeInput, end: TimeInput, goal_id? }` (start default now)   | `{ recommendation, undo_until }`                          |
-| `suggest_app_mute`       | `recommendations` | `{}`                                                                                    | `{ recommendation }` or `{}` when nothing stands out      |
-| `plan_travel`            | `write_events`    | `{ from?, to? }` (default today)                                                        | `TravelPlanResult` (see Places and travel)                |
+| Tool                     | Scope             | Input                                                                                   | `structuredContent`                                                                        |
+| ------------------------ | ----------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `get_timeline`           | `timeline`        | `{ date?: LocalDay, from?: TimeInput, to?: TimeInput, source?, type? }` (default: 24 h) | `{ from, to, count, truncated, events: Event[] }` (≤ 500)                                  |
+| `get_goals`              | `goals`           | `{ active_only?: boolean }` (default true)                                              | `{ goals: Goal[] }`                                                                        |
+| `get_instructions`       | `goals`           | `{ active_only?: boolean }` (default true)                                              | `{ instructions: Instruction[] }` (standing instructions)                                  |
+| `propose_goals`          | `goals`           | `{}`                                                                                    | `{ suggestions: GoalSuggestion[] }`                                                        |
+| `get_score`              | `score`           | `{ date?: LocalDay }` (default today)                                                   | `Score` without `day.blocks[].ticks` (target, verdict, records, free time, sleep included) |
+| `get_records`            | `score`           | `{}`                                                                                    | `{ records: PersonalRecord[] }` (as `GET /v1/records`)                                     |
+| `get_patterns`           | `timeline`        | `{ from?: TimeInput, to?: TimeInput }` (default: the last 7 days)                       | `PatternReport`                                                                            |
+| `list_recommendations`   | `recommendations` | `{ status?: RecommendationStatus }`                                                     | `{ recommendations: Recommendation[] }`                                                    |
+| `get_nudges`             | `recommendations` | `{ date?: LocalDay }` (default today)                                                   | `{ day, nudges: Nudge[] }`                                                                 |
+| `get_moments`            | `score`           | `{ kind?: MomentKind }` (default morning before 15:00 local, evening after)             | `Moment`                                                                                   |
+| `add_event`              | `write_events`    | `EventInput`                                                                            | `{ inserted, duplicates, ignored, events: Event[] }`                                       |
+| `add_goal`               | `goals`           | `{ category, title, description?, weekly_budget_minutes?, target? }`                    | `{ goal: Goal }`                                                                           |
+| `update_goal`            | `goals`           | `{ id, category?, title?, description?, weekly_budget_minutes?, target?, active? }`     | `{ goal: Goal }`, error when not found                                                     |
+| `update_recommendation`  | `recommendations` | `{ id, status: "accepted" \| "dismissed" }`                                             | `{ recommendation }`; a `done` one is refused (undo it)                                    |
+| `execute_recommendation` | `write_events`    | `{ id }`                                                                                | `{ recommendation, undo_until }`                                                           |
+| `undo_recommendation`    | `write_events`    | `{ id }`                                                                                | `{ recommendation }`                                                                       |
+| `create_focus_block`     | `write_events`    | `{ start: TimeInput, end: TimeInput, title?, goal_id? }`                                | `{ recommendation, undo_until }`                                                           |
+| `block_mac_app`          | `write_events`    | `{ apps: string[], start?: TimeInput, end: TimeInput, goal_id? }` (start default now)   | `{ recommendation, undo_until }`                                                           |
+| `suggest_app_mute`       | `recommendations` | `{}`                                                                                    | `{ recommendation }` or `{}` when nothing stands out                                       |
+| `plan_travel`            | `write_events`    | `{ from?, to? }` (default today)                                                        | `TravelPlanResult` (see Places and travel)                                                 |
 
 - `execute_recommendation` / `undo_recommendation` call the same functions as
   `POST /v1/recommendations/:id/execute` and `/undo` (`apps/api/src/actions/calendar.ts`), with the

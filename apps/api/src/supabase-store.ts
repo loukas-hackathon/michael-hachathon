@@ -15,12 +15,14 @@ import type {
   IntegrationProvider,
   Nudge,
   NudgeStatus,
+  PersonalRecord,
   Place,
   Profile,
   Recommendation,
   RecommendationStatus,
   Source,
   SourceSetting,
+  WeeklyTarget,
 } from "@michael/shared";
 import { Source as SourceEnum } from "@michael/shared";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -30,6 +32,7 @@ import { HttpError } from "./http";
 import { type GuardDeps, guardRecommendation, guardRecommendations } from "./instructions/guard";
 import type { GeocodeHit } from "./integrations/maps";
 import { type PrivacyRules, screenEvents } from "./privacy";
+import type { NewRecord } from "./score/records";
 import {
   type AskedQuestion,
   type DataDeleteScope,
@@ -48,6 +51,7 @@ import {
   type Store,
   sameEvent,
   summaryDayRange,
+  type TargetInput,
   type TelegramChat,
   type TimelineFilter,
   toInstruction,
@@ -208,6 +212,35 @@ const toNudge = (r: Record<string, unknown>): Nudge => ({
   sent_at: iso(r.sent_at as string | null),
 });
 
+const toTarget = (r: Record<string, unknown>): WeeklyTarget => ({
+  week_start: String(r.week_start).slice(0, 10),
+  overall_pct: Number(r.overall_pct),
+  areas: r.areas as WeeklyTarget["areas"],
+  floors: r.floors as WeeklyTarget["floors"],
+  status: r.status as WeeklyTarget["status"],
+  set_by: r.set_by as WeeklyTarget["set_by"],
+  reason: (r.reason as string | null) ?? "",
+  basis: r.basis as WeeklyTarget["basis"],
+  created_at: iso(r.created_at as string) as string,
+  updated_at: iso(r.updated_at as string) as string,
+});
+
+const toRecord = (r: Record<string, unknown>): PersonalRecord => ({
+  id: r.id as string,
+  type: r.type as PersonalRecord["type"],
+  area: (r.area as PersonalRecord["area"]) ?? null,
+  goal_id: (r.goal_id as string | null) ?? null,
+  value: Number(r.value),
+  unit: r.unit as PersonalRecord["unit"],
+  previous_value: r.previous_value == null ? null : Number(r.previous_value),
+  achieved_on: String(r.achieved_on).slice(0, 10),
+  event_id: (r.event_id as string | null) ?? null,
+  tick_index: r.tick_index == null ? null : Number(r.tick_index),
+  line: (r.line as string | null) ?? null,
+  announced_at: iso((r.announced_at as string | null) ?? null),
+  created_at: iso(r.created_at as string) as string,
+});
+
 function check<T>(res: { data: T; error: { message: string; code?: string } | null }): T {
   if (res.error) throw new HttpError("upstream_error", `Database error: ${res.error.message}`);
   return res.data;
@@ -239,6 +272,8 @@ export const USER_TABLES = [
   "source_settings",
   "privacy_state",
   "user_profiles",
+  "weekly_targets",
+  "records",
 ] as const;
 
 const SUMMARY_KEYS = "user_id,day,source,type,category";
@@ -1170,6 +1205,78 @@ export class SupabaseStore implements Store {
       await this.db.from("telegram_chats").select("user_id").eq("chat_id", chatId).maybeSingle(),
     );
     return row?.user_id ?? null;
+  }
+
+  async listTargets(from: string, to: string) {
+    const rows = check(
+      await this.db
+        .from("weekly_targets")
+        .select("*")
+        .eq("user_id", currentUserId())
+        .gte("week_start", from)
+        .lte("week_start", to)
+        .order("week_start"),
+    );
+    return (rows ?? []).map(toTarget);
+  }
+
+  async saveTarget(t: TargetInput) {
+    const row = check(
+      await this.db
+        .from("weekly_targets")
+        .upsert(
+          {
+            user_id: currentUserId(),
+            week_start: t.week_start,
+            overall_pct: t.overall_pct,
+            areas: t.areas,
+            floors: t.floors,
+            status: t.status,
+            set_by: t.set_by,
+            reason: t.reason,
+            basis: t.basis,
+          },
+          { onConflict: "user_id,week_start" },
+        )
+        .select("*")
+        .single(),
+    );
+    return toTarget(row);
+  }
+
+  async listRecords() {
+    const rows = check(
+      await this.db.from("records").select("*").eq("user_id", currentUserId()).order("created_at"),
+    );
+    return (rows ?? []).map(toRecord);
+  }
+
+  async insertRecords(records: NewRecord[]) {
+    if (records.length === 0) return [];
+    const userId = currentUserId();
+    const rows = check(
+      await this.db
+        .from("records")
+        .upsert(
+          records.map((r) => ({ ...r, user_id: userId })),
+          { onConflict: "user_id,key", ignoreDuplicates: true },
+        )
+        .select("*"),
+    );
+    return (rows ?? []).map(toRecord);
+  }
+
+  async markRecordAnnounced(id: string) {
+    const q = () => this.db.from("records");
+    check(
+      await q()
+        .update({ announced_at: new Date().toISOString() })
+        .eq("user_id", currentUserId())
+        .eq("id", id)
+        .is("announced_at", null),
+    );
+    const row = check(await q().select("*").eq("user_id", currentUserId()).eq("id", id).maybeSingle());
+    return row ? toRecord(row) : null;
   }
 
   async activeUserIds(since: string) {
