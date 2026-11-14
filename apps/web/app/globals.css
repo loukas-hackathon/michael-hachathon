@@ -192,7 +192,28 @@ h3 {
   pointer-events: none;
 }
 
+/* Push to talk: a calm breathing ring while Michael listens. */
+@keyframes m-listen {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.45;
+  }
+  50% {
+    transform: scale(1.45);
+    opacity: 0.12;
+  }
+}
+.m-listen-ring {
+  animation: m-listen 1.8s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .m-listen-ring {
+    animation: none;
+    transform: scale(1.3);
+    opacity: 0.25;
+  }
   .press,
   .press:active,
   .m-switch,

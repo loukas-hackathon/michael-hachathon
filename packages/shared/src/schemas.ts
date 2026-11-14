@@ -1449,6 +1449,13 @@ export type PersonalTokenCreate = z.infer<typeof PersonalTokenCreate>;
 
 export const PersonalTokenCreated = z.object({ token: PersonalToken, secret: z.string() });
 export type PersonalTokenCreated = z.infer<typeof PersonalTokenCreated>;
+// ---------- voice (POST /v1/voice/speak) ----------
+// Michael's reply read aloud by ElevenLabs. Text in, audio/mpeg out; nothing is stored.
+
+export const VoiceSpeakRequest = z.object({
+  text: z.string().trim().min(1).max(1000),
+});
+export type VoiceSpeakRequest = z.input<typeof VoiceSpeakRequest>;
 
 // ---------- your data: deletion and retention (DELETE /v1/me/data) ----------
 

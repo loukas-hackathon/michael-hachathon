@@ -49,6 +49,12 @@ const Env = z.object({
   TELEGRAM_WEBHOOK_SECRET: z.string().optional(),
   // Google Maps Platform (Routes API + Geocoding API), server side only. Empty = no travel times.
   GOOGLE_MAPS_API_KEY: z.string().optional(),
+  // ElevenLabs voice for POST /v1/voice/speak (free tier is enough). Without a key the route answers
+  // 503 and the app speaks with the browser's own voice.
+  ELEVENLABS_API_KEY: z.string().optional(),
+  // "George": warm, calm, middle aged British male from the ElevenLabs default voices.
+  ELEVENLABS_VOICE_ID: z.string().default("JBFqnCBsd6RMkjVDRZzb"),
+  ELEVENLABS_MODEL: z.string().default("eleven_flash_v2_5"),
 });
 
 export type Env = z.infer<typeof Env>;

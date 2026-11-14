@@ -1115,6 +1115,20 @@ Only `headline` may be phrased by Claude (`ANTHROPIC_MODEL`, when `ANTHROPIC_API
 facts only, and its line is used only if it keeps the voice rules and every number in it appears in
 the facts; otherwise `phrased_by` is `template`. Lines are cached per user, kind, day and facts.
 
+### Voice
+
+| Method | Path              | Body                               | Response                                                                                                   | Status |
+| ------ | ----------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------- | ------ |
+| GET    | `/v1/voice`       |                                    | `200 { elevenlabs: boolean }`: whether the API can speak with ElevenLabs                                   | live   |
+| POST   | `/v1/voice/speak` | `{ text: string }` (1..1000 chars) | `200 audio/mpeg`; `503 unavailable` without `ELEVENLABS_API_KEY`; `502 upstream_error` if ElevenLabs fails | live   |
+
+Push to talk in the app: the browser turns speech into text (Web Speech API, en-GB), the text goes
+to `POST /v1/chat`, and the reply is read aloud. `POST /v1/voice/speak` proxies ElevenLabs text to
+speech (`ELEVENLABS_VOICE_ID`, default "George", a calm British male; `ELEVENLABS_MODEL`, default
+`eleven_flash_v2_5`) so the key stays on the server. Without a key, or when it fails, the app uses
+the browser's own speech synthesis, preferring a low en-GB male voice. Audio is never stored:
+only text goes in, and the mp3 is streamed straight back and played once.
+
 ### Recommendations
 
 | Method | Path                                  | Body                               | Response                                    | Status |
