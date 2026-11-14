@@ -575,7 +575,7 @@ Roles used by the focus rules: **work** = `work`, `ai`; **distractor** = `commun
 
 #### Definitions and minimum samples
 
-- `phone_cadence`: A **session** is one pick up: consecutive iPhone app intervals less than 30
+- `phone_cadence`: A **session** is one stretch of phone use in which an app was opened (not Apple's "pickup": a glance at the lock screen leaves no record, so we see about two thirds of Apple's count): consecutive iPhone app intervals less than 30
   seconds apart (our estimate; Apple does not export pick ups). A **check** is a session under 30
   seconds. A **gap** runs from the end of one session to the start of the next; it is left out when
   it overlaps a recorded sleep or is longer than 3 hours (sleep or away). The first app skips the
