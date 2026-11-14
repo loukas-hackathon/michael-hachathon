@@ -1,6 +1,13 @@
 import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
-import { AUTH_MISSING_MESSAGE, DEMO_COOKIE, demoVisitorId, localFallbackAllowed } from "./lib/auth-mode";
+import {
+  AUTH_MISSING_MESSAGE,
+  DEMO_COOKIE,
+  demoVisitorId,
+  E2E_COOKIE,
+  e2eTestUser,
+  localFallbackAllowed,
+} from "./lib/auth-mode";
 
 const URL_ = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
@@ -35,7 +42,7 @@ export async function proxy(request: NextRequest) {
   // getClaims refreshes an expired session, then verifies the JWT locally against the project's
   // cached JWKS (ES256): no round trip to Supabase Auth on every navigation, unlike getUser.
   const { data } = await supabase.auth.getClaims();
-  const signedIn = Boolean(data?.claims?.sub);
+  const signedIn = Boolean(data?.claims?.sub) || e2eTestUser(request.cookies.get(E2E_COOKIE)?.value) !== null;
 
   const path = request.nextUrl.pathname;
   const isPublic = PUBLIC_PATHS.some((p) => path === p || path.startsWith(`${p}/`));

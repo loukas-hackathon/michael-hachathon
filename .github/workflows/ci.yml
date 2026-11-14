@@ -65,3 +65,44 @@ jobs:
           key: next-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
           restore-keys: next-${{ hashFiles('pnpm-lock.yaml') }}-
       - run: pnpm --filter @michael/web build
+
+  # The demo path end to end (e2e/): the production web build against the real API on the memory
+  # store, in Chromium at 390x844. Hermetic: no keys, and requests that leave the machine fail.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      # Sign in configured but unreachable (a closed local port), as e2e/playwright.config.ts expects:
+      # the demo week then takes the real demo visitor path.
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:9
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: e2e-anon-key
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Playwright version
+        id: pw
+        run: echo "version=$(node -p "require('./e2e/node_modules/@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ steps.pw.outputs.version }}-chromium-shell
+      - run: pnpm --filter @michael/e2e exec playwright install --with-deps --only-shell chromium
+      - uses: actions/cache@v4
+        with:
+          path: apps/web/.next/cache
+          key: next-e2e-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: next-e2e-${{ hashFiles('pnpm-lock.yaml') }}-
+      - run: pnpm --filter @michael/web build
+      - run: pnpm --filter @michael/e2e e2e --trace off
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results
+          path: e2e/test-results/
+          retention-days: 7

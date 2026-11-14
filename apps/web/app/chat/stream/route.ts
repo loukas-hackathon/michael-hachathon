@@ -18,6 +18,13 @@ export async function POST(request: Request) {
       ? error(401, "unauthorized", "Not signed in")
       : error(502, "network", "Could not reach the API");
   }
+  if (upstream.status === 503) {
+    // Chat not switched on yet (no model key) is a state, not a fault: answer it as the stream's own
+    // error event so the browser shows the calm line without logging a failed request.
+    return new Response(`event: error\ndata: ${(await upstream.text()).replace(/\n/g, " ")}\n\n`, {
+      headers: { "content-type": "text/event-stream", "cache-control": "no-cache, no-transform" },
+    });
+  }
   if (!upstream.ok || !upstream.body) {
     return new Response(await upstream.text(), {
       status: upstream.status,
