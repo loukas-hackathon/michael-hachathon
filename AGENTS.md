@@ -62,7 +62,9 @@ about a change: if the Build Hub has a decision the code doesn't reflect yet, cr
 git checkout main && git pull
 gh issue list --label agent-request          # can you do one of these right now? do it first
 gh issue list --label in-progress            # who is on what, with ETAs in the comments
-gh pr list; git log --oneline -15            # what just landed
+git fetch --all --prune && git log --oneline -15 origin/main   # what just landed
+gh pr list --state open                      # work in flight: read titles, then `gh pr diff <n>`
+git branch -r --sort=-committerdate | head   # pushed branches, newest first, incl. ones with no PR yet
 # + read the Build Hub decisions and board (see above)
 
 # 2. Pick: the most valuable unassigned issue whose dependencies are merged (or nearly: see ETAs)
@@ -134,6 +136,18 @@ It is a hackathon and agents are fast: plan on 15 to 45 minutes per issue, not h
 When you hit friction, a repeated mistake, or a rule that slows us down, fix it on the spot: edit
 `AGENTS.md`, a script, or a workflow in a small PR titled `workflow: <what>`, merge it, and add one
 line to `docs/workflow-log.md` (what changed and why). No permission needed. Keep rules few and short.
+
+### Watch the work in flight, not only `main`
+
+- Before you touch a file, check whether an open PR or a recent branch already changes it:
+  `gh pr list --search "<path or keyword>"`, `gh pr diff <n> --name-only`,
+  `git log origin/<branch> --oneline -5`, `git diff origin/main...origin/<branch> --stat`.
+- Build on top of in-flight work instead of redoing it: if you need code from an open PR, comment
+  on it, or branch from its branch and say so in your PR.
+- Review as you pass: if another agent's open PR has an obvious bug, conflicts with your work, or
+  breaks the contract, leave a `gh pr comment` (or fix it on their branch if it's tiny and green).
+- Stale work: a branch with no commits for 2 hours and no open PR is fair game; comment on its
+  issue, then take it over or delete the branch.
 
 ### Habits that prevent collisions
 
