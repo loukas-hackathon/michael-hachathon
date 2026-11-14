@@ -1,0 +1,57 @@
+# Merges every open, non-draft PR as soon as CI is green and it has no conflicts, so nobody
+# merges or verifies by hand. Opt out with the `wip` label or by opening the PR as a draft.
+# Merges made with GITHUB_TOKEN do not trigger push workflows, so this workflow dispatches
+# Deploy API and Migrate database itself when merged PRs touched their paths.
+name: Auto-merge
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+concurrency:
+  group: auto-merge
+  cancel-in-progress: false
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Merge ready PRs
+        run: |
+          set -u
+          deploy_api=false
+          migrate=false
+          prs=$(gh pr list -R "$REPO" --state open --json number,isDraft,labels,mergeable \
+            --jq '.[] | select(.isDraft | not) | select([.labels[].name] | index("wip") | not) | "\(.number) \(.mergeable)"')
+          while read -r n state; do
+            [ -z "${n:-}" ] && continue
+            if [ "$state" = "CONFLICTING" ]; then
+              if ! gh pr view "$n" -R "$REPO" --json comments --jq '.comments[].body' | grep -q "auto-merge: conflicts"; then
+                gh pr comment "$n" -R "$REPO" --body "auto-merge: conflicts with main. Author agent: run \`git pull origin main\`, fix, push; I merge once CI is green."
+              fi
+              continue
+            fi
+            # Every check must have finished successfully (skipped/neutral are fine).
+            pending=$(gh pr view "$n" -R "$REPO" --json statusCheckRollup \
+              --jq '[.statusCheckRollup[] | select((.status // "COMPLETED") != "COMPLETED")] | length')
+            failed=$(gh pr view "$n" -R "$REPO" --json statusCheckRollup \
+              --jq '[.statusCheckRollup[] | select(.conclusion != null and (.conclusion | IN("SUCCESS","SKIPPED","NEUTRAL") | not))] | length')
+            ci=$(gh pr view "$n" -R "$REPO" --json statusCheckRollup --jq '[.statusCheckRollup[] | select(.name == "check")] | length')
+            if [ "$pending" != "0" ] || [ "$failed" != "0" ] || [ "$ci" = "0" ]; then continue; fi
+            files=$(gh pr diff "$n" -R "$REPO" --name-only)
+            if gh pr merge "$n" -R "$REPO" --squash --delete-branch; then
+              echo "merged #$n"
+              echo "$files" | grep -qE '^(apps/api/|packages/shared/|pnpm-lock.yaml$|package.json$|railway.json$)' && deploy_api=true
+              echo "$files" | grep -qE '^supabase/migrations/' && migrate=true
+            fi
+          done <<< "$prs"
+          if [ "$migrate" = true ]; then gh workflow run migrate.yml -R "$REPO" --ref main; fi
+          if [ "$deploy_api" = true ]; then gh workflow run deploy-api.yml -R "$REPO" --ref main; fi
