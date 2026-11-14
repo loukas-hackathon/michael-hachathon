@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en-GB">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Michael settings</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="sheet">
+      <header class="masthead">
+        <p class="wordmark">Michael</p>
+        <p class="quiet">On your side.</p>
+      </header>
+
+      <section class="record">
+        <div aria-live="polite">
+          <h1 id="record-title">Recording time on sites.</h1>
+          <p class="quiet" id="record-detail"></p>
+        </div>
+        <label class="switch">
+          <input type="checkbox" class="switch-input" id="paused" />
+          <span class="switch-text">Off the record</span>
+        </label>
+      </section>
+
+      <section class="block">
+        <h2>Where to send it</h2>
+        <p class="quiet">The address of your Michael API and the key that lets this browser write to it.</p>
+        <form id="connection" novalidate>
+          <label class="field">
+            <span>API address</span>
+            <input type="url" id="api-url" placeholder="http://localhost:8787" spellcheck="false" autocomplete="off" />
+          </label>
+          <label class="field">
+            <span>API key</span>
+            <input type="password" id="api-key" spellcheck="false" autocomplete="off" />
+          </label>
+          <div class="actions">
+            <button type="submit" class="button primary" id="save">Save</button>
+            <button type="button" class="button" id="test">Send a test event</button>
+          </div>
+          <p class="result" id="connection-result" role="status"></p>
+        </form>
+      </section>
+
+      <section class="block">
+        <h2>Sites never to record</h2>
+        <p class="quiet">
+          Banking, health and adult sites, password managers and local addresses are always left out. So are
+          incognito windows. Add your own below. A site on this list leaves no trace, not even a count.
+        </p>
+        <form class="add-site" id="add-site" novalidate>
+          <input type="text" id="site" placeholder="example.com" aria-label="Site to leave out" spellcheck="false" autocomplete="off" />
+          <button type="submit" class="button">Add</button>
+        </form>
+        <p class="result" id="site-result" role="status"></p>
+        <ul class="excluded" id="excluded"></ul>
+      </section>
+
+      <p class="status" id="status" role="status"></p>
+      <p class="status-detail trouble" id="status-trouble" hidden></p>
+      <p class="status-detail quiet" id="status-note" hidden></p>
+    </main>
+
+    <script type="module" src="options.js"></script>
+  </body>
+</html>
