@@ -27,7 +27,10 @@ test("onboarding completes for a fresh user", async ({ page, context, baseURL })
   await expect(page.getByRole("button", { name: /^Deep work/ })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("button", { name: /^Training/ })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("button", { name: /^Sleep/ })).toHaveAttribute("aria-pressed", "false");
-  await tap(page.getByRole("button", { name: "Keep these two" }));
+  // Each starter says its area; one more goal in the user's own words (#190).
+  await expect(page.getByRole("button", { name: /^Time for yourself.*Personal$/ })).toBeVisible();
+  await page.getByLabel("Something else, in your own words").fill("Learn Greek");
+  await tap(page.getByRole("button", { name: "Keep these three" }));
 
   await expect(page.getByRole("heading", { name: "Now, your days." })).toBeVisible();
   await expect(page.getByText("Apple Watch")).toBeVisible();
@@ -38,9 +41,15 @@ test("onboarding completes for a fresh user", async ({ page, context, baseURL })
 
   // Saved for this user only, never on the demo account.
   const { goals } = await asUser<{ goals: { title: string }[] }>("/v1/goals");
-  expect(goals.map((g) => g.title).sort()).toEqual(["Deep work", "Training"]);
+  expect(goals.map((g) => g.title).sort()).toEqual(["Deep work", "Learn Greek", "Training"]);
   const profile = await asUser<{ onboarded_at: string | null }>("/v1/profile");
   expect(profile.onboarded_at).not.toBeNull();
+
+  // House rules are one tap on You (#190), and leave the suggestions once added.
+  await page.goto("/you");
+  await tap(page.getByRole("button", { name: "Add: Keep Sundays clear" }));
+  await expect(page.getByRole("button", { name: "Add: Keep Sundays clear" })).toHaveCount(0);
+  await expect(page.getByRole("checkbox", { name: "Keep Sundays clear: on" })).toBeVisible();
 });
 
 // Redo setup on the demo week: the visitor walks both screens; nothing is written (#239).
