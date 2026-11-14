@@ -17,6 +17,7 @@ import {
   mockEvents,
   mockGoals,
   mockRecommendations,
+  mockScore,
   type NudgeTestResult,
   type PlaceSuggestionsResponse,
   type PlacesResponse,
@@ -34,12 +35,14 @@ import {
   type TargetUpdate,
   type TimelineResponse,
 } from "@michael/shared";
+import { cache } from "react";
 import { authHeaders } from "./caller";
 import { categoryOf } from "./categories";
 import type { ChecklistDay, ChecklistItem } from "./checklist";
 import type { DayView } from "./day";
 import type { GoalsView } from "./goals-view";
 import type { Instruction, InstructionInput } from "./instructions";
+import { causesFrom, type LostWeek, lostWeekFrom } from "./lost-week";
 import { API_URL, USE_MOCKS } from "./mode";
 import { sampleChecklist } from "./sample/checklist";
 import {
@@ -425,8 +428,28 @@ const athensDay = (d = new Date()) =>
   new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Athens" }).format(d);
 
 /** GET /v1/score for a local day (default today). */
+// Deduped per request: Today asks for the score twice (the day and the week's lost time).
+const scoreFor = cache((date: string) => get<Score>(`/v1/score?date=${date}`));
 export async function getScore(date = athensDay()): Promise<Score> {
-  return get<Score>(`/v1/score?date=${date}`);
+  return scoreFor(date);
+}
+
+/** Goal time lost per day of the week holding `date` (Timeline chart, Today's week line). */
+export async function getLostWeek(date?: string, variant?: string): Promise<LostWeek | null> {
+  if (USE_MOCKS || variant === "sample") {
+    return { ...lostWeekFrom(mockScore, mockScore.date), causes: causesFrom([mockScore]) };
+  }
+  try {
+    const today = athensDay();
+    const week = lostWeekFrom(await getScore(date ?? today), today);
+    // What took it: the score names causes for one day at a time, so read each past day that lost
+    // time (at most seven, in parallel, deduped with the call above). TODO: a week total from the API.
+    const days = week.days.filter((d) => (d.lost ?? 0) > 0).map((d) => d.date);
+    const scores = await Promise.all(days.map((d) => getScore(d).catch(() => null)));
+    return { ...week, causes: causesFrom(scores.filter((x): x is Score => x != null)) };
+  } catch {
+    return null;
+  }
 }
 
 /**
