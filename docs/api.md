@@ -1046,6 +1046,9 @@ type MomentGoal = {
   goal_id: string;
   title: string;
   category: GoalCategory;
+  area?: "business" | "health" | "personal"; // goalArea(category)
+  kind?: "time" | "target" | "count" | "checklist"; // goalKind(goal)
+  sleep?: boolean; // the sleep goal: hide it from time lines
   budget_minutes: number | null;
   spent_week_minutes: number; // Monday 00:00 until now
   planned_today_minutes: number; // goal blocks today; rest: a seventh of the weekly budget

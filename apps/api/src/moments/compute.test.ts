@@ -79,6 +79,9 @@ test("morning: today against each budget, the stretch at risk and two moves", ()
     goal_id: W,
     title: "Deep work",
     category: "work",
+    area: "business",
+    kind: "time",
+    sleep: false,
     budget_minutes: 600,
     spent_week_minutes: 200, // 2 x (120 planned less 20 lost)
     planned_today_minutes: 120,
@@ -92,6 +95,10 @@ test("morning: today against each budget, the stretch at risk and two moves", ()
   assert.equal(gym?.unplanned_minutes, 180);
   const rest = m.goals.find((g) => g.goal_id === R);
   assert.equal(rest?.spent_today_minutes, 480);
+  // The screens hide the sleep goal from time lines by this flag, not by category.
+  assert.equal(rest?.sleep, true);
+  assert.equal(rest?.area, "health");
+  assert.equal(gym?.sleep, false);
   assert.equal(rest?.planned_today_minutes, 450);
   assert.equal(rest?.unplanned_minutes, null);
 

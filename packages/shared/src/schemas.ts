@@ -1513,6 +1513,11 @@ export const MomentGoal = z.object({
   goal_id: z.uuid(),
   title: z.string(),
   category: GoalCategory,
+  // business | health | personal for any category (goalArea), and how the goal is measured.
+  area: GoalArea.optional(),
+  kind: GoalKind.optional(),
+  // True for the sleep goal (isSleepGoal): screens hide it from time lines.
+  sleep: z.boolean().optional(),
   budget_minutes: z.number().int().nonnegative().nullable(),
   // This week (Monday 00:00 local) until now.
   spent_week_minutes: z.number().int().nonnegative(),
