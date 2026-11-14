@@ -37,7 +37,11 @@
       "PowerShell(git commit:*)",
       "PowerShell(git push -u origin:*)",
       "PowerShell(gh issue:*)",
-      "PowerShell(gh pr:*)"
+      "PowerShell(gh pr:*)",
+      "Bash(git worktree:*)",
+      "PowerShell(git worktree:*)",
+      "Bash(git branch -D:*)",
+      "Bash(cp ../../apps/:*)"
     ],
     "deny": [
       "Bash(git push origin main:*)",

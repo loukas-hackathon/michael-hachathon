@@ -69,6 +69,34 @@ lists until its PR is merged.
 Before starting, run `gh issue list --label in-progress` and read the "Files likely touched" of
 each. If your task would touch the same files, pick another task or comment on their issue first.
 
+Claim race: right after claiming, run `gh issue view <n> --json assignees,labels`. If someone else
+was already assigned or labelled it first, unassign yourself and pick another issue.
+
+## Multiple agents on one machine: one git worktree per agent
+
+Several agents may run at the same time (both humans, and several agents per human). Agents that
+share one checkout overwrite each other's branches and files, so:
+
+- **The main checkout stays on `main`, clean.** Use it only to pull and to read.
+- **Every agent works in its own worktree** under `.worktrees/` (gitignored), one per issue:
+
+```bash
+git checkout main && git pull
+git worktree add .worktrees/<n>-short-name -b <n>-short-name origin/main
+cd .worktrees/<n>-short-name
+pnpm install                                  # fast, the pnpm store is shared
+cp ../../apps/api/.env apps/api/.env 2>/dev/null; cp ../../apps/web/.env.local apps/web/.env.local 2>/dev/null
+```
+
+- **Never `cd` into or edit another agent's worktree.** Never `git checkout` a different branch
+  inside a worktree; make a new worktree instead.
+- **Ports:** the default dev ports (api 8787, web 3000) belong to the main checkout. In a worktree
+  use free ports: `PORT=8788 pnpm dev:api` and
+  `pnpm --filter @michael/web exec next dev --port 3001`.
+- **After merge, clean up** from the main checkout:
+  `git worktree remove .worktrees/<n>-short-name && git branch -D <n>-short-name && git pull`.
+  (The repo deletes merged remote branches automatically.)
+
 ## Workflow for every task
 
 ```bash
@@ -79,14 +107,15 @@ gh issue list --state open --search "no:assignee"      # pick the lowest-numbere
 gh issue edit <n> --add-label in-progress --add-assignee @me
 # or create one:
 gh issue create --title "<task>" --label in-progress --label <backend|frontend> --assignee @me
-git checkout -b <n>-short-name
-# ... small change (< 1h) ...
+git worktree add .worktrees/<n>-short-name -b <n>-short-name origin/main   # see section above
+cd .worktrees/<n>-short-name && pnpm install
+# ... small change (< 1h), commit early and often ...
 pnpm check
 git add -A && git commit -m "<what> (#<n>)"
 git push -u origin HEAD
 gh pr create --fill --body "Closes #<n>"
-gh pr merge --squash --delete-branch
-git checkout main && git pull
+gh pr merge --squash        # no --delete-branch: it tries to check out main, which fails in a worktree
+cd ../.. && git pull && git worktree remove .worktrees/<n>-short-name && git branch -D <n>-short-name
 ```
 
 - **Never push directly to `main`.** Always branch + PR, even for one-line fixes.

@@ -23,3 +23,6 @@ Thumbs.db
 .vercel/
 .claude/settings.local.json
 supabase/.temp/
+
+# per-agent git worktrees
+.worktrees/
