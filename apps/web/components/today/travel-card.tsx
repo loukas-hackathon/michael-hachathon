@@ -5,8 +5,8 @@ import { formatTime, minutesPhrase } from "@/lib/format";
 import type { TravelPlan } from "@/lib/travel";
 import { MiMark } from "../brand";
 
-/** One departure as a bar: the empty road solid, the traffic on top hatched (time lost). */
-function DriveBar({
+/** One departure as a bar: the empty road solid, the traffic on top hatched (time lost). Shared with the suggestions list. */
+export function DriveBar({
   at,
   minutes,
   traffic,
