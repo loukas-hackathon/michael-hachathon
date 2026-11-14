@@ -7,7 +7,7 @@ import { HideButton } from "./hide-button";
 const HIDE_FROM = 3;
 
 /**
- * Get started: the six steps that make Michael useful, at the top of Today until they are done.
+ * Get started: the steps that make Michael useful (only connections proven on production, #295), at the top of Today until they are done.
  * Each step's tick comes from the person's real data. The next step carries the one big action.
  * Nothing for sample data, previews or the shared demo account.
  */
