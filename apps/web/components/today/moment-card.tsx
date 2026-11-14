@@ -78,8 +78,8 @@ export function MomentView({ moment }: { moment: Moment }) {
 }
 
 /** Morning plan or Evening review for the Today screen. Renders nothing if the moment cannot load. */
-export async function MomentCard({ kind }: { kind: MomentKind }) {
-  const moment = await getMoment(kind).catch((err) => {
+export async function MomentCard({ kind, sample }: { kind: MomentKind; sample: boolean }) {
+  const moment = await getMoment(kind, sample).catch((err) => {
     console.error("moment card:", err);
     return null;
   });

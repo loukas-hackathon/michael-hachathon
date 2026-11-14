@@ -6,10 +6,35 @@ import {
 } from "@michael/shared";
 import { Hono } from "hono";
 import { HttpError, parse } from "../http";
+import { momentNudge } from "../moments/nudge";
 import { nudgePayload, primaryChannel } from "../nudges/channels";
-import { candidates, decide, engineWindow } from "../nudges/engine";
+import {
+  candidates,
+  DEFAULT_QUIET,
+  decide,
+  type EngineInput,
+  engineWindow,
+  momentDue,
+  type QuietHours,
+} from "../nudges/engine";
 import { pushToCurrentUser } from "../nudges/push";
 import { store } from "../store";
+import { momentCoreFor } from "./moments";
+import { readProfile } from "./profile";
+
+const minutesOf = (clock: string) => {
+  const [h, m] = clock.split(":").map(Number);
+  return (h ?? 0) * 60 + (m ?? 0);
+};
+
+/** The night's quiet hours come from the user's profile; dinner and deep work keep their defaults. */
+export function quietFrom(profile: { quiet_hours: { start: string; end: string } }): QuietHours {
+  return {
+    ...DEFAULT_QUIET,
+    nightStart: minutesOf(profile.quiet_hours.start),
+    nightEnd: minutesOf(profile.quiet_hours.end),
+  };
+}
 
 /**
  * Runs the engine once for the current user: reads the week so far, decides, stores the nudge
@@ -18,13 +43,27 @@ import { store } from "../store";
 export async function checkNudges(): Promise<NudgeCheckResult> {
   const now = new Date().toISOString();
   const win = engineWindow(now);
-  const [events, goals, today, privacy] = await Promise.all([
-    store.listEvents({ from: win.weekStart, to: win.dayEnd }),
+  const [events, goals, today, privacy, profile] = await Promise.all([
+    store.listEvents({ from: win.from, to: win.dayEnd }),
     store.listGoals(),
     store.listNudges({ from: win.dayStart, to: win.dayEnd }),
     store.privacyRules(),
+    readProfile(),
   ]);
-  const decision = decide({ now, goals, events, today, offTheRecord: privacy.offTheRecord });
+  const input: EngineInput = {
+    now,
+    goals,
+    events,
+    today,
+    offTheRecord: privacy.offTheRecord,
+    quiet: quietFrom(profile),
+  };
+  // A Morning or Evening moment that is due and not yet out today: its line joins the candidates.
+  const due = privacy.offTheRecord ? null : momentDue(input);
+  if (due && !today.some((n) => n.key === due)) {
+    input.moment = { kind: due, ...momentNudge(await momentCoreFor(due, now)) };
+  }
+  const decision = decide(input);
   const counted = today.filter((n) => n.status !== "suppressed").length;
   if (decision.action === "skip") {
     return { checked_at: now, nudge: null, skipped: decision.skipped, sent_today: counted };

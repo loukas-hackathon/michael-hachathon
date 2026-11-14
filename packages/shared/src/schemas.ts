@@ -541,7 +541,15 @@ export const NudgeStatus = z.enum(["queued", "sent", "failed", "suppressed"]);
 export type NudgeStatus = z.infer<typeof NudgeStatus>;
 
 // What a nudge is about. Each kind is one rule of the engine (apps/api/src/nudges).
-export const NudgeKind = z.enum(["focus_drift", "block_soon", "wind_down", "goal_behind"]);
+// morning and evening carry the Morning and Evening moments (GET /v1/moments/:kind), once each a day.
+export const NudgeKind = z.enum([
+  "focus_drift",
+  "block_soon",
+  "wind_down",
+  "goal_behind",
+  "morning",
+  "evening",
+]);
 export type NudgeKind = z.infer<typeof NudgeKind>;
 
 // At most 5 per day, under 15 words, never during quiet hours, each tied to a goal.
