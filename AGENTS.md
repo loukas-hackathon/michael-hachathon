@@ -84,11 +84,16 @@ database, full detail 90 days then summaries, deletion really deletes. Send mode
 
 ## Voice, copy and look
 
-Firm sports coach: talks about goals, asks only when unsure, admits mistakes in one line, respects
-quiet hours, shows the maths. British spelling, 24-hour time, nudges under 15 words, "I" for Michael,
-"we" for the team. No emoji, no dashes in copy, never "productivity" or "wellness", never name the
-Marvel assistant that inspired the idea. Look: light paper by day, dark at night; colours, fonts and
-logo come from the Build Hub ("Colour and type", "Logo") and `docs/design-guide.md`, as CSS variables.
+Everything Michael says, from a model or a template, uses `packages/shared/src/voice.ts`: put
+`MICHAEL_VOICE` in the system prompt, check model lines with `voiceProblems`, write durations with
+`voiceDuration` ("47 minutes", "2h 15") or `voiceShortDuration` ("47 min", "1h 20"). In short: a tough
+sports coach (4 of 5) for founders and executives, number first, one fix, says what he moved and until
+when it can be undone, "I" for Michael, "we" for the shared effort, asks only when data is missing.
+British spelling, 24 hour time, nudges under 15 words, no emoji, no dashes, no exclamation marks.
+Never: productivity, optimise, hustle, crush it, journey, wellness, unlock, potential, amazing, great
+job, pickups, or the name of the Marvel assistant that inspired the idea. Copy lines: Build Hub voice
+sheet. Look: white background, black text, one hot pink for goal time, Apple style, system font in
+the app and Mulish outside it; tokens and rules in `docs/design-guide.md`.
 
 ## Code
 
