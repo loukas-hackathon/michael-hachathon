@@ -129,6 +129,8 @@ Where configuration lives (values are never committed):
 
 The production API key and access notes for the team are on the Build Hub (link in `CLAUDE.local.md`).
 
+Seed the demo goals and recommendations (idempotent, never events): `pnpm --filter @michael/api seed`.
+
 ## Deploy (from scratch)
 
 1. **Supabase:** create a project, then apply `supabase/migrations/*.sql`
