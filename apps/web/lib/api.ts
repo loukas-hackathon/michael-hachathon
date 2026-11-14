@@ -16,6 +16,7 @@ import {
   mockGoals,
   mockRecommendations,
   type NudgeTestResult,
+  type PlaceSuggestionsResponse,
   type PlacesResponse,
   type PlacesUpdate,
   type PrivacyState,
@@ -567,6 +568,12 @@ export async function getPlaces(): Promise<PlacesResponse> {
 export async function searchPlaces(q: string): Promise<AddressSearchResponse> {
   if (USE_MOCKS) return { results: [], maps_available: false };
   return get<AddressSearchResponse>(`/v1/places/search?${new URLSearchParams({ q })}`);
+}
+
+/** Places the user often looks up in Google Maps, offered for saving (#223). Empty while maps is off. */
+export async function getPlaceSuggestions(): Promise<PlaceSuggestionsResponse> {
+  if (USE_MOCKS) return { enabled: false, suggestions: [] };
+  return get<PlaceSuggestionsResponse>("/v1/places/suggestions");
 }
 
 /** PUT replaces the whole list; saving places is the user's opt in to travel times. */

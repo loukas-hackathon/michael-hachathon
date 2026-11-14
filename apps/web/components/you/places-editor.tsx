@@ -1,6 +1,6 @@
 "use client";
 
-import type { AddressMatch, Place, PlaceInput } from "@michael/shared";
+import type { AddressMatch, Place, PlaceInput, PlaceSuggestion } from "@michael/shared";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { findAddress, savePlaceList } from "@/app/you/places/actions";
@@ -176,12 +176,16 @@ export function PlacesEditor({
   places,
   mapsAvailable,
   travelEnabled,
+  suggestions = [],
 }: {
   places: Place[];
   mapsAvailable: boolean;
   travelEnabled: boolean;
+  /** Places looked up often in Google Maps (#223), offered once each. */
+  suggestions?: PlaceSuggestion[];
 }) {
   const router = useRouter();
+  const [hidden, setHidden] = useState<string[]>([]);
   const [list, setList] = useState(places);
   const [open, setOpen] = useState<SlotKey | null>(places.some((p) => p.key === "home") ? null : "home");
   const [busy, setBusy] = useState(false);
@@ -249,6 +253,61 @@ export function PlacesEditor({
           </p>
         )}
       </section>
+
+      {(() => {
+        const offers = suggestions.filter(
+          (x) =>
+            x.key &&
+            SLOTS.some((sl) => sl.key === x.key) &&
+            !list.some((p) => p.key === x.key) &&
+            !hidden.includes(x.label),
+        );
+        if (offers.length === 0) return null;
+        return (
+          <section aria-label="Places you look up often">
+            <ul className="overflow-hidden rounded-group bg-fill">
+              {offers.map((x, i) => {
+                const slot = SLOTS.find((sl) => sl.key === x.key) as (typeof SLOTS)[number];
+                return (
+                  <li key={x.label} className="relative flex min-h-14 items-center gap-2 px-4 py-2">
+                    {i > 0 ? <span className="absolute inset-x-0 top-0 ml-4 h-[0.5px] bg-separator" /> : null}
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate text-body">
+                        Save {x.label} as {slot.label.toLowerCase()}?
+                      </span>
+                      <span className="text-footnote text-label-2 tnum">
+                        You looked it up {x.count} times in Maps.
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        save(slot.key, {
+                          key: slot.key,
+                          label: slot.label,
+                          address: x.label,
+                          ...(x.lat !== null && x.lng !== null ? { lat: x.lat, lng: x.lng } : {}),
+                        })
+                      }
+                      className="press min-h-9 rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-3.5 text-subhead font-semibold text-tint-text disabled:opacity-60"
+                    >
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setHidden((h) => [...h, x.label])}
+                      className="press min-h-9 px-1 text-subhead font-semibold text-tint-text"
+                    >
+                      Not now
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        );
+      })()}
 
       <section aria-label="Travel times">
         <label className="flex min-h-14 items-center justify-between gap-4 rounded-group bg-fill px-4 py-2">

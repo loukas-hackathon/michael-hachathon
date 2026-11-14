@@ -30,5 +30,6 @@ export async function savePlaceList(places: unknown): Promise<SaveResult> {
   if (!res.ok) return res;
   revalidatePath(PLACES_PATH);
   revalidatePath("/you");
+  revalidatePath("/you/connections/travel");
   return { ok: true };
 }
