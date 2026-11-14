@@ -12,6 +12,7 @@ import {
   type ScoreBlock,
   type ScoreDay,
   type ScoreGoal,
+  type ScoreLostBy,
   type ScoreLostStretch,
   type ScoreTick,
   type TimeWonBack,
@@ -183,6 +184,21 @@ interface Piece extends Span, Sum {
 }
 
 const ZERO: Sum = { planned: 0, elapsed: 0, lost: 0, verified: 0 };
+
+/** The lost stretches of some blocks summed by what took them, most first; under a minute is left out. */
+export function lostBy(stretches: ScoreLostStretch[]): ScoreLostBy[] {
+  const sums = new Map<string, ScoreLostBy>();
+  for (const s of stretches) {
+    const key = `${s.kind}\u0000${s.what}`;
+    const row = sums.get(key);
+    if (row) row.minutes += s.minutes;
+    else sums.set(key, { what: s.what, kind: s.kind, category: s.category, minutes: s.minutes });
+  }
+  return [...sums.values()]
+    .map((r) => ({ ...r, minutes: Math.round(r.minutes) }))
+    .filter((r) => r.minutes >= 1)
+    .sort((a, b) => b.minutes - a.minutes || a.what.localeCompare(b.what));
+}
 
 const plus = (a: Sum, b: Sum): Sum => ({
   planned: a.planned + b.planned,
@@ -686,6 +702,7 @@ export function scoreWithHistory(
       on_target: null,
       records: [],
       free_minutes_left: freeMinutesLeft(zone, range.days, now, waking, committed),
+      lost_by: lostBy(weekPieces.flatMap((piece) => piece.stretches)),
       sleep: sleepWeek(events, active, zone, range.days, now),
     },
     null,

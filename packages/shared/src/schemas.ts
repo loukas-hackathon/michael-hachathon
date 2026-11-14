@@ -1688,6 +1688,16 @@ export const ScoreLostStretch = z.object({
 });
 export type ScoreLostStretch = z.infer<typeof ScoreLostStretch>;
 
+// What took the lost time over a stretch of days: one entry per app, site or site category.
+export const ScoreLostBy = z.object({
+  what: z.string(),
+  kind: z.enum(["app", "site"]),
+  category: AppCategory,
+  // Whole minutes, at least 1.
+  minutes: z.number().int().positive(),
+});
+export type ScoreLostBy = z.infer<typeof ScoreLostBy>;
+
 export const ScoreBlock = z.object({
   // The calendar event. A block that crosses local midnight appears once on each day.
   event_id: z.string(),
@@ -1973,6 +1983,10 @@ export const Score = WeeklyScore.extend({
   // Waking time left this week outside fixed calendar commitments and sleep (#117). Goal blocks
   // count as free: they are where goal time goes.
   free_minutes_left: Minutes,
+  // What took the week's lost time, most first: every lost stretch of the week's blocks summed
+  // by app or site. GET /v1/score always sends it. The entries are rounded one by one, so they
+  // can add up to a few minutes off `lost_minutes`.
+  lost_by: z.array(ScoreLostBy).optional(),
   // Null until there is a sleep goal and sleep data this week.
   sleep: ScoreSleep.nullable(),
 });

@@ -1159,6 +1159,11 @@ export const mockScore: Score = {
   on_target: null,
   records: [],
   free_minutes_left: 4390,
+  lost_by: [
+    { what: "Instagram", kind: "app", category: "social", minutes: 148 },
+    { what: "WhatsApp", kind: "app", category: "communication", minutes: 81 },
+    { what: "Mail", kind: "app", category: "communication", minutes: 5 },
+  ],
   sleep: { goal_minutes: 450, nightly: [431, 388, 452, null, null, null, null] },
 };
 

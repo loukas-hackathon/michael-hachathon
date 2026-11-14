@@ -2281,6 +2281,10 @@ type Score = ScoreTotals & {
   records: PersonalRecord[]; // set in this week (achieved_on inside it), baselines included
   // Waking time left this week outside fixed calendar commitments and sleep (see below).
   free_minutes_left: number;
+  // What took the week's lost time, most first: every lost stretch of the week's blocks summed by
+  // app or site, in whole minutes, entries under a minute left out. Rounded one by one, so the
+  // entries can add up to a few minutes off `lost_minutes`.
+  lost_by: { what: string; kind: "app" | "site"; category: AppCategory; minutes: number }[];
   // Null until there is a sleep goal and sleep data this week. Sleep stays outside the score.
   sleep: { goal_minutes: number; nightly: (number | null)[] } | null; // 7 nights, Monday first
 };
