@@ -22,7 +22,7 @@ returns `501 not_implemented`, `planned` = not routed yet. Update the status whe
     account (`demo@michael.app`). Per-user ingest tokens come later.
 - **Shared secret details:**
   Send `Authorization: Bearer <API_KEY>`. Applies to everything under `/v1/*` and `/mcp`, except
-  `/health` and the OAuth connect/callback redirects. Only `/v1/webhooks/*` and `/mcp` also accept
+  `/health` and the OAuth callback redirect (`/oauth/google/callback`). Only `/v1/webhooks/*` and `/mcp` also accept
   `?key=<API_KEY>` (for webhook senders and claude.ai connectors that cannot set headers); every
   other route rejects it. To be replaced by real auth (per-source secrets / HMAC, OAuth for MCP)
   if we go multi-user.
@@ -147,6 +147,7 @@ type AnalysisRun = {
 type Integration = {
   provider: IntegrationProvider;
   status: IntegrationStatus;
+  account: string | null; // Google: the address of the account the user picked
   connected_at: string | null;
   last_sync_at: string | null;
   error: string | null;
@@ -785,14 +786,64 @@ Rules: act only on the user's own calendar blocks and Mac; never touch events wi
 
 ### Integrations (OAuth)
 
-| Method | Path                           | Auth                        | Response                                           | Status |
-| ------ | ------------------------------ | --------------------------- | -------------------------------------------------- | ------ |
-| GET    | `/v1/integrations`             | Bearer                      | `200 { integrations: Integration[] }`              | stub   |
-| GET    | `/v1/oauth/:provider/connect`  | none                        | `302` to provider consent screen                   | stub   |
-| GET    | `/v1/oauth/:provider/callback` | none (validated by `state`) | `302` back to web `/settings?connected=<provider>` | stub   |
+| Method | Path                                       | Auth                        | Response                                                       | Status |
+| ------ | ------------------------------------------ | --------------------------- | -------------------------------------------------------------- | ------ |
+| GET    | `/v1/integrations`                         | Bearer                      | `200 { integrations: Integration[] }` (every provider, always) | live   |
+| POST   | `/v1/integrations/google_calendar/connect` | Bearer                      | `200 { url }`: Google's consent screen; the browser goes there | live   |
+| GET    | `/oauth/google/callback`                   | none (validated by `state`) | `302` to `${WEB_URL}/you?connected=google_calendar`            | live   |
+| POST   | `/v1/integrations/google_calendar/sync`    | Bearer                      | `200 CalendarSyncResult`; `409` if not connected               | live   |
+| DELETE | `/v1/integrations/google_calendar`         | Bearer                      | `200 Integration` (`disconnected`); revokes at Google          | live   |
 
-`:provider` is `google_calendar` or `whoop`. Tokens are stored in the `integrations` table and are
-never returned by the API. Redirect URI: `${PUBLIC_API_URL}/v1/oauth/<provider>/callback`.
+`whoop` answers `501` until it is wired up. Tokens live in the `integrations` table and are never
+returned by the API.
+
+**Connect flow (one tap for the user).** The web app's `/integrations/google/connect` calls
+`POST /v1/integrations/google_calendar/connect` with the user's token and redirects the browser to
+`url`. That is Google's consent screen with `scope=openid email https://www.googleapis.com/auth/calendar.events`,
+`access_type=offline`, `prompt=select_account consent` (the user picks which Google account, which
+can differ from the one they signed in with) and `include_granted_scopes=true`. `state` is signed
+with a key derived from `API_KEY`, names the user and expires after 15 minutes, so it stops CSRF and
+binds the callback to the user who started it. Google returns to `${PUBLIC_API_URL}/oauth/google/callback`;
+the API swaps the code for tokens, stores the refresh token and the account address (from the ID
+token), runs the first sync and redirects to `/you?connected=google_calendar`. Failures redirect to
+`/you?integration_error=google_calendar&reason=expired|declined|token`. Access tokens are refreshed
+when they have under a minute left; a revoked grant sets `status: "error"`.
+
+**Sync.** Pulls the primary calendar, now minus 7 days to now plus 7 days, recurring events expanded,
+into `calendar_event` events with `source: "google_calendar"` and `external_id` = Google's event id.
+Idempotent: unchanged events are left alone, changed ones (title, time) are updated in place, and
+mirrored events that were deleted or cancelled in Google within the window are removed from the
+timeline (the calendar itself is never touched). Cancelled and declined events are skipped. Runs
+after connecting, on `POST .../sync`, and every `CALENDAR_SYNC_MINUTES` (default 15) for every
+connected user.
+
+```ts
+type CalendarSyncResult = {
+  from: string;
+  to: string;
+  fetched: number;
+  inserted: number;
+  updated: number;
+  unchanged: number;
+  removed: number;
+  last_sync_at: string;
+};
+// `data` of a google_calendar event
+type CalendarEventData = {
+  calendar: "primary";
+  status: string;
+  all_day: boolean; // all day events start and end at local midnight in the calendar's zone
+  attendees: number; // people on the invite, the user included, rooms left out
+  with_others: boolean; // anyone else invited, or someone else organised it: Michael never touches it
+  organizer_self: boolean;
+  michael: boolean; // a block Michael created
+  transparency: string; // "transparent" = shows as free
+  recurring: boolean;
+  location: string | null;
+  html_link: string | null;
+  updated: string | null;
+};
+```
 
 ### Privacy
 

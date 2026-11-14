@@ -55,7 +55,8 @@ export const app = new Hono()
   })
   // MCP OAuth: discovery, client registration, authorise and token (public by design).
   .route("/", oauthPublic)
-  .route("/v1", oauth)
+  // Google Calendar OAuth callback (/oauth/google/callback), validated by its signed state.
+  .route("/", oauth)
   .route("/v1/webhooks", webhooksApp)
   .route("/v1", v1)
   // claude.ai signs in with OAuth (routes/oauth.ts); the API key and ?key= keep working.
