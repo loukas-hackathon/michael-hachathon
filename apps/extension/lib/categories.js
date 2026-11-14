@@ -1,7 +1,8 @@
 // A small host to category map, so the timeline can say "travel during a work block" without the
-// model ever seeing an address. apps/collector has its own map in TypeScript for the Chrome
-// history reader. This folder has no build step and cannot import TypeScript, so the two are
-// separate for now and should become one shared list later (see README).
+// model ever seeing an address. Same twelve category names as
+// apps/collector/src/site-categories.ts, which the Chrome history reader uses. This folder has no
+// build step and cannot import TypeScript, so the two lists are separate for now and should
+// become one shared list later (see README).
 
 const BY_CATEGORY = {
   travel: [

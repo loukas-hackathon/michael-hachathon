@@ -99,7 +99,7 @@ test("the event has the API's EventInput shape", () => {
   const event = toEvent({
     id: id(),
     tabId: 1,
-    host: "www.skyscanner.net",
+    host: "skyscanner.net",
     title: "Flights",
     start: T0,
     end: T0 + 61_400,
@@ -110,7 +110,7 @@ test("the event has the API's EventInput shape", () => {
     start_at: "2026-11-14T10:00:00.000Z",
     end_at: "2026-11-14T10:01:01.400Z",
     title: "Flights",
-    data: { host: "www.skyscanner.net", seconds: 61, category: "travel", origin: "extension" },
+    data: { host: "skyscanner.net", seconds: 61, category: "travel", origin: "extension" },
     external_id: `ext:${id()}`,
   });
 });
@@ -125,6 +125,7 @@ test("no category key when the host is unknown, and short stretches are dropped"
 test("only web pages have a host", () => {
   assert.equal(hostFromUrl("https://Example.com/a/b?c=d#e"), "example.com");
   assert.equal(hostFromUrl("http://example.com:8080/"), "example.com");
+  assert.equal(hostFromUrl("https://www.wikipedia.org/wiki/Athens"), "wikipedia.org");
   for (const url of [
     "chrome://extensions",
     "chrome-extension://abc/options.html",

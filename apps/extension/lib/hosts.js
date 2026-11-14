@@ -1,7 +1,12 @@
 // Which pages may be recorded. Everything here works on the host only: the full address is read
 // once to take the host out of it and is never stored or sent.
 
-/** The host of a web page, or null for anything that is not http(s) (chrome://, file:, about:). */
+/**
+ * The bare host of a web page: lower case, no "www.", no port, path or query. Null for anything
+ * that is not http(s) (chrome://, file:, about:). Same rule as `hostFromUrl` in
+ * apps/collector/src/site-privacy.ts, so a visit seen by the extension and the same visit read
+ * from Chrome's history carry the same host.
+ */
 export function hostFromUrl(url) {
   if (!url) return null;
   let parsed;
@@ -11,14 +16,17 @@ export function hostFromUrl(url) {
     return null;
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
-  const host = parsed.hostname.toLowerCase().replace(/\.$/, "");
+  const host = parsed.hostname
+    .toLowerCase()
+    .replace(/\.$/, "")
+    .replace(/^www\./, "");
   return host || null;
 }
 
 /** True when `host` is `domain` or one of its subdomains. */
 export const matchesDomain = (host, domain) => host === domain || host.endsWith(`.${domain}`);
 
-/** `www.example.com` and `example.com` are one site in the popup and in the user's list. */
+/** `www.example.com` and `example.com` are one site, also in the user's list and the tally. */
 export const displayHost = (host) => host.replace(/^www\./, "");
 
 const LOCAL_SUFFIXES = [

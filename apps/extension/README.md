@@ -16,14 +16,15 @@ One event per stretch on a site, sent to `POST /v1/events/batch`:
   "start_at": "2026-11-14T10:00:00.000Z",
   "end_at": "2026-11-14T10:12:00.000Z",
   "title": "Flights from Athens to New York",
-  "data": { "host": "www.skyscanner.net", "seconds": 720, "category": "travel", "origin": "extension" },
+  "data": { "host": "skyscanner.net", "seconds": 720, "category": "travel", "origin": "extension" },
   "external_id": "ext:6f1c2c0e-3d4b-4c59-9a55-0e9f6a3f1b21"
 }
 ```
 
-That is all of it: the host, the page title, when, how long, and a category when the host is in
-the small built in map. `origin: "extension"` tells these events apart from the ones the Chrome
-history reader in `apps/collector` produces.
+That is all of it: the bare host (no `www.`, no port, path or query), the page title, when, how
+long, and a category when the host is in the small built in map. `origin: "extension"` tells these
+events apart from the ones the Chrome history reader in `apps/collector` produces (`origin:
+"history"`); both use the same host rule, so the same visit carries the same host from either.
 
 ## What it never records
 
@@ -127,9 +128,10 @@ The folder has no `package.json` on purpose, so pnpm does not treat it as a work
 
 ## Later
 
-- **One category list.** `lib/categories.js` here and `apps/collector/src/site-categories.ts` do the
-  same job in two languages because this folder has no build step. They should become one shared
-  list (generated JSON, or a build step for the extension).
+- **One category list and one exclusion list.** `lib/categories.js` and `lib/hosts.js` here do the
+  same job as `apps/collector/src/site-categories.ts` and `site-privacy.ts`, in two languages,
+  because this folder has no build step. The category names and the host rule already match; the
+  lists themselves should become one (generated JavaScript, or a build step for the extension).
 - **One event per visit.** The history reader and the extension both describe the same visits. The
   timeline should prefer `origin: "extension"` where both exist.
 
