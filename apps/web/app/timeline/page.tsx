@@ -3,7 +3,7 @@ import Link from "next/link";
 import { EmptyState } from "@/components/empty-state";
 import { LiveRefresh } from "@/components/live-refresh";
 import { ScreenHeader } from "@/components/screen";
-import { DayTimeline, HeartRow, SleepBand } from "@/components/timeline/day-timeline";
+import { DayTimeline, HeartRow } from "@/components/timeline/day-timeline";
 import { LostWeekChart } from "@/components/timeline/lost-week";
 import { WeekStrip } from "@/components/timeline/week-strip";
 import { getLostWeek } from "@/lib/api";
@@ -95,11 +95,7 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
             )}
           </p>
           <HeartRow day={day} heartHidden={heartHidden} />
-          {day.health?.lastNight ? <SleepBand night={day.health.lastNight} goal={screen.sleepGoal} /> : null}
-          <DayTimeline day={day} heartHidden={heartHidden} />
-          {day.health?.tonight ? (
-            <SleepBand night={day.health.tonight} goal={screen.sleepGoal} tonight />
-          ) : null}
+          <DayTimeline day={day} heartHidden={heartHidden} sleepGoal={screen.sleepGoal} />
         </>
       ) : (
         <EmptyState
