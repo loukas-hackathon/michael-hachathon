@@ -55,6 +55,14 @@ export default async function YouPage() {
         ))}
       </ul>
 
+      <Link
+        href="/you/devices"
+        className="press mt-8 flex h-12 items-center justify-between rounded-group bg-fill px-4 text-body font-semibold"
+      >
+        Devices
+        <span className="text-label-2">›</span>
+      </Link>
+
       <a
         href="/auth/signout"
         className="press mt-8 flex h-11 items-center justify-center rounded-group bg-fill text-body font-semibold text-danger"

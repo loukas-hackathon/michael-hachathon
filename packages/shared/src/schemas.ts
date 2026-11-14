@@ -931,6 +931,24 @@ export const ChatHistory = z.object({
 });
 export type ChatHistory = z.infer<typeof ChatHistory>;
 
+// ---------- device keys (personal tokens for collectors and webhooks) ----------
+
+// A revocable key that acts for one user. The secret ("mk_...") is shown once, at creation.
+export const PersonalToken = z.object({
+  id: z.uuid(),
+  name: z.string().min(1),
+  prefix: z.string(), // first characters, so the user can tell keys apart
+  created_at: IsoDateTime,
+  last_used_at: IsoDateTime.nullable(),
+});
+export type PersonalToken = z.infer<typeof PersonalToken>;
+
+export const PersonalTokenCreate = z.object({ name: z.string().min(1).max(60) });
+export type PersonalTokenCreate = z.infer<typeof PersonalTokenCreate>;
+
+export const PersonalTokenCreated = z.object({ token: PersonalToken, secret: z.string() });
+export type PersonalTokenCreated = z.infer<typeof PersonalTokenCreated>;
+
 // ---------- errors ----------
 
 export const ErrorCode = z.enum([

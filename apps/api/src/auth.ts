@@ -1,11 +1,12 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import type { MiddlewareHandler } from "hono";
-import { runAsUser } from "./context";
+import { type AuthMethod, runAsUser } from "./context";
 import { env } from "./env";
 import { errorResponse } from "./http";
 import { mcpResource, resourceMetadataUrl } from "./public-url";
 import { verifyAccessToken } from "./routes/oauth";
+import { isPersonalToken, userForPersonalToken } from "./tokens";
 
 const digest = (s: string) => createHash("sha256").update(s).digest();
 const expected = digest(env.API_KEY);
@@ -60,10 +61,21 @@ export const requireUser =
     if (!token) return deny("Sign in, or send the API key");
 
     let userId: string | null;
-    if (isApiKey(token)) userId = env.DEMO_USER_ID;
-    else if (opts.mcp && token.startsWith("mcp_at_")) {
+    let via: AuthMethod;
+    if (isApiKey(token)) {
+      userId = env.DEMO_USER_ID;
+      via = "api_key";
+    } else if (isPersonalToken(token)) {
+      // Device keys (Mac collector, Health Auto Export) made by the person in the app.
+      userId = await userForPersonalToken(token);
+      via = "personal_token";
+    } else if (opts.mcp && token.startsWith("mcp_at_")) {
       userId = (await verifyAccessToken(token, mcpResource(c)))?.user_id ?? null;
-    } else userId = await userFromSupabaseToken(token);
+      via = "mcp_oauth";
+    } else {
+      userId = await userFromSupabaseToken(token);
+      via = "session";
+    }
     if (!userId) return deny("Invalid or expired credentials");
-    await runAsUser(userId, () => next());
+    await runAsUser(userId, () => next(), via);
   };
