@@ -147,7 +147,10 @@ Seed the demo goals and recommendations (idempotent, never events): `pnpm --filt
 
 ## Connect the MCP server
 
-Tools: `get_timeline`, `get_goals`, `get_recommendations`, `add_event` (see `docs/api.md`).
+Tools: read the day (`get_timeline`, `get_goals`, `get_score`, `get_patterns`, `get_moments`,
+`get_nudges`, `list_recommendations`) and change it (`add_event`, `add_goal`, `update_goal`,
+`update_recommendation`, `execute_recommendation`, `undo_recommendation`, `create_focus_block`).
+See `docs/api.md`.
 
 **Claude Code:**
 

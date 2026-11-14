@@ -1172,10 +1172,11 @@ type AgentQuery = {
   plain line ("Read your day from Sat 09:00 to Sat 17:00", `Added "Ran 5 km" to your day`), never
   the payload. A call outside the agent's scopes, or by an agent that is not `approved`, returns a
   tool result with `isError: true` ("Not allowed. ...") and is logged with `allowed: false`.
-- Scope per tool: `get_timeline`, `get_patterns` = `timeline`; `get_goals` = `goals`;
-  `get_recommendations` = `recommendations`; `get_score` = `score`; `add_event` = `write_events`.
-  A tool not in that list needs `timeline` if it is read only, else `write_events`
-  (`apps/api/src/mcp-guard.ts`).
+- Scope per tool: `get_timeline`, `get_patterns` = `timeline`; `get_goals`, `add_goal`,
+  `update_goal` = `goals`; `list_recommendations`, `update_recommendation`, `get_nudges` =
+  `recommendations`; `get_score`, `get_moments` = `score`; `add_event`, `execute_recommendation`,
+  `undo_recommendation`, `create_focus_block`, `plan_travel` = `write_events`. A tool not in that
+  list needs `timeline` if it is read only, else `write_events` (`apps/api/src/mcp-guard.ts`).
 - `queries`: `from` defaults to local midnight today (Europe/Athens), `to` to now; newest first,
   at most 500.
 
@@ -1486,14 +1487,40 @@ On allow, `redirect_to` carries a one time `code` (5 minutes), `state` and `iss`
 
 ### Tools
 
-| Tool                  | Input                                                   | Output (JSON text content)                                                   |
-| --------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `get_timeline`        | `{ from?, to?, source?: Source[], type?: EventType[] }` | `{ from, to, events: Event[] }`                                              |
-| `get_goals`           | `{ active_only?: boolean }` (default true)              | `{ goals: Goal[] }`                                                          |
-| `get_recommendations` | `{ status?: RecommendationStatus }`                     | `{ recommendations: Recommendation[] }`                                      |
-| `get_patterns`        | `{ from?, to? }` (default: the last 7 days)             | `PatternReport`                                                              |
-| `get_score`           | `{ date? }` (a local day, default today)                | `Score`                                                                      |
-| `add_event`           | `EventInput`                                            | `{ inserted: number, duplicates: number, ignored: number, events: Event[] }` |
-| `plan_travel`         | `{ from?, to? }` (default today)                        | `TravelPlanResult` (see Places and travel)                                   |
+Every tool answers with short, human readable text first (24 hour Europe/Athens time, the numbers
+that matter and the ids for the next call) and the same facts as `structuredContent`. Times the
+model writes (`TimeInput`) are `YYYY-MM-DDTHH:MM` in Europe/Athens wall time, or ISO 8601 with an
+offset. A refused or failed call returns `isError: true` with one plain sentence saying why
+(`HttpError` messages, validation issues listed). Scope per tool: see "Michael for agents".
+
+| Tool                     | Scope             | Input                                                                                   | `structuredContent`                                       |
+| ------------------------ | ----------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `get_timeline`           | `timeline`        | `{ date?: LocalDay, from?: TimeInput, to?: TimeInput, source?, type? }` (default: 24 h) | `{ from, to, count, truncated, events: Event[] }` (≤ 500) |
+| `get_goals`              | `goals`           | `{ active_only?: boolean }` (default true)                                              | `{ goals: Goal[] }`                                       |
+| `get_score`              | `score`           | `{ date?: LocalDay }` (default today)                                                   | `Score` without `day.blocks[].ticks`                      |
+| `get_patterns`           | `timeline`        | `{ from?: TimeInput, to?: TimeInput }` (default: the last 7 days)                       | `PatternReport`                                           |
+| `list_recommendations`   | `recommendations` | `{ status?: RecommendationStatus }`                                                     | `{ recommendations: Recommendation[] }`                   |
+| `get_nudges`             | `recommendations` | `{ date?: LocalDay }` (default today)                                                   | `{ day, nudges: Nudge[] }`                                |
+| `get_moments`            | `score`           | `{ kind?: MomentKind }` (default morning before 15:00 local, evening after)             | `Moment`                                                  |
+| `add_event`              | `write_events`    | `EventInput`                                                                            | `{ inserted, duplicates, ignored, events: Event[] }`      |
+| `add_goal`               | `goals`           | `{ category, title, description?, weekly_budget_minutes?, target? }`                    | `{ goal: Goal }`                                          |
+| `update_goal`            | `goals`           | `{ id, category?, title?, description?, weekly_budget_minutes?, target?, active? }`     | `{ goal: Goal }`, error when not found                    |
+| `update_recommendation`  | `recommendations` | `{ id, status: "accepted" \| "dismissed" }`                                             | `{ recommendation }`; a `done` one is refused (undo it)   |
+| `execute_recommendation` | `write_events`    | `{ id }`                                                                                | `{ recommendation, undo_until }`                          |
+| `undo_recommendation`    | `write_events`    | `{ id }`                                                                                | `{ recommendation }`                                      |
+| `create_focus_block`     | `write_events`    | `{ start: TimeInput, end: TimeInput, title?, goal_id? }`                                | `{ recommendation, undo_until }`                          |
+| `plan_travel`            | `write_events`    | `{ from?, to? }` (default today)                                                        | `TravelPlanResult` (see Places and travel)                |
+
+- `execute_recommendation` / `undo_recommendation` call the same functions as
+  `POST /v1/recommendations/:id/execute` and `/undo` (`apps/api/src/actions/calendar.ts`), with the
+  same rules: own time only, never an event with other people, never deletes the user's events,
+  undo until the block starts.
+- `create_focus_block` books straight away: it saves a recommendation (`source: "chat"`, `status: "done"`, rationale
+  "Booked at your request through <agent name>") and carries it out like any other, so the block
+  shows in Michael and `undo_recommendation` takes it back. Refused in the past, under 5 minutes,
+  over 6 hours, or when it overlaps an event with other people.
+- No tool deletes anything, sends anything in the user's name, or touches an event with other
+  people. Goals are paused with `update_goal { active: false }`, never deleted.
+- `get_recommendations` was renamed `list_recommendations`.
 
 Status: all `live` (Supabase in production, in-memory locally without Supabase keys).
