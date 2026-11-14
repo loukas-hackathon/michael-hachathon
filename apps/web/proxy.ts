@@ -38,5 +38,8 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   // Everything except static files and images.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)"],
+  // Static files, images and the PWA manifest stay public so the app can be installed signed out.
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+  ],
 };
