@@ -1,4 +1,12 @@
-import type { Event, Goal, GoalCategory, Nudge, NudgeKind, NudgeSkip } from "@michael/shared";
+import {
+  type Event,
+  type Goal,
+  type GoalCategory,
+  type Nudge,
+  type NudgeKind,
+  type NudgeSkip,
+  voiceShortDuration,
+} from "@michael/shared";
 import { DEFAULT_TIMEZONE } from "../patterns/context";
 import { goalBlocks, roleOf } from "../patterns/focus";
 import { DAY, MINUTE, Zone } from "../patterns/time";
@@ -91,13 +99,8 @@ const SPENT_TYPES: Record<GoalCategory, Event["type"]> = {
 };
 
 /** "45 min", "2h", "2h 10m". */
-export function shortDuration(minutes: number): string {
-  const m = Math.max(0, Math.round(minutes));
-  if (m < 60) return `${m} min`;
-  const h = Math.floor(m / 60);
-  const rest = m % 60;
-  return rest ? `${h}h ${rest}m` : `${h}h`;
-}
+/** Compact durations the voice sheet way: "47 min", "2h 10", "6h". */
+export const shortDuration = voiceShortDuration;
 
 export const wordCount = (text: string) => text.trim().split(/\s+/).filter(Boolean).length;
 

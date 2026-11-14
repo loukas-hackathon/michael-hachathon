@@ -47,7 +47,7 @@ test("chat context lists goals, today's entries and weekly totals in local time"
   assert.match(text, /- 23:40 to 07:10 sleep: Sleep/);
   // The swim was on Thursday: not a line of today, but in the weekly total.
   assert.doesNotMatch(text, /workout: Swim/);
-  assert.match(text, /- workout: 2 entries, 1h 45m in total/);
+  assert.match(text, /- workout: 2 entries, 105 minutes in total/);
 });
 
 test("chat history always starts with the user's turn", () => {
@@ -108,10 +108,10 @@ test("POST /v1/chat/stream without a model key answers 503 before streaming", {
 test("the score goes into the chat context with its own figures", () => {
   const text = scoreLines(mockScore);
   assert.match(text, /64% of planned goal time spent/);
-  assert.match(text, /6h 56m spent of 10h 50m planned time already passed/);
+  assert.match(text, /6h 56 spent of 10h 50 planned time already passed/);
   assert.match(
     text,
-    /4h of deep work per day \[work\]: 6h 6m spent of budget 20h \(13h 54m left to reach it\)/,
+    /4h of deep work per day \[work\]: 6h 06 spent of budget 20h \(13h 54 left to reach it\)/,
   );
 });
 

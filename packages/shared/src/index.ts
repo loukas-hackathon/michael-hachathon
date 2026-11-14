@@ -5,3 +5,4 @@ export * from "./ai-prompts";
 export * from "./categories";
 export * from "./mocks";
 export * from "./schemas";
+export * from "./voice";

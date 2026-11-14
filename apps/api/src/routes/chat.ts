@@ -7,8 +7,10 @@ import {
   type ChatResponse,
   type Event,
   type Goal,
+  MICHAEL_VOICE,
   type PatternReport,
   type Score,
+  voiceDuration,
 } from "@michael/shared";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
@@ -42,16 +44,11 @@ const LISTED_TYPES = new Set<Event["type"]>([
 // Types totalled over the week so Michael can talk budgets.
 const WEEK_TYPES = ["workout", "sleep", "focus_session", "meal"] as const;
 
-const SYSTEM_PROMPT = `You are Michael, a coach for the whole day. You are on the user's side: you find the time they lose every day and give it back to their goals (work, gym, rest, food).
+const SYSTEM_PROMPT = `${MICHAEL_VOICE}
 
-Voice:
-- A firm sports coach. Talk about goals and time, plainly and warmly, never preachy.
-- Short answers: two to five sentences unless the user asks for detail. No headings.
-- Show the maths when you use a number ("2h 10m of 9h this week").
-- British spelling, 24-hour time (14:30), "I" for yourself.
-- No emoji. No dashes as punctuation. Never say "productivity" or "wellness".
-- Ask a question only when you are genuinely unsure what the user wants.
-- If you got something wrong, admit it in one line and move on.
+In this chat:
+- Short answers: two to five sentences unless the user asks for detail.
+- Show the maths when you use a number ("2h 10 of 9h this week").
 - When you suggest a change, make it concrete and tie it to a goal: what, when, how long.
 
 Facts:
@@ -61,13 +58,8 @@ Facts:
 - You never touch events with other people, never delete, and never send anything in the user's name.`;
 
 const minutes = (ms: number) => Math.round(ms / 60_000);
-function hm(totalMinutes: number): string {
-  const m = Math.round(totalMinutes);
-  const h = Math.floor(m / 60);
-  const rest = m % 60;
-  if (h === 0) return `${rest}m`;
-  return rest === 0 ? `${h}h` : `${h}h ${rest}m`;
-}
+// Durations the voice sheet way, so the model copies the same format: "47 minutes", "2h 15".
+const hm = (totalMinutes: number) => voiceDuration(totalMinutes);
 
 export interface ChatContextInput {
   now: number;

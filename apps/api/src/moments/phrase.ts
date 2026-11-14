@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { MICHAEL_VOICE, voiceProblems } from "@michael/shared";
 import { env } from "../env";
 import { type MomentCore, templateHeadline } from "./compute";
 
@@ -7,12 +8,9 @@ import { type MomentCore, templateHeadline } from "./compute";
 
 const TIMEOUT_MS = 8000;
 
-const SYSTEM = [
-  "You are Michael, a firm sports coach for the whole day. Write ONE sentence, at most 25 words,",
-  "for the user's moment card. Use only numbers and times that appear in the facts. British spelling,",
-  "24 hour time, speak to the user as you, refer to yourself as I. No dashes, no emoji, no",
-  "exclamation marks, no quotes. Never say productivity or wellness. Reply with the sentence only.",
-].join(" ");
+const SYSTEM = `${MICHAEL_VOICE}
+
+Task: write ONE sentence, at most 25 words, for the user's moment card. Use only numbers and times that appear in the facts. No quotes. Reply with the sentence only.`;
 
 /** Facts the model may use: the template line, the totals and the moves, all from the core. */
 export function factsFor(m: MomentCore): string {
@@ -36,8 +34,7 @@ export function factsFor(m: MomentCore): string {
 /** True when a model line keeps the voice rules and invents no number. */
 export function acceptable(line: string, facts: string): boolean {
   if (line.length < 10 || line.length > 220 || line.includes("\n")) return false;
-  if (/[‐-―]|\s-\s|!|\p{Extended_Pictographic}/u.test(line)) return false;
-  if (/productivity|wellness/i.test(line)) return false;
+  if (voiceProblems(line).length > 0) return false;
   const known = new Set(facts.match(/\d+/g) ?? []);
   return (line.match(/\d+/g) ?? []).every((n) => known.has(n));
 }
