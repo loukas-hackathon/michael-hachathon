@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import type { MiddlewareHandler } from "hono";
+import { agentsStore } from "./agents-store";
 import { type AuthMethod, runAsUser } from "./context";
 import { env } from "./env";
 import { errorResponse } from "./http";
@@ -62,6 +63,7 @@ export const requireUser =
 
     let userId: string | null;
     let via: AuthMethod;
+    let agentId: string | null = null;
     if (isApiKey(token)) {
       userId = env.DEMO_USER_ID;
       via = "api_key";
@@ -70,12 +72,23 @@ export const requireUser =
       userId = await userForPersonalToken(token);
       via = "personal_token";
     } else if (opts.mcp && token.startsWith("mcp_at_")) {
-      userId = (await verifyAccessToken(token, mcpResource(c)))?.user_id ?? null;
+      const oauth = await verifyAccessToken(token, mcpResource(c));
+      userId = oauth?.user_id ?? null;
+      agentId = oauth?.agent_id ?? null;
       via = "mcp_oauth";
     } else {
       userId = await userFromSupabaseToken(token);
       via = "session";
     }
     if (!userId) return deny("Invalid or expired credentials");
+
+    if (agentId) {
+      // The agent behind the token: its current scopes apply and every tool call is logged.
+      const uid = userId;
+      const agent = await runAsUser(uid, () => agentsStore.getAgent(agentId), via);
+      if (!agent || agent.status === "revoked") return deny("This agent was revoked. Connect it again.");
+      await runAsUser(uid, () => next(), via, agent);
+      return;
+    }
     await runAsUser(userId, () => next(), via);
   };

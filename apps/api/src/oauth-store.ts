@@ -23,6 +23,7 @@ export type OAuthGrant = {
   scopes: string[];
   resource: string;
   user_id: string | null;
+  agent_id: string | null;
   code_hash: string | null;
   expires_at: string;
   used_at: string | null;
@@ -32,6 +33,7 @@ export type OAuthToken = {
   id: string;
   client_id: string;
   user_id: string;
+  agent_id: string | null;
   scopes: string[];
   resource: string;
   access_hash: string;
@@ -46,12 +48,14 @@ export type TokenRotation = Pick<
   "access_hash" | "refresh_hash" | "access_expires_at" | "refresh_expires_at"
 >;
 
+export type Approval = { userId: string; agentId: string; codeHash: string; expiresAt: string };
+
 export interface OAuthStore {
   createClient(client: OAuthClient): Promise<void>;
   getClient(clientId: string): Promise<OAuthClient | null>;
   createGrant(grant: OAuthGrant): Promise<void>;
   getGrant(id: string): Promise<OAuthGrant | null>;
-  approveGrant(id: string, userId: string, codeHash: string, expiresAt: string): Promise<OAuthGrant | null>;
+  approveGrant(id: string, approval: Approval): Promise<OAuthGrant | null>;
   deleteGrant(id: string): Promise<void>;
   /** Marks the code used and returns its grant; null if unknown or already used. Single use. */
   consumeCode(codeHash: string): Promise<OAuthGrant | null>;
@@ -59,6 +63,8 @@ export interface OAuthStore {
   tokenByAccessHash(accessHash: string): Promise<OAuthToken | null>;
   /** Swaps a live refresh token for new hashes (rotation); null if unknown, revoked or expired. */
   rotateRefresh(refreshHash: string, next: TokenRotation): Promise<OAuthToken | null>;
+  /** Revokes every token of one of the user's agents (the agent was revoked). */
+  revokeAgentTokens(userId: string, agentId: string): Promise<void>;
 }
 
 const isLive = (expiresAt: string) => Date.parse(expiresAt) > Date.now();
@@ -80,10 +86,15 @@ export class MemoryOAuthStore implements OAuthStore {
   async getGrant(id: string) {
     return this.grants.get(id) ?? null;
   }
-  async approveGrant(id: string, userId: string, codeHash: string, expiresAt: string) {
+  async approveGrant(id: string, a: Approval) {
     const g = this.grants.get(id);
     if (!g || g.user_id) return null;
-    Object.assign(g, { user_id: userId, code_hash: codeHash, expires_at: expiresAt });
+    Object.assign(g, {
+      user_id: a.userId,
+      agent_id: a.agentId,
+      code_hash: a.codeHash,
+      expires_at: a.expiresAt,
+    });
     return g;
   }
   async deleteGrant(id: string) {
@@ -107,6 +118,12 @@ export class MemoryOAuthStore implements OAuthStore {
     Object.assign(t, next);
     return t;
   }
+  async revokeAgentTokens(userId: string, agentId: string) {
+    for (const t of this.tokens.values()) {
+      if (t.user_id === userId && t.agent_id === agentId && !t.revoked_at)
+        t.revoked_at = new Date().toISOString();
+    }
+  }
 }
 
 const iso = (v: unknown) => new Date(v as string).toISOString();
@@ -121,6 +138,7 @@ const toGrant = (r: Record<string, unknown>): OAuthGrant => ({
   scopes: (r.scopes as string[]) ?? [],
   resource: r.resource as string,
   user_id: (r.user_id as string | null) ?? null,
+  agent_id: (r.agent_id as string | null) ?? null,
   code_hash: (r.code_hash as string | null) ?? null,
   expires_at: iso(r.expires_at),
   used_at: isoOrNull(r.used_at),
@@ -130,6 +148,7 @@ const toToken = (r: Record<string, unknown>): OAuthToken => ({
   id: r.id as string,
   client_id: r.client_id as string,
   user_id: r.user_id as string,
+  agent_id: (r.agent_id as string | null) ?? null,
   scopes: (r.scopes as string[]) ?? [],
   resource: r.resource as string,
   access_hash: r.access_hash as string,
@@ -166,11 +185,11 @@ export class SupabaseOAuthStore implements OAuthStore {
     const row = check(await this.db.from("oauth_grants").select("*").eq("id", id).maybeSingle());
     return row ? toGrant(row) : null;
   }
-  async approveGrant(id: string, userId: string, codeHash: string, expiresAt: string) {
+  async approveGrant(id: string, a: Approval) {
     const rows = check(
       await this.db
         .from("oauth_grants")
-        .update({ user_id: userId, code_hash: codeHash, expires_at: expiresAt })
+        .update({ user_id: a.userId, agent_id: a.agentId, code_hash: a.codeHash, expires_at: a.expiresAt })
         .eq("id", id)
         .is("user_id", null)
         .select(),
@@ -211,6 +230,16 @@ export class SupabaseOAuthStore implements OAuthStore {
         .select(),
     );
     return rows?.[0] ? toToken(rows[0]) : null;
+  }
+  async revokeAgentTokens(userId: string, agentId: string) {
+    check(
+      await this.db
+        .from("oauth_tokens")
+        .update({ revoked_at: new Date().toISOString() })
+        .eq("user_id", userId)
+        .eq("agent_id", agentId)
+        .is("revoked_at", null),
+    );
   }
 }
 

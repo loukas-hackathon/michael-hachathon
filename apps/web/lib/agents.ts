@@ -1,8 +1,9 @@
 import "server-only";
-import type { AgentClient, AgentQuery, AgentScope } from "@michael/shared";
+import type { AgentClient, AgentClientUpdate, AgentQuery, AgentScope } from "@michael/shared";
+import { API_URL, bearer } from "./api";
 
-// Michael for agents, from the user's side. Shapes are the contract's (AgentClient, AgentQuery);
-// SAMPLE DATA until GET /v1/agents and /v1/agents/queries are live (docs/api.md, status stub).
+// Michael for agents, from the user's side. Shapes are the contract's (AgentClient, AgentQuery).
+// Real data from the API; the sample below is for USE_MOCKS and ?demo=sample.
 
 export const SCOPE_LABEL: Record<AgentScope, string> = {
   timeline: "Your day",
@@ -64,11 +65,41 @@ const sampleQueries: AgentQuery[] = [
 
 export type AgentsView = { sample: boolean; agents: AgentClient[]; queries: AgentQuery[] };
 
-/** `variant` previews states (?demo=empty|error). */
+const USE_MOCKS = process.env.USE_MOCKS !== "false";
+
+async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${API_URL}${path}`, {
+    ...init,
+    headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`${init?.method ?? "GET"} ${path} failed: ${res.status}`);
+  return (await res.json()) as T;
+}
+
+/**
+ * The user's agents and today's questions (GET /v1/agents, /v1/agents/queries).
+ * Sample data with USE_MOCKS; `variant` previews states (?demo=sample|empty|error).
+ */
 export async function getAgents(variant?: string): Promise<AgentsView> {
   if (variant === "error") throw new Error("Preview of the error state");
   if (variant === "empty") return { sample: true, agents: [], queries: [] };
-  return { sample: true, agents: sampleAgents, queries: sampleQueries };
+  if (USE_MOCKS || variant === "sample")
+    return { sample: true, agents: sampleAgents, queries: sampleQueries };
+  const [{ agents }, { queries }] = await Promise.all([
+    api<{ agents: AgentClient[] }>("/v1/agents"),
+    api<{ queries: AgentQuery[] }>("/v1/agents/queries"),
+  ]);
+  return { sample: false, agents, queries };
+}
+
+/** Approve, revoke or change scopes (PATCH /v1/agents/:id). Sample agents only pretend. */
+export async function patchAgent(id: string, patch: AgentClientUpdate): Promise<AgentClient | null> {
+  if (USE_MOCKS || sampleAgents.some((a) => a.id === id)) return null;
+  return api<AgentClient>(`/v1/agents/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
 }
 
 /** "Claude, twice" / "Claude, twice, and Cursor, once". Counts only questions that were answered. */

@@ -39,6 +39,7 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
           {pending.map((a) => (
             <ApprovalCard
               key={a.id}
+              id={a.id}
               name={a.name}
               wants={a.scopes.includes("timeline") ? "when you're in deep work." : "about your goals."}
               scopes={a.scopes.map((s) => SCOPE_LABEL[s])}
@@ -55,6 +56,7 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
                       <span className="absolute inset-x-0 top-0 ml-16 h-[0.5px] bg-separator" />
                     ) : null}
                     <AgentRow
+                      id={a.id}
                       name={a.name}
                       lastAsked={a.last_seen_at ? formatTime(a.last_seen_at) : null}
                       scopes={(Object.keys(SCOPE_LABEL) as (keyof typeof SCOPE_LABEL)[]).map((k) => ({

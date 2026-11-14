@@ -1,20 +1,40 @@
 "use client";
 
 import { useState } from "react";
+import { saveAgent } from "@/lib/agents-actions";
 
 type Answer = "once" | "always" | "no";
 
 /**
- * A new agent's first request: one tap to answer. Feedback stays in the card.
- * TODO(#51 follow up): PATCH /v1/agents/:id once the agents API is live.
+ * An agent waiting for approval: one tap to answer (PATCH /v1/agents/:id). Feedback stays in the
+ * card. "Once" approves like "Always" for now; there is no expiry on the API yet.
  */
-export function ApprovalCard({ name, wants, scopes }: { name: string; wants: string; scopes: string[] }) {
-  const [answer, setAnswer] = useState<Answer | null>(null);
+export function ApprovalCard({
+  id,
+  name,
+  wants,
+  scopes,
+}: {
+  id: string;
+  name: string;
+  wants: string;
+  scopes: string[];
+}) {
+  const [answer, setAnswerState] = useState<Answer | null>(null);
+  const [failed, setFailed] = useState(false);
   const result: Record<Answer, string> = {
-    once: `Allowed once. ${name} can read this until midnight.`,
+    once: `Allowed. You can revoke ${name} any time below.`,
     always: `Always allowed. You can change it any time below.`,
     no: `Refused. ${name} sees nothing, and I've told it so.`,
   };
+  function setAnswer(a: Answer) {
+    setAnswerState(a);
+    setFailed(false);
+    saveAgent(id, { status: a === "no" ? "revoked" : "approved" }).catch(() => {
+      setAnswerState(null);
+      setFailed(true);
+    });
+  }
 
   return (
     <section
@@ -31,6 +51,7 @@ export function ApprovalCard({ name, wants, scopes }: { name: string; wants: str
           </li>
         ))}
       </ul>
+      {failed ? <p className="text-footnote text-danger">I could not save that. Try again.</p> : null}
       {answer ? (
         <p role="status" className="flex min-h-9 items-center text-subhead text-label-2">
           {result[answer]}

@@ -2,6 +2,7 @@ import { EventInput, EventType, RecommendationStatus, Source } from "@michael/sh
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
+import { guardTools } from "./mcp-guard";
 import { patternReportFor } from "./routes/patterns";
 import { scoreFor } from "./routes/score";
 import { store } from "./store";
@@ -12,6 +13,8 @@ const json = (value: unknown) => ({
 
 export function createMcpServer(): McpServer {
   const server = new McpServer({ name: "michael", version: "0.1.0" });
+  // Agent scopes and the query log apply to every tool registered below (mcp-guard.ts).
+  guardTools(server);
 
   server.registerTool(
     "get_timeline",
