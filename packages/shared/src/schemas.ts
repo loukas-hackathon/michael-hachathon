@@ -329,6 +329,60 @@ export type PrivacyState = z.infer<typeof PrivacyState>;
 export const OffTheRecordUpdate = z.object({ off_the_record: z.boolean() });
 export type OffTheRecordUpdate = z.infer<typeof OffTheRecordUpdate>;
 
+// ---------- profile: the onboarding answers (GET/PUT /v1/profile) ----------
+
+// "HH:MM", 24 hour, Europe/Athens wall clock.
+export const ClockTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Expected HH:MM");
+export type ClockTime = z.infer<typeof ClockTime>;
+
+export const Weekday = z.enum(["mon", "tue", "wed", "thu", "fri", "sat", "sun"]);
+export type Weekday = z.infer<typeof Weekday>;
+
+// Where the user says their time leaks. Analysis and nudges can look for these first.
+export const WeakSpot = z.enum([
+  "phone_in_bed",
+  "late_nights",
+  "context_switching",
+  "skipped_lunch",
+  "doomscrolling",
+  "back_to_back_meetings",
+  "inbox_all_day",
+  "late_caffeine",
+]);
+export type WeakSpot = z.infer<typeof WeakSpot>;
+
+export const TimeWindow = z.object({ start: ClockTime, end: ClockTime });
+export type TimeWindow = z.infer<typeof TimeWindow>;
+
+export const Profile = z.object({
+  // No nudges inside this window. May cross midnight (22:00 to 07:00 is the default).
+  quiet_hours: TimeWindow,
+  // The usual week: work hours on work days, and the days the user trains.
+  work_hours: TimeWindow,
+  work_days: z.array(Weekday),
+  gym_days: z.array(Weekday),
+  weak_spots: z.array(WeakSpot),
+  // Set when onboarding is finished or skipped; null means Today should offer onboarding.
+  onboarded_at: IsoDateTime.nullable(),
+  // null until the user saves anything (the response is then the defaults).
+  updated_at: IsoDateTime.nullable(),
+});
+export type Profile = z.infer<typeof Profile>;
+
+// Partial: only the fields sent change. Arrays are replaced, not merged.
+export const ProfileUpdate = Profile.omit({ updated_at: true }).partial();
+export type ProfileUpdate = z.infer<typeof ProfileUpdate>;
+
+export const DEFAULT_PROFILE: Profile = {
+  quiet_hours: { start: "22:00", end: "07:00" },
+  work_hours: { start: "09:00", end: "18:00" },
+  work_days: ["mon", "tue", "wed", "thu", "fri"],
+  gym_days: [],
+  weak_spots: [],
+  onboarded_at: null,
+  updated_at: null,
+};
+
 // ---------- Michael for agents ----------
 
 export const AgentScope = z.enum(["timeline", "goals", "recommendations", "score", "write_events"]);

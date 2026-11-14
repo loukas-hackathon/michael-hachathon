@@ -4,12 +4,16 @@ import {
   type ChatHistory,
   type ChatMessage,
   type ChatResponse,
+  DEFAULT_PROFILE,
   type Goal,
+  type GoalCreate,
   mockEvents,
   mockGoals,
   mockRecommendations,
   type NudgeTestResult,
   type PrivacyState,
+  type Profile,
+  type ProfileUpdate,
   type PushConfig,
   type PushSubscriptionInput,
   type Recommendation,
@@ -206,4 +210,45 @@ export async function getGoalsWeek(variant?: string): Promise<GoalsView> {
   if (variant === "empty") return sampleGoalsEmpty;
   if (USE_MOCKS || variant === "sample") return sampleGoals;
   return goalsFromScore(await getScore());
+}
+
+// ---------- profile and onboarding (docs/api.md, Profile) ----------
+
+// With mocks, one in-process profile so onboarding can be walked through without the API.
+let mockProfile: Profile = structuredClone(DEFAULT_PROFILE);
+
+export async function getProfile(): Promise<Profile> {
+  if (USE_MOCKS) return structuredClone(mockProfile);
+  return get<Profile>("/v1/profile");
+}
+
+export async function putProfile(patch: ProfileUpdate): Promise<Profile> {
+  if (USE_MOCKS) {
+    mockProfile = { ...mockProfile, ...patch, updated_at: new Date().toISOString() };
+    return structuredClone(mockProfile);
+  }
+  return send<Profile>("PUT", "/v1/profile", patch);
+}
+
+export async function createGoal(input: GoalCreate): Promise<Goal | null> {
+  if (USE_MOCKS) return null;
+  const res = await fetch(`${API_URL}/v1/goals`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
+    body: JSON.stringify(input),
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`POST /v1/goals failed: ${res.status}`);
+  return (await res.json()) as Goal;
+}
+
+/** A new user (no goals, never onboarded) starts with the talk. Fails open: Today always renders. */
+export async function needsOnboarding(): Promise<boolean> {
+  if (USE_MOCKS) return false;
+  try {
+    const [goals, profile] = await Promise.all([getGoals(), getProfile()]);
+    return goals.length === 0 && profile.onboarded_at === null;
+  } catch {
+    return false;
+  }
 }
