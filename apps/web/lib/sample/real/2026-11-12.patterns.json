@@ -1,0 +1,786 @@
+{
+  "from": "2026-11-11T22:00:00.000Z",
+  "to": "2026-11-12T22:00:00.000Z",
+  "timezone": "Europe/Athens",
+  "generated_at": "2026-11-14T16:51:03.061Z",
+  "days": [
+    {
+      "day": "2026-11-12",
+      "complete": true
+    }
+  ],
+  "inputs": {
+    "mac_app_usage": 349,
+    "iphone_app_usage": 207,
+    "web_visits": 52,
+    "web_visits_superseded": 0,
+    "web_visits_unmeasured": 160,
+    "searches": 18,
+    "goal_blocks": 0,
+    "sleeps": 0,
+    "ai_sessions": 19
+  },
+  "headlines": [
+    "6 disruptions a day during focus, 6.4 minutes a day in the apps that caused them. Longest uninterrupted stretch: 8.7 minutes on a typical day with focus, 8.7 minutes at best.",
+    "A disruption of 1 minute costs 1.7 minutes before the app that was left is back in front (medians over 6 disruptions). That adds up to 11 minutes a day.",
+    "No travel, shopping, video, social or news browsing during focus on 1 day with focus.",
+    "44 app switches per active hour. 29% of screen time is spent in stays shorter than 2 minutes (median stay 22 seconds).",
+    "Screen time 11h 43 a day over 1 day (Mac 6h 10, iPhone 5h 33). Most of it: social 3h 36, other 3h 18, communication 2h 09 a day.",
+    "AI tools open for 5h 06 a day by the clock, 19 sessions a day (19 sessions, 5h 46 of session time in total). 43% of session time was the tool waiting for the user."
+  ],
+  "phone_cadence": {
+    "status": "not_enough_data",
+    "reason": "not enough data: needs at least 3 days of phone usage, found 1",
+    "minimum": "at least 3 days of iPhone usage and 20 waking gaps between sessions; an hour needs 5 gaps, the working window 20",
+    "summary": null,
+    "evidence": [],
+    "data": null
+  },
+  "mac_app_cadence": {
+    "status": "not_enough_data",
+    "reason": "not enough data: needs at least 3 days of Mac usage, found 1",
+    "minimum": "at least 3 days of Mac usage; an app needs 10 activations on 2 or more days, and 5 gaps for a median gap",
+    "summary": null,
+    "evidence": [],
+    "data": null
+  },
+  "focus_disruptions": {
+    "status": "ok",
+    "reason": null,
+    "minimum": "at least one focus stretch (15 minutes or more, at least half of it in work apps) or one planned goal block with device data",
+    "summary": "6 disruptions a day during focus, 6.4 minutes a day in the apps that caused them. Longest uninterrupted stretch: 8.7 minutes on a typical day with focus, 8.7 minutes at best.",
+    "evidence": [
+      "a1a46aa2-d9db-40ac-96b0-77d8447112b7",
+      "122584ba-4327-499c-956b-6318402e3687",
+      "be087b19-503b-4d95-be8b-f2c71dcb557c",
+      "b36ab066-3c85-42b0-81ef-7b66ce8a6e17",
+      "10b4685b-2650-43c8-aa23-b4dfda7fb4db",
+      "bf0e2609-f8c3-4ce3-a98a-460aa79eb2b1"
+    ],
+    "data": {
+      "mode": "inferred",
+      "days_with_data": 1,
+      "uncategorised_share": 0.28,
+      "blocks": 0,
+      "stretches": 2,
+      "focus_minutes": 49.5,
+      "disruptions": 6,
+      "disruptions_per_day": 6,
+      "minutes_lost": 6.4,
+      "minutes_lost_per_day": 6.4,
+      "longest_uninterrupted_minutes": 8.7,
+      "median_daily_longest_uninterrupted_minutes": 8.7,
+      "daily": [
+        {
+          "day": "2026-11-12",
+          "complete": true,
+          "focus_minutes": 49.5,
+          "stretches": 2,
+          "disruptions": 6,
+          "ended_stretches": 0,
+          "minutes_lost": 6.4,
+          "longest_uninterrupted_minutes": 8.7
+        }
+      ],
+      "items": [
+        {
+          "mode": "inferred",
+          "day": "2026-11-12",
+          "start_at": "2026-11-12T21:43:49.000Z",
+          "end_at": "2026-11-12T21:44:01.000Z",
+          "device": "iphone",
+          "trigger": {
+            "kind": "app",
+            "key": "com.burbn.instagram",
+            "name": "Instagram",
+            "category": "social"
+          },
+          "opened_by_notification": null,
+          "left": {
+            "kind": "site",
+            "key": "claude.ai",
+            "name": "claude.ai",
+            "category": "ai"
+          },
+          "minutes_lost": 0.2,
+          "minutes_until_back": 0.2,
+          "ended_stretch": false,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": ["a1a46aa2-d9db-40ac-96b0-77d8447112b7"]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-11-12",
+          "start_at": "2026-11-12T20:13:52.000Z",
+          "end_at": "2026-11-12T20:15:12.000Z",
+          "device": "iphone",
+          "trigger": {
+            "kind": "app",
+            "key": "com.burbn.instagram",
+            "name": "Instagram",
+            "category": "social"
+          },
+          "opened_by_notification": null,
+          "left": {
+            "kind": "app",
+            "key": "com.microsoft.VSCode",
+            "name": "VS Code",
+            "category": "work"
+          },
+          "minutes_lost": 1.3,
+          "minutes_until_back": 1.3,
+          "ended_stretch": false,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": ["122584ba-4327-499c-956b-6318402e3687"]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-11-12",
+          "start_at": "2026-11-12T20:07:35.000Z",
+          "end_at": "2026-11-12T20:09:42.000Z",
+          "device": "iphone",
+          "trigger": {
+            "kind": "app",
+            "key": "com.burbn.instagram",
+            "name": "Instagram",
+            "category": "social"
+          },
+          "opened_by_notification": null,
+          "left": {
+            "kind": "app",
+            "key": "com.microsoft.VSCode",
+            "name": "VS Code",
+            "category": "work"
+          },
+          "minutes_lost": 2.1,
+          "minutes_until_back": 2.1,
+          "ended_stretch": false,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": ["be087b19-503b-4d95-be8b-f2c71dcb557c"]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-11-12",
+          "start_at": "2026-11-12T20:05:23.000Z",
+          "end_at": "2026-11-12T20:07:16.000Z",
+          "device": "iphone",
+          "trigger": {
+            "kind": "app",
+            "key": "com.burbn.instagram",
+            "name": "Instagram",
+            "category": "social"
+          },
+          "opened_by_notification": null,
+          "left": {
+            "kind": "app",
+            "key": "com.microsoft.VSCode",
+            "name": "VS Code",
+            "category": "work"
+          },
+          "minutes_lost": 0.7,
+          "minutes_until_back": 1.9,
+          "ended_stretch": false,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": ["b36ab066-3c85-42b0-81ef-7b66ce8a6e17"]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-11-12",
+          "start_at": "2026-11-12T19:56:22.000Z",
+          "end_at": "2026-11-12T19:57:52.000Z",
+          "device": "iphone",
+          "trigger": {
+            "kind": "app",
+            "key": "com.burbn.instagram",
+            "name": "Instagram",
+            "category": "social"
+          },
+          "opened_by_notification": null,
+          "left": {
+            "kind": "app",
+            "key": "com.microsoft.VSCode",
+            "name": "VS Code",
+            "category": "work"
+          },
+          "minutes_lost": 1.5,
+          "minutes_until_back": 1.5,
+          "ended_stretch": false,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": ["10b4685b-2650-43c8-aa23-b4dfda7fb4db"]
+        },
+        {
+          "mode": "inferred",
+          "day": "2026-11-12",
+          "start_at": "2026-11-12T19:48:58.000Z",
+          "end_at": "2026-11-12T19:52:54.000Z",
+          "device": "mac",
+          "trigger": {
+            "kind": "app",
+            "key": "net.whatsapp.WhatsApp",
+            "name": "WhatsApp",
+            "category": "communication"
+          },
+          "opened_by_notification": null,
+          "left": {
+            "kind": "app",
+            "key": "com.microsoft.VSCode",
+            "name": "VS Code",
+            "category": "work"
+          },
+          "minutes_lost": 0.6,
+          "minutes_until_back": 3.9,
+          "ended_stretch": false,
+          "block_event_id": null,
+          "goal_id": null,
+          "event_ids": [
+            "bf0e2609-f8c3-4ce3-a98a-460aa79eb2b1",
+            "2a27fc60-8a7b-462b-a4cd-9c64b90b89c0",
+            "f2bec700-6acc-49d8-b949-bd097eaee4fc"
+          ]
+        }
+      ]
+    }
+  },
+  "recovery_cost": {
+    "status": "ok",
+    "reason": null,
+    "minimum": "at least 5 disruptions after which the user got back to the app they left; a day needs 3 for its own median",
+    "summary": "A disruption of 1 minute costs 1.7 minutes before the app that was left is back in front (medians over 6 disruptions). That adds up to 11 minutes a day.",
+    "evidence": [
+      "bf0e2609-f8c3-4ce3-a98a-460aa79eb2b1",
+      "be087b19-503b-4d95-be8b-f2c71dcb557c",
+      "b36ab066-3c85-42b0-81ef-7b66ce8a6e17",
+      "10b4685b-2650-43c8-aa23-b4dfda7fb4db",
+      "122584ba-4327-499c-956b-6318402e3687",
+      "a1a46aa2-d9db-40ac-96b0-77d8447112b7"
+    ],
+    "data": {
+      "measured": 6,
+      "not_returned": 0,
+      "median_minutes_lost": 1,
+      "median_minutes_until_back": 1.7,
+      "multiplier": 1.7,
+      "total_minutes_until_back": 11,
+      "minutes_until_back_per_day": 11,
+      "daily": [
+        {
+          "day": "2026-11-12",
+          "measured": 6,
+          "total_minutes_until_back": 11,
+          "median_minutes_until_back": 1.7
+        }
+      ]
+    }
+  },
+  "repeat_offenders": {
+    "status": "not_enough_data",
+    "reason": "not enough data: no app or site disrupted focus on 2 or more days (6 disruptions found)",
+    "minimum": "an app or site that caused disruptions on at least 2 different days",
+    "summary": null,
+    "evidence": [],
+    "data": null
+  },
+  "drift": {
+    "status": "ok",
+    "reason": null,
+    "minimum": "browsing data (web visits) and at least one focus stretch or planned work block",
+    "summary": "No travel, shopping, video, social or news browsing during focus on 1 day with focus.",
+    "evidence": [],
+    "data": {
+      "minutes": 0,
+      "by_category": [],
+      "daily": [],
+      "items": []
+    }
+  },
+  "late_screens": {
+    "status": "not_enough_data",
+    "reason": "not enough data: needs at least 3 nights with device data, found 0",
+    "minimum": "at least 3 nights inside the range on days with device data; usual bedtime needs 3 recorded sleeps of 3 hours or more; the recovery comparison needs 3 late and 3 other nights",
+    "summary": null,
+    "evidence": [],
+    "data": null
+  },
+  "context_switching": {
+    "status": "ok",
+    "reason": null,
+    "minimum": "at least 60 minutes of active device time in the range; a day needs 30 active minutes for its own rate",
+    "summary": "44 app switches per active hour. 29% of screen time is spent in stays shorter than 2 minutes (median stay 22 seconds).",
+    "evidence": [
+      "4882cd62-6632-4b1b-94d4-d26e5c841524",
+      "19fc01d1-b09f-4f7d-9f46-d52ad81531cb",
+      "311240a4-f3a0-4779-a2f7-cfc01640d1dc",
+      "c1342b68-ee39-4792-817b-8b8de5319051",
+      "360c4b7d-f20e-42d3-9050-5bc59eade3c4",
+      "19d78a3c-13bb-45ed-8941-42e92b769403",
+      "876d108d-687a-48a3-9738-5819ba68b028",
+      "13345160-fdae-4412-bf1f-1e29e78d5335",
+      "0704e2c0-2b09-4c48-b90d-f5425b62fa4b",
+      "f5d0fced-f6b2-45a7-8651-dbe0278fb2be",
+      "d3b77ffe-af14-4966-a92e-c0571176f798",
+      "1e3905ca-f163-403c-b708-32b079bb5b15",
+      "52a2fae8-8529-4127-8ae6-620096c8a134",
+      "a1a46aa2-d9db-40ac-96b0-77d8447112b7",
+      "64612964-f071-431e-b244-f8c15bfaa368",
+      "bdb57e24-49b0-4067-b42d-3fee8f64a8f0",
+      "d953dd23-e314-4a0d-99af-17f604dc42a2",
+      "75d8e838-a485-47be-af64-d844f8354fb8",
+      "b87d63fd-9c3b-480e-8e42-cfbf326203aa"
+    ],
+    "data": {
+      "days_with_data": 1,
+      "active_minutes": 703.2,
+      "switches": 516,
+      "switches_per_active_hour": 44,
+      "fragment_share": 0.29,
+      "median_stay_seconds": 22,
+      "daily": [
+        {
+          "day": "2026-11-12",
+          "complete": true,
+          "active_minutes": 703.2,
+          "switches": 516,
+          "switches_per_active_hour": 44,
+          "fragment_share": 0.29
+        }
+      ]
+    }
+  },
+  "time_by_app": {
+    "status": "ok",
+    "reason": null,
+    "minimum": "any Mac or iPhone app usage in the range",
+    "summary": "Screen time 11h 43 a day over 1 day (Mac 6h 10, iPhone 5h 33). Most of it: social 3h 36, other 3h 18, communication 2h 09 a day.",
+    "evidence": [
+      "0c7b8633-97aa-4824-958e-8906a2869403",
+      "3cc19742-ec7a-44ca-ad58-25fecc5fc41b",
+      "701640b0-3084-46f1-af91-c8c9a57dcf37",
+      "2386dbf0-df14-4e64-a290-56bcc7cc309c",
+      "d1792394-142b-4056-99a6-03108bb39a97",
+      "f2f294e5-879e-4531-b1a4-7b31e04fe179",
+      "8077f5b9-358b-4ebd-837d-77394c3f87ec",
+      "0f5bb7cb-7f8a-4b56-8d4a-b02a9f5ab460",
+      "3ac5ffc8-5ff8-4cac-a523-108750b6d2b3",
+      "35daee8d-8733-40cb-965d-778cea9d72f3",
+      "438e6409-5308-4136-a93e-0b5e97deca7b",
+      "3be791ea-fb2b-4fb0-80e4-db4503b999b3",
+      "13a5ae2f-9311-4110-8647-bf47f995bfc5",
+      "58f7d091-1995-4605-9074-ec8899707561",
+      "7237d348-914b-46c4-87a8-dfc77b26a035",
+      "8b8da536-228e-4f1c-becc-cce5e19b1e59",
+      "68623dd3-6ed7-4787-81f8-ff45a0100118",
+      "00a9bda0-181e-4fdb-853c-ec6f6b96e52c",
+      "afc20e45-1bcd-480a-8ff2-a3014df69b23",
+      "8bcc1b4f-6a6f-44de-9049-c2e12c815122"
+    ],
+    "data": {
+      "days_with_data": 1,
+      "active_minutes_per_day": 703,
+      "totals": {
+        "active_seconds": 42178,
+        "mac_seconds": 22195,
+        "iphone_seconds": 19983,
+        "overlap_seconds": 9055,
+        "by_category": [
+          {
+            "category": "social",
+            "seconds": 12956
+          },
+          {
+            "category": "other",
+            "seconds": 11894
+          },
+          {
+            "category": "communication",
+            "seconds": 7769
+          },
+          {
+            "category": "work",
+            "seconds": 6161
+          },
+          {
+            "category": "ai",
+            "seconds": 1248
+          },
+          {
+            "category": "video",
+            "seconds": 1222
+          },
+          {
+            "category": "music",
+            "seconds": 534
+          },
+          {
+            "category": "travel",
+            "seconds": 262
+          },
+          {
+            "category": "system",
+            "seconds": 132
+          }
+        ],
+        "apps": [
+          {
+            "subject": {
+              "kind": "app",
+              "key": "com.burbn.instagram",
+              "name": "Instagram",
+              "category": "social"
+            },
+            "device": "iphone",
+            "seconds": 10489
+          },
+          {
+            "subject": {
+              "kind": "app",
+              "key": "com.google.Chrome",
+              "name": "Chrome",
+              "category": "other"
+            },
+            "device": "mac",
+            "seconds": 10148
+          },
+          {
+            "subject": {
+              "kind": "app",
+              "key": "com.microsoft.VSCode",
+              "name": "VS Code",
+              "category": "work"
+            },
+            "device": "mac",
+            "seconds": 5721
+          },
+          {
+            "subject": {
+              "kind": "app",
+              "key": "com.apple.InCallService",
+              "name": "Phone call",
+              "category": "communication"
+            },
+            "device": "iphone",
+            "seconds": 3042
+          },
+          {
+            "subject": {
+              "kind": "app",
+              "key": "com.zhiliaoapp.musically",
+              "name": "TikTok",
+              "category": "social"
+            },
+            "device": "iphone",
+            "seconds": 2108
+          },
+          {
+            "subject": {
+              "kind": "app",
+              "key": "net.whatsapp.WhatsApp",
+              "name": "WhatsApp",
+              "category": "communication"
+            },
+            "device": "mac",
+            "seconds": 1813
+          },
+          {
+            "subject": {
+              "kind": "site",
+              "key": "claude.ai",
+              "name": "claude.ai",
+              "category": "ai"
+            },
+            "device": "mac",
+            "seconds": 1248
+          },
+          {
+            "subject": {
+              "kind": "app",
+              "key": "com.netflix.Netflix",
+              "name": "Netflix",
+              "category": "video"
+            },
+            "device": "iphone",
+            "seconds": 878
+          },
+          {
+            "subject": {
+              "kind": "app",
+              "key": "com.apple.calculator",
+              "name": "Calculator",
+              "category": "other"
+            },
+            "device": "iphone",
+            "seconds": 797
+          },
+          {
+            "subject": {
+              "kind": "site",
+              "key": "mail.google.com",
+              "name": "mail.google.com",
+              "category": "communication"
+            },
+            "device": "mac",
+            "seconds": 612
+          },
+          {
+            "subject": {
+              "kind": "app",
+              "key": "us.zoom.xos",
+              "name": "Zoom",
+              "category": "communication"
+            },
+            "device": "mac",
+            "seconds": 523
+          },
+          {
+            "subject": {
+              "kind": "app",
+              "key": "com.apple.mobilephone",
+              "name": "Phone",
+              "category": "communication"
+            },
+            "device": "iphone",
+            "seconds": 425
+          },
+          {
+            "subject": {
+              "kind": "app",
+              "key": "com.spotify.client",
+              "name": "Spotify",
+              "category": "music"
+            },
+            "device": "mac",
+            "seconds": 422
+          },
+          {
+            "subject": {
+              "kind": "app",
+              "key": "com.facebook.Messenger",
+              "name": "Messenger",
+              "category": "communication"
+            },
+            "device": "iphone",
+            "seconds": 415
+          },
+          {
+            "subject": {
+              "kind": "site",
+              "key": "youtube.com",
+              "name": "youtube.com",
+              "category": "video"
+            },
+            "device": "mac",
+            "seconds": 344
+          }
+        ],
+        "other_apps_seconds": 3193
+      },
+      "daily": [
+        {
+          "day": "2026-11-12",
+          "complete": true,
+          "active_seconds": 42178,
+          "mac_seconds": 22195,
+          "iphone_seconds": 19983,
+          "overlap_seconds": 9055,
+          "by_category": [
+            {
+              "category": "social",
+              "seconds": 12956
+            },
+            {
+              "category": "other",
+              "seconds": 11894
+            },
+            {
+              "category": "communication",
+              "seconds": 7769
+            },
+            {
+              "category": "work",
+              "seconds": 6161
+            },
+            {
+              "category": "ai",
+              "seconds": 1248
+            },
+            {
+              "category": "video",
+              "seconds": 1222
+            },
+            {
+              "category": "music",
+              "seconds": 534
+            },
+            {
+              "category": "travel",
+              "seconds": 262
+            },
+            {
+              "category": "system",
+              "seconds": 132
+            }
+          ],
+          "apps": [
+            {
+              "subject": {
+                "kind": "app",
+                "key": "com.burbn.instagram",
+                "name": "Instagram",
+                "category": "social"
+              },
+              "device": "iphone",
+              "seconds": 10489
+            },
+            {
+              "subject": {
+                "kind": "app",
+                "key": "com.google.Chrome",
+                "name": "Chrome",
+                "category": "other"
+              },
+              "device": "mac",
+              "seconds": 10148
+            },
+            {
+              "subject": {
+                "kind": "app",
+                "key": "com.microsoft.VSCode",
+                "name": "VS Code",
+                "category": "work"
+              },
+              "device": "mac",
+              "seconds": 5721
+            },
+            {
+              "subject": {
+                "kind": "app",
+                "key": "com.apple.InCallService",
+                "name": "Phone call",
+                "category": "communication"
+              },
+              "device": "iphone",
+              "seconds": 3042
+            },
+            {
+              "subject": {
+                "kind": "app",
+                "key": "com.zhiliaoapp.musically",
+                "name": "TikTok",
+                "category": "social"
+              },
+              "device": "iphone",
+              "seconds": 2108
+            },
+            {
+              "subject": {
+                "kind": "app",
+                "key": "net.whatsapp.WhatsApp",
+                "name": "WhatsApp",
+                "category": "communication"
+              },
+              "device": "mac",
+              "seconds": 1813
+            },
+            {
+              "subject": {
+                "kind": "site",
+                "key": "claude.ai",
+                "name": "claude.ai",
+                "category": "ai"
+              },
+              "device": "mac",
+              "seconds": 1248
+            },
+            {
+              "subject": {
+                "kind": "app",
+                "key": "com.netflix.Netflix",
+                "name": "Netflix",
+                "category": "video"
+              },
+              "device": "iphone",
+              "seconds": 878
+            },
+            {
+              "subject": {
+                "kind": "app",
+                "key": "com.apple.calculator",
+                "name": "Calculator",
+                "category": "other"
+              },
+              "device": "iphone",
+              "seconds": 797
+            },
+            {
+              "subject": {
+                "kind": "site",
+                "key": "mail.google.com",
+                "name": "mail.google.com",
+                "category": "communication"
+              },
+              "device": "mac",
+              "seconds": 612
+            }
+          ],
+          "other_apps_seconds": 5322
+        }
+      ]
+    }
+  },
+  "ai_tool_use": {
+    "status": "ok",
+    "reason": null,
+    "minimum": "at least one AI session in the range; the waiting share needs sessions that report waiting time",
+    "summary": "AI tools open for 5h 06 a day by the clock, 19 sessions a day (19 sessions, 5h 46 of session time in total). 43% of session time was the tool waiting for the user.",
+    "evidence": [
+      "e6d740a2-87ad-4eff-bc3f-021fbca6f0b5",
+      "0cb0682a-accc-4c37-a074-5dc90e366336",
+      "bfdc791d-7fe5-4290-b921-ed898d15d187",
+      "021796f8-e9e2-4ce0-a400-de6f84c0fcfe",
+      "5ac68f47-609d-454d-8896-7cfbbdcd1792",
+      "f4954192-cd15-4897-9d90-4260fa150296",
+      "88c0bfee-dac5-4ec1-b668-2b74a1919590",
+      "30f6fe96-dd5c-4855-a563-ed4f5f94e7e8",
+      "2847e08c-8910-47fa-aaab-be0ccfc3ddb1",
+      "1cbe4fec-deb5-4a32-9c50-cc5ffcf751c7",
+      "b103745e-a0fe-445d-8114-8d1f1da62b06",
+      "53197ad2-9670-4bd9-a081-ad7824e67a1e",
+      "27762066-37f0-441f-833e-46739ac8fbed",
+      "e3c10e69-5a42-41a9-8c7d-e2ead8a2e2a2",
+      "09787ae2-5191-4159-8aa8-da85d84024c2",
+      "182d4f45-db09-4b8a-997c-f0855386214b",
+      "4c39bae6-4521-42fa-9361-09bf07773696",
+      "3fba0aa2-edfc-449f-829b-67f33bbc01e4",
+      "a0ce5c66-dc44-4d81-9dd0-fa597b6dfd7f"
+    ],
+    "data": {
+      "days_with_data": 1,
+      "sessions": 19,
+      "sessions_per_day": 19,
+      "session_minutes": 346.3,
+      "wall_minutes": 305.6,
+      "waiting_minutes": 148.3,
+      "waiting_share": 0.43,
+      "by_tool": [
+        {
+          "tool": "claude_code",
+          "sessions": 19,
+          "session_minutes": 346.3,
+          "waiting_share": 0.43
+        }
+      ],
+      "daily": [
+        {
+          "day": "2026-11-12",
+          "sessions": 19,
+          "session_minutes": 346.3,
+          "wall_minutes": 305.6
+        }
+      ]
+    }
+  }
+}
