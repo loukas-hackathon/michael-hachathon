@@ -36,7 +36,6 @@ const REAL: Record<string, { file: unknown; patterns: Patterns }> = {
 };
 
 export const SAMPLE_DATE = sampleDay.date;
-export const DEFAULT_DATE = "2026-11-12";
 export const DATES_WITH_DATA = [...Object.keys(REAL), SAMPLE_DATE].sort();
 
 /** Athens midnight for these dates (all after the October clock change, so UTC+2). */
@@ -46,13 +45,13 @@ const nextDay = (date: string) =>
 
 export type TimelineResult = { day: TimelineDay; longestUninterrupted: number | null; label: string };
 
-export function getTimelineDay(date: string): TimelineResult | null {
+export function getTimelineDay(date: string, now?: number): TimelineResult | null {
   if (date === SAMPLE_DATE)
     return { day: fromSample(sampleDay), longestUninterrupted: null, label: "Sample day" };
   const real = REAL[date];
   if (!real) return null;
   const file = real.file as { label: string; events: unknown };
-  const day = buildTimeline(date, Events.parse(file.events), midnight(date), midnight(nextDay(date)));
+  const day = buildTimeline(date, Events.parse(file.events), midnight(date), midnight(nextDay(date)), now);
   return { day, longestUninterrupted: longestFrom(real.patterns), label: file.label };
 }
 
