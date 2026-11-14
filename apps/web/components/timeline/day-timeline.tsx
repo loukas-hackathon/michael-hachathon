@@ -598,12 +598,17 @@ export function TimelineKey({
   const heart = day?.health?.heart ?? [];
   const lo = heart.length > 1 ? Math.round(Math.min(...heart.map((p) => p.avg))) : 0;
   const hi = heart.length > 1 ? Math.round(Math.max(...heart.map((p) => p.avg))) : 0;
+  // The key scrolls sideways; it is `relative` so its absolute sr-only labels stay inside the
+  // scroller instead of widening the whole page (which zoomed phones out and pushed the tab bar).
   const item = "inline-flex shrink-0 items-center gap-1";
   const swatch = "h-2.5 w-3 rounded-[3px]";
   return (
     <div className="mt-3 flex min-h-6 items-center gap-2 text-caption font-medium text-label-2">
       {open ? (
-        <ul aria-label="Key" className="flex min-w-0 flex-1 gap-x-2 overflow-x-auto whitespace-nowrap">
+        <ul
+          aria-label="Key"
+          className="relative flex min-w-0 flex-1 gap-x-2 overflow-x-auto whitespace-nowrap"
+        >
           <li className={item}>
             <span className={`${swatch} bg-spark`} />
             {goalTime ? "Goal time" : hasWorkouts ? "Work apps, workouts" : "Work apps"}

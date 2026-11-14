@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { Suspense } from "react";
 import { CountUp } from "@/components/count-up";
 import { LiveRefresh } from "@/components/live-refresh";
 import { ScreenHeader } from "@/components/screen";
@@ -28,12 +29,15 @@ const TITLE: Record<DayView["moment"], string> = { morning: "Morning", today: "T
 export default async function TodayPage({ searchParams }: { searchParams: Promise<{ demo?: string }> }) {
   const { demo } = await searchParams;
   if (await needsOnboarding()) redirect("/onboarding");
+  // The day and the suggestions load side by side; "More from Michael" streams in behind
+  // Suspense, so the score never waits on the brief, the moment or the watch.
+  const suggestions = todaySuggestions();
   const day = await getToday(demo);
   const ticks = tape(day);
   const t = totals(day);
   const firstBlock = day.blocks[0];
   const momentKind = momentKindFor(day);
-  const { primary } = await todaySuggestions();
+  const { primary } = await suggestions;
 
   return (
     <main className="screen">
@@ -52,12 +56,14 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
           <GetStarted demo={demo} />
           <TodayEmpty demo={demo} />
           <RecommendationsPanel slot="primary" />
-          <MoreFromMichael>
-            {momentKind && !day.sample ? <MomentCard kind={momentKind} sample={false} /> : null}
-            <WatchLine demo={demo} />
-            <BriefCard sample={day.sample} />
-            <RecommendationsPanel slot="rest" />
-          </MoreFromMichael>
+          <Suspense fallback={null}>
+            <MoreFromMichael>
+              {momentKind && !day.sample ? <MomentCard kind={momentKind} sample={false} /> : null}
+              <WatchLine demo={demo} />
+              <BriefCard sample={day.sample} />
+              <RecommendationsPanel slot="rest" />
+            </MoreFromMichael>
+          </Suspense>
         </>
       ) : (
         <>
@@ -148,13 +154,15 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
             </section>
           ) : null}
 
-          <MoreFromMichael>
-            {momentKind ? <MomentCard kind={momentKind} sample={day.sample} /> : null}
-            <WatchLine demo={demo} />
-            {day.sample && day.travelPlan ? <TravelCard plan={day.travelPlan} /> : null}
-            <BriefCard sample={day.sample} />
-            <RecommendationsPanel slot="rest" />
-          </MoreFromMichael>
+          <Suspense fallback={null}>
+            <MoreFromMichael>
+              {momentKind ? <MomentCard kind={momentKind} sample={day.sample} /> : null}
+              <WatchLine demo={demo} />
+              {day.sample && day.travelPlan ? <TravelCard plan={day.travelPlan} /> : null}
+              <BriefCard sample={day.sample} />
+              <RecommendationsPanel slot="rest" />
+            </MoreFromMichael>
+          </Suspense>
         </>
       )}
 
