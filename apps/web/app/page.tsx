@@ -16,6 +16,7 @@ import { type DayView, nowIndex, tape, totals } from "@/lib/day";
 import { formatDay, formatTime, hm, minutesPhrase } from "@/lib/format";
 import { verdict } from "@/lib/gamification";
 import { momentKindFor } from "@/lib/moments";
+import { preloadTodaySections } from "@/lib/today-preload";
 
 const TITLE: Record<DayView["moment"], string> = { morning: "Morning", today: "Today", evening: "Evening" };
 
@@ -26,8 +27,12 @@ const TITLE: Record<DayView["moment"], string> = { morning: "Morning", today: "T
 
 export default async function TodayPage({ searchParams }: { searchParams: Promise<{ demo?: string }> }) {
   const { demo } = await searchParams;
+  // The day loads while the onboarding check runs; a redirect simply drops it.
+  const dayLoad = getToday(demo);
+  preloadTodaySections(demo);
+  dayLoad.catch(() => {});
   if (await needsOnboarding()) redirect("/onboarding");
-  const day = await getToday(demo);
+  const day = await dayLoad;
   const ticks = tape(day);
   const t = totals(day);
   const firstBlock = day.blocks[0];

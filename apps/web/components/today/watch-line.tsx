@@ -1,4 +1,5 @@
 import type { Event, Goal } from "@michael/shared";
+import { Suspense } from "react";
 import { get, usingMocks } from "@/lib/api";
 import { athensDay, dayBounds } from "@/lib/athens";
 import { formatTime, hm } from "@/lib/format";
@@ -13,12 +14,26 @@ const iso = (ms: number) => new Date(ms).toISOString();
  * Fetches its own data (sleep and workouts only, a few rows) so Today's page stays one line.
  * Says nothing on the sample previews, while mocks are on, or when the watch has nothing to say.
  */
-export async function WatchLine({ demo }: { demo?: string }) {
+export function WatchLine({ demo }: { demo?: string }) {
   if (demo || usingMocks()) return null;
+  // Streams in on its own, so the score above never waits for it.
+  return (
+    <Suspense fallback={null}>
+      <WatchLineBody />
+    </Suspense>
+  );
+}
+
+/** Today's sleep and workouts. One path, so lib/today-preload.ts can start the same request early. */
+export function watchTimelinePath(): string {
   const { start, end } = dayBounds(athensDay());
-  const qs = new URLSearchParams({ from: iso(start), to: iso(end), type: "sleep,workout" });
+  return `/v1/timeline?${new URLSearchParams({ from: iso(start), to: iso(end), type: "sleep,workout" })}`;
+}
+
+async function WatchLineBody() {
+  const { start, end } = dayBounds(athensDay());
   const [timeline, goals] = await Promise.all([
-    get<{ events: Event[] }>(`/v1/timeline?${qs}`).catch(() => ({ events: [] as Event[] })),
+    get<{ events: Event[] }>(watchTimelinePath()).catch(() => ({ events: [] as Event[] })),
     get<{ goals: Goal[] }>("/v1/goals").catch(() => ({ goals: [] as Goal[] })),
   ]);
   const health = healthOf(timeline.events, start, end);

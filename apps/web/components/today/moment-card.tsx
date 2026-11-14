@@ -1,4 +1,5 @@
 import type { Moment, MomentKind, MomentMove } from "@michael/shared";
+import { Suspense } from "react";
 import { formatTime, hm } from "@/lib/format";
 import { getMoment } from "@/lib/moments";
 import { Fold } from "./fold";
@@ -77,8 +78,19 @@ export function MomentView({ moment }: { moment: Moment }) {
   );
 }
 
-/** Morning plan or Evening review for Today's "More from Michael". Renders nothing if the moment cannot load. */
-export async function MomentCard({ kind, sample }: { kind: MomentKind; sample: boolean }) {
+/**
+ * Morning plan or Evening review for Today's "More from Michael". Renders nothing if the moment
+ * cannot load. Streams in on its own (Suspense), so the score above never waits for it.
+ */
+export function MomentCard(props: { kind: MomentKind; sample: boolean }) {
+  return (
+    <Suspense fallback={null}>
+      <MomentCardBody {...props} />
+    </Suspense>
+  );
+}
+
+async function MomentCardBody({ kind, sample }: { kind: MomentKind; sample: boolean }) {
   const moment = await getMoment(kind, sample).catch((err) => {
     console.error("moment card:", err);
     return null;

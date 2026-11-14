@@ -31,6 +31,7 @@ import {
   type TargetUpdate,
   type TimelineResponse,
 } from "@michael/shared";
+import { cache } from "react";
 import { authHeaders } from "./caller";
 import { categoryOf } from "./categories";
 import type { DayView } from "./day";
@@ -57,13 +58,20 @@ export const usingMocks = () => USE_MOCKS;
 
 // Whose data to fetch (a session always beats the demo cookie): authHeaders in lib/caller.ts.
 
-export async function get<T>(path: string): Promise<T> {
+// One fetch per path per server render: Today's onboarding check and its suggestions panel both
+// read /v1/goals, for example, and share the one answer. Outside a render (route handlers, server
+// actions) React's cache is a no-op, so every call fetches.
+const getOnce = cache(async (path: string): Promise<unknown> => {
   const res = await fetch(`${API_URL}${path}`, {
     headers: await authHeaders(),
     cache: "no-store",
   });
   if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
-  return (await res.json()) as T;
+  return res.json();
+});
+
+export async function get<T>(path: string): Promise<T> {
+  return (await getOnce(path)) as T;
 }
 
 async function send<T>(method: "PUT" | "PATCH" | "POST", path: string, body?: unknown): Promise<T> {
@@ -410,12 +418,15 @@ export async function getToday(variant?: string): Promise<DayView> {
   if (variant === "error") throw new Error("Preview of the error state");
   if (variant && variant in SAMPLE_DAYS) return SAMPLE_DAYS[variant] as DayView;
   if (USE_MOCKS || variant === "sample") return sampleDay;
-  const score = await getScore();
   const to = new Date().toISOString();
   const from = new Date(Date.now() - 7 * 86_400_000).toISOString();
-  const patterns = await get<{ phone_cadence?: { status: string; data: unknown } }>(
-    `/v1/patterns?${new URLSearchParams({ from, to })}`,
-  ).catch(() => ({}));
+  // Side by side: the lead never waits for the score, nor the score for the lead.
+  const [score, patterns] = await Promise.all([
+    getScore(),
+    get<{ phone_cadence?: { status: string; data: unknown } }>(
+      `/v1/patterns?${new URLSearchParams({ from, to })}`,
+    ).catch(() => ({})),
+  ]);
   return dayFromScore(score, leadFromPatterns(patterns, score.day.now));
 }
 

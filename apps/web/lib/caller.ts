@@ -1,5 +1,6 @@
 import "server-only";
 import { cookies } from "next/headers";
+import { cache } from "react";
 import { AUTH_MISSING_MESSAGE, DEMO_COOKIE, demoVisitorId, localFallbackAllowed } from "./auth-mode";
 import { authEnabled, supabaseServer } from "./supabase/server";
 
@@ -21,7 +22,8 @@ export type Caller =
   | { kind: "demo"; visitor: string }
   | { kind: "local" };
 
-export async function currentCaller(): Promise<Caller> {
+/** Resolved once per server render (React cache), however many loaders ask. */
+export const currentCaller = cache(async (): Promise<Caller> => {
   if (!authEnabled) {
     if (!localFallbackAllowed()) throw new Error(AUTH_MISSING_MESSAGE);
     return { kind: "local" };
@@ -31,7 +33,7 @@ export async function currentCaller(): Promise<Caller> {
   const visitor = demoVisitorId((await cookies()).get(DEMO_COOKIE)?.value);
   if (visitor) return { kind: "demo", visitor };
   throw new Error("Not signed in");
-}
+});
 
 /** The headers every API call carries. Throws when nobody is signed in. */
 export async function authHeaders(): Promise<Record<string, string>> {
