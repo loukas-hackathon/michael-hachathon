@@ -62,8 +62,8 @@ Locked on the Build Hub ("Colour and type"). Use the CSS variables, never litera
 | `--m-context`   | `#D1D1D6` | `#3A3A3C` | Context bars in charts (days that are not today, other goals) |
 | `--m-spark`     | `#FF2E93` | `#FF2E93` | Goal time as a shape: ticks, fills, bars. Never small text    |
 | `--m-tint`      | `#E6007A` | `#E6007A` | Filled buttons (white text), selected tab                     |
-| `--m-tint-text` | `#E6007A` | `#FF4FA3` | Pink text and links                                           |
-| `--m-danger`    | `#FF3B30` | `#FF453A` | Errors only                                                   |
+| `--m-tint-text` | `#BB0062` | `#FF4FA3` | Pink text and links (AA on `--m-fill` and tinted buttons)     |
+| `--m-danger`    | `#D70015` | `#FF453A` | Errors only (Apple's accessible red in light, AA on fills)    |
 
 - Text on a pink fill is black (about 6:1). White on `--m-spark` fails contrast.
 - At most one pink element competes for attention on a screen; the tape counts as one.
@@ -216,16 +216,34 @@ Follow "Showing time on a phone" in `docs/interface-research.md`, plus:
 
 ## Motion
 
-| What                         | How                                          |
-| ---------------------------- | -------------------------------------------- |
-| Press on anything tappable   | `scale(.97)`, 120ms                          |
-| Interface changes            | 200ms, `cubic-bezier(.23, 1, .32, 1)`        |
-| Sheets                       | 500ms, `cubic-bezier(.32, .72, 0, 1)`        |
-| Tape fill and score count up | Once per day on first open, 700ms, no bounce |
-| Tab switches                 | None. The tab bar never moves                |
-| Reduced motion               | Instant, opacity only                        |
+Tokens live in `apps/web/app/globals.css` as CSS variables; use them, never literals.
 
-Animate `transform` and `opacity` only. Content is visible by default; motion never gates it.
+| Token            | Value                           | Use                                   |
+| ---------------- | ------------------------------- | ------------------------------------- |
+| `--m-ease-out`   | `cubic-bezier(.23, 1, .32, 1)`  | Everything by default                 |
+| `--m-ease-sheet` | `cubic-bezier(.32, .72, 0, 1)`  | Sheets                                |
+| `--m-spring`     | `linear(...)`, one 6% overshoot | Selection pops only (the tab icon)    |
+| `--m-dur-press`  | 120ms                           | Press feedback                        |
+| `--m-dur-ui`     | 200ms                           | Interface changes, switches           |
+| `--m-dur-tab`    | 220ms                           | Tab switch                            |
+| `--m-dur-enter`  | 420ms                           | Something new arriving (live refresh) |
+| `--m-dur-sheet`  | 500ms                           | Sheets                                |
+| `--m-dur-count`  | 700ms                           | Score count up                        |
+
+| What                       | How                                                                                                   |
+| -------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Press on anything tappable | `.press`: `scale(.97)`, 120ms. Primary (filled) buttons also give a light haptic tick                 |
+| Tab bar press              | Icon to `scale(.86)` and the tab to 60% opacity; the newly selected icon settles on `--m-spring`      |
+| Tab switches               | The old screen fades out in 120ms, the new rises 6px in 220ms (View Transitions). The bar never moves |
+| Interface changes          | 200ms, `--m-ease-out`                                                                                 |
+| Sheets                     | 500ms, `--m-ease-sheet`                                                                               |
+| Score count up             | Once per session, 700ms, no bounce, after the splash. The real number is always in the DOM            |
+| Live refresh               | New blocks rise 6px and fade in; a tape tick that just filled grows from the baseline                 |
+| Loading                    | Skeleton in the final layout (`loading.tsx` per route): blank for 150ms, then a slow 1.6s breath      |
+| Reduced motion             | Instant, opacity only: no transforms, no count up, no view transitions, skeletons still               |
+
+Animate `transform` and `opacity` only. Content is visible by default; motion never gates it. Only
+navigations tagged `tab` animate; refreshes, sheets and form actions stay instant.
 
 ## Copy
 

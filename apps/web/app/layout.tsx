@@ -1,6 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { Figtree } from "next/font/google";
 import type { ReactNode } from "react";
+import { MotionScript } from "@/components/count-up";
+import { Haptics } from "@/components/haptics";
+import { PageTransition } from "@/components/page-transition";
 import { Splash } from "@/components/splash";
 import { TabBar } from "@/components/tab-bar";
 import "./globals.css";
@@ -28,11 +31,16 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en-GB" className={figtree.variable}>
+    // The inline motion script marks <html> before hydration (data-counted, data-splashing).
+    <html lang="en-GB" className={figtree.variable} suppressHydrationWarning>
       <body>
         <Splash />
+        <MotionScript />
+        <Haptics />
         <div className="min-h-dvh lg:pl-64">
-          <div className="mx-auto w-full max-w-[560px] lg:max-w-[720px]">{children}</div>
+          <div className="mx-auto w-full max-w-[560px] lg:max-w-[720px]">
+            <PageTransition>{children}</PageTransition>
+          </div>
         </div>
         <TabBar />
       </body>

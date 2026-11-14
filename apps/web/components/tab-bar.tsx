@@ -44,13 +44,14 @@ export function TabBar() {
             <li key={href} className="h-full lg:h-auto">
               <Link
                 href={href}
+                transitionTypes={active ? undefined : ["tab"]}
                 aria-current={active ? "page" : undefined}
-                className={`press flex h-full flex-col items-center justify-center gap-px text-tab font-semibold lg:h-11 lg:flex-row lg:justify-start lg:gap-3 lg:rounded-block lg:px-3 lg:text-body ${
+                className={`m-tab flex h-full flex-col items-center justify-center gap-px text-tab font-semibold lg:h-11 lg:flex-row lg:justify-start lg:gap-3 lg:rounded-block lg:px-3 lg:text-body ${
                   active ? "text-tint-text lg:bg-fill" : "text-label"
                 }`}
               >
                 <span className="relative">
-                  <Icon className="size-6" />
+                  <Icon className="m-tab-icon size-6" />
                   {href === "/chat" && waiting && !active ? (
                     <span
                       role="img"

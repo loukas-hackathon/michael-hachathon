@@ -45,7 +45,8 @@ export function Tape({
               const i = index++;
               const isNow = showNow && i === nowAt;
               return (
-                <span key={i} className="relative min-w-0 flex-1">
+                // data-live-key: a tick that changes state (ahead to spent) eases in after a live refresh.
+                <span key={i} data-live-key={`t${i}${t}`} className="m-tick relative min-w-0 flex-1">
                   {i === recordAt ? (
                     <span
                       aria-hidden="true"

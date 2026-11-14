@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { EmptyState } from "@/components/empty-state";
+import { LiveRefresh } from "@/components/live-refresh";
 import { ScreenHeader } from "@/components/screen";
 import { DayTimeline, TimelineKey } from "@/components/timeline/day-timeline";
 import { WeekStrip } from "@/components/timeline/week-strip";
@@ -19,7 +20,15 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
 
   return (
     <main className="screen">
-      <ScreenHeader context={formatMonth(noon)} title="Timeline" />
+      <ScreenHeader
+        context={
+          <>
+            {formatMonth(noon)}
+            <LiveRefresh />
+          </>
+        }
+        title="Timeline"
+      />
       <WeekStrip date={date} available={screen.available} demo={sampleParam} />
 
       {day ? (
