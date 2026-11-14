@@ -239,6 +239,18 @@ body::before {
   }
 }
 
+/* A screen with two columns on a laptop (Goals): wider than the reading column, still centred in
+ * the space beside the sidebar. Phone and narrow laptops keep the one column. */
+@media (min-width: 1280px) {
+  .m-wide {
+    --m-wide: min(1040px, calc(100vw - 16rem - 48px));
+    position: relative;
+    left: 50%;
+    width: var(--m-wide);
+    margin-left: calc(var(--m-wide) / -2);
+  }
+}
+
 ::view-transition {
   pointer-events: none;
 }
