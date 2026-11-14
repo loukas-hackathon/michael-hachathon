@@ -1,6 +1,8 @@
 // Types only from @michael/shared: this file reaches the Timeline's client code, and a value import
 // would ship zod and the whole schema file with it (#255). Goal helpers live in ./sleep-goal.ts.
+// The nap rule comes from "@michael/shared/sleep", a zod free entry the API score uses too.
 import type { Event } from "@michael/shared";
+import { isNap as napRule } from "@michael/shared/sleep";
 import { hm } from "./format";
 
 // The Apple Watch on one day, from the events Health Auto Export writes (apps/api/src/ingest/
@@ -10,7 +12,8 @@ import { hm } from "./format";
 //
 // The night rule, one rule for every screen:
 // - A sleep shorter than 3 hours that starts between 09:00 and 20:00 is a nap: a small quiet block
-//   in the day, never a night and never set against the Sleep goal.
+//   in the day, never a night and never set against the Sleep goal (packages/shared/src/sleep.ts;
+//   the API score leaves naps out by the same rule).
 // - Every other sleep is a night, and a night belongs to the day you woke up. It is that day's
 //   `lastNight` (the band above the day, and Today's watch line) wherever the bedtime falls, so a
 //   night from 00:40 to 07:20 is the 07:20 day's, the same day the API's score counts it on.
@@ -61,7 +64,6 @@ export type DayHealth = {
 export const HEART_COOKIE = "m_hr";
 
 const HOUR = 3_600_000;
-const NAP_MAX = 3 * HOUR;
 const t = (iso: string) => new Date(iso).getTime();
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
 
@@ -97,8 +99,7 @@ function night(e: Event): Night | null {
 
 /** Whether a sleep that starts on the day beginning at `dayStart` is a nap (the night rule). */
 function isNap(n: Night, dayStart: number) {
-  const hour = (n.start - dayStart) / HOUR;
-  return n.end - n.start < NAP_MAX && hour >= 9 && hour < 20;
+  return napRule(n.start, n.end, (n.start - dayStart) / HOUR);
 }
 
 /** The average of one biometric's hourly readings that start in [from, to), or undefined. */

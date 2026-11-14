@@ -91,6 +91,120 @@ export function NotchTrack({
   );
 }
 
+/**
+ * The week's budget as one continuous bar (#309): pink for time spent (pale where no data proves it
+ * yet), a dashed outline for time already planned in blocks, the grey track for what is still to
+ * find. The black tick is where an even week would be by now. Closed: solid pink and a check.
+ */
+export function GoalBar({
+  budget,
+  spent,
+  unverified = 0,
+  planned = 0,
+  pace,
+  close = "open",
+  size = "sm",
+  label,
+}: {
+  budget: number;
+  spent: number;
+  unverified?: number;
+  /** Minutes planned in blocks this week, counted from the start of the week like `spent`. */
+  planned?: number;
+  pace: number;
+  close?: CloseState;
+  size?: "sm" | "lg";
+  label: string;
+}) {
+  const share = (m: number) => `${Math.max(0, Math.min(1, budget > 0 ? m / budget : 0)) * 100}%`;
+  const h = size === "lg" ? "h-3" : "h-1.5";
+  const tick = size === "lg" ? "-top-1 h-5" : "-top-[5px] h-4";
+  if (close === "closed") {
+    return (
+      <div role="img" aria-label={label} className="flex items-center gap-2">
+        <div className={`m-track-closed ${h} flex-1 rounded-full bg-spark`} />
+        <svg viewBox="0 0 20 20" aria-hidden="true" className="m-check-pop -my-1 size-4 shrink-0">
+          <circle cx="10" cy="10" r="10" fill="var(--m-spark)" />
+          <path
+            d="M6 10.4l2.6 2.6L14 7.6"
+            fill="none"
+            stroke="var(--m-bg)"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </div>
+    );
+  }
+  const firm = Math.max(0, spent - unverified);
+  return (
+    <div role="img" aria-label={label} className="relative">
+      <div
+        className={`relative ${h} overflow-hidden rounded-full bg-[color-mix(in_srgb,var(--m-context)_60%,transparent)]`}
+      >
+        {planned > spent ? (
+          <span
+            className="absolute inset-y-0 left-0 rounded-full border border-dashed border-label-2"
+            style={{ width: share(planned) }}
+          />
+        ) : null}
+        {spent > 0 ? (
+          <span
+            className="absolute inset-y-0 left-0 rounded-full bg-[color-mix(in_srgb,var(--m-spark)_38%,var(--m-bg))]"
+            style={{ width: share(spent) }}
+          />
+        ) : null}
+        {firm > 0 ? (
+          <span className="absolute inset-y-0 left-0 rounded-full bg-spark" style={{ width: share(firm) }} />
+        ) : null}
+      </div>
+      <span
+        aria-hidden="true"
+        className={`absolute ${tick} w-[2px] -translate-x-1/2 rounded-full bg-label`}
+        style={{ left: `${Math.max(0, Math.min(1, pace)) * 100}%` }}
+      />
+    </div>
+  );
+}
+
+const LETTERS = ["M", "T", "W", "T", "F", "S", "S"];
+
+/** The week day by day, wide enough to read: minutes per day, today pink, days to come outlined. */
+export function WeekBars({ daily, today, cap }: { daily: (number | null)[]; today: number; cap: number }) {
+  return (
+    <div
+      role="img"
+      aria-label={daily
+        .map((m, i) => (m == null ? null : `${DAYS[i]} ${hm(m)}`))
+        .filter(Boolean)
+        .join(", ")}
+      className="grid grid-cols-7 gap-2"
+    >
+      {daily.map((m, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: days are positional
+        <div key={i} className="flex flex-col items-center gap-1">
+          <div className="flex h-8 w-full items-end justify-center">
+            <span
+              className={`w-full max-w-5 rounded-[3px] ${
+                m == null
+                  ? "h-[3px] shadow-[inset_0_0_0_1px_var(--m-context)]"
+                  : i === today
+                    ? "bg-spark"
+                    : "bg-context"
+              }`}
+              style={m == null ? undefined : { height: `${Math.max(2, (Math.min(m, cap) / cap) * 32)}px` }}
+            />
+          </div>
+          <span className={`text-caption tnum ${i === today ? "font-semibold text-label" : "text-label-2"}`}>
+            {LETTERS[i]}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** Seven thin day columns: today pink, past days grey, days to come as small outlines. */
 export function DayColumns({ daily, today, cap }: { daily: (number | null)[]; today: number; cap: number }) {
   return (

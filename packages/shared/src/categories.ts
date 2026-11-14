@@ -35,6 +35,9 @@ const APPS: Record<Exclude<AppCategory, "other">, string[]> = {
     "com.postmanlabs.mac",
     "com.docker.docker",
     "com.tinyapp.TablePlus",
+    "at.eggerapps.Postico",
+    "org.jkiss.dbeaver.core.product",
+    "com.google.android.studio",
     "com.github.stormbreaker.prod", // GitHub on iPhone
     // documents and notes
     "com.microsoft.Word",
@@ -262,6 +265,24 @@ const HOSTS: Record<Exclude<AppCategory, "other" | "system">, string[]> = {
     "developer.mozilla.org",
     "developer.apple.com",
     "overleaf.com",
+    "notion.site",
+    "notion.com",
+    "sheets.google.com",
+    "slides.google.com",
+    "dropbox.com",
+    "onedrive.live.com",
+    "coda.io",
+    "evernote.com",
+    "pypi.org",
+    "crates.io",
+    "docker.com",
+    "netlify.com",
+    "portal.azure.com",
+    "sentry.io",
+    "codepen.io",
+    "codesandbox.io",
+    "replit.com",
+    "developer.chrome.com",
     "office.com",
     "sharepoint.com",
     "localhost",
@@ -278,6 +299,16 @@ const HOSTS: Record<Exclude<AppCategory, "other" | "system">, string[]> = {
     "aistudio.google.com",
     "perplexity.ai",
     "copilot.microsoft.com",
+    "openai.com",
+    "notebooklm.google.com",
+    "mistral.ai",
+    "grok.com",
+    "deepseek.com",
+    "poe.com",
+    "huggingface.co",
+    "openrouter.ai",
+    "midjourney.com",
+    "elevenlabs.io",
   ],
   communication: [
     "mail.google.com",
@@ -293,6 +324,14 @@ const HOSTS: Record<Exclude<AppCategory, "other" | "system">, string[]> = {
     "zoom.us",
     "mail.proton.me",
     "mail.yahoo.com",
+    "outlook.office365.com",
+    "fastmail.com",
+    "mail.zoho.com",
+    "hey.com",
+    "whatsapp.com",
+    "telegram.org",
+    "messages.google.com",
+    "chat.google.com",
   ],
   social: [
     "instagram.com",
@@ -308,6 +347,7 @@ const HOSTS: Record<Exclude<AppCategory, "other" | "system">, string[]> = {
     "snapchat.com",
     "tumblr.com",
     "bsky.app",
+    "mastodon.social",
   ],
   video: [
     "youtube.com",
@@ -319,6 +359,10 @@ const HOSTS: Record<Exclude<AppCategory, "other" | "system">, string[]> = {
     "primevideo.com",
     "max.com",
     "dailymotion.com",
+    "hbomax.com",
+    "hulu.com",
+    "tv.apple.com",
+    "crunchyroll.com",
   ],
   news: [
     "news.google.com",
@@ -338,6 +382,15 @@ const HOSTS: Record<Exclude<AppCategory, "other" | "system">, string[]> = {
     "protothema.gr",
     "naftemporiki.gr",
     "in.gr",
+    "apnews.com",
+    "wsj.com",
+    "washingtonpost.com",
+    "politico.com",
+    "politico.eu",
+    "euronews.com",
+    "aljazeera.com",
+    "wired.com",
+    "arstechnica.com",
   ],
   shopping: [
     "amazon.com",
@@ -352,6 +405,14 @@ const HOSTS: Record<Exclude<AppCategory, "other" | "system">, string[]> = {
     "public.gr",
     "kotsovolos.gr",
     "plaisio.gr",
+    "alibaba.com",
+    "asos.com",
+    "zara.com",
+    "hm.com",
+    "nike.com",
+    "vinted.com",
+    "walmart.com",
+    "bestbuy.com",
   ],
   travel: [
     "skyscanner.net",
@@ -367,6 +428,16 @@ const HOSTS: Record<Exclude<AppCategory, "other" | "system">, string[]> = {
     "ryanair.com",
     "aegeanair.com",
     "ferryhopper.com",
+    "agoda.com",
+    "omio.com",
+    "rome2rio.com",
+    "thetrainline.com",
+    "trainline.com",
+    "trivago.com",
+    "easyjet.com",
+    "wizzair.com",
+    "lufthansa.com",
+    "flights.google.com",
   ],
   music: ["open.spotify.com", "music.youtube.com", "music.apple.com", "soundcloud.com"],
 };
@@ -377,6 +448,8 @@ const HOST_BRANDS: Record<string, AppCategory> = {
   ebay: "shopping",
   zalando: "shopping",
   ikea: "shopping",
+  vinted: "shopping",
+  pinterest: "social",
   skyscanner: "travel",
   tripadvisor: "travel",
   expedia: "travel",
@@ -439,7 +512,7 @@ export function categoriseHost(input: string): AppCategory {
     const last = labels.length - 1;
     const second = labels[last - 1] ?? "";
     const brand = labels.length >= 3 && SECOND_LEVEL_ENDINGS.has(second) ? labels[last - 2] : second;
-    const known = brand ? HOST_BRANDS[brand] : undefined;
+    const known = brand && Object.hasOwn(HOST_BRANDS, brand) ? HOST_BRANDS[brand] : undefined;
     if (known) return known;
   }
   return "other";
@@ -471,5 +544,232 @@ export function categoriseVisit(host: string, label?: unknown): AppCategory {
   const known = categoriseHost(host);
   if (known !== "other" || typeof label !== "string") return known;
   const key = label.toLowerCase();
-  return SITE_LABELS[key] ?? (CATEGORY_NAMES.has(key) ? (key as AppCategory) : "other");
+  if (Object.hasOwn(SITE_LABELS, key)) return SITE_LABELS[key] ?? "other";
+  return CATEGORY_NAMES.has(key) ? (key as AppCategory) : "other";
 }
+
+// Some sources name an app instead of giving its bundle id: ActivityWatch sends the Mac app's name
+// ("Google Chrome", "Code"), an iPhone Shortcuts automation the name the person picked
+// ("Instagram"). This is how those names read as bundle ids, lower case. Only names that say
+// exactly one product are here; anything else stays unknown.
+const APP_NAMES: Record<string, string> = {
+  // editors, terminals and developer tools
+  code: "com.microsoft.VSCode",
+  "visual studio code": "com.microsoft.VSCode",
+  "vs code": "com.microsoft.VSCode",
+  cursor: "com.todesktop.230313mzl4w4u92",
+  windsurf: "com.exafunction.windsurf",
+  zed: "dev.zed.Zed",
+  xcode: "com.apple.dt.Xcode",
+  simulator: "com.apple.iphonesimulator",
+  "sublime text": "com.sublimetext.4",
+  nova: "com.panic.Nova",
+  terminal: "com.apple.Terminal",
+  iterm: "com.googlecode.iterm2",
+  iterm2: "com.googlecode.iterm2",
+  warp: "dev.warp.Warp-Stable",
+  ghostty: "com.mitchellh.ghostty",
+  kitty: "net.kovidgoyal.kitty",
+  alacritty: "org.alacritty",
+  wezterm: "com.github.wez.wezterm",
+  "intellij idea": "com.jetbrains.intellij",
+  pycharm: "com.jetbrains.pycharm",
+  webstorm: "com.jetbrains.WebStorm",
+  goland: "com.jetbrains.goland",
+  "android studio": "com.google.android.studio",
+  "github desktop": "com.github.GitHubClient",
+  postman: "com.postmanlabs.mac",
+  "docker desktop": "com.docker.docker",
+  tableplus: "com.tinyapp.TablePlus",
+  postico: "at.eggerapps.Postico",
+  dbeaver: "org.jkiss.dbeaver.core.product",
+  // documents, notes and planning
+  "microsoft word": "com.microsoft.Word",
+  word: "com.microsoft.Word",
+  "microsoft excel": "com.microsoft.Excel",
+  excel: "com.microsoft.Excel",
+  "microsoft powerpoint": "com.microsoft.Powerpoint",
+  powerpoint: "com.microsoft.Powerpoint",
+  pages: "com.apple.iWork.Pages",
+  numbers: "com.apple.iWork.Numbers",
+  keynote: "com.apple.iWork.Keynote",
+  "google docs": "com.google.Docs",
+  "google sheets": "com.google.Sheets",
+  "google slides": "com.google.Slides",
+  notion: "notion.id",
+  obsidian: "md.obsidian",
+  notes: "com.apple.Notes",
+  evernote: "com.evernote.Evernote",
+  bear: "net.shinyfrog.bear",
+  craft: "com.lukilabs.lukiapp",
+  linear: "com.linear",
+  things: "com.culturedcode.ThingsMac",
+  "things 3": "com.culturedcode.ThingsMac",
+  todoist: "com.todoist.mac.Todoist",
+  trello: "com.atlassian.trello",
+  figma: "com.figma.Desktop",
+  sketch: "com.bohemiancoding.sketch3",
+  canva: "com.canva.CanvaDesktop",
+  "final cut pro": "com.apple.FinalCut",
+  "logic pro": "com.apple.logic10",
+  "davinci resolve": "com.blackmagic-design.DaVinciResolve",
+  capcut: "com.lemon.lvoverseas",
+  blender: "org.blenderfoundation.blender",
+  // AI
+  claude: "com.anthropic.claudefordesktop",
+  chatgpt: "com.openai.chat",
+  codex: "com.openai.codex",
+  gemini: "com.google.gemini",
+  perplexity: "ai.perplexity.mac",
+  copilot: "com.microsoft.copilot",
+  // communication
+  whatsapp: "net.whatsapp.WhatsApp",
+  "whatsapp business": "net.whatsapp.WhatsAppSMB",
+  messages: "com.apple.MobileSMS",
+  telegram: "ru.keepcoder.Telegram",
+  slack: "com.tinyspeck.slackmacgap",
+  discord: "com.hnc.Discord",
+  "microsoft teams": "com.microsoft.teams2",
+  teams: "com.microsoft.teams2",
+  skype: "com.skype.skype",
+  zoom: "us.zoom.xos",
+  "zoom.us": "us.zoom.xos",
+  "google meet": "com.google.meetings",
+  mail: "com.apple.mail",
+  outlook: "com.microsoft.Outlook",
+  "microsoft outlook": "com.microsoft.Outlook",
+  gmail: "com.google.Gmail",
+  spark: "com.readdle.smartemail-Mac",
+  superhuman: "com.superhuman.electron",
+  messenger: "com.facebook.Messenger",
+  viber: "com.viber.osx",
+  signal: "org.whispersystems.signal-desktop",
+  facetime: "com.apple.FaceTime",
+  phone: "com.apple.mobilephone",
+  "phone call": "com.apple.InCallService",
+  // social
+  instagram: "com.burbn.instagram",
+  tiktok: "com.zhiliaoapp.musically",
+  x: "com.atebits.Tweetie2",
+  twitter: "com.atebits.Tweetie2",
+  facebook: "com.facebook.Facebook",
+  linkedin: "com.linkedin.LinkedIn",
+  reddit: "com.reddit.Reddit",
+  snapchat: "com.toyopagroup.picaboo",
+  threads: "com.burbn.barcelona",
+  pinterest: "pinterest",
+  tumblr: "com.tumblr.tumblr",
+  bluesky: "xyz.blueskyweb.app",
+  mastodon: "org.joinmastodon.app",
+  bereal: "AlexisBarreyat.BeReal",
+  // video, news, shopping, travel, music
+  youtube: "com.google.ios.youtube",
+  netflix: "com.netflix.Netflix",
+  twitch: "tv.twitch",
+  tv: "com.apple.TV",
+  "apple tv": "com.apple.TV",
+  "disney+": "com.disney.disneyplus",
+  "prime video": "com.amazon.aiv.AIVApp",
+  vlc: "org.videolan.vlc",
+  iina: "com.colliderli.iina",
+  "quicktime player": "com.apple.QuickTimePlayerX",
+  news: "com.apple.news",
+  "apple news": "com.apple.news",
+  amazon: "com.amazon.Amazon",
+  ebay: "com.ebay.iphone",
+  etsy: "com.etsy.etsyforios",
+  airbnb: "com.airbnb.app",
+  "booking.com": "com.booking.BookingApp",
+  booking: "com.booking.BookingApp",
+  uber: "com.ubercab.UberClient",
+  spotify: "com.spotify.client",
+  music: "com.apple.Music",
+  "apple music": "com.apple.Music",
+  podcasts: "com.apple.podcasts",
+  shazam: "com.shazam.Shazam",
+  "youtube music": "com.google.ios.youtubemusic",
+  // browsers (containers: the page decides)
+  "google chrome": "com.google.Chrome",
+  chrome: "com.google.Chrome",
+  safari: "com.apple.Safari",
+  arc: "company.thebrowser.Browser",
+  dia: "company.thebrowser.dia",
+  "brave browser": "com.brave.Browser",
+  brave: "com.brave.Browser",
+  "microsoft edge": "com.microsoft.edgemac",
+  firefox: "org.mozilla.firefox",
+  opera: "com.operasoftware.Opera",
+  vivaldi: "com.vivaldi.Vivaldi",
+  "zen browser": "app.zen-browser.zen",
+  // the system
+  finder: "com.apple.finder",
+  "system settings": "com.apple.systempreferences",
+  "system preferences": "com.apple.systempreferences",
+  settings: "com.apple.Preferences",
+  loginwindow: "com.apple.loginwindow",
+  dock: "com.apple.dock",
+  spotlight: "com.apple.Spotlight",
+  "activity monitor": "com.apple.ActivityMonitor",
+  "app store": "com.apple.AppStore",
+};
+
+/**
+ * Bundle id of a well known app from its name ("Google Chrome", "Code.app", "Instagram"), or null.
+ * Case and a trailing ".app" do not matter. Unknown names are null: we never guess.
+ */
+export function bundleIdForAppName(name: string): string | null {
+  const key = name
+    .trim()
+    .toLowerCase()
+    .replace(/\.app$/, "");
+  return Object.hasOwn(APP_NAMES, key) ? (APP_NAMES[key] ?? null) : null;
+}
+
+/** What a category does to a goal, wherever it shows up (score, patterns, timeline colours). */
+export type CategoryRole = "work" | "distractor" | "neutral";
+
+const WORK_CATEGORIES: ReadonlySet<AppCategory> = new Set(["work", "ai"]);
+const DISTRACTING_CATEGORIES: ReadonlySet<AppCategory> = new Set([
+  "communication",
+  "social",
+  "video",
+  "news",
+  "shopping",
+  "travel",
+]);
+
+/**
+ * work: work, ai. distractor: communication, social, video, news, shopping, travel. neutral:
+ * music, the system and anything unknown (they neither make nor break focus).
+ */
+export const categoryRole = (category: AppCategory): CategoryRole =>
+  WORK_CATEGORIES.has(category) ? "work" : DISTRACTING_CATEGORIES.has(category) ? "distractor" : "neutral";
+
+const text = (v: unknown): string | null => (typeof v === "string" && v.trim().length > 0 ? v : null);
+
+/**
+ * THE categoriser for an event. A site (`data.host`) goes by `categoriseVisit`; an app by its
+ * bundle id (`data.bundle_id`), else by its well known name (`data.app`, else the title of an
+ * `app_usage` event). Null when the event is neither an app nor a site.
+ */
+export function categoriseEvent(e: {
+  type?: string;
+  title?: string | null;
+  data?: Record<string, unknown> | null;
+}): AppCategory | null {
+  const d = e.data ?? {};
+  const host = text(d.host);
+  if (host) return categoriseVisit(host, d.category);
+  const bundle = text(d.bundle_id);
+  if (bundle) return categoriseApp(bundle);
+  const name = text(d.app) ?? (e.type === "app_usage" ? text(e.title) : null);
+  if (name) {
+    const id = bundleIdForAppName(name);
+    return id ? categoriseApp(id) : "other";
+  }
+  return null;
+}
+
+/** The site lists themselves, for the browser extension's generated copy (apps/extension/lib/categories.js). */
+export const SITE_LISTS: Readonly<Record<string, readonly string[]>> = HOSTS;
+export const SITE_BRANDS: Readonly<Record<string, AppCategory>> = HOST_BRANDS;

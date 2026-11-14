@@ -801,6 +801,13 @@ export const GoalSuggestionAccept = z.object({
 });
 export type GoalSuggestionAccept = z.input<typeof GoalSuggestionAccept>;
 
+// Book time for a goal from the Goals tab (#309): the first free slot of this length from now
+// until the end of the week, booked at once and undoable until it starts.
+export const GoalBook = z.object({
+  minutes: z.number().int().min(15).max(360).default(60),
+});
+export type GoalBook = z.input<typeof GoalBook>;
+
 // Where the user says their time leaks. Analysis and nudges can look for these first.
 export const WeakSpot = z.enum([
   "phone_in_bed",
@@ -1615,6 +1622,8 @@ export const PatternReport = z.object({
   inputs: z.object({
     mac_app_usage: z.number().int().nonnegative(),
     iphone_app_usage: z.number().int().nonnegative(),
+    // ActivityWatch and Shortcuts intervals left out because Apple's own log covered the same hour.
+    app_usage_superseded: z.number().int().nonnegative(),
     web_visits: z.number().int().nonnegative(),
     // History visits left out because the extension covered the same window.
     web_visits_superseded: z.number().int().nonnegative(),
@@ -1947,8 +1956,8 @@ export type RecordsResponse = z.infer<typeof RecordsResponse>;
 export const ScoreSleep = z.object({
   // The nightly goal in minutes (sleep_hours x 60).
   goal_minutes: Minutes,
-  // Seven entries, Monday first: minutes slept in the night that ended that day. Null for a night
-  // with no sleep data and for nights to come.
+  // Seven entries, Monday first: minutes slept in the night that ended that day, naps left out
+  // (isNap, ./sleep.ts). Null for a night with no sleep data and for nights to come.
   nightly: z.array(Minutes.nullable()),
 });
 export type ScoreSleep = z.infer<typeof ScoreSleep>;

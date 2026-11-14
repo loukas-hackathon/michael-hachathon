@@ -7,4 +7,5 @@ export * from "./connectors";
 export * from "./mac-apps";
 export * from "./mocks";
 export * from "./schemas";
+export * from "./sleep";
 export * from "./voice";

@@ -198,6 +198,10 @@ const CATEGORY_TITLE = {
   docs: "Docs",
   finance: "Finance site",
   search: "Search engine",
+  // The shared vocabulary (packages/shared/src/categories.ts), which newer events carry.
+  communication: "Messaging site",
+  work: "Work site",
+  music: "Music site",
 };
 
 const pick = (data, keys) => Object.fromEntries(keys.filter((k) => k in data).map((k) => [k, data[k]]));

@@ -78,10 +78,15 @@ Enums:
 - `NudgeChannel`: `watch | push | telegram`; `NudgeStatus`: `queued | sent | failed | suppressed | test`
 - `NudgeKind`: `focus_drift | block_soon | wind_down | goal_behind | morning | evening`; `NudgeSkip`: `nothing_to_say | quiet_hours | daily_cap | too_soon | off_the_record`
 - `AppCategory`: `work | communication | social | video | news | shopping | travel | ai | music | system | other`
+  (one shared categoriser for apps and sites, `packages/shared/src/categories.ts`; unknown = `other`).
+  `categoriseEvent` is the entry point for an event (host, then bundle id, then a well known app
+  name) and `categoryRole` says what a category does to a goal (`work`: work, ai; `distractor`:
+  communication, social, video, news, shopping, travel; `neutral`: the rest). The patterns, the
+  score, the retention roll up, the web timeline colours, ActivityWatch focus, the collector and
+  (as a generated copy) the browser extension all use them.
 - `ConnectorId`: `google-calendar | apple-watch | mac | iphone | claude | nudges | telegram | travel`;
   `ConnectorStatus`: `live | soon`. `CONNECTOR_STATUS` (shared, not served by the API) says which
   connections are proven end to end on production; the apps show the rest as Coming soon (#295).
-  (one shared categoriser for apps and sites, `packages/shared/src/categories.ts`; unknown = `other`)
 - `IntegrationProvider`: `google_calendar | whoop`
 - `IntegrationStatus`: `connected | disconnected | error`
 - `DraftStatus`: `proposed | done | dismissed`; `DraftChannel`: `email | chat`; `DraftAuthor`: `model | template | analysis`
@@ -324,7 +329,8 @@ type ShortcutsPayload = {
   than two hours, is dropped. Held opens live in the API's memory, so a deploy in the middle of a
   session loses that session.
 - While off the record or with the source off, a call answers `ignored: 1` and an open is not held.
-- The patterns layer reads `iphone_usage` only for now; these events show on the timeline.
+- The patterns layer uses these sessions for the hours the Biome backfill (`iphone_usage`) has not
+  covered yet, and steps aside once it has (see "One timeline first").
 
 `POST /v1/webhooks/activitywatch` takes ActivityWatch bucket events exactly as
 `GET /api/0/buckets/<id>/events` returns them (`{ timestamp, duration, data: { app, title } }`
@@ -336,7 +342,8 @@ Format: https://docs.activitywatch.net/en/latest/buckets-and-events.html. Mappin
 - Away time (`afk`) is cut out, then the same app within 10 seconds is one run: one `app_usage`
   event (`title` = app, `data`: `app`, `device: "mac"`, `seconds`; `external_id` =
   `aw:<app lowercased>:<start, UTC second>`). Window titles are never stored.
-- Focus rule: work app runs (editors, terminals, design and writing tools, see `WORK_APPS`) where
+- Focus rule: work app runs (an app whose name the shared categoriser reads as a `work` or `ai`
+  app, `bundleIdForAppName` in `packages/shared/src/categories.ts`) where
   every gap or non work stretch between them is at most 3 minutes, lasting at least 25 minutes from
   the first work run to the last, with work apps at least 70% of that time. Browsers neither break
   nor count. Gives a `focus_session` (`title` `Deep work: Code + Terminal (36m)`, `data`: `apps`
@@ -388,9 +395,11 @@ visit can arrive from both; the patterns layer decides which to trust. From `his
 
 - `foreground` is `true` when `seconds` is the time Chrome measured the page in front, and `false`
   when Chrome did not measure it and `seconds` is how long the page stayed open. Capped at two hours.
-- `category` is one of `travel`, `shopping`, `social`, `news`, `video`, `messaging`, `mail`, `dev`,
-  `ai`, `docs`, `finance`, `search`, from a short built in list of well known sites
-  (`apps/collector/src/site-categories.ts`). A site we do not know has no category.
+- `category` is an `AppCategory` (`work`, `ai`, `communication`, `social`, `video`, `news`,
+  `shopping`, `travel`, `music`), from the one list of well known sites in
+  `packages/shared/src/categories.ts` (the extension uses a generated copy). A site we do not know,
+  and a search engine, has no category. Older events may carry the earlier labels (`messaging`,
+  `mail`, `dev`, `docs`, `finance`, `search`); `categoriseVisit` reads them as the same categories.
 - `profile` is the Chrome profile folder (`Default`, `Profile 1`).
 - Visits to excluded hosts (banking, health, adult, password managers, the local network, and the
   user's own list) are never sent, and neither are their titles or search terms
@@ -449,6 +458,20 @@ AI tool events (`ai_session`, `ai_prompt`) from `claude_code`:
 | DELETE | `/v1/goals/:id`                    |                                   | `204`, `404`                  | live   |
 | GET    | `/v1/goals/suggestions`            |                                   | `200 GoalSuggestionsResponse` | live   |
 | POST   | `/v1/goals/suggestions/:id/accept` | `GoalSuggestionAccept` (optional) | `201 Goal`, `404`             | live   |
+| POST   | `/v1/goals/:id/book`               | `GoalBook` (optional)             | `201 Recommendation`, `409`   | live   |
+
+#### Book time for a goal (#309)
+
+The Goals tab's one action. `type GoalBook = { minutes?: number }` (15 to 360, default 60). Michael
+takes the first free slot of that length from now (at least 5 minutes ahead, on the quarter hour)
+to Sunday night, inside the waking day (the sleep goal sets it), clear of every calendar entry that
+holds time and of time an active standing instruction protects for the goal's block title. The
+block is titled with the goal's first `calendar_titles` entry (else its title), so the score counts
+it, and is booked at once as a `create_focus_block` recommendation (`status: "done"`, rationale
+"Booked at your request through Goals."), the same path as the MCP `create_focus_block` tool.
+Undo with `POST /v1/recommendations/:id/undo` until it starts. `404` for an unknown or paused goal,
+`409` "No free 90 minutes left this week" when nothing fits. Pure slot logic: `goalSlot` in
+`apps/api/src/goals/book.ts`.
 
 #### Goals from the calendar (#134)
 
@@ -862,7 +885,13 @@ rules, no model): the same events always give the same report. Days and hours ar
 (`Europe/Athens`), correct across the daylight saving change.
 
 This is what the analysis (`POST /v1/analysis/run`) reads instead of raw events: `headlines` holds
-the one line summary of every detector that had enough data, most important first.
+the one line summary of every detector that had enough data and found something worth leading
+with, most important first. A detector can answer and still stay out of `headlines` when its
+finding is trivial or its sample small (`RULES.headline` in `apps/api/src/patterns/context.ts`):
+under 5 minutes of drift, lost time or AI tool time; fewer than 5 disruptions or under 60 minutes
+of focus; recovery measured on fewer than 10 disruptions; no late night; under 60 minutes of screen
+time; fewer than 3 AI sessions. Its `summary` and `data` stay for the detail. When nothing clears
+the bar `headlines` is empty and the chat and the connector say "Not enough data yet".
 
 ```ts
 type PatternReport = {
@@ -874,7 +903,8 @@ type PatternReport = {
   inputs: {
     // how many events the report was built from
     mac_app_usage: number;
-    iphone_app_usage: number;
+    iphone_app_usage: number; // Apple's logs, plus ActivityWatch and Shortcuts where they have nothing
+    app_usage_superseded: number; // ActivityWatch and Shortcuts intervals ignored because Apple's log covered the hour
     web_visits: number;
     web_visits_superseded: number; // history visits ignored because the extension covered them
     web_visits_unmeasured: number; // history visits ignored because Chrome did not measure them in front
@@ -899,7 +929,7 @@ type PatternReport = {
 // Every detector answers in the same envelope.
 type Detector<T> = {
   status: "ok" | "not_enough_data";
-  reason: string | null; // "not enough data: needs at least 3 days of phone usage, found 1"
+  reason: string | null; // "Not enough data yet: needs at least 3 days of phone usage, found 1"
   minimum: string; // the smallest sample this detector speaks from
   summary: string | null; // one plain sentence with the numbers
   evidence: string[]; // up to 20 event ids, so the app can show the proof
@@ -1103,9 +1133,14 @@ Before any detector runs, the events become one line of attention (`patterns/tim
 rules live there and nowhere else:
 
 - **Sources used:** `app_usage` from `macos_usage` and `iphone_usage` (needs `bundle_id` and an
-  end; `device: "watch"` is left out), `web_visit`, `search`, `screen`, `notification`, `sleep`, `recovery`, `calendar_event`,
-  `ai_session`. `app_usage` from `ios_shortcuts` and `focus_session` are not used, so the same
-  minute is not counted from two sources.
+  end; `device: "watch"` is left out), and from `activitywatch` (Mac) and `ios_shortcuts` (iPhone),
+  which name the app instead (`data.app` or the title: a well known name reads as its bundle id,
+  any other name stays as it is with category `other`); `web_visit`, `search`, `screen`,
+  `notification`, `sleep`, `recovery`, `calendar_event`, `ai_session`. `focus_session` is not used.
+- **App usage precedence:** Apple's own logs are the record. Per device, for every clock hour in
+  which `macos_usage` (Mac) or `iphone_usage` (iPhone, the Biome backfill that lands up to a day
+  late) has an interval, `activitywatch` or `ios_shortcuts` intervals that start in that hour are
+  ignored (`inputs.app_usage_superseded`); any overlap left at an hour's edge goes to the record.
 - **Mac:** one thing in front at a time. If two intervals overlap, the one that started later wins.
   Time with the screen off (`screen` events with state `off` and an end) is removed.
 - **Web visits** refine the browser: while a browser is in front, the visit's host and category
@@ -2472,7 +2507,9 @@ Stated here and at the top of `apps/api/src/score/count.ts`; the two change toge
   17." maths. The per day numbers for the Goals tab are `goals[].daily`.
 - **`sleep.nightly`:** minutes slept in the night that ended on each day (`data.duration_min` when
   the source gives it), null for a night with no data and nights to come; `goal_minutes` is
-  `sleep_hours x 60` (else the weekly budget over 7).
+  `sleep_hours x 60` (else the weekly budget over 7). Naps never count: a sleep under 3 hours that
+  starts between 09:00 and 20:00 local time (`isNap` in `packages/shared/src/sleep.ts`, the same
+  rule the web's Timeline uses).
 
 ### Targets
 

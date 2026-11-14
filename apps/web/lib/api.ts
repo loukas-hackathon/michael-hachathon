@@ -365,6 +365,12 @@ export async function undoRecommendation(id: string): Promise<RecResult> {
   return recCall("POST", `/v1/recommendations/${encodeURIComponent(id)}/undo`);
 }
 
+/** POST /v1/goals/:id/book: the first free slot this week, booked at once, undoable until it starts. */
+export async function bookGoal(goalId: string, minutes: number): Promise<RecResult> {
+  if (USE_MOCKS) return { ok: false, status: 501, message: "Booking needs the live API" };
+  return recCall("POST", `/v1/goals/${encodeURIComponent(goalId)}/book`, { minutes });
+}
+
 /** PATCH /v1/recommendations/:id { status: dismissed }: "Not now". */
 export async function dismissRecommendation(id: string): Promise<RecResult> {
   if (USE_MOCKS && isMockRec(id)) return mockRecAction(id, "dismiss");

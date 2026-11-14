@@ -48,6 +48,7 @@ import {
 } from "./mcp-format";
 import { guardTools } from "./mcp-guard";
 import { listMemories, remember } from "./memory";
+import { NO_HEADLINES } from "./patterns";
 import { momentFor } from "./routes/moments";
 import { patternReportFor } from "./routes/patterns";
 import { travelPlanFor } from "./routes/places";
@@ -402,7 +403,7 @@ export function createMcpServer(): McpServer {
       });
       const text = report.headlines.length
         ? ["Headlines:", ...report.headlines.map((h) => `- ${h}`)].join("\n")
-        : "Not enough data for patterns in that range.";
+        : `${NO_HEADLINES} for patterns in that range: no finding is big enough to lead with.`;
       return reply(`${text}\n\nFull report:\n${JSON.stringify(report)}`, report as Record<string, unknown>);
     }),
   );

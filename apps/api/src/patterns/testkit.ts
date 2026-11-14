@@ -69,6 +69,28 @@ export const phone = (bundle: string, start: string, end: string, openedFrom?: s
     },
   });
 
+/** An app session from iPhone Shortcuts: the app's name, no bundle id (the usual automation). */
+export const shortcut = (app: string, start: string, end: string): Event =>
+  event({
+    source: "ios_shortcuts",
+    type: "app_usage",
+    start_at: start,
+    end_at: end,
+    title: app,
+    data: { app, device: "iphone", seconds: (Date.parse(end) - Date.parse(start)) / 1000 },
+  });
+
+/** A Mac app run from ActivityWatch: the app's name as the Mac shows it, no bundle id. */
+export const activityWatch = (app: string, start: string, end: string): Event =>
+  event({
+    source: "activitywatch",
+    type: "app_usage",
+    start_at: start,
+    end_at: end,
+    title: app,
+    data: { app, device: "mac", seconds: (Date.parse(end) - Date.parse(start)) / 1000 },
+  });
+
 export const web = (
   host: string,
   start: string,
