@@ -84,7 +84,16 @@ curl -H "Authorization: Bearer dev-key" "localhost:8787/v1/timeline?from=2026-11
 | `API_URL`   | base URL of the API                           |
 | `API_KEY`   | same secret as the API                        |
 
-## Deploy
+## Live
+
+- Web: https://michael-zeta-sand.vercel.app
+- API: https://api-production-16521a26.up.railway.app (`/health`, MCP at `/mcp`)
+- Database: Supabase project `michael`, EU (Frankfurt)
+
+Merging to `main` deploys everything: Railway rebuilds the API, Vercel rebuilds the web app, and
+the `Migrate database` GitHub Action applies new files in `supabase/migrations/`.
+
+## Deploy (from scratch)
 
 1. **Supabase:** create a project, then apply `supabase/migrations/*.sql`
    (`supabase link --project-ref <ref> && supabase db push`, or paste into the SQL editor).
