@@ -8,6 +8,8 @@ import type {
   GoalCreate,
   GoalUpdate,
   IntegrationProvider,
+  Nudge,
+  NudgeStatus,
   Recommendation,
   RecommendationStatus,
   Source,
@@ -23,6 +25,8 @@ import {
   type InsertResult,
   type IntegrationPatch,
   type IntegrationRecord,
+  type NudgeCreate,
+  type PushDevice,
   type Store,
   sameEvent,
   type TimelineFilter,
@@ -104,6 +108,21 @@ const toIntegration = (r: Record<string, unknown>): IntegrationRecord => ({
   refresh_token: (r.refresh_token as string | null) ?? null,
   expires_at: iso(r.expires_at as string | null),
   scope: (r.scope as string | null) ?? null,
+});
+
+const toNudge = (r: Record<string, unknown>): Nudge => ({
+  id: r.id as string,
+  recommendation_id: (r.recommendation_id as string | null) ?? null,
+  goal_id: (r.goal_id as string | null) ?? null,
+  kind: r.kind as Nudge["kind"],
+  key: (r.key as string | null) ?? "",
+  day: r.day as string,
+  channel: r.channel as Nudge["channel"],
+  text: r.text as string,
+  reason: (r.reason as string | null) ?? "",
+  status: r.status as NudgeStatus,
+  created_at: iso(r.created_at as string) as string,
+  sent_at: iso(r.sent_at as string | null),
 });
 
 function check<T>(res: { data: T; error: { message: string; code?: string } | null }): T {
@@ -473,5 +492,85 @@ export class SupabaseStore implements Store {
       await this.db.from("integrations").select("user_id").eq("provider", provider).eq("status", "connected"),
     );
     return (rows ?? []).map((r) => r.user_id as string).filter(Boolean);
+  }
+
+  async listNudges(f: { from: string; to: string }) {
+    const rows = check(
+      await this.db
+        .from("nudges")
+        .select("*")
+        .eq("user_id", currentUserId())
+        .gte("created_at", f.from)
+        .lt("created_at", f.to)
+        .order("created_at", { ascending: true }),
+    );
+    return (rows ?? []).map(toNudge);
+  }
+
+  async createNudge(i: NudgeCreate) {
+    const res = await this.db
+      .from("nudges")
+      .insert({ ...i, user_id: currentUserId() })
+      .select("*")
+      .single();
+    // Unique (user_id, day, key): another check got there first.
+    if (res.error?.code === "23505") return null;
+    return toNudge(check(res));
+  }
+
+  async updateNudgeStatus(id: string, status: NudgeStatus) {
+    const row = check(
+      await this.db
+        .from("nudges")
+        .update({ status, ...(status === "sent" ? { sent_at: new Date().toISOString() } : {}) })
+        .eq("user_id", currentUserId())
+        .eq("id", id)
+        .select("*")
+        .maybeSingle(),
+    );
+    return row ? toNudge(row) : null;
+  }
+
+  async listPushDevices(): Promise<PushDevice[]> {
+    const rows = check(
+      await this.db
+        .from("push_subscriptions")
+        .select("endpoint, p256dh, auth")
+        .eq("user_id", currentUserId()),
+    );
+    return (rows ?? []).map((r) => ({ endpoint: r.endpoint, keys: { p256dh: r.p256dh, auth: r.auth } }));
+  }
+
+  async savePushDevice(device: PushDevice, userAgent: string | null) {
+    check(
+      await this.db.from("push_subscriptions").upsert(
+        {
+          user_id: currentUserId(),
+          endpoint: device.endpoint,
+          p256dh: device.keys.p256dh,
+          auth: device.keys.auth,
+          user_agent: userAgent,
+          last_used_at: new Date().toISOString(),
+        },
+        { onConflict: "endpoint" },
+      ),
+    );
+  }
+
+  async removePushDevice(endpoint: string) {
+    check(
+      await this.db
+        .from("push_subscriptions")
+        .delete()
+        .eq("user_id", currentUserId())
+        .eq("endpoint", endpoint),
+    );
+  }
+
+  async activeUserIds(since: string) {
+    const rows = check(await this.db.rpc("active_user_ids", { since }));
+    return ((rows ?? []) as unknown[]).map((r) =>
+      typeof r === "string" ? r : String((r as Record<string, unknown>).active_user_ids),
+    );
   }
 }

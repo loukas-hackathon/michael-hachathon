@@ -9,6 +9,4 @@ export const product = new Hono()
   // Michael for agents
   .get("/agents", notImplemented("GET /v1/agents"))
   .patch("/agents/:id", notImplemented("PATCH /v1/agents/:id"))
-  .get("/agents/queries", notImplemented("GET /v1/agents/queries"))
-  // nudges (the score lives in routes/score.ts)
-  .get("/nudges", notImplemented("GET /v1/nudges"));
+  .get("/agents/queries", notImplemented("GET /v1/agents/queries"));

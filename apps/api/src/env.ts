@@ -27,6 +27,17 @@ const Env = z.object({
   WEB_URL: z.string().optional(),
   // Minutes between background calendar syncs for every connected user; 0 turns it off.
   CALENDAR_SYNC_MINUTES: z.coerce.number().int().nonnegative().default(15),
+  // Web Push (nudges to iPhone, Apple Watch and browsers). Generate with `npx web-push generate-vapid-keys`.
+  VAPID_PUBLIC_KEY: z.string().optional(),
+  VAPID_PRIVATE_KEY: z.string().optional(),
+  // Contact for push services, a mailto: or https: URL.
+  VAPID_SUBJECT: z.string().default("mailto:team@michael.app"),
+  // Runs the nudge check for active users on an interval. Default: on in production only.
+  SCHEDULER_ENABLED: z
+    .enum(["true", "false", ""])
+    .optional()
+    .transform((v) => (v ? v === "true" : process.env.NODE_ENV === "production")),
+  SCHEDULER_INTERVAL_MINUTES: z.coerce.number().positive().default(5),
 });
 
 export type Env = z.infer<typeof Env>;

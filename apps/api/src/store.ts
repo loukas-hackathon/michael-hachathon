@@ -14,6 +14,8 @@ import {
   mockEvents,
   mockGoals,
   mockRecommendations,
+  type Nudge,
+  type NudgeStatus,
   type Recommendation,
   type RecommendationStatus,
   type Source,
@@ -82,6 +84,14 @@ export const sameEvent = (e: Event, i: z.output<typeof EventInput>) =>
   (e.end_at ? Date.parse(e.end_at) : null) === (i.end_at ? Date.parse(i.end_at) : null) &&
   canonical(e.data) === canonical(i.data);
 
+export type NudgeCreate = Omit<Nudge, "id" | "created_at" | "sent_at">;
+
+/** A device that turned nudges on (Web Push). Server side only, never sent to the browser. */
+export interface PushDevice {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+}
+
 // Storage boundary. Routes and MCP tools depend only on this interface.
 // MemoryStore is used when Supabase env vars are missing; SupabaseStore (supabase-store.ts) otherwise.
 export interface Store extends PrivacyBackend {
@@ -116,6 +126,21 @@ export interface Store extends PrivacyBackend {
   saveIntegration(provider: IntegrationProvider, patch: IntegrationPatch): Promise<IntegrationRecord>;
   /** Not scoped to the current user: only the background sync uses it, then acts as each user. */
   listConnectedUserIds(provider: IntegrationProvider): Promise<string[]>;
+  /** Nudges created in [from, to), oldest first. */
+  listNudges(filter: { from: string; to: string }): Promise<Nudge[]>;
+  /** Null when this key was already used on that day (the dedupe guard). */
+  createNudge(input: NudgeCreate): Promise<Nudge | null>;
+  updateNudgeStatus(id: string, status: NudgeStatus): Promise<Nudge | null>;
+  // Web Push devices of the current user.
+  listPushDevices(): Promise<PushDevice[]>;
+  /** Saves the device for the current user (a device belongs to whoever subscribed it last). */
+  savePushDevice(device: PushDevice, userAgent: string | null): Promise<void>;
+  removePushDevice(endpoint: string): Promise<void>;
+  /**
+   * The one read that is NOT scoped to the current user: ids of users with events received since
+   * `since`. Only the scheduler calls it, outside any request, and then runs each check as that user.
+   */
+  activeUserIds(since: string): Promise<string[]>;
 }
 
 export const emptyIntegration = (provider: IntegrationProvider): IntegrationRecord => ({
@@ -151,6 +176,8 @@ export class MemoryStore implements Store {
       privacy: PrivacyRules;
       chat: ChatMessage[];
       integrations: IntegrationRecord[];
+      nudges: Nudge[];
+      push: PushDevice[];
     }
   >();
   private get d() {
@@ -165,6 +192,8 @@ export class MemoryStore implements Store {
         privacy: { offTheRecord: false, since: null, sources: {} },
         chat: [],
         integrations: [],
+        nudges: [],
+        push: [],
       };
       this.data.set(userId, x);
     }
@@ -367,6 +396,51 @@ export class MemoryStore implements Store {
   async listConnectedUserIds(provider: IntegrationProvider) {
     return [...this.data.entries()]
       .filter(([, x]) => x.integrations.some((i) => i.provider === provider && i.status === "connected"))
+      .map(([userId]) => userId);
+  }
+
+  async listNudges(f: { from: string; to: string }) {
+    const from = Date.parse(f.from);
+    const to = Date.parse(f.to);
+    return this.d.nudges.filter((n) => {
+      const t = Date.parse(n.created_at);
+      return t >= from && t < to;
+    });
+  }
+
+  async createNudge(i: NudgeCreate) {
+    if (this.d.nudges.some((n) => n.day === i.day && n.key === i.key)) return null;
+    const nudge: Nudge = { ...i, id: crypto.randomUUID(), created_at: now(), sent_at: null };
+    this.d.nudges.push(nudge);
+    return nudge;
+  }
+
+  async updateNudgeStatus(id: string, status: NudgeStatus) {
+    const nudge = this.d.nudges.find((n) => n.id === id);
+    if (!nudge) return null;
+    nudge.status = status;
+    if (status === "sent") nudge.sent_at = now();
+    return nudge;
+  }
+
+  async listPushDevices() {
+    return structuredClone(this.d.push);
+  }
+
+  async savePushDevice(device: PushDevice) {
+    // The endpoint moves to the current user, as in the database's unique index.
+    for (const x of this.data.values()) x.push = x.push.filter((p) => p.endpoint !== device.endpoint);
+    this.d.push.push(structuredClone(device));
+  }
+
+  async removePushDevice(endpoint: string) {
+    this.d.push = this.d.push.filter((p) => p.endpoint !== endpoint);
+  }
+
+  async activeUserIds(since: string) {
+    const from = Date.parse(since);
+    return [...this.data.entries()]
+      .filter(([, x]) => x.events.some((e) => Date.parse(e.created_at) >= from))
       .map(([userId]) => userId);
   }
 }
