@@ -2472,7 +2472,9 @@ Stated here and at the top of `apps/api/src/score/count.ts`; the two change toge
   17." maths. The per day numbers for the Goals tab are `goals[].daily`.
 - **`sleep.nightly`:** minutes slept in the night that ended on each day (`data.duration_min` when
   the source gives it), null for a night with no data and nights to come; `goal_minutes` is
-  `sleep_hours x 60` (else the weekly budget over 7).
+  `sleep_hours x 60` (else the weekly budget over 7). Naps never count: a sleep under 3 hours that
+  starts between 09:00 and 20:00 local time (`isNap` in `packages/shared/src/sleep.ts`, the same
+  rule the web's Timeline uses).
 
 ### Targets
 

@@ -903,6 +903,25 @@ test("sleep: minutes per night against the goal, null until there is data", () =
   assert.equal(score(nights, "2026-11-11", "2026-11-11 12:00", [COMPANY]).sleep, null);
 });
 
+test("sleep: naps never count toward the goal, short nights still do", () => {
+  const s = score(
+    [
+      sleep(T("2026-11-08 23:30"), T("2026-11-09 07:00")),
+      // A 25 minute nap in the afternoon and a 2 hour one at 09:00: naps, left out.
+      sleep(T("2026-11-09 15:10"), T("2026-11-09 15:35")),
+      sleep(T("2026-11-09 09:00"), T("2026-11-09 11:00")),
+      // A short night after midnight and a long afternoon sleep (3 hours): both count.
+      sleep(T("2026-11-10 03:00"), T("2026-11-10 05:30")),
+      sleep(T("2026-11-11 13:00"), T("2026-11-11 16:00")),
+      // Starts 20:00, so not a nap: it counts on the day it ends.
+      sleep(T("2026-11-11 20:00"), T("2026-11-11 21:00")),
+    ],
+    "2026-11-11",
+    "2026-11-11 23:00",
+  );
+  assert.deepEqual(s.sleep, { goal_minutes: 450, nightly: [450, 150, 240, null, null, null, null] });
+});
+
 test("history: the weeks before and the longest verified run in each ended block", () => {
   const events = [
     // 10:00 to 11:30 with the phone from 10:30 to 10:40: 30 minutes, 2 lost ticks, then 50 minutes.
