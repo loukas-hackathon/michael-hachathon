@@ -77,7 +77,7 @@ const unknown = (c: Connection): ConnectionStatus => ({
   ...c,
   state: "unknown",
   line: "I could not check this right now.",
-  action: { kind: "link", label: "Open", href: c.href },
+  action: { kind: "link", label: "Manage", href: c.href },
 });
 
 /** Pure: the row for one connection from what the API said. Exported for tests. */
@@ -111,12 +111,7 @@ export function statusFor(c: Connection, x: Inputs, now = Date.now()): Connectio
               line: `${who}. Last sync failed.`,
               action: { kind: "sync-calendar", label: "Sync now" },
             }
-          : {
-              ...c,
-              state: "on",
-              line: `${otr}${who}${sync}.`,
-              action: { kind: "sync-calendar", label: "Sync now" },
-            };
+          : { ...c, state: "on", line: `${otr}${who}${sync}.`, action: manage };
       }
       const connect = { kind: "link" as const, label: "Connect", href: GOOGLE_CONNECT, external: true };
       if (cal?.status === "error")
@@ -139,7 +134,7 @@ export function statusFor(c: Connection, x: Inputs, now = Date.now()): Connectio
         ...c,
         state: "none",
         line: "Not connected",
-        action: setUp(c.id === "iphone" ? "Set up" : "Connect"),
+        action: setUp(),
       };
     }
     case "claude": {
@@ -169,11 +164,11 @@ export function statusFor(c: Connection, x: Inputs, now = Date.now()): Connectio
           ...c,
           state: "unavailable",
           line: "Not ready on our side yet.",
-          action: { ...manage, label: "Open" },
+          action: manage,
         };
       if (p.devices > 0)
         return { ...c, state: "on", line: `On for ${plural(p.devices, "device")}.`, action: manage };
-      return { ...c, state: "none", line: "Not turned on", action: setUp("Turn on") };
+      return { ...c, state: "none", line: "Not connected", action: setUp() };
     }
     case "telegram": {
       const t = x.telegram;
@@ -183,7 +178,7 @@ export function statusFor(c: Connection, x: Inputs, now = Date.now()): Connectio
           ...c,
           state: "unavailable",
           line: "Not ready on our side yet. Push still works.",
-          action: { ...manage, label: "Open" },
+          action: manage,
         };
       if (t.connected)
         return {
@@ -214,7 +209,7 @@ export function statusFor(c: Connection, x: Inputs, now = Date.now()): Connectio
             : `${names} saved. Traffic is not ready on our side yet.`,
           action: manage,
         };
-      return { ...c, state: "none", line: "Not set up", action: setUp("Set up") };
+      return { ...c, state: "none", line: "Not connected", action: setUp() };
     }
   }
 }

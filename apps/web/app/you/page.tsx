@@ -2,12 +2,10 @@ import Link from "next/link";
 import { ConnectionsList } from "@/components/you/connections-list";
 import { StandingInstructions } from "@/components/you/instructions";
 import { signedInAs } from "@/lib/account";
-import { getInstructions, getPrivacy, getProfile } from "@/lib/api";
-import { OTHER_SOURCES } from "@/lib/connections";
+import { getInstructions, getProfile } from "@/lib/api";
 import { getConnections } from "@/lib/connections-status";
 import { DeleteDataRow } from "./delete-data-row";
 import { OffTheRecordSwitch } from "./off-the-record-switch";
-import { SourceSwitches } from "./source-switches";
 
 const PROMISES = [
   [
@@ -29,9 +27,8 @@ export default async function YouPage({
 }) {
   const params = await searchParams;
   // Every call fails on its own: if the API is down, the rest of the page still works.
-  const [connections, privacy, instructions, profile, account] = await Promise.all([
+  const [connections, instructions, profile, account] = await Promise.all([
     getConnections(),
-    getPrivacy().catch(() => null),
     getInstructions().catch(() => ({ available: false as const })),
     getProfile().catch(() => null),
     signedInAs(),
@@ -72,12 +69,6 @@ export default async function YouPage({
         <p className="mt-2 px-4 text-footnote text-label-2">
           One tap stops all collection, on every connection. Each connection has its own switch on its page.
         </p>
-        {privacy ? (
-          <>
-            <h3 className="mt-5 mb-2 px-4 text-footnote font-semibold text-label-2">Other connections</h3>
-            <SourceSwitches initial={privacy.sources} sources={OTHER_SOURCES} />
-          </>
-        ) : null}
         <Link
           href="/agents"
           className="press mt-5 flex min-h-14 items-center justify-between gap-3 rounded-group bg-fill px-4 py-2"
