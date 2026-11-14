@@ -16,8 +16,10 @@ returns `501 not_implemented`, `planned` = not routed yet. Update the status whe
 - List endpoints wrap results: `{ "goals": [...] }`, `{ "recommendations": [...] }`.
 - **Auth:** every request acts for one user, and all data is scoped to that user.
   - Signed-in users (web app): `Authorization: Bearer <Supabase access token>`.
-  - Collectors, webhooks and the demo Claude connector: the shared secret `API_KEY`, which acts as
-    the demo account (`demo@michael.app`). Per-user ingest tokens come later.
+  - Collectors, webhooks and the Claude connector: a personal token (`mk_...`, see Personal
+    tokens), which acts for its owner.
+  - The shared secret `API_KEY` acts as the demo account (`demo@michael.app`): synthetic demo data
+    only, never real collector data.
 - **Shared secret details:**
   Send `Authorization: Bearer <API_KEY>`. Applies to everything under `/v1/*` and `/mcp`, except
   `/health` and the OAuth connect/callback redirects. Only `/v1/webhooks/*` and `/mcp` also accept
@@ -685,6 +687,33 @@ type PrivacyState = { off_the_record: boolean; since: string | null; sources: So
 
 Sources are opt-in (disabled by default). While off the record, or for a disabled source, ingest
 drops events and counts them in `ignored`.
+
+### Personal tokens
+
+```ts
+type PersonalToken = {
+  id: string;
+  name: string;
+  prefix: string;
+  created_at: string;
+  last_used_at: string | null;
+};
+type PersonalTokenCreated = {
+  token: PersonalToken;
+  secret: string /* "mk_...", shown once */;
+  mcp_url: string;
+};
+```
+
+| Method | Path             | Body       | Response                                                                | Status |
+| ------ | ---------------- | ---------- | ----------------------------------------------------------------------- | ------ |
+| GET    | `/v1/tokens`     |            | `200 { tokens: PersonalToken[] }` (never the secret)                    | live   |
+| POST   | `/v1/tokens`     | `{ name }` | `201 PersonalTokenCreated`; `mcp_url` is ready for claude.ai Connectors | live   |
+| DELETE | `/v1/tokens/:id` |            | `204` (revoked within 30 s), `404`                                      | live   |
+
+A personal token acts for its owner everywhere: `Authorization: Bearer mk_...`, or `?key=mk_...` on
+`/mcp` and `/v1/webhooks/*`. Use one per device or tool (Claude, Mac collector, Health Auto Export).
+The web app creates them on the Connect screen (`/connect`). Only the sha256 is stored.
 
 ### Michael for agents
 

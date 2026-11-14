@@ -28,6 +28,14 @@ export default function YouPage() {
       </section>
       <p className="mt-2 px-4 text-footnote text-label-2">One tap stops all collection, on every source.</p>
 
+      <Link
+        href="/connect"
+        className="press mt-6 flex h-12 items-center justify-between rounded-group bg-fill px-4 text-body font-semibold"
+      >
+        Connect Claude and your devices
+        <span className="text-label-2">›</span>
+      </Link>
+
       <h2 className="mt-8 mb-2 text-title3 font-bold">Three promises</h2>
       <ul className="overflow-hidden rounded-group bg-fill">
         {PROMISES.map(([title, body], i) => (

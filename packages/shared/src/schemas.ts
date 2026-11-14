@@ -753,6 +753,28 @@ export const PatternReport = z.object({
 });
 export type PatternReport = z.infer<typeof PatternReport>;
 
+// ---------- personal tokens (collectors, webhooks, the Claude connector) ----------
+
+// A revocable token that acts for one user. The secret is shown once, at creation.
+export const PersonalToken = z.object({
+  id: z.uuid(),
+  name: z.string().min(1),
+  prefix: z.string(), // first characters, so the user can tell tokens apart
+  created_at: IsoDateTime,
+  last_used_at: IsoDateTime.nullable(),
+});
+export type PersonalToken = z.infer<typeof PersonalToken>;
+
+export const PersonalTokenCreate = z.object({ name: z.string().min(1).max(60) });
+export type PersonalTokenCreate = z.infer<typeof PersonalTokenCreate>;
+
+export const PersonalTokenCreated = z.object({
+  token: PersonalToken,
+  secret: z.string(), // "mk_..." - only returned here
+  mcp_url: z.string(), // ready to paste into claude.ai Connectors
+});
+export type PersonalTokenCreated = z.infer<typeof PersonalTokenCreated>;
+
 // ---------- errors ----------
 
 export const ErrorCode = z.enum([

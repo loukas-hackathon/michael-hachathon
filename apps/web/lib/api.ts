@@ -4,6 +4,7 @@ import {
   mockEvents,
   mockGoals,
   mockRecommendations,
+  type PersonalTokenCreated,
   type Recommendation,
   type TimelineResponse,
 } from "@michael/shared";
@@ -48,6 +49,23 @@ export async function getTimeline(from: string, to: string): Promise<TimelineRes
 export async function getGoals(): Promise<Goal[]> {
   if (USE_MOCKS) return mockGoals;
   return (await get<{ goals: Goal[] }>("/v1/goals")).goals;
+}
+
+/** Whether the visitor is browsing the shared demo week (no personal tokens there). */
+export async function isDemo(): Promise<boolean> {
+  return (await cookies()).get(DEMO_COOKIE)?.value === "1";
+}
+
+/** Creates a personal token for the signed-in user; the secret is returned only this once. */
+export async function createPersonalToken(name: string): Promise<PersonalTokenCreated> {
+  const res = await fetch(`${API_URL}/v1/tokens`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
+    body: JSON.stringify({ name }),
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`POST /v1/tokens failed: ${res.status}`);
+  return (await res.json()) as PersonalTokenCreated;
 }
 
 export async function getRecommendations(): Promise<Recommendation[]> {

@@ -13,6 +13,7 @@ import { integrations, oauth } from "./routes/integrations";
 import { patterns } from "./routes/patterns";
 import { product } from "./routes/product";
 import { recommendations } from "./routes/recommendations";
+import { tokens } from "./routes/tokens";
 import { webhooks } from "./routes/webhooks";
 import { store } from "./store";
 
@@ -30,7 +31,8 @@ const v1 = new Hono()
   .route("/", analysis)
   .route("/", patterns)
   .route("/", integrations)
-  .route("/", product);
+  .route("/", product)
+  .route("/", tokens);
 
 export const app = new Hono()
   .use(logger())

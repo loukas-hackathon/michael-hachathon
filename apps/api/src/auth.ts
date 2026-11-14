@@ -4,6 +4,7 @@ import type { MiddlewareHandler } from "hono";
 import { runAsUser } from "./context";
 import { env } from "./env";
 import { errorResponse } from "./http";
+import { isPersonalToken, userForPersonalToken } from "./tokens";
 
 const digest = (s: string) => createHash("sha256").update(s).digest();
 const expected = digest(env.API_KEY);
@@ -34,7 +35,8 @@ async function userFromSupabaseToken(token: string): Promise<string | null> {
 /**
  * Resolves who the request acts for and runs the rest of the request as that user:
  * - a signed-in user's Supabase access token (`Authorization: Bearer <jwt>`) -> that user
- * - the shared API key -> the demo account (collectors, webhooks, the claude.ai demo connector)
+ * - a personal token (`mk_...`, made in the app) -> its owner (collectors, webhooks, Claude connector)
+ * - the shared API key -> the demo account (synthetic demo data only)
  * `allowQueryKey` also accepts `?key=` for callers that cannot set headers (webhook senders,
  * claude.ai custom connectors). URLs end up in logs, so only enable it where needed.
  */
@@ -46,7 +48,11 @@ export const requireUser =
     const token = bearer ?? (opts.allowQueryKey ? c.req.query("key") : undefined);
     if (!token) return errorResponse(c, "unauthorized", "Sign in, or send the API key");
 
-    const userId = isApiKey(token) ? env.DEMO_USER_ID : await userFromSupabaseToken(token);
+    const userId = isApiKey(token)
+      ? env.DEMO_USER_ID
+      : isPersonalToken(token)
+        ? await userForPersonalToken(token)
+        : await userFromSupabaseToken(token);
     if (!userId) return errorResponse(c, "unauthorized", "Invalid or expired credentials");
     await runAsUser(userId, () => next());
   };
