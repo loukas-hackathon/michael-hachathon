@@ -7,7 +7,10 @@ import {
   type ChatMessage,
   ChatResponse,
   type Event,
+  type Goal,
+  type Instruction,
   mockGoals,
+  mockInstructions,
   mockScore,
 } from "@michael/shared";
 import { app } from "../app";
@@ -41,7 +44,7 @@ test("chat context lists goals, today's entries and weekly totals in local time"
     week: null,
   });
   assert.match(text, /Saturday 14 November, 19:05/);
-  assert.match(text, /4h of deep work per day \[work, 20h a week planned\]/);
+  assert.match(text, /4h of deep work per day \[business, 20h a week planned\]/);
   assert.match(text, /- 08:00 to 08:45 workout: Run/);
   assert.match(text, /- 20:00 to 21:00 calendar event: Gym block \(planned\)/);
   assert.match(text, /- 23:40 to 07:10 sleep: Sleep/);
@@ -50,12 +53,48 @@ test("chat context lists goals, today's entries and weekly totals in local time"
   assert.match(text, /- workout: 2 entries, 105 minutes in total/);
 });
 
+test("chat context reads older categories as the three, and carries the active standing instructions", () => {
+  const goal = (category: Goal["category"], title: string): Goal => ({
+    ...(mockGoals[0] as Goal),
+    category,
+    title,
+    description: null,
+    weekly_budget_minutes: null,
+  });
+  const rule = (text: string, active: boolean): Instruction => ({
+    ...(mockInstructions[0] as Instruction),
+    text,
+    active,
+  });
+  const input = {
+    now: Date.parse("2026-11-14T19:05:00+02:00"),
+    goals: [goal("work", "The company"), goal("gym", "70.3"), goal("personal", "Fun")],
+    events: [],
+    today: null,
+    week: null,
+  };
+  const text = buildChatContext({
+    ...input,
+    instructions: [rule("Keep Sundays clear", true), rule("No calls on Fridays", false)],
+  });
+  assert.match(text, /- The company \[business\] [^\n]*\n- 70\.3 \[health\] [^\n]*\n- Fun \[personal\] /);
+  // The mock rule carries its exception, in words.
+  assert.match(
+    text,
+    /Standing instructions \(never plan, move or suggest[^\n]*\):\n- Keep Sundays clear \(except: Rhefuel\)\n/,
+  );
+  // A paused instruction is not handed over; with none, the section is not there at all.
+  assert.doesNotMatch(text, /No calls on Fridays/);
+  assert.doesNotMatch(buildChatContext(input), /Standing instructions/);
+});
+
 test("chat history always starts with the user's turn", () => {
   const line = (role: ChatMessage["role"], content: string): ChatMessage => ({
     id: crypto.randomUUID(),
     role,
     content,
     created_at: "2026-11-14T19:00:00+02:00",
+    action_ids: [],
   });
   assert.deepEqual(toTurns([line("assistant", "a"), line("user", "b"), line("assistant", "c")]), [
     { role: "user", content: "b" },
@@ -111,7 +150,7 @@ test("the score goes into the chat context with its own figures", () => {
   assert.match(text, /6h 56 spent of 10h 50 planned time already passed/);
   assert.match(
     text,
-    /4h of deep work per day \[work\]: 6h 06 spent of budget 20h \(13h 54 left to reach it\)/,
+    /4h of deep work per day \[business\]: 6h 06 spent of budget 20h \(13h 54 left to reach it\)/,
   );
 });
 

@@ -10,9 +10,13 @@ import { actions } from "./routes/actions";
 import { agents } from "./routes/agents";
 import { analysis } from "./routes/analysis";
 import { chat } from "./routes/chat";
+import { demo } from "./routes/demo";
 import { events } from "./routes/events";
+import { focusGuards } from "./routes/focus-guards";
 import { goals } from "./routes/goals";
+import { instructions } from "./routes/instructions";
 import { integrations, oauth } from "./routes/integrations";
+import { meData } from "./routes/me-data";
 import { moments } from "./routes/moments";
 import { nudges } from "./routes/nudges";
 import { connect, oauthPublic } from "./routes/oauth";
@@ -24,7 +28,11 @@ import { profile } from "./routes/profile";
 import { push } from "./routes/push";
 import { recommendations } from "./routes/recommendations";
 import { score } from "./routes/score";
+import { sources } from "./routes/sources";
+import { targets } from "./routes/targets";
+import { telegram, telegramWebhook } from "./routes/telegram";
 import { tokens } from "./routes/tokens";
+import { voice } from "./routes/voice";
 import { webhooks } from "./routes/webhooks";
 import { store } from "./store";
 
@@ -38,26 +46,42 @@ const v1 = new Hono()
   .use(requireUser())
   .route("/", events)
   .route("/", goals)
+  .route("/", instructions)
   .route("/", recommendations)
   .route("/", analysis)
   .route("/", patterns)
   .route("/", score)
+  .route("/", targets)
   .route("/", chat)
   .route("/", moments)
+  .route("/", voice)
   .route("/", integrations)
   .route("/", privacy)
+  .route("/", sources)
   .route("/", nudges)
   .route("/", push)
   .route("/", actions)
+  .route("/", focusGuards)
   .route("/", profile)
   .route("/", product)
   .route("/", tokens)
+  .route("/", telegram)
   .route("/", connect)
   .route("/", agents)
-  .route("/", places);
+  .route("/", places)
+  .route("/", meData)
+  .route("/", demo);
 
 export const app = new Hono()
   .use(logger())
+  // Server time and region on every response, so latency can be measured from anywhere (#229).
+  .use(async (c, next) => {
+    const start = performance.now();
+    await next();
+    const region = process.env.RAILWAY_REPLICA_REGION ?? "local";
+    c.res.headers.append("Server-Timing", `app;dur=${(performance.now() - start).toFixed(1)}`);
+    c.res.headers.append("Server-Timing", `region;desc="${region}"`);
+  })
   .use(cors({ origin: env.WEB_ORIGIN.split(",").map((s) => s.trim()) }))
   .get("/health", (c) => {
     const body: Health = {
@@ -73,6 +97,8 @@ export const app = new Hono()
   .route("/", oauthPublic)
   // Google Calendar OAuth callback (/oauth/google/callback), validated by its signed state.
   .route("/", oauth)
+  // Telegram's bot webhook carries no user: verified by its secret token, before the auth below.
+  .route("/v1/webhooks/telegram", telegramWebhook)
   .route("/v1/webhooks", webhooksApp)
   .route("/v1", v1)
   // claude.ai signs in with OAuth (routes/oauth.ts); the API key and ?key= keep working.

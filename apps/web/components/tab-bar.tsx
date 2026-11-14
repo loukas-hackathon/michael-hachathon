@@ -3,14 +3,15 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ComponentType } from "react";
+import { useCheckIn } from "@/lib/check-in";
 import { Wordmark } from "./brand";
-import { AgentsIcon, GoalsIcon, TimelineIcon, TodayIcon } from "./icons";
+import { ChatIcon, GoalsIcon, TimelineIcon, TodayIcon } from "./icons";
 
 const TABS: { href: string; label: string; Icon: ComponentType<{ className?: string }> }[] = [
   { href: "/", label: "Today", Icon: TodayIcon },
   { href: "/timeline", label: "Timeline", Icon: TimelineIcon },
   { href: "/goals", label: "Goals", Icon: GoalsIcon },
-  { href: "/agents", label: "Agents", Icon: AgentsIcon },
+  { href: "/chat", label: "Chat", Icon: ChatIcon },
 ];
 
 function isActive(pathname: string, href: string) {
@@ -23,7 +24,9 @@ function isActive(pathname: string, href: string) {
  */
 export function TabBar() {
   const pathname = usePathname();
-  if (pathname.startsWith("/onboarding") || pathname.startsWith("/connect")) return null;
+  // A quiet dot on Chat while Michael's check in waits: no number, no red.
+  const waiting = !useCheckIn().done;
+  if (["/onboarding", "/connect", "/stage"].some((p) => pathname.startsWith(p))) return null;
 
   return (
     <nav
@@ -42,11 +45,20 @@ export function TabBar() {
               <Link
                 href={href}
                 aria-current={active ? "page" : undefined}
-                className={`press flex h-full flex-col items-center justify-center gap-px text-tab font-semibold lg:h-11 lg:flex-row lg:justify-start lg:gap-3 lg:rounded-block lg:px-3 lg:text-body ${
+                className={`m-tab flex h-full flex-col items-center justify-center gap-px text-tab font-semibold lg:h-11 lg:flex-row lg:justify-start lg:gap-3 lg:rounded-block lg:px-3 lg:text-body ${
                   active ? "text-tint-text lg:bg-fill" : "text-label"
                 }`}
               >
-                <Icon className="size-6" />
+                <span className="relative">
+                  <Icon className="m-tab-icon size-6" />
+                  {href === "/chat" && waiting && !active ? (
+                    <span
+                      role="img"
+                      aria-label="Questions waiting"
+                      className="absolute -top-0.5 -right-1 size-2 rounded-full bg-label ring-2 ring-[var(--m-bg)]"
+                    />
+                  ) : null}
+                </span>
                 <span>{label}</span>
               </Link>
             </li>

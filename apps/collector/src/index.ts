@@ -3,10 +3,13 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { parseArgs } from "node:util";
 import type { EventInput } from "@michael/shared";
+import { startFocusGuardian } from "./focus-guard";
 import { readers } from "./readers/index";
 
 // Michael's collector: runs on the user's own Mac, reads what the Mac already knows about the day
 // and posts it to Michael's timeline. It only reads; it never changes the files it looks at.
+// While watching it also enforces focus guards (focus-guard.ts): muted apps are closed when they
+// come to the front. --no-guard turns that off.
 
 const { values } = parseArgs({
   // pnpm passes a bare "--" through; drop it so both `pnpm collect --list` and `-- --list` work.
@@ -19,6 +22,7 @@ const { values } = parseArgs({
     interval: { type: "string", default: "60" },
     list: { type: "boolean", default: false },
     reset: { type: "boolean", default: false },
+    "no-guard": { type: "boolean", default: false },
     help: { type: "boolean", default: false },
   },
 });
@@ -114,6 +118,7 @@ async function main() {
   --interval N         seconds between passes (default 60)
   --dry-run            read and count, post nothing, keep cursors unchanged
   --reset              forget saved positions, so the next run backfills again
+  --no-guard           do not close muted apps during focus guards (on by default while watching)
 
   MICHAEL_API_URL      where to post (default http://localhost:8787)
   MICHAEL_API_KEY      bearer key for the API (default dev-key)`);
@@ -141,6 +146,10 @@ async function main() {
 
   const seconds = Math.max(10, Number(values.interval));
   console.log(`Watching. Next pass every ${seconds} seconds. Stop with Ctrl+C.`);
+  if (process.platform === "darwin" && !values["no-guard"]) {
+    console.log("Focus guards on: muted apps close when they come to the front.");
+    startFocusGuardian({ apiUrl: API_URL, apiKey: API_KEY });
+  }
   setInterval(() => void runOnce(selected, false, backfillDays), seconds * 1000);
 }
 

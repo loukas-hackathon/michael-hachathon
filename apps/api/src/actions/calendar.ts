@@ -2,11 +2,13 @@ import {
   CreateFocusBlockPayload,
   type Event,
   MoveCalendarBlockPayload,
+  MoveCalendarBlocksPayload,
   type Recommendation,
   type RecommendationAction,
 } from "@michael/shared";
 import { z } from "zod";
 import { HttpError, parse } from "../http";
+import { refusalFor } from "../instructions/guard";
 import { toTimelineEvent } from "../integrations/calendar-sync";
 import {
   createdByMichael,
@@ -18,6 +20,7 @@ import {
   withOthers,
 } from "../integrations/google";
 import { store } from "../store";
+import { startFocusGuard, stopFocusGuard } from "./focus-guard";
 
 // Michael acts on the user's own time only. Rules (Build Hub, docs/api.md):
 // - never an event with other people (refused with 409, checked again against Google itself);
@@ -30,6 +33,14 @@ import { store } from "../store";
 const Times = z.object({ start_at: z.string(), end_at: z.string().nullable(), title: z.string() });
 
 // Saved on the recommendation (jsonb `execution`) so undo knows exactly what to put back.
+const MoveExecution = z.object({
+  kind: z.literal("move_calendar_block"),
+  timeline_event_id: z.string(),
+  google_event_id: z.string().nullable(),
+  original: Times,
+  undo_until: z.string(),
+});
+type MoveExecution = z.infer<typeof MoveExecution>;
 const Execution = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("create_focus_block"),
@@ -37,11 +48,16 @@ const Execution = z.discriminatedUnion("kind", [
     google_event_id: z.string().nullable(),
     undo_until: z.string(),
   }),
+  MoveExecution,
+  // Several moves carried out together (the whole day around traffic), undone together.
   z.object({
-    kind: z.literal("move_calendar_block"),
-    timeline_event_id: z.string(),
-    google_event_id: z.string().nullable(),
-    original: Times,
+    kind: z.literal("move_calendar_blocks"),
+    moves: z.array(MoveExecution).min(1),
+    undo_until: z.string(),
+  }),
+  z.object({
+    kind: z.literal("block_mac_app"),
+    focus_guard_id: z.string(),
     undo_until: z.string(),
   }),
 ]);
@@ -118,8 +134,31 @@ async function createFocusBlock(rec: Recommendation, action: RecommendationActio
   };
 }
 
-async function moveCalendarBlock(action: RecommendationAction): Promise<Execution> {
-  const p = parse(MoveCalendarBlockPayload, action.payload);
+async function moveCalendarBlock(action: RecommendationAction): Promise<MoveExecution> {
+  return moveOne(parse(MoveCalendarBlockPayload, action.payload), action.undo_until);
+}
+
+/**
+ * Every move or none: the moves run in order, and when one is refused the ones already made go
+ * back before the error reaches the user.
+ */
+async function moveCalendarBlocks(action: RecommendationAction): Promise<Execution> {
+  const { moves } = parse(MoveCalendarBlocksPayload, action.payload);
+  const done: MoveExecution[] = [];
+  try {
+    for (const p of moves) done.push(await moveOne(p, action.undo_until));
+  } catch (err) {
+    for (const ex of done.reverse()) await restoreMove(ex).catch(() => null);
+    throw err;
+  }
+  return {
+    kind: "move_calendar_blocks",
+    moves: done,
+    undo_until: earliest(...done.map((m) => m.undo_until)),
+  };
+}
+
+async function moveOne(p: MoveCalendarBlockPayload, actionUndoUntil: string | null): Promise<MoveExecution> {
   const event = await store.getEvent(p.event_id);
   if (!event) throw new HttpError("not_found", "The block to move is no longer on the timeline");
   if (event.type !== "calendar_event") throw conflict("Only calendar blocks can be moved");
@@ -134,7 +173,7 @@ async function moveCalendarBlock(action: RecommendationAction): Promise<Executio
   if (Date.parse(start) <= Date.now()) throw conflict("The new time has already started");
   if (end && Date.parse(end) <= Date.parse(start)) throw conflict("The block would end before it starts");
   const original = { start_at: event.start_at, end_at: event.end_at, title: event.title };
-  const undoUntil = earliest(action.undo_until, event.start_at, start);
+  const undoUntil = earliest(actionUndoUntil, event.start_at, start);
 
   if (event.source === "google_calendar") {
     if (!event.external_id) throw conflict("That block has no calendar id");
@@ -171,6 +210,27 @@ async function moveCalendarBlock(action: RecommendationAction): Promise<Executio
   };
 }
 
+/** Puts a moved block back to its original time and title. */
+async function restoreMove(ex: MoveExecution): Promise<void> {
+  const o = ex.original;
+  if (ex.google_event_id) {
+    const g = await getCalendarEvent(ex.google_event_id);
+    if (withOthers(g)) throw conflict("Someone else is on that block now. Move it in your calendar.");
+    const restored = await patchCalendarEvent(g.id, {
+      start: { dateTime: o.start_at, timeZone: g.start?.timeZone },
+      end: { dateTime: o.end_at ?? o.start_at, timeZone: g.end?.timeZone },
+      summary: o.title,
+    });
+    await mirror(restored);
+  } else {
+    await store.updateEvent(ex.timeline_event_id, {
+      start_at: o.start_at,
+      end_at: o.end_at,
+      title: o.title,
+    });
+  }
+}
+
 export async function executeRecommendation(id: string): Promise<Recommendation> {
   const rec = await store.getRecommendation(id);
   if (!rec) throw new HttpError("not_found", "Recommendation not found");
@@ -179,10 +239,18 @@ export async function executeRecommendation(id: string): Promise<Recommendation>
   if (rec.status === "done") throw conflict("Already done");
   if (rec.status === "dismissed") throw conflict("This recommendation was dismissed");
   if (action.involves_others) throw conflict("This involves other people. I only advise on it.");
+  // Checked again now: an instruction added after the recommendation was made still holds.
+  const verdict = await refusalFor(action, {
+    instructions: await store.listInstructions(),
+    getEvent: (eventId) => store.getEvent(eventId),
+  });
+  if (!verdict.allowed) throw conflict(verdict.reason);
 
   let execution: Execution;
   if (action.kind === "create_focus_block") execution = await createFocusBlock(rec, action);
   else if (action.kind === "move_calendar_block") execution = await moveCalendarBlock(action);
+  else if (action.kind === "block_mac_app") execution = (await startFocusGuard(rec, action)).execution;
+  else if (action.kind === "move_calendar_blocks") execution = await moveCalendarBlocks(action);
   else throw new HttpError("not_implemented", `${action.kind} cannot be carried out yet`);
 
   const saved = await store.recordRecommendationAction(id, {
@@ -202,9 +270,17 @@ export async function undoRecommendation(id: string): Promise<Recommendation> {
   const parsed = Execution.safeParse(await store.getRecommendationExecution(id));
   if (!parsed.success) throw conflict("I have no record of what I changed, so I cannot undo it");
   const ex = parsed.data;
-  if (Date.now() >= Date.parse(ex.undo_until)) throw conflict("Too late to undo: the block has started");
+  if (Date.now() >= Date.parse(ex.undo_until)) {
+    throw conflict(
+      ex.kind === "block_mac_app"
+        ? "Nothing to undo: that guard has already ended"
+        : "Too late to undo: the block has started",
+    );
+  }
 
-  if (ex.kind === "create_focus_block") {
+  if (ex.kind === "block_mac_app") {
+    await stopFocusGuard(ex);
+  } else if (ex.kind === "create_focus_block") {
     if (ex.google_event_id) {
       try {
         const g = await getCalendarEvent(ex.google_event_id);
@@ -218,24 +294,15 @@ export async function undoRecommendation(id: string): Promise<Recommendation> {
       }
     }
     if (ex.timeline_event_id) await store.deleteEvents([ex.timeline_event_id]);
-  } else {
-    const o = ex.original;
-    if (ex.google_event_id) {
-      const g = await getCalendarEvent(ex.google_event_id);
-      if (withOthers(g)) throw conflict("Someone else is on that block now. Move it in your calendar.");
-      const restored = await patchCalendarEvent(g.id, {
-        start: { dateTime: o.start_at, timeZone: g.start?.timeZone },
-        end: { dateTime: o.end_at ?? o.start_at, timeZone: g.end?.timeZone },
-        summary: o.title,
-      });
-      await mirror(restored);
-    } else {
-      await store.updateEvent(ex.timeline_event_id, {
-        start_at: o.start_at,
-        end_at: o.end_at,
-        title: o.title,
-      });
+  } else if (ex.kind === "move_calendar_blocks") {
+    // Check every block first, so undo puts all of them back or none.
+    for (const m of ex.moves) {
+      if (m.google_event_id && withOthers(await getCalendarEvent(m.google_event_id)))
+        throw conflict("Someone else is on one of those blocks now. Move it in your calendar.");
     }
+    for (const m of [...ex.moves].reverse()) await restoreMove(m);
+  } else {
+    await restoreMove(ex);
   }
 
   const saved = await store.recordRecommendationAction(id, {
@@ -244,4 +311,78 @@ export async function undoRecommendation(id: string): Promise<Recommendation> {
   });
   if (!saved) throw new HttpError("not_found", "Recommendation not found");
   return saved;
+}
+
+const MIN_BLOCK_MS = 5 * 60_000;
+const MAX_BLOCK_MS = 6 * 3600_000;
+
+export interface FocusBlockRequest {
+  start_at: string;
+  end_at: string;
+  title?: string;
+  goal_id?: string | null;
+  /** Who asked, for the rationale the user reads ("Claude"). */
+  requested_by: string;
+}
+
+/**
+ * Books a block on the user's own time straight away (an agent asked for it, over MCP). It is saved
+ * as a recommendation and carried out by `executeRecommendation`, so it shows in Michael with the
+ * same undo until it starts. Refuses a time that overlaps an event with other people.
+ */
+export async function bookFocusBlock(req: FocusBlockRequest): Promise<Recommendation> {
+  const payload = parse(CreateFocusBlockPayload, {
+    start_at: req.start_at,
+    end_at: req.end_at,
+    title: req.title,
+  });
+  const start = Date.parse(payload.start_at);
+  const end = Date.parse(payload.end_at);
+  if (start <= Date.now()) throw conflict("That time has already started");
+  if (end - start < MIN_BLOCK_MS) throw new HttpError("bad_request", "A block is at least 5 minutes");
+  if (end - start > MAX_BLOCK_MS) throw new HttpError("bad_request", "A block is at most 6 hours");
+  if (req.goal_id && !(await store.getGoal(req.goal_id))) throw new HttpError("not_found", "Goal not found");
+
+  const overlapping = await store.listEvents({
+    from: payload.start_at,
+    to: payload.end_at,
+    type: ["calendar_event"],
+  });
+  const clash = overlapping.find(
+    (e) =>
+      isOthers(e) &&
+      Date.parse(e.start_at) < end &&
+      (e.end_at ? Date.parse(e.end_at) : Date.parse(e.start_at)) > start,
+  );
+  if (clash) {
+    throw conflict(`That overlaps "${clash.title}", which has other people in it. Pick a free time.`);
+  }
+
+  const title = payload.title ?? "Focus block";
+  const rec = await store.createRecommendation({
+    goal_id: req.goal_id ?? null,
+    title,
+    rationale: `Booked at your request through ${req.requested_by}. Undo in Michael until it starts.`,
+    action: {
+      kind: "create_focus_block",
+      payload: { ...payload, title },
+      involves_others: false,
+      undo_until: payload.start_at,
+    },
+    // Asked for in a conversation (with Claude), carried out straight away: same as Michael's chat.
+    source: "chat",
+  });
+  try {
+    return await executeRecommendation(rec.id);
+  } catch (err) {
+    // Nothing was booked: do not leave a half made suggestion behind.
+    await store.updateRecommendationStatus(rec.id, "dismissed").catch(() => null);
+    throw err;
+  }
+}
+
+/** Until when a done recommendation can still be undone, or null when there is no record. */
+export async function undoDeadline(id: string): Promise<string | null> {
+  const parsed = Execution.safeParse(await store.getRecommendationExecution(id));
+  return parsed.success ? parsed.data.undo_until : null;
 }

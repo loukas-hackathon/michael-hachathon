@@ -1,10 +1,22 @@
-import type { Event, Goal, Moment, MomentGoal, MomentKind, MomentMove, MomentStretch } from "@michael/shared";
+import {
+  type Event,
+  type Goal,
+  goalArea,
+  goalKind,
+  isSleepGoal,
+  type Moment,
+  type MomentGoal,
+  type MomentKind,
+  type MomentMove,
+  type MomentStretch,
+} from "@michael/shared";
 import { buildContext, DEFAULT_TIMEZONE } from "../patterns/context";
 import { analyseFocus, type GoalBlock, goalBlocks, type RawDisruption } from "../patterns/focus";
 import { duration, label } from "../patterns/format";
 import { DAY, HOUR, MINUTE, Zone } from "../patterns/time";
 import { subjectOf } from "../patterns/timeline";
 import { iso, type Span, sum, union, unionLength } from "../patterns/util";
+import { isTrainingGoal } from "../score/purpose";
 
 // Morning and Evening moments, computed. Pure: events, goals and the clock come in, numbers come
 // out. Only the headline may later be phrased by a model (phrase.ts); everything else is here.
@@ -18,6 +30,9 @@ const MIN_SLOT = 30;
 const MAX_SLOT = 90;
 /** How a move names the time it books: goal titles are often long targets ("4h of deep work per day"). */
 const ACTIVITY: Record<Goal["category"], string> = {
+  business: "work",
+  health: "training",
+  personal: "your own time",
   work: "deep work",
   gym: "training",
   rest: "sleep",
@@ -124,7 +139,8 @@ export function computeMoment(input: MomentInput): MomentCore {
   for (const g of goals) {
     const blocks = plan.filter((b) => b.goal.id === g.id);
     if (g.weekly_budget_minutes === null && blocks.length === 0) continue;
-    const isRest = g.category === "rest";
+    // Sleep: a health goal of kind `target` that describes sleep (an older `rest` goal reads as one).
+    const isRest = isSleepGoal(g);
     const perDay = (g.weekly_budget_minutes ?? 0) / 7;
     const blockTime = (a: number, z: number) => sum(blocks.map((b) => overlap(b, a, z)));
     const spent = (a: number, z: number) => {
@@ -132,7 +148,7 @@ export function computeMoment(input: MomentInput): MomentCore {
       if (!(until > a)) return 0;
       // Rest is sleep, counted on the day it ends. Gym is the workouts the watch saw, when it saw any.
       if (isRest) return sum(sleeps.filter((s) => s.end >= a && s.end < until).map((s) => s.end - s.start));
-      if (g.category === "gym" && workouts.length > 0)
+      if (isTrainingGoal(g) && workouts.length > 0)
         return unionLength(
           workouts.map((w) => ({ start: Math.max(w.start, a), end: Math.min(w.end, until) })),
         );
@@ -146,6 +162,9 @@ export function computeMoment(input: MomentInput): MomentCore {
       goal_id: g.id,
       title: g.title,
       category: g.category,
+      area: goalArea(g.category),
+      kind: goalKind(g),
+      sleep: isRest,
       budget_minutes: g.weekly_budget_minutes,
       spent_week_minutes: spentWeek,
       planned_today_minutes: isRest ? Math.round(perDay) : toMin(blockTime(todayStart, tomorrowStart)),
@@ -164,7 +183,8 @@ export function computeMoment(input: MomentInput): MomentCore {
   const historyDays = [...usageDays].filter((d) => d >= zone.dayOf(historyStart) && d < today);
   const baseline =
     historyDays.length > 0 ? toMin(lostBetween(historyStart, todayStart) / historyDays.length) : null;
-  const work = goalLines.filter((l) => l.category !== "rest");
+  const sleepIds = new Set(goals.filter(isSleepGoal).map((g) => g.id));
+  const work = goalLines.filter((l) => !sleepIds.has(l.goal_id));
   const planned = sum(work.map((l) => l.planned_today_minutes));
   const spentToday = sum(work.map((l) => l.spent_today_minutes));
   const lostToday = toMin(lostBetween(todayStart, now));
@@ -277,7 +297,7 @@ export function computeMoment(input: MomentInput): MomentCore {
 
     type Candidate = Span & { title: string; goalId: string | null; blockId: string | null };
     const candidates: Candidate[] = plan
-      .filter((b) => b.goal.category !== "rest" && b.end > now && b.start < tomorrowStart)
+      .filter((b) => b.end > now && b.start < tomorrowStart)
       .map((b) => ({
         start: Math.max(b.start, now),
         end: b.end,
@@ -359,7 +379,7 @@ export function computeMoment(input: MomentInput): MomentCore {
 
   function firstMove(): MomentMove | null {
     const next = plan
-      .filter((b) => b.goal.category !== "rest" && b.start >= tomorrowStart && b.start < dayAfterStart)
+      .filter((b) => b.start >= tomorrowStart && b.start < dayAfterStart)
       .sort((a, b) => a.start - b.start)[0];
     if (next) {
       const top = topTriggerToday();

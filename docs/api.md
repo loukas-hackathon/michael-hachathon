@@ -44,7 +44,7 @@ Every non-2xx response:
 | `conflict`        | 409                                                     |
 | `not_implemented` | 501                                                     |
 | `unavailable`     | 503 (a dependency is not configured, e.g. no model key) |
-| `upstream_error`  | 502 (WHOOP, Google, Gemini, Omi failed)                 |
+| `upstream_error`  | 502 (WHOOP, Google, Claude, Omi failed)                 |
 | `internal`        | 500                                                     |
 
 ## Types
@@ -53,15 +53,19 @@ Enums:
 
 - `Source`: `omi | whoop | health_auto_export | ios_shortcuts | activitywatch | google_calendar | owntracks | manual | agent | macos_usage | iphone_usage | chrome | claude_code | maps`
 - `EventType`: `sleep | workout | recovery | biometric | app_usage | focus_session | conversation | memory | calendar_event | location | meal | note | web_visit | search | notification | screen | ai_session | ai_prompt | travel`
-- `GoalCategory`: `work | gym | rest | food`
+- `GoalCategory`: `business | health | personal`, plus the four older values, still accepted and
+  readable: `work` (means business), `gym`, `rest`, `food` (mean health). Group with `goalArea`.
+- `GoalArea`: `business | health | personal` (what `goalArea(category)` returns)
+- `GoalKind`: `time | target | count | checklist` (in `goal.target.kind`; `time` when absent)
+- `InstructionKind`: `clear_day | home_by | quiet_hours | custom`
 - `RecommendationStatus`: `proposed | accepted | dismissed | done | undone` (`done` = action executed)
 - `ActionKind`: `move_calendar_block | create_focus_block | block_mac_app | draft_follow_up | reminder`
 - `AnalysisStatus`: `queued | running | succeeded | failed`
 - `AnalysisTrigger`: `manual | scheduled | mcp | morning | evening`
 - `AgentScope`: `timeline | goals | recommendations | score | write_events`
 - `AgentStatus`: `pending | approved | revoked`
-- `NudgeChannel`: `watch | push | telegram`; `NudgeStatus`: `queued | sent | failed | suppressed`
-- `NudgeKind`: `focus_drift | block_soon | wind_down | goal_behind`; `NudgeSkip`: `nothing_to_say | quiet_hours | daily_cap | too_soon | off_the_record`
+- `NudgeChannel`: `watch | push | telegram`; `NudgeStatus`: `queued | sent | failed | suppressed | test`
+- `NudgeKind`: `focus_drift | block_soon | wind_down | goal_behind | morning | evening`; `NudgeSkip`: `nothing_to_say | quiet_hours | daily_cap | too_soon | off_the_record`
 - `AppCategory`: `work | communication | social | video | news | shopping | travel | ai | music | system | other`
   (one shared categoriser for apps and sites, `packages/shared/src/categories.ts`; unknown = `other`)
 - `IntegrationProvider`: `google_calendar | whoop`
@@ -96,21 +100,55 @@ type Goal = {
   category: GoalCategory;
   title: string;
   description: string | null;
-  target: Record<string, unknown> | null; // e.g. { "sleep_hours": 7.5 }, { "calendar_titles": ["Gym", "Run"] }
+  target: Record<string, unknown> | null; // free form; the keys the API understands are GoalTarget
   weekly_budget_minutes: number | null; // e.g. 540 = "9 hours this week"
   active: boolean;
   created_at: string;
   updated_at: string;
 };
+// The known keys of `goal.target`. Any other key is allowed and kept as it is.
+type GoalTarget = {
+  kind?: GoalKind; // what the goal measures; absent = "time"
+  label?: string; // a free label for a personal goal: "fun", "family", "hobby" (1 to 40 characters)
+  calendar_titles?: string[]; // calendar event titles that count towards the goal
+  work_categories?: AppCategory[]; // attention categories that count as this goal's work in its blocks
+  sleep_hours?: number; // kind "target": hours a night
+  screens_off?: string; // kind "target": "HH:MM"
+  per_week?: number; // kind "count": times a week
+  [key: string]: unknown;
+};
 type GoalCreate = {
-  category: GoalCategory;
+  category: GoalCategory; // any of the seven values
   title: string;
   description?: string | null;
-  target?: Record<string, unknown> | null;
+  target?: GoalTarget | null; // known keys are checked (400 on a wrong type), unknown keys are kept
   weekly_budget_minutes?: number | null;
   active?: boolean /* default true */;
 };
 type GoalUpdate = Partial<GoalCreate>;
+
+type Instruction = {
+  id: string;
+  text: string; // the user's own words, kept exactly as written
+  kind: InstructionKind;
+  days?: number[]; // 0 = Sunday .. 6 = Saturday; left out when not set
+  time?: string; // "HH:MM", 24 hour clock, local time; left out when not set
+  end_time?: string; // "HH:MM"; left out when not set
+  exceptions?: string[]; // calendar titles allowed inside the protected time; left out when none
+  active: boolean; // false = paused: it protects nothing
+  created_at: string;
+  updated_at: string;
+};
+type InstructionCreate = {
+  text: string; // 1 to 500 characters, not blank
+  kind?: InstructionKind; // default "custom"
+  days?: number[] | null;
+  time?: string | null;
+  end_time?: string | null;
+  exceptions?: string[] | null; // up to 50 titles, each 1 to 200 characters, not blank
+  active?: boolean; // default true
+};
+type InstructionUpdate = Partial<InstructionCreate>; // null clears days, time, end_time or exceptions
 
 type RecommendationAction = {
   kind: ActionKind;
@@ -125,9 +163,12 @@ type Recommendation = {
   title: string;
   rationale: string;
   action: RecommendationAction | null;
+  evidence?: string[]; // what supports it: pattern names ("phone_cadence"), "plan" or "score"; absent on older rows
   status: RecommendationStatus;
   executed_at: string | null;
   undone_at: string | null;
+  source?: "analysis" | "chat"; // "chat": asked for in chat or by voice and carried out at once
+  specialist?: "work" | "training" | "rest" | "food" | null; // runs in mode specialists only
   created_at: string;
   updated_at: string;
 };
@@ -138,8 +179,9 @@ type AnalysisRun = {
   trigger: AnalysisTrigger;
   range_start: string;
   range_end: string;
-  model: string;
-  summary: string | null;
+  model: string; // the model that answered (a fallback model when the first one declined)
+  summary: string | null; // Michael's brief for the moment, at most four lines
+  question?: string | null; // one short question about a missing fact, usually null
   error: string | null;
   started_at: string;
   finished_at: string | null;
@@ -159,6 +201,7 @@ type ChatMessage = {
   role: "user" | "assistant";
   content: string;
   created_at: string;
+  action_ids: string[]; // on Michael's answers: recommendations done or undone while writing it
 };
 
 type Health = {
@@ -319,7 +362,7 @@ The `data` payload per type:
 | `macos_usage`                 | `notification` | app name                           | `bundle_id`, `device`                                                                                                         |
 | `macos_usage`                 | `screen`       | `Screen on` or `Screen off`        | `state` (`on` or `off`), `device`                                                                                             |
 | `chrome`                      | `web_visit`    | page title                         | `host`, `seconds`, `foreground?`, `category?`, `origin`, `profile?`. Never the full address                                   |
-| `chrome`                      | `search`       | the search term                    | `engine`, `term`, `origin`, `profile?`                                                                                        |
+| `chrome`                      | `search`       | the search term                    | `engine`, `term`, `origin`, `profile?`, `maps?` (Google Maps, below)                                                          |
 | `claude_code`                 | `ai_session`   | session title                      | `tool`, `session_id`, `project`, `model?`, `turns`, `waiting_seconds`, `input_tokens`, `cached_input_tokens`, `output_tokens` |
 | `claude_code`                 | `ai_prompt`    | first 120 characters of the prompt | `tool`, `session_id`, `project`                                                                                               |
 | `claude_code`                 | `notification` | `Claude Code`                      | `tool`, `session_id`, `project`, `kind` (`permission_prompt` or `idle_prompt`). Live hook only                                |
@@ -337,6 +380,30 @@ visit can arrive from both; the patterns layer decides which to trust. From `his
 - Visits to excluded hosts (banking, health, adult, password managers, the local network, and the
   user's own list) are never sent, and neither are their titles or search terms
   (`apps/collector/src/site-privacy.ts`).
+
+Google Maps is the one site whose address is read past the host (`apps/collector/src/maps-url.ts`).
+A search (`/maps/search/`, `?q=`, `?query=`), an opened place (`/maps/place/`) or directions
+(`/maps/dir/`, `?origin=&destination=`, `?saddr=&daddr=`) becomes a `search` event with `engine:
+"google_maps"` and a clean `term` ("gyms near me", "Acropolis Museum", "Pagrati to Kifisia",
+"Directions to Kifisia", "Dropped pin"). The map position (`/@lat,lng,zoom`) and `data=` blob never
+reach the term. Bare map views and short links (`maps.app.goo.gl`) are not searches. Page titles
+that are a position become `Google Maps`.
+
+```ts
+type MapsStop = { name: string | null; lat: number | null; lng: number | null };
+// data.maps of a chrome search event
+type MapsQuery = {
+  kind: "search" | "place" | "directions";
+  place: MapsStop | null; // search and place
+  from: MapsStop | null; // directions
+  to: MapsStop | null;
+};
+```
+
+Coordinates come only from the address: a place's own `!3d!4d` pair (else the map centre), a stop
+or search that is a bare position. A search for words never has coordinates. Location is opt in:
+the API stores every `lat`/`lng` as `null` unless source `maps` is switched on, and drops a `maps`
+field that does not match the contract (`redactLocation` in `apps/api/src/privacy.ts`).
 
 AI tool events (`ai_session`, `ai_prompt`) from `claude_code`:
 
@@ -358,13 +425,146 @@ AI tool events (`ai_session`, `ai_prompt`) from `claude_code`:
 
 ### Goals
 
-| Method | Path            | Body         | Response                | Status |
-| ------ | --------------- | ------------ | ----------------------- | ------ |
-| GET    | `/v1/goals`     |              | `200 { goals: Goal[] }` | live   |
-| GET    | `/v1/goals/:id` |              | `200 Goal`, `404`       | live   |
-| POST   | `/v1/goals`     | `GoalCreate` | `201 Goal`              | live   |
-| PATCH  | `/v1/goals/:id` | `GoalUpdate` | `200 Goal`, `404`       | live   |
-| DELETE | `/v1/goals/:id` |              | `204`, `404`            | live   |
+| Method | Path                               | Body                              | Response                      | Status |
+| ------ | ---------------------------------- | --------------------------------- | ----------------------------- | ------ |
+| GET    | `/v1/goals`                        |                                   | `200 { goals: Goal[] }`       | live   |
+| GET    | `/v1/goals/:id`                    |                                   | `200 Goal`, `404`             | live   |
+| POST   | `/v1/goals`                        | `GoalCreate`                      | `201 Goal`                    | live   |
+| PATCH  | `/v1/goals/:id`                    | `GoalUpdate`                      | `200 Goal`, `404`             | live   |
+| DELETE | `/v1/goals/:id`                    |                                   | `204`, `404`                  | live   |
+| GET    | `/v1/goals/suggestions`            |                                   | `200 GoalSuggestionsResponse` | live   |
+| POST   | `/v1/goals/suggestions/:id/accept` | `GoalSuggestionAccept` (optional) | `201 Goal`, `404`             | live   |
+
+#### Goals from the calendar (#134)
+
+People already live by goals they never wrote down. `GET /v1/goals/suggestions` reads the user's own
+calendar blocks (no other people, not all day, not booked by Michael) from four weeks back to a week
+ahead, groups the ones that recur and proposes each as a goal. Pure logic in
+`apps/api/src/goals/suggest.ts`.
+
+```ts
+type GoalSuggestion = {
+  id: string; // stable: "training", "study", "deep_work", "business", "meals", or "title:<slug>"
+  title: string; // "Training", "University", "Deep work", "Business", or the calendar title
+  category: GoalCategory; // always business, health or personal (#131), the same as area
+  area: GoalArea;
+  weekly_budget_minutes: number; // average a week, rounded to 30 minutes
+  target: { kind: "time"; calendar_titles: string[] }; // the titles that count, biggest first
+  evidence: string; // "Gym, Swimming and Run, Mon, Tue and Fri, 4h 30 a week."
+  sessions_per_week: number;
+  days: Weekday[];
+};
+type GoalSuggestionsResponse = { from: string; to: string; suggestions: GoalSuggestion[] };
+type GoalSuggestionAccept = { title?: string; weekly_budget_minutes?: number; calendar_titles?: string[] };
+```
+
+- **Titles:** the part that stays the same each week, as the user wrote it: `Lecture: Statistics`
+  counts as `Lecture`, `Cold Outreach / Sales` as `Cold Outreach`, `Swimming 1,500m` as `Swimming`.
+  The score matches calendar titles as prefixes, so every variant counts.
+- **Grouping:** known words pool into one goal: sport into Training, lectures and study into
+  University or Study, focus into Deep work, outreach, sales, marketing and preparation into
+  Business, meals into Proper meals. Any other title stays a goal of its own, business when most
+  of it falls on weekdays 08:00 to 18:00, personal otherwise. Sleep, commutes and travel are never
+  suggested.
+- **Recurring:** a group on at least two days, or one Google marks as repeating. One-offs are noise.
+  Weekly hours are averaged over the weeks of calendar seen; a block counts at most once a week per
+  weekday it falls on. At most 6 suggestions, biggest first, none under 30 minutes a week.
+- **Already covered:** an event an active goal already counts (the matcher below) is left out, and
+  so is a suggestion with an active goal's name. Accepting one makes it disappear.
+- **Accepting:** `POST /v1/goals` with `category`, `title`, `weekly_budget_minutes` and `target` as
+  given, or `POST /v1/goals/suggestions/:id/accept` with optional edits. The goal's description says
+  where it came from. `404` when the calendar no longer suggests that id.
+- **Where it shows:** the Google Calendar callback syncs four weeks back on first connect and adds
+  `goal_suggestions=<n>` to the redirect when there are any; onboarding's first step, the Goals tab
+  and the calendar row on You list them with one tap to keep. MCP: `propose_goals` (scope `goals`).
+
+#### Three categories, four kinds
+
+Goals sit in three categories: `business`, `health`, `personal`. The four older values are still
+accepted and readable, so nothing stored breaks: `work` means business; `gym`, `rest` and `food`
+mean health. `goalArea(category)` in `@michael/shared` returns the one of the three for any of the
+seven values; the API groups and reasons with it everywhere (score, patterns, moments, chat).
+New goals may use any of the seven; use the three. The older values will be removed in a later
+change, once every client has moved and the stored rows have been rewritten.
+
+What a goal measures is its **kind**, in `target.kind` (`target` is a free form record, so this
+needs no table change). `goalKind(goal)` reads it:
+
+| Kind        | Measures                                             | In `target`                               |
+| ----------- | ---------------------------------------------------- | ----------------------------------------- |
+| `time`      | Weekly minutes in planned blocks. The default.       | `calendar_titles`, `work_categories`      |
+| `target`    | A value per day: sleep 7.5 hours, screens off 23:00. | `sleep_hours`, `screens_off`, or your own |
+| `count`     | Times a week.                                        | `per_week`                                |
+| `checklist` | The day's one to three business outcomes.            | (the items are not stored on the goal)    |
+
+**Only `time` goals take part in the time score.** A `target`, `count` or `checklist` goal has no
+planned blocks: `GET /v1/score` lists it with `scored: false` so the Goals screen can show it. One
+fallback keeps older data right: a goal with no kind, category `rest`, and a sleep or bed key in
+its target (or the word sleep in its title) reads as `target`. `isSleepGoal(goal)` says whether a
+goal is the sleep goal (health, kind `target`, describes sleep).
+
+`target` is checked softly on `POST` and `PATCH`: the known keys (`GoalTarget` above) must have the
+right type, or the answer is `400`; any other key is stored as it is. A personal goal carries a
+free `label` (fun, family, hobby); there is no enum for it.
+
+One example per category:
+
+```json
+{
+  "category": "business",
+  "title": "The company",
+  "weekly_budget_minutes": 480,
+  "target": {
+    "kind": "time",
+    "calendar_titles": ["Cold Outreach / Sales", "Call Leads"],
+    "work_categories": ["communication"]
+  }
+}
+```
+
+```json
+{
+  "category": "health",
+  "title": "Sleep",
+  "target": { "kind": "target", "sleep_hours": 7.5, "screens_off": "23:00" }
+}
+```
+
+```json
+{
+  "category": "personal",
+  "title": "Fun",
+  "weekly_budget_minutes": 120,
+  "target": { "kind": "time", "label": "fun", "calendar_titles": ["Night out"] }
+}
+```
+
+A count goal: `{ "category": "health", "title": "Yoga", "target": { "kind": "count", "per_week": 2 } }`.
+
+#### Categories that count as a goal's work
+
+Communication is a distraction in most blocks, but inside a sales block mail and messages are the
+work. A goal says so in `target.work_categories`, a list of `AppCategory` values:
+
+```json
+{ "target": { "calendar_titles": ["Call Leads"], "work_categories": ["communication"] } }
+```
+
+Inside that goal's blocks, time in those categories is **spent and verified, not lost**. Other
+goals' blocks are unchanged. One function decides what attention means inside a block
+(`apps/api/src/score/purpose.ts`), and both the score and the patterns' calendar mode read it, so
+the two numbers agree:
+
+| Attention in the block                          | Business goal     | Health or personal goal |
+| ----------------------------------------------- | ----------------- | ----------------------- |
+| A category the goal lists in `work_categories`  | spent, verified   | spent, verified         |
+| `work`, `ai`                                    | spent, verified   | **lost**                |
+| `communication`, `social`, `video`, `news`, ... | lost              | lost                    |
+| `music`, `system`, `other`                      | spent, unverified | spent, unverified       |
+
+Work apps inside a training block are lost: a sales call during the gym session is not training.
+The same goes for a personal block. A goal that really does use such a category (a follow along
+video in a yoga block) lists it in `work_categories`.
 
 #### Which calendar events count towards a goal
 
@@ -373,7 +573,7 @@ mean one training goal. So a goal lists the calendar titles that count towards i
 (a free form record, so this needs no schema or database change):
 
 ```json
-{ "category": "gym", "title": "70.3", "target": { "calendar_titles": ["Gym", "Swimming", "Run"] } }
+{ "category": "health", "title": "70.3", "target": { "calendar_titles": ["Gym", "Swimming", "Run"] } }
 ```
 
 A calendar event belongs to the goal when its title **equals an entry or starts with it**, ignoring
@@ -381,26 +581,206 @@ case, accents and extra spaces. An entry ends at a word boundary: `Run` matches 
 `Run: 8 km`, not `Runway review`. Entries that are not text are skipped.
 
 One matcher decides this for the score and for the patterns' calendar mode
-(`apps/api/src/score/match.ts`). Rules, first hit wins, over the user's active goals:
+(`apps/api/src/score/match.ts`). Rules, first hit wins, over the user's active goals of kind `time`:
 
 1. `data.goal_id` on the event names a goal.
 2. `target.calendar_titles` of a goal (the longest matching entry wins).
 3. `data.goal_category` (or `data.category`) names a goal category: the first goal of that category.
 4. The title starts with a goal's own title.
-5. The title starts with a category word (`Gym: legs`, `Work: pitch`), or contains `deep work` or
-   `focus` (work).
+5. The title starts with one of the older category words (`Gym: legs`, `Work: pitch`), or contains
+   `deep work` or `focus` (work).
 
-Rules 3 to 5 are the older provisional ones, kept as fallbacks. **An event with other people in it
+Rules 3 to 5 are the older provisional ones, kept as fallbacks. In rules 3 and 5 a category means
+the first goal with exactly that category, or else the first goal in the same one of the three:
+`work` finds a business goal, `gym` a health goal (`rest` and `food` only find a goal that still
+carries that older name). `business`, `health` and `personal` are not title words, so
+"Personal training" does not land on a personal goal. **An event with other people in it
 is never the user's own block:** `data.attendees` is the number of other people, and any value
 above 0 makes the event a meeting, whatever its title or `goal_id` says. Each block in
 `GET /v1/score` carries `matched_by`, the rule that tied it to its goal.
 
+### Standing instructions
+
+Some things are not goals: they are the user's ground rules, such as "keep Sundays clear" or "home
+every day by 21:00". The user gives a few at setup and can change, pause or remove them later.
+**Michael never plans or moves anything into the time an active instruction protects**, and flags
+what already sits there. An instruction is a rule he obeys everywhere, not only a flag on the score:
+no path may create, move or propose a block there, and nothing may be carried out there (see "The
+guard" below).
+
+| Method | Path                   | Body                | Response                              | Status |
+| ------ | ---------------------- | ------------------- | ------------------------------------- | ------ |
+| GET    | `/v1/instructions`     |                     | `200 { instructions: Instruction[] }` | live   |
+| POST   | `/v1/instructions`     | `InstructionCreate` | `201 Instruction`, `400`              | live   |
+| PATCH  | `/v1/instructions/:id` | `InstructionUpdate` | `200 Instruction`, `400`, `404`       | live   |
+| DELETE | `/v1/instructions/:id` |                     | `204`, `404`                          | live   |
+
+Per user, behind the normal auth, oldest first. The list has its own table and its own endpoints
+rather than a place inside the profile (`GET/PUT /v1/profile`): the profile is one document saved
+whole, and an instruction is a row the user adds, edits, pauses and removes by id. The night
+window for nudges stays in the profile (`quiet_hours`); an instruction of kind `quiet_hours` is
+about planning, not about nudges.
+
+| Kind          | Protects, in the user's local time                                          | Needs                 |
+| ------------- | --------------------------------------------------------------------------- | --------------------- |
+| `clear_day`   | The whole day, midnight to midnight, on each of `days`                      | `days`                |
+| `home_by`     | From `time` until 05:00 the next morning, on `days` (every day when absent) | `time`                |
+| `quiet_hours` | From `time` to `end_time`, on `days` (every day when absent)                | `time` and `end_time` |
+| `custom`      | Nothing: it is text for the coach to read                                   |                       |
+
+- `text` is always the user's own words and is never rewritten. `kind` defaults to `custom`, so a
+  client may send only the words.
+- `days`: 0 = Sunday to 6 = Saturday. `time` and `end_time`: `"HH:MM"`, 24 hour clock.
+- When `end_time` is not after `time`, quiet hours run past midnight (22:00 to 07:00) and belong to
+  the day they start on. `home_by` runs on until 05:00: a block at 00:30 counts as after 21:00 of
+  the day before. A `time` before 05:00 ("home by 01:00") is that night's small hours.
+- `exceptions`: calendar titles allowed inside the protected time, such as the Sunday recovery
+  session on "Keep Sundays clear". Matched exactly like a goal's `calendar_titles` (equal or starting
+  with the entry at a word boundary, ignoring case and accents; one matcher, `score/match.ts`). A
+  block that matches one is not listed in `instructions_broken` and may be planned. Set with `POST`
+  or `PATCH`; `null` clears them.
+- A kind must have what it needs, on create and after a change (`400` otherwise). `null` in a
+  `PATCH` clears `days`, `time` or `end_time`. Pause with `{ "active": false }`.
+- `days`, `time` and `end_time` are left out of the answer when they are not set.
+
+```json
+{ "text": "Keep Sundays clear", "kind": "clear_day", "days": [0], "exceptions": ["Rhefuel"] }
+```
+
+Which instructions a span of time falls under is one pure function,
+`protectedBy(instructions, start, end, timezone)` in `apps/api/src/instructions/protected.ts`. It
+returns the active instructions with any part of the span inside their protected time. Ends are
+exclusive (a block that stops at Sunday 00:00 has not touched Sunday), days are local days in the
+timezone given (default Europe/Athens), and the days the clocks change are handled. `forbiddenBy`
+in the same file is the same with a block's title: it leaves out the instructions whose
+`exceptions` name the block. The score does not count with it: each block in `GET /v1/score` only
+carries `instructions_broken`, the ids of the active instructions its time falls under (less those
+whose exceptions name it), so the app can flag a work block planned on a clear Sunday. The chat with
+Michael and the analysis brief are given the active instructions, as the user wrote them, with their
+exceptions in words ("Keep Sundays clear (except: Rhefuel)"); a paused one is left out.
+
+#### The guard
+
+One pure function decides, `checkAction(action, instructions, timezone)` in
+`apps/api/src/instructions/guard.ts`: an action (its kind, the span it lands on, the block's title)
+is allowed, or refused with the instruction that forbids it and one line in Michael's voice derived
+from it: "Sundays are kept clear." (clear_day), "You're home by 21:00." (home_by), "That's in your
+quiet hours." (quiet_hours). A `custom` instruction never refuses anything.
+
+| Action                                      | Refused when                                                                  |
+| ------------------------------------------- | ----------------------------------------------------------------------------- |
+| `create_focus_block`, `move_calendar_block` | Where the block lands is protected and its title is not one of the exceptions |
+| `reminder`                                  | It falls inside `quiet_hours`                                                 |
+| `block_mac_app`                             | Never: it protects the time                                                   |
+| `draft_follow_up`                           | Never: it is not planning                                                     |
+
+Only where a block lands counts, so moving a block out of protected time is always allowed. Where
+it is enforced:
+
+- **When a recommendation is stored** (one choke point: both stores call `guardRecommendation` in
+  `createRecommendation` and `saveAnalysis`). Covers the analysis, the travel rules, the chat tools
+  and an agent's `create_focus_block`. A refused action is dropped and the recommendation stays as
+  advice, its words untouched; the refusal is logged (`instruction_guard_refused`). A
+  recommendation asked for in chat (`source: "chat"`) is carried out at once, so it is refused
+  instead: `409 conflict` with the reason, and nothing is stored or booked.
+- **When a recommendation is carried out**: `POST /v1/recommendations/:id/execute` checks again
+  against the instructions as they are now and answers `409 conflict` with the reason, in case an
+  instruction was added after the recommendation was made.
+- **The Morning and Evening moments** (and the nudge built from them) leave out a move whose action
+  is refused.
+
+`mockInstructions` in `packages/shared/src/mocks.ts` holds one example ("Keep Sundays clear", with
+the exception "Rhefuel").
+
 ### Analysis
 
-| Method | Path                  | Body                                               | Response                                                                                            | Status |
-| ------ | --------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ------ |
-| POST   | `/v1/analysis/run`    | `{ from?, to? }` (default: today in Europe/Athens) | `201 { run: AnalysisRun, recommendations: Recommendation[] }`; `502 upstream_error` if Gemini fails | stub   |
-| GET    | `/v1/analysis/latest` |                                                    | `200 { run, recommendations }`, `404` if none                                                       | live   |
+| Method | Path                  | Body                                                                            | Response                                                                                                                                                                                 | Status |
+| ------ | --------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| POST   | `/v1/analysis/run`    | `?mode=single\|specialists`; `{ from?, to?, trigger? }`, or no body (see below) | `201 { run: AnalysisRun, recommendations: Recommendation[] }`; `400` bad range; `502 upstream_error` if the model fails or its answer is unusable; `503 unavailable` without a model key | live   |
+| GET    | `/v1/analysis/latest` |                                                                                 | `200 { run, recommendations }`, `404` if none                                                                                                                                            | live   |
+
+`POST /v1/analysis/run` is how Michael speaks. One run reads the caller's data, writes an
+**analysis brief**, asks Claude once, checks the answer and stores an `AnalysisRun` (`summary` is
+Michael's short brief for the moment, `question` his one question when a fact is missing) with up
+to 3 `Recommendation`s, all `proposed`. The first recommendation is the lead: the one the Today
+card shows. `evidence` names what proves it: patterns (`PatternReport` keys), `"plan"` (the goals
+and their blocks) or `"score"`.
+
+- **Body.** `from`, `to`: ISO with offset; default is today so far in `Europe/Athens`. A range that
+  ended in the past is read as it stood at its end, so a day can be run again later. At most 31
+  days. `trigger`: `manual` (default) `| scheduled | mcp | morning | evening`; it decides what the
+  summary talks about (morning: the plan; evening: the day against the plan).
+- **Failure.** If the model declines, times out or answers something that is not the agreed JSON,
+  the run is stored with `status: "failed"` and `error`, and the response is `502 upstream_error`
+  with `details.run_id`. Without `ANTHROPIC_API_KEY` the route answers `503 unavailable` before
+  reading any data, and nothing else in the API is affected.
+- **The model.** `claude-opus-5-5` (`ANTHROPIC_MODEL`), adaptive thinking, effort `medium`,
+  structured output (a JSON schema, checked again with zod), server side fallbacks if the request
+  is declined, and the coach instructions as a cached system prompt
+  (`apps/api/src/analysis/coach.ts`: one stable string, nothing per user in it).
+- **What never depends on the model** (`analysis/output.ts`): `goal_id` is one of the user's goals
+  or null; at most 3 recommendations; `evidence` only names patterns that had data; an `action` is
+  kept only when it is in the future, inside the user's own time and clear of every event with
+  other people, otherwise the action is dropped and the advice stays. A `move_calendar_block` can
+  only name one of the user's own goal blocks that has not started. Stored payloads are the ones
+  `POST /v1/recommendations/:id/execute` takes. Actions are stored, not carried out: executing
+  stays a separate call.
+- **Copy.** The hard copy rules are checked in code (no dashes as punctuation, no emoji, no
+  exclamation marks, none of the banned words). Actions are offers until the person taps, so a
+  summary or rationale that says something was already done ("I've set", "I moved", "already
+  moved") is a violation too. On a violation, or a dropped action, the model is asked once more and
+  told exactly what was wrong; if the second answer is no better the run is stored anyway and the
+  violations are logged.
+
+**Mode `specialists`** (`?mode=specialists`, issue #20; the default stays `single`). Same body,
+same response, same storage; each recommendation also carries `specialist`. Code in
+`apps/api/src/analysis/specialists.ts`.
+
+1. The brief is built once, as above. Four specialists (`work`: business and study goals and focus;
+   `training`; `rest`: sleep, late screens, time off; `food`) each get only their slice: their goals,
+   their goals' blocks, busy time, the patterns of their domain, the data notes. A specialist with
+   nothing to read (no goals, or no blocks, scored goals or patterns) is not asked.
+2. They run in parallel at effort `low` and return up to 4 findings each (structured output, zod):
+   `finding`, `maths`, `evidence_numbers`, `goal_id`, `confidence` (0 to 1), `evidence`, `action`
+   (an existing kind). Code drops a finding with a number that is not in its slice, nulls a goal
+   that is not the specialist's, and drops an action that fails the usual action rules.
+3. Code merges them: duplicates go (same sentence, or the same goal asking for the same change at
+   the same time), and two actions from different specialists that want the same time are settled:
+   the higher confidence wins; within 0.1, rest beats training beats work beats food. The loser
+   keeps its finding, not its action. The best 6 go on.
+4. A coordinator (the coach instructions plus a short section on specialists, effort `medium`)
+   gets the full brief and the merged findings and writes the usual answer, naming the finding
+   behind each recommendation. Same checks as the single pass (at most 3, enforce, copy rules, one
+   retry), plus the **number guard** (`analysis/numbers.ts`): every number and time in the copy must
+   be in the brief or the findings, or be a minutes to hours conversion of one, or a time the
+   answer's own action proposes. An invented number in a recommendation drops it; in the summary
+   or question after the retry, the run falls back.
+
+**Fallback and cost.** If any specialist or the coordinator fails, the same brief goes through the
+single pass, so the person always gets a brief (logged as `analysis_specialists_fallback`).
+Findings are cached in memory per user per day by a hash of the model, prompt and slice: a second
+tap with no new data asks no specialist again. A typical run is 2 to 4 specialist calls at low
+effort plus one coordinator call.
+
+**Privacy: what is sent to the model.** Only the brief, built by one pure function
+(`analysis/brief.ts`, held in place by `brief.test.ts`). It holds summaries, never raw events:
+
+| In the brief                                                                                                                              | Never in the brief                                                            |
+| ----------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Now, timezone, trigger, the local range                                                                                                   | Event ids, external ids, raw events                                           |
+| Goals: id, title, category (as data), weekly budget, description, this week's planned, spent, lost and unverified minutes (the score)     | Search terms, page titles, full addresses                                     |
+| Standing instructions, in the user's own words (`instructions`: the active ones from `/v1/instructions`)                                  | A site's host, unless it is on the shared public list                         |
+| The plan for today and tomorrow (and yesterday in the morning): the user's own goal blocks with title, start, end and the score's numbers | The title of any calendar entry that is not the user's own goal block         |
+| Events with other people: "busy from A to B" only. The user's own entries with no goal: time only                                         | Names, attendees, locations or anything else about an event with other people |
+| Patterns for the last 7 days and for the range: each detector's sentence and a trimmed set of numbers, or the reason it has too little    | Conversations, memories, notes, meals, message text, AI prompts (never read)  |
+| Data notes: how old the phone and Mac data is, the share of browser time not measured, sources with no data                               | Anything from another user: every read is scoped to the caller                |
+| The last 5 recommendations: day, title, status, and whether an analysis made it                                                           |                                                                               |
+| `actions_are`: `offers` (nothing is carried out until the person taps) or `applied`. Runs pass `offers`                                   |                                                                               |
+| `already_asked`: the last 5 questions Michael asked, with their day, so he never asks one twice                                           |                                                                               |
+
+`pnpm --filter @michael/api analysis:brief --from <iso> --to <iso> --trigger evening --api http://localhost:8787`
+prints the system prompt and the user message exactly as a run would send them, from a local API,
+without calling any model.
 
 ### Patterns
 
@@ -413,8 +793,8 @@ or a range over 92 days. Computed on request by pure functions in `apps/api/src/
 rules, no model): the same events always give the same report. Days and hours are local
 (`Europe/Athens`), correct across the daylight saving change.
 
-This is what the analysis prompt (#17) should read instead of raw events: `headlines` holds the
-one line summary of every detector that had enough data, most important first.
+This is what the analysis (`POST /v1/analysis/run`) reads instead of raw events: `headlines` holds
+the one line summary of every detector that had enough data, most important first.
 
 ```ts
 type PatternReport = {
@@ -686,7 +1066,8 @@ rules live there and nowhere else:
   local midnight is split by day.
 
 Roles used by the focus rules: **work** = `work`, `ai`; **distractor** = `communication`, `social`,
-`video`, `news`, `shopping`, `travel`; **neutral** = `music`, `system`, `other`.
+`video`, `news`, `shopping`, `travel`; **neutral** = `music`, `system`, `other`. Inside a planned
+goal block the goal has a say: see Goals, "Categories that count as a goal's work".
 
 #### Definitions and minimum samples
 
@@ -714,8 +1095,11 @@ Roles used by the focus rules: **work** = `work`, `ai`; **distractor** = `commun
   least half of it. A trip away from work that touches a distractor is a disruption; a distractor
   that comes up within 60 seconds after the last work app, with no return inside 10 minutes, is the
   disruption that ended the stretch (`ended_stretch`, minutes capped at 10). **With a calendar:**
-  inside each `calendar_event` that belongs to a goal (see below), every off purpose visit (work
-  block: distractors; any other block: distractors and work apps) is a disruption. Planned blocks
+  inside each `calendar_event` that belongs to a goal (see below), every off purpose visit is a
+  disruption. Off purpose is the same rule the score calls lost (Goals, "Categories that count as a
+  goal's work"): distractors the goal does not list in `target.work_categories`, and work apps
+  inside a block of a health or personal goal. A category the goal lists counts as time on purpose
+  in a business block, and browsing in it is not drift there. Planned blocks
   own their time: stretches are inferred only outside them. Intervals under 3 seconds are ignored.
   The longest uninterrupted stretch is the longest work run with no disruption and no idle break in
   it. **Speaks from:** One focus stretch or one goal block with device data.
@@ -748,7 +1132,8 @@ Roles used by the focus rules: **work** = `work`, `ai`; **distractor** = `commun
 Which goal a calendar block belongs to is decided by the one matcher described under Goals
 ("Which calendar events count towards a goal"): `data.goal_id`, then the goal's
 `target.calendar_titles`, then the older fallbacks. Events with other people in them
-(`data.attendees` above 0) are meetings and are never focus blocks.
+(`data.attendees` above 0) are meetings and are never focus blocks. Only goals of kind `time` have
+blocks: a sleep target, a count or a checklist never owns a calendar event.
 
 Summaries follow the voice basics (numbers first, British spelling, 24 hour time, no dashes). They
 name apps; a site is named only if its host is on the shared public list, otherwise it is "a
@@ -756,14 +1141,15 @@ travel site" or "an uncategorised site". Structured `data` carries the host for 
 
 ### Chat
 
-| Method | Path                | Body                                  | Response                                                                                                                                                                                                        | Status |
-| ------ | ------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| GET    | `/v1/chat?limit=50` |                                       | `200 { messages: ChatMessage[] }` (oldest first, limit 1..100)                                                                                                                                                  | live   |
-| POST   | `/v1/chat`          | `{ message: string }` (1..2000 chars) | `201 { message: ChatMessage, reply: ChatMessage }`; `503 unavailable` without `ANTHROPIC_API_KEY`; `502 upstream_error` if Claude fails                                                                         | live   |
-| POST   | `/v1/chat/stream`   | `{ message: string }` (1..2000 chars) | `200 text/event-stream`: `event: delta` `{ text }` per piece, then `event: done` `ChatResponse`, or `event: error` `ApiError`. Validation and `503 unavailable` come back as plain JSON before the stream opens | live   |
+| Method | Path                | Body                                  | Response                                                                                                                                                                                                                                                                   | Status |
+| ------ | ------------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| GET    | `/v1/chat?limit=50` |                                       | `200 { messages: ChatMessage[], actions: Recommendation[] }` (oldest first, limit 1..100; `actions` are the ones named in `action_ids`, as they stand now)                                                                                                                 | live   |
+| POST   | `/v1/chat`          | `{ message: string }` (1..2000 chars) | `201 ChatResponse` `{ message, reply, actions: Recommendation[] }`; `503 unavailable` without `ANTHROPIC_API_KEY`; `502 upstream_error` if Claude fails                                                                                                                    | live   |
+| POST   | `/v1/chat/stream`   | `{ message: string }` (1..2000 chars) | `200 text/event-stream`: `event: delta` `{ text }` per piece, `event: action` `Recommendation` per thing done or undone, then `event: done` `ChatResponse`, or `event: error` `ApiError`. Validation and `503 unavailable` come back as plain JSON before the stream opens | live   |
 
 `/v1/chat` stays for callers that want the whole answer (MCP, voice); `/v1/chat/stream` gives the
-first words fast and stores the same pair when it finishes.
+first words fast and stores the same pair when it finishes. The stored answer keeps the ids of what
+it did (`action_ids`), so a client can show the same Undo chips under it after a reload.
 
 The API keeps the history per user (`chat_messages`); the client sends only the new line. Michael
 answers with Claude (`ANTHROPIC_MODEL`, default `claude-opus-5-5`) from a summary built in the API:
@@ -773,8 +1159,21 @@ left; today's score and biggest losses inside goal blocks),
 the active goals with weekly budgets, today's calendar, workout, sleep, meal and focus entries,
 today's screen time totals, 7 day totals per type and the pattern headlines for today and the last
 7 days, plus the last 20 lines of chat. Raw app, web and AI events are never sent, only totals, and
-conversations and memories stay out. Nothing is stored when the call fails. The chat only advises;
-it never changes the calendar.
+conversations and memories stay out. Nothing is stored when the call fails.
+
+**Chat acts on the user's own time (#46).** Claude gets five tools, run server side inside the
+request (no HTTP self calls): `find_calendar_blocks { from, to }` (ids and whether a block may be
+moved), `create_focus_block { title, start_at, end_at, goal_id? }`, `move_calendar_block { event_id,
+start_at, end_at?, new_title? }`, `block_mac_app { apps: string[], start_at, end_at, goal_id? }`
+(see Focus guards) and `undo_action { recommendation_id }`. Each action becomes a
+recommendation with `source: "chat"` that is carried out at once by the same code as
+`POST /v1/recommendations/:id/execute` (and `/undo`), so every guard rail holds: events with other
+people and anything already started are refused (the model hears the 409 and advises instead;
+the refused recommendation is stored as `dismissed`), Michael never deletes the user's events, and
+undo works until the block starts. `ChatResponse.actions` lists what was done (`status: "done"`,
+deadline in `action.undo_until`) or undone in this answer, and the reply always ends with
+"Undo until HH:MM." for each thing done. The context gives Claude ids only for the user's own blocks
+that have not started, goal ids, and the things that can still be undone.
 
 ### Moments (Morning and Evening)
 
@@ -792,6 +1191,9 @@ type MomentGoal = {
   goal_id: string;
   title: string;
   category: GoalCategory;
+  area?: "business" | "health" | "personal"; // goalArea(category)
+  kind?: "time" | "target" | "count" | "checklist"; // goalKind(goal)
+  sleep?: boolean; // the sleep goal: hide it from time lines
   budget_minutes: number | null;
   spent_week_minutes: number; // Monday 00:00 until now
   planned_today_minutes: number; // goal blocks today; rest: a seventh of the weekly budget
@@ -844,8 +1246,9 @@ How the numbers are made (`apps/api/src/moments/compute.ts`, pure, with tests):
 
 - **Planned** is goal blocks (the same matching as Patterns: `data.goal_id`, `data.goal_category`,
   or a category word or "deep work"/"focus" in the title; meetings with any other attendee never count).
-- **Spent**: rest is sleep, counted on the day it ends; gym is workouts when the watch reported any;
-  everything else is elapsed block time less the minutes lost to interruptions inside it.
+- **Spent**: the sleep goal (`isSleepGoal`) is sleep, counted on the day it ends; a health goal of
+  kind `time` is workouts when the watch reported any; everything else is elapsed block time less
+  the minutes lost inside it (the same rule as the score, so the two agree).
 - **Lost** comes from the focus analysis behind `focus_disruptions`. **Won back** (evening) is the
   daily average lost on the last 7 days with device data less what was lost today.
 - **At risk** (morning): for each block still ahead today, the minutes usually lost in those hours
@@ -859,6 +1262,20 @@ How the numbers are made (`apps/api/src/moments/compute.ts`, pure, with tests):
 Only `headline` may be phrased by Claude (`ANTHROPIC_MODEL`, when `ANTHROPIC_API_KEY` is set). The model sees the computed
 facts only, and its line is used only if it keeps the voice rules and every number in it appears in
 the facts; otherwise `phrased_by` is `template`. Lines are cached per user, kind, day and facts.
+
+### Voice
+
+| Method | Path              | Body                               | Response                                                                                                   | Status |
+| ------ | ----------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------- | ------ |
+| GET    | `/v1/voice`       |                                    | `200 { elevenlabs: boolean }`: whether the API can speak with ElevenLabs                                   | live   |
+| POST   | `/v1/voice/speak` | `{ text: string }` (1..1000 chars) | `200 audio/mpeg`; `503 unavailable` without `ELEVENLABS_API_KEY`; `502 upstream_error` if ElevenLabs fails | live   |
+
+Push to talk in the app: the browser turns speech into text (Web Speech API, en-GB), the text goes
+to `POST /v1/chat`, and the reply is read aloud. `POST /v1/voice/speak` proxies ElevenLabs text to
+speech (`ELEVENLABS_VOICE_ID`, default "George", a calm British male; `ELEVENLABS_MODEL`, default
+`eleven_flash_v2_5`) so the key stays on the server. Without a key, or when it fails, the app uses
+the browser's own speech synthesis, preferring a low en-GB male voice. Audio is never stored:
+only text goes in, and the mp3 is streamed straight back and played once.
 
 ### Recommendations
 
@@ -874,7 +1291,8 @@ Changing status never executes `action`; use the routes below.
 | POST   | `/v1/recommendations/:id/execute` | `200 Recommendation` (`status: done`, `executed_at` set). `409` see below | live   |
 | POST   | `/v1/recommendations/:id/undo`    | `200 Recommendation` (`status: undone`, `undone_at` set). `409` see below | live   |
 
-Kinds carried out: `move_calendar_block` and `create_focus_block`; other kinds answer `501`.
+Kinds carried out: `move_calendar_block`, `move_calendar_blocks`, `create_focus_block` and
+`block_mac_app`; other kinds answer `501`.
 
 ```ts
 // move_calendar_block: one of the user's own solo blocks (a timeline event id). A new start keeps
@@ -882,6 +1300,22 @@ Kinds carried out: `move_calendar_block` and `create_focus_block`; other kinds a
 type MoveCalendarBlockPayload = { event_id: string; start_at?: string; end_at?: string; new_title?: string };
 // create_focus_block: a new block, tagged as Michael's (title defaults to "Focus block").
 type CreateFocusBlockPayload = { start_at: string; end_at: string; title?: string };
+// block_mac_app: close distracting Mac apps from start_at to end_at (a focus guard, see below).
+// At least one of app, apps, bundle_ids; names or bundle ids from the allowlist only.
+type BlockMacAppPayload = {
+  app?: string; // "WhatsApp"
+  apps?: string[]; // up to 10
+  bundle_ids?: string[];
+  start_at: string;
+  end_at: string; // after start_at, at most 12 hours after the guard starts
+  goal_id?: string;
+  block_event_id?: string; // the planned block it sits in (analysis sets it)
+  back_to?: string; // "Back to <this>." in the notification; default the goal or block title
+};
+// move_calendar_blocks: several moves carried out together (the whole day around traffic). All or
+// nothing: when one move is refused, the ones already made go back first. One undo puts every
+// block back. Extra fields (the travel maths, see Places and travel) ride along for the app.
+type MoveCalendarBlocksPayload = { moves: MoveCalendarBlockPayload[] }; // 1 to 10
 ```
 
 Rules: act only on the user's own calendar blocks and Mac; never touch events with other people;
@@ -891,13 +1325,57 @@ never delete the user's events; never send in the user's name.
   private extended property `michael=1`) and the timeline mirror follows at once. Without it, the
   change happens on the timeline only (a created block is a `calendar_event` with `source: "agent"`).
 - `409 conflict` when: the action is `null`; the recommendation is already `done` or `dismissed`;
-  `involves_others` is true; the block has `data.with_others` or 2 or more attendees, or Google
+  `involves_others` is true; the action falls in time an active standing instruction protects (the
+  message is the reason, e.g. "Sundays are kept clear."; see Standing instructions, The guard); the block has `data.with_others` or 2 or more attendees, or Google
   itself now shows someone else on it (checked live before every write); the block or the new
   time has already started; it is an all day event.
 - Undo: a moved block goes back to its original time and title; a created block is deleted, and
   only if Google still marks it as Michael's. Allowed until the earliest of `undo_until`, the
   block's original start and its new start; afterwards `409`. Undo of anything not `done` is `409`.
 - What was changed is kept on the recommendation (`execution`, internal, never returned).
+- `block_mac_app` creates a focus guard (below). A window that has begun starts now; `409` when it
+  has already ended or names an app off the allowlist, `400` over 12 hours. Undo deletes the guard
+  at once and is allowed until the window ends (not until it starts).
+
+### Focus guards (block Mac apps, #41)
+
+```ts
+type FocusGuard = {
+  id: string;
+  recommendation_id: string | null;
+  apps: string[]; // allowlisted names, e.g. ["WhatsApp"]
+  bundle_ids: string[]; // every Mac bundle id those names map to
+  start_at: string;
+  end_at: string;
+  goal_id: string | null;
+  back_to: string | null; // "Back to The company."
+  created_at: string;
+};
+type FocusGuardsResponse = { now: string; off_the_record: boolean; guards: FocusGuard[] };
+```
+
+| Method | Path                       | Response                                                         | Status |
+| ------ | -------------------------- | ---------------------------------------------------------------- | ------ |
+| GET    | `/v1/focus-guards/active`  | `200 FocusGuardsResponse`: running now or starting in 10 minutes | live   |
+| POST   | `/v1/focus-guards/suggest` | `201 { recommendation }` or `200 { recommendation: null }`       | live   |
+
+- Executing a `block_mac_app` recommendation creates a guard; undoing it deletes the guard.
+- `/active` is the one read a device key may make (the Mac collector polls it every 30 to 60 s).
+  While the user is off the record it answers `off_the_record: true` and no guards, and the
+  collector does nothing.
+- Only apps in `BLOCKABLE_MAC_APPS` (`packages/shared/src/mac-apps.ts`: chat, social, music, video
+  and games, for example WhatsApp, Telegram, Messages, Slack, Discord, Mail, Instagram, X, Spotify,
+  Music, TV, Netflix, Steam) can be named. System apps, terminals, Claude and Michael can never be
+  closed; the collector checks the list again before it acts.
+- The collector reads the front app with `lsappinfo` (no permission), closes a muted app with
+  AppleScript `quit` by bundle id (like Cmd+Q; macOS asks once per app for Automation), hides it if
+  quitting is not allowed, and shows "Instagram is off until 12:00. Back to The company." at most
+  once a minute per app.
+- `/suggest` proposes muting the week's worst Mac offender (`repeat_offenders`, allowlisted apps
+  only) during today's next work block, or the next two hours between 08:00 and 18:00 when there is
+  no block: "Mute WhatsApp 14:00 to 16:00", rationale "... took 47 min.". It is a `proposed`
+  recommendation (`source: "analysis"`); nothing happens until Do it. Not repeated while an open one
+  for the same app has not ended.
 
 ### Integrations (OAuth)
 
@@ -989,6 +1467,76 @@ MCP). `manual` events, typed by the user, are always kept. `since` is when colle
 `null`. Never set sources show `updated_at` as `1970-01-01T00:00:00.000Z`. The check lives in
 `apps/api/src/privacy.ts` and runs inside `Store.insertEvents`.
 
+### Your data: deletion and retention
+
+```ts
+type DataDeleteResult = {
+  scope: "everything" | "timeline";
+  deleted: Record<string, number>; // rows really deleted, per table
+  total: number;
+  google_revoked: boolean; // Google was told to forget Michael's calendar access
+  account_deleted: boolean; // the Supabase Auth user is gone too ("everything" only)
+};
+type EventSummary = {
+  day: string; // UTC day of the events' start, YYYY-MM-DD
+  source: Source;
+  type: EventType;
+  category: string; // app or site category when the event had one, else ""
+  events: number;
+  seconds: number;
+};
+const RETENTION_DAYS = 90;
+```
+
+| Method | Path                            | Response               | Status |
+| ------ | ------------------------------- | ---------------------- | ------ |
+| DELETE | `/v1/me/data`                   | `200 DataDeleteResult` | live   |
+| DELETE | `/v1/me/data?source=&from=&to=` | `200 DataDeleteResult` | live   |
+| DELETE | `/v1/events/:id`                | `204`, `404`           | live   |
+
+Deletion really deletes: rows are removed from the database, not hidden. `DELETE /v1/me/data` with
+no parameters removes every row of the account: events, event summaries, goals, recommendations,
+analysis runs, nudges, chat messages, standing instructions, the Telegram chat, integrations (Google is revoked first), push subscriptions,
+device keys, agents with their query log, OAuth grants and tokens, places, the geocode cache, source
+switches, the off the record state and the profile. Then the Supabase Auth user itself is deleted,
+so the next sign in starts a new, empty account. With any of `source`, `from`, `to` (ISO date times,
+`from` < `to`) only the matching timeline events (`start_at` in `[from, to)`) and the summaries of
+the days they cover are removed (`scope: "timeline"`).
+
+Only a signed-in session may call it: device keys, agents and the demo API key get `403 forbidden`,
+and so does the demo account (reseed it with `POST /v1/demo/reseed`). The table list is
+`USER_TABLES` in `apps/api/src/supabase-store.ts`; a test fails when a migration adds a table that
+the list misses.
+
+Retention: once a day (`apps/api/src/retention.ts`, run by the scheduler) events that started
+before the UTC day 90 days ago are rolled into `event_summaries` (one row per UTC day, source, type
+and category; counts and seconds, no titles, no data) and the raw rows are deleted, in batches of
+500. Seconds are `end_at - start_at`, else `data.seconds`, else 0. Category is `data.category`, else
+the app category of `data.bundle_id`, else the site category of `data.host`, else `""`.
+
+### Sources status
+
+```ts
+type SourceStatus = {
+  source: Source;
+  enabled: boolean; // the privacy switch, as GET /v1/privacy shows it
+  collecting: boolean; // would ingest store its events right now
+  last_event_at: string | null;
+};
+type SourcesStatusResponse = { off_the_record: boolean; sources: SourceStatus[] };
+```
+
+| Method | Path                 | Response                    | Status |
+| ------ | -------------------- | --------------------------- | ------ |
+| GET    | `/v1/sources/status` | `200 SourcesStatusResponse` | live   |
+
+Every source, always. `enabled` is the privacy switch (as in `GET /v1/privacy`). `collecting` is
+what ingest would do now: `false` while off the record or once the user switched the source off,
+`true` for a source never decided on (its first event is the opt in). `last_event_at` is
+when Michael last received a new event from that source (the event's `created_at`), or `null` if it
+never sent one. An event that arrives again unchanged does not move it. The web app's Connections
+rows on You read it to say "Last data 12 min ago". Code: `apps/api/src/routes/sources.ts`.
+
 ### Device keys (personal tokens)
 
 ```ts
@@ -1009,10 +1557,13 @@ type PersonalTokenCreated = { token: PersonalToken; secret: string /* "mk_...", 
 | DELETE | `/v1/tokens/:id` |            | `204` (stops working within 30 s), `404`             | live   |
 
 Only a signed-in session (Supabase token) may call these: device keys, OAuth tokens and the demo
-API key get `403 forbidden`. A device key acts for its owner on ingest, webhooks and `/mcp`
-(`Authorization: Bearer mk_...` or `?key=mk_...` where query keys are allowed). One key per device
+API key get `403 forbidden`. A device key acts for its owner and can only send data:
+`POST /v1/events`, `POST /v1/events/batch` and `POST /v1/webhooks/*`, plus one read,
+`GET /v1/focus-guards/active`, so the Mac collector can enforce focus guards
+(`Authorization: Bearer mk_...`, or `?key=mk_...` on webhooks). Anything else, including other
+reads, `/mcp` and every credential route, returns `403`. One key per device
 (Mac collector, Health Auto Export). Only the sha256 is stored. The web app makes them under
-You > Devices. Claude connects with MCP OAuth instead (no key).
+You > Connections (Mac, Apple Watch). Claude connects with MCP OAuth instead (no key).
 
 ### Profile
 
@@ -1038,6 +1589,7 @@ type Profile = {
   work_days: Weekday[]; // default mon to fri
   gym_days: Weekday[]; // default []
   weak_spots: WeakSpot[]; // default []
+  fixed_titles: string[]; // calendar titles Michael never moves ("PT session"); default []
   onboarded_at: string | null; // set when onboarding is finished or skipped
   updated_at: string | null; // null until first saved
 };
@@ -1100,14 +1652,56 @@ type TravelPlanResult = {
   travel: Event[]; // newly stored travel events
   recommendations: Recommendation[]; // newly proposed
   skipped: { calendar_event_id: string; reason: string }[];
+  day?: TravelDayPlan | null; // only with whole_day: true
 };
+type TravelLeg = { depart_at: string; minutes: number };
+type TravelDayDrive = {
+  from: string;
+  to: string;
+  to_event_id: string | null; // null: the drive home at the end of the day
+  before: TravelLeg | null; // the day as it stands
+  after: TravelLeg | null; // with Michael's moves
+};
+type TravelDayPlan = {
+  day: string; // "YYYY-MM-DD", Europe/Athens
+  before_minutes: number; // on the road as the day stands
+  after_minutes: number; // with the moves
+  won_minutes: number;
+  moves: { event_id: string; title: string; from_start_at: string; start_at: string; end_at: string }[];
+  drives: TravelDayDrive[];
+  recommendation_id: string | null; // the one recommendation, when the day wins 10 minutes or more
+  note: string | null; // why there is nothing to propose ("Save your home first, ...")
+};
+type AddressMatch = { formatted_address: string; place_id: string | null; lat: number; lng: number };
+type AddressSearchResponse = { results: AddressMatch[]; maps_available: boolean };
 ```
 
-| Method | Path              | Body                                | Response               | Status |
-| ------ | ----------------- | ----------------------------------- | ---------------------- | ------ |
-| GET    | `/v1/places`      |                                     | `200 PlacesResponse`   | live   |
-| PUT    | `/v1/places`      | `{ places: PlaceInput[] }` (max 20) | `200 PlacesResponse`   | live   |
-| POST   | `/v1/travel/plan` | optional `{ from?, to? }` (ISO)     | `200 TravelPlanResult` | live   |
+| Method | Path                     | Body                                  | Response                       | Status |
+| ------ | ------------------------ | ------------------------------------- | ------------------------------ | ------ |
+| GET    | `/v1/places`             |                                       | `200 PlacesResponse`           | live   |
+| PUT    | `/v1/places`             | `{ places: PlaceInput[] }` (max 20)   | `200 PlacesResponse`           | live   |
+| GET    | `/v1/places/search?q=`   |                                       | `200 AddressSearchResponse`    | live   |
+| GET    | `/v1/places/suggestions` |                                       | `200 PlaceSuggestionsResponse` | live   |
+| POST   | `/v1/travel/plan`        | optional `{ from?, to?, whole_day? }` | `200 TravelPlanResult`         | live   |
+
+```ts
+type PlaceSuggestion = {
+  key: string | null; // "gym", "work", "university", "home" when the name or use says so
+  label: string;
+  lat: number | null;
+  lng: number | null;
+  count: number; // Maps searches, places and directions that mentioned it
+  last_seen_at: string;
+};
+type PlaceSuggestionsResponse = { enabled: boolean; suggestions: PlaceSuggestion[] };
+```
+
+- `GET /v1/places/suggestions` offers places the user looked up in Google Maps (chrome `search`
+  events with `data.maps`) at least twice in the last 30 days, at most 5, most looked up first.
+  Generic searches ("near me", "open now") and places already saved (same name, or within 200 m)
+  are left out. `key` comes from the name (gym, university, office) or, for `home`, from where
+  directions most often start. Nothing is ever saved: the user picks one and saves it with
+  `PUT /v1/places`. With source `maps` off, `enabled` is `false` and the list is empty.
 
 - `PUT /v1/places` replaces the whole list. Addresses are geocoded on save when the server has a
   key (cached per user for 30 days, as Google's terms allow); otherwise coordinates stay `null`.
@@ -1126,8 +1720,25 @@ type TravelPlanResult = {
     event: `move_calendar_block` with `{ event_id, start_at, end_at, from_start_at }` (`MoveCalendarBlockPayload`),
     `undo_until` = the original start. Meetings with other people are never moved.
     Recommendations carry the goal the block serves (`apps/api/src/score/match.ts`).
-- Without `GOOGLE_MAPS_API_KEY` the status is `maps_unavailable` and nothing is computed; without
-  the opt in it is `travel_off`. Code: `apps/api/src/integrations/maps.ts` (Geocoding, Routes
+- `GET /v1/places/search?q=` geocodes what the user types on the server (up to five matches; under
+  three characters, none). Without a key: `{ results: [], maps_available: false }`, and places are
+  still saved from the typed address.
+- `POST /v1/travel/plan` with `whole_day: true` plans the day `from` falls on (default today) as a
+  whole (#155). The drives go on the timeline as above, without per block suggestions. Then, from
+  home at the start to home at the end, it searches new start times for the movable blocks (two
+  hours earlier to three hours later, in 30 minute steps; every combination up to 1,500, else one
+  block at a time) that spend the fewest minutes on the road. A block is movable only when it is
+  the user's own (no other attendees), has a physical location, has not started, is not marked
+  `data.fixed: true` and its title is not in `profile.fixed_titles`. Meetings with other people never
+  move. A moved block keeps its length, never overlaps another event and stays outside quiet hours;
+  standing instructions "home by 21:00" and "keep Sundays clear" are respected. At most 60 Routes
+  calls per plan. When the day wins 10 minutes or more it proposes ONE recommendation, "Plan today
+  around traffic: win 35 minutes", with a `move_calendar_blocks` action (`{ moves: [{ event_id,
+  start_at, end_at, from_start_at, title }], before_minutes, after_minutes, won_minutes, drives }`),
+  `undo_until` the earliest original or new start, tied to the goal of the first moved block. The
+  MCP tool `plan_travel` takes `whole_day` too. Code: `integrations/day-plan.ts` (pure planner).
+- Without `GOOGLE_MAPS_API_KEY` the status is `maps_unavailable` and nothing is computed (with
+  `whole_day`, `day.note` says maps need setting up); without the opt in it is `travel_off`. Code: `apps/api/src/integrations/maps.ts` (Geocoding, Routes
   `computeRoutes` with `TRAFFIC_AWARE` and `departureTime`) and `integrations/travel.ts`.
 
 ### Michael for agents
@@ -1167,10 +1778,12 @@ type AgentQuery = {
   plain line ("Read your day from Sat 09:00 to Sat 17:00", `Added "Ran 5 km" to your day`), never
   the payload. A call outside the agent's scopes, or by an agent that is not `approved`, returns a
   tool result with `isError: true` ("Not allowed. ...") and is logged with `allowed: false`.
-- Scope per tool: `get_timeline`, `get_patterns` = `timeline`; `get_goals` = `goals`;
-  `get_recommendations` = `recommendations`; `get_score` = `score`; `add_event` = `write_events`.
-  A tool not in that list needs `timeline` if it is read only, else `write_events`
-  (`apps/api/src/mcp-guard.ts`).
+- Scope per tool: `get_timeline`, `get_patterns` = `timeline`; `get_goals`, `add_goal`,
+  `update_goal`, `propose_goals` = `goals`; `list_recommendations`, `update_recommendation`, `get_nudges` =
+  `recommendations`; `get_score`, `get_records`, `get_moments` = `score`; `add_event`, `execute_recommendation`,
+  `undo_recommendation`, `create_focus_block`, `block_mac_app`, `plan_travel` = `write_events`;
+  `suggest_app_mute` = `recommendations`. A tool not in that
+  list needs `timeline` if it is read only, else `write_events` (`apps/api/src/mcp-guard.ts`).
 - `queries`: `from` defaults to local midnight today (Europe/Athens), `to` to now; newest first,
   at most 500.
 
@@ -1195,7 +1808,7 @@ type NudgeCheckResult = {
   checked_at: string;
   nudge: Nudge | null; // created by this check (queued, sent, failed or suppressed)
   skipped: NudgeSkip | null; // why nothing went out
-  sent_today: number; // nudges today that count towards the cap (all but suppressed)
+  sent_today: number; // nudges today that count towards the cap (all but suppressed and test)
 };
 ```
 
@@ -1206,14 +1819,22 @@ type NudgeCheckResult = {
 | POST   | `/v1/nudges/test`      | `200 NudgeTestResult` (push one nudge to the caller's devices now)      | live   |
 
 Nudge engine (`apps/api/src/nudges/engine.ts`, pure, thresholds in `LIMITS`). Each check picks the
-most urgent candidate of four rules, each tied to a goal:
+most urgent candidate of these rules (in this order):
 
-| Kind          | When                                                                          | Example                                                           |
-| ------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `focus_drift` | inside a work goal block, 3+ of the last 10 min on distractor apps or sites   | "6 min on Instagram in your focus block. Back to it until 12:00." |
-| `block_soon`  | a goal block starts in 2 to 15 min                                            | "Gym at 18:00. Wrap up in 12 min."                                |
-| `wind_down`   | 30 min before the night, 3+ of the last 10 min on screens, a rest goal exists | "Screens off by 22:00. Sleep is on the plan."                     |
-| `goal_behind` | before 19:00, a weekly budget behind its linear pace by 60+ min and 15%+      | "Gym 2h 34m behind this week. Book 90 min today."                 |
+| Kind          | When                                                                                                                         | Example                                                               |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `focus_drift` | inside a work goal block, 3+ of the last 10 min on distractor apps or sites                                                  | "6 min on Instagram in your focus block. Back to it until 12:00."     |
+| `block_soon`  | a goal block starts in 2 to 15 min                                                                                           | "Gym at 18:00. Wrap up in 12 min."                                    |
+| `morning`     | after the night's sleep (3h+) ends today, else from 08:00; until 12:00                                                       | the Morning moment's headline, e.g. "Today holds 2h 00 of goal time." |
+| `evening`     | an hour before the usual bedtime (median of 3+ of the last 8 nights), else 21:00; never later than 45 min before quiet hours | the Evening moment's headline                                         |
+| `wind_down`   | 30 min before the night, 3+ of the last 10 min on screens, a rest goal exists                                                | "Screens off by 22:00. Sleep is on the plan."                         |
+| `goal_behind` | before 19:00, a weekly budget behind its linear pace by 60+ min and 15%+                                                     | "Gym 2h 34m behind this week. Book 90 min today."                     |
+
+`morning` and `evening` carry the Morning and Evening moments (`GET /v1/moments/:kind`, template
+headline, no model): the headline when it is under 15 words, else its first sentence, else a shorter
+line from the same numbers; `reason` holds the maths and when it was sent. Their key is the kind, so
+each goes out at most once a day, and they count toward the 5. The push opens Today (`url: "/"`).
+The night's quiet hours come from the profile (`quiet_hours`, default 22:00 to 07:00).
 
 Goal time spent this week = the goal's calendar blocks so far plus its own events (`work`:
 `focus_session`, `gym`: `workout`, `rest`: `sleep`, `food`: `meal`), counted once. Rules: at most 5
@@ -1223,18 +1844,24 @@ sets when `wind_down` speaks; dinner 20:00 to 21:00; work goal blocks except
 between nudges. Once 5 went out, the best candidate is stored as `suppressed` (once per key). Off
 the record stops all nudges. Delivery is pluggable (`apps/api/src/nudges/channels.ts`): with VAPID
 keys set, nudges go out as Web Push to every device the user turned nudges on for (`sent` when one
-accepted, `failed` when all refused, `queued` when there is no device); without keys they are only
-logged and stay `queued`.
+accepted, `failed` when all refused, `queued` when there is no device). With `TELEGRAM_BOT_TOKEN`
+set they also go to the user's Telegram chat, when one is connected (see "Telegram" below). With
+both, every nudge goes to both (`sent` when either took it); the stored `channel` is `push`. Without
+either they are only logged and stay `queued`. Channels only deliver: the cap, quiet hours and
+dedupe are the engine's.
 
 Scheduler (`apps/api/src/scheduler.ts`): inside the API process, every `SCHEDULER_INTERVAL_MINUTES`
 (default 5) the check runs once for each user with events received in the last 24 hours, each run
 scoped as that user. On by default when `NODE_ENV=production`, `SCHEDULER_ENABLED` overrides.
 
 `POST /v1/nudges/test` sends the best current candidate (or a sample line) to the caller's devices
-at once, ignoring the cap, quiet hours and dedupe, and stores nothing. It is for the stage moment.
+and Telegram chat (counted as one device in `devices` and `delivered`) at once, ignoring the cap, quiet hours and dedupe. It is for the stage moment: it stores the nudge
+with status `test` (a fresh key each press), so `GET /v1/nudges` and the stage view (`/stage`) show
+the same line as the watch buzzes. `test` nudges never count towards the 5 a day, the 20 minute gap
+or the daily dedupe (`countsTowardsCap` in `@michael/shared`).
 
 ```ts
-type NudgeTestResult = { text: string; reason: string; delivered: number; devices: number };
+type NudgeTestResult = { text: string; reason: string; delivered: number; devices: number; nudge: Nudge };
 type PushSubscriptionInput = {
   endpoint: string;
   expirationTime?: number | null;
@@ -1253,6 +1880,43 @@ Watch. The app's service worker is `apps/web/public/sw.js`.
 | GET    | `/v1/push`               |                                      | `200 PushConfig`                        | live   |
 | POST   | `/v1/push/subscriptions` | `PushSubscriptionInput` (`toJSON()`) | `201 PushConfig` (saved for the caller) | live   |
 | DELETE | `/v1/push/subscriptions` | `{ endpoint }`                       | `200 PushConfig`                        | live   |
+
+### Telegram
+
+A backup channel for nudges (`apps/api/src/nudges/telegram.ts`). Telegram mirrors its
+notifications to the Apple Watch, so a nudge still buzzes when Web Push does not. Setup for the
+team: `docs/sources/telegram.md`.
+
+| Method | Path                    | Body                | Response                                                                | Status |
+| ------ | ----------------------- | ------------------- | ----------------------------------------------------------------------- | ------ |
+| GET    | `/v1/telegram`          |                     | `200 TelegramStatus`                                                    | live   |
+| POST   | `/v1/telegram/link`     |                     | `200 { url }` (`https://t.me/<bot>?start=<token>`); `503` without a bot | live   |
+| DELETE | `/v1/telegram`          |                     | `200 TelegramStatus` (unbinds the caller's chat)                        | live   |
+| POST   | `/v1/webhooks/telegram` | a Telegram `Update` | `200`, with the bot's reply as a `sendMessage` method body              | live   |
+
+```ts
+type TelegramStatus = {
+  enabled: boolean; // false until the API has TELEGRAM_BOT_TOKEN
+  connected: boolean;
+  username: string | null; // the chat's Telegram @username
+  connected_at: string | null;
+};
+type TelegramLinkResponse = { url: string };
+```
+
+- One tap: "Connect Telegram" on You opens the link (web route `/integrations/telegram/connect`),
+  Telegram opens the bot, the user taps Start, and the bot gets `/start <token>`. The token holds
+  the user id, a 15 minute expiry and an HMAC (key derived from `API_KEY`), 61 characters to fit
+  t.me's 64. Each token binds once. The bot answers "Connected. I'll keep it short."
+- The webhook needs no user auth; it checks `X-Telegram-Bot-Api-Secret-Token` against
+  `TELEGRAM_WEBHOOK_SECRET` (default: derived from the bot token) and answers `401` otherwise,
+  `404` when there is no bot. Only private chats. `/stop` unbinds the chat. A chat belongs to
+  whoever bound it last (`telegram_chats`, one row per user).
+- Delivery: `sendMessage` with the nudge text. `sent` when Telegram took it, `failed` when it
+  refused; a `403` (the user blocked the bot) also unbinds the chat.
+- On start, with a token, the API calls `setWebhook` to `${PUBLIC_API_URL}/v1/webhooks/telegram`
+  (https only; a repeat is a no-op). The bot username comes from `TELEGRAM_BOT_USERNAME`, else
+  from `getMe`.
 
 ### Score
 
@@ -1291,20 +1955,55 @@ type Score = ScoreTotals & {
   timezone: string; // "Europe/Athens"
   generated_at: string; // the instant it was scored at
   date: string; // the local day asked for
+  areas: ScoreWeekArea[]; // the week per category, with target and floor; they add up to the week
   days: ScoreDay[]; // Monday to Sunday
   day: ScoreDayDetail; // `date` in detail
   // The last instant each device reported anything. Lost time after it is not known yet (phone
   // data can arrive hours late), so a fresh score can still drop.
   data_until: { mac: string | null; iphone: string | null };
+  // The week's target (see Targets): the stored one, else Michael's proposal; null until the
+  // baseline is ready and nothing is stored.
+  target: {
+    overall_pct: number;
+    areas: Record<GoalArea, number | null>;
+    floors: Record<GoalArea, number>;
+    status: "proposed" | "accepted";
+    set_by: "michael" | "user";
+  } | null;
+  // True only when score_pct meets target.overall_pct AND every category with time goals meets
+  // its floor. Null without a target or before anything has elapsed.
+  on_target: boolean | null;
+  records: PersonalRecord[]; // set in this week (achieved_on inside it), baselines included
+  // Waking time left this week outside fixed calendar commitments and sleep (see below).
+  free_minutes_left: number;
+  // Null until there is a sleep goal and sleep data this week. Sleep stays outside the score.
+  sleep: { goal_minutes: number; nightly: (number | null)[] } | null; // 7 nights, Monday first
+};
+
+// The week's entry per category (Score.areas). day.areas stay plain ScoreArea.
+type ScoreWeekArea = ScoreArea & {
+  target_pct: number | null; // the week's target for the category; null without one or without time goals
+  floor_pct: number; // default 50, editable per week
+  meets_floor: boolean | null; // null without time goals or before anything elapsed; nothing elapsed in it = false
+};
+
+// One of the three categories. Always three entries, in the order business, health, personal.
+type ScoreArea = ScoreTotals & {
+  area: GoalArea;
+  goal_ids: string[]; // every active goal in the category, scored or not
 };
 
 type ScoreGoal = ScoreTotals & {
   goal_id: string;
   title: string;
   category: GoalCategory;
-  scored: boolean; // false for sleep: listed with its budget, outside the score
+  area: GoalArea; // goalArea(category)
+  kind: GoalKind; // goalKind(goal)
+  scored: boolean; // true only for kind "time"; a target (sleep), count or checklist is listed, outside the score
   budget_minutes: number; // weekly_budget_minutes, 0 when the goal has none
   daily: { date: string; planned_minutes: number; spent_minutes: number }[]; // Monday to Sunday
+  minutes_left: number; // budget - spent, never below 0; 0 for a goal outside the score
+  open_blocks: number; // the goal's blocks this week that have not ended (one block across midnight counts once)
 };
 
 type ScoreDay = ScoreTotals & { date: string; time_won_back_minutes: number };
@@ -1318,6 +2017,7 @@ type ScoreDayDetail = ScoreDay & {
     reason: string | null; // why the value is 0 when there is not enough history
   };
   blocks: ScoreBlock[]; // in order of start
+  areas: ScoreArea[]; // the day per category; they add up to the day
 };
 
 type ScoreBlock = ScoreTotals & {
@@ -1328,6 +2028,9 @@ type ScoreBlock = ScoreTotals & {
   matched_by: "goal_id" | "calendar_titles" | "goal_category" | "goal_title" | "category_word";
   start_at: string;
   end_at: string;
+  // The longest_block record set in this block (not a baseline): the tape draws the mark at its
+  // tick_index. Null when the block set none.
+  record_id: string | null;
   ticks: ("spent" | "lost" | "ahead" | "unverified")[]; // one per 5 minutes, from start_at
   lost: {
     start_at: string;
@@ -1338,31 +2041,47 @@ type ScoreBlock = ScoreTotals & {
     category: AppCategory;
     device: "mac" | "iphone";
   }[];
+  // Ids of the active standing instructions the block's time falls under (a block planned on a
+  // clear Sunday), less those whose `exceptions` name the block. Empty when it breaks none. It
+  // never changes the block's minutes.
+  instructions_broken: string[];
 };
 ```
 
 The zod schemas of the same names are in `packages/shared/src/schemas.ts`; `mockScore` in
-`mocks.ts` is a full example (a made up Wednesday at 15:20). `WeeklyScore` and `GoalScore` stay
+`mocks.ts` is a full example (a made up Wednesday at 15:20, with a meeting, three nights of sleep and no
+target yet). `WeeklyScore` and `GoalScore` stay
 exported: they are the week's part of `Score` with a `score_pct` that is never null.
 
 #### The attribution rule
 
 Stated here and at the top of `apps/api/src/score/score.ts`; the two change together.
 
+- **Goals:** three categories, business, health and personal (the older `work` reads as business,
+  `gym`, `rest` and `food` as health). Only goals of kind `time` take part. A `target` (sleep), a
+  `count` or a `checklist` has no planned minutes: it is listed with `scored: false` and has no
+  blocks.
 - **Planned:** the user's own calendar blocks that belong to a goal (see Goals, "Which calendar
   events count towards a goal"). An event with other people in it is never a block. Where two
   blocks overlap, the earlier one keeps the time. A block that crosses local midnight is cut
   there, and each day gets its part.
 - **Ahead:** planned time that has not started yet. **Elapsed:** planned time that has passed; a
   block in progress counts up to `now`.
-- **Lost:** time inside an elapsed block spent in a distracting category (`communication`,
-  `social`, `video`, `news`, `shopping`, `travel`) on any device. It is read from the single line
-  of attention, where the phone and the Mac are already one line, so a minute is never lost twice.
+- **Lost:** time inside an elapsed block that was off purpose for the block's goal, on any device
+  (Goals, "Categories that count as a goal's work"; one function, which the patterns read too):
+  - a distracting category (`communication`, `social`, `video`, `news`, `shopping`, `travel`),
+    unless the goal lists it in `target.work_categories`;
+  - a work category (`work`, `ai`) inside a block of a health or personal goal that does not list
+    it. A sales call during the gym session is not training.
+
+  It is read from the single line of attention, where the phone and the Mac are already one line,
+  so a minute is never lost twice.
+
 - **Spent:** elapsed minus lost.
-- **Verified:** the part of spent for which the data positively shows the goal. A goal of category
-  `work`: attention in a work category (`work`, `ai`) inside the block. A goal of category `gym`: a
-  `workout` event overlapping the block, minus the lost time inside it. Any other goal has nothing
-  that could prove it.
+- **Verified:** the part of spent for which the data positively shows the goal. Any goal: attention
+  in a category it lists in `target.work_categories`. A business goal: attention in a work category
+  (`work`, `ai`) inside the block. A health goal: a `workout` event overlapping the block, minus
+  the lost time inside it. Nothing else can prove a goal.
 - **Unverified:** spent minus verified: no device data there, or only neutral apps (music, the
   system, anything uncategorised). Reported apart as `unverified_minutes` and as `unverified`
   ticks; never present it as proven.
@@ -1370,10 +2089,17 @@ Stated here and at the top of `apps/api/src/score/score.ts`; the two change toge
   the gym or studying on paper leaves no trace on a screen, and a coach who calls a real session
   "missed" loses trust. The price: a skipped session also scores as spent until a watch or a check
   in says otherwise. `unverified_minutes` shows how much of the score rests on that.
-- **Sleep is outside the score.** A goal of category `rest` whose target describes sleep (a key
-  with `sleep` or `bed` in it, or a title with the word) is listed in `goals` with its budget and
-  `scored: false`. It has no blocks and takes no part in any total; its minutes are 0 and mean
-  nothing.
+- **Sleep is outside the score.** It is a goal of kind `target` (an older goal of category `rest`
+  with a `sleep` or `bed` key in its target, or the word in its title, reads as one). It is listed
+  in `goals` with its budget and `scored: false`. It has no blocks and takes no part in any total;
+  its minutes are 0 and mean nothing. The same holds for every `target`, `count` and `checklist`
+  goal.
+- **Areas:** `areas` (the week) and `day.areas` (the day) hold the same totals for each of the three
+  categories, always in the order business, health, personal, with the ids of every active goal in
+  the category. They add up to the week and to the day. A category with nothing elapsed has
+  `score_pct: null`, so a strong business week with no personal time does not read as a win.
+- **Standing instructions never change a minute of the score.** Each block only carries
+  `instructions_broken`: the active instructions its time falls under (see Standing instructions).
 - **`score_pct`** = spent / elapsed, rounded. `null` when nothing has elapsed (before the first
   block, or on a day with no plan): not 0 and not 100.
 - **Time won back**, in one sentence: less time lost inside your planned blocks than on your usual
@@ -1390,10 +2116,188 @@ Stated here and at the top of `apps/api/src/score/score.ts`; the two change toge
   of it was lost; otherwise `spent` when at least as much of the rest is verified as not, else
   `unverified`. Ticks are the drawing: totals come from the exact intervals, not from counting
   ticks.
-- **Lost stretches:** distracting intervals less than 30 seconds apart are one stretch, named after
+- **Lost stretches:** off purpose intervals less than 30 seconds apart are one stretch, named after
   whatever held most of it. An app goes by its name; a site by its host only when the host is on
   the shared public list, otherwise by its category ("a travel site"). `minutes` is the time lost
   inside the stretch.
+
+#### Free time and sleep (#117)
+
+- **Waking day:** from the sleep goal (a health goal of kind `target`): it ends at `screens_off`
+  (default 23:00) and starts `sleep_hours` later (23:00 and 7.5 hours: 06:30 to 23:00). Without a
+  sleep goal with hours, 07:00 to 23:00.
+- **Fixed commitments:** calendar events that are not goal blocks (anything with other people,
+  and the user's own entries with no goal), inside the waking day. All day entries are left out.
+- **`free_minutes_left`:** the waking day from `now` to Sunday night, minus the fixed commitments.
+  Goal blocks count as free: they are where goal time goes. 0 for a week that has ended. With
+  `goals[].minutes_left` this is the "The 70.3 and the degree need 23 hours this week. You have
+  17." maths. The per day numbers for the Goals tab are `goals[].daily`.
+- **`sleep.nightly`:** minutes slept in the night that ended on each day (`data.duration_min` when
+  the source gives it), null for a night with no data and nights to come; `goal_minutes` is
+  `sleep_hours x 60` (else the weekly budget over 7).
+
+### Targets
+
+| Method | Path                                            | Response             | Status |
+| ------ | ----------------------------------------------- | -------------------- | ------ |
+| GET    | `/v1/targets/current?week=YYYY-MM-DD&now=<iso>` | `200 TargetResponse` | live   |
+| PUT    | `/v1/targets/:week_start`                       | `200 WeeklyTarget`   | live   |
+
+Every Monday Michael proposes the week's score target from the user's history, overall and per
+category, with the maths. The user accepts it or sets their own numbers.
+
+```ts
+type WeeklyTarget = {
+  week_start: string; // Monday, Europe/Athens, YYYY-MM-DD
+  overall_pct: number; // 0..100
+  areas: Record<GoalArea, number | null>; // target per category; null when it has no time goals
+  floors: Record<GoalArea, number>; // default 50 each
+  status: "proposed" | "accepted";
+  set_by: "michael" | "user";
+  reason: string; // one line in Michael's voice, with the maths
+  basis: {
+    weeks_used: number; // full weeks of history, at most 4
+    median_pct: number | null;
+    step: "up" | "hold" | "down" | null;
+    on_target_weeks: number; // of the last 4
+    heavy_week: boolean; // the calendar already shows a heavy week
+  };
+  created_at: string;
+  updated_at: string;
+};
+type TargetResponse = {
+  target: WeeklyTarget | null; // stored, else a fresh proposal (status "proposed", not stored)
+  baseline: { ready: boolean; full_weeks: number; needed: 2; reason: string | null };
+};
+type TargetUpdate = {
+  accept?: true;
+  overall_pct?: number;
+  areas?: Partial<Record<GoalArea, number | null>>;
+  floors?: Partial<Record<GoalArea, number>>;
+};
+```
+
+- `GET` `week` is any day of the week (default this week); `now` replays the proposal as it stood
+  then. `400` on a day that is not real.
+- `PUT` `week_start` must be a Monday (`400` otherwise). `{ accept: true }` stores Michael's
+  proposal (or the stored target) as `accepted` and keeps `set_by`; `409` while there is nothing to
+  accept. Any number makes it `set_by: "user"`, merged onto the proposal or the stored target;
+  `reason` then reads "You set 75%. I proposed 83%.". `overall_pct` is required while there is no
+  proposal. Stored in `weekly_targets` (one row per user and Monday, RLS on).
+
+**The target rule** (`apps/api/src/score/targets.ts`, pure; the two change together):
+
+- **History:** the full weeks before the target week, at most the last 4. A week is full when it
+  has ended and has a score. No proposal until 2 exist; `baseline.reason` says the baseline is
+  still being built ("I need two full weeks of scores before I set a target. I have one.").
+- **Median** of their scores, rounded. **On target:** a past week met its stored target (overall,
+  and every category with time goals at its floor); a week with no stored target is judged
+  against the median (at or above your usual counts).
+- **Step:** of the last 4 full weeks on target, 3 or 4 step up 5 points (3 from a median of 70,
+  never over 100), 2 hold, 1 or none step down 3. The last two full weeks both missed step down 3
+  whatever the count; when both had stored targets the reason starts "My target was too high."
+- **Heavy week:** the week's fixed commitments (above) are at least 20% and 3 hours over the
+  median of the full weeks: 3 more points off, said in the reason.
+- **Categories:** the same rule on each category's own scores. A category with time goals but
+  fewer than 2 full weeks of its own takes the overall proposal; one without time goals is null.
+  Floors carry over from the latest stored target, else 50.
+- **The balanced week:** `on_target` on the score is true only when the overall score meets the
+  target AND every category with time goals meets its floor. A category with time goals and
+  nothing elapsed in it does not meet its floor: business 91 and personal 12 is not a win.
+- Example reason: "Usual week 63%. You hit 4 of the last 4, so up 5. Your week already holds 31h of
+  fixed time, 11h over usual, so down 3 more. Target 65%."
+
+### Records
+
+| Method | Path                        | Response                                    | Status |
+| ------ | --------------------------- | ------------------------------------------- | ------ |
+| GET    | `/v1/records`               | `200 { records: PersonalRecord[] }`         | live   |
+| POST   | `/v1/records/:id/announced` | `200 PersonalRecord` (`404` when not found) | live   |
+
+```ts
+type PersonalRecord = {
+  id: string;
+  type: "best_week" | "best_week_area" | "longest_block";
+  area: GoalArea | null; // set for best_week_area, and for longest_block (the block's goal area)
+  goal_id: string | null; // longest_block only
+  value: number;
+  unit: "pct" | "minutes";
+  previous_value: number | null; // null for the first one, a baseline that is never announced
+  achieved_on: string; // week_start for the week records, the local day for a block
+  event_id: string | null; // longest_block: the calendar block it happened in
+  tick_index: number | null; // longest_block: the 5 minute tick in that block where the old best was passed
+  line: string | null; // Michael's one line, under 15 words; null for a baseline
+  announced_at: string | null; // set once it has gone out as a nudge
+  created_at: string;
+};
+```
+
+- `GET /v1/records` lists the current best of each type and scope plus any not yet announced.
+  `GET /v1/score` carries the records set in its week, and `record_id` on the day block where a
+  block record was set.
+- `POST /v1/records/:id/announced` marks one as sent (the first time only), so the nudge engine
+  can deliver it once and count it as one of the day's five.
+- Lines: "Best Health week since you started. 71%. Do it again.", "2h 15 on 70.3 without a break.
+  Your longest block yet."
+
+**The record rule** (`apps/api/src/score/records.ts`, pure; the two change together):
+
+- **Kinds:** best week (the week's score), best week per category, and the longest run of verified
+  5 minute ticks (`spent`) inside one goal block (minutes, across all goals). A `lost` or an
+  `unverified` tick breaks the run: a block with no device data or workout to prove it (a class
+  with the phone away) never sets or holds the record. Week records stay scores, where unverified
+  time is already reported apart.
+- **What counts:** only a week that has ended, with at least 2 hours elapsed in that scope, sets a
+  week record (30 minutes at 100% would otherwise stand forever). Only a block that has ended, with
+  a run of at least 15 minutes, sets a block record.
+- **The first value** of a kind and scope is a baseline: the best of the history then available,
+  `previous_value: null`, `line: null`, never announced.
+- **A new best** is strictly greater than the stored best, on or after its day. Equal is not a
+  record.
+- **Where:** computed when the score is read (`GET /v1/score`, `get_score`, `GET /v1/records`), from
+  the five weeks the score already holds, and written with a unique key per period and scope
+  (`records.key`, insert ignoring duplicates), so a record is created once however often the
+  score is read. A replay with `now` in the future never writes. Stored in `records` (RLS on).
+
+### Demo account
+
+| Method | Path              | Response             | Status |
+| ------ | ----------------- | -------------------- | ------ |
+| POST   | `/v1/demo/reseed` | `200 DemoSeedResult` | live   |
+
+```ts
+type DemoSeedResult = {
+  days: string[]; // Athens dates covered, oldest first; the last is today
+  events: { inserted: number; removed: number; kept: number };
+  goals_written: number;
+};
+```
+
+The demo account (`API_KEY`) carries a generated week (`apps/api/src/demo`): the seven Athens days
+ending now, plus its calendar planned to Sunday. The Mac, iPhone, Chrome and Claude Code lanes
+replay Manolis' anonymised real days (`apps/web/lib/sample/real`); Apple Watch, Google Calendar,
+Omi conversations and meals are generated around them. Every generated event has an `external_id`
+starting `demo:`; only those rows are ever added or removed, so nothing else in the account is
+touched; days that leave the window are removed. The API refreshes the week on demo requests at
+most every 5 minutes (the first refresh after a deploy resets the goals to the Build Hub plan,
+later ones keep edits; `DEMO_WEEK=off` turns it off). `POST /v1/demo/reseed` also resets the goals.
+Any other account gets `403 forbidden`. Off the record, nothing changes. Per source switches are
+not applied: on the demo account they keep real collectors out (#114). From a terminal:
+`pnpm --filter @michael/api seed:demo` (or `--dry` to print the week without a database).
+
+Generated events use exactly the titles and `data` of the real ingest paths (Health Auto Export
+sleep, workouts and hourly `heart_rate`, `step_count`, `heart_rate_variability`,
+`resting_heart_rate`; Omi conversations; the collector's lanes); a test compares them with the
+webhook mappers. Calendar events carry `attendees` (the number of other people, 0 for the user's
+own blocks), `calendar`, `location?`, `status`, `all_day`. Meals are `manual` `meal` events with
+`estimated_kcal`, `protein_g`; typed notes are `manual` `note` events with `category`.
+
+Travel in the demo is precomputed (`apps/api/src/demo/travel.ts`), never asked of Google: five
+neighbourhood level places (saved when the account has none), some blocks with a location (the
+place is part of the calendar event's `external_id`), a `maps` `travel` event per drive with a
+simple Athens rush hour model (in `TravelData.calendar_event_id` the calendar event's external id),
+and one "Leave at 19:15 instead of 18:30, win 20 minutes" style `reminder` recommendation for the
+next drive today or tomorrow that leaving later makes shorter.
 
 ## MCP server
 
@@ -1441,14 +2345,48 @@ On allow, `redirect_to` carries a one time `code` (5 minutes), `state` and `iss`
 
 ### Tools
 
-| Tool                  | Input                                                   | Output (JSON text content)                                                   |
-| --------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `get_timeline`        | `{ from?, to?, source?: Source[], type?: EventType[] }` | `{ from, to, events: Event[] }`                                              |
-| `get_goals`           | `{ active_only?: boolean }` (default true)              | `{ goals: Goal[] }`                                                          |
-| `get_recommendations` | `{ status?: RecommendationStatus }`                     | `{ recommendations: Recommendation[] }`                                      |
-| `get_patterns`        | `{ from?, to? }` (default: the last 7 days)             | `PatternReport`                                                              |
-| `get_score`           | `{ date? }` (a local day, default today)                | `Score`                                                                      |
-| `add_event`           | `EventInput`                                            | `{ inserted: number, duplicates: number, ignored: number, events: Event[] }` |
-| `plan_travel`         | `{ from?, to? }` (default today)                        | `TravelPlanResult` (see Places and travel)                                   |
+Every tool answers with short, human readable text first (24 hour Europe/Athens time, the numbers
+that matter and the ids for the next call) and the same facts as `structuredContent`. Times the
+model writes (`TimeInput`) are `YYYY-MM-DDTHH:MM` in Europe/Athens wall time, or ISO 8601 with an
+offset. A refused or failed call returns `isError: true` with one plain sentence saying why
+(`HttpError` messages, validation issues listed). Scope per tool: see "Michael for agents".
+
+| Tool                     | Scope             | Input                                                                                   | `structuredContent`                                                                        |
+| ------------------------ | ----------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `get_timeline`           | `timeline`        | `{ date?: LocalDay, from?: TimeInput, to?: TimeInput, source?, type? }` (default: 24 h) | `{ from, to, count, truncated, events: Event[] }` (≤ 500)                                  |
+| `get_goals`              | `goals`           | `{ active_only?: boolean }` (default true)                                              | `{ goals: Goal[] }`                                                                        |
+| `get_instructions`       | `goals`           | `{ active_only?: boolean }` (default true)                                              | `{ instructions: Instruction[] }` (standing instructions)                                  |
+| `propose_goals`          | `goals`           | `{}`                                                                                    | `{ suggestions: GoalSuggestion[] }`                                                        |
+| `get_score`              | `score`           | `{ date?: LocalDay }` (default today)                                                   | `Score` without `day.blocks[].ticks` (target, verdict, records, free time, sleep included) |
+| `get_records`            | `score`           | `{}`                                                                                    | `{ records: PersonalRecord[] }` (as `GET /v1/records`)                                     |
+| `get_patterns`           | `timeline`        | `{ from?: TimeInput, to?: TimeInput }` (default: the last 7 days)                       | `PatternReport`                                                                            |
+| `list_recommendations`   | `recommendations` | `{ status?: RecommendationStatus }`                                                     | `{ recommendations: Recommendation[] }`                                                    |
+| `get_nudges`             | `recommendations` | `{ date?: LocalDay }` (default today)                                                   | `{ day, nudges: Nudge[] }`                                                                 |
+| `get_moments`            | `score`           | `{ kind?: MomentKind }` (default morning before 15:00 local, evening after)             | `Moment`                                                                                   |
+| `add_event`              | `write_events`    | `EventInput`                                                                            | `{ inserted, duplicates, ignored, events: Event[] }`                                       |
+| `add_goal`               | `goals`           | `{ category, title, description?, weekly_budget_minutes?, target? }`                    | `{ goal: Goal }`                                                                           |
+| `update_goal`            | `goals`           | `{ id, category?, title?, description?, weekly_budget_minutes?, target?, active? }`     | `{ goal: Goal }`, error when not found                                                     |
+| `update_recommendation`  | `recommendations` | `{ id, status: "accepted" \| "dismissed" }`                                             | `{ recommendation }`; a `done` one is refused (undo it)                                    |
+| `execute_recommendation` | `write_events`    | `{ id }`                                                                                | `{ recommendation, undo_until }`                                                           |
+| `undo_recommendation`    | `write_events`    | `{ id }`                                                                                | `{ recommendation }`                                                                       |
+| `create_focus_block`     | `write_events`    | `{ start: TimeInput, end: TimeInput, title?, goal_id? }`                                | `{ recommendation, undo_until }`                                                           |
+| `block_mac_app`          | `write_events`    | `{ apps: string[], start?: TimeInput, end: TimeInput, goal_id? }` (start default now)   | `{ recommendation, undo_until }`                                                           |
+| `suggest_app_mute`       | `recommendations` | `{}`                                                                                    | `{ recommendation }` or `{}` when nothing stands out                                       |
+| `plan_travel`            | `write_events`    | `{ from?, to? }` (default today)                                                        | `TravelPlanResult` (see Places and travel)                                                 |
+
+- `execute_recommendation` / `undo_recommendation` call the same functions as
+  `POST /v1/recommendations/:id/execute` and `/undo` (`apps/api/src/actions/calendar.ts`), with the
+  same rules: own time only, never an event with other people, never deletes the user's events,
+  undo until the block starts.
+- `create_focus_block` books straight away: it saves a recommendation (`source: "chat"`, `status: "done"`, rationale
+  "Booked at your request through <agent name>") and carries it out like any other, so the block
+  shows in Michael and `undo_recommendation` takes it back. Refused in the past, under 5 minutes,
+  over 6 hours, or when it overlaps an event with other people.
+- `block_mac_app` mutes straight away the same way (`source: "chat"`, `status: "done"`, see Focus
+  guards); `undo_recommendation` lets the apps open again until the window ends. Apps off the
+  allowlist are refused. `suggest_app_mute` only proposes.
+- No tool deletes anything, sends anything in the user's name, or touches an event with other
+  people. Goals are paused with `update_goal { active: false }`, never deleted.
+- `get_recommendations` was renamed `list_recommendations`.
 
 Status: all `live` (Supabase in production, in-memory locally without Supabase keys).

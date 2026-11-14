@@ -1,0 +1,275 @@
+import type Anthropic from "@anthropic-ai/sdk";
+import { type Event, IsoDateTime, type Recommendation } from "@michael/shared";
+import { z } from "zod";
+import { HttpError } from "../http";
+import { DEFAULT_TIMEZONE } from "../patterns";
+import { Zone } from "../patterns/time";
+import { store } from "../store";
+import { executeRecommendation, undoRecommendation } from "./calendar";
+import { guardMacApps } from "./mac-apps";
+
+// Tools the chat model can call so Michael acts, not only advises. Each action is a recommendation
+// (source "chat") carried out by the same code as POST /v1/recommendations/:id/execute and undone by
+// the same code as /undo, so it shows on Today and keeps every guard rail: only the user's own
+// solo blocks, nothing that has started, undo until the block starts, never a delete of the user's
+// own events.
+
+const MAX_RANGE_MS = 8 * 24 * 3600_000;
+const MAX_BLOCKS = 40;
+
+export const CHAT_TOOLS: Anthropic.Tool[] = [
+  {
+    name: "find_calendar_blocks",
+    description:
+      "List calendar blocks between two times, with their ids and whether Michael may move them. Use it to find the event_id for move_calendar_block when the block is not listed for today, for example tomorrow's gym block. At most 8 days.",
+    input_schema: {
+      type: "object",
+      properties: {
+        from: { type: "string", description: "ISO 8601 start with offset, e.g. 2026-11-15T00:00:00+02:00" },
+        to: { type: "string", description: "ISO 8601 end with offset" },
+      },
+      required: ["from", "to"],
+    },
+  },
+  {
+    name: "create_focus_block",
+    description:
+      "Put a new block on the user's own calendar, for example focus work, a gym session or a proper lunch. Only when the user asked for it or clearly agreed. The time must be in the future. It can be undone until it starts.",
+    input_schema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Short title, e.g. 'Focus: pitch deck' or 'Gym'" },
+        start_at: { type: "string", description: "ISO 8601 with offset" },
+        end_at: { type: "string", description: "ISO 8601 with offset, after start_at" },
+        goal_id: { type: "string", description: "Id of the goal this block serves, from the goals list" },
+      },
+      required: ["title", "start_at", "end_at"],
+    },
+  },
+  {
+    name: "move_calendar_block",
+    description:
+      "Move one of the user's own solo calendar blocks to a new time (the length is kept unless end_at is given), optionally renaming it. Refused for events with other people and for blocks that have started. It can be undone until the block starts.",
+    input_schema: {
+      type: "object",
+      properties: {
+        event_id: {
+          type: "string",
+          description: "The block's id, from today's list or find_calendar_blocks",
+        },
+        start_at: { type: "string", description: "New start, ISO 8601 with offset" },
+        end_at: { type: "string", description: "New end, ISO 8601 with offset (optional)" },
+        new_title: { type: "string", description: "New title (optional)" },
+      },
+      required: ["event_id", "start_at"],
+    },
+  },
+  {
+    name: "block_mac_app",
+    description:
+      "Close distracting apps on the user's Mac for a stretch of time, for example WhatsApp or Slack during a focus block. While it runs, the app is closed when it comes to the front and the user sees why. Only chat, social, music, video and game apps can be named (WhatsApp, Telegram, Messages, Slack, Discord, Mail, Instagram, X, Spotify, Music, TV, Netflix, Steam and similar). Only when the user asked for it or clearly agreed. It can be undone until it ends.",
+    input_schema: {
+      type: "object",
+      properties: {
+        apps: { type: "array", items: { type: "string" }, description: "App names, e.g. ['WhatsApp']" },
+        start_at: { type: "string", description: "ISO 8601 with offset; now or later" },
+        end_at: { type: "string", description: "ISO 8601 with offset, after start_at" },
+        goal_id: { type: "string", description: "Id of the goal this protects, from the goals list" },
+      },
+      required: ["apps", "start_at", "end_at"],
+    },
+  },
+  {
+    name: "undo_action",
+    description:
+      "Take back something Michael did on the calendar or the Mac (a block he created or moved, or apps he muted), by its recommendation id from the list of things that can still be undone or from an earlier tool result.",
+    input_schema: {
+      type: "object",
+      properties: { recommendation_id: { type: "string" } },
+      required: ["recommendation_id"],
+    },
+  },
+];
+
+const FindInput = z.object({ from: IsoDateTime, to: IsoDateTime });
+const CreateInput = z.object({
+  title: z.string().trim().min(1).max(200),
+  start_at: IsoDateTime,
+  end_at: IsoDateTime,
+  goal_id: z.string().nullish(),
+});
+const MoveInput = z.object({
+  event_id: z.uuid(),
+  start_at: IsoDateTime,
+  end_at: IsoDateTime.nullish(),
+  new_title: z.string().trim().min(1).max(200).nullish(),
+});
+const UndoInput = z.object({ recommendation_id: z.uuid() });
+const GuardInput = z.object({
+  apps: z.array(z.string().trim().min(1).max(80)).min(1).max(10),
+  start_at: IsoDateTime,
+  end_at: IsoDateTime,
+  goal_id: z.string().nullish(),
+});
+
+export interface ToolOutcome {
+  /** What the model reads back. */
+  content: string;
+  isError: boolean;
+  /** The recommendation done or undone, for the reply's `actions` and the stream's `action` event. */
+  action?: Recommendation;
+}
+
+const zone = () => new Zone(DEFAULT_TIMEZONE);
+const clock = (iso: string) => zone().clock(Date.parse(iso));
+const isOthers = (e: Event) => e.data.with_others === true || Number(e.data.attendees ?? 0) >= 2;
+const earliest = (...isos: string[]) => new Date(Math.min(...isos.map((x) => Date.parse(x)))).toISOString();
+
+/** "Undo until 15:00" for a done recommendation, or null without a deadline. */
+export function undoLine(rec: Recommendation): string | null {
+  const until = rec.action?.undo_until;
+  return until ? `Undo until ${clock(until)}` : null;
+}
+
+function invalid(err: z.ZodError): ToolOutcome {
+  const issues = err.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`).join("; ");
+  return { content: `Invalid input: ${issues}`, isError: true };
+}
+
+/** Carries out a fresh chat recommendation; on refusal it is dismissed so Today does not offer it. */
+async function carryOut(rec: Recommendation): Promise<ToolOutcome> {
+  try {
+    const done = await executeRecommendation(rec.id);
+    return {
+      content: `Done: ${done.title}. ${undoLine(done) ?? "No undo deadline"}. Recommendation id ${done.id}.`,
+      isError: false,
+      action: done,
+    };
+  } catch (err) {
+    await store.updateRecommendationStatus(rec.id, "dismissed").catch(() => null);
+    throw err;
+  }
+}
+
+async function findBlocks(input: unknown): Promise<ToolOutcome> {
+  const p = FindInput.safeParse(input);
+  if (!p.success) return invalid(p.error);
+  const from = Date.parse(p.data.from);
+  const to = Math.min(Date.parse(p.data.to), from + MAX_RANGE_MS);
+  if (to <= from) return { content: "`to` must be after `from`", isError: true };
+  const events = await store.listEvents({
+    from: new Date(from).toISOString(),
+    to: new Date(to).toISOString(),
+    type: ["calendar_event"],
+  });
+  const now = Date.now();
+  const z = zone();
+  const lines = events
+    .sort((a, b) => Date.parse(a.start_at) - Date.parse(b.start_at))
+    .slice(0, MAX_BLOCKS)
+    .map((e) => {
+      const start = Date.parse(e.start_at);
+      const when = `${z.dayOf(start)} ${z.clock(start)}${e.end_at ? ` to ${z.clock(Date.parse(e.end_at))}` : ""}`;
+      const rule = isOthers(e)
+        ? "with other people, advice only"
+        : start <= now
+          ? "already started"
+          : "yours, can move";
+      return `- ${when} ${e.title} (id ${e.id}; ${rule})`;
+    });
+  return { content: lines.length ? lines.join("\n") : "No calendar blocks in that range.", isError: false };
+}
+
+async function createBlock(input: unknown): Promise<ToolOutcome> {
+  const p = CreateInput.safeParse(input);
+  if (!p.success) return invalid(p.error);
+  const { title, start_at, end_at } = p.data;
+  if (Date.parse(end_at) <= Date.parse(start_at))
+    return { content: "end_at must be after start_at", isError: true };
+  const goal = p.data.goal_id ? await store.getGoal(p.data.goal_id).catch(() => null) : null;
+  const rec = await store.createRecommendation({
+    goal_id: goal?.id ?? null,
+    title: `${title}, ${clock(start_at)} to ${clock(end_at)}`,
+    rationale: "Asked for in chat.",
+    action: {
+      kind: "create_focus_block",
+      payload: { start_at, end_at, title },
+      involves_others: false,
+      undo_until: start_at,
+    },
+    source: "chat",
+  });
+  return carryOut(rec);
+}
+
+async function moveBlock(input: unknown): Promise<ToolOutcome> {
+  const p = MoveInput.safeParse(input);
+  if (!p.success) return invalid(p.error);
+  const { event_id, start_at, end_at, new_title } = p.data;
+  const event = await store.getEvent(event_id);
+  if (!event) throw new HttpError("not_found", "That block is not on the timeline");
+  const rec = await store.createRecommendation({
+    goal_id: null,
+    title: `Moved ${new_title ?? event.title} to ${clock(start_at)}`,
+    rationale: "Asked for in chat.",
+    action: {
+      kind: "move_calendar_block",
+      payload: {
+        event_id,
+        start_at,
+        ...(end_at ? { end_at } : {}),
+        ...(new_title ? { new_title } : {}),
+      },
+      // The executor refuses these with 409; the flag keeps the record honest.
+      involves_others: isOthers(event),
+      undo_until: earliest(event.start_at, start_at),
+    },
+    source: "chat",
+  });
+  return carryOut(rec);
+}
+
+async function guardApps(input: unknown): Promise<ToolOutcome> {
+  const p = GuardInput.safeParse(input);
+  if (!p.success) return invalid(p.error);
+  const goalId = p.data.goal_id && z.uuid().safeParse(p.data.goal_id).success ? p.data.goal_id : null;
+  const done = await guardMacApps({ ...p.data, goal_id: goalId, requested_by: "chat with Michael" });
+  return {
+    content: `Done: ${done.title}. ${undoLine(done) ?? "No undo deadline"}. Recommendation id ${done.id}.`,
+    isError: false,
+    action: done,
+  };
+}
+
+async function undo(input: unknown): Promise<ToolOutcome> {
+  const p = UndoInput.safeParse(input);
+  if (!p.success) return invalid(p.error);
+  const rec = await undoRecommendation(p.data.recommendation_id);
+  return { content: `Undone: ${rec.title}.`, isError: false, action: rec };
+}
+
+/**
+ * Runs one tool call. Guard rail refusals (HttpError, e.g. 409 for an event with other people)
+ * come back as error results the model explains; anything else is a real failure and throws.
+ */
+export async function runChatTool(name: string, input: unknown): Promise<ToolOutcome> {
+  try {
+    switch (name) {
+      case "find_calendar_blocks":
+        return await findBlocks(input);
+      case "create_focus_block":
+        return await createBlock(input);
+      case "move_calendar_block":
+        return await moveBlock(input);
+      case "block_mac_app":
+        return await guardApps(input);
+      case "undo_action":
+        return await undo(input);
+      default:
+        return { content: `Unknown tool ${name}`, isError: true };
+    }
+  } catch (err) {
+    if (err instanceof HttpError) return { content: `Refused (${err.code}): ${err.message}`, isError: true };
+    throw err;
+  }
+}

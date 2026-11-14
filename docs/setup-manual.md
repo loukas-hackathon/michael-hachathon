@@ -86,7 +86,9 @@ Then each user taps **Connect Google Calendar** in the app once (issues #12, #13
 1. In Telegram search `@BotFather` (blue tick), **Start**.
 2. Send `/newbot`. Name: `Michael`. Username: something free ending in `bot`, e.g. `michael_coach_bot`.
 3. BotFather replies with a token like `123456:ABC...`. Railway: `TELEGRAM_BOT_TOKEN`.
-4. Send the bot username to the team (it goes in the Connections screen, #120).
+4. Railway: `TELEGRAM_BOT_USERNAME` = the username without `@` (optional; the API asks Telegram).
+   Redeploy; the API sets the webhook itself. Then **You > Nudges > Connect Telegram**, tap
+   **Start**. Details: `docs/sources/telegram.md`.
 
 ## 6. Watch buzz on stage (whoever wears the watch, 1 min)
 
@@ -97,14 +99,14 @@ Then each user taps **Connect Google Calendar** in the app once (issues #12, #13
 ## 7. Apple Watch data (Manolis, 5 min, after #8 ships)
 
 1. App Store: **Health Auto Export - JSON+CSV** (paid, has a trial). Allow Health access.
-2. In Michael: **You > Devices > Apple Watch > Connect > Copy** (a URL with your own key).
+2. In Michael: **You > Connections > Apple Watch > Connect > Copy** (a URL with your own key).
 3. Health Auto Export: **Automations > New > REST API**. URL: paste. Format JSON.
    Metrics: sleep analysis, workouts, heart rate, HRV, steps. Interval: 5 minutes. **Save**.
 
 ## 8. Your Mac (Manolis and Loukas, 2 min)
 
-In Michael: **You > Devices > Your Mac > Connect > Copy**, then paste it into the collector
-when it asks for the key (see `apps/collector` README). Real data then goes to your own account.
+In Michael: **You > Connections > Mac > Connect > Copy**, then paste the line into Terminal in
+the repo folder (see `apps/collector` README). Real data then goes to your own account.
 
 ## 9. Team access (Loukas, 2 min)
 

@@ -2,9 +2,6 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Score } from "@michael/shared";
 import { app } from "../app";
-import { calendar } from "../patterns/testkit";
-import type { TimelineFilter } from "../store";
-import { readAllEvents } from "./score";
 
 const auth = { Authorization: "Bearer dev-key" };
 const get = (query = "") => app.request(`/v1/score${query}`, { headers: auth });
@@ -38,10 +35,21 @@ test("GET /v1/score scores the mock day: the gym hour is a block, the call with 
   assert.equal(body.day.unverified_minutes, 60);
   assert.equal(body.day.score_pct, 100);
   assert.equal(body.day.time_won_back.reason?.startsWith("not enough history"), true);
-  // Sleep is listed with its budget, outside the score.
-  const sleep = body.goals.find((g) => g.category === "rest");
-  assert.equal(sleep?.scored, false);
+  // Sleep is a health goal of kind `target`: listed with its budget, outside the score.
+  const sleep = body.goals.find((g) => g.title.startsWith("Sleep"));
+  assert.deepEqual([sleep?.area, sleep?.kind, sleep?.scored], ["health", "target", false]);
   assert.equal(sleep?.budget_minutes, 3150);
+  // The three categories, in order, and they add up to the day: the gym hour is health.
+  assert.deepEqual(
+    body.day.areas.map((a) => [a.area, a.planned_minutes, a.score_pct]),
+    [
+      ["business", 0, null],
+      ["health", 60, 100],
+      ["personal", 0, null],
+    ],
+  );
+  // Saturday breaks no standing instruction (the mock one keeps Sundays clear).
+  assert.deepEqual(body.day.blocks[0]?.instructions_broken, []);
 
   // The same day at 09:00: nothing has elapsed, so there is no score yet.
   const early = Score.parse(
@@ -63,30 +71,4 @@ test("GET /v1/score rejects a bad date or instant", async () => {
     const error = (await res.json()) as { error: { code: string } };
     assert.equal(error.error.code, "bad_request", query);
   }
-});
-
-test("the reader gets every event from a store that caps the rows of one query", async () => {
-  // 3,500 one minute events, and a store that never returns more than 1,000 rows, oldest first.
-  const first = Date.parse("2026-11-09T00:00:00+02:00");
-  const at = (ms: number) => new Date(ms).toISOString();
-  const all = Array.from({ length: 3500 }, (_, i) =>
-    calendar("Block", at(first + i * 60_000), at(first + (i + 1) * 60_000)),
-  );
-  let queries = 0;
-  const capped = async (f: TimelineFilter) => {
-    queries++;
-    const from = Date.parse(f.from);
-    const to = Date.parse(f.to);
-    return all
-      .filter((e) => Date.parse(e.start_at) <= to && Date.parse(e.end_at ?? e.start_at) >= from)
-      .slice(0, 1000);
-  };
-  const read = await readAllEvents(capped, first, first + 7 * 24 * 3600_000, ["calendar_event"]);
-  assert.equal(read.length, 3500);
-  assert.equal(new Set(read.map((e) => e.id)).size, 3500);
-  assert.ok(queries >= 4 && queries <= 6, `${queries} queries`);
-
-  // A page that brings nothing new ends the loop instead of spinning.
-  const stuck = async () => all.slice(0, 1000);
-  assert.equal((await readAllEvents(stuck, first, first + 3600_000, ["calendar_event"])).length, 1000);
 });

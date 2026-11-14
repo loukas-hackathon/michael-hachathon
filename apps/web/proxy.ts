@@ -22,12 +22,15 @@ export async function proxy(request: NextRequest) {
       },
     },
   });
-  const { data } = await supabase.auth.getUser();
+  // getClaims refreshes an expired session, then verifies the JWT locally against the project's
+  // cached JWKS (ES256): no round trip to Supabase Auth on every navigation, unlike getUser.
+  const { data } = await supabase.auth.getClaims();
+  const signedIn = Boolean(data?.claims?.sub);
 
   const path = request.nextUrl.pathname;
   const isPublic = PUBLIC_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
   const isDemo = request.cookies.get("michael_demo")?.value === "1";
-  if (!data.user && !isDemo && !isPublic) {
+  if (!signedIn && !isDemo && !isPublic) {
     const login = request.nextUrl.clone();
     login.pathname = "/login";
     // Come back here after signing in (the connect consent page relies on it).

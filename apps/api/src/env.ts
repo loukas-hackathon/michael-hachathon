@@ -6,6 +6,8 @@ const Env = z.object({
   API_KEY: z.string().min(1).default("dev-key"),
   // The demo account (Supabase Auth user) that API-key requests act for.
   DEMO_USER_ID: z.uuid().default("2ee12960-e594-456d-85cb-a672d0ff3ac3"),
+  // "on": the demo account carries the generated demo week (src/demo), kept up to now. "off": not.
+  DEMO_WEEK: z.enum(["on", "off"]).default("on"),
   // Comma-separated origins allowed by CORS (the web app).
   WEB_ORIGIN: z.string().default("http://localhost:3000"),
   // Public base URL of this API, used for OAuth redirect URIs.
@@ -17,7 +19,8 @@ const Env = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().default("gemini-2.5-flash"),
-  // Claude for chat. Without a key POST /v1/chat answers 503 unavailable instead of crashing.
+  // Claude for chat and for the analysis. Without a key POST /v1/chat and POST /v1/analysis/run
+  // answer 503 unavailable; nothing crashes at start-up.
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_MODEL: z.string().default("claude-opus-5-5"),
   // Google Calendar OAuth (web application client). Redirect URI: ${PUBLIC_API_URL}/oauth/google/callback
@@ -38,8 +41,20 @@ const Env = z.object({
     .optional()
     .transform((v) => (v ? v === "true" : process.env.NODE_ENV === "production")),
   SCHEDULER_INTERVAL_MINUTES: z.coerce.number().positive().default(5),
+  // Telegram bot for nudges (backup to Web Push). Token from BotFather; without it the channel is off.
+  TELEGRAM_BOT_TOKEN: z.string().optional(),
+  // The bot's @username without the @. Empty: asked from Telegram (getMe) once.
+  TELEGRAM_BOT_USERNAME: z.string().optional(),
+  // Checked on every webhook call (X-Telegram-Bot-Api-Secret-Token). Empty: derived from the token.
+  TELEGRAM_WEBHOOK_SECRET: z.string().optional(),
   // Google Maps Platform (Routes API + Geocoding API), server side only. Empty = no travel times.
   GOOGLE_MAPS_API_KEY: z.string().optional(),
+  // ElevenLabs voice for POST /v1/voice/speak (free tier is enough). Without a key the route answers
+  // 503 and the app speaks with the browser's own voice.
+  ELEVENLABS_API_KEY: z.string().optional(),
+  // "George": warm, calm, middle aged British male from the ElevenLabs default voices.
+  ELEVENLABS_VOICE_ID: z.string().default("JBFqnCBsd6RMkjVDRZzb"),
+  ELEVENLABS_MODEL: z.string().default("eleven_flash_v2_5"),
 });
 
 export type Env = z.infer<typeof Env>;

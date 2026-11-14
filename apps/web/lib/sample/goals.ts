@@ -17,6 +17,8 @@ export const sampleGoals: GoalsView = {
       budgetMinutes: 900,
       spentMinutes: 460,
       unverifiedMinutes: 120,
+      plannedMinutes: 840,
+      openBlocks: 3,
       daily: [170, 160, 130, null, null, null, null],
     },
     {
@@ -26,6 +28,8 @@ export const sampleGoals: GoalsView = {
       budgetMinutes: 360,
       spentMinutes: 80,
       unverifiedMinutes: 0,
+      plannedMinutes: 300,
+      openBlocks: 2,
       daily: [20, 0, 60, null, null, null, null],
     },
     {
@@ -35,10 +39,58 @@ export const sampleGoals: GoalsView = {
       budgetMinutes: 540,
       spentMinutes: 290,
       unverifiedMinutes: 95,
+      plannedMinutes: 540,
+      openBlocks: 2,
       daily: [95, 75, 120, null, null, null, null],
     },
   ],
   sleep: { goalMinutes: 450, nightly: [412, 455, 400, null, null, null, null] },
+  target: {
+    status: "accepted",
+    median: 62,
+    overall: 65,
+    areas: { business: 70, health: 62, personal: 55 },
+    floors: { business: 50, health: 50, personal: 50 },
+    setBy: "michael",
+    reason: null,
+  },
+  baseline: null,
+  balance: {
+    overall: 64,
+    target: 65,
+    areas: { business: 91, health: 63, personal: 12 },
+    floors: { business: 50, health: 50, personal: 50 },
+  },
+};
+
+/** Monday: Michael's proposal for the week, waiting for the user. */
+export const sampleGoalsMonday: GoalsView = {
+  ...sampleGoals,
+  now: "2026-11-09T08:10:00+02:00",
+  freeMinutesLeft: null,
+  target: {
+    status: "proposed",
+    median: 62,
+    overall: 65,
+    areas: { business: 70, health: 62, personal: 55 },
+    floors: { business: 50, health: 50, personal: 50 },
+    setBy: "michael",
+    reason: null,
+  },
+  balance: null,
+  goals: sampleGoals.goals.map((g) => ({
+    ...g,
+    spentMinutes: 0,
+    unverifiedMinutes: 0,
+    daily: [0, null, null, null, null, null, null],
+  })),
+};
+
+/** The first week: not enough history for a target yet. */
+export const sampleGoalsBaseline: GoalsView = {
+  ...sampleGoalsMonday,
+  target: null,
+  baseline: { weeksDone: 1, weeksNeeded: 2 },
 };
 
 export const sampleGoalsEmpty: GoalsView = { ...sampleGoals, goals: [], sleep: null };
