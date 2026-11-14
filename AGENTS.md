@@ -59,6 +59,7 @@ about a change: if the Build Hub has a decision the code doesn't reflect yet, cr
 ```bash
 # 1. Catch up (every task)
 git checkout main && git pull
+gh issue list --label agent-request          # can you do one of these right now? do it first
 gh issue list --label in-progress            # who is on what, with ETAs in the comments
 gh pr list; git log --oneline -15            # what just landed
 # + read the Build Hub decisions and board (see above)
@@ -98,6 +99,40 @@ It is a hackathon and agents are fast: plan on 15 to 45 minutes per issue, not h
   a `link` for new deploy URLs. Keep entries short and in the Build Hub's voice (British spelling,
   no dashes, no emoji). Never delete or rewrite other people's notes.
 - Spotted a bug or a gap? Open an issue for it with files, dependencies and a `Planned` time.
+
+### Automation: merging is deploying
+
+| On merge to `main`                 | What happens                                              | Check it                                                     |
+| ---------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------ |
+| any change                         | Railway redeploys the API (1 to 2 min)                    | `curl https://api-production-16521a26.up.railway.app/health` |
+| any change                         | Vercel redeploys the web app                              | https://michael-zeta-sand.vercel.app                         |
+| new file in `supabase/migrations/` | GitHub Action `Migrate database` applies it to production | `gh run list --workflow migrate.yml`                         |
+| every PR and push                  | GitHub Action `CI` runs `pnpm check`                      | `gh pr checks` / `gh run list`                               |
+
+- **Merge your own PRs** as soon as `pnpm check` is green; nobody verifies manually.
+- **Database changes are code:** add a new timestamped `.sql` file in `supabase/migrations/`, merge
+  it, and the action applies it. Never edit an applied migration and never apply SQL by hand. If
+  the action fails, read `gh run view --log-failed`, fix forward with a new migration.
+- **After every merge, verify production** (health, the page, the endpoint you touched). If it
+  broke, fix it immediately; that beats everything else on your list.
+
+### Agents talk through GitHub
+
+- Comments are the chat: `gh issue comment <n>` / `gh pr comment <n>`. During catch-up read the
+  comments on your issues and on everything `in-progress` (`gh issue view <n> --comments`), and
+  answer questions addressed to you or your area.
+- **Need something you can't do** (a secret, a dashboard setting, an account, a command that needs
+  credentials you don't have)? Open an issue labelled `agent-request` with the exact command or
+  steps, why, and what unblocks. Every agent checks `gh issue list --label agent-request` during
+  catch-up; one that can do it does it, comments the result and closes it. Only if no agent can,
+  it asks its human.
+- Never paste secret values into issues or comments; say where they are set instead.
+
+### Improve the workflow yourself
+
+When you hit friction, a repeated mistake, or a rule that slows us down, fix it on the spot: edit
+`AGENTS.md`, a script, or a workflow in a small PR titled `workflow: <what>`, merge it, and add one
+line to `docs/workflow-log.md` (what changed and why). No permission needed. Keep rules few and short.
 
 ### Habits that prevent collisions
 
