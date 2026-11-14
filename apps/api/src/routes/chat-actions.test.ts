@@ -283,3 +283,18 @@ test("POST /v1/chat/stream sends an action event, then the reply with its action
     },
   );
 });
+
+test("a spoken answer asks Claude to be brief and listless; a typed one does not", () =>
+  withClaude(
+    [{ text: "Forty seven minutes so far." }, { text: "Two hours this week." }],
+    async (requests) => {
+      const system = (r: Anthropic.MessageCreateParams | undefined) =>
+        (Array.isArray(r?.system) ? r.system : []).map((b) => b.text).join("\n");
+      const ask = (body: object) =>
+        app.request("/v1/chat", { method: "POST", headers: auth, body: JSON.stringify(body) });
+      assert.equal((await ask({ message: "How much deep work today?", spoken: true })).status, 201);
+      assert.match(system(requests[0]), /spoken aloud/);
+      assert.equal((await ask({ message: "And this week?" })).status, 201);
+      assert.doesNotMatch(system(requests[1]), /spoken aloud/);
+    },
+  ));

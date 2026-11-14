@@ -53,6 +53,18 @@ Open the Michael app on the phone, Chat tab.
 The voice is ElevenLabs (free tier) when the team has set `ELEVENLABS_API_KEY` on the API,
 otherwise the best low en-GB voice the phone has. Both sound fine; ElevenLabs sounds better in a hall.
 
+## Script C: talk to Michael hands free (60 seconds)
+
+Chat tab, tap the wave button left of the Mi button once. The sheet opens and Michael listens.
+
+1. Say: "How much deep work have I done today?" and pause. After about a second he answers in one
+   or two sentences, by voice, with the words on screen, and listens again.
+2. Say: "Block an hour for it this afternoon." He books it and says the undo time.
+3. While he speaks, tap the Mi symbol (or, on a laptop, just talk): he stops and listens.
+4. Tap End, or stay quiet for nine seconds and he ends it himself. The lines stay in the chat.
+
+On iPhone, speaking over him is off (the microphone would cut his voice); a tap cuts in.
+
 ## If something goes wrong
 
 | Problem                                | Recovery                                                                                                                                                      |

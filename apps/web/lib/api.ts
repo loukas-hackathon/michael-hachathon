@@ -88,11 +88,11 @@ async function send<T>(method: "PUT" | "PATCH" | "POST", path: string, body?: un
  * The raw server-sent event stream of POST /v1/chat/stream, for the /chat/stream route to pass on.
  * Throws when signed out or the API cannot be reached.
  */
-export async function openChatStream(message: string): Promise<Response> {
+export async function openChatStream(message: string, spoken = false): Promise<Response> {
   return fetch(`${API_URL}/v1/chat/stream`, {
     method: "POST",
     headers: { ...(await authHeaders()), "content-type": "application/json" },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify(spoken ? { message, spoken } : { message }),
     cache: "no-store",
   });
 }

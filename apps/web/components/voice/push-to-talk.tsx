@@ -12,47 +12,18 @@ import {
   DICTATE_COPY,
   hasTouchKeyboard,
   isIosHomeScreenApp,
+  markRefused,
   meansNoVoiceHere,
   primeSpeech,
   type Recognition,
+  readRefused,
   recognitionCtor,
   recognitionErrorCopy,
+  subscribeRefused,
   transcriptOf,
   UNSUPPORTED_COPY,
   unlockAudio,
 } from "./speech";
-
-// Set once recognition has refused to run in this browser (an iPhone home screen app, mostly), so
-// the button stays the dictation hint instead of failing on every press. Remembered per device.
-const REFUSED_KEY = "michael.voice.refused";
-let refused: boolean | null = null;
-const refusedListeners = new Set<() => void>();
-
-function readRefused(): boolean {
-  if (refused === null) {
-    try {
-      refused = localStorage.getItem(REFUSED_KEY) === "1";
-    } catch {
-      refused = false;
-    }
-  }
-  return refused;
-}
-
-function markRefused() {
-  refused = true;
-  try {
-    localStorage.setItem(REFUSED_KEY, "1");
-  } catch {
-    // Private mode: remembered for this visit only.
-  }
-  for (const l of refusedListeners) l();
-}
-
-function subscribeRefused(l: () => void) {
-  refusedListeners.add(l);
-  return () => refusedListeners.delete(l);
-}
 
 type Props = {
   disabled?: boolean;

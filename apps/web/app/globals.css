@@ -259,11 +259,28 @@ body::before {
   animation: m-listen 1.8s ease-in-out infinite;
 }
 
+/* Conversation: the Mi symbol breathes slowly while Michael speaks. */
+@keyframes m-speak {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.06);
+  }
+}
+.m-speak-breath {
+  animation: m-speak 2.4s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .m-listen-ring {
     animation: none;
     transform: scale(1.3);
     opacity: 0.25;
+  }
+  .m-speak-breath {
+    animation: none;
   }
   .press,
   .press:active:not(:disabled),
