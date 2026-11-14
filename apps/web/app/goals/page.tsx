@@ -11,7 +11,7 @@ import { getGoals, getGoalsWeek } from "@/lib/api";
 import { CATEGORIES, CATEGORY_TITLE, categoryOf } from "@/lib/categories";
 import { SETUP_LINKS } from "@/lib/first-run";
 import { formatWeekday, hm } from "@/lib/format";
-import { type GoalStatus, pace, rank, todayIndex } from "@/lib/goals-view";
+import { closeState, type GoalStatus, pace, rank, todayIndex } from "@/lib/goals-view";
 
 export default async function GoalsPage({ searchParams }: { searchParams: Promise<{ demo?: string }> }) {
   const { demo } = await searchParams;
@@ -29,7 +29,6 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
   const groups = CATEGORIES.map((c) => ({ c, items: ranked.filter((r) => r.goal.category === c) })).filter(
     (g) => g.items.length > 0,
   );
-  const anyUnverified = week.goals.some((g) => g.unverifiedMinutes > 0);
 
   return (
     <main className="screen">
@@ -52,14 +51,10 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
         </EmptyState>
       ) : (
         <>
-          <p className="mt-1.5 text-subhead text-label-2">
-            Furthest behind first. The black tick is where you should be by now.
-            {anyUnverified ? " Pale pink is time not confirmed by data yet." : ""}
-          </p>
-
-          {week.target || week.baseline || week.balance || week.recordLine ? (
+          {week.target || week.balance || week.recordLine ? (
             <section className="mt-5 flex flex-col gap-4">
-              <TargetCard target={week.target ?? null} baseline={week.baseline ?? null} />
+              {/* No target yet means nothing to say: the learning line is noise on a new account. */}
+              {week.target ? <TargetCard target={week.target} baseline={week.baseline ?? null} /> : null}
               {week.recordLine ? (
                 <p className="flex items-center gap-2 text-subhead">
                   <span aria-hidden="true" className="size-[7px] shrink-0 rotate-45 rounded-[1px] bg-label" />
@@ -177,13 +172,20 @@ function GoalRow({
   cap: number;
 }) {
   const { goal, behind, leftMinutes } = status;
+  const close = closeState(goal.budgetMinutes, goal.spentMinutes, leftMinutes);
   return (
     <div className="relative px-4 pt-3 pb-3.5">
       {first ? null : <span className="absolute inset-x-0 top-0 ml-4 h-[0.5px] bg-separator" />}
       <div className="flex items-baseline justify-between gap-3">
         <h3 className="text-body font-semibold">{goal.title}</h3>
         <p className="shrink-0 text-subhead text-label-2 tnum">
-          <b className="font-semibold text-label">{hm(leftMinutes)}</b> left
+          {close === "closed" ? (
+            <b className="font-semibold text-tint-text">Closed</b>
+          ) : (
+            <>
+              <b className="font-semibold text-label">{hm(leftMinutes)}</b> left
+            </>
+          )}
         </p>
       </div>
       <div className="mt-1.5 flex items-end gap-3.5">
@@ -194,18 +196,33 @@ function GoalRow({
             unverified={goal.unverifiedMinutes}
             planned={goal.plannedMinutes}
             pace={pace}
+            close={close}
             label={`${hm(goal.spentMinutes)} of ${hm(goal.budgetMinutes)}, ${behind ? "behind" : "ahead of"} pace`}
           />
         </div>
         <DayColumns daily={goal.daily} today={today} cap={cap} />
       </div>
       <p className="mt-1.5 text-footnote text-label-2 tnum">
-        {leftMinutes === 0 ? (
-          <b className="font-semibold text-label">Done for the week.</b>
+        {close === "closed" ? (
+          <>
+            <b className="font-semibold text-label">Closed for the week.</b> {hm(goal.spentMinutes)} of{" "}
+            {hm(goal.budgetMinutes)}.
+          </>
+        ) : close === "last" ? (
+          <b className="font-semibold text-tint-text">One more block closes it.</b>
+        ) : close === "near" ? (
+          <>
+            <b className="font-semibold text-tint-text">{hm(leftMinutes)} to close it.</b>
+            {goal.openBlocks ? ` ${blocksOpen(goal.openBlocks)}` : ""}
+          </>
         ) : (
           <>
-            {behind ? <b className="font-semibold text-label">{hm(leftMinutes)}</b> : hm(leftMinutes)} left of{" "}
-            {hm(goal.budgetMinutes)}.{goal.openBlocks ? ` ${blocksOpen(goal.openBlocks)}` : ""}
+            {behind ? (
+              <b className="font-semibold text-label">{hm(goal.spentMinutes)}</b>
+            ) : (
+              hm(goal.spentMinutes)
+            )}{" "}
+            of {hm(goal.budgetMinutes)}.{goal.openBlocks ? ` ${blocksOpen(goal.openBlocks)}` : ""}
           </>
         )}
       </p>
