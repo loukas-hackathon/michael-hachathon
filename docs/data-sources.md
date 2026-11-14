@@ -171,3 +171,6 @@ model explains them:
 - **Recovery cost:** time to return to the task after each interruption.
 - **Late screens:** phone or Mac use after the usual bedtime, against next day recovery.
 - **Waiting on tools:** time an AI session sat waiting for the user, and long sessions with little output.
+
+Built in `apps/api/src/patterns` and served by `GET /v1/patterns`. The exact definition and the
+minimum sample of every detector are in `docs/api.md`, section Patterns.

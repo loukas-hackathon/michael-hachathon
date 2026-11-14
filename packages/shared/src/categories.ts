@@ -204,6 +204,8 @@ const APPS: Record<Exclude<AppCategory, "other">, string[]> = {
 const APP_PREFIXES: [prefix: string, category: AppCategory][] = [
   ["com.jetbrains.", "work"],
   ["com.adobe.", "work"],
+  // The iPhone's own surfaces: home screen, lock screen, app switcher.
+  ["com.apple.springboard", "system"],
 ];
 
 // A browser is a container: the page decides the category, so the browser itself is "other".

@@ -85,6 +85,7 @@ test("cadence with known gaps: 10 pick ups a day, every gap 19 minutes", () => {
   const d = dataOf(r.phone_cadence);
   assert.equal(d.days_with_data, 3);
   assert.equal(d.sessions, 30);
+  assert.equal(d.screen_only_sessions, 0);
   assert.equal(d.sessions_per_day, 10);
   // 9 gaps a day inside the day; the 2 overnight gaps (21 hours) are left out.
   assert.equal(d.gaps, 27);
@@ -124,6 +125,21 @@ test("cadence with known gaps: 10 pick ups a day, every gap 19 minutes", () => {
     "Phone picked up every 54 minutes between 09:00 and 18:00: 10 pickups a day in that window, median gap 19 minutes. 70% of pickups start with WhatsApp. 0% last under 30 seconds. 40% were opened from a notification, the rest by hand.",
   );
   assert.equal(r.phone_cadence.evidence.length, 20);
+});
+
+test("a lit lock screen with no app opened is not a pick up", () => {
+  const events = DAYS.flatMap(regularDay);
+  // The screen wakes for 10 seconds twice a day, between two real sessions. No app is opened.
+  for (const day of DAYS) {
+    events.push(phone(APPS.home, T(`${day} 09:10:00`), T(`${day} 09:10:10`)));
+    events.push(phone("com.apple.springboard.lock-screen", T(`${day} 09:30:00`), T(`${day} 09:30:10`)));
+  }
+  const d = dataOf(report(events, "2026-11-10 00:00", "2026-11-13 00:00").phone_cadence);
+  assert.equal(d.screen_only_sessions, 6);
+  // The rhythm is untouched: still 10 pick ups a day, every gap 19 minutes.
+  assert.equal(d.sessions, 30);
+  assert.equal(d.sessions_per_day, 10);
+  assert.equal(d.median_gap_minutes, 19);
 });
 
 test("checks: sessions under 30 seconds", () => {

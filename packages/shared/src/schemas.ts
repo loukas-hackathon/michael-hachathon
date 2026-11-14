@@ -386,6 +386,8 @@ export const patternDetector = <T extends z.ZodType>(data: T) =>
 export const PhoneCadence = z.object({
   days_with_data: z.number().int().nonnegative(),
   sessions: z.number().int().nonnegative(),
+  // Sessions in which no app was opened (lock screen or home screen only). Not in `sessions`.
+  screen_only_sessions: z.number().int().nonnegative(),
   sessions_per_day: z.number().nonnegative(),
   // Sessions shorter than 30 seconds.
   checks_share: z.number().min(0).max(1),

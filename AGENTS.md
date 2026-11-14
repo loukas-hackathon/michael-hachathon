@@ -30,6 +30,7 @@ aura. Move fast, keep quality, commit often.
 pnpm install
 pnpm dev          # api :8787 + web :3000
 pnpm check        # typecheck + lint
+pnpm test         # unit tests (node --test through tsx; put *.test.ts next to the code)
 pnpm format       # auto-fix formatting
 ```
 

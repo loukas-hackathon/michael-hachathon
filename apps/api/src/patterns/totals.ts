@@ -93,7 +93,7 @@ export function timeByApp(ctx: Ctx): Detector<TimeByApp> {
   const devices = [`Mac ${duration(perDay((d) => d.mac_seconds))}`];
   if (totals.iphone_seconds > 0) devices.push(`iPhone ${duration(perDay((d) => d.iphone_seconds))}`);
   const summary = [
-    `Screen time ${duration(data.active_minutes_per_day)} a day over ${dayCount(rows.length)} (${devices.join(", ")}).`,
+    `Screen time ${duration(perDay((d) => d.active_seconds))} a day over ${dayCount(rows.length)} (${devices.join(", ")}).`,
     `Most of it: ${topCategories.map(([c, m]) => `${c} ${duration(m)}`).join(", ")} a day.`,
   ].join(" ");
   const evidence = [...tl.attention]

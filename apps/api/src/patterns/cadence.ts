@@ -16,7 +16,8 @@ export interface PhoneSession extends Span {
 
 /**
  * A phone session is one pick up: consecutive app intervals with less than 30 seconds between
- * them. Apple does not export pick ups, so this is our estimate from the app focus stream.
+ * them. Apple does not export pick ups, so this is our estimate from the app focus stream. The
+ * cadence only counts sessions in which an app was opened (`first` is set).
  */
 export function phoneSessions(iphone: Segment[], gapMs: number = RULES.sessionGapMs): PhoneSession[] {
   const out: PhoneSession[] = [];
@@ -69,11 +70,17 @@ const PHONE_MINIMUM =
 export function phoneCadence(ctx: Ctx): Detector<PhoneCadence> {
   const { zone } = ctx;
   // Day and hour are worked out once per session and once per gap, then only grouped.
-  const sessions = phoneSessions(ctx.tl.iphone).map((s) => ({
-    ...s,
-    day: zone.dayOf(s.start),
-    hour: zone.hourOf(s.start),
-  }));
+  // A session in which no app was opened (the lock screen lit up, the home screen was looked at)
+  // may be the phone waking for a notification, not a hand picking it up. It is counted apart
+  // and kept out of the rhythm, so the pick up number is never inflated.
+  const allSessions = phoneSessions(ctx.tl.iphone);
+  const sessions = allSessions
+    .filter((s) => s.first !== null)
+    .map((s) => ({
+      ...s,
+      day: zone.dayOf(s.start),
+      hour: zone.hourOf(s.start),
+    }));
   const withData = new Set(sessions.map((s) => s.day));
   if (withData.size < RULES.minPhoneDays) {
     return notEnough(
@@ -175,6 +182,7 @@ export function phoneCadence(ctx: Ctx): Detector<PhoneCadence> {
   const data: PhoneCadence = {
     days_with_data: withData.size,
     sessions: sessions.length,
+    screen_only_sessions: allSessions.length - sessions.length,
     sessions_per_day: round1(ratio(inCounted.length, counted.length)),
     checks_share: round2(ratio(checks.length, sessions.length)),
     median_session_seconds: Math.round(median(sessions.map((s) => (s.end - s.start) / 1000))),

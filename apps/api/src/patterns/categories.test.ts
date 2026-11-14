@@ -13,6 +13,7 @@ test("apps: known bundle ids on the Mac and the iPhone", () => {
   assert.equal(categoriseApp("com.apple.finder"), "system");
   assert.equal(categoriseApp("COM.MICROSOFT.VSCODE"), "work"); // case does not matter
   assert.equal(categoriseApp("com.jetbrains.intellij"), "work"); // a whole family by prefix
+  assert.equal(categoriseApp("com.apple.springboard.home-screen"), "system");
 });
 
 test("apps: unknown ids stay other, and so does a browser", () => {
