@@ -10,6 +10,7 @@ import {
   toggleInstruction,
 } from "@/app/you/instructions-actions";
 import { type Instruction, type InstructionKind, instructionText } from "@/lib/instructions";
+import { safeFormAction } from "@/lib/use-action";
 import { input, Row, Segmented } from "../form-controls";
 import { Sheet } from "../sheet";
 
@@ -71,7 +72,7 @@ function InstructionForm({
   onPending: (pending: boolean) => void;
 }) {
   const action = item ? editInstruction.bind(null, item.id) : addInstruction;
-  const [state, formAction, pending] = useActionState(action, initial);
+  const [state, formAction, pending] = useActionState(safeFormAction(action), initial);
   useEffect(() => {
     onPending(pending);
   }, [pending, onPending]);
@@ -167,7 +168,7 @@ function QuietForm({
   onDone: () => void;
   onPending: (pending: boolean) => void;
 }) {
-  const [state, formAction, pending] = useActionState(saveQuietHours, initial);
+  const [state, formAction, pending] = useActionState(safeFormAction(saveQuietHours), initial);
   useEffect(() => {
     onPending(pending);
   }, [pending, onPending]);
