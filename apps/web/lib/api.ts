@@ -8,11 +8,15 @@ import {
   demoRecommendations,
   type Goal,
   type GoalCreate,
+  type GoalSuggestion,
+  type GoalSuggestionAccept,
   type GoalUpdate,
   mockEvents,
   mockGoals,
   mockRecommendations,
   type NudgeTestResult,
+  type PlacesResponse,
+  type PlacesUpdate,
   type PrivacyState,
   type Profile,
   type ProfileUpdate,
@@ -29,8 +33,15 @@ import { categoryOf } from "./categories";
 import type { DayView } from "./day";
 import type { GoalsView } from "./goals-view";
 import type { Instruction, InstructionInput } from "./instructions";
-import { sampleDay, sampleEarly, sampleEmpty, sampleEvening, sampleMorning } from "./sample/day";
-import { sampleGoals, sampleGoalsEmpty } from "./sample/goals";
+import {
+  sampleDay,
+  sampleEarly,
+  sampleEmpty,
+  sampleEvening,
+  sampleMissed,
+  sampleMorning,
+} from "./sample/day";
+import { sampleGoals, sampleGoalsBaseline, sampleGoalsEmpty, sampleGoalsMonday } from "./sample/goals";
 import { dayFromScore, goalsFromScore, leadFromPatterns } from "./score-map";
 import { authEnabled, DEMO_COOKIE, supabaseServer } from "./supabase/server";
 
@@ -40,6 +51,8 @@ import { authEnabled, DEMO_COOKIE, supabaseServer } from "./supabase/server";
 const USE_MOCKS = process.env.USE_MOCKS !== "false";
 export const API_URL = process.env.API_URL ?? "http://localhost:8787";
 const API_KEY = process.env.API_KEY ?? "dev-key";
+/** For loaders outside this file (lib/timeline-data.ts). */
+export const usingMocks = () => USE_MOCKS;
 
 // Whose data to fetch: the signed-in user's own token, or the API key for the demo week.
 export async function bearer(): Promise<string> {
@@ -108,6 +121,33 @@ export async function sendChat(message: string): Promise<ChatResult> {
   return err.success
     ? { ok: false, code: err.data.error.code, message: err.data.error.message }
     : { ok: false, code: "internal", message: `POST /v1/chat failed: ${res.status}` };
+}
+
+/** Whether the API can speak with ElevenLabs. False when it cannot say: the browser voice is fine. */
+export async function getVoiceEnabled(): Promise<boolean> {
+  try {
+    return (await get<{ elevenlabs: boolean }>("/v1/voice")).elevenlabs;
+  } catch {
+    return false;
+  }
+}
+
+/** Michael's reply as audio/mpeg from POST /v1/voice/speak, or null so the browser speaks instead. */
+export async function speak(text: string): Promise<Response | null> {
+  try {
+    const res = await fetch(`${API_URL}/v1/voice/speak`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
+      body: JSON.stringify({ text }),
+      cache: "no-store",
+    });
+    if (res.ok && res.body) return res;
+    console.error(`voice: POST /v1/voice/speak failed: ${res.status}`);
+    return null;
+  } catch (err) {
+    console.error("voice:", err);
+    return null;
+  }
 }
 
 export async function getTimeline(from: string, to: string): Promise<TimelineResponse> {
@@ -197,6 +237,24 @@ export async function removeGoalById(id: string): Promise<WriteResult> {
     return { ok: true };
   }
   return write("DELETE", `/v1/goals/${id}`);
+}
+
+/** Goals Michael reads off the user's own calendar (#134). Empty with mocks or when the API is down. */
+export async function getGoalSuggestions(): Promise<GoalSuggestion[]> {
+  if (USE_MOCKS) return [];
+  try {
+    return (await get<{ suggestions: GoalSuggestion[] }>("/v1/goals/suggestions")).suggestions;
+  } catch {
+    return [];
+  }
+}
+
+export async function acceptGoalSuggestion(
+  id: string,
+  edits: GoalSuggestionAccept = {},
+): Promise<WriteResult> {
+  if (USE_MOCKS) return { ok: false, message: "Suggestions need the live API." };
+  return write("POST", `/v1/goals/suggestions/${encodeURIComponent(id)}/accept`, edits);
 }
 // With mocks, one in-process list so Do it, Undo and Not now still hold while the server runs.
 let mockRecs: Recommendation[] | null = null;
@@ -333,6 +391,7 @@ const SAMPLE_DAYS: Record<string, DayView> = {
   early: sampleEarly,
   evening: sampleEvening,
   empty: sampleEmpty,
+  missed: sampleMissed,
 };
 
 const athensDay = (d = new Date()) =>
@@ -368,6 +427,8 @@ export async function getToday(variant?: string): Promise<DayView> {
 export async function getGoalsWeek(variant?: string): Promise<GoalsView> {
   if (variant === "error") throw new Error("Preview of the error state");
   if (variant === "empty") return sampleGoalsEmpty;
+  if (variant === "monday") return sampleGoalsMonday;
+  if (variant === "baseline") return sampleGoalsBaseline;
   if (variant === "sample") return sampleGoals;
   if (USE_MOCKS) return sampleWeekFromStore();
   return goalsFromScore(await getScore());
@@ -386,6 +447,8 @@ function sampleWeekFromStore(): GoalsView {
         budgetMinutes: g.weekly_budget_minutes ?? 0,
         spentMinutes: known?.spentMinutes ?? 0,
         unverifiedMinutes: known?.unverifiedMinutes ?? 0,
+        plannedMinutes: known?.plannedMinutes,
+        openBlocks: known?.openBlocks,
         daily: known?.daily ?? [0, 0, 0, null, null, null, null],
       };
     });
@@ -488,4 +551,45 @@ export async function deleteInstruction(id: string): Promise<WriteResult> {
     return { ok: true };
   }
   return write("DELETE", `/v1/instructions/${id}`);
+}
+
+// ---------- places (GET/PUT /v1/places, #115) ----------
+
+const mockPlaces: PlacesResponse = { places: [], maps_available: false, travel_enabled: false };
+
+export async function getPlaces(): Promise<PlacesResponse> {
+  if (USE_MOCKS) return structuredClone(mockPlaces);
+  return get<PlacesResponse>("/v1/places");
+}
+
+/** PUT replaces the whole list; saving places is the user's opt in to travel times. */
+export async function putPlaces(update: PlacesUpdate): Promise<WriteResult> {
+  if (USE_MOCKS) {
+    const t = new Date().toISOString();
+    mockPlaces.places = update.places.map((p) => ({
+      key: p.key,
+      label: p.label ?? p.key,
+      address: p.address ?? null,
+      lat: p.lat ?? null,
+      lng: p.lng ?? null,
+      updated_at: t,
+    }));
+    return { ok: true };
+  }
+  try {
+    const res = await fetch(`${API_URL}/v1/places`, {
+      method: "PUT",
+      headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
+      body: JSON.stringify(update),
+      cache: "no-store",
+    });
+    if (res.ok) return { ok: true };
+    const err = ApiError.safeParse(await res.json().catch(() => null));
+    return {
+      ok: false,
+      message: err.success ? err.data.error.message : `PUT /v1/places failed: ${res.status}`,
+    };
+  } catch {
+    return { ok: false, message: "Michael's server can't be reached." };
+  }
 }

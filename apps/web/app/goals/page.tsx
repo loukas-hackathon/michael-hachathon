@@ -1,5 +1,8 @@
 import { type Goal, GoalCategory } from "@michael/shared";
 import { EmptyState } from "@/components/empty-state";
+import { BalanceBars } from "@/components/gamification/balance";
+import { TargetCard } from "@/components/gamification/target-card";
+import { CalendarGoals } from "@/components/goals/calendar-goals";
 import { DayColumns, NotchTrack, SleepBars, SplitBar } from "@/components/goals/goal-charts";
 import { AddGoal, EditGoal, type GoalDraft } from "@/components/goals/goal-sheets";
 import { ScreenHeader } from "@/components/screen";
@@ -29,6 +32,7 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
   return (
     <main className="screen">
       <ScreenHeader context={context} title="Goals" actions={<AddGoal personalReady={personalReady} />} />
+      <CalendarGoals className="mt-4" />
 
       {week.goals.length === 0 ? (
         <EmptyState title="No goals yet.">
@@ -40,6 +44,17 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
             Furthest behind first. The black tick is where you should be by now.
             {anyUnverified ? " Pale pink is time not confirmed by data yet." : ""}
           </p>
+
+          {week.target || week.baseline || week.balance ? (
+            <section className="mt-5 flex flex-col gap-4">
+              <TargetCard target={week.target ?? null} baseline={week.baseline ?? null} />
+              {week.balance ? (
+                <div className="rounded-group bg-fill px-4 pt-3 pb-3.5">
+                  <BalanceBars balance={week.balance} />
+                </div>
+              ) : null}
+            </section>
+          ) : null}
 
           {groups.map(({ c, items }) => {
             const spent = items.reduce((n, r) => n + r.goal.spentMinutes, 0);
@@ -150,7 +165,7 @@ function GoalRow({
       <div className="flex items-baseline justify-between gap-3">
         <h3 className="text-body font-semibold">{goal.title}</h3>
         <p className="shrink-0 text-subhead text-label-2 tnum">
-          <b className="font-semibold text-label">{hm(goal.spentMinutes)}</b> of {hm(goal.budgetMinutes)}
+          <b className="font-semibold text-label">{hm(leftMinutes)}</b> left
         </p>
       </div>
       <div className="mt-1.5 flex items-end gap-3.5">
@@ -159,6 +174,7 @@ function GoalRow({
             budget={goal.budgetMinutes}
             spent={goal.spentMinutes}
             unverified={goal.unverifiedMinutes}
+            planned={goal.plannedMinutes}
             pace={pace}
             label={`${hm(goal.spentMinutes)} of ${hm(goal.budgetMinutes)}, ${behind ? "behind" : "ahead of"} pace`}
           />
@@ -170,8 +186,8 @@ function GoalRow({
           <b className="font-semibold text-label">Done for the week.</b>
         ) : (
           <>
-            {behind ? <b className="font-semibold text-label">Behind pace.</b> : "Ahead of pace."}{" "}
-            {hm(leftMinutes)} left.
+            {behind ? <b className="font-semibold text-label">{hm(leftMinutes)}</b> : hm(leftMinutes)} left of{" "}
+            {hm(goal.budgetMinutes)}.{goal.openBlocks ? ` ${blocksOpen(goal.openBlocks)}` : ""}
           </>
         )}
       </p>
@@ -226,4 +242,10 @@ function draftOf(g: Goal): GoalDraft {
       Array.isArray(t.work_categories) && (t.work_categories as string[]).includes("communication"),
     active: g.active,
   };
+}
+
+const COUNT = ["No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten"];
+/** "Two blocks still open." (copy: Brand, #168) */
+function blocksOpen(n: number) {
+  return `${COUNT[n] ?? n} ${n === 1 ? "block" : "blocks"} still open.`;
 }

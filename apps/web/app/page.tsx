@@ -1,13 +1,19 @@
 import { redirect } from "next/navigation";
+import { CountUp } from "@/components/count-up";
 import { EmptyState } from "@/components/empty-state";
+import { LiveRefresh } from "@/components/live-refresh";
 import { ScreenHeader } from "@/components/screen";
 import { Tape, TapeKey } from "@/components/tape";
+import { BriefCard } from "@/components/today/brief-card";
 import { MichaelCard } from "@/components/today/michael-card";
 import { MomentCard } from "@/components/today/moment-card";
 import { RecommendationsPanel } from "@/components/today/recommendations";
+import { TravelCard } from "@/components/today/travel-card";
+import { WatchLine } from "@/components/today/watch-line";
 import { getToday, needsOnboarding } from "@/lib/api";
 import { type DayView, nowIndex, tape, totals } from "@/lib/day";
 import { formatDay, formatTime, hm, minutesPhrase } from "@/lib/format";
+import { verdict } from "@/lib/gamification";
 import { momentKindFor } from "@/lib/moments";
 
 const TITLE: Record<DayView["moment"], string> = { morning: "Morning", today: "Today", evening: "Evening" };
@@ -23,7 +29,16 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
 
   return (
     <main className="screen">
-      <ScreenHeader context={formatDay(day.now)} title={TITLE[day.moment]} />
+      <ScreenHeader
+        context={
+          <>
+            {formatDay(day.now)}
+            {day.sample ? null : <LiveRefresh />}
+          </>
+        }
+        title={TITLE[day.moment]}
+      />
+      <WatchLine demo={demo} />
 
       {day.blocks.length === 0 ? (
         <>
@@ -41,6 +56,9 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
               week.{day.week.line ? ` ${day.week.line}` : ""}
             </p>
           ) : null}
+          {day.balance && verdict(day.balance).line ? (
+            <p className="mt-1 text-subhead font-semibold">{verdict(day.balance).line}</p>
+          ) : null}
 
           <section aria-label="Goal time today" className="mt-5">
             {t.scorePct === null && firstBlock ? (
@@ -50,7 +68,7 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
             ) : (
               <h2 className="flex flex-col">
                 <span className="font-num text-score font-extrabold tracking-[-0.02em] tnum">
-                  {t.scorePct}%
+                  <CountUp value={t.scorePct ?? 0} suffix="%" />
                 </span>
                 <span className="text-title3 font-semibold">
                   of your goal time {day.moment === "evening" ? "today" : "so far"}.
@@ -62,6 +80,7 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
                 ticks={ticks}
                 nowAt={day.moment === "evening" || t.scorePct === null ? null : nowIndex(ticks)}
                 nowLabel={formatTime(day.now)}
+                recordAt={day.record?.tick ?? null}
                 label={`${hm(t.spent)} spent (${hm(t.unverified)} unconfirmed), ${hm(t.lost)} lost, ${hm(t.ahead)} still ahead`}
               />
             </div>
@@ -81,6 +100,12 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
                     ]
               }
             />
+            {day.record ? (
+              <p className="mt-2 flex items-center gap-2 text-subhead">
+                <span aria-hidden="true" className="size-[7px] shrink-0 rotate-45 rounded-[1px] bg-label" />
+                {day.record.line}
+              </p>
+            ) : null}
           </section>
 
           {day.wonBackMinutes > 0 ? (
@@ -93,6 +118,8 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
           {momentKind ? <MomentCard kind={momentKind} sample={day.sample} /> : null}
 
           {day.lead ? <MichaelCard lead={day.lead} /> : null}
+
+          {day.travelPlan ? <TravelCard plan={day.travelPlan} /> : null}
 
           <RecommendationsPanel />
 
@@ -112,6 +139,8 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
           ) : null}
         </>
       )}
+
+      <BriefCard sample={day.sample} />
 
       {day.sample ? (
         <p className="mt-8 text-footnote text-label-2">

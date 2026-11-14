@@ -1,4 +1,5 @@
 import type { Category } from "./categories";
+import type { Balance, Baseline, WeeklyTarget } from "./gamification";
 
 // The week as the Goals tab sees it. GET /v1/score has per goal totals (GoalScore) but not the
 // per day minutes or sleep; until it does (issue for the contract), lib/api.ts serves a sample week
@@ -12,6 +13,9 @@ export type GoalWeek = {
   spentMinutes: number;
   /** The part of spentMinutes no data proves yet (drawn pale pink). */
   unverifiedMinutes: number;
+  /** Minutes planned in calendar blocks this week, and how many of those blocks are still to come. */
+  plannedMinutes?: number;
+  openBlocks?: number;
   /** Minutes per day, Monday first. Days after today are null. */
   daily: (number | null)[];
 };
@@ -31,6 +35,9 @@ export type GoalsView = {
   freeMinutesLeft: number | null;
   goals: GoalWeek[];
   sleep: SleepWeek | null;
+  target?: WeeklyTarget | null;
+  baseline?: Baseline | null;
+  balance?: Balance | null;
 };
 
 const WEEK_MS = 7 * 86_400_000;

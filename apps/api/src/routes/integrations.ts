@@ -8,6 +8,8 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { currentUserId, runAsUser } from "../context";
 import { webUrl } from "../env";
+import { PAST_DAYS } from "../goals/suggest";
+import { currentSuggestions } from "../goals/suggestions";
 import { HttpError, parse } from "../http";
 import { syncGoogleCalendar } from "../integrations/calendar-sync";
 import { authUrl, emailFromIdToken, exchangeCode, revokeToken } from "../integrations/google";
@@ -103,12 +105,16 @@ export const oauth = new Hono().get("/oauth/google/callback", async (c) => {
       console.error("oauth callback", err);
       return c.redirect(backToWeb({ integration_error: provider, reason: "token" }));
     }
-    // First sync now, so the timeline fills while the user is still looking.
+    // First sync now, so the timeline fills while the user is still looking. Four weeks back, so
+    // Michael can read the user's habits and suggest goals straight away (#134).
+    const back: Record<string, string> = { connected: provider };
     try {
-      await syncGoogleCalendar();
+      await syncGoogleCalendar(Date.now(), PAST_DAYS);
+      const { suggestions } = await currentSuggestions();
+      if (suggestions.length > 0) back.goal_suggestions = String(suggestions.length);
     } catch (err) {
       console.error("first calendar sync", err);
     }
-    return c.redirect(backToWeb({ connected: provider }));
+    return c.redirect(backToWeb(back));
   });
 });

@@ -1,8 +1,8 @@
 import type { AnalysisResult, AnalysisRun, AnalysisTrigger, Event, EventType } from "@michael/shared";
 import { HttpError } from "../http";
+import { instructionLine } from "../instructions/protected";
 import { DEFAULT_TIMEZONE } from "../patterns";
 import { DAY, Zone } from "../patterns/time";
-import { readAllEvents } from "../routes/score";
 import type { Store } from "../store";
 import { type BriefContext, briefWindow, buildBrief, renderUserMessage } from "./brief";
 import { COACH_INSTRUCTIONS } from "./coach";
@@ -53,8 +53,8 @@ const TYPES: EventType[] = [
 const WEEK_MS = 7 * DAY;
 
 /**
- * Every event the brief needs in the window, a week at a time side by side. `readAllEvents` pages
- * past the store's row cap, so a busy week never silently loses its most recent days.
+ * Every event the brief needs in the window, a week at a time side by side. The store returns
+ * every row of a window past PostgREST's row cap (#127), so a busy week keeps its latest days.
  */
 export async function loadEvents(
   store: Pick<Store, "listEvents">,
@@ -65,7 +65,11 @@ export async function loadEvents(
   const end = Date.parse(to);
   const chunks: Promise<Event[]>[] = [];
   for (let t = start; t < end; t += WEEK_MS) {
-    chunks.push(readAllEvents((filter) => store.listEvents(filter), t, Math.min(end, t + WEEK_MS), TYPES));
+    const window = {
+      from: new Date(t).toISOString(),
+      to: new Date(Math.min(end, t + WEEK_MS)).toISOString(),
+    };
+    chunks.push(store.listEvents({ ...window, type: TYPES }));
   }
   const byId = new Map<string, Event>();
   for (const chunk of await Promise.all(chunks)) for (const e of chunk) byId.set(e.id, e);
@@ -128,14 +132,15 @@ export async function runAnalysis(request: AnalysisRequest, deps: AnalysisDeps):
   let brief: ReturnType<typeof buildBrief>;
   try {
     const window = briefWindow({ from, to, now });
-    const [events, goals, recommendations, asked] = await Promise.all([
+    const [events, goals, recommendations, asked, instructions] = await Promise.all([
       loadEvents(store, window.from, window.to),
       store.listGoals(),
       store.listRecommendations(),
       store.listAnalysisQuestions(5),
+      // The person's ground rules (/v1/instructions). A failed read must not stop the run: the
+      // brief then carries an empty list, as it did before the table existed.
+      store.listInstructions().catch(() => []),
     ]);
-    // Standing instructions have no home yet (the profile endpoint that stores them is not built):
-    // the brief carries the field, empty, so the model's contract does not change when it arrives.
     brief = buildBrief({
       events,
       goals,
@@ -144,7 +149,9 @@ export async function runAnalysis(request: AnalysisRequest, deps: AnalysisDeps):
       to,
       now,
       trigger,
-      instructions: [],
+      // Active ones only, in the person's own words, with their exceptions in words ("Keep
+      // Sundays clear (except: Rhefuel)"). A paused instruction protects nothing.
+      instructions: instructions.filter((i) => i.active).map(instructionLine),
       // Nothing is carried out on a run: every action waits for the person's tap (the execute
       // route). When a run starts applying actions itself, this becomes "applied".
       actionsAre: "offers",

@@ -6,7 +6,8 @@ import {
   type TimelineResponse,
 } from "@michael/shared";
 import { Hono } from "hono";
-import { jsonBody, parse } from "../http";
+import { z } from "zod";
+import { HttpError, jsonBody, parse } from "../http";
 import { store } from "../store";
 
 const list = (v: string | undefined) =>
@@ -42,4 +43,10 @@ export const events = new Hono()
     const { inserted, duplicates, ignored } = await store.insertEvents(input.events);
     const body: IngestResponse = { inserted: inserted.length, duplicates, ignored, events: inserted };
     return c.json(body, 201);
+  })
+  // Deletion really deletes (#47): the row is gone, not hidden.
+  .delete("/events/:id", async (c) => {
+    const id = parse(z.uuid(), c.req.param("id"));
+    if (!(await store.deleteEvents([id]))) throw new HttpError("not_found", "Event not found");
+    return c.body(null, 204);
   });

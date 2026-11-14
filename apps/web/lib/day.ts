@@ -1,3 +1,8 @@
+import type { Balance, RecordMark, Recovery } from "./gamification";
+import type { Drive, TravelPlan } from "./travel";
+
+export type { Recovery };
+
 // The day as the interface sees it: planned goal blocks, what happened inside them, and Michael's lead.
 // Built from the timeline and the user's plan. Until the analysis endpoints are live (score, nudges,
 // patterns), lib/api.ts serves a sample day in this shape; the shape is local to apps/web on purpose.
@@ -29,6 +34,8 @@ export type Evidence =
   | { kind: "none" };
 
 export type Lead = {
+  /** After a missed block: the 25 minute block that still counts, offered with Take it and Undo. */
+  recovery?: Recovery;
   at: string;
   /** Sentence parts; `strong` parts are the numbers and facts, set in the label colour. */
   insight: { text: string; strong?: boolean }[];
@@ -54,6 +61,12 @@ export type DayView = {
   scored?: { ticks: Tick[][]; totals: Totals };
   blocks: GoalBlock[];
   wonBackMinutes: number;
+  /** A personal best on today's tape (#166). */
+  record?: RecordMark | null;
+  balance?: Balance | null;
+  /** Today's drives and Michael's plan for them (#157). */
+  drives?: Drive[];
+  travelPlan?: TravelPlan | null;
   lead: Lead | null;
   nudge: Nudge | null;
 };

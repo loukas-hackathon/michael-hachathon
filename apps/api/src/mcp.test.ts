@@ -5,6 +5,7 @@ import { type AgentClient, mockRecommendations, type Recommendation } from "@mic
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { runAsUser } from "./context";
+import { withoutInstructions } from "./instructions/testkit";
 import { createMcpServer } from "./mcp";
 import { toInstant, zone } from "./mcp-format";
 import { summarise } from "./mcp-guard";
@@ -35,6 +36,13 @@ async function connect() {
 
 const asNewUser = <T>(fn: () => Promise<T>, agent?: AgentClient) =>
   runAsUser(randomUUID(), fn, agent ? "mcp_oauth" : "script", agent);
+// The booking tests book "tomorrow", which on a Saturday is the mock's clear Sunday: they start
+// without standing instructions (instructions/guard.test.ts covers the guard).
+const asNewUserWithoutRules = <T>(fn: () => Promise<T>) =>
+  asNewUser(async () => {
+    await withoutInstructions(store);
+    return fn();
+  });
 
 const text = (r: Result) => r.content.map((c) => c.text).join("\n");
 // Tomorrow at a local wall time, so the block is always in the future.
@@ -43,9 +51,11 @@ const tomorrow = (hhmm: string) => `${zone.nextDay(zone.dayOf(Date.now()))}T${hh
 const TOOLS = [
   "add_event",
   "add_goal",
+  "block_mac_app",
   "create_focus_block",
   "execute_recommendation",
   "get_goals",
+  "get_instructions",
   "get_moments",
   "get_nudges",
   "get_patterns",
@@ -53,6 +63,8 @@ const TOOLS = [
   "get_timeline",
   "list_recommendations",
   "plan_travel",
+  "propose_goals",
+  "suggest_app_mute",
   "undo_recommendation",
   "update_goal",
   "update_recommendation",
@@ -69,7 +81,14 @@ test("the tool set is complete and every tool explains itself", () =>
 test("reads answer with short text and structured content", () =>
   asNewUser(async () => {
     const { call } = await connect();
-    for (const name of ["get_goals", "get_score", "get_nudges", "get_timeline", "list_recommendations"]) {
+    for (const name of [
+      "get_goals",
+      "get_instructions",
+      "get_score",
+      "get_nudges",
+      "get_timeline",
+      "list_recommendations",
+    ]) {
       const r = await call(name);
       assert.notEqual(r.isError, true, `${name}: ${text(r)}`);
       assert.ok(text(r).length > 0);
@@ -77,6 +96,19 @@ test("reads answer with short text and structured content", () =>
     }
     const goals = await call("get_goals");
     assert.match(text(goals), /a week/);
+    // The three categories, and what a goal measures when it is not time.
+    assert.match(text(goals), /- business: "4h of deep work per day", 20h a week/);
+    assert.match(text(goals), /- health: "Sleep 7.5h\+", .*a target goal/);
+    assert.match(text(goals), /- personal: "Evenings out"/);
+    // Standing instructions: the user's ground rules, active ones only.
+    const rules = await call("get_instructions");
+    assert.match(text(rules), /1 standing instructions:\n- "Keep Sundays clear" \(clear_day, id /);
+    assert.deepEqual(
+      (
+        (rules.structuredContent?.instructions ?? []) as { text: string; kind: string; days?: number[] }[]
+      ).map((i) => [i.text, i.kind, i.days]),
+      [["Keep Sundays clear", "clear_day", [0]]],
+    );
     const moment = await call("get_moments", { kind: "evening" });
     assert.notEqual(moment.isError, true, text(moment));
     assert.match(text(moment), /^Evening/);
@@ -130,7 +162,7 @@ test("update_recommendation accepts and dismisses, but never a done one", () =>
   }));
 
 test("execute_recommendation and undo_recommendation go through the calendar actions", () =>
-  asNewUser(async () => {
+  asNewUserWithoutRules(async () => {
     const { call } = await connect();
     const rec = (await store.getRecommendation(CREATE_ID)) as Recommendation;
     const start = toInstant(tomorrow("15:00"));
@@ -163,7 +195,7 @@ test("execute_recommendation and undo_recommendation go through the calendar act
   }));
 
 test("create_focus_block books own time in local time, shows in Michael and can be undone", () =>
-  asNewUser(async () => {
+  asNewUserWithoutRules(async () => {
     const { call } = await connect();
     const booked = await call("create_focus_block", {
       start: tomorrow("10:00"),
@@ -187,7 +219,7 @@ test("create_focus_block books own time in local time, shows in Michael and can 
   }));
 
 test("create_focus_block refuses the past and time with other people, and leaves their events alone", () =>
-  asNewUser(async () => {
+  asNewUserWithoutRules(async () => {
     const { call } = await connect();
     const past = await call("create_focus_block", {
       start: new Date(Date.now() - 3600_000).toISOString(),
@@ -249,3 +281,30 @@ test("local times are Europe/Athens wall time; summaries stay plain", () => {
   );
   assert.equal(summarise("update_recommendation", undefined, { status: "dismissed" }), "Dismissed my advice");
 });
+
+test("block_mac_app mutes an allowlisted app now, shows in Michael and can be undone", () =>
+  asNewUser(async () => {
+    const { call } = await connect();
+    const r = await call("block_mac_app", {
+      apps: ["WhatsApp"],
+      end: new Date(Date.now() + 3600_000).toISOString(),
+    });
+    assert.equal(r.isError, undefined, text(r));
+    assert.match(text(r), /Muted: "Mute WhatsApp/);
+    const rec = r.structuredContent?.recommendation as Recommendation;
+    assert.equal(rec.status, "done");
+    assert.equal(rec.action?.kind, "block_mac_app");
+    const { guards } = await (await import("./actions/focus-guard")).activeFocusGuards();
+    assert.deepEqual(guards[0]?.apps, ["WhatsApp"]);
+
+    const undone = await call("undo_recommendation", { id: rec.id });
+    assert.equal(undone.isError, undefined, text(undone));
+    assert.equal((await (await import("./actions/focus-guard")).activeFocusGuards()).guards.length, 0);
+
+    const refused = await call("block_mac_app", {
+      apps: ["Finder"],
+      end: new Date(Date.now() + 3600_000).toISOString(),
+    });
+    assert.equal(refused.isError, true);
+    assert.match(text(refused), /not on my list/);
+  }));

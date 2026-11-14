@@ -5,15 +5,21 @@ import {
   demoRecommendations,
   type Event,
   type EventInput,
+  type EventSummary,
   type EventType,
+  type FocusGuard,
   type Goal,
   type GoalCreate,
   type GoalUpdate,
+  type Instruction,
+  type InstructionCreate,
+  type InstructionUpdate,
   type Integration,
   type IntegrationProvider,
   mockAnalysisRun,
   mockEvents,
   mockGoals,
+  mockInstructions,
   mockRecommendations,
   type Nudge,
   type NudgeStatus,
@@ -28,6 +34,7 @@ import type { z } from "zod";
 import { currentUserId } from "./context";
 import { stableUuid } from "./demo/week";
 import { env } from "./env";
+import { guardRecommendation, guardRecommendations } from "./instructions/guard";
 import type { GeocodeHit } from "./integrations/maps";
 import { type PrivacyBackend, type PrivacyRules, screenEvents } from "./privacy";
 import { SupabaseStore } from "./supabase-store";
@@ -91,6 +98,25 @@ export interface RecommendationActionUpdate {
   execution?: unknown;
 }
 
+/** What DELETE /v1/me/data removes: the whole account, or the matching timeline events. */
+export interface DataDeleteScope {
+  everything: boolean;
+  source?: Source;
+  from?: string;
+  to?: string;
+}
+
+/** Rows deleted per table. */
+export type DeleteCounts = Record<string, number>;
+
+/** UTC days a summary row must fall in to match a [from, to) range. */
+export const summaryDayRange = (from?: string, to?: string) => ({
+  from: from ? new Date(from).toISOString().slice(0, 10) : undefined,
+  to: to ? new Date(Date.parse(to) - 1).toISOString().slice(0, 10) : undefined,
+});
+
+export type NewFocusGuard = Omit<FocusGuard, "id" | "created_at">;
+
 export type EventPatch = Partial<Pick<Event, "start_at" | "end_at" | "title" | "data">>;
 
 // JSON with sorted keys, so jsonb's own key order never reads as a change.
@@ -117,12 +143,21 @@ export interface PushDevice {
   keys: { p256dh: string; auth: string };
 }
 
+/** The Telegram chat a user connected for nudges. Server side only. */
+export interface TelegramChat {
+  chat_id: string;
+  username: string | null;
+  connected_at: string;
+}
+
 // Storage boundary. Routes and MCP tools depend only on this interface.
 // MemoryStore is used when Supabase env vars are missing; SupabaseStore (supabase-store.ts) otherwise.
 export interface Store extends PrivacyBackend {
   readonly kind: "memory" | "supabase";
   listEvents(filter: TimelineFilter): Promise<Event[]>;
   insertEvents(events: z.output<typeof EventInput>[]): Promise<InsertResult>;
+  /** When the newest event of each source arrived (created_at); sources never seen are left out. */
+  lastEventAtBySource(): Promise<Partial<Record<Source, string>>>;
   listGoals(): Promise<Goal[]>;
   getGoal(id: string): Promise<Goal | null>;
   createGoal(input: z.output<typeof GoalCreate>): Promise<Goal>;
@@ -131,6 +166,12 @@ export interface Store extends PrivacyBackend {
   // The onboarding answers (routes/profile.ts fills in defaults); null until first saved.
   getProfile(): Promise<Profile | null>;
   saveProfile(profile: Profile): Promise<Profile>;
+  // ---- standing instructions (the user's ground rules), oldest first ----
+  listInstructions(): Promise<Instruction[]>;
+  createInstruction(input: z.output<typeof InstructionCreate>): Promise<Instruction>;
+  /** A null in the patch clears `days`, `time` or `end_time`; a missing key leaves it alone. */
+  updateInstruction(id: string, patch: z.output<typeof InstructionUpdate>): Promise<Instruction | null>;
+  deleteInstruction(id: string): Promise<boolean>;
   listRecommendations(filter?: { status?: RecommendationStatus }): Promise<Recommendation[]>;
   updateRecommendationStatus(id: string, status: RecommendationStatus): Promise<Recommendation | null>;
   getRecommendation(id: string): Promise<Recommendation | null>;
@@ -144,6 +185,11 @@ export interface Store extends PrivacyBackend {
   saveAnalysis(input: NewAnalysis): Promise<{ run: AnalysisRun; recommendations: Recommendation[] }>;
   // Proposed by Michael's own rules (e.g. travel) or asked for in chat; status starts at proposed.
   createRecommendation(input: NewRecommendation): Promise<Recommendation>;
+  // Focus guards (block_mac_app): created by executing, deleted by undo (actions/mac-apps.ts).
+  createFocusGuard(input: NewFocusGuard): Promise<FocusGuard>;
+  deleteFocusGuard(id: string): Promise<boolean>;
+  /** Guards that end after `endsAfter` and start before `startsBefore`, soonest first. */
+  listFocusGuards(filter: { endsAfter: string; startsBefore: string }): Promise<FocusGuard[]>;
   // Saved places (home, work, gym). replacePlaces swaps the whole list.
   listPlaces(): Promise<Place[]>;
   replacePlaces(places: Omit<Place, "updated_at">[]): Promise<Place[]>;
@@ -180,6 +226,20 @@ export interface Store extends PrivacyBackend {
   /** Saves the device for the current user (a device belongs to whoever subscribed it last). */
   savePushDevice(device: PushDevice, userAgent: string | null): Promise<void>;
   removePushDevice(endpoint: string): Promise<void>;
+  // The Telegram chat of the current user (nudges/telegram.ts), null when none is bound.
+  getTelegramChat(): Promise<TelegramChat | null>;
+  /**
+   * Binds the chat to the current user (a chat belongs to whoever bound it last). `link` is the
+   * start token: "used" when that same token already bound a chat once, so each link works once.
+   */
+  bindTelegramChat(
+    chat: { chat_id: string; username: string | null },
+    link: string,
+  ): Promise<"bound" | "used">;
+  /** False when nothing was bound. */
+  unbindTelegramChat(): Promise<boolean>;
+  /** NOT scoped: the webhook only knows the chat. Whose chat this is, or null. */
+  telegramChatOwner(chatId: string): Promise<string | null>;
   /**
    * The one read that is NOT scoped to the current user: ids of users with events received since
    * `since`. Only the scheduler calls it, outside any request, and then runs each check as that user.
@@ -197,6 +257,21 @@ export interface Store extends PrivacyBackend {
   ): Promise<SeedResult>;
   // Writes goals with their fixed ids. `overwrite: false` only adds the missing ones.
   seedGoals(goals: Goal[], opts: { overwrite: boolean }): Promise<number>;
+
+  // ---- your data: deletion and retention (#47, retention.ts) ----
+  /**
+   * Really deletes the current user's rows. `everything`: every table that holds the user's data
+   * (device keys are deleted by tokens.ts, the auth user by auth.ts). Otherwise only the events and
+   * summaries matching source and [from, to).
+   */
+  deleteMyData(scope: DataDeleteScope): Promise<DeleteCounts>;
+  /** The current user's events that started before `before`, oldest first, at most `limit`. */
+  listEventsBefore(before: string, limit: number): Promise<Event[]>;
+  /** Adds these totals onto the current user's summaries (same day, source, type, category). */
+  addEventSummaries(rows: EventSummary[]): Promise<void>;
+  listEventSummaries(): Promise<EventSummary[]>;
+  /** NOT scoped: users with events that started before `before`. Only the retention job calls it. */
+  usersWithEventsBefore(before: string): Promise<string[]>;
 }
 
 export interface AskedQuestion {
@@ -222,6 +297,31 @@ export const emptyIntegration = (provider: IntegrationProvider): IntegrationReco
   scope: null,
 });
 
+/** An instruction as the contract has it: `days`, `time` and `end_time` are left out when not set. */
+export const toInstruction = (r: {
+  id: string;
+  text: string;
+  kind: Instruction["kind"];
+  days?: number[] | null;
+  time?: string | null;
+  end_time?: string | null;
+  exceptions?: string[] | null;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}): Instruction => ({
+  id: r.id,
+  text: r.text,
+  kind: r.kind,
+  ...(r.days?.length ? { days: [...r.days].sort((a, b) => a - b) } : {}),
+  ...(r.time ? { time: r.time } : {}),
+  ...(r.end_time ? { end_time: r.end_time } : {}),
+  ...(r.exceptions?.length ? { exceptions: [...r.exceptions] } : {}),
+  active: r.active,
+  created_at: r.created_at,
+  updated_at: r.updated_at,
+});
+
 const now = () => new Date().toISOString();
 const overlaps = (e: Event, from: number, to: number) => {
   const start = Date.parse(e.start_at);
@@ -238,6 +338,7 @@ export class MemoryStore implements Store {
     {
       events: Event[];
       goals: Goal[];
+      instructions: Instruction[];
       recommendations: Recommendation[];
       runs: AnalysisRun[];
       privacy: PrivacyRules;
@@ -245,30 +346,40 @@ export class MemoryStore implements Store {
       integrations: IntegrationRecord[];
       nudges: Nudge[];
       push: PushDevice[];
+      telegram: (Partial<TelegramChat> & { last_link?: string }) | null;
       executions: Map<string, unknown>;
       places: Place[];
       geocodes: Map<string, GeocodeHit>;
+      summaries: EventSummary[];
+      guards: FocusGuard[];
     }
   >();
+  private fresh(sample: boolean) {
+    return {
+      events: sample ? structuredClone(mockEvents) : [],
+      goals: sample ? structuredClone(mockGoals) : [],
+      instructions: sample ? structuredClone(mockInstructions) : [],
+      recommendations: sample ? [...structuredClone(mockRecommendations), ...demoRecommendations()] : [],
+      runs: sample ? [structuredClone(mockAnalysisRun)] : [],
+      privacy: { offTheRecord: false, since: null, sources: {} } as PrivacyRules,
+      chat: [] as ChatMessage[],
+      integrations: [] as IntegrationRecord[],
+      nudges: [] as Nudge[],
+      push: [] as PushDevice[],
+      telegram: null as (Partial<TelegramChat> & { last_link?: string }) | null,
+      executions: new Map<string, unknown>(),
+      places: [] as Place[],
+      geocodes: new Map<string, GeocodeHit>(),
+      summaries: [] as EventSummary[],
+      guards: [] as FocusGuard[],
+    };
+  }
   private get d() {
     const userId = currentUserId();
     let x = this.data.get(userId);
     if (!x) {
       const demo = userId === env.DEMO_USER_ID && env.DEMO_WEEK === "on";
-      x = {
-        events: demo ? [] : structuredClone(mockEvents),
-        goals: demo ? [] : structuredClone(mockGoals),
-        recommendations: [...structuredClone(mockRecommendations), ...demoRecommendations()],
-        runs: [structuredClone(mockAnalysisRun)],
-        privacy: { offTheRecord: false, since: null, sources: {} },
-        chat: [],
-        integrations: [],
-        nudges: [],
-        push: [],
-        executions: new Map(),
-        places: [],
-        geocodes: new Map(),
-      };
+      x = { ...this.fresh(true), ...(demo ? { events: [], goals: [] } : {}) };
       this.data.set(userId, x);
     }
     return x;
@@ -297,6 +408,15 @@ export class MemoryStore implements Store {
       .filter((e) => !f.source || f.source.includes(e.source))
       .filter((e) => !f.type || f.type.includes(e.type))
       .sort((a, b) => Date.parse(a.start_at) - Date.parse(b.start_at));
+  }
+
+  async lastEventAtBySource() {
+    const out: Partial<Record<Source, string>> = {};
+    for (const e of this.events) {
+      const was = out[e.source];
+      if (!was || Date.parse(e.created_at) > Date.parse(was)) out[e.source] = e.created_at;
+    }
+    return out;
   }
 
   async privacyRules() {
@@ -394,6 +514,39 @@ export class MemoryStore implements Store {
     return structuredClone(profile);
   }
 
+  async listInstructions() {
+    return this.d.instructions;
+  }
+
+  async createInstruction(i: z.output<typeof InstructionCreate>) {
+    const instruction = toInstruction({
+      id: crypto.randomUUID(),
+      ...i,
+      created_at: now(),
+      updated_at: now(),
+    });
+    this.d.instructions.push(instruction);
+    return instruction;
+  }
+
+  async updateInstruction(id: string, patch: z.output<typeof InstructionUpdate>) {
+    const list = this.d.instructions;
+    const at = list.findIndex((i) => i.id === id);
+    const found = list[at];
+    if (!found) return null;
+    const changes = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined));
+    const updated = toInstruction({ ...found, ...changes, updated_at: now() });
+    list[at] = updated;
+    return updated;
+  }
+
+  async deleteInstruction(id: string) {
+    const d = this.d;
+    const before = d.instructions.length;
+    d.instructions = d.instructions.filter((i) => i.id !== id);
+    return d.instructions.length < before;
+  }
+
   async listRecommendations(filter?: { status?: RecommendationStatus }) {
     return this.recommendations.filter((r) => !filter?.status || r.status === filter.status);
   }
@@ -402,7 +555,9 @@ export class MemoryStore implements Store {
     return this.recommendations.find((r) => r.id === id) ?? null;
   }
 
-  async createRecommendation(i: NewRecommendation) {
+  async createRecommendation(input: NewRecommendation) {
+    // The choke point: nothing is proposed inside time a standing instruction protects.
+    const i = await guardRecommendation(input, this.guardDeps());
     const rec: Recommendation = {
       id: crypto.randomUUID(),
       analysis_run_id: i.analysis_run_id ?? null,
@@ -455,11 +610,17 @@ export class MemoryStore implements Store {
       .slice(0, limit);
   }
 
+  /** What instructions/guard.ts needs to check a new recommendation: the rules and the blocks. */
+  private guardDeps() {
+    return { instructions: this.d.instructions, getEvent: (id: string) => this.getEvent(id) };
+  }
+
   async saveAnalysis(input: NewAnalysis) {
     const run: AnalysisRun = { id: crypto.randomUUID(), ...input.run };
+    const guarded = await guardRecommendations(input.recommendations, this.guardDeps());
     this.runs.push(run);
     const at = run.finished_at ?? now();
-    const recommendations = input.recommendations.map(
+    const recommendations = guarded.map(
       (r): Recommendation => ({
         id: crypto.randomUUID(),
         analysis_run_id: run.id,
@@ -591,11 +752,62 @@ export class MemoryStore implements Store {
     this.d.push = this.d.push.filter((p) => p.endpoint !== endpoint);
   }
 
+  async getTelegramChat() {
+    const t = this.d.telegram;
+    if (!t?.chat_id) return null;
+    return { chat_id: t.chat_id, username: t.username ?? null, connected_at: t.connected_at ?? now() };
+  }
+
+  async bindTelegramChat(chat: { chat_id: string; username: string | null }, link: string) {
+    const d = this.d;
+    if (d.telegram?.last_link === link) return "used" as const;
+    // The chat moves to the current user, as in the database's unique index.
+    for (const x of this.data.values()) {
+      if (x !== d && x.telegram?.chat_id === chat.chat_id) x.telegram = { last_link: x.telegram.last_link };
+    }
+    d.telegram = { ...chat, connected_at: now(), last_link: link };
+    return "bound" as const;
+  }
+
+  async unbindTelegramChat() {
+    const d = this.d;
+    if (!d.telegram?.chat_id) return false;
+    d.telegram = { last_link: d.telegram.last_link };
+    return true;
+  }
+
+  async telegramChatOwner(chatId: string) {
+    for (const [userId, x] of this.data) if (x.telegram?.chat_id === chatId) return userId;
+    return null;
+  }
+
   async activeUserIds(since: string) {
     const from = Date.parse(since);
     return [...this.data.entries()]
       .filter(([, x]) => x.events.some((e) => Date.parse(e.created_at) >= from))
       .map(([userId]) => userId);
+  }
+
+  async createFocusGuard(input: NewFocusGuard) {
+    const guard: FocusGuard = { ...structuredClone(input), id: crypto.randomUUID(), created_at: now() };
+    this.d.guards.push(guard);
+    return structuredClone(guard);
+  }
+
+  async deleteFocusGuard(id: string) {
+    const before = this.d.guards.length;
+    this.d.guards = this.d.guards.filter((g) => g.id !== id);
+    return this.d.guards.length < before;
+  }
+
+  async listFocusGuards(f: { endsAfter: string; startsBefore: string }) {
+    const after = Date.parse(f.endsAfter);
+    const before = Date.parse(f.startsBefore);
+    return structuredClone(
+      this.d.guards
+        .filter((g) => Date.parse(g.end_at) > after && Date.parse(g.start_at) < before)
+        .sort((a, b) => Date.parse(a.start_at) - Date.parse(b.start_at)),
+    );
   }
 
   async listPlaces() {
@@ -655,6 +867,86 @@ export class MemoryStore implements Store {
       inserted++;
     }
     return { inserted, removed, kept: existing.size };
+  }
+
+  async deleteMyData(scope: DataDeleteScope): Promise<DeleteCounts> {
+    const d = this.d;
+    if (scope.everything) {
+      const userId = currentUserId();
+      const counts: DeleteCounts = {
+        events: d.events.length,
+        event_summaries: d.summaries.length,
+        goals: d.goals.length,
+        focus_guards: d.guards.length,
+        recommendations: d.recommendations.length,
+        analysis_runs: d.runs.length,
+        chat_messages: d.chat.length,
+        instructions: d.instructions.length,
+        telegram_chats: d.telegram?.chat_id ? 1 : 0,
+        nudges: d.nudges.length,
+        integrations: d.integrations.length,
+        push_subscriptions: d.push.length,
+        places: d.places.length,
+        geocode_cache: d.geocodes.size,
+        source_settings: Object.keys(d.privacy.sources).length,
+        privacy_state: d.privacy.offTheRecord || d.privacy.since ? 1 : 0,
+        user_profiles: this.profiles.has(userId) ? 1 : 0,
+      };
+      // An empty account, not the sample day a first visit gets.
+      this.data.set(userId, this.fresh(false));
+      this.profiles.delete(userId);
+      return counts;
+    }
+    const from = scope.from ? Date.parse(scope.from) : -Infinity;
+    const to = scope.to ? Date.parse(scope.to) : Infinity;
+    const days = summaryDayRange(scope.from, scope.to);
+    const eventHit = (e: Event) => {
+      const t = Date.parse(e.start_at);
+      return (!scope.source || e.source === scope.source) && t >= from && t < to;
+    };
+    const summaryHit = (s: EventSummary) =>
+      (!scope.source || s.source === scope.source) &&
+      (!days.from || s.day >= days.from) &&
+      (!days.to || s.day <= days.to);
+    const before = { events: d.events.length, event_summaries: d.summaries.length };
+    d.events = d.events.filter((e) => !eventHit(e));
+    d.summaries = d.summaries.filter((s) => !summaryHit(s));
+    return {
+      events: before.events - d.events.length,
+      event_summaries: before.event_summaries - d.summaries.length,
+    };
+  }
+
+  async listEventsBefore(before: string, limit: number) {
+    const t = Date.parse(before);
+    return this.events
+      .filter((e) => Date.parse(e.start_at) < t)
+      .sort((a, b) => Date.parse(a.start_at) - Date.parse(b.start_at))
+      .slice(0, limit);
+  }
+
+  async addEventSummaries(rows: EventSummary[]) {
+    const d = this.d;
+    for (const r of rows) {
+      const hit = d.summaries.find(
+        (s) => s.day === r.day && s.source === r.source && s.type === r.type && s.category === r.category,
+      );
+      if (hit) {
+        hit.events += r.events;
+        hit.seconds += r.seconds;
+      } else d.summaries.push({ ...r });
+    }
+  }
+
+  async listEventSummaries() {
+    return structuredClone(this.d.summaries).sort((a, b) => a.day.localeCompare(b.day));
+  }
+
+  async usersWithEventsBefore(before: string) {
+    const t = Date.parse(before);
+    return [...this.data.entries()]
+      .filter(([, x]) => x.events.some((e) => Date.parse(e.start_at) < t))
+      .map(([userId]) => userId);
   }
 
   async seedGoals(goals: Goal[], opts: { overwrite: boolean }) {

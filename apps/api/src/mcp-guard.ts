@@ -16,6 +16,8 @@ export const TOOL_SCOPE: Record<string, AgentScope> = {
   get_timeline: "timeline",
   get_patterns: "timeline",
   get_goals: "goals",
+  get_instructions: "goals",
+  propose_goals: "goals",
   add_goal: "goals",
   update_goal: "goals",
   list_recommendations: "recommendations",
@@ -27,6 +29,8 @@ export const TOOL_SCOPE: Record<string, AgentScope> = {
   execute_recommendation: "write_events",
   undo_recommendation: "write_events",
   create_focus_block: "write_events",
+  block_mac_app: "write_events",
+  suggest_app_mute: "recommendations",
   plan_travel: "write_events",
 };
 
@@ -70,6 +74,10 @@ export function summarise(name: string, title: string | undefined, input: unknow
       return `Read your patterns${range}`;
     case "get_goals":
       return "Read your goals";
+    case "get_instructions":
+      return "Read your standing instructions";
+    case "propose_goals":
+      return "Read the goals your calendar suggests";
     case "list_recommendations":
       return "Read my advice";
     case "get_nudges":
@@ -93,6 +101,14 @@ export function summarise(name: string, title: string | undefined, input: unknow
       const start = hhmm(a.start);
       return start ? `Booked ${what} for ${start}` : `Booked ${what}`;
     }
+    case "block_mac_app": {
+      const apps = Array.isArray(a.apps) ? a.apps.filter((x) => typeof x === "string").slice(0, 3) : [];
+      const end = hhmm(a.end);
+      const what = apps.length ? apps.join(", ") : "apps";
+      return end ? `Muted ${what} on your Mac until ${end}` : `Muted ${what} on your Mac`;
+    }
+    case "suggest_app_mute":
+      return "Suggested muting an app";
     case "get_score":
       return typeof a.date === "string" ? `Read your score for ${a.date}` : "Read your score";
     case "add_event":

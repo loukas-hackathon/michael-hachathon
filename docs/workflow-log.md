@@ -3,6 +3,7 @@
 One line per change to how we work (newest first): date, what changed, why.
 
 - Sat 14 Nov 20:10: CI runs `pnpm test` (hermetic: `apps/api/src/test-env.ts` clears real keys), `pnpm --filter @michael/web build` and a migrations guard (unique timestamps, new files sort after main; Auto-merge rechecks against main before merging). Why: regressions slipped through untested merges, a web build break blocked API deploys, and duplicate migration timestamps stopped production migrations (#178).
+- Sat 14 Nov 20:05: Vercel builds only main (apps/web/vercel.json); PR previews off. Why: previews plus merges hit the Hobby daily deployment limit and production stopped updating (#161).
 - Sat 14 Nov 18:25: AGENTS.md rewritten lean (247 to about 90 lines): goals, facts and a few principles instead of scripts. Why: strong models need context, not step-by-step rules.
 - Sat 14 Nov 18:20: SessionStart catch-up hook; failed deploys/migrations open `incident` issues; Auto-merge closes linked issues. Why: Railway crashed on Node 20 unnoticed until a human looked, and bot merges left issues open.
 - Sat 14 Nov 17:50: Auto-merge merges green PRs and dispatches deploys; Deploy API ships to Railway with a project token; ETAs default to now + 20 min. Why: zero manual merging, verification or approvals; speed first.

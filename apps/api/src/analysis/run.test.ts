@@ -87,7 +87,9 @@ test("the model gets the coach instructions and a brief, never raw events", asyn
   assert.equal(request?.system, COACH_INSTRUCTIONS);
   assert.match(request?.user ?? "", /"trigger": "evening"/);
   assert.match(request?.user ?? "", /"now": "2026-11-14 20:00"/);
-  assert.match(request?.user ?? "", /"instructions": \[\]/);
+  // The store starts every user with one standing instruction, and it reaches the brief as written,
+  // with its exception in words.
+  assert.match(request?.user ?? "", /"instructions": \[\s*"Keep Sundays clear \(except: Rhefuel\)"\s*\]/);
   // The mock day holds a search, a page title, a conversation and a call with other people.
   for (const leak of [
     "athens new york flights december",

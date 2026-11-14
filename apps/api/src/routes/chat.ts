@@ -7,6 +7,8 @@ import {
   type ChatResponse,
   type Event,
   type Goal,
+  goalArea,
+  type Instruction,
   MICHAEL_VOICE,
   type PatternReport,
   type Recommendation,
@@ -18,6 +20,7 @@ import { streamSSE } from "hono/streaming";
 import { CHAT_TOOLS, runChatTool, undoLine } from "../actions/chat-tools";
 import { env } from "../env";
 import { HttpError, jsonBody, parse } from "../http";
+import { instructionLine } from "../instructions/protected";
 import { DEFAULT_TIMEZONE } from "../patterns";
 import { Zone } from "../patterns/time";
 import { store } from "../store";
@@ -59,7 +62,7 @@ Facts:
 - Quote times and ids only from the context or from tool results.
 
 Acting:
-- You act only on the user's own time: you can add a block to their calendar (create_focus_block), move one of their own solo blocks (move_calendar_block) and take back something you did (undo_action). On everything else you advise.
+- You act only on the user's own time: you can add a block to their calendar (create_focus_block), move one of their own solo blocks (move_calendar_block), close distracting apps on their Mac for a while (block_mac_app) and take back something you did (undo_action). On everything else you advise.
 - Act when the user asks you to, or clearly agrees to a change you proposed. If the time or the block is unclear, ask first instead of guessing.
 - You never touch events with other people, never delete the user's events, and never send anything in the user's name. If a tool refuses, say why in one line and offer advice instead.
 - Never claim you did something unless a tool result says it is done.
@@ -83,6 +86,8 @@ export interface ChatContextInput {
   now: number;
   timezone?: string;
   goals: Goal[];
+  /** The user's standing instructions. Paused ones are left out. */
+  instructions?: Instruction[];
   /** Events from the start of the week window to now. */
   events: Event[];
   today: PatternReport | null;
@@ -108,10 +113,11 @@ export function scoreLines(s: Score): string {
   ];
   const goals = s.goals.map((g) => {
     const budget = g.budget_minutes ? `budget ${hm(g.budget_minutes)}` : "no budget";
-    if (!g.scored) return `- ${g.title} [${g.category}]: ${budget}, not scored from calendar blocks`;
+    if (!g.scored)
+      return `- ${g.title} [${g.area}]: ${budget}, a ${g.kind} goal, not scored from calendar blocks`;
     const left = Math.max(0, g.budget_minutes - g.spent_minutes);
     return (
-      `- ${g.title} [${g.category}]: ${hm(g.spent_minutes)} spent of ${budget}` +
+      `- ${g.title} [${g.area}]: ${hm(g.spent_minutes)} spent of ${budget}` +
       (g.budget_minutes ? ` (${hm(left)} left to reach it)` : "") +
       `; ${hm(g.planned_minutes)} planned in the calendar, ${hm(g.lost_minutes)} lost, ` +
       `${hm(g.ahead_minutes)} planned still ahead; ${pct(g.score_pct)}`
@@ -161,11 +167,22 @@ export function buildChatContext(input: ChatContextInput): string {
           .map((g) => {
             const budget = g.weekly_budget_minutes ? `, ${hm(g.weekly_budget_minutes)} a week planned` : "";
             const why = g.description ? ` (${g.description})` : "";
-            return `- ${g.title} [${g.category}${budget}]${why} {goal_id ${g.id}}`;
+            // The one of the three categories: an older `work` goal reads as business.
+            return `- ${g.title} [${goalArea(g.category)}${budget}]${why} {goal_id ${g.id}}`;
           })
           .join("\n")}`
       : "Goals: none set yet.",
   );
+
+  // The user's ground rules, in their own words. They are not goals.
+  const rules = (input.instructions ?? []).filter((i) => i.active);
+  if (rules.length > 0) {
+    parts.push(
+      `Standing instructions (never plan, move or suggest anything inside the time they protect):\n${rules
+        .map((i) => `- ${instructionLine(i)}`)
+        .join("\n")}`,
+    );
+  }
 
   const todayLines = input.events
     .filter((e) => LISTED_TYPES.has(e.type))
@@ -258,8 +275,9 @@ async function contextForNow(): Promise<string> {
   const nowIso = new Date(now).toISOString();
   // Pattern reports are best effort: a detector failing must not take the chat down.
   const report = (from: string) => patternReportFor({ from, to: nowIso }).catch(() => null);
-  const [goals, events, today, week, score, undoable] = await Promise.all([
+  const [goals, instructions, events, today, week, score, undoable] = await Promise.all([
     store.listGoals(),
+    store.listInstructions().catch(() => []),
     store.listEvents({
       from: new Date(now - WEEK_MS).toISOString(),
       to: new Date(dayEnd).toISOString(),
@@ -273,7 +291,7 @@ async function contextForNow(): Promise<string> {
     }),
     store.listRecommendations({ status: "done" }).catch(() => []),
   ]);
-  return buildChatContext({ now, goals, events, today, week, score, undoable });
+  return buildChatContext({ now, goals, instructions, events, today, week, score, undoable });
 }
 
 let client: Anthropic | null = null;

@@ -2,6 +2,8 @@
 
 import type { ChatMessage, Recommendation } from "@michael/shared";
 import { type FormEvent, useEffect, useRef, useState, useTransition } from "react";
+import { PushToTalk } from "@/components/voice/push-to-talk";
+import { speakReply } from "@/components/voice/speech";
 import { formatTime } from "@/lib/format";
 import { ActionChips } from "./action-chips";
 import { streamChat } from "./stream-chat";
@@ -15,7 +17,7 @@ const STARTERS = [
 
 type Line = Pick<ChatMessage, "id" | "role" | "content"> & { created_at: string | null };
 
-export function Chat({ initial }: { initial: ChatMessage[] }) {
+export function Chat({ initial, elevenlabs = false }: { initial: ChatMessage[]; elevenlabs?: boolean }) {
   const [lines, setLines] = useState<Line[]>(initial);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -24,6 +26,9 @@ export function Chat({ initial }: { initial: ChatMessage[] }) {
   const input = useRef<HTMLTextAreaElement>(null);
   // What Michael did while answering, by reply id: shown as "Done. Undo" chips under that reply.
   const [acted, setActed] = useState<Record<string, Recommendation[]>>({});
+  const [listening, setListening] = useState(false);
+  // Set when the line came from push to talk, so the reply is spoken back.
+  const spoken = useRef(false);
 
   // Keep the newest line (or the thinking bubble) in view, as in Messages.
   const tail = lines.length + (pending ? 1 : 0);
@@ -31,9 +36,10 @@ export function Chat({ initial }: { initial: ChatMessage[] }) {
     end.current?.scrollIntoView({ block: "end", behavior: tail > initial.length ? "smooth" : "auto" });
   }, [tail, initial.length]);
 
-  function send(text: string) {
+  function send(text: string, viaVoice = false) {
     const message = text.trim();
     if (!message || pending) return;
+    spoken.current = viaVoice;
     const tempId = `pending-${Date.now()}`;
     setError(null);
     setDraft("");
@@ -56,12 +62,15 @@ export function Chat({ initial }: { initial: ChatMessage[] }) {
         setLines((l) => [...l.filter(temp), res.data.message, res.data.reply]);
         const done = res.data.actions;
         if (done.length) setActed((a) => ({ ...a, [res.data.reply.id]: done }));
+        // Spoken once the whole answer is in: a voice reading half sentences sounds broken.
+        if (spoken.current) void speakReply(res.data.reply.content, elevenlabs);
       } else {
         // Nothing was stored: take the line back and put it in the box so it can be sent again.
         setLines((l) => l.filter(temp));
         setDraft(message);
         setError(res.error);
-        input.current?.focus();
+        if (spoken.current) void speakReply(res.error, false);
+        else input.current?.focus();
       }
     });
   }
@@ -145,7 +154,7 @@ export function Chat({ initial }: { initial: ChatMessage[] }) {
             rows={1}
             value={draft}
             maxLength={2000}
-            placeholder="Ask Michael"
+            placeholder={listening ? "Listening. Let go to send" : "Ask Michael"}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -154,6 +163,16 @@ export function Chat({ initial }: { initial: ChatMessage[] }) {
               }
             }}
             className="max-h-32 min-h-9 flex-1 resize-none bg-transparent py-1.5 text-body outline-none [field-sizing:content] placeholder:text-label-2"
+          />
+          <PushToTalk
+            disabled={pending}
+            onListeningChange={(on) => {
+              setListening(on);
+              if (on) setError(null);
+            }}
+            onInterim={setDraft}
+            onFinal={(text) => send(text, true)}
+            onError={setError}
           />
           <button
             type="submit"

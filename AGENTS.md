@@ -2,7 +2,7 @@
 
 Michael is a coach for the whole day. He builds ONE timeline of the user's day from many sources
 (Apple Watch, Google Calendar, Mac and iPhone activity, browser, Claude Code, conversations),
-checks it against the user's goals (work, gym, rest, food), and recommends or makes concrete changes
+checks it against the user's goals (business, health, personal), and recommends or makes concrete changes
 tied to a goal. Claude and other AI agents can read and write the user's day through our MCP server.
 
 Tagline: "On your side." Mission: "Michael finds the time you lose every day and gives it back to

@@ -1,4 +1,4 @@
-import { type Event, type Goal, GoalCategory } from "@michael/shared";
+import { type Event, type Goal, GoalCategory, goalArea } from "@michael/shared";
 
 // THE one place that says which goal a calendar event belongs to. The score and the patterns'
 // calendar mode both read it, so a block counts the same everywhere.
@@ -16,9 +16,13 @@ import { type Event, type Goal, GoalCategory } from "@michael/shared";
 //   2. `goal.target.calendar_titles` (the longest matching entry wins);
 //   3. `data.goal_category` (or `data.category`) names a goal category;
 //   4. the title starts with a goal's own title;
-//   5. the title starts with a category word ("Gym: legs", "Work: pitch"), or contains "deep work"
-//      or "focus" (work).
-// Rules 3 to 5 are the older provisional ones, kept as fallbacks.
+//   5. the title starts with one of the older category words ("Gym: legs", "Work: pitch"), or
+//      contains "deep work" or "focus" (work).
+// Rules 3 to 5 are the older provisional ones, kept as fallbacks. A category in rules 3 and 5
+// means the first goal with exactly that category, or else the first goal in the same one of the
+// three categories: "work" finds a business goal, "gym" a health goal ("rest" and "food" only find
+// a goal that still carries that older name). The words business, health and personal are not
+// title words: "Personal training" must not land on a personal goal.
 //
 // An event with other people in it (`data.attendees` above 0, the number of other people) is a
 // meeting: it is never the user's own block, whatever its title says.
@@ -46,6 +50,16 @@ function startsWithEntry(title: string, entry: string): boolean {
   return !(WORD_CHAR.test(last) && WORD_CHAR.test(next));
 }
 
+/**
+ * True when a calendar title matches one of `entries` the way `calendar_titles` match: equal or
+ * starting with the entry at a word boundary, ignoring case and accents. Standing instructions use
+ * it for their `exceptions`, so a title counts the same everywhere.
+ */
+export function titleMatchesAny(title: string, entries: readonly string[]): boolean {
+  const t = normaliseTitle(title);
+  return entries.some((entry) => startsWithEntry(t, normaliseTitle(entry)));
+}
+
 /** The calendar titles a goal lists in `target.calendar_titles`. Anything that is not text is skipped. */
 export function calendarTitles(goal: Goal): string[] {
   const list = goal.target?.calendar_titles;
@@ -62,6 +76,9 @@ export function attendeesOf(event: Event): number {
 /** A calendar event with a start and an end and nobody else in it. */
 export const isOwnBlock = (event: Event) =>
   event.type === "calendar_event" && event.end_at !== null && attendeesOf(event) <= 0;
+
+/** The category words a calendar title may start with (rule 5). */
+const TitleWord = GoalCategory.extract(["work", "gym", "rest", "food"]);
 
 /** Among goals, the one whose candidate text is the longest prefix of the title. */
 function longestPrefix(title: string, goals: Goal[], candidates: (goal: Goal) => string[]): Goal | null {
@@ -85,7 +102,12 @@ function longestPrefix(title: string, goals: Goal[], candidates: (goal: Goal) =>
  */
 export function goalForEvent(event: Event, goals: Goal[]): GoalMatch | null {
   if (!isOwnBlock(event) || goals.length === 0) return null;
-  const byCategory = (category: string) => goals.find((g) => g.category === category);
+  // The older `rest` and `food` never meant training: they only find a goal that still says so.
+  const byCategory = (category: GoalCategory) =>
+    goals.find((g) => g.category === category) ??
+    (category === "rest" || category === "food"
+      ? undefined
+      : goals.find((g) => goalArea(g.category) === goalArea(category)));
 
   const named = goals.find((g) => g.id === event.data.goal_id);
   if (named) return { goal: named, rule: "goal_id" };
@@ -103,7 +125,7 @@ export function goalForEvent(event: Event, goals: Goal[]): GoalMatch | null {
   const titled = longestPrefix(title, goals, (g) => [g.title]);
   if (titled) return { goal: titled, rule: "goal_title" };
 
-  const firstWord = GoalCategory.safeParse(title.split(/[\s:]+/)[0] ?? "");
+  const firstWord = TitleWord.safeParse(title.split(/[\s:]+/)[0] ?? "");
   const word = firstWord.success ? firstWord.data : /\b(deep work|focus)\b/.test(title) ? "work" : null;
   const goal = word ? byCategory(word) : undefined;
   return goal ? { goal, rule: "category_word" } : null;

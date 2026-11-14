@@ -7,6 +7,7 @@ import {
 } from "@michael/shared";
 import { z } from "zod";
 import { HttpError, parse } from "../http";
+import { refusalFor } from "../instructions/guard";
 import { toTimelineEvent } from "../integrations/calendar-sync";
 import {
   createdByMichael,
@@ -18,6 +19,7 @@ import {
   withOthers,
 } from "../integrations/google";
 import { store } from "../store";
+import { startFocusGuard, stopFocusGuard } from "./focus-guard";
 
 // Michael acts on the user's own time only. Rules (Build Hub, docs/api.md):
 // - never an event with other people (refused with 409, checked again against Google itself);
@@ -42,6 +44,11 @@ const Execution = z.discriminatedUnion("kind", [
     timeline_event_id: z.string(),
     google_event_id: z.string().nullable(),
     original: Times,
+    undo_until: z.string(),
+  }),
+  z.object({
+    kind: z.literal("block_mac_app"),
+    focus_guard_id: z.string(),
     undo_until: z.string(),
   }),
 ]);
@@ -179,10 +186,17 @@ export async function executeRecommendation(id: string): Promise<Recommendation>
   if (rec.status === "done") throw conflict("Already done");
   if (rec.status === "dismissed") throw conflict("This recommendation was dismissed");
   if (action.involves_others) throw conflict("This involves other people. I only advise on it.");
+  // Checked again now: an instruction added after the recommendation was made still holds.
+  const verdict = await refusalFor(action, {
+    instructions: await store.listInstructions(),
+    getEvent: (eventId) => store.getEvent(eventId),
+  });
+  if (!verdict.allowed) throw conflict(verdict.reason);
 
   let execution: Execution;
   if (action.kind === "create_focus_block") execution = await createFocusBlock(rec, action);
   else if (action.kind === "move_calendar_block") execution = await moveCalendarBlock(action);
+  else if (action.kind === "block_mac_app") execution = (await startFocusGuard(rec, action)).execution;
   else throw new HttpError("not_implemented", `${action.kind} cannot be carried out yet`);
 
   const saved = await store.recordRecommendationAction(id, {
@@ -202,9 +216,17 @@ export async function undoRecommendation(id: string): Promise<Recommendation> {
   const parsed = Execution.safeParse(await store.getRecommendationExecution(id));
   if (!parsed.success) throw conflict("I have no record of what I changed, so I cannot undo it");
   const ex = parsed.data;
-  if (Date.now() >= Date.parse(ex.undo_until)) throw conflict("Too late to undo: the block has started");
+  if (Date.now() >= Date.parse(ex.undo_until)) {
+    throw conflict(
+      ex.kind === "block_mac_app"
+        ? "Nothing to undo: that guard has already ended"
+        : "Too late to undo: the block has started",
+    );
+  }
 
-  if (ex.kind === "create_focus_block") {
+  if (ex.kind === "block_mac_app") {
+    await stopFocusGuard(ex);
+  } else if (ex.kind === "create_focus_block") {
     if (ex.google_event_id) {
       try {
         const g = await getCalendarEvent(ex.google_event_id);

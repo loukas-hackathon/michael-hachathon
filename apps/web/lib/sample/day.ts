@@ -58,6 +58,41 @@ export const sampleDay: DayView = {
     },
   ],
   wonBackMinutes: 47,
+  record: { tick: 21, line: "91%, your best Business week since you started. Do it again." },
+  drives: [
+    {
+      start: d("17:25"),
+      end: d("18:00"),
+      to: "the pool",
+      minutes: 35,
+      freeFlowMinutes: 20,
+      parking: {
+        hard: true,
+        carPark: "the car park on Ilia Iliou",
+        walkMinutes: 4,
+        url: "https://www.google.com/maps/search/?api=1&query=parking+near+Olympic+Aquatic+Centre+Athens",
+      },
+    },
+  ],
+  travelPlan: {
+    block: "swim",
+    before: { departAt: d("17:25"), minutes: 35, trafficMinutes: 15 },
+    after: { departAt: d("18:40"), minutes: 20, trafficMinutes: 0, blockStart: d("19:00") },
+    wonMinutes: 15,
+    undoUntil: d("17:25"),
+    parking: {
+      hard: true,
+      carPark: "the car park on Ilia Iliou",
+      walkMinutes: 4,
+      url: "https://www.google.com/maps/search/?api=1&query=parking+near+Olympic+Aquatic+Centre+Athens",
+    },
+  },
+  balance: {
+    overall: 64,
+    target: 65,
+    areas: { business: 91, health: 63, personal: 12 },
+    floors: { business: 50, health: 50, personal: 50 },
+  },
   lead: {
     at: d("15:12"),
     insight: [
@@ -159,4 +194,22 @@ export const sampleEmpty: DayView = {
   wonBackMinutes: 0,
   lead: null,
   nudge: null,
+};
+
+/** A missed block: Michael names the cause and offers the smallest block that still counts (#167). */
+export const sampleMissed: DayView = {
+  ...sampleDay,
+  record: null,
+  lead: {
+    at: d("15:31"),
+    insight: [
+      { text: "Meetings ate the study block. " },
+      { text: "Take 25 minutes at 16:00.", strong: true },
+      { text: " Still counts." },
+    ],
+    evidence: { kind: "none" },
+    fix: [],
+    action: null,
+    recovery: { slotStart: d("16:00"), slotEnd: d("16:25"), undoUntil: d("16:00") },
+  },
 };

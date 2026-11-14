@@ -26,7 +26,14 @@ const [MOVE_ID, CREATE_ID, NO_ACTION_ID] = mockRecommendations.map((r) => r.id) 
 const iso = (ms: number) => new Date(ms).toISOString();
 
 // Each test acts as a fresh user with its own copy of the mock recommendations.
-const asNewUser = <T>(fn: () => Promise<T>) => runAsUser(randomUUID(), fn);
+const { withoutInstructions } = await import("../instructions/testkit");
+// Each test is a fresh user without standing instructions: they book relative to now, and on a
+// Saturday "tomorrow" is the mock's clear Sunday (instructions/guard.test.ts covers the guard).
+const asNewUser = <T>(fn: () => Promise<T>) =>
+  runAsUser(randomUUID(), async () => {
+    await withoutInstructions(store);
+    return fn();
+  });
 
 async function connect(events: Parameters<typeof fakeGoogle>[0] = []) {
   const g = fakeGoogle(events);
@@ -182,8 +189,14 @@ test("past times and other action kinds are refused", () =>
       payload: { start_at: iso(Date.now() - HOUR), end_at: iso(Date.now() + HOUR) },
     });
     await assert.rejects(executeRecommendation(CREATE_ID), /already started/);
-    await withAction(CREATE_ID, { kind: "block_mac_app", payload: { app: "com.apple.Safari" } });
+    await withAction(CREATE_ID, { kind: "draft_follow_up", payload: { text: "Thanks" } });
     await assert.rejects(executeRecommendation(CREATE_ID), /cannot be carried out yet/);
+    // Safari is a browser, not on the list of apps Michael may close.
+    await withAction(CREATE_ID, {
+      kind: "block_mac_app",
+      payload: { app: "com.apple.Safari", start_at: iso(Date.now()), end_at: iso(Date.now() + HOUR) },
+    });
+    await assert.rejects(executeRecommendation(CREATE_ID), /not on my list/);
   }));
 
 test("without Google Calendar: Michael's block lives on the timeline only, and undo removes it", () =>

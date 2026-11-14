@@ -2,6 +2,7 @@ import { countsTowardsCap, type NudgeCheckResult } from "@michael/shared";
 import { runAsUser } from "./context";
 import { env } from "./env";
 import { HOUR } from "./patterns/time";
+import { runRetention } from "./retention";
 import { checkNudges } from "./routes/nudges";
 import { store } from "./store";
 
@@ -62,4 +63,9 @@ export function startScheduler(): void {
   // First pass shortly after boot, once the health check has passed.
   setTimeout(() => void runNudgeChecks(), 30_000).unref();
   setInterval(() => void runNudgeChecks(), every).unref();
+  // Retention (#47): once a day, events older than 90 days become daily summaries. Also shortly
+  // after each boot; a second pass the same day finds nothing to do.
+  console.log("[scheduler] retention daily");
+  setTimeout(() => void runRetention(), 2 * 60_000).unref();
+  setInterval(() => void runRetention(), 24 * HOUR).unref();
 }
