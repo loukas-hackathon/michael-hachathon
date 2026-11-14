@@ -15,6 +15,7 @@ import { events } from "./routes/events";
 import { goals } from "./routes/goals";
 import { instructions } from "./routes/instructions";
 import { integrations, oauth } from "./routes/integrations";
+import { meData } from "./routes/me-data";
 import { moments } from "./routes/moments";
 import { nudges } from "./routes/nudges";
 import { connect, oauthPublic } from "./routes/oauth";
@@ -60,6 +61,7 @@ const v1 = new Hono()
   .route("/", connect)
   .route("/", agents)
   .route("/", places)
+  .route("/", meData)
   .route("/", demo);
 
 export const app = new Hono()

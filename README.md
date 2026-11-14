@@ -285,3 +285,13 @@ Add this to `~/.claude/settings.json` (merge it into an existing `hooks` block i
   `SessionEnd` are accepted and not stored yet, so you can leave those two out. Tool input, tool
   output and Claude's answers are never stored.
 - The same prompt arriving later from the transcripts is recognised and not stored twice.
+
+## Privacy
+
+- **Opt in per source.** Every source is off until connected; one tap goes off the record.
+- **Full detail for 90 days, then summaries.** A daily job rolls older events into daily totals per
+  source, type and category (no titles, no content) and deletes the raw rows
+  (`apps/api/src/retention.ts`).
+- **Deletion really deletes.** You > Delete my data calls `DELETE /v1/me/data`: every row of the
+  account is removed from the database, Google access is revoked and the sign in is deleted. The
+  response counts what went, table by table (docs/api.md, "Your data").

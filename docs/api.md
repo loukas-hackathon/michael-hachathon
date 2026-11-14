@@ -1236,6 +1236,53 @@ MCP). `manual` events, typed by the user, are always kept. `since` is when colle
 `null`. Never set sources show `updated_at` as `1970-01-01T00:00:00.000Z`. The check lives in
 `apps/api/src/privacy.ts` and runs inside `Store.insertEvents`.
 
+### Your data: deletion and retention
+
+```ts
+type DataDeleteResult = {
+  scope: "everything" | "timeline";
+  deleted: Record<string, number>; // rows really deleted, per table
+  total: number;
+  google_revoked: boolean; // Google was told to forget Michael's calendar access
+  account_deleted: boolean; // the Supabase Auth user is gone too ("everything" only)
+};
+type EventSummary = {
+  day: string; // UTC day of the events' start, YYYY-MM-DD
+  source: Source;
+  type: EventType;
+  category: string; // app or site category when the event had one, else ""
+  events: number;
+  seconds: number;
+};
+const RETENTION_DAYS = 90;
+```
+
+| Method | Path                            | Response               | Status |
+| ------ | ------------------------------- | ---------------------- | ------ |
+| DELETE | `/v1/me/data`                   | `200 DataDeleteResult` | live   |
+| DELETE | `/v1/me/data?source=&from=&to=` | `200 DataDeleteResult` | live   |
+| DELETE | `/v1/events/:id`                | `204`, `404`           | live   |
+
+Deletion really deletes: rows are removed from the database, not hidden. `DELETE /v1/me/data` with
+no parameters removes every row of the account: events, event summaries, goals, recommendations,
+analysis runs, nudges, chat messages, integrations (Google is revoked first), push subscriptions,
+device keys, agents with their query log, OAuth grants and tokens, places, the geocode cache, source
+switches, the off the record state and the profile. Then the Supabase Auth user itself is deleted,
+so the next sign in starts a new, empty account. With any of `source`, `from`, `to` (ISO date times,
+`from` < `to`) only the matching timeline events (`start_at` in `[from, to)`) and the summaries of
+the days they cover are removed (`scope: "timeline"`).
+
+Only a signed-in session may call it: device keys, agents and the demo API key get `403 forbidden`,
+and so does the demo account (reseed it with `POST /v1/demo/reseed`). The table list is
+`USER_TABLES` in `apps/api/src/supabase-store.ts`; a test fails when a migration adds a table that
+the list misses.
+
+Retention: once a day (`apps/api/src/retention.ts`, run by the scheduler) events that started
+before the UTC day 90 days ago are rolled into `event_summaries` (one row per UTC day, source, type
+and category; counts and seconds, no titles, no data) and the raw rows are deleted, in batches of
+500. Seconds are `end_at - start_at`, else `data.seconds`, else 0. Category is `data.category`, else
+the app category of `data.bundle_id`, else the site category of `data.host`, else `""`.
+
 ### Device keys (personal tokens)
 
 ```ts
