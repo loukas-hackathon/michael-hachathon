@@ -869,12 +869,35 @@ the facts; otherwise `phrased_by` is `template`. Lines are cached per user, kind
 
 Changing status never executes `action`; use the routes below.
 
-| Method | Path                              | Response                                                                                                                                        | Status |
-| ------ | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| POST   | `/v1/recommendations/:id/execute` | `200 Recommendation` (`status: done`, `executed_at` set). `409 conflict` if `involves_others` (Michael never touches events with other people). | stub   |
-| POST   | `/v1/recommendations/:id/undo`    | `200 Recommendation` (`status: undone`). `409 conflict` after `undo_until`.                                                                     | stub   |
+| Method | Path                              | Response                                                                  | Status |
+| ------ | --------------------------------- | ------------------------------------------------------------------------- | ------ |
+| POST   | `/v1/recommendations/:id/execute` | `200 Recommendation` (`status: done`, `executed_at` set). `409` see below | live   |
+| POST   | `/v1/recommendations/:id/undo`    | `200 Recommendation` (`status: undone`, `undone_at` set). `409` see below | live   |
 
-Rules: act only on the user's own calendar blocks and Mac; never touch events with other people; never delete; never send in the user's name.
+Kinds carried out: `move_calendar_block` and `create_focus_block`; other kinds answer `501`.
+
+```ts
+// move_calendar_block: one of the user's own solo blocks (a timeline event id). A new start keeps
+// the length unless end_at is given; new_title renames. At least one of the three.
+type MoveCalendarBlockPayload = { event_id: string; start_at?: string; end_at?: string; new_title?: string };
+// create_focus_block: a new block, tagged as Michael's (title defaults to "Focus block").
+type CreateFocusBlockPayload = { start_at: string; end_at: string; title?: string };
+```
+
+Rules: act only on the user's own calendar blocks and Mac; never touch events with other people;
+never delete the user's events; never send in the user's name.
+
+- With Google Calendar connected the change happens in the calendar (a created block carries the
+  private extended property `michael=1`) and the timeline mirror follows at once. Without it, the
+  change happens on the timeline only (a created block is a `calendar_event` with `source: "agent"`).
+- `409 conflict` when: the action is `null`; the recommendation is already `done` or `dismissed`;
+  `involves_others` is true; the block has `data.with_others` or 2 or more attendees, or Google
+  itself now shows someone else on it (checked live before every write); the block or the new
+  time has already started; it is an all day event.
+- Undo: a moved block goes back to its original time and title; a created block is deleted, and
+  only if Google still marks it as Michael's. Allowed until the earliest of `undo_until`, the
+  block's original start and its new start; afterwards `409`. Undo of anything not `done` is `409`.
+- What was changed is kept on the recommendation (`execution`, internal, never returned).
 
 ### Integrations (OAuth)
 
@@ -907,7 +930,8 @@ Idempotent: unchanged events are left alone, changed ones (title, time) are upda
 mirrored events that were deleted or cancelled in Google within the window are removed from the
 timeline (the calendar itself is never touched). Cancelled and declined events are skipped. Runs
 after connecting, on `POST .../sync`, and every `CALENDAR_SYNC_MINUTES` (default 15) for every
-connected user.
+connected user. Off the record, or with the `google_calendar` source switched off, sync reads nothing
+and answers zero counts.
 
 ```ts
 type CalendarSyncResult = {

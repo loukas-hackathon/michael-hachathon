@@ -66,6 +66,15 @@ export interface UpsertResult {
   unchanged: number;
 }
 
+// What executing a recommendation changed, so undo can put it back. Stored as jsonb; parsed by
+// apps/api/src/actions/calendar.ts. Never returned by the API.
+export interface RecommendationActionUpdate {
+  status: RecommendationStatus;
+  executed_at?: string | null;
+  undone_at?: string | null;
+  execution?: unknown;
+}
+
 export type EventPatch = Partial<Pick<Event, "start_at" | "end_at" | "title" | "data">>;
 
 // JSON with sorted keys, so jsonb's own key order never reads as a change.
@@ -105,6 +114,10 @@ export interface Store extends PrivacyBackend {
   deleteGoal(id: string): Promise<boolean>;
   listRecommendations(filter?: { status?: RecommendationStatus }): Promise<Recommendation[]>;
   updateRecommendationStatus(id: string, status: RecommendationStatus): Promise<Recommendation | null>;
+  getRecommendation(id: string): Promise<Recommendation | null>;
+  /** The execution record saved by `recordRecommendationAction`, or null. */
+  getRecommendationExecution(id: string): Promise<unknown>;
+  recordRecommendationAction(id: string, update: RecommendationActionUpdate): Promise<Recommendation | null>;
   latestAnalysisRun(): Promise<AnalysisRun | null>;
   // Privacy (privacy.ts holds the rules; insertEvents applies them).
   setOffTheRecord(on: boolean): Promise<PrivacyRules>;
@@ -178,6 +191,7 @@ export class MemoryStore implements Store {
       integrations: IntegrationRecord[];
       nudges: Nudge[];
       push: PushDevice[];
+      executions: Map<string, unknown>;
     }
   >();
   private get d() {
@@ -194,6 +208,7 @@ export class MemoryStore implements Store {
         integrations: [],
         nudges: [],
         push: [],
+        executions: new Map(),
       };
       this.data.set(userId, x);
     }
@@ -311,6 +326,25 @@ export class MemoryStore implements Store {
 
   async listRecommendations(filter?: { status?: RecommendationStatus }) {
     return this.recommendations.filter((r) => !filter?.status || r.status === filter.status);
+  }
+
+  async getRecommendation(id: string) {
+    return this.recommendations.find((r) => r.id === id) ?? null;
+  }
+
+  async getRecommendationExecution(id: string) {
+    return this.d.executions.get(id) ?? null;
+  }
+
+  async recordRecommendationAction(id: string, u: RecommendationActionUpdate) {
+    const rec = this.recommendations.find((r) => r.id === id);
+    if (!rec) return null;
+    rec.status = u.status;
+    if (u.executed_at !== undefined) rec.executed_at = u.executed_at;
+    if (u.undone_at !== undefined) rec.undone_at = u.undone_at;
+    if (u.execution !== undefined) this.d.executions.set(id, u.execution);
+    rec.updated_at = now();
+    return rec;
   }
 
   async updateRecommendationStatus(id: string, status: RecommendationStatus) {

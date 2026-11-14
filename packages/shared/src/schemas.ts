@@ -169,6 +169,29 @@ export type GoalUpdate = z.input<typeof GoalUpdate>;
 
 // ---------- recommendations ----------
 
+// Payloads of the actions POST /v1/recommendations/:id/execute can carry out.
+// move_calendar_block: one of the user's own solo blocks (a timeline event id). Give a new start
+// (the length is kept unless `end_at` is given), a new title, or both.
+export const MoveCalendarBlockPayload = z
+  .object({
+    event_id: z.uuid(),
+    start_at: IsoDateTime.optional(),
+    end_at: IsoDateTime.optional(),
+    new_title: z.string().min(1).max(200).optional(),
+  })
+  .refine((p) => p.start_at || p.end_at || p.new_title, { message: "Give start_at, end_at or new_title" });
+export type MoveCalendarBlockPayload = z.infer<typeof MoveCalendarBlockPayload>;
+
+// create_focus_block: a new block on the user's calendar, tagged as Michael's.
+export const CreateFocusBlockPayload = z
+  .object({
+    start_at: IsoDateTime,
+    end_at: IsoDateTime,
+    title: z.string().min(1).max(200).optional(),
+  })
+  .refine((p) => Date.parse(p.end_at) > Date.parse(p.start_at), { message: "end_at must be after start_at" });
+export type CreateFocusBlockPayload = z.infer<typeof CreateFocusBlockPayload>;
+
 export const RecommendationAction = z.object({
   kind: ActionKind,
   payload: z.record(z.string(), z.unknown()),

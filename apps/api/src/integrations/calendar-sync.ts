@@ -1,6 +1,7 @@
 import type { CalendarEventData, CalendarSyncResult, EventInput } from "@michael/shared";
 import type { z } from "zod";
 import { Zone } from "../patterns/time";
+import { isCollecting } from "../privacy";
 import { store } from "../store";
 import { createdByMichael, type GoogleEvent, listCalendarEvents, withOthers } from "./google";
 
@@ -73,6 +74,12 @@ export function toTimelineEvent(e: GoogleEvent, zoneName: string): z.output<type
 export async function syncGoogleCalendar(now = Date.now()): Promise<CalendarSyncResult> {
   const from = new Date(now - SYNC_DAYS * DAY_MS).toISOString();
   const to = new Date(now + SYNC_DAYS * DAY_MS).toISOString();
+  // Off the record, or the user switched the calendar off: do not even read it.
+  if (!(await isCollecting(store, "google_calendar"))) {
+    const rec = await store.getIntegration("google_calendar");
+    const last = rec?.last_sync_at ?? new Date(0).toISOString();
+    return { from, to, fetched: 0, inserted: 0, updated: 0, unchanged: 0, removed: 0, last_sync_at: last };
+  }
   try {
     const page = await listCalendarEvents(from, to);
     const zone = page.timeZone ?? DEFAULT_ZONE;
