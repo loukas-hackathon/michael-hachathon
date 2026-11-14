@@ -1,259 +1,95 @@
 # Michael - agent guide
 
 Michael is a coach for the whole day. He builds ONE timeline of the user's day from many sources
-(Apple Watch via Health Auto Export, WHOOP, ActivityWatch, iPhone Shortcuts, Omi, Google Calendar),
-checks it often against the user's goals (work, gym, rest, food), and recommends or makes concrete
-changes tied to a goal. Other AI agents can ask Michael about the user through our MCP server.
+(Apple Watch, Google Calendar, Mac and iPhone activity, browser, Claude Code, conversations),
+checks it against the user's goals (work, gym, rest, food), and recommends or makes concrete changes
+tied to a goal. Claude and other AI agents can read and write the user's day through our MCP server.
 
 Tagline: "On your side." Mission: "Michael finds the time you lose every day and gives it back to
-your goals." Product decisions live in the team's Build Hub; the parts that affect code are below.
+your goals." Hackathon: Sat 14 Nov 12:00 to Sun 15 Nov 24:00 (Athens), finalists Sun 20:00, pitch
+Mon 16 Nov. Judged on usefulness, craft and aura. Two people (Loukas, Manolis) steer many Claude
+Code agents in parallel. You are trusted: use your judgement; these notes are context, not a cage.
 
-Hackathon: Sat 14 Nov 12:00 -> Sun 15 Nov 24:00 (Athens). Finalists Sun 20:00, pitch Mon 16 Nov.
-Two people (Loukas, Manolis) running Claude Code agents in parallel. Judged on usefulness, craft,
-aura. Move fast, keep quality, commit often.
+## Where things are
 
-## Repo map
+| Path                               | What                                                                                               |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `apps/api`                         | Hono API: REST `/v1`, MCP `/mcp`, webhooks, analysis. Railway.                                     |
+| `apps/api/src/store.ts`            | `Store`: the only way to read or write data, scoped to the current user                            |
+| `apps/web`                         | Next.js App Router + Tailwind, phone first PWA. Vercel. Read `apps/web/AGENTS.md` first (Next 16). |
+| `apps/collector`, `apps/extension` | Run on the user's machines, post events to the API                                                 |
+| `packages/shared` + `docs/api.md`  | The shared contract: change them together, in the same PR                                          |
+| `supabase/migrations`              | Schema. New file per change; applied automatically on merge                                        |
 
-| Path                    | What                                                                             |
-| ----------------------- | -------------------------------------------------------------------------------- |
-| `apps/api`              | Hono API: REST under `/v1`, MCP at `/mcp`, webhooks, Gemini. Deploys to Railway. |
-| `apps/api/src/store.ts` | `Store` interface: the only way to read/write data                               |
-| `apps/web`              | Next.js App Router + Tailwind. Deploys to Vercel (root dir `apps/web`).          |
-| `apps/collector`        | Runs on the user's Mac: reads local data (app usage and more), posts to the API  |
-| `packages/shared`       | zod schemas, types, mock data. **Shared contract.**                              |
-| `docs/api.md`           | API + MCP contract in words. **Shared contract.**                                |
-| `supabase/migrations`   | database schema                                                                  |
-
-## Commands (from repo root)
-
-```bash
-pnpm install
-pnpm dev          # api :8787 + web :3000
-pnpm check        # typecheck + lint
-pnpm test         # unit tests (node --test through tsx; put *.test.ts next to the code)
-pnpm format       # auto-fix formatting
-```
+Live URLs, dashboards and where every setting lives: README "Live services". Commands: `pnpm dev`,
+`pnpm check` (typecheck + lint), `pnpm test`, `pnpm format`.
 
 ## How we work
 
-This project is built only by agents (Claude Code), steered by two humans. Agents own their task
-end to end: pick it, build it, check it, merge it, deploy it. No gatekeepers, no required reviews.
-Be proactive (find the next useful thing and do it) and reactive (notice what changed and adapt).
+- **Own it end to end.** Pick the most valuable unblocked thing (demo path first: real data, analysis,
+  Claude connector, the Today/Timeline/Goals/Agents screens), build it, open a PR, and it ships.
+  Nobody owns an area; labels say where code lives, not who does it.
+- **Stay visible.** Claim the issue (assignee + `in-progress`) with an optimistic ETA comment (aim for
+  10 to 30 minutes; ship the smallest working version, improve in the next PR). Glance at open PRs
+  and in-progress issues before touching shared files; talk through issue and PR comments.
+- **Merging is deploying.** CI runs `pnpm check`; Auto-merge merges green PRs and closes their issues;
+  Deploy API ships to Railway; Migrate database applies new migrations; Vercel redeploys the web.
+  Use a draft or the `wip` label to hold a PR. After your merge, check production (`/health` reports
+  the deployed commit).
+- **Broken beats new.** A failed deploy or migration opens an `incident` issue automatically. Fix it
+  forward, then add whatever prevents it next time. Same for anything broken you notice.
+- **Need access you don't have?** Open an `agent-request` issue with the exact steps; any agent that
+  can, does it. Ask your human only for product decisions and credentials. Never paste secrets.
+- **Improve the workflow** when something slows us down: small `workflow:` PR, one line in
+  `docs/workflow-log.md`. Prefer fewer, shorter rules.
+- **Several agents on one machine:** one git worktree each (`.worktrees/`), `pnpm env:copy`, other ports.
 
-**Nobody owns an area.** Loukas and Manolis both take backend AND frontend work, and each runs as
-many agents in parallel as useful. The `backend` / `frontend` labels only say where the code lives,
-not who does it. Always take the most valuable unblocked issue, whatever its label.
+## The Build Hub is the product source of truth (keep it in sync yourself)
 
-### Two sources of truth, read them yourself
+The team's claude.ai artifact (link in `CLAUDE.local.md`; ask your human if missing). Read it with
+ArtifactData at session start (a SessionStart hook prints the GitHub side for you):
 
-- **Build Hub** (product): the team's shared claude.ai artifact with the brief, brand, decisions log
-  and board. Its link is in `CLAUDE.local.md` (gitignored, because the link grants edit access;
-  if the file is missing, ask your human for the link). Read its `notes` (decisions) and `tasks`
-  (board) collections with the ArtifactData tool, and the page itself with the Artifact tool.
-- **GitHub issues and PRs** (code): `gh issue list`, `gh pr list`, `git log origin/main`.
+- `notes`: decisions. A decision the code doesn't reflect yet becomes an issue or a contract change.
+- `tasks`: the board. Move a task to `doing`/`done` as its issues move; add tasks for new work.
+- `findings`: status, findings and research (`group`, `order`, `title`, `summary`, `body`, `updated`).
+  Update `status-now` after merges; add entries for what you learn or test.
+  Write in its voice (British spelling, no dashes, no emoji). Never delete other people's entries.
+  Humans should never have to sync anything.
 
-Read both at the start of every session and again before each new task. Never wait to be told
-about a change: if the Build Hub has a decision the code doesn't reflect yet, create an issue for it
-(or update the contract) yourself.
+## Product decisions that shape code
 
-### The loop
-
-```bash
-# 1. Catch up (every task)
-git checkout main && git pull
-gh issue list --label agent-request          # can you do one of these right now? do it first
-gh issue list --label in-progress            # who is on what, with ETAs in the comments
-git fetch --all --prune && git log --oneline -15 origin/main   # what just landed
-gh pr list --state open                      # work in flight: read titles, then `gh pr diff <n>`
-git branch -r --sort=-committerdate | head   # pushed branches, newest first, incl. ones with no PR yet
-# + read the Build Hub decisions and board (see above)
-
-# 2. Pick: the most valuable unassigned issue whose dependencies are merged (or nearly: see ETAs)
-gh issue list --search "no:assignee sort:created-asc"   # lower number = earlier in the plan
-gh issue edit <n> --add-assignee @me --add-label in-progress
-gh issue comment <n> --body "Claimed. ETA 17:30 (optimistic). Plan: <one line>"
-
-# 3. Build on a branch, commit often
-git checkout -b <n>-short-name
-pnpm check && git push -u origin HEAD
-gh pr create --fill --body "Closes #<n>"     # Auto-merge merges it once CI is green
-git checkout main && git pull
-
-# 4. Close the loop (see below), then go back to 1
-```
-
-### Optimistic ETAs
-
-Every issue carries an optimistic ETA (Athens time) so every agent can see what will exist and when.
-It is a hackathon and agents are fast: plan on 10 to 30 minutes per issue, never hours. Default ETA
-is now + 20 minutes. Be optimistic and then hit it: ship the smallest version that works, merge,
-and improve in the next PR rather than polishing one big one.
-
-- Each open issue has a `Planned: <day> HH:MM` line in its body: when we expect it merged.
-- When you claim an issue, comment `ETA HH:MM` (optimistic: we move fast). If it slips, comment the new
-  ETA straight away. On merge the issue closes, which is the "done" signal.
-- Use other agents' ETAs to plan: if you need an endpoint that lands at 18:00, build against the
-  mocks in `@michael/shared` now and switch over after it merges, rather than waiting.
-- If you finish early, pull the next issue forward and tighten the `Planned` times that depend on it.
-
-### Close the loop after every merge
-
-- Comment on issues that depended on yours ("#12 is merged: `/v1/...` is live").
-- Update `docs/api.md` status (stub -> live) in your PR when an endpoint goes live.
-- **Everything we learn goes on the Build Hub**, not only in the repo. Its section "Status, findings
-  and research" is rendered from the ArtifactData collection `findings`: one document per entry with
-  `group` (`status` | `findings` | `research`), `order`, `title`, `summary`, `body` and `updated` (ms).
-  The body is plain text: `## ` starts a sub heading, `- ` a bullet, `| a | b |` a table row. After
-  a merge, update `status-now` (what is merged and tested) and add or update an entry for any
-  finding, research or test result. Update with ArtifactData; do not republish the page for this.
-- Update the Build Hub board: move the matching task to `doing` when work starts and to `done` when
-  the feature is live. Add a `note` of kind `decision` for any product-visible choice you made, and
-  a `link` for new deploy URLs. Keep entries short and in the Build Hub's voice (British spelling,
-  no dashes, no emoji). Never delete or rewrite other people's notes.
-- Spotted a bug or a gap? Open an issue for it with files, dependencies and a `Planned` time.
-
-### Automation: merging is deploying
-
-| On merge to `main`                 | What happens                                                | Check it                                                                               |
-| ---------------------------------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| API, shared or root config change  | GitHub Action `Deploy API` ships it to Railway (2 to 3 min) | `curl https://api-production-16521a26.up.railway.app/health` (`commit` = deployed SHA) |
-| any change                         | Vercel redeploys the web app                                | https://michael-zeta-sand.vercel.app                                                   |
-| new file in `supabase/migrations/` | GitHub Action `Migrate database` applies it to production   | `gh run list --workflow migrate.yml`                                                   |
-| PR open, CI green, no conflicts    | GitHub Action `Auto-merge` squash-merges it and ships it    | `gh run list --workflow auto-merge.yml`                                                |
-| every PR and push                  | GitHub Action `CI` runs `pnpm check`                        | `gh pr checks` / `gh run list`                                                         |
-
-- **Nobody merges or verifies by hand.** Open the PR; `Auto-merge` merges it once CI is green (after
-  each CI run and every 10 min) and triggers Deploy API / Migrate database. Not ready? Open it as a
-  draft or add the `wip` label. If Auto-merge comments about conflicts, pull `main` and push.
-- **Database changes are code:** add a new timestamped `.sql` file in `supabase/migrations/`, merge
-  it, and the action applies it. Never edit an applied migration and never apply SQL by hand. If
-  the action fails, read `gh run view --log-failed`, fix forward with a new migration.
-- **After every merge, verify production** (health, the page, the endpoint you touched). If it
-  broke, fix it immediately; that beats everything else on your list.
-
-### Agents talk through GitHub
-
-- Comments are the chat: `gh issue comment <n>` / `gh pr comment <n>`. During catch-up read the
-  comments on your issues and on everything `in-progress` (`gh issue view <n> --comments`), and
-  answer questions addressed to you or your area.
-- **Need something you can't do** (a secret, a dashboard setting, an account, a command that needs
-  credentials you don't have)? Open an issue labelled `agent-request` with the exact command or
-  steps, why, and what unblocks. Every agent checks `gh issue list --label agent-request` during
-  catch-up; one that can do it does it, comments the result and closes it. Only if no agent can,
-  it asks its human.
-- Never paste secret values into issues or comments; say where they are set instead.
-
-### Broken things: fix, then prevent
-
-- Every session starts with a catch-up brief (SessionStart hook, `scripts/agent-catchup.mjs`):
-  incidents, agent requests, in-progress work, open PRs, recent merges, and the Build Hub sync
-  checklist. Nobody has to ask for it.
-- A failed deploy or migration opens an `incident` issue automatically. Incidents beat everything:
-  the first agent that sees one fixes it forward, verifies production, then adds the prevention (a
-  test, a check, a pinned version, a rule) and closes it with the one line cause.
-- Anything else broken that you notice (a red check, a stale issue, a wrong doc, a flaky script)
-  you fix in passing or open an issue for. Don't route around it.
-- Tracking lives in issues + labels and the Build Hub board. No GitHub Project: one less board to sync.
-
-### Improve the workflow yourself
-
-When you hit friction, a repeated mistake, or a rule that slows us down, fix it on the spot: edit
-`AGENTS.md`, a script, or a workflow in a small PR titled `workflow: <what>`, merge it, and add one
-line to `docs/workflow-log.md` (what changed and why). No permission needed. Keep rules few and short.
-
-### Watch the work in flight, not only `main`
-
-- Before you touch a file, check whether an open PR or a recent branch already changes it:
-  `gh pr list --search "<path or keyword>"`, `gh pr diff <n> --name-only`,
-  `git log origin/<branch> --oneline -5`, `git diff origin/main...origin/<branch> --stat`.
-- Build on top of in-flight work instead of redoing it: if you need code from an open PR, comment
-  on it, or branch from its branch and say so in your PR.
-- Review as you pass: if another agent's open PR has an obvious bug, conflicts with your work, or
-  breaks the contract, leave a `gh pr comment` (or fix it on their branch if it's tiny and green).
-- Stale work: a branch with no commits for 2 hours and no open PR is fair game; comment on its
-  issue, then take it over or delete the branch.
-
-### Habits that prevent collisions
-
-- **Claim before you code** and steer around files listed in other `in-progress` issues. If you
-  must touch them, comment on that issue first.
-- **Keep the shared contract in sync.** If you change `packages/shared`, update `docs/api.md` (and
-  add a migration if the DB changes) in the same PR, and mention it in the issue.
-- **Merge small and often.** `pnpm check` green is enough. Frequent commits are judged.
-- **Ask the human only for real product decisions or credentials.** For third-party APIs, read the
-  official docs rather than guessing.
-- **Several agents on one machine:** give each its own folder:
-  `git worktree add .worktrees/<n>-name -b <n>-name origin/main`, then `pnpm install &&
-  pnpm env:copy` inside it, use other ports (`PORT=8788 pnpm dev:api`), and merge with
-  `gh pr merge --squash` (no `--delete-branch` inside a worktree).
-
-## Product decisions that affect code
-
-- **Autonomy:** "acts on your time, advises on your life". Michael may act on the user's OWN
-  calendar blocks and Mac: move blocks, create focus blocks, block distracting Mac apps, draft
-  follow-ups. He never touches events with other people, never deletes, never sends in the user's
-  name. Every action can be undone until the event starts.
-- **Goals** have a weekly time budget (for example "70.3 training: 9 hours this week").
-- **Headline score:** share of planned goal time actually spent on goals; "time won back" beneath.
-- **Two moments:** Morning (when the watch detects waking) and Evening (one hour before usual bedtime).
-- **Nudges:** at most 5 per day, via watch, push and Telegram. Chat by typing or voice.
-- **Navigation:** Today, Timeline, Goals, Agents.
-- **Off the record:** one tap stops all collection.
-- **Michael for agents:** other agents query Michael within scopes the user chooses. A new agent's
-  first request needs one-tap approval; every query is logged and visible ("who asked about me today").
-- **Real data by Sunday:** Apple Watch, Google Calendar, Mac activity, iPhone app opens. Public or
-  seeded data fills the gaps. Omi/conversations and WHOOP come after those.
-- **Main surface:** a phone first, installable web app (PWA) built around dashboards (Today, weekly
-  score). No native app.
-- **Demo:** Manolis is the demo user with real data (private names edited out) and wears an Apple
-  Watch on stage; the live moment is the watch buzzing while Michael's message shows on the big screen.
-
-- **Everything lives in the database.** All data goes to Supabase through the API, never only on a
-  device, so the user and any AI tool (Claude via MCP first) can reach it from anywhere.
-- **Simplicity is the product.** Connecting a source, an integration or an AI tool must be one tap or
-  one link for a non-technical user: no keys, URLs, JSON or terminal steps in the user's path. If a
-  provider forces setup (Health Auto Export, Shortcuts), ship a one-tap install link or QR plus a
-  three-step screen. Technical setup is for us, never for the user.
+- **Personal:** every user signs in (Google for the demo) and sees only their own data. The API
+  resolves the caller in `apps/api/src/auth.ts` (Supabase token, or `API_KEY` = demo account) and the
+  store scopes every query (`currentUserId()`). Never take a user id from a request body.
+- **Everything lives in the database** so the user and any AI tool can reach it from anywhere.
+- **Simplicity is the product:** connecting a source, integration or AI tool is one tap or one link
+  for a non technical user. No keys, URLs, JSON or terminals in the user's path.
 - **Claude first:** the claude.ai connector (read and write the day) is the headline demo moment.
+- **Autonomy:** acts on the user's own time (own calendar blocks, Mac apps, drafts), advises on the
+  rest. Never touches events with other people, never deletes, never sends in the user's name;
+  every action can be undone until the event starts.
+- Goals have weekly time budgets. Headline score: share of planned goal time actually spent, with
+  "time won back" beneath. Morning and Evening moments. At most 5 nudges a day (watch, push,
+  Telegram). Off the record stops all collection. Other agents need one tap approval; every query
+  is logged ("who asked about me today").
+- Demo: Manolis' real week (private names removed), Apple Watch buzzing on stage.
 
-### Picking work: demo path first
+## Privacy
 
-Before opening a new issue of your own, check the planned backlog. The demo path wins over new
-sources: real data by Sunday (#8 Apple Watch, #12 and #13 Calendar, Mac and iPhone collectors),
-analysis (#17), the Claude connector, then the web screens (Today, Timeline, Goals, Agents). Both
-humans' agents take frontend issues too.
+Opt in per source (watch data is health data). Conversations only in user-started meetings mode,
+raw audio deleted after transcription, keep only lessons and the user's own commitments. EU
+database, full detail 90 days then summaries, deletion really deletes. Send models summaries.
 
-## Privacy rules (build them in, don't bolt them on)
+## Voice, copy and look
 
-- Watch data is health data: explicit opt-in and one on/off switch per source.
-- Conversations are recorded only in a user-started meetings mode. Raw audio is deleted after
-  transcription. Store only lessons and the user's own commitments, never other people's words.
-- EU-region database. Full detail for 90 days, summaries after. Deletion must really delete.
-- Send summaries to models where possible, not raw data.
+Firm sports coach: talks about goals, asks only when unsure, admits mistakes in one line, respects
+quiet hours, shows the maths. British spelling, 24-hour time, nudges under 15 words, "I" for Michael,
+"we" for the team. No emoji, no dashes in copy, never "productivity" or "wellness", never name the
+Marvel assistant that inspired the idea. Look: light paper by day, dark at night; colours, fonts and
+logo come from the Build Hub ("Colour and type", "Logo") and `docs/design-guide.md`, as CSS variables.
 
-## Voice and copy (any user-facing text)
+## Code
 
-- Michael is a firm sports coach: talks only about goals, asks only when unsure, admits mistakes in
-  one line, respects quiet hours (deep work, dinner, after 22:00), shows the maths when goals compete.
-- British spelling, 24-hour time, nudges under 15 words. "I" for Michael's actions, "we" for the team.
-- No emoji. No dashes in copy. Never use the words "productivity" or "wellness".
-- Never name the Marvel assistant that inspired the idea, anywhere public (code, README, UI, commits).
-- Visual: light paper by default, dark at night and on the watch, warm humanist sans. The symbol is
-  not a face. No eyes, robots, or gradients/glow on the logo. Colours and fonts: use the provisional
-  tokens in the Build Hub's "Colour and type" section (currently Palette 1 Forest, font Figtree)
-  as CSS variables, so a later pick only changes the values.
-
-## Code conventions
-
-- TypeScript everywhere; validate every external input with zod.
-- Types come from `@michael/shared` only; never redeclare them in an app.
-- Only `apps/api` touches the database (via `Store`) and Gemini. The web app calls the API
-  server-side (`apps/web/lib/api.ts`); `USE_MOCKS=true` serves mock data until an endpoint exists.
-- API errors: throw `HttpError` (`apps/api/src/http.ts`) so every error has the `ApiError` shape.
-- **Every user has their own data.** Users sign in with Google (Supabase Auth). The API resolves
-  the caller in `apps/api/src/auth.ts` (a user's Supabase token, or the shared `API_KEY` which acts
-  as the demo account) and the store scopes every query by that user (`currentUserId()`). Never
-  query a table without the store; never take a user id from the request body.
-- Secrets only in env vars; add new ones to the matching `.env.example`.
-- Next.js 16 is newer than most training data: read `apps/web/AGENTS.md` before web work.
-- Comments in English. When an endpoint goes live, update its status in `docs/api.md`.
+TypeScript; zod on every external input; types only from `@michael/shared`. Only `apps/api` touches
+the database and the LLMs. API errors via `HttpError`. Secrets in env vars (update `.env.example`).
+Comments in English.
