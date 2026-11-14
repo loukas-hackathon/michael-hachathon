@@ -1,21 +1,20 @@
 "use server";
 
 import type { PersonalTokenCreated } from "@michael/shared";
-import { cookies } from "next/headers";
-import { API_URL, bearer } from "@/lib/api";
-import { DEMO_COOKIE } from "@/lib/supabase/server";
+import { API_URL } from "@/lib/api";
+import { authHeaders, isDemoVisitor } from "@/lib/caller";
 
 export type KeyResult = { secret: string; apiBase: string } | { error: string };
 
 // Creates a device key for the signed-in person. Demo visitors can't: keys are personal.
 export async function createDeviceKey(name: string): Promise<KeyResult> {
-  if ((await cookies()).get(DEMO_COOKIE)?.value === "1") {
+  if (await isDemoVisitor()) {
     return { error: "Sign in with Google to connect your own devices." };
   }
   try {
     const res = await fetch(`${API_URL}/v1/tokens`, {
       method: "POST",
-      headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
+      headers: { ...(await authHeaders()), "content-type": "application/json" },
       body: JSON.stringify({ name: name.slice(0, 60) }),
       cache: "no-store",
     });

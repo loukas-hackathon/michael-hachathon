@@ -19,7 +19,7 @@ export async function sendMessage(message: string): Promise<SendResult> {
     console.error(`chat: ${res.code}: ${res.message}`);
     return { ok: false, error: copyFor(res.code) };
   } catch (err) {
-    // bearer() throws when signed out.
+    // authHeaders() throws when signed out.
     console.error("chat:", err);
     return { ok: false, error: copyFor("unauthorized") };
   }

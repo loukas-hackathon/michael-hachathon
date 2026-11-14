@@ -1,21 +1,20 @@
 "use server";
 
 import type { DataDeleteResult } from "@michael/shared";
-import { cookies } from "next/headers";
-import { API_URL, bearer } from "@/lib/api";
-import { DEMO_COOKIE } from "@/lib/supabase/server";
+import { API_URL } from "@/lib/api";
+import { authHeaders, isDemoVisitor } from "@/lib/caller";
 
 export type DeleteOutcome = { result: DataDeleteResult } | { error: string };
 
 // DELETE /v1/me/data for the signed-in person: every row, Google access and the sign in itself.
 export async function deleteEverything(): Promise<DeleteOutcome> {
-  if ((await cookies()).get(DEMO_COOKIE)?.value === "1") {
+  if (await isDemoVisitor()) {
     return { error: "This is the demo week. Sign in with Google to delete your own data." };
   }
   try {
     const res = await fetch(`${API_URL}/v1/me/data`, {
       method: "DELETE",
-      headers: { authorization: `Bearer ${await bearer()}` },
+      headers: await authHeaders(),
       cache: "no-store",
     });
     if (res.status === 403) return { error: "Sign in again, then delete." };

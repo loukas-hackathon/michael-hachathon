@@ -1,6 +1,7 @@
 import "server-only";
 import { type AnalysisResult, ApiError, mockAnalysisRun, mockRecommendations } from "@michael/shared";
-import { API_URL, bearer } from "./api";
+import { API_URL } from "./api";
+import { authHeaders } from "./caller";
 
 // Michael's brief on demand (POST /v1/analysis/run) and the last one he wrote
 // (GET /v1/analysis/latest). Kept out of lib/api.ts so it can change without touching the shared file.
@@ -21,7 +22,7 @@ export async function getLatestBrief(): Promise<AnalysisResult | null> {
   if (USE_MOCKS) return null;
   try {
     const res = await fetch(`${API_URL}/v1/analysis/latest`, {
-      headers: { authorization: `Bearer ${await bearer()}` },
+      headers: await authHeaders(),
       cache: "no-store",
     });
     if (!res.ok) return null;
@@ -39,7 +40,7 @@ export async function runBrief(): Promise<BriefResult> {
   try {
     res = await fetch(`${API_URL}/v1/analysis/run`, {
       method: "POST",
-      headers: { authorization: `Bearer ${await bearer()}` },
+      headers: await authHeaders(),
       cache: "no-store",
     });
   } catch {

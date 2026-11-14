@@ -8,7 +8,7 @@ import {
   TelegramLinkResponse,
   TelegramStatus,
 } from "@michael/shared";
-import { bearer } from "./api";
+import { authHeaders } from "./caller";
 
 // Server-side calls for connecting sources (Google Calendar). Tokens stay in the API; the browser
 // only ever sees Google's consent screen and the connection status.
@@ -18,7 +18,7 @@ const API_URL = process.env.API_URL ?? "http://localhost:8787";
 async function call(method: string, path: string): Promise<Response> {
   const res = await fetch(`${API_URL}${path}`, {
     method,
-    headers: { authorization: `Bearer ${await bearer()}` },
+    headers: await authHeaders(),
     cache: "no-store",
   });
   if (!res.ok) throw new Error(`${method} ${path} failed: ${res.status}`);
@@ -41,7 +41,7 @@ export async function googleConnectUrl(returnTo?: ReturnPath): Promise<string> {
   const res = returnTo
     ? await fetch(`${API_URL}/v1/integrations/google_calendar/connect`, {
         method: "POST",
-        headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
+        headers: { ...(await authHeaders()), "content-type": "application/json" },
         body: JSON.stringify({ return_to: returnTo } satisfies OAuthConnectRequest),
         cache: "no-store",
       })

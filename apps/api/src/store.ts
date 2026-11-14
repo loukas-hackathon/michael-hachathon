@@ -33,7 +33,7 @@ import {
   type WeeklyTarget,
 } from "@michael/shared";
 import type { z } from "zod";
-import { currentUserId } from "./context";
+import { currentDemoVisitor, currentUserId } from "./context";
 import { stableUuid } from "./demo/week";
 import { env } from "./env";
 import { guardRecommendation, guardRecommendations } from "./instructions/guard";
@@ -201,10 +201,16 @@ export interface Store extends PrivacyBackend {
   saveGeocode(query: string, hit: GeocodeHit): Promise<void>;
   // Privacy (privacy.ts holds the rules; insertEvents applies them).
   setOffTheRecord(on: boolean): Promise<PrivacyRules>;
-  /** The most recent chat messages, oldest first. */
+  /**
+   * The most recent chat messages, oldest first. Chat is per demo visitor on the demo account
+   * (`currentDemoVisitor()`): a visitor sees only their own lines, everyone else only the
+   * account's own lines (visitor null).
+   */
   listChatMessages(limit: number): Promise<ChatMessage[]>;
   /** `actionIds`: recommendations done or undone while writing an answer (ChatMessage.action_ids). */
   addChatMessage(role: ChatRole, content: string, actionIds?: string[]): Promise<ChatMessage>;
+  /** Deletes the current user's demo visitor chat lines written at or before `before`. */
+  clearVisitorChat(before: string): Promise<number>;
 
   // ---- events mirrored from a provider (Google Calendar) ----
   getEvent(id: string): Promise<Event | null>;
@@ -365,7 +371,7 @@ export class MemoryStore implements Store {
       recommendations: Recommendation[];
       runs: AnalysisRun[];
       privacy: PrivacyRules;
-      chat: ChatMessage[];
+      chat: (ChatMessage & { visitor: string | null })[];
       integrations: IntegrationRecord[];
       nudges: Nudge[];
       push: PushDevice[];
@@ -387,7 +393,7 @@ export class MemoryStore implements Store {
       recommendations: sample ? [...structuredClone(mockRecommendations), ...demoRecommendations()] : [],
       runs: sample ? [structuredClone(mockAnalysisRun)] : [],
       privacy: { offTheRecord: false, since: null, sources: {} } as PrivacyRules,
-      chat: [] as ChatMessage[],
+      chat: [] as (ChatMessage & { visitor: string | null })[],
       integrations: [] as IntegrationRecord[],
       nudges: [] as Nudge[],
       push: [] as PushDevice[],
@@ -669,7 +675,11 @@ export class MemoryStore implements Store {
   }
 
   async listChatMessages(limit: number) {
-    return this.d.chat.slice(-limit);
+    const visitor = currentDemoVisitor();
+    return this.d.chat
+      .filter((m) => m.visitor === visitor)
+      .slice(-limit)
+      .map(({ visitor: _v, ...m }): ChatMessage => m);
   }
 
   async addChatMessage(role: ChatRole, content: string, actionIds: string[] = []) {
@@ -680,8 +690,17 @@ export class MemoryStore implements Store {
       created_at: now(),
       action_ids: [...actionIds],
     };
-    this.d.chat.push(message);
+    this.d.chat.push({ ...message, visitor: currentDemoVisitor() });
     return message;
+  }
+
+  async clearVisitorChat(before: string) {
+    const d = this.d;
+    const cut = Date.parse(before);
+    const kept = d.chat.filter((m) => m.visitor === null || Date.parse(m.created_at) > cut);
+    const removed = d.chat.length - kept.length;
+    d.chat = kept;
+    return removed;
   }
 
   async getEvent(id: string) {

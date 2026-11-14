@@ -27,7 +27,7 @@ import type {
 import { Source as SourceEnum } from "@michael/shared";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { z } from "zod";
-import { currentUserId } from "./context";
+import { currentDemoVisitor, currentUserId } from "./context";
 import { HttpError } from "./http";
 import { type GuardDeps, guardRecommendation, guardRecommendations } from "./instructions/guard";
 import type { GeocodeHit } from "./integrations/maps";
@@ -918,11 +918,10 @@ export class SupabaseStore implements Store {
   }
 
   async listChatMessages(limit: number) {
+    const visitor = currentDemoVisitor();
+    const q = this.db.from("chat_messages").select("*").eq("user_id", currentUserId());
     const rows = check(
-      await this.db
-        .from("chat_messages")
-        .select("*")
-        .eq("user_id", currentUserId())
+      await (visitor ? q.eq("visitor_id", visitor) : q.is("visitor_id", null))
         .order("created_at", { ascending: false })
         .limit(limit),
     );
@@ -935,11 +934,24 @@ export class SupabaseStore implements Store {
     const row = check(
       await this.db
         .from("chat_messages")
-        .insert({ user_id: currentUserId(), role, content, ...extra })
+        .insert({ user_id: currentUserId(), visitor_id: currentDemoVisitor(), role, content, ...extra })
         .select("*")
         .single(),
     );
     return toChatMessage(row);
+  }
+
+  async clearVisitorChat(before: string) {
+    const rows = check(
+      await this.db
+        .from("chat_messages")
+        .delete()
+        .eq("user_id", currentUserId())
+        .not("visitor_id", "is", null)
+        .lte("created_at", before)
+        .select("id"),
+    );
+    return (rows ?? []).length;
   }
 
   async getEvent(id: string) {
