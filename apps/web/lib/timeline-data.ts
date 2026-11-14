@@ -3,9 +3,9 @@ import { type Event, EventType, type Goal, type TimelineResponse } from "@michae
 import { get } from "./api";
 import { addDays, athensDay, dayBounds, isLocalDay, weekOf } from "./athens";
 import { DATES_WITH_DATA, getTimelineDay, longestFrom, type Patterns } from "./days";
-import { sleepGoalMinutes } from "./health";
 import { getGoogleCalendar } from "./integrations";
 import { USE_MOCKS } from "./mode";
+import { sleepGoalMinutes } from "./sleep-goal";
 import { buildTimeline, type TimelineDay } from "./timeline";
 
 // Loads the Timeline screen for one Athens day: the day itself from GET /v1/timeline, the longest
