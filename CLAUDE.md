@@ -48,6 +48,8 @@ Smoke test: `curl localhost:8787/health`, then
 - **DB access only in `apps/api`**, only through `Store` (`apps/api/src/store.ts`), using the
   Supabase service role key server-side. The web app never talks to the DB.
 - **Gemini only from `apps/api`** (`@google/genai`).
+- **Next.js 16 differs from your training data.** Before writing web code, read `apps/web/AGENTS.md`
+  and the guides in `apps/web/node_modules/next/dist/docs/`.
 - **Web uses mocks until the endpoint exists:** `USE_MOCKS=true` (default) in `apps/web` serves
   fixtures from `@michael/shared`. When the real endpoint ships, flip it per call site, not globally.
 - **Actions are advise-only.** `Recommendation.action` is modelled but never executed. Don't build
