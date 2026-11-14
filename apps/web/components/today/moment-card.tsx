@@ -28,9 +28,7 @@ function GoalLines({ moment }: { moment: Moment }) {
           <dd className="text-right tnum">
             {moment.kind === "morning"
               ? `${hm(g.planned_today_minutes)} today, ${hm(g.spent_week_minutes)} of ${hm(g.budget_minutes ?? 0)} this week`
-              : g.planned_today_minutes === 0 && g.spent_today_minutes === 0
-                ? "Not booked today"
-                : `${hm(g.spent_today_minutes)} of ${hm(g.planned_today_minutes)} held${g.lost_today_minutes > 0 ? `, ${hm(g.lost_today_minutes)} lost` : ""}`}
+              : `${hm(g.spent_today_minutes)} of ${hm(g.planned_today_minutes)} held${g.lost_today_minutes > 0 ? `, ${hm(g.lost_today_minutes)} lost` : ""}`}
           </dd>
         </div>
       ))}

@@ -52,21 +52,9 @@ test("Today has no serious accessibility violations", async ({ page }) => {
   // Let the count up and entrance animations settle so contrast is measured on final colours.
   await page.waitForTimeout(1500);
   const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
-  // The brand pink (#e6007a, --m-tint-text in light mode) is a deliberate product decision and is
-  // kept as is, although it is under 4.5:1 on the grey fill. Only contrast findings on that exact
-  // colour are exempt; every other rule and every other colour still fails the test.
-  const isBrandPink = (n: { any: { data?: unknown }[] }) =>
-    n.any.some((c) => {
-      const fg = (c.data as { fgColor?: string } | undefined)?.fgColor?.toLowerCase();
-      return fg === "#e6007a";
-    });
   const serious = results.violations
     .filter((v) => v.impact === "serious" || v.impact === "critical")
-    .flatMap((v) =>
-      v.nodes
-        .filter((n) => !(v.id === "color-contrast" && isBrandPink(n)))
-        .map((n) => `${v.id}: ${n.target.join(" ")}: ${n.failureSummary ?? v.help}`),
-    );
+    .flatMap((v) => v.nodes.map((n) => `${v.id}: ${n.target.join(" ")}: ${n.failureSummary ?? v.help}`));
   expect(serious).toEqual([]);
 });
 

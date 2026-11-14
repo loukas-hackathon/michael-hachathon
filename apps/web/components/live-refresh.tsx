@@ -3,7 +3,6 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { formatTime } from "@/lib/format";
-import { stagger } from "./motion";
 
 const POLL_MS = 45_000;
 // Coming back to the tab checks at once, unless we checked a moment ago.
@@ -75,23 +74,12 @@ export function LiveRefresh() {
     if (pending || !before.current) return;
     const seen = before.current;
     before.current = null;
-    // In reading order (document order), a subtle stagger so a screen that fills at once (first data
-    // of the day) reads top to bottom. Sections marked data-live-pop pop in; blocks and ticks rise.
-    let i = 0;
     for (const el of document.querySelectorAll<HTMLElement>("[data-live-key]")) {
       if (!el.dataset.liveKey || seen.has(el.dataset.liveKey)) continue;
-      const cls = el.hasAttribute("data-live-pop") ? "m-pop-in" : "m-live-enter";
-      el.classList.remove(cls);
+      el.classList.remove("m-live-enter");
       void el.offsetWidth; // restart the animation if the class was already there
-      el.style.animationDelay = stagger(i++).animationDelay as string;
-      el.classList.add(cls);
-      const end = (e: AnimationEvent) => {
-        if (e.target !== el) return; // a child's own animation finished, not this entrance
-        el.removeEventListener("animationend", end);
-        el.classList.remove(cls);
-        el.style.animationDelay = "";
-      };
-      el.addEventListener("animationend", end);
+      el.classList.add("m-live-enter");
+      el.addEventListener("animationend", () => el.classList.remove("m-live-enter"), { once: true });
     }
     setUpdated(new Date());
   }, [pending]);

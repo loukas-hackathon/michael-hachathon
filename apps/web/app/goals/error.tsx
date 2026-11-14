@@ -8,7 +8,7 @@ export default function GoalsError({ reset }: { error: Error; reset: () => void 
     <main className="screen">
       <ScreenHeader context="Goals" title="Goals" />
       <section className="mt-8 flex flex-col gap-2 rounded-card bg-fill px-4 pt-4 pb-5">
-        <h2 className="text-title3 font-bold">I couldn't load your goals.</h2>
+        <h2 className="text-title3 font-bold">Michael couldn't load your goals.</h2>
         <p className="text-subhead text-label-2">Your data is safe. Check your connection and try again.</p>
         <div className="mt-2">
           <button

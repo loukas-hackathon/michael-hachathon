@@ -1,16 +1,19 @@
-import { Bone, Skeleton } from "@/components/skeleton";
+import { Skeleton } from "@/components/skeleton";
+import { ChatHistorySkeleton, CheckInSkeleton, ComposerSkeleton } from "@/components/skeletons";
 
-/** Chat, loading: a few bubbles and the message box where it will sit. */
+/** Chat, loading: the conversation's bubbles and the message field where they will be. */
 export default function Loading() {
   return (
-    <Skeleton title="Chat" label="Loading the chat">
-      <div aria-hidden="true" className="mt-6 flex flex-col gap-2">
-        <Bone className="h-10 w-2/3 self-end rounded-card" />
-        <Bone className="h-16 w-4/5 rounded-card" />
-        <Bone className="h-10 w-1/2 self-end rounded-card" />
-        <Bone className="h-24 w-4/5 rounded-card" />
+    <Skeleton
+      header={{ kind: "tab", title: "Chat", context: false }}
+      label="Loading the conversation"
+      className="flex min-h-dvh flex-col"
+    >
+      <CheckInSkeleton />
+      <div className="flex-1">
+        <ChatHistorySkeleton />
       </div>
-      <Bone className="mt-6 h-12 w-full rounded-card" />
+      <ComposerSkeleton />
     </Skeleton>
   );
 }

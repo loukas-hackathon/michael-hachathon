@@ -3,9 +3,6 @@ import type {
   ChatMessage,
   ChatRole,
   CheckInValue,
-  ChecklistItem,
-  Draft,
-  DraftStatus,
   Event,
   EventInput,
   EventSummary,
@@ -39,8 +36,6 @@ import { type PrivacyRules, screenEvents } from "./privacy";
 import type { NewRecord } from "./score/records";
 import {
   type AskedQuestion,
-  type ChecklistPatch,
-  checklistOrder,
   type DataDeleteScope,
   type DeleteCounts,
   type EventPatch,
@@ -49,8 +44,6 @@ import {
   type IntegrationRecord,
   type NewAnalysis,
   type NewCheckIn,
-  type NewChecklistItem,
-  type NewDraft,
   type NewFocusGuard,
   type NewRecommendation,
   type NudgeCreate,
@@ -257,20 +250,6 @@ const toTarget = (r: Record<string, unknown>): WeeklyTarget => ({
   updated_at: iso(r.updated_at as string) as string,
 });
 
-const toChecklistItem = (r: Record<string, unknown>): ChecklistItem => ({
-  id: r.id as string,
-  goal_id: r.goal_id as string,
-  date: String(r.date).slice(0, 10),
-  text: r.text as string,
-  position: Number(r.position),
-  status: r.status as ChecklistItem["status"],
-  settled_at: iso((r.settled_at as string | null) ?? null),
-  settled_by: (r.settled_by as ChecklistItem["settled_by"]) ?? null,
-  carried_from: (r.carried_from as string | null) ?? null,
-  created_at: iso(r.created_at as string) as string,
-  updated_at: iso(r.updated_at as string) as string,
-});
-
 const toRecord = (r: Record<string, unknown>): PersonalRecord => ({
   id: r.id as string,
   type: r.type as PersonalRecord["type"],
@@ -285,21 +264,6 @@ const toRecord = (r: Record<string, unknown>): PersonalRecord => ({
   line: (r.line as string | null) ?? null,
   announced_at: iso((r.announced_at as string | null) ?? null),
   created_at: iso(r.created_at as string) as string,
-});
-
-const toDraft = (r: Record<string, unknown>): Draft => ({
-  id: r.id as string,
-  event_id: (r.event_id as string | null) ?? null,
-  recommendation_id: (r.recommendation_id as string | null) ?? null,
-  title: r.title as string,
-  event_at: iso((r.event_at as string | null) ?? null),
-  channel: r.channel as Draft["channel"],
-  subject: (r.subject as string | null) ?? null,
-  body: r.body as string,
-  written_by: r.written_by as Draft["written_by"],
-  status: r.status as DraftStatus,
-  created_at: iso(r.created_at as string) as string,
-  updated_at: iso(r.updated_at as string) as string,
 });
 
 function check<T>(res: { data: T; error: { message: string; code?: string } | null }): T {
@@ -318,10 +282,8 @@ export const USER_TABLES = [
   "agent_clients",
   "focus_guards",
   "nudges",
-  "drafts",
   "recommendations",
   "analysis_runs",
-  "checklist_items",
   "goals",
   "events",
   "event_summaries",
@@ -1070,41 +1032,6 @@ export class SupabaseStore implements Store {
     return (rows ?? []).length;
   }
 
-  async listDrafts(filter?: { status?: DraftStatus }) {
-    let q = this.db
-      .from("drafts")
-      .select("*")
-      .eq("user_id", currentUserId())
-      .order("created_at", { ascending: false })
-      .limit(100);
-    if (filter?.status) q = q.eq("status", filter.status);
-    return (check(await q) ?? []).map(toDraft);
-  }
-
-  async createDraft(input: NewDraft) {
-    const res = await this.db
-      .from("drafts")
-      .insert({ ...input, user_id: currentUserId() })
-      .select("*")
-      .single();
-    // 23505: that event already has a draft (drafts_user_event_idx).
-    if (res.error?.code === "23505") return null;
-    return toDraft(check(res));
-  }
-
-  async updateDraftStatus(id: string, status: DraftStatus) {
-    const row = check(
-      await this.db
-        .from("drafts")
-        .update({ status, updated_at: new Date().toISOString() })
-        .eq("user_id", currentUserId())
-        .eq("id", id)
-        .select("*")
-        .maybeSingle(),
-    );
-    return row ? toDraft(row) : null;
-  }
-
   async getEvent(id: string) {
     const row = check(
       await this.db.from("events").select("*").eq("user_id", currentUserId()).eq("id", id).maybeSingle(),
@@ -1375,67 +1302,6 @@ export class SupabaseStore implements Store {
       await this.db.from("telegram_chats").select("user_id").eq("chat_id", chatId).maybeSingle(),
     );
     return row?.user_id ?? null;
-  }
-
-  async listChecklist(f: { from: string; to: string }) {
-    const rows = check(
-      await this.db
-        .from("checklist_items")
-        .select("*")
-        .eq("user_id", currentUserId())
-        .gte("date", f.from)
-        .lte("date", f.to),
-    );
-    return (rows ?? []).map(toChecklistItem).sort(checklistOrder);
-  }
-
-  async getChecklistItem(id: string) {
-    const row = check(
-      await this.db
-        .from("checklist_items")
-        .select("*")
-        .eq("user_id", currentUserId())
-        .eq("id", id)
-        .maybeSingle(),
-    );
-    return row ? toChecklistItem(row) : null;
-  }
-
-  async createChecklistItem(input: NewChecklistItem) {
-    const res = await this.db
-      .from("checklist_items")
-      .insert({
-        user_id: currentUserId(),
-        goal_id: input.goal_id,
-        date: input.date,
-        text: input.text,
-        position: input.position,
-        carried_from: input.carried_from ?? null,
-      })
-      .select("*")
-      .single();
-    // The unique index on open items: two adds at once for the same slot.
-    if (res.error?.code === "23505") throw new HttpError("conflict", "That slot of the day is taken");
-    return toChecklistItem(check(res));
-  }
-
-  async updateChecklistItem(id: string, patch: ChecklistPatch) {
-    const changes = withoutUndefined(patch as Record<string, unknown>);
-    const q = this.db.from("checklist_items");
-    const res =
-      Object.keys(changes).length === 0
-        ? await q.select("*").eq("user_id", currentUserId()).eq("id", id).maybeSingle()
-        : await q.update(changes).eq("user_id", currentUserId()).eq("id", id).select("*").maybeSingle();
-    if (res.error?.code === "23505") throw new HttpError("conflict", "That slot of the day is taken");
-    const row = check(res);
-    return row ? toChecklistItem(row) : null;
-  }
-
-  async deleteChecklistItem(id: string) {
-    const rows = check(
-      await this.db.from("checklist_items").delete().eq("user_id", currentUserId()).eq("id", id).select("id"),
-    );
-    return (rows ?? []).length > 0;
   }
 
   async listTargets(from: string, to: string) {

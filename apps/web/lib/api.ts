@@ -38,6 +38,7 @@ import { authHeaders } from "./caller";
 import { categoryOf } from "./categories";
 import type { ChecklistDay, ChecklistItem } from "./checklist";
 import type { DayView } from "./day";
+import { devLatency } from "./dev-latency";
 import type { GoalsView } from "./goals-view";
 import type { Instruction, InstructionInput } from "./instructions";
 import { API_URL, USE_MOCKS } from "./mode";
@@ -105,6 +106,7 @@ export async function answerCheckIn(id: string, value: CheckInValue): Promise<Ch
 
 /** Chat always talks to the API: there is no fixture for a conversation. */
 export async function getChatHistory(): Promise<ChatHistory> {
+  await devLatency();
   const body = await get<ChatHistory>("/v1/chat?limit=50");
   // An API from before action_ids still answers: no chips come back, the lines do.
   return {
@@ -435,6 +437,7 @@ export async function getScore(date = athensDay()): Promise<Score> {
  * `variant` previews the sample day's moments and states (?demo=morning|early|evening|empty|error|sample).
  */
 export async function getToday(variant?: string): Promise<DayView> {
+  await devLatency();
   if (variant === "error") throw new Error("Preview of the error state");
   if (variant && variant in SAMPLE_DAYS) return SAMPLE_DAYS[variant] as DayView;
   if (USE_MOCKS || variant === "sample") return sampleDay;
@@ -452,6 +455,7 @@ export async function getToday(variant?: string): Promise<DayView> {
  * `variant` previews states (?demo=empty|error|sample).
  */
 export async function getGoalsWeek(variant?: string): Promise<GoalsView> {
+  await devLatency();
   if (variant === "error") throw new Error("Preview of the error state");
   if (variant === "empty") return sampleGoalsEmpty;
   if (variant === "monday") return sampleGoalsMonday;

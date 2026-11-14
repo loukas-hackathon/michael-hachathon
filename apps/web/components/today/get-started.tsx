@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import { Tween } from "@/components/motion-ui";
 import { getSetup, getStartedDismissed, type SetupStep } from "@/lib/first-run";
 import { dismissGetStarted } from "@/lib/first-run-actions";
 import { HideButton } from "./hide-button";
@@ -22,7 +21,7 @@ export async function GetStarted({ demo }: { demo?: string }) {
       <div className="flex items-baseline justify-between gap-3">
         <h2 className="text-title3 font-bold">Get started</h2>
         <p className="text-footnote font-semibold text-label-2 tnum">
-          <Tween value={setup.done} /> of {total}
+          {setup.done} of {total}
         </p>
       </div>
       <div
@@ -35,10 +34,7 @@ export async function GetStarted({ demo }: { demo?: string }) {
         aria-label={`${setup.done} of ${total} steps done`}
       >
         {setup.steps.map((s) => (
-          <span
-            key={s.key}
-            className={`h-1 rounded-full transition-colors duration-[var(--m-dur-ui)] ease-[var(--m-ease-out)] motion-reduce:transition-none ${s.done ? "bg-label" : "bg-context"}`}
-          />
+          <span key={s.key} className={`h-1 rounded-full ${s.done ? "bg-label" : "bg-context"}`} />
         ))}
       </div>
 

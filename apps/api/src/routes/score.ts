@@ -9,12 +9,10 @@ import {
   type WeeklyTarget,
 } from "@michael/shared";
 import { Hono } from "hono";
-import { offerGoalActions } from "../checklist/offers";
 import { HttpError, parse } from "../http";
 import { DEFAULT_TIMEZONE } from "../patterns";
 import { Zone } from "../patterns/time";
 import {
-  countCheckInsFrom,
   detectRecords,
   isLocalDay,
   type Proposal,
@@ -64,27 +62,15 @@ export async function loadWeek(query: { date?: string; now?: string }): Promise<
       store.listEvents({ from: iso(start), to: iso(Math.min(start + WEEK_MS, range.to)), type: TYPES }),
     );
   }
-  // The week itself, for the checklist and count rows (#238): its items and the check in's
-  // answers. Extras, like the flags.
-  const monday = range.days[0] ?? date;
-  const sunday = range.days[6] ?? date;
-  const [goals, instructions, checklist, checkIns, ...pages] = await Promise.all([
+  const [goals, instructions, ...pages] = await Promise.all([
     store.listGoals(),
     // The flags on the blocks are an extra: a failed read here must never take the score down.
     store.listInstructions().catch(() => []),
-    store.listChecklist({ from: monday, to: sunday }).catch(() => []),
-    store.listCheckIns({ fromDay: monday, toDay: sunday }).catch(() => []),
     ...chunks,
   ]);
   const events = new Map<string, Event>();
   for (const page of pages) for (const e of page) events.set(e.id, e);
-  const built = scoreWithHistory([...events.values()], goals, {
-    date,
-    now,
-    instructions,
-    checklist,
-    countCheckIns: countCheckInsFrom(checkIns),
-  });
+  const built = scoreWithHistory([...events.values()], goals, { date, now, instructions });
   return { ...built, goals, now, real: Date.parse(now) <= clock };
 }
 
@@ -142,16 +128,6 @@ export async function scoreFor(query: { date?: string; now?: string }): Promise<
       return [] as PersonalRecord[];
     }),
   ]);
-  // Today's offers for checklist and count goals (checklist/offers.ts), made once a day through
-  // the instruction guard. Only from a score of the current week read at the real clock.
-  const today = new Zone(DEFAULT_TIMEZONE).dayOf(Date.now());
-  if (
-    week.real &&
-    Date.now() - Date.parse(week.now) < 60_000 &&
-    week.score.days.some((d) => d.date === today)
-  ) {
-    await offerGoalActions({ rows: week.score.goals }).catch((err) => console.error("score: offers", err));
-  }
   const s = withTarget(week.score, state?.target ? scoreTarget(state.target) : null);
   const days = new Set(s.days.map((d) => d.date));
   const inWeek = records.filter((r) => days.has(r.achieved_on));

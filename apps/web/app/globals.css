@@ -14,7 +14,7 @@
   --m-context: #d1d1d6;
   --m-spark: #ff2e93;
   --m-tint: #e6007a;
-  --m-tint-text: #e6007a;
+  --m-tint-text: #b80062; /* AA (4.5:1) on fill and on the tinted button; #e6007a was 4.05 */
   --m-on-tint: #ffffff;
   --m-danger: #ff3b30;
   --m-glass: rgb(249 249 251 / 0.82);
@@ -43,10 +43,6 @@
   --m-dur-sheet: 500ms;
   --m-dur-sheet-out: 360ms;
   --m-dur-count: 700ms;
-  /* A number that changed after mount moves to its new value (components/motion-ui.tsx, Tween). */
-  --m-dur-tween: 450ms;
-  /* Between items that arrive together, in reading order; capped at six items (motion.ts, stagger). */
-  --m-stagger: 30ms;
 }
 @supports (transition-timing-function: linear(0, 1)) {
   :root {
@@ -393,17 +389,39 @@ body::before {
   }
 }
 
-/* Skeletons (components/skeleton.tsx): nothing for 150ms, then a slow breath. No gradients. */
+/*
+ * Skeletons (components/skeleton.tsx): nothing for 200ms, so a fast load never flashes, then a
+ * slow breath. Bones are the fill on the page and a little darker inside a grey group or card.
+ * No gradients, no shimmer.
+ */
 .m-skeleton {
-  animation: m-fade-in var(--m-dur-ui) var(--m-ease-out) 150ms both;
+  animation: m-fade-in var(--m-dur-ui) var(--m-ease-out) 200ms both;
 }
 .m-bone {
   background: var(--m-fill);
-  animation: m-breathe 1.6s ease-in-out 350ms infinite;
+  animation: m-breathe 1.6s ease-in-out 400ms infinite;
+}
+.bg-fill .m-bone {
+  background: color-mix(in srgb, var(--m-label-2) 16%, transparent);
 }
 @keyframes m-breathe {
   50% {
     opacity: 0.55;
+  }
+}
+/*
+ * Content that replaces a skeleton the user saw cross-fades in, opacity only. <html data-reveal>
+ * is set for one moment by the leaving skeleton (components/skeleton-client.tsx), and
+ * @starting-style only applies to newly inserted elements, so nothing already on screen blinks.
+ */
+.screen,
+.m-reveal {
+  transition: opacity var(--m-dur-ui) var(--m-ease-out);
+}
+@starting-style {
+  html[data-reveal] .screen:not(.m-skeleton),
+  html[data-reveal] .m-reveal {
+    opacity: 0;
   }
 }
 
@@ -430,6 +448,10 @@ body::before {
   .m-skeleton {
     animation-name: m-fade-in;
     animation-duration: 1ms;
+  }
+  .screen,
+  .m-reveal {
+    transition-timing-function: linear;
   }
 }
 
@@ -507,8 +529,6 @@ body::before {
   background: var(--m-bg);
   color: var(--m-label);
   box-shadow: 0 -8px 30px -12px rgb(0 0 0 / 0.3);
-  /* Content never spills while the sheet eases to a new height (motion.ts, useSmoothHeight). */
-  overflow: hidden;
   transform: translateY(0);
   transition:
     transform var(--m-dur-sheet) var(--m-ease-sheet),
@@ -595,31 +615,6 @@ body::before {
   animation: m-fade-in var(--m-dur-ui) var(--m-ease-out) both;
 }
 
-/*
- * Open and close in place (components/motion-ui.tsx, Collapse): the row's height eases on the
- * smooth spring (no overshoot, so nothing spills), the content fades in just behind it and out
- * quicker than it came.
- */
-.m-collapse {
-  display: grid;
-  grid-template-rows: 0fr;
-  opacity: 0;
-  transition:
-    grid-template-rows var(--m-dur-smooth) var(--m-spring-smooth),
-    opacity var(--m-dur-exit) var(--m-ease-out);
-}
-.m-collapse[data-open] {
-  grid-template-rows: 1fr;
-  opacity: 1;
-  transition:
-    grid-template-rows var(--m-dur-smooth) var(--m-spring-smooth),
-    opacity var(--m-dur-ui) var(--m-ease-out) 60ms;
-}
-.m-collapse-inner {
-  min-height: 0;
-  overflow: hidden;
-}
-
 /* Segmented control: the selected pill slides between segments (components/form-controls.tsx). */
 .m-seg-thumb {
   transition: transform var(--m-dur-smooth) var(--m-spring-smooth);
@@ -637,11 +632,6 @@ body::before {
   .m-seg-thumb,
   .m-switch::after {
     transition: none;
-  }
-  /* Rows snap open or shut; the content still fades so the change is noticed. */
-  .m-collapse,
-  .m-collapse[data-open] {
-    transition: opacity var(--m-dur-ui) linear;
   }
   .m-switch:active:not(:disabled)::after {
     transform: none;

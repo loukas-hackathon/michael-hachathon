@@ -32,9 +32,7 @@ export function InstallApp() {
     return (
       <div className="rounded-group bg-fill px-4 py-3">
         <p className="text-body font-semibold">Put Michael on your Home Screen</p>
-        <p className="text-subhead text-label-2">
-          Tap Share, then Add to Home Screen. Nudges on iPhone need it.
-        </p>
+        <p className="text-subhead text-label-2">Tap Share, then Add to Home Screen.</p>
       </div>
     );
   }

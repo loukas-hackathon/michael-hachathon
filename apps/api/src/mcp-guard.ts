@@ -20,14 +20,9 @@ export const TOOL_SCOPE: Record<string, AgentScope> = {
   propose_goals: "goals",
   add_goal: "goals",
   update_goal: "goals",
-  get_checklist: "goals",
-  add_checklist_item: "goals",
   list_recommendations: "recommendations",
   update_recommendation: "recommendations",
   get_nudges: "recommendations",
-  // Drafts are Michael's advice for the user to send themselves; nothing is sent or booked.
-  list_drafts: "recommendations",
-  draft_follow_up: "recommendations",
   get_score: "score",
   get_records: "score",
   get_moments: "score",
@@ -96,20 +91,10 @@ export function summarise(name: string, title: string | undefined, input: unknow
       return "Read my advice";
     case "get_nudges":
       return "Read your nudges";
-    case "list_drafts":
-      return "Read your follow up drafts";
-    case "draft_follow_up":
-      return "Drafted a follow up for you to send";
     case "get_moments":
       return a.kind === "evening" ? "Read your evening moment" : "Read your morning moment";
     case "add_goal":
       return typeof a.title === "string" ? `Added the goal "${a.title.slice(0, 80)}"` : "Added a goal";
-    case "get_checklist":
-      return typeof a.date === "string" ? `Read your outcomes for ${a.date}` : "Read today's outcomes";
-    case "add_checklist_item":
-      return typeof a.text === "string"
-        ? `Added "${a.text.slice(0, 80)}" to your outcomes`
-        : "Added an outcome";
     case "update_goal":
       return a.active === false ? "Paused one of your goals" : "Changed one of your goals";
     case "update_recommendation":

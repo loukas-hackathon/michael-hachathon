@@ -11,9 +11,7 @@ import { agents } from "./routes/agents";
 import { analysis } from "./routes/analysis";
 import { chat } from "./routes/chat";
 import { checkIn } from "./routes/check-in";
-import { checklist } from "./routes/checklist";
 import { demo } from "./routes/demo";
-import { drafts } from "./routes/drafts";
 import { events } from "./routes/events";
 import { focusGuards } from "./routes/focus-guards";
 import { goals } from "./routes/goals";
@@ -51,7 +49,6 @@ const webhooksApp = new Hono().use(requireUser({ allowQueryKey: true })).route("
 export const v1Routes = new Hono()
   .route("/", events)
   .route("/", goals)
-  .route("/", checklist)
   .route("/", instructions)
   .route("/", recommendations)
   .route("/", analysis)
@@ -69,7 +66,6 @@ export const v1Routes = new Hono()
   .route("/", push)
   .route("/", actions)
   .route("/", focusGuards)
-  .route("/", drafts)
   .route("/", profile)
   .route("/", product)
   .route("/", tokens)

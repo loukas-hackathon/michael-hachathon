@@ -1,6 +1,5 @@
 import {
   type AnalysisTrigger,
-  type ChecklistItem,
   type Event,
   type Goal,
   isBrowser,
@@ -15,7 +14,7 @@ import { label } from "../patterns/format";
 import { DAY, HOUR, MINUTE, Zone } from "../patterns/time";
 import { buildTimeline, type Segment } from "../patterns/timeline";
 import { overlapWith, round1, round2, type Span, union } from "../patterns/util";
-import { behindPace, buildScore, type CountCheckIn, calendarTitles } from "../score";
+import { buildScore, calendarTitles } from "../score";
 import { type PlanEvent, planEvents } from "./plan";
 
 // The analysis brief: everything the model is told about one person for one run.
@@ -80,13 +79,6 @@ export interface BriefInput {
   actionsAre?: ActionsAre;
   /** Questions Michael asked in earlier runs, any order. He never asks one of them again. */
   asked?: { question: string; asked_at: string }[];
-  /**
-   * Checklist items of the week (#238). The brief carries today's open ones in the person's own
-   * words, and each checklist goal's tally. Michael never ticks them.
-   */
-  checklist?: ChecklistItem[];
-  /** Check in answers "yes" (score/check-in.ts), for the count goals' pace. */
-  countCheckIns?: CountCheckIn[];
   timezone?: string;
 }
 
@@ -212,25 +204,12 @@ function lostTo(block: ScoreBlock) {
  * from the score module (score/score.ts, "the attribution rule"), so the brief, the Today screen
  * and the Goals screen can never disagree about a block.
  */
-function buildPlan(
-  m: Moment,
-  events: Event[],
-  plan: PlanEvent[],
-  goals: Goal[],
-  withYesterday: boolean,
-  extras: Pick<BriefInput, "checklist" | "countCheckIns"> = {},
-) {
+function buildPlan(m: Moment, events: Event[], plan: PlanEvent[], goals: Goal[], withYesterday: boolean) {
   const { zone, now, today } = m;
   const at = new Date(now).toISOString();
   const calendarOnly = events.filter((e) => e.type === "calendar_event");
   const scoreOf = (date: string, from = events) =>
-    buildScore(from, goals, {
-      date,
-      now: at,
-      timezone: zone.name,
-      checklist: extras.checklist,
-      countCheckIns: extras.countCheckIns,
-    });
+    buildScore(from, goals, { date, now: at, timezone: zone.name });
   const week = weekOf(zone, today);
   const thisWeek = scoreOf(today);
 
@@ -238,14 +217,9 @@ function buildPlan(
   const perGoal = new Map(
     thisWeek.goals.map((g) => [
       g.goal_id,
-      // A goal outside the score (sleep) has no blocks to count. A count goal carries its pace
-      // ("1 of 2 done, 3 days left"), a checklist goal its tally (#238): data, not advice.
+      // A goal outside the score (sleep) has no blocks to count.
       !g.scored
-        ? compact({
-            scored: false,
-            count: g.count ? { ...g.count, behind_pace: behindPace(g.count) } : null,
-            checklist: g.checklist ?? null,
-          })
+        ? { scored: false }
         : {
             planned_minutes: g.planned_minutes,
             elapsed_minutes: g.elapsed_minutes,
@@ -711,19 +685,7 @@ export function buildBrief(input: BriefInput): { brief: Brief; context: BriefCon
     };
   }
 
-  const built = buildPlan(m, input.events, plan, goals, morning, {
-    checklist: input.checklist,
-    countCheckIns: input.countCheckIns,
-  });
-
-  // Today's open outcomes of the checklist goals, in the person's own words (#238).
-  const goalTitles = new Map(goals.map((g) => [g.id, g.title]));
-  const openToday = (input.checklist ?? [])
-    .filter((i) => i.date === today && i.status === "open" && goalTitles.has(i.goal_id))
-    .sort((a, b) => a.goal_id.localeCompare(b.goal_id) || a.position - b.position)
-    .map((i) =>
-      compact({ goal: goalTitles.get(i.goal_id), text: i.text, carried: i.carried_from ? true : null }),
-    );
+  const built = buildPlan(m, input.events, plan, goals, morning);
 
   const recent = input.recommendations
     .filter((r) => Date.parse(r.created_at) <= now)
@@ -754,8 +716,6 @@ export function buildBrief(input: BriefInput): { brief: Brief; context: BriefCon
         this_week: built.perGoal.get(g.id),
       }),
     ),
-    // The day's outcomes still open (checklist goals). Michael never ticks one himself.
-    ...(openToday.length > 0 ? { checklist_today: openToday } : {}),
     actions_are: input.actionsAre ?? "offers",
     // Ground rules in the person's own words. Not goals. Empty when they set none.
     instructions: (input.instructions ?? []).map((line) => line.trim()).filter((line) => line.length > 0),

@@ -3,6 +3,7 @@ import { type Event, EventType, type Goal, type TimelineResponse } from "@michae
 import { get } from "./api";
 import { addDays, athensDay, dayBounds, isLocalDay, weekOf } from "./athens";
 import { DATES_WITH_DATA, getTimelineDay, longestFrom, type Patterns } from "./days";
+import { devLatency } from "./dev-latency";
 import { getGoogleCalendar } from "./integrations";
 import { USE_MOCKS } from "./mode";
 import { sleepGoalMinutes } from "./sleep-goal";
@@ -55,6 +56,7 @@ const lightScan = (from: number, to: number) =>
   ).catch(() => ({ events: [] as Event[] }));
 
 export async function loadTimeline(asked?: string, demo?: string): Promise<TimelineScreen> {
+  await devLatency();
   if (demo === "sample" || USE_MOCKS) return loadSample(asked);
 
   const today = athensDay();

@@ -37,16 +37,6 @@ test("a device key acts for its owner, cannot mint keys, and stops working when 
   const mint = await call("/v1/tokens", secret, { method: "GET" });
   assert.equal(mint.status, 403, "a device key must not list or create keys");
 
-  // Device keys only send data (#114): no reads, no MCP.
-  assert.equal((await call("/v1/goals", secret)).status, 403, "a device key must not read data");
-  assert.equal((await call("/v1/today", secret)).status, 403, "a device key must not read the day");
-  const mcp = await call("/mcp", secret, {
-    method: "POST",
-    headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
-  });
-  assert.equal(mcp.status, 403, "a device key must not use MCP");
-
   await runAsUser(OWNER, () => revokePersonalToken(token.id), "session");
   const after = await call("/v1/goals", secret);
   assert.equal(after.status, 401);
