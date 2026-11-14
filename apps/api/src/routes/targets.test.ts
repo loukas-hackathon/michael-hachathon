@@ -51,6 +51,23 @@ const phone = (start: string, end: string): Input => ({
     seconds: (Date.parse(T(end)) - Date.parse(T(start))) / 1000,
   },
 });
+const editor = (start: string, end: string): Input => ({
+  source: "macos_usage",
+  type: "app_usage",
+  start_at: T(start),
+  end_at: T(end),
+  title: "VS Code",
+  data: {
+    bundle_id: "com.microsoft.VSCode",
+    device: "mac",
+    seconds: (Date.parse(T(end)) - Date.parse(T(start))) / 1000,
+  },
+});
+/** A sales block with the editor in front for all of it: verified, so it can set a block record. */
+const sales = (start: string, end: string): Input[] => [
+  block("Cold Outreach", start, end),
+  editor(start, end),
+];
 const day = (monday: string, i: number) =>
   new Date(Date.UTC(+monday.slice(0, 4), +monday.slice(5, 7) - 1, +monday.slice(8, 10) + i))
     .toISOString()
@@ -61,8 +78,7 @@ const clock = (minutes: number) =>
 /** A week: sales 10:00 to 12:00 Monday to Friday, the gym on Tuesday, `lost` minutes on the phone. */
 function week(monday: string, lost: number): Input[] {
   const out: Input[] = [];
-  for (let i = 0; i < 5; i++)
-    out.push(block("Cold Outreach", `${day(monday, i)} 10:00`, `${day(monday, i)} 12:00`));
+  for (let i = 0; i < 5; i++) out.push(...sales(`${day(monday, i)} 10:00`, `${day(monday, i)} 12:00`));
   out.push(block("Gym", `${day(monday, 1)} 18:00`, `${day(monday, 1)} 19:00`));
   let left = lost;
   for (let i = 0; left > 0; i++) {
@@ -99,7 +115,7 @@ async function setUp() {
     });
     const events = [
       ...HISTORY.flatMap((m, i) => week(m, [132, 66, 198, 99][i] ?? 0)),
-      block("Cold Outreach", `${TARGET_WEEK} 10:00`, `${TARGET_WEEK} 13:00`),
+      ...sales(`${TARGET_WEEK} 10:00`, `${TARGET_WEEK} 13:00`),
       block("Gym", `${day(TARGET_WEEK, 1)} 18:00`, `${day(TARGET_WEEK, 1)} 19:00`),
     ];
     await store.insertEvents(events.map((e) => EventInput.parse(e)));

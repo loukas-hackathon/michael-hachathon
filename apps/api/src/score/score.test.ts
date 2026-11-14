@@ -13,6 +13,7 @@ import {
   web,
   workout,
 } from "../patterns/testkit";
+import { detectRecords } from "./records";
 import { buildScore, isSleepGoal, scoreRange, scoreWithHistory } from "./score";
 
 // Small synthetic timelines whose answer can be worked out by hand. Every title, app and time
@@ -874,10 +875,11 @@ test("sleep: minutes per night against the goal, null until there is data", () =
   assert.equal(score(nights, "2026-11-11", "2026-11-11 12:00", [COMPANY]).sleep, null);
 });
 
-test("history: the weeks before and the longest run with no lost tick in each ended block", () => {
+test("history: the weeks before and the longest verified run in each ended block", () => {
   const events = [
     // 10:00 to 11:30 with the phone from 10:30 to 10:40: 30 minutes, 2 lost ticks, then 50 minutes.
     calendar("Cold Outreach", T("2026-11-03 10:00"), T("2026-11-03 11:30")),
+    mac(APPS.editor, T("2026-11-03 10:00"), T("2026-11-03 11:30")),
     phone(APPS.social, T("2026-11-03 10:30"), T("2026-11-03 10:40")),
     // Not ended yet: no run.
     calendar("Cold Outreach", T("2026-11-11 11:00"), T("2026-11-11 13:00")),
@@ -897,5 +899,32 @@ test("history: the weeks before and the longest run with no lost tick in each en
   assert.deepEqual(
     history.runs.map((r) => [r.day, r.minutes, r.first_tick, r.tick_minutes.length, r.area]),
     [["2026-11-03", 50, 8, 10, "business"]],
+  );
+});
+
+test("the longest block counts verified ticks only: 120 unseen minutes do not beat 50 proven ones", () => {
+  const events = [
+    // Two hours with no device data at all: spent, but all of it unverified.
+    calendar("Gym", T("2026-11-03 18:00"), T("2026-11-03 20:00")),
+    // 50 minutes in the editor inside a sales block: verified.
+    calendar("Cold Outreach", T("2026-11-04 10:00"), T("2026-11-04 10:50")),
+    mac(APPS.editor, T("2026-11-04 10:00"), T("2026-11-04 10:50")),
+    // Verified, then 20 minutes with no data, then verified again: the gap breaks the run.
+    calendar("Cold Outreach", T("2026-11-05 10:00"), T("2026-11-05 11:00")),
+    mac(APPS.editor, T("2026-11-05 10:00"), T("2026-11-05 10:20")),
+    mac(APPS.editor, T("2026-11-05 10:40"), T("2026-11-05 11:00")),
+  ];
+  const { history } = scoreWithHistory(events, GOALS, { date: "2026-11-11", now: T("2026-11-11 12:00") });
+  assert.deepEqual(
+    history.runs.map((r) => [r.day, r.minutes, r.first_tick]),
+    [
+      ["2026-11-04", 50, 0],
+      ["2026-11-05", 20, 0],
+    ],
+  );
+  const [baseline] = detectRecords({ weeks: [], runs: history.runs, stored: [] });
+  assert.deepEqual(
+    [baseline?.type, baseline?.value, baseline?.achieved_on],
+    ["longest_block", 50, "2026-11-04"],
   );
 });

@@ -2156,8 +2156,11 @@ type PersonalRecord = {
 
 **The record rule** (`apps/api/src/score/records.ts`, pure; the two change together):
 
-- **Kinds:** best week (the week's score), best week per category, and the longest run of 5 minute
-  ticks with no lost tick inside one goal block (minutes, across all goals).
+- **Kinds:** best week (the week's score), best week per category, and the longest run of verified
+  5 minute ticks (`spent`) inside one goal block (minutes, across all goals). A `lost` or an
+  `unverified` tick breaks the run: a block with no device data or workout to prove it (a class
+  with the phone away) never sets or holds the record. Week records stay scores, where unverified
+  time is already reported apart.
 - **What counts:** only a week that has ended, with at least 2 hours elapsed in that scope, sets a
   week record (30 minutes at 100% would otherwise stand forever). Only a block that has ended, with
   a run of at least 15 minutes, sets a block record.

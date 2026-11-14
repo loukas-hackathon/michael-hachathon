@@ -403,7 +403,10 @@ const areaTotals = (pieces: Piece[]) =>
     ]),
   ) as Record<GoalArea, ReturnType<typeof totals>>;
 
-/** The longest stretch of ticks with no lost tick in an ended piece. */
+/**
+ * The longest stretch of verified ticks (`spent`) in an ended piece. An `unverified` tick breaks
+ * the run like a lost one: a record never rests on time the data cannot prove.
+ */
 function longestRun(p: Piece): BlockRun | null {
   let best: { first: number; minutes: number[] } | null = null;
   let run: { first: number; minutes: number[] } | null = null;
@@ -411,7 +414,7 @@ function longestRun(p: Piece): BlockRun | null {
   p.ticks.forEach((tick, i) => {
     const a = p.start + i * SCORE_RULES.tickMs;
     const minutes = (Math.min(a + SCORE_RULES.tickMs, p.end) - a) / MINUTE;
-    if (tick === "lost" || tick === "ahead") {
+    if (tick !== "spent") {
       run = null;
       return;
     }

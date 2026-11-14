@@ -7,8 +7,9 @@ import { AREAS, areaName } from "./targets";
 // THE RECORD RULE (also in docs/api.md, "Records"; change both together)
 //
 //   Kinds       best_week (the week's score), best_week_area (one per category), longest_block
-//               (the longest run of 5 minute ticks with no lost tick inside one goal block, in
-//               minutes, across all goals).
+//               (the longest run of verified 5 minute ticks, `spent`, inside one goal block, in
+//               minutes, across all goals). A lost or an unverified tick breaks the run: a block
+//               the data cannot prove never sets or holds the record.
 //   Counts      Only a week that has ended, with at least 2 hours elapsed in that scope, sets a
 //               week record; only a block that has ended (and its run at least 15 minutes) sets
 //               a block record. A week with 30 minutes at 100% would otherwise stand forever.
@@ -34,7 +35,7 @@ export interface RecordWeek {
   areas: Record<GoalArea, { score_pct: number | null; elapsed_minutes: number }>;
 }
 
-/** The longest run with no lost tick inside one ended block (one day's part of it). */
+/** The longest run of verified ticks inside one ended block (one day's part of it). */
 export interface BlockRun {
   event_id: string;
   goal_id: string;
