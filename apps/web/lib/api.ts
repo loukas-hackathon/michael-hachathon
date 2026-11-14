@@ -9,7 +9,9 @@ import {
 } from "@michael/shared";
 import { cookies } from "next/headers";
 import type { DayView } from "./day";
+import type { GoalsView } from "./goals-view";
 import { sampleDay, sampleEarly, sampleEmpty, sampleEvening, sampleMorning } from "./sample/day";
+import { sampleGoals, sampleGoalsEmpty } from "./sample/goals";
 import { authEnabled, DEMO_COOKIE, supabaseServer } from "./supabase/server";
 
 // Server-side data access. The browser never sees API_KEY and never talks to the DB. Each request
@@ -68,4 +70,13 @@ const SAMPLE_DAYS: Record<string, DayView> = {
 export async function getToday(variant?: string): Promise<DayView> {
   if (variant === "error") throw new Error("Preview of the error state");
   return (variant && SAMPLE_DAYS[variant]) || sampleDay;
+}
+
+/**
+ * The week per goal. Sample until GET /v1/score carries per goal, per day minutes and sleep.
+ * `variant` previews states (?demo=empty|error).
+ */
+export async function getGoalsWeek(variant?: string): Promise<GoalsView> {
+  if (variant === "error") throw new Error("Preview of the error state");
+  return variant === "empty" ? sampleGoalsEmpty : sampleGoals;
 }
