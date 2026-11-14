@@ -6,7 +6,8 @@
   "scripts": {
     "start": "tsx src/index.ts",
     "check:chrome": "tsx src/checks/chrome.check.ts",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "tsx --test \"src/**/*.test.ts\""
   },
   "dependencies": {
     "@michael/shared": "workspace:*",
