@@ -138,7 +138,7 @@ function SlotRow({
             placeholder={slot.placeholder}
             autoComplete="street-address"
             maxLength={300}
-            className="min-h-11 rounded-[10px] bg-bg px-3 text-body outline-none placeholder:text-label-2"
+            className="min-h-11 rounded-control bg-bg px-3 text-body outline-none placeholder:text-label-2"
           />
           {mapsAvailable ? (
             <ul aria-live="polite" className="flex flex-col">
