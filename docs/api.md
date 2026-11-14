@@ -33,6 +33,7 @@ Every non-2xx response:
 | ----------------- | --------------------------------------------------- |
 | `bad_request`     | 400 (validation errors put zod issues in `details`) |
 | `unauthorized`    | 401                                                 |
+| `forbidden`       | 403 (agent lacks scope or is not approved)          |
 | `not_found`       | 404                                                 |
 | `conflict`        | 409                                                 |
 | `not_implemented` | 501                                                 |
@@ -46,10 +47,13 @@ Enums:
 - `Source`: `omi | whoop | health_auto_export | ios_shortcuts | activitywatch | google_calendar | owntracks | manual | agent`
 - `EventType`: `sleep | workout | recovery | biometric | app_usage | focus_session | conversation | memory | calendar_event | location | meal | note`
 - `GoalCategory`: `work | gym | rest | food`
-- `RecommendationStatus`: `proposed | accepted | dismissed | done`
-- `ActionKind`: `move_calendar_block | create_calendar_block | draft_message | reminder`
+- `RecommendationStatus`: `proposed | accepted | dismissed | done | undone` (`done` = action executed)
+- `ActionKind`: `move_calendar_block | create_focus_block | block_mac_app | draft_follow_up | reminder`
 - `AnalysisStatus`: `queued | running | succeeded | failed`
-- `AnalysisTrigger`: `manual | scheduled | mcp`
+- `AnalysisTrigger`: `manual | scheduled | mcp | morning | evening`
+- `AgentScope`: `timeline | goals | recommendations | score | write_events`
+- `AgentStatus`: `pending | approved | revoked`
+- `NudgeChannel`: `watch | push | telegram`; `NudgeStatus`: `queued | sent | failed | suppressed`
 - `IntegrationProvider`: `google_calendar | whoop`
 - `IntegrationStatus`: `connected | disconnected | error`
 
@@ -83,6 +87,7 @@ type Goal = {
   title: string;
   description: string | null;
   target: Record<string, unknown> | null; // e.g. { "sleep_hours": 7.5 }
+  weekly_budget_minutes: number | null; // e.g. 540 = "9 hours this week"
   active: boolean;
   created_at: string;
   updated_at: string;
@@ -92,19 +97,27 @@ type GoalCreate = {
   title: string;
   description?: string | null;
   target?: Record<string, unknown> | null;
+  weekly_budget_minutes?: number | null;
   active?: boolean /* default true */;
 };
 type GoalUpdate = Partial<GoalCreate>;
 
-type RecommendationAction = { kind: ActionKind; payload: Record<string, unknown> };
+type RecommendationAction = {
+  kind: ActionKind;
+  payload: Record<string, unknown>;
+  involves_others: boolean; // true => never executed, advice only
+  undo_until: string | null; // undo allowed until then (normally the event start)
+};
 type Recommendation = {
   id: string;
   analysis_run_id: string | null;
   goal_id: string | null;
   title: string;
   rationale: string;
-  action: RecommendationAction | null; // modelled, NOT executed in the MVP
+  action: RecommendationAction | null;
   status: RecommendationStatus;
+  executed_at: string | null;
+  undone_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -158,7 +171,8 @@ Response `200`: `Health`.
 - `source`, `type` optional comma-separated filters.
 - `200`: `{ from, to, events: Event[] }`. `400` on bad dates or unknown enum values.
 
-`POST /v1/events` body `EventInput` → `201 { inserted: number, duplicates: number, events: Event[] }`.
+`POST /v1/events` body `EventInput` → `201 { inserted: number, duplicates: number, ignored: number, events: Event[] }`.
+`ignored` counts events dropped because their source is switched off or the user is off the record.
 A duplicate `(source, external_id)` is skipped and counted in `duplicates` (not an error).
 
 `POST /v1/events/batch` body `{ events: EventInput[] }` (1..1000) → same response as above.
@@ -201,7 +215,14 @@ The exact provider payload for each is documented in the issue that implements i
 | GET    | `/v1/recommendations?status=proposed` |                                    | `200 { recommendations: Recommendation[] }` | live   |
 | PATCH  | `/v1/recommendations/:id`             | `{ status: RecommendationStatus }` | `200 Recommendation`, `404`                 | live   |
 
-Changing status never executes `action` in the MVP.
+Changing status never executes `action`; use the routes below.
+
+| Method | Path                              | Response                                                                                                                                        | Status |
+| ------ | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| POST   | `/v1/recommendations/:id/execute` | `200 Recommendation` (`status: done`, `executed_at` set). `409 conflict` if `involves_others` (Michael never touches events with other people). | stub   |
+| POST   | `/v1/recommendations/:id/undo`    | `200 Recommendation` (`status: undone`). `409 conflict` after `undo_until`.                                                                     | stub   |
+
+Rules: act only on the user's own calendar blocks and Mac; never touch events with other people; never delete; never send in the user's name.
 
 ### Integrations (OAuth)
 
@@ -214,15 +235,92 @@ Changing status never executes `action` in the MVP.
 `:provider` is `google_calendar` or `whoop`. Tokens are stored in the `integrations` table and are
 never returned by the API. Redirect URI: `${PUBLIC_API_URL}/v1/oauth/<provider>/callback`.
 
+### Privacy
+
+```ts
+type SourceSetting = { source: Source; enabled: boolean; updated_at: string };
+type PrivacyState = { off_the_record: boolean; since: string | null; sources: SourceSetting[] };
+```
+
+| Method | Path                          | Body                          | Response            | Status |
+| ------ | ----------------------------- | ----------------------------- | ------------------- | ------ |
+| GET    | `/v1/privacy`                 |                               | `200 PrivacyState`  | stub   |
+| PUT    | `/v1/privacy/off-the-record`  | `{ off_the_record: boolean }` | `200 PrivacyState`  | stub   |
+| PATCH  | `/v1/privacy/sources/:source` | `{ enabled: boolean }`        | `200 SourceSetting` | stub   |
+
+Sources are opt-in (disabled by default). While off the record, or for a disabled source, ingest
+drops events and counts them in `ignored`.
+
+### Michael for agents
+
+```ts
+type AgentClient = {
+  id: string;
+  name: string;
+  status: AgentStatus;
+  scopes: AgentScope[];
+  created_at: string;
+  last_seen_at: string | null;
+};
+type AgentQuery = {
+  id: string;
+  agent_id: string;
+  tool: string;
+  summary: string;
+  allowed: boolean;
+  created_at: string;
+};
+```
+
+| Method | Path                           | Body                                                    | Response                                                     | Status |
+| ------ | ------------------------------ | ------------------------------------------------------- | ------------------------------------------------------------ | ------ |
+| GET    | `/v1/agents`                   |                                                         | `200 { agents: AgentClient[] }`                              | stub   |
+| PATCH  | `/v1/agents/:id`               | `{ status?, scopes? }` (approve, revoke, change scopes) | `200 AgentClient`                                            | stub   |
+| GET    | `/v1/agents/queries?from=&to=` |                                                         | `200 { queries: AgentQuery[] }` ("who asked about me today") | stub   |
+
+A new agent's first MCP request registers it as `pending` and returns `forbidden` until the user
+approves it. Every MCP tool call is logged as an `AgentQuery`.
+
+### Nudges and score
+
+```ts
+type Nudge = {
+  id: string;
+  recommendation_id: string | null;
+  channel: NudgeChannel;
+  text: string;
+  status: NudgeStatus;
+  created_at: string;
+  sent_at: string | null;
+};
+type GoalScore = { goal_id: string; budget_minutes: number; planned_minutes: number; spent_minutes: number };
+type WeeklyScore = {
+  week_start: string;
+  planned_minutes: number;
+  spent_minutes: number;
+  score_pct: number;
+  time_won_back_minutes: number;
+  goals: GoalScore[];
+};
+```
+
+| Method | Path                        | Response                                              | Status |
+| ------ | --------------------------- | ----------------------------------------------------- | ------ |
+| GET    | `/v1/nudges?from=&to=`      | `200 { nudges: Nudge[] }`                             | stub   |
+| GET    | `/v1/score?week=YYYY-MM-DD` | `200 WeeklyScore` (week starts Monday, Europe/Athens) | stub   |
+
+Nudges: at most 5 per day, under 15 words, none in quiet hours (deep work, dinner, after 22:00);
+extra ones are stored as `suppressed`.
+
 ## MCP server
 
 Streamable HTTP at `POST /mcp` (stateless, JSON responses). Auth: `Authorization: Bearer <API_KEY>`.
 
-| Tool                  | Input                                                   | Output (JSON text content)                                  |
-| --------------------- | ------------------------------------------------------- | ----------------------------------------------------------- |
-| `get_timeline`        | `{ from?, to?, source?: Source[], type?: EventType[] }` | `{ from, to, events: Event[] }`                             |
-| `get_goals`           | `{ active_only?: boolean }` (default true)              | `{ goals: Goal[] }`                                         |
-| `get_recommendations` | `{ status?: RecommendationStatus }`                     | `{ recommendations: Recommendation[] }`                     |
-| `add_event`           | `EventInput`                                            | `{ inserted: number, duplicates: number, events: Event[] }` |
+| Tool                  | Input                                                   | Output (JSON text content)                                                   |
+| --------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `get_timeline`        | `{ from?, to?, source?: Source[], type?: EventType[] }` | `{ from, to, events: Event[] }`                                              |
+| `get_goals`           | `{ active_only?: boolean }` (default true)              | `{ goals: Goal[] }`                                                          |
+| `get_recommendations` | `{ status?: RecommendationStatus }`                     | `{ recommendations: Recommendation[] }`                                      |
+| `add_event`           | `EventInput`                                            | `{ inserted: number, duplicates: number, ignored: number, events: Event[] }` |
 
 Status: all `live` (in-memory store).
