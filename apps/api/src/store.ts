@@ -39,6 +39,7 @@ export interface TimelineFilter {
 
 export type NewRecommendation = Pick<Recommendation, "goal_id" | "title" | "rationale" | "action"> & {
   analysis_run_id?: string | null;
+  source?: Recommendation["source"];
 };
 
 export interface InsertResult {
@@ -81,11 +82,6 @@ export interface RecommendationActionUpdate {
   undone_at?: string | null;
   execution?: unknown;
 }
-
-export type NewRecommendation = Pick<Recommendation, "goal_id" | "title" | "rationale" | "action"> & {
-  analysis_run_id?: string | null;
-  source?: Recommendation["source"];
-};
 
 export type EventPatch = Partial<Pick<Event, "start_at" | "end_at" | "title" | "data">>;
 
@@ -130,13 +126,11 @@ export interface Store extends PrivacyBackend {
   listRecommendations(filter?: { status?: RecommendationStatus }): Promise<Recommendation[]>;
   updateRecommendationStatus(id: string, status: RecommendationStatus): Promise<Recommendation | null>;
   getRecommendation(id: string): Promise<Recommendation | null>;
-  /** A new recommendation of the current user; status starts at proposed. */
-  createRecommendation(input: NewRecommendation): Promise<Recommendation>;
   /** The execution record saved by `recordRecommendationAction`, or null. */
   getRecommendationExecution(id: string): Promise<unknown>;
   recordRecommendationAction(id: string, update: RecommendationActionUpdate): Promise<Recommendation | null>;
   latestAnalysisRun(): Promise<AnalysisRun | null>;
-  // Proposed by Michael's own rules (e.g. travel); status starts at proposed.
+  // Proposed by Michael's own rules (e.g. travel) or asked for in chat; status starts at proposed.
   createRecommendation(input: NewRecommendation): Promise<Recommendation>;
   // Saved places (home, work, gym). replacePlaces swaps the whole list.
   listPlaces(): Promise<Place[]>;
@@ -535,24 +529,6 @@ export class MemoryStore implements Store {
     return [...this.data.entries()]
       .filter(([, x]) => x.events.some((e) => Date.parse(e.created_at) >= from))
       .map(([userId]) => userId);
-  }
-
-  async createRecommendation(i: NewRecommendation) {
-    const rec: Recommendation = {
-      id: crypto.randomUUID(),
-      analysis_run_id: i.analysis_run_id ?? null,
-      goal_id: i.goal_id,
-      title: i.title,
-      rationale: i.rationale,
-      action: i.action,
-      status: "proposed",
-      executed_at: null,
-      undone_at: null,
-      created_at: now(),
-      updated_at: now(),
-    };
-    this.recommendations.push(rec);
-    return rec;
   }
 
   async listPlaces() {

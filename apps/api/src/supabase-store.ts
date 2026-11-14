@@ -432,24 +432,6 @@ export class SupabaseStore implements Store {
     return row ? toRecommendation(row) : null;
   }
 
-  async createRecommendation(i: NewRecommendation) {
-    const row = check(
-      await this.db
-        .from("recommendations")
-        .insert({
-          user_id: currentUserId(),
-          analysis_run_id: i.analysis_run_id ?? null,
-          goal_id: i.goal_id,
-          title: i.title,
-          rationale: i.rationale,
-          action: i.action,
-        })
-        .select("*")
-        .single(),
-    );
-    return toRecommendation(row);
-  }
-
   async listPlaces() {
     const rows = check(await this.db.from("places").select("*").eq("user_id", currentUserId()).order("key"));
     return (rows ?? []).map(toPlace);
