@@ -4,7 +4,9 @@ import { EmptyState } from "@/components/empty-state";
 import { LiveRefresh } from "@/components/live-refresh";
 import { ScreenHeader } from "@/components/screen";
 import { DayTimeline, HeartRow, SleepBand } from "@/components/timeline/day-timeline";
+import { LostWeekChart } from "@/components/timeline/lost-week";
 import { WeekStrip } from "@/components/timeline/week-strip";
+import { getLostWeek } from "@/lib/api";
 import { addDays } from "@/lib/athens";
 import { formatDay, formatMonth, formatWeekday, hm, minutesPhrase } from "@/lib/format";
 import { HEART_COOKIE } from "@/lib/health";
@@ -18,7 +20,10 @@ const tinted =
 export default async function TimelinePage({ searchParams }: { searchParams: Promise<Search> }) {
   const { day: askedDay, date: askedDate, demo } = await searchParams;
   // ?day= is the link format; ?date= still works for links made before.
-  const screen = await loadTimeline(askedDay ?? askedDate, demo);
+  const [screen, lostWeek] = await Promise.all([
+    loadTimeline(askedDay ?? askedDate, demo),
+    getLostWeek(askedDay ?? askedDate, demo),
+  ]);
   const { date, day, today } = screen;
   const noon = `${date}T12:00:00+02:00`;
   const sampleParam = demo === "sample" ? "sample" : undefined;
@@ -38,6 +43,7 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
         }
         title="Timeline"
       />
+      {lostWeek ? <LostWeekChart week={lostWeek} selected={date} hrefFor={dayHref} /> : null}
       <WeekStrip date={date} today={today} available={screen.available} demo={sampleParam} />
 
       <div className="mt-4">

@@ -1,4 +1,5 @@
 import { goalKind } from "@michael/shared";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { CountUp } from "@/components/count-up";
@@ -16,11 +17,12 @@ import { RecommendationsPanel, todaySuggestions } from "@/components/today/recom
 import { TodayEmpty } from "@/components/today/today-empty";
 import { TravelCard } from "@/components/today/travel-card";
 import { WatchLine } from "@/components/today/watch-line";
-import { getChecklist, getGoals, getToday, needsOnboarding } from "@/lib/api";
+import { getChecklist, getGoals, getLostWeek, getToday, needsOnboarding } from "@/lib/api";
 import type { ChecklistDay } from "@/lib/checklist";
 import { type DayView, nowIndex, tape, totals } from "@/lib/day";
 import { formatDay, formatTime, hm } from "@/lib/format";
 import { verdict } from "@/lib/gamification";
+import type { LostWeek } from "@/lib/lost-week";
 import { momentKindFor } from "@/lib/moments";
 
 const TITLE: Record<DayView["moment"], string> = { morning: "Morning", today: "Today", evening: "Evening" };
@@ -36,10 +38,11 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
   // The day and the suggestions load side by side; "More from Michael" streams in behind
   // Suspense, so the score never waits on the brief, the moment or the watch.
   const suggestions = todaySuggestions();
-  const [day, checklist, goals] = await Promise.all([
+  const [day, checklist, goals, lostWeek] = await Promise.all([
     getToday(demo),
     getChecklist().catch(() => null),
     getGoals().catch(() => []),
+    getLostWeek(undefined, demo),
   ]);
   const lists = checklistsFor(checklist, goals);
   const ticks = tape(day);
@@ -81,13 +84,13 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
         <>
           {day.week.scorePct != null ? (
             <p className="mt-1.5 text-subhead text-label-2">
-              We're at{" "}
               <b className="font-semibold text-label tnum">
                 <Tween value={day.week.scorePct} format="pct" />
               </b>{" "}
-              of goal time this week.{day.week.line ? ` ${day.week.line}` : ""}
+              optimisation score this week.{day.week.line ? ` ${day.week.line}` : ""}
             </p>
           ) : null}
+          {lostWeek && lostWeek.total > 0 ? <LostWeekLine week={lostWeek} demo={demo} /> : null}
           {day.balance && verdict(day.balance).line ? (
             <p className="mt-1 text-subhead font-semibold">{verdict(day.balance).line}</p>
           ) : null}
@@ -100,6 +103,7 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
                 </p>
               ) : (
                 <h2 className="flex flex-col">
+                  <span className="text-footnote font-semibold text-label-2">Optimisation score</span>
                   <span className="font-num text-score font-extrabold tracking-[-0.02em] tnum">
                     <CountUp value={t.scorePct ?? 0} suffix="%" />
                   </span>
@@ -214,4 +218,29 @@ function checklistsFor(day: ChecklistDay | null, goals: Awaited<ReturnType<typeo
     items: day.items.filter((i) => i.goal_id === goalId),
     suggestions: day.suggestions.filter((i) => i.goal_id === goalId),
   }));
+}
+
+/** "3h 54 lost from your goal blocks this week. Instagram took 1h 05 of it." Opens the chart. */
+function LostWeekLine({ week, demo }: { week: LostWeek; demo?: string }) {
+  const top = week.causes[0];
+  return (
+    <Link
+      href={`/timeline${demo === "sample" ? "?demo=sample" : ""}`}
+      className="press mt-1 flex items-start justify-between gap-3 text-subhead text-label-2"
+    >
+      <span>
+        <b className="font-semibold text-label tnum">{hm(week.total)}</b> lost from your goal blocks this
+        week.
+        {top ? (
+          <>
+            {" "}
+            {top.what} took <span className="tnum">{hm(top.minutes)}</span> of it.
+          </>
+        ) : null}
+      </span>
+      <span aria-hidden="true" className="shrink-0">
+        ›
+      </span>
+    </Link>
+  );
 }
