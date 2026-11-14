@@ -1,6 +1,13 @@
 import "server-only";
 import { cookies } from "next/headers";
-import { AUTH_MISSING_MESSAGE, DEMO_COOKIE, demoVisitorId, localFallbackAllowed } from "./auth-mode";
+import {
+  AUTH_MISSING_MESSAGE,
+  DEMO_COOKIE,
+  demoVisitorId,
+  E2E_COOKIE,
+  e2eTestUser,
+  localFallbackAllowed,
+} from "./auth-mode";
 import { authEnabled, supabaseServer } from "./supabase/server";
 
 // Who the web app asks the API for. One rule, in this order:
@@ -22,6 +29,9 @@ export type Caller =
   | { kind: "local" };
 
 export async function currentCaller(): Promise<Caller> {
+  // End-to-end tests only (see e2eTestUser): a fresh user without Supabase.
+  const testUser = e2eTestUser((await cookies()).get(E2E_COOKIE)?.value);
+  if (testUser) return { kind: "session", token: `e2e_${testUser}` };
   if (!authEnabled) {
     if (!localFallbackAllowed()) throw new Error(AUTH_MISSING_MESSAGE);
     return { kind: "local" };

@@ -14,7 +14,7 @@
   --m-context: #d1d1d6;
   --m-spark: #ff2e93;
   --m-tint: #e6007a;
-  --m-tint-text: #e6007a;
+  --m-tint-text: #b80062; /* AA (4.5:1) on fill and on the tinted button; #e6007a was 4.05 */
   --m-on-tint: #ffffff;
   --m-danger: #ff3b30;
   --m-glass: rgb(249 249 251 / 0.82);

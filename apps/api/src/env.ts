@@ -8,6 +8,9 @@ const Env = z.object({
   DEMO_USER_ID: z.uuid().default("2ee12960-e594-456d-85cb-a672d0ff3ac3"),
   // "on": the demo account carries the generated demo week (src/demo), kept up to now. "off": not.
   DEMO_WEEK: z.enum(["on", "off"]).default("on"),
+  // End-to-end tests only (e2e/): "on" accepts `Bearer e2e_<uuid>` as that user, so the suite can
+  // sign in a fresh, non demo user without Supabase. Ignored unless the store is in memory.
+  E2E_TEST_AUTH: z.enum(["on", "off"]).default("off"),
   // Comma-separated origins allowed by CORS (the web app).
   WEB_ORIGIN: z.string().default("http://localhost:3000"),
   // Public base URL of this API, used for OAuth redirect URIs.
@@ -74,4 +77,8 @@ export const webUrl = () => (env.WEB_URL ?? env.WEB_ORIGIN.split(",")[0] ?? "").
 
 if (env.API_KEY === "dev-key" && process.env.NODE_ENV === "production") {
   throw new Error("API_KEY must be set in production");
+}
+
+if (env.E2E_TEST_AUTH === "on" && (env.SUPABASE_URL || process.env.NODE_ENV === "production")) {
+  throw new Error("E2E_TEST_AUTH is for the in-memory test API only");
 }

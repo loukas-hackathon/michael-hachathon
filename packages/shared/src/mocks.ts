@@ -1011,9 +1011,16 @@ export const DEMO_RECOMMENDATION_IDS = [
 
 export function demoRecommendations(now: Date = new Date()): Recommendation[] {
   const hour = athensHour(now);
-  // Today if the slot is still comfortably ahead, otherwise tomorrow.
-  const focusDay = hour < 8 ? 0 : 1;
-  const runDay = hour < 17 ? 0 : 1;
+  // Today if the slot is still comfortably ahead, otherwise tomorrow; never on a Sunday, which the
+  // demo's standing instruction "Keep Sundays clear" protects (Do it would be refused).
+  const notSunday = (days: number) => {
+    const weekday = new Intl.DateTimeFormat("en-GB", { timeZone: DEMO_TZ, weekday: "short" }).format(
+      new Date(now.getTime() + days * 86_400_000),
+    );
+    return weekday === "Sun" ? days + 1 : days;
+  };
+  const focusDay = notSunday(hour < 8 ? 0 : 1);
+  const runDay = notSunday(hour < 17 ? 0 : 1);
   const focusStart = athensAt(now, focusDay, "09:30");
   const runStart = athensAt(now, runDay, "18:30");
   const syncStart = athensAt(now, 1, "11:00");

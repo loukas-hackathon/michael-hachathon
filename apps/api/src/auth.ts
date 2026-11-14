@@ -18,6 +18,9 @@ const expected = digest(env.API_KEY);
 // Constant-time comparison (hashing first equalises lengths).
 const isApiKey = (token: string) => timingSafeEqual(digest(token), expected);
 
+// `e2e_<uuid>`: a test user, accepted only with E2E_TEST_AUTH=on (see env.ts).
+const E2E_TOKEN = /^e2e_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
 const supabase =
   env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY
     ? createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } })
@@ -89,7 +92,11 @@ export const requireUser =
     let via: AuthMethod;
     let agentId: string | null = null;
     let visitor: string | undefined;
-    if (isApiKey(token)) {
+    if (env.E2E_TEST_AUTH === "on" && E2E_TOKEN.test(token)) {
+      // Test sign in for the end-to-end suite; env.ts refuses it outside the in-memory store.
+      userId = token.slice(4);
+      via = "session";
+    } else if (isApiKey(token)) {
       userId = env.DEMO_USER_ID;
       via = "api_key";
       // The web app browsing the demo week for one anonymous visitor: read mostly, own chat.
