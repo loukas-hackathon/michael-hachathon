@@ -1,0 +1,39 @@
+# Deploys the API to Railway on every merge to main that touches API code, so deploys never
+# depend on who merged (no Railway seat or manual approval needed).
+# Needs repo secret RAILWAY_TOKEN: a Railway *project* token for project "michael", environment production.
+name: Deploy API
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/api/**"
+      - "packages/shared/**"
+      - "pnpm-lock.yaml"
+      - "package.json"
+      - "railway.json"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: deploy-api
+  cancel-in-progress: true
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install -g @railway/cli@5.74.0
+      - run: railway up --service api --ci
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      - name: Verify health
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS https://api-production-16521a26.up.railway.app/health; then exit 0; fi
+            sleep 10
+          done
+          exit 1
