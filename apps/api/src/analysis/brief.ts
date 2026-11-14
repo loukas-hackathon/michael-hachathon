@@ -68,6 +68,11 @@ export interface BriefInput {
    */
   instructions?: string[];
   /**
+   * What the person told Michael in the check in (#187), one line each: the question and their
+   * own answer. Facts the sensors could not see; quoted, never invented.
+   */
+  toldMe?: string[];
+  /**
    * Whether the actions in the answer are carried out as it is written ("applied") or wait for one
    * tap from the person ("offers", the default). The model words its lines accordingly.
    */
@@ -714,6 +719,8 @@ export function buildBrief(input: BriefInput): { brief: Brief; context: BriefCon
     actions_are: input.actionsAre ?? "offers",
     // Ground rules in the person's own words. Not goals. Empty when they set none.
     instructions: (input.instructions ?? []).map((line) => line.trim()).filter((line) => line.length > 0),
+    // Check in answers (#187). Left out when there are none, so older briefs read the same.
+    ...(input.toldMe?.length ? { told_me: input.toldMe } : {}),
     plan: built.plan,
     patterns,
     data_notes: dataNotes(m, input.events, timeline.mac, weekFrom),

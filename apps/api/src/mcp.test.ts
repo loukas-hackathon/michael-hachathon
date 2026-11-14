@@ -51,9 +51,11 @@ const tomorrow = (hhmm: string) => `${zone.nextDay(zone.dayOf(Date.now()))}T${hh
 const TOOLS = [
   "add_event",
   "add_goal",
+  "answer_check_in",
   "block_mac_app",
   "create_focus_block",
   "execute_recommendation",
+  "get_check_in",
   "get_goals",
   "get_instructions",
   "get_moments",

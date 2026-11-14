@@ -10,6 +10,7 @@ import { actions } from "./routes/actions";
 import { agents } from "./routes/agents";
 import { analysis } from "./routes/analysis";
 import { chat } from "./routes/chat";
+import { checkIn } from "./routes/check-in";
 import { demo } from "./routes/demo";
 import { events } from "./routes/events";
 import { focusGuards } from "./routes/focus-guards";
@@ -54,6 +55,7 @@ export const v1Routes = new Hono()
   .route("/", score)
   .route("/", targets)
   .route("/", chat)
+  .route("/", checkIn)
   .route("/", moments)
   .route("/", voice)
   .route("/", integrations)

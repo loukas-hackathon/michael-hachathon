@@ -1186,6 +1186,77 @@ deadline in `action.undo_until`) or undone in this answer, and the reply always 
 "Undo until HH:MM." for each thing done. The context gives Claude ids only for the user's own blocks
 that have not started, goal ids, and the things that can still be undone.
 
+**Chat proposes goal and plan changes (#188).** Two more tools turn what the user said ("I have
+exams from 1 December", "my knee hurts") into one proposal: `propose_goal_change { changes:
+[{ goal_id, weekly_budget_minutes?, active? }], until?, title, reason }` and `propose_plan_change
+{ steps: [{ kind: "move_calendar_block", event_id, start_at?, end_at?, new_title? } | { kind:
+"create_focus_block", start_at, end_at, title? }], goal_id?, title, reason }`. Nothing changes: each
+stores a recommendation (`source: "chat"`, `status: "proposed"`, kind `change_goal` or
+`plan_change`, payloads under Recommendations) and returns it in `ChatResponse.actions` (and the
+stream's `action` event). The app shows Accept, which calls `POST /v1/recommendations/:id/execute`,
+and Not now, which sets `status: "dismissed"`; an accepted change is undone with `/undo`. Rules: one
+proposal per answer; a plan step on an event with other people or one that has started is
+refused before anything is stored; a proposal the user dismissed in the last 7 days for the same
+goals or blocks is refused, so Michael does not repeat it that week. The recommendation is the
+record of who changed the goal (chat) and why (`rationale`).
+
+**Check in in chat (#187).** The context lists the user's check in answers from the last 7 days
+("What you told me", quoted, never invented) and today's open questions with their ids, and a tool
+`answer_check_in { check_in_id, value }` keeps an answer the user types in the chat (same rules as
+`POST /v1/check-in/:id/answer`; the result gives the follow up to ask, word for word).
+
+### Check in (#187)
+
+Michael asks a few questions about the day, drawn from the timeline, and keeps the answers as
+structured notes (`check_ins`, one row per question) that feed the chat context, the analysis brief
+(`told_me`) and MCP.
+
+| Method | Path                      | Body                                         | Response                                                                        | Status |
+| ------ | ------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------- | ------ |
+| GET    | `/v1/check-in`            |                                              | `200 CheckInToday` `{ day, open, moment, questions: CheckIn[] }`                | live   |
+| POST   | `/v1/check-in/:id/answer` | `{ value: "yes" \| "no" \| 1..5 \| string }` | `201 CheckInAnswerResponse` `{ check_in, follow_up }`; `409` if answered; `404` | live   |
+| DELETE | `/v1/check-in/:id`        |                                              | `204`; the question, its answer and its follow ups are really deleted; `404`    | live   |
+
+```ts
+type CheckIn = {
+  id: string;
+  day: string; // local YYYY-MM-DD
+  kind: "missed_block" | "unaccounted" | "training" | "meeting" | "short_night" | "follow_up";
+  question: string; // "14:00 to 15:10 is unaccounted for on your Mac. Were you in a meeting?"
+  answer_type: "yes_no" | "scale" | "text";
+  moment: "missed_block" | "evening"; // the round it was asked in
+  event_id: string | null;
+  goal_id: string | null;
+  start_at: string | null;
+  end_at: string | null;
+  follow_up_of: string | null;
+  answer: "yes" | "no" | number | string | null; // the user's own words
+  label: string | null; // what it settles: "meeting", "trained", "skipped", "played_a_part", "low", "high", "other"
+  asked_at: string;
+  answered_at: string | null;
+};
+```
+
+- **Questions come from the day**, most useful first, at most 5: an own calendar block for a
+  health goal (or titled like a sport) that ended with no workout within an hour ("Run, 18:30 to
+  19:30. No workout recorded. Did you train?"); up to two stretches of 45 minutes or more between
+  09:00 and 19:00, inside the Mac day, with no Mac activity and nothing on the timeline ("14:00 to
+  15:10 is unaccounted for on your Mac. Were you in a meeting?"); a training block with a workout
+  ("Gym, 07:30 to 08:30. How did it go? 1 to 5."); up to two meetings with other people that ended
+  ("Investor call, 16:00. Did it go the way you wanted?"); a night under 6 hours ("You slept 5h 10.
+  Energy today? 1 to 5."). Only what has ended. Copy follows the voice sheet.
+- **At most two rounds a day**, opened by `GET /v1/check-in` (the app's Chat tab, MCP): right
+  after a missed training block (that question only), and from 20:00 the Evening round (the rest).
+  Once a round has been asked it is not asked again, and a question's key (`missed:<event id>`)
+  keeps it from being stored twice.
+- **Follow ups only when the answer calls for one**: a "no" on a meeting or a missed block, or 1 or
+  2 for a session, after a short night offers the night as the cause ("You slept 5h 10. Did that play
+  a part?"); an unaccounted stretch that was not a meeting asks "14:00 to 15:10. What was it? A few
+  words." Never a why.
+- Each question is answered once (`409` after). A yes or no may be typed as words too; any
+  question takes the user's own words. Answers about sleep, energy and training are health data:
+  deletable one by one, and in "delete everything".
+
 ### Moments (Morning and Evening)
 
 | Method | Path                           | Response     | Status |
@@ -1302,8 +1373,9 @@ Changing status never executes `action`; use the routes below.
 | POST   | `/v1/recommendations/:id/execute` | `200 Recommendation` (`status: done`, `executed_at` set). `409` see below | live   |
 | POST   | `/v1/recommendations/:id/undo`    | `200 Recommendation` (`status: undone`, `undone_at` set). `409` see below | live   |
 
-Kinds carried out: `move_calendar_block`, `move_calendar_blocks`, `create_focus_block` and
-`block_mac_app`; other kinds answer `501`.
+Kinds carried out: `move_calendar_block`, `move_calendar_blocks`, `create_focus_block`,
+`block_mac_app`, and the two chat proposals `change_goal` and `plan_change` (#188, below); other
+kinds answer `501`.
 
 ```ts
 // move_calendar_block: one of the user's own solo blocks (a timeline event id). A new start keeps
@@ -1327,6 +1399,35 @@ type BlockMacAppPayload = {
 // nothing: when one move is refused, the ones already made go back first. One undo puts every
 // block back. Extra fields (the travel maths, see Places and travel) ride along for the app.
 type MoveCalendarBlocksPayload = { moves: MoveCalendarBlockPayload[] }; // 1 to 10
+// change_goal (#188, proposed in chat only): patch up to 5 goals at once. `until` makes it
+// temporary: the old values come back then (scheduler and GET /v1/goals), and undo stays open
+// until then; without it undo stays open for 7 days.
+type ChangeGoalPayload = {
+  changes: {
+    goal_id: string;
+    weekly_budget_minutes?: number | null;
+    target?: GoalTarget | null;
+    active?: boolean;
+  }[];
+  until?: string | null;
+  reason: string; // "Exams from 1 December."
+};
+// plan_change (#188, proposed in chat only): up to 10 steps on the user's own calendar, carried out
+// together. Each step keeps the guard rails of its kind (and the standing instructions); if one
+// is refused, the steps already done are taken back. Undo reverts every step, until the first starts.
+type PlanChangePayload = {
+  steps: (
+    | {
+        kind: "move_calendar_block";
+        event_id: string;
+        start_at?: string;
+        end_at?: string;
+        new_title?: string;
+      }
+    | { kind: "create_focus_block"; start_at: string; end_at: string; title?: string }
+  )[];
+  reason: string; // "Knee hurts."
+};
 ```
 
 Rules: act only on the user's own calendar blocks and Mac; never touch events with other people;
@@ -2421,6 +2522,8 @@ offset. A refused or failed call returns `isError: true` with one plain sentence
 | `get_score`              | `score`           | `{ date?: LocalDay }` (default today)                                                   | `Score` without `day.blocks[].ticks` (target, verdict, records, free time, sleep included) |
 | `get_records`            | `score`           | `{}`                                                                                    | `{ records: PersonalRecord[] }` (as `GET /v1/records`)                                     |
 | `get_patterns`           | `timeline`        | `{ from?: TimeInput, to?: TimeInput }` (default: the last 7 days)                       | `PatternReport`                                                                            |
+| `get_check_in`           | `timeline`        | `{}`                                                                                    | `CheckInToday` (see Check in)                                                              |
+| `answer_check_in`        | `timeline`        | `{ id: uuid, value: "yes" \| "no" \| 1..5 \| string }`                                  | `CheckInAnswerResponse`                                                                    |
 | `list_recommendations`   | `recommendations` | `{ status?: RecommendationStatus }`                                                     | `{ recommendations: Recommendation[] }`                                                    |
 | `get_nudges`             | `recommendations` | `{ date?: LocalDay }` (default today)                                                   | `{ day, nudges: Nudge[] }`                                                                 |
 | `get_moments`            | `score`           | `{ kind?: MomentKind }` (default morning before 15:00 local, evening after)             | `Moment`                                                                                   |

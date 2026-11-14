@@ -5,7 +5,7 @@ import { useArrival } from "@/components/motion";
 import { answer, finish, useCheckIn } from "@/lib/check-in";
 import { AFTER, type Answer, DONE, OPENING, type Question, queue } from "@/lib/check-in-data";
 
-function Bubble({
+export function Bubble({
   from,
   arrive = false,
   children,
@@ -29,7 +29,7 @@ function Bubble({
   );
 }
 
-const label = (a: Answer) => (a === "yes" ? "Yes" : a === "no" ? "No" : String(a));
+export const label = (a: Answer) => (a === "yes" ? "Yes" : a === "no" ? "No" : String(a));
 
 /** Michael's questions about the day, one at a time: quick answers or the user's own words. */
 export function CheckIn({ questions, sample }: { questions: Question[]; sample: boolean }) {

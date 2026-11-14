@@ -1,4 +1,5 @@
 import { countsTowardsCap, type NudgeCheckResult } from "@michael/shared";
+import { revertExpiredGoalChanges } from "./actions/calendar";
 import { runAsUser } from "./context";
 import { env } from "./env";
 import { HOUR } from "./patterns/time";
@@ -34,7 +35,11 @@ export async function runNudgeChecks(now = Date.now()): Promise<UserCheck[] | nu
     const out: UserCheck[] = [];
     for (const userId of users) {
       try {
-        const result = await runAsUser(userId, () => checkNudges());
+        const result = await runAsUser(userId, async () => {
+          // Temporary goal changes from chat (#188) end on time even when nobody opens the app.
+          await revertExpiredGoalChanges().catch((err) => console.error("[scheduler] goal revert", err));
+          return checkNudges();
+        });
         out.push({ userId, result });
       } catch (err) {
         console.error(`[scheduler] nudge check failed for ${userId}`, err);

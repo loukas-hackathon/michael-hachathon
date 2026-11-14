@@ -2,6 +2,7 @@ import type {
   AnalysisRun,
   ChatMessage,
   ChatRole,
+  CheckInValue,
   Event,
   EventInput,
   EventSummary,
@@ -42,6 +43,7 @@ import {
   type IntegrationPatch,
   type IntegrationRecord,
   type NewAnalysis,
+  type NewCheckIn,
   type NewFocusGuard,
   type NewRecommendation,
   type NudgeCreate,
@@ -49,6 +51,7 @@ import {
   type RecommendationActionUpdate,
   type SeedResult,
   type Store,
+  type StoredCheckIn,
   sameEvent,
   summaryDayRange,
   type TargetInput,
@@ -110,6 +113,25 @@ const toFocusGuard = (r: Record<string, unknown>): FocusGuard => ({
   goal_id: (r.goal_id as string | null) ?? null,
   back_to: (r.back_to as string | null) ?? null,
   created_at: iso(r.created_at as string) as string,
+});
+
+const toCheckIn = (r: Record<string, unknown>): StoredCheckIn => ({
+  id: r.id as string,
+  key: r.key as string,
+  day: r.day as string,
+  kind: r.kind as StoredCheckIn["kind"],
+  question: r.question as string,
+  answer_type: r.answer_type as StoredCheckIn["answer_type"],
+  moment: r.moment as StoredCheckIn["moment"],
+  event_id: (r.event_id as string | null) ?? null,
+  goal_id: (r.goal_id as string | null) ?? null,
+  start_at: iso((r.start_at as string | null) ?? null),
+  end_at: iso((r.end_at as string | null) ?? null),
+  follow_up_of: (r.follow_up_of as string | null) ?? null,
+  answer: (r.answer as CheckInValue | null) ?? null,
+  label: (r.label as string | null) ?? null,
+  asked_at: iso(r.asked_at as string) as string,
+  answered_at: iso((r.answered_at as string | null) ?? null),
 });
 
 const toGoal = (r: Record<string, unknown>): Goal => ({
@@ -265,6 +287,7 @@ export const USER_TABLES = [
   "events",
   "event_summaries",
   "chat_messages",
+  "check_ins",
   "instructions",
   "telegram_chats",
   "integrations",
@@ -413,6 +436,63 @@ export class SupabaseStore implements Store {
       if (res.error && res.error.code !== "23505") check(res);
     }
     return { inserted: fresh.length, removed: stale.length, kept: existing.size - stale.length };
+  }
+
+  async listCheckIns(f: { fromDay: string; toDay: string }) {
+    const rows = check(
+      await this.db
+        .from("check_ins")
+        .select("*")
+        .eq("user_id", currentUserId())
+        .gte("day", f.fromDay)
+        .lte("day", f.toDay)
+        .order("asked_at")
+        .limit(200),
+    );
+    return (rows ?? []).map(toCheckIn);
+  }
+
+  async createCheckIns(rows: NewCheckIn[]) {
+    if (rows.length === 0) return [];
+    const userId = currentUserId();
+    const inserted = check(
+      await this.db
+        .from("check_ins")
+        .upsert(
+          rows.map((r) => ({ ...r, user_id: userId })),
+          { onConflict: "user_id,key", ignoreDuplicates: true },
+        )
+        .select("*"),
+    );
+    return (inserted ?? []).map(toCheckIn);
+  }
+
+  async getCheckIn(id: string) {
+    const row = check(
+      await this.db.from("check_ins").select("*").eq("user_id", currentUserId()).eq("id", id).maybeSingle(),
+    );
+    return row ? toCheckIn(row) : null;
+  }
+
+  async answerCheckIn(id: string, a: { answer: CheckInValue; label: string | null }) {
+    const row = check(
+      await this.db
+        .from("check_ins")
+        .update({ answer: a.answer, label: a.label, answered_at: new Date().toISOString() })
+        .eq("user_id", currentUserId())
+        .eq("id", id)
+        .select("*")
+        .maybeSingle(),
+    );
+    return row ? toCheckIn(row) : null;
+  }
+
+  async deleteCheckIn(id: string) {
+    // Follow ups go with their question (on delete cascade).
+    const rows = check(
+      await this.db.from("check_ins").delete().eq("user_id", currentUserId()).eq("id", id).select("id"),
+    );
+    return (rows ?? []).length > 0;
   }
 
   async seedGoals(goals: Goal[], opts: { overwrite: boolean }): Promise<number> {

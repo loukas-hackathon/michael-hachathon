@@ -1,4 +1,5 @@
 import type { AnalysisResult, AnalysisRun, AnalysisTrigger, Event, EventType } from "@michael/shared";
+import { checkInContext, checkInLine } from "../checkin/service";
 import { HttpError } from "../http";
 import { instructionLine } from "../instructions/protected";
 import { DEFAULT_TIMEZONE } from "../patterns";
@@ -145,7 +146,7 @@ export async function prepareBrief(
   let brief: ReturnType<typeof buildBrief>;
   try {
     const window = briefWindow({ from, to, now });
-    const [events, goals, recommendations, asked, instructions] = await Promise.all([
+    const [events, goals, recommendations, asked, instructions, checkIns] = await Promise.all([
       loadEvents(store, window.from, window.to),
       store.listGoals(),
       store.listRecommendations(),
@@ -153,6 +154,8 @@ export async function prepareBrief(
       // The person's ground rules (/v1/instructions). A failed read must not stop the run: the
       // brief then carries an empty list, as it did before the table existed.
       store.listInstructions().catch(() => []),
+      // What the person told Michael in the check in (#187). Best effort, like the instructions.
+      checkInContext(Date.parse(now)),
     ]);
     brief = buildBrief({
       events,
@@ -165,6 +168,7 @@ export async function prepareBrief(
       // Active ones only, in the person's own words, with their exceptions in words ("Keep
       // Sundays clear (except: Rhefuel)"). A paused instruction protects nothing.
       instructions: instructions.filter((i) => i.active).map(instructionLine),
+      toldMe: checkIns.answered.map(checkInLine),
       // Nothing is carried out on a run: every action waits for the person's tap (the execute
       // route). When a run starts applying actions itself, this becomes "applied".
       actionsAre: "offers",

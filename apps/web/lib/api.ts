@@ -4,6 +4,9 @@ import {
   ApiError,
   type ChatHistory,
   type ChatResponse,
+  type CheckInAnswerResponse,
+  type CheckInToday,
+  type CheckInValue,
   DEFAULT_PROFILE,
   demoRecommendations,
   type Goal,
@@ -86,6 +89,16 @@ export async function openChatStream(message: string): Promise<Response> {
     body: JSON.stringify({ message }),
     cache: "no-store",
   });
+}
+
+/** GET /v1/check-in (#187): today's questions; the API opens a round when one is due. */
+export async function getCheckIn(): Promise<CheckInToday> {
+  return get<CheckInToday>("/v1/check-in");
+}
+
+/** POST /v1/check-in/:id/answer: the answer, and the follow up it calls for. */
+export async function answerCheckIn(id: string, value: CheckInValue): Promise<CheckInAnswerResponse> {
+  return send<CheckInAnswerResponse>("POST", `/v1/check-in/${encodeURIComponent(id)}/answer`, { value });
 }
 
 /** Chat always talks to the API: there is no fixture for a conversation. */

@@ -4,6 +4,7 @@ import type { Recommendation } from "@michael/shared";
 import { useState, useTransition } from "react";
 import { formatTime } from "@/lib/format";
 import { undoAction } from "./actions";
+import { ProposalCard } from "./proposal-card";
 
 /** What Michael did while answering, each with its undo until the block starts. */
 export function ActionChips({ actions }: { actions: Recommendation[] }) {
@@ -19,6 +20,12 @@ export function ActionChips({ actions }: { actions: Recommendation[] }) {
 }
 
 function ActionChip({ action }: { action: Recommendation }) {
+  // A proposal (#188) waits for the user's tap instead.
+  if (action.status === "proposed") return <ProposalCard action={action} />;
+  return <DoneChip action={action} />;
+}
+
+function DoneChip({ action }: { action: Recommendation }) {
   const [undone, setUndone] = useState(action.status === "undone");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
