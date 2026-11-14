@@ -2,7 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { deleteInstruction, patchInstruction, postInstruction, putProfile } from "@/lib/api";
-import { type InstructionInput, type InstructionKind, instructionText } from "@/lib/instructions";
+import {
+  HOUSE_RULES,
+  type InstructionInput,
+  type InstructionKind,
+  instructionText,
+} from "@/lib/instructions";
 
 export type FormState = { ok: boolean; message: string | null };
 
@@ -44,6 +49,15 @@ export async function addInstruction(_prev: FormState, form: FormData): Promise<
   if (!res.ok) return { ok: false, message: res.message };
   revalidatePath("/you");
   return { ok: true, message: null };
+}
+
+/** One tap: add one of the suggested house rules, by its place in HOUSE_RULES. */
+export async function addHouseRule(index: number): Promise<FormState> {
+  const rule = Number.isInteger(index) ? HOUSE_RULES[index] : undefined;
+  if (!rule) return { ok: false, message: "That rule is not on the list." };
+  const res = await postInstruction(rule);
+  revalidatePath("/you");
+  return res.ok ? { ok: true, message: null } : { ok: false, message: res.message };
 }
 
 export async function editInstruction(id: string, _prev: FormState, form: FormData): Promise<FormState> {

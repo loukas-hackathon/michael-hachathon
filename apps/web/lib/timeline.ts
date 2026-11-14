@@ -63,7 +63,7 @@ export type TimelineDay = {
   phone: Mark[];
   ai: Mark[];
   segments: Segment[];
-  /** The Apple Watch: last night, tonight, workouts and heart rate per hour. */
+  /** The Apple Watch: last night, tonight, naps, workouts and heart rate per hour (lib/health.ts). */
   health?: DayHealth;
   totals: { workMinutes: number; lostMinutes: number; phoneSessions: number; phoneMinutes: number };
 };
@@ -320,10 +320,11 @@ export function buildTimeline(
     .filter((d) => d.end > d.start);
 
   // 6. Quiet stretches of 90 minutes or more (no Mac block, no phone session, nothing planned, no
-  // workout, no drive) collapse to one row.
+  // workout, no nap, no drive) collapse to one row.
   const busy = [
     ...blocks.map((b) => [b.start, b.end] as const),
     ...health.workouts.map((w) => [Math.max(w.start, dayStart), Math.min(w.end, dayEnd)] as const),
+    ...health.naps.map((n) => [n.start, Math.min(n.end, dayEnd)] as const),
     ...phone.map((p) => [p.start, p.end] as const),
     ...plans.map((p) => [p.start, p.end] as const),
     ...drives.map((d) => [d.start, d.end] as const),

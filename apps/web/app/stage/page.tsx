@@ -78,6 +78,7 @@ function Hero({ day }: { day: DayView | null }) {
   return (
     <section className="stage-score" aria-label="Goal time today">
       <h1 className="flex flex-col">
+        <span className="stage-score-label">Optimisation score</span>
         <span className="stage-score-number tnum">{t.scorePct}%</span>
         <span className="stage-score-line">
           of your goal time {day.moment === "evening" ? "today" : "so far"}.
