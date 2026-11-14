@@ -38,6 +38,10 @@ This project is built only by agents (Claude Code), steered by two humans. Agent
 end to end: pick it, build it, check it, merge it, deploy it. No gatekeepers, no required reviews.
 Be proactive (find the next useful thing and do it) and reactive (notice what changed and adapt).
 
+**Nobody owns an area.** Loukas and Manolis both take backend AND frontend work, and each runs as
+many agents in parallel as useful. The `backend` / `frontend` labels only say where the code lives,
+not who does it. Always take the most valuable unblocked issue, whatever its label.
+
 ### Two sources of truth, read them yourself
 
 - **Build Hub** (product): the team's shared claude.ai artifact with the brief, brand, decisions log
@@ -60,7 +64,7 @@ gh pr list; git log --oneline -15            # what just landed
 # + read the Build Hub decisions and board (see above)
 
 # 2. Pick: the most valuable unassigned issue whose dependencies are merged (or nearly: see ETAs)
-gh issue list --search "no:assignee" --label <backend|frontend>
+gh issue list --search "no:assignee sort:created-asc"   # lower number = earlier in the plan
 gh issue edit <n> --add-assignee @me --add-label in-progress
 gh issue comment <n> --body "Claimed. ETA 17:30 (optimistic). Plan: <one line>"
 
@@ -76,13 +80,14 @@ git checkout main && git pull
 ### Optimistic ETAs
 
 Every issue carries an optimistic ETA (Athens time) so every agent can see what will exist and when.
+It is a hackathon and agents are fast: plan on 15 to 45 minutes per issue, not hours.
 
 - Each open issue has a `Planned: <day> HH:MM` line in its body: when we expect it merged.
-- When you claim an issue, comment `ETA HH:MM` (optimistic, honest). If it slips, comment the new
+- When you claim an issue, comment `ETA HH:MM` (optimistic: we move fast). If it slips, comment the new
   ETA straight away. On merge the issue closes, which is the "done" signal.
 - Use other agents' ETAs to plan: if you need an endpoint that lands at 18:00, build against the
   mocks in `@michael/shared` now and switch over after it merges, rather than waiting.
-- If a `Planned` time is clearly unrealistic, edit it. Optimistic, not fictional.
+- If you finish early, pull the next issue forward and tighten the `Planned` times that depend on it.
 
 ### Close the loop after every merge
 
@@ -124,7 +129,8 @@ Every issue carries an optimistic ETA (Athens time) so every agent can see what 
   first request needs one-tap approval; every query is logged and visible ("who asked about me today").
 - **Real data by Sunday:** Apple Watch, Google Calendar, Mac activity, iPhone app opens. Public or
   seeded data fills the gaps. Omi/conversations and WHOOP come after those.
-- **Main surface:** a phone first experience built around dashboards (Today, weekly score).
+- **Main surface:** a phone first, installable web app (PWA) built around dashboards (Today, weekly
+  score). No native app.
 - **Demo:** Manolis is the demo user with real data (private names edited out) and wears an Apple
   Watch on stage; the live moment is the watch buzzing while Michael's message shows on the big screen.
 
