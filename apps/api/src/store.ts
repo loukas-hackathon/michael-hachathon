@@ -25,6 +25,7 @@ import {
 } from "@michael/shared";
 import type { z } from "zod";
 import { currentUserId } from "./context";
+import { stableUuid } from "./demo/week";
 import { env } from "./env";
 import type { GeocodeHit } from "./integrations/maps";
 import { type PrivacyBackend, type PrivacyRules, screenEvents } from "./privacy";
@@ -40,6 +41,12 @@ export interface TimelineFilter {
 export type NewRecommendation = Pick<Recommendation, "goal_id" | "title" | "rationale" | "action"> & {
   analysis_run_id?: string | null;
 };
+
+export interface SeedResult {
+  inserted: number;
+  removed: number;
+  kept: number;
+}
 
 export interface InsertResult {
   inserted: Event[];
@@ -172,6 +179,18 @@ export interface Store extends PrivacyBackend {
    * `since`. Only the scheduler calls it, outside any request, and then runs each check as that user.
    */
   activeUserIds(since: string): Promise<string[]>;
+
+  // Seeding (the demo week, src/demo). Makes the current user's events whose external_id starts
+  // with `prefix` and whose source is in `sources` exactly `events`: missing ones are inserted,
+  // ones no longer listed are removed. Events without the prefix or of other sources are never
+  // touched. No privacy screening here: the caller decides which sources to pass.
+  syncSeededEvents(
+    prefix: string,
+    sources: Source[],
+    events: z.output<typeof EventInput>[],
+  ): Promise<SeedResult>;
+  // Writes goals with their fixed ids. `overwrite: false` only adds the missing ones.
+  seedGoals(goals: Goal[], opts: { overwrite: boolean }): Promise<number>;
 }
 
 export const emptyIntegration = (provider: IntegrationProvider): IntegrationRecord => ({
@@ -197,6 +216,7 @@ const overlaps = (e: Event, from: number, to: number) => {
 export class MemoryStore implements Store {
   readonly kind = "memory" as const;
   // One copy of the mock day per user, created on first access, so users never see each other's data.
+  // The demo account starts empty instead: the demo week (src/demo) fills it on its first request.
   private data = new Map<
     string,
     {
@@ -218,9 +238,10 @@ export class MemoryStore implements Store {
     const userId = currentUserId();
     let x = this.data.get(userId);
     if (!x) {
+      const demo = userId === env.DEMO_USER_ID && env.DEMO_WEEK === "on";
       x = {
-        events: structuredClone(mockEvents),
-        goals: structuredClone(mockGoals),
+        events: demo ? [] : structuredClone(mockEvents),
+        goals: demo ? [] : structuredClone(mockGoals),
         recommendations: structuredClone(mockRecommendations),
         runs: [structuredClone(mockAnalysisRun)],
         privacy: { offTheRecord: false, since: null, sources: {} },
@@ -546,6 +567,58 @@ export class MemoryStore implements Store {
 
   async saveGeocode(query: string, hit: GeocodeHit) {
     this.d.geocodes.set(query, hit);
+  }
+
+  async syncSeededEvents(
+    prefix: string,
+    sources: Source[],
+    inputs: z.output<typeof EventInput>[],
+  ): Promise<SeedResult> {
+    const key = (e: { source: string; external_id?: string | null }) => `${e.source}|${e.external_id}`;
+    const scope = new Set(sources);
+    const wanted = new Map(inputs.filter((i) => scope.has(i.source)).map((i) => [key(i), i]));
+    const d = this.d;
+    let removed = 0;
+    const existing = new Set<string>();
+    d.events = d.events.filter((e) => {
+      if (!e.external_id?.startsWith(prefix) || !scope.has(e.source)) return true;
+      if (wanted.has(key(e))) {
+        existing.add(key(e));
+        return true;
+      }
+      removed++;
+      return false;
+    });
+    let inserted = 0;
+    for (const [k, i] of wanted) {
+      if (existing.has(k)) continue;
+      d.events.push({
+        // Stable ids, so a recommendation pointing at a seeded event survives a reseed.
+        id: stableUuid(k),
+        source: i.source,
+        type: i.type,
+        start_at: i.start_at,
+        end_at: i.end_at ?? null,
+        title: i.title,
+        data: i.data,
+        external_id: i.external_id ?? null,
+        created_at: now(),
+      });
+      inserted++;
+    }
+    return { inserted, removed, kept: existing.size };
+  }
+
+  async seedGoals(goals: Goal[], opts: { overwrite: boolean }) {
+    let written = 0;
+    for (const g of goals) {
+      const i = this.goals.findIndex((x) => x.id === g.id);
+      if (i === -1) this.goals.push(structuredClone(g));
+      else if (opts.overwrite) this.goals[i] = structuredClone(g);
+      else continue;
+      written++;
+    }
+    return written;
   }
 }
 

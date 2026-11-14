@@ -1386,6 +1386,39 @@ Stated here and at the top of `apps/api/src/score/score.ts`; the two change toge
   the shared public list, otherwise by its category ("a travel site"). `minutes` is the time lost
   inside the stretch.
 
+### Demo account
+
+| Method | Path              | Response             | Status |
+| ------ | ----------------- | -------------------- | ------ |
+| POST   | `/v1/demo/reseed` | `200 DemoSeedResult` | live   |
+
+```ts
+type DemoSeedResult = {
+  days: string[]; // Athens dates covered, oldest first; the last is today
+  events: { inserted: number; removed: number; kept: number };
+  goals_written: number;
+};
+```
+
+The demo account (`API_KEY`) carries a generated week (`apps/api/src/demo`): the seven Athens days
+ending now, plus its calendar planned to Sunday. The Mac, iPhone, Chrome and Claude Code lanes
+replay Manolis' anonymised real days (`apps/web/lib/sample/real`); Apple Watch, Google Calendar,
+Omi conversations and meals are generated around them. Every generated event has an `external_id`
+starting `demo:`; only those rows are ever added or removed, so nothing else in the account is
+touched; days that leave the window are removed. The API refreshes the week on demo requests at
+most every 5 minutes (the first refresh after a deploy resets the goals to the Build Hub plan,
+later ones keep edits; `DEMO_WEEK=off` turns it off). `POST /v1/demo/reseed` also resets the goals.
+Any other account gets `403 forbidden`. Off the record, nothing changes. Per source switches are
+not applied: on the demo account they keep real collectors out (#114). From a terminal:
+`pnpm --filter @michael/api seed:demo` (or `--dry` to print the week without a database).
+
+Generated events use exactly the titles and `data` of the real ingest paths (Health Auto Export
+sleep, workouts and hourly `heart_rate`, `step_count`, `heart_rate_variability`,
+`resting_heart_rate`; Omi conversations; the collector's lanes); a test compares them with the
+webhook mappers. Calendar events carry `attendees` (the number of other people, 0 for the user's
+own blocks), `calendar`, `location?`, `status`, `all_day`. Meals are `manual` `meal` events with
+`estimated_kcal`, `protein_g`; typed notes are `manual` `note` events with `category`.
+
 ## MCP server
 
 Streamable HTTP at `POST /mcp` (stateless, JSON responses). Auth: `Authorization: Bearer <token>`,

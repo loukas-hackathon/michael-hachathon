@@ -1,6 +1,6 @@
 // Seeds Supabase with the demo goals, one analysis run and its recommendations from
 // @michael/shared. Idempotent: rows keep their fixed ids and existing ids are skipped.
-// Events are never seeded: the timeline holds real data only.
+// Events are not seeded here; the demo account's week comes from scripts/demo-week.ts (seed:demo).
 // Usage: pnpm --filter @michael/api seed   (reads SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY)
 import { mockAnalysisRun, mockGoals, mockRecommendations } from "@michael/shared";
 import { createClient } from "@supabase/supabase-js";
