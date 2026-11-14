@@ -79,7 +79,7 @@ export default async function YouPage({
           >
             <span className="flex flex-col">
               <span className="text-body">Redo setup</span>
-              <span className="text-footnote text-label-2">Goals, usual week and quiet hours</span>
+              <span className="text-footnote text-label-2">Goals and connections</span>
             </span>
             <span className="text-label-2">›</span>
           </Link>

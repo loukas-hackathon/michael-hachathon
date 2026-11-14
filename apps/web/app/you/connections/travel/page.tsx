@@ -7,14 +7,15 @@ export const metadata = { title: "Location · Michael" };
 
 // Location: home, work and gym, typed or taken from the phone in one tap, and the travel switch.
 // Michael plans drives between these and the places in your calendar.
-export default async function LocationPage() {
+export default async function LocationPage({ searchParams }: { searchParams: Promise<{ from?: string }> }) {
+  const { from } = await searchParams;
   const [{ row }, places, suggestions] = await Promise.all([
     getConnection("travel"),
     getPlaces().catch(() => null),
     getPlaceSuggestions().catch(() => null),
   ]);
   return (
-    <ConnectionPage row={row}>
+    <ConnectionPage row={row} from={from}>
       <SetupSection title="Your places">
         {places ? (
           <PlacesEditor

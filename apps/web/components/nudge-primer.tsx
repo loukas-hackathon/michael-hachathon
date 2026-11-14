@@ -3,8 +3,7 @@
 import { useState } from "react";
 import { markAsked, recentlyAsked, useNudges } from "@/lib/use-nudges";
 
-// The ask for nudges, at the moment they help (#207): after the first Do it on Today, and at the end
-// of onboarding (that one lives in app/onboarding/flow.tsx and uses the same pieces). A primer comes
+// The ask for nudges, at the moment they help (#207): after the first Do it on Today. A primer comes
 // before the system prompt, so "Not now" never spends it. On iPhone in Safari it shows the two
 // Home Screen steps first, because iOS only allows web push from there.
 

@@ -1,16 +1,22 @@
 "use server";
 
 import { GoalCategory, ProfileUpdate } from "@michael/shared";
-import { createGoal, getGoals, patchGoal, putProfile } from "@/lib/api";
+import { revalidatePath } from "next/cache";
+import { acceptGoalSuggestion, createGoal, getGoals, patchGoal, putProfile } from "@/lib/api";
 import { isDemoVisitor } from "@/lib/caller";
 
 // Server functions behind the onboarding talk. Only the server talks to the API, with the signed in
 // user's token. Everything here comes from the browser, so it is parsed first.
 
 export type GoalAnswer = { category: GoalCategory; weekly_minutes: number };
+/** A goal Michael found in the calendar (#134), kept with the hours the user left on it. */
+export type KeptSuggestion = { id: string; weekly_minutes: number };
 export type Answers = {
   goals: GoalAnswer[];
-  profile: Omit<ProfileUpdate, "onboarded_at">;
+  /** Calendar suggestions to keep, by id. */
+  kept?: KeptSuggestion[];
+  /** Usual week and quiet hours are no longer asked: the API defaults stand until You changes them. */
+  profile?: Omit<ProfileUpdate, "onboarded_at">;
 };
 
 const MAX_WEEK = 7 * 24 * 60;
@@ -37,6 +43,20 @@ const GOAL_TEMPLATE: Record<GoalCategory, { title: string; target: Record<string
   food: { title: "Proper meals", target: { calendar_titles: ["Breakfast", "Lunch", "Dinner"] } },
 };
 
+function parseKept(input: unknown): KeptSuggestion[] {
+  if (input === undefined) return [];
+  if (!Array.isArray(input) || input.length > 6) throw new Error("Invalid suggestions");
+  return input.map((k: Partial<KeptSuggestion> | null) => {
+    const id = k?.id;
+    const weekly = k?.weekly_minutes;
+    if (typeof id !== "string" || id.length === 0 || id.length > 120) throw new Error("Invalid id");
+    if (typeof weekly !== "number" || !Number.isInteger(weekly) || weekly < 0 || weekly > MAX_WEEK) {
+      throw new Error("Invalid weekly minutes");
+    }
+    return { id, weekly_minutes: weekly };
+  });
+}
+
 function targetFor(g: GoalAnswer, gymDays: number): Record<string, unknown> {
   const base = GOAL_TEMPLATE[g.category].target;
   if (g.category === "rest") return { sleep_hours: Math.round((g.weekly_minutes / 7 / 60) * 2) / 2 };
@@ -51,10 +71,15 @@ function targetFor(g: GoalAnswer, gymDays: number): Record<string, unknown> {
  */
 export async function finishOnboarding(input: Answers): Promise<{ ok: boolean }> {
   const goals = parseGoals(input?.goals);
+  const kept = parseKept(input?.kept);
   const profile = ProfileUpdate.parse({ ...input?.profile, onboarded_at: new Date().toISOString() });
   // The demo week is read mostly: a visitor walks the whole talk, nothing is written (#239).
   if (await isDemoVisitor()) return { ok: true };
   try {
+    for (const k of kept) {
+      const res = await acceptGoalSuggestion(k.id, { weekly_budget_minutes: k.weekly_minutes });
+      if (!res.ok) throw new Error(res.message ?? "Could not keep a suggestion");
+    }
     const current = await getGoals();
     for (const g of goals) {
       const mine = current.find((x) => x.category === g.category && x.active);
@@ -73,6 +98,8 @@ export async function finishOnboarding(input: Answers): Promise<{ ok: boolean }>
       });
     }
     await putProfile(profile);
+    revalidatePath("/");
+    revalidatePath("/goals");
     return { ok: true };
   } catch (err) {
     console.error(err);

@@ -487,7 +487,8 @@ type GoalSuggestionAccept = { title?: string; weekly_budget_minutes?: number; ca
   given, or `POST /v1/goals/suggestions/:id/accept` with optional edits. The goal's description says
   where it came from. `404` when the calendar no longer suggests that id.
 - **Where it shows:** the Google Calendar callback syncs four weeks back on first connect and adds
-  `goal_suggestions=<n>` to the redirect when there are any; onboarding's first step, the Goals tab
+  `goal_suggestions=<n>` to the redirect when there are any (from onboarding, the page runs that
+  sync itself with `?past_days=28`); onboarding's first step, the Goals tab
   and the calendar row on You list them with one tap to keep. MCP: `propose_goals` (scope `goals`).
 
 #### Three categories, four kinds
@@ -1655,14 +1656,17 @@ when they have under a minute left; a revoked grant sets `status: "error"`.
 characters, otherwise `400`. It is signed into `state`, and the callback then redirects to
 `${WEB_URL}<return_to>` with the same `connected` or `integration_error` parameters added. Without
 it, or when the state is unreadable, the callback goes to `/you`. The web app passes it as
-`/integrations/google/connect?return_to=...`.
+`/integrations/google/connect?return_to=...`. A `return_to` under `/onboarding` skips the first sync
+and adds `sync=pending`: onboarding then calls `POST .../sync?past_days=28` itself, behind a
+"Reading your calendar" status line, so nobody waits on Google's page.
 
 **Sync.** Pulls the primary calendar, now minus 7 days to now plus 7 days, recurring events expanded,
 into `calendar_event` events with `source: "google_calendar"` and `external_id` = Google's event id.
 Idempotent: unchanged events are left alone, changed ones (title, time) are updated in place, and
 mirrored events that were deleted or cancelled in Google within the window are removed from the
 timeline (the calendar itself is never touched). Cancelled and declined events are skipped. Runs
-after connecting, on `POST .../sync`, and every `CALENDAR_SYNC_MINUTES` (default 15) for every
+after connecting, on `POST .../sync` (optional `?past_days=1..28` reads further back; `400` outside
+that), and every `CALENDAR_SYNC_MINUTES` (default 15) for every
 connected user. Off the record, or with the `google_calendar` source switched off, sync reads nothing
 and answers zero counts.
 
