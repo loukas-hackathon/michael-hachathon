@@ -59,7 +59,11 @@
       "Bash(git worktree remove --force:*)",
       "Bash(git worktree remove -f:*)",
       "PowerShell(git worktree remove --force:*)",
-      "PowerShell(git worktree remove -f:*)"
+      "PowerShell(git worktree remove -f:*)",
+      "Bash(git push --set-upstream origin main:*)",
+      "Bash(git push origin HEAD:main:*)",
+      "PowerShell(git push --set-upstream origin main:*)",
+      "PowerShell(git push origin HEAD:main:*)"
     ]
   }
 }
