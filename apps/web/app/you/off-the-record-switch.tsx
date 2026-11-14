@@ -5,7 +5,7 @@ import { formatTime } from "@/lib/format";
 import { setOffTheRecord, useOffTheRecord } from "@/lib/off-the-record";
 
 export function OffTheRecordSwitch() {
-  const { on, since } = useOffTheRecord();
+  const { on, since, failed } = useOffTheRecord();
   // Safari draws <input switch> natively, with the system haptic. Elsewhere we draw the same switch.
   const [native, setNative] = useState(true);
   useEffect(() => setNative("switch" in HTMLInputElement.prototype), []);
@@ -15,9 +15,11 @@ export function OffTheRecordSwitch() {
       <span className="flex flex-col">
         <span className="text-body">Off the record</span>
         <span className="text-footnote text-label-2 tnum">
-          {on
-            ? `Nothing is being collected${since ? ` since ${formatTime(since)}` : ""}.`
-            : "Collecting from your sources."}
+          {failed
+            ? "I could not save that. Try again."
+            : on
+              ? `Nothing is being collected${since ? ` since ${formatTime(since)}` : ""}.`
+              : "Collecting from your sources."}
         </span>
       </span>
       <input

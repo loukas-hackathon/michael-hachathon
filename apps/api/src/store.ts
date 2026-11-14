@@ -13,10 +13,12 @@ import {
   type Recommendation,
   type RecommendationStatus,
   type Source,
+  type SourceSetting,
 } from "@michael/shared";
 import type { z } from "zod";
 import { currentUserId } from "./context";
 import { env } from "./env";
+import { type PrivacyBackend, type PrivacyRules, screenEvents } from "./privacy";
 import { SupabaseStore } from "./supabase-store";
 
 export interface TimelineFilter {
@@ -29,13 +31,13 @@ export interface TimelineFilter {
 export interface InsertResult {
   inserted: Event[];
   duplicates: number;
-  // Dropped by privacy settings (source off / off the record). Enforced in its own issue.
+  // Dropped by privacy settings (source off / off the record), see privacy.ts.
   ignored: number;
 }
 
 // Storage boundary. Routes and MCP tools depend only on this interface.
 // MemoryStore is used when Supabase env vars are missing; SupabaseStore (supabase-store.ts) otherwise.
-export interface Store {
+export interface Store extends PrivacyBackend {
   readonly kind: "memory" | "supabase";
   listEvents(filter: TimelineFilter): Promise<Event[]>;
   insertEvents(events: z.output<typeof EventInput>[]): Promise<InsertResult>;
@@ -47,6 +49,8 @@ export interface Store {
   listRecommendations(filter?: { status?: RecommendationStatus }): Promise<Recommendation[]>;
   updateRecommendationStatus(id: string, status: RecommendationStatus): Promise<Recommendation | null>;
   latestAnalysisRun(): Promise<AnalysisRun | null>;
+  // Privacy (privacy.ts holds the rules; insertEvents applies them).
+  setOffTheRecord(on: boolean): Promise<PrivacyRules>;
 }
 
 const now = () => new Date().toISOString();
@@ -61,7 +65,13 @@ export class MemoryStore implements Store {
   // One copy of the mock day per user, created on first access, so users never see each other's data.
   private data = new Map<
     string,
-    { events: Event[]; goals: Goal[]; recommendations: Recommendation[]; runs: AnalysisRun[] }
+    {
+      events: Event[];
+      goals: Goal[];
+      recommendations: Recommendation[];
+      runs: AnalysisRun[];
+      privacy: PrivacyRules;
+    }
   >();
   private get d() {
     const userId = currentUserId();
@@ -72,6 +82,7 @@ export class MemoryStore implements Store {
         goals: structuredClone(mockGoals),
         recommendations: structuredClone(mockRecommendations),
         runs: [structuredClone(mockAnalysisRun)],
+        privacy: { offTheRecord: false, since: null, sources: {} },
       };
       this.data.set(userId, x);
     }
@@ -103,7 +114,27 @@ export class MemoryStore implements Store {
       .sort((a, b) => Date.parse(a.start_at) - Date.parse(b.start_at));
   }
 
-  async insertEvents(inputs: z.output<typeof EventInput>[]) {
+  async privacyRules() {
+    return structuredClone(this.d.privacy);
+  }
+
+  async setOffTheRecord(on: boolean) {
+    const p = this.d.privacy;
+    if (on !== p.offTheRecord) {
+      p.offTheRecord = on;
+      p.since = on ? now() : null;
+    }
+    return structuredClone(p);
+  }
+
+  async setSourceEnabled(source: Source, enabled: boolean): Promise<SourceSetting> {
+    const setting = { enabled, updated_at: now() };
+    this.d.privacy.sources[source] = setting;
+    return { source, ...setting };
+  }
+
+  async insertEvents(all: z.output<typeof EventInput>[]) {
+    const { allowed: inputs, ignored } = await screenEvents(this, all);
     const inserted: Event[] = [];
     let duplicates = 0;
     for (const i of inputs) {
@@ -126,7 +157,7 @@ export class MemoryStore implements Store {
       this.events.push(event);
       inserted.push(event);
     }
-    return { inserted, duplicates, ignored: 0 };
+    return { inserted, duplicates, ignored };
   }
 
   async listGoals() {

@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { getPrivacy } from "@/lib/api";
 import { OffTheRecordSwitch } from "./off-the-record-switch";
+import { SourceSwitches } from "./source-switches";
 
 const PROMISES = [
   [
@@ -10,7 +12,9 @@ const PROMISES = [
   ["Coaches you, forgets them.", "I keep the lesson and your own commitments, never other people's words."],
 ] as const;
 
-export default function YouPage() {
+export default async function YouPage() {
+  // The source switches need the API; if it is down, the rest of the page still works.
+  const privacy = await getPrivacy().catch(() => null);
   return (
     <main className="screen">
       <header className="flex min-h-11 items-center justify-end pt-2">
@@ -27,6 +31,18 @@ export default function YouPage() {
         <OffTheRecordSwitch />
       </section>
       <p className="mt-2 px-4 text-footnote text-label-2">One tap stops all collection, on every source.</p>
+
+      <h2 className="mt-8 mb-2 text-title3 font-bold">Sources</h2>
+      {privacy ? (
+        <>
+          <SourceSwitches initial={privacy.sources} />
+          <p className="mt-2 px-4 text-footnote text-label-2">
+            Each source is off until you connect it. Switch one off and I stop reading it.
+          </p>
+        </>
+      ) : (
+        <p className="px-4 text-footnote text-label-2">I could not load your sources. Pull to refresh.</p>
+      )}
 
       <h2 className="mt-8 mb-2 text-title3 font-bold">Three promises</h2>
       <ul className="overflow-hidden rounded-group bg-fill">

@@ -4,7 +4,10 @@ import {
   mockEvents,
   mockGoals,
   mockRecommendations,
+  type PrivacyState,
   type Recommendation,
+  Source,
+  type SourceSetting,
   type TimelineResponse,
 } from "@michael/shared";
 import { cookies } from "next/headers";
@@ -39,6 +42,17 @@ async function get<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+async function send<T>(method: "PUT" | "PATCH", path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${API_URL}${path}`, {
+    method,
+    headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`${method} ${path} failed: ${res.status}`);
+  return (await res.json()) as T;
+}
+
 export async function getTimeline(from: string, to: string): Promise<TimelineResponse> {
   if (USE_MOCKS) return { from, to, events: mockEvents };
   const qs = new URLSearchParams({ from, to });
@@ -53,6 +67,38 @@ export async function getGoals(): Promise<Goal[]> {
 export async function getRecommendations(): Promise<Recommendation[]> {
   if (USE_MOCKS) return mockRecommendations;
   return (await get<{ recommendations: Recommendation[] }>("/v1/recommendations")).recommendations;
+}
+
+// Privacy. With mocks, one in-process state so the switches still hold while the server runs.
+const mockPrivacy: PrivacyState = {
+  off_the_record: false,
+  since: null,
+  sources: Source.options.map((source) => ({ source, enabled: true, updated_at: new Date(0).toISOString() })),
+};
+
+export async function getPrivacy(): Promise<PrivacyState> {
+  if (USE_MOCKS) return structuredClone(mockPrivacy);
+  return get<PrivacyState>("/v1/privacy");
+}
+
+export async function putOffTheRecord(on: boolean): Promise<PrivacyState> {
+  if (USE_MOCKS) {
+    if (mockPrivacy.off_the_record !== on) {
+      mockPrivacy.off_the_record = on;
+      mockPrivacy.since = on ? new Date().toISOString() : null;
+    }
+    return structuredClone(mockPrivacy);
+  }
+  return send<PrivacyState>("PUT", "/v1/privacy/off-the-record", { off_the_record: on });
+}
+
+export async function patchSource(source: Source, enabled: boolean): Promise<SourceSetting> {
+  if (USE_MOCKS) {
+    const s = mockPrivacy.sources.find((x) => x.source === source) as SourceSetting;
+    Object.assign(s, { enabled, updated_at: new Date().toISOString() });
+    return { ...s };
+  }
+  return send<SourceSetting>("PATCH", `/v1/privacy/sources/${encodeURIComponent(source)}`, { enabled });
 }
 
 const SAMPLE_DAYS: Record<string, DayView> = {
