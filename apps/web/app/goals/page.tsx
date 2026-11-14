@@ -243,7 +243,7 @@ function SleepSection({ sleep }: { sleep: { goalMinutes: number; nightly: (numbe
           </p>
           <p className="text-footnote text-label-2 tnum">
             {avg != null
-              ? `Goal ${hm(sleep.goalMinutes)}. Outside the score.`
+              ? `Goal ${hm(sleep.goalMinutes)}.`
               : `Goal ${hm(sleep.goalMinutes)}. Wear the watch tonight.`}
           </p>
         </div>
