@@ -71,6 +71,10 @@ export default async function YouPage() {
         <span className="text-label-2">›</span>
       </Link>
 
+      <Link href="/onboarding" className="press mt-3 flex h-11 items-center px-4 text-subhead text-label-2">
+        Redo setup: goals, usual week, quiet hours
+      </Link>
+
       <a
         href="/auth/signout"
         className="press mt-8 flex h-11 items-center justify-center rounded-group bg-fill text-body font-semibold text-danger"

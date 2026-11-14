@@ -2,7 +2,17 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Event, Goal, Nudge } from "@michael/shared";
 import { APPS, calendar, goal, mac, T } from "../patterns/testkit";
-import { candidates, decide, type EngineInput, isValidCopy, shortDuration, wordCount } from "./engine";
+import {
+  candidates,
+  DEFAULT_QUIET,
+  decide,
+  type EngineInput,
+  isValidCopy,
+  quietFromProfile,
+  quietNow,
+  shortDuration,
+  wordCount,
+} from "./engine";
 
 // Wednesday 11 November 2026, Athens winter time. Every app and time is made up.
 const DAY = "2026-11-11";
@@ -115,6 +125,18 @@ test("never in the night or at dinner", () => {
   assert.deepEqual(decide(input("22:33", late, [REST])), { action: "skip", skipped: "quiet_hours" });
   const dinner = [calendar("Gym", at("20:40"), at("21:30"))];
   assert.deepEqual(decide(input("20:30", dinner, [GYM])), { action: "skip", skipped: "quiet_hours" });
+});
+
+test("the user's own quiet hours replace the default night, and bad ones fall back to 22:00 to 07:00", () => {
+  const owl = quietFromProfile({ start: "23:30", end: "06:00" });
+  assert.deepEqual([owl.nightStart, owl.nightEnd], [23 * 60 + 30, 6 * 60]);
+  assert.equal(quietNow({ ...input("22:33", [], [REST]), quiet: owl }), null);
+  assert.equal(quietNow({ ...input("23:45", [], [REST]), quiet: owl }), "night");
+  assert.equal(quietNow({ ...input("05:50", [], [REST]), quiet: owl }), "night");
+  assert.equal(quietNow({ ...input("06:10", [], [REST]), quiet: owl }), null);
+  for (const bad of [null, undefined, { start: "25:00", end: "07:00" }, { start: "22:00", end: "22:00" }]) {
+    assert.deepEqual(quietFromProfile(bad), DEFAULT_QUIET);
+  }
 });
 
 test("at most 5 a day: the sixth is stored as suppressed", () => {

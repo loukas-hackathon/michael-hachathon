@@ -7,9 +7,10 @@ import {
 import { Hono } from "hono";
 import { HttpError, parse } from "../http";
 import { nudgePayload, primaryChannel } from "../nudges/channels";
-import { candidates, decide, engineWindow } from "../nudges/engine";
+import { candidates, decide, engineWindow, quietFromProfile } from "../nudges/engine";
 import { pushToCurrentUser } from "../nudges/push";
 import { store } from "../store";
+import { readProfile } from "./profile";
 
 /**
  * Runs the engine once for the current user: reads the week so far, decides, stores the nudge
@@ -18,13 +19,22 @@ import { store } from "../store";
 export async function checkNudges(): Promise<NudgeCheckResult> {
   const now = new Date().toISOString();
   const win = engineWindow(now);
-  const [events, goals, today, privacy] = await Promise.all([
+  const [events, goals, today, privacy, profile] = await Promise.all([
     store.listEvents({ from: win.weekStart, to: win.dayEnd }),
     store.listGoals(),
     store.listNudges({ from: win.dayStart, to: win.dayEnd }),
     store.privacyRules(),
+    // The user's own quiet hours (onboarding); 22:00 to 07:00 if unset or unreadable.
+    readProfile().catch(() => null),
   ]);
-  const decision = decide({ now, goals, events, today, offTheRecord: privacy.offTheRecord });
+  const decision = decide({
+    now,
+    goals,
+    events,
+    today,
+    offTheRecord: privacy.offTheRecord,
+    quiet: quietFromProfile(profile?.quiet_hours),
+  });
   const counted = today.filter((n) => n.status !== "suppressed").length;
   if (decision.action === "skip") {
     return { checked_at: now, nudge: null, skipped: decision.skipped, sent_today: counted };
@@ -76,11 +86,13 @@ export const SAMPLE_NUDGE = {
 export async function testNudge(): Promise<NudgeTestResult> {
   const now = new Date().toISOString();
   const win = engineWindow(now);
-  const [events, goals] = await Promise.all([
+  const [events, goals, profile] = await Promise.all([
     store.listEvents({ from: win.weekStart, to: win.dayEnd }),
     store.listGoals(),
+    readProfile().catch(() => null),
   ]);
-  const pick = candidates({ now, goals, events, today: [] })[0] ?? SAMPLE_NUDGE;
+  const quiet = quietFromProfile(profile?.quiet_hours);
+  const pick = candidates({ now, goals, events, today: [], quiet })[0] ?? SAMPLE_NUDGE;
   const { devices, delivered } = await pushToCurrentUser(nudgePayload(pick));
   console.log(`[nudge] test "${pick.text}" pushed to ${delivered} of ${devices} devices`);
   return { text: pick.text, reason: pick.reason, delivered, devices };

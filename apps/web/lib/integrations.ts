@@ -1,5 +1,11 @@
 import "server-only";
-import { type Integration, IntegrationsResponse, OAuthConnectResponse } from "@michael/shared";
+import {
+  type Integration,
+  IntegrationsResponse,
+  type OAuthConnectRequest,
+  OAuthConnectResponse,
+  type ReturnPath,
+} from "@michael/shared";
 import { bearer } from "./api";
 
 // Server-side calls for connecting sources (Google Calendar). Tokens stay in the API; the browser
@@ -29,8 +35,16 @@ export async function getGoogleCalendar(): Promise<Integration | null> {
 }
 
 /** Google's consent screen for the signed-in user (a signed state ties it to them). */
-export async function googleConnectUrl(): Promise<string> {
-  const res = await call("POST", "/v1/integrations/google_calendar/connect");
+export async function googleConnectUrl(returnTo?: ReturnPath): Promise<string> {
+  const res = returnTo
+    ? await fetch(`${API_URL}/v1/integrations/google_calendar/connect`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
+        body: JSON.stringify({ return_to: returnTo } satisfies OAuthConnectRequest),
+        cache: "no-store",
+      })
+    : await call("POST", "/v1/integrations/google_calendar/connect");
+  if (!res.ok) throw new Error(`POST /v1/integrations/google_calendar/connect failed: ${res.status}`);
   return OAuthConnectResponse.parse(await res.json()).url;
 }
 

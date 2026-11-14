@@ -924,6 +924,14 @@ token), runs the first sync and redirects to `/you?connected=google_calendar`. F
 `/you?integration_error=google_calendar&reason=expired|declined|token`. Access tokens are refreshed
 when they have under a minute left; a revoked grant sets `status: "error"`.
 
+**Coming back somewhere else.** The connect call takes an optional body
+`OAuthConnectRequest = { return_to?: ReturnPath }`, where `ReturnPath` is a path on the web app
+(`/onboarding?step=done`): it must start with one `/`, never `//` or `/\`, no scheme, at most 200
+characters, otherwise `400`. It is signed into `state`, and the callback then redirects to
+`${WEB_URL}<return_to>` with the same `connected` or `integration_error` parameters added. Without
+it, or when the state is unreadable, the callback goes to `/you`. The web app passes it as
+`/integrations/google/connect?return_to=...`.
+
 **Sync.** Pulls the primary calendar, now minus 7 days to now plus 7 days, recurring events expanded,
 into `calendar_event` events with `source: "google_calendar"` and `external_id` = Google's event id.
 Idempotent: unchanged events are left alone, changed ones (title, time) are updated in place, and
@@ -1209,7 +1217,8 @@ most urgent candidate of four rules, each tied to a goal:
 
 Goal time spent this week = the goal's calendar blocks so far plus its own events (`work`:
 `focus_session`, `gym`: `workout`, `rest`: `sleep`, `food`: `meal`), counted once. Rules: at most 5
-per day; none in quiet hours (22:00 to 07:00, dinner 20:00 to 21:00, work goal blocks except
+per day; none in quiet hours (the user's `Profile.quiet_hours`, default 22:00 to 07:00, which also
+sets when `wind_down` speaks; dinner 20:00 to 21:00; work goal blocks except
 `focus_drift`); one key once per local day (`goal_behind` once per day in all); at least 20 min
 between nudges. Once 5 went out, the best candidate is stored as `suppressed` (once per key). Off
 the record stops all nudges. Delivery is pluggable (`apps/api/src/nudges/channels.ts`): with VAPID
