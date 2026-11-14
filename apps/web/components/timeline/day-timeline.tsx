@@ -27,6 +27,7 @@ function blockMeta(b: Block) {
 export function DayTimeline({ day }: { day: TimelineDay }) {
   const y = makeY(day.segments, PER_HOUR, QUIET);
   const height = y(day.dayEnd);
+  const plans = day.plans ?? [];
   const hours: number[] = [];
   for (const s of day.segments) {
     if (s.kind !== "hours") continue;
@@ -88,7 +89,17 @@ export function DayTimeline({ day }: { day: TimelineDay }) {
         />
       ))}
 
-      {/* Planned outlines first, then what happened on top. */}
+      {/* Planned outlines first, then what happened on top. Michael's own blocks are outlined in tint. */}
+      {plans.map((p) => (
+        <div
+          key={`cal${p.start}${p.title}`}
+          className={`absolute right-4 left-[50px] rounded-block border-[1.5px] border-dashed ${
+            p.michael ? "border-tint" : "border-label-2"
+          }`}
+          style={{ top: y(p.start), height: Math.max(4, y(p.end) - y(p.start)) }}
+          title={`${p.title}, ${formatTime(iso(p.start))} to ${formatTime(iso(p.end))}`}
+        />
+      ))}
       {day.blocks.map((b) =>
         b.plan ? (
           <div
@@ -173,6 +184,33 @@ export function DayTimeline({ day }: { day: TimelineDay }) {
         );
       })}
 
+      {/* Plan titles where nothing happened over their first lines, and Michael's marker always. */}
+      {plans.map((p) => {
+        const top = y(p.start);
+        const h = y(p.end) - top;
+        const covered = day.blocks.some((b) => y(b.start) < top + 18 && y(b.end) > top + 2);
+        return (
+          <div key={`calt${p.start}${p.title}`}>
+            {!covered && h >= 17 ? (
+              <p
+                className="absolute right-[76px] left-[58px] truncate text-footnote leading-4 font-semibold text-label-2"
+                style={{ top: top + 4 }}
+              >
+                {p.title}
+              </p>
+            ) : null}
+            {p.michael ? (
+              <span
+                className="absolute right-[22px] rounded-[4px] bg-bg px-1 text-caption font-semibold text-tint-text"
+                style={{ top: top + (h >= 17 ? 3 : -8) }}
+              >
+                Michael
+              </span>
+            ) : null}
+          </div>
+        );
+      })}
+
       {lossLabels.map((l) => (
         <span
           key={l.key}
@@ -207,7 +245,18 @@ export function DayTimeline({ day }: { day: TimelineDay }) {
 }
 
 /** Key for the lanes, shown once above the day. */
-export function TimelineKey({ hasAi, hasPlan }: { hasAi: boolean; hasPlan: boolean }) {
+export function TimelineKey({
+  hasAi,
+  hasPlan,
+  goalTime = hasPlan,
+  hasMichael = false,
+}: {
+  hasAi: boolean;
+  hasPlan: boolean;
+  /** Pink means goal time against a plan (the sample day); otherwise it is time in work apps. */
+  goalTime?: boolean;
+  hasMichael?: boolean;
+}) {
   const item = "inline-flex items-center gap-1.5";
   return (
     <ul className="mt-3 flex flex-wrap gap-x-3 gap-y-1.5 text-footnote text-label-2">
@@ -217,15 +266,21 @@ export function TimelineKey({ hasAi, hasPlan }: { hasAi: boolean; hasPlan: boole
           Planned
         </li>
       ) : null}
+      {hasMichael ? (
+        <li className={item}>
+          <span className="h-3 w-4 rounded-[3px] border-[1.5px] border-dashed border-tint" />
+          Booked by Michael
+        </li>
+      ) : null}
       <li className={item}>
         <span className="h-3 w-4 rounded-[3px] bg-spark" />
-        {hasPlan ? "Goal time" : "Work apps"}
+        {goalTime ? "Goal time" : "Work apps"}
       </li>
       <li className={item}>
         <span className="hatch h-3 w-4 rounded-[3px] shadow-[inset_0_0_0_1px_var(--m-label-2)]" />
         Lost
       </li>
-      {hasPlan ? null : (
+      {goalTime ? null : (
         <li className={item}>
           <span className="h-3 w-4 rounded-[3px] bg-fill shadow-[inset_0_0_0_0.5px_var(--m-separator)]" />
           Other

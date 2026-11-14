@@ -1,14 +1,14 @@
 import Link from "next/link";
+import { weekOf } from "@/lib/athens";
 
 const LETTERS = ["M", "T", "W", "T", "F", "S", "S"];
 
-/** Monday first, like Apple's calendar strip. Days without data are shown but cannot be opened. */
-export function WeekStrip({ date, available }: { date: string; available: string[] }) {
-  const d = new Date(`${date}T12:00:00Z`);
-  const monday = new Date(d.getTime() - ((d.getUTCDay() + 6) % 7) * 86_400_000);
-  const days = Array.from({ length: 7 }, (_, i) =>
-    new Date(monday.getTime() + i * 86_400_000).toISOString().slice(0, 10),
-  );
+/**
+ * Monday first, like Apple's calendar strip. Days without data are shown but cannot be opened.
+ * `demo` keeps ?demo=sample on the links so the sample week stays the sample week.
+ */
+export function WeekStrip({ date, available, demo }: { date: string; available: string[]; demo?: string }) {
+  const days = weekOf(date);
 
   return (
     <nav aria-label="Days" className="mt-2.5 grid grid-cols-7 text-center">
@@ -35,7 +35,7 @@ export function WeekStrip({ date, available }: { date: string; available: string
         return has && !selected ? (
           <Link
             key={day}
-            href={`/timeline?date=${day}`}
+            href={`/timeline?day=${day}${demo ? `&demo=${demo}` : ""}`}
             className="press flex flex-col items-center gap-0.5 py-1"
           >
             {inner}

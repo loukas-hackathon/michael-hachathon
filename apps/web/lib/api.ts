@@ -40,6 +40,8 @@ import { authEnabled, DEMO_COOKIE, supabaseServer } from "./supabase/server";
 const USE_MOCKS = process.env.USE_MOCKS !== "false";
 export const API_URL = process.env.API_URL ?? "http://localhost:8787";
 const API_KEY = process.env.API_KEY ?? "dev-key";
+/** For loaders outside this file (lib/timeline-data.ts). */
+export const usingMocks = () => USE_MOCKS;
 
 // Whose data to fetch: the signed-in user's own token, or the API key for the demo week.
 export async function bearer(): Promise<string> {
