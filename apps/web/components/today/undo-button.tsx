@@ -40,7 +40,7 @@ export function UndoButton({
 
   if (undone) {
     return (
-      <p className="flex min-h-9 items-center text-subhead text-label-2" role="status">
+      <p className="m-swap flex min-h-9 items-center text-subhead text-label-2" role="status">
         {done}
       </p>
     );

@@ -60,9 +60,26 @@ export function Sheet({
     drag.current = null;
     if (!s || !d) return;
     const velocity = s.dy / Math.max(1, performance.now() - s.t);
-    d.style.transition = "";
     d.style.transform = "";
-    if (s.dy > 120 || velocity > 0.5) onClose();
+    if (s.dy > 120 || velocity > 0.5) {
+      // Let go far or fast enough: it carries on down from where the finger left it.
+      d.style.transition = "";
+      onClose();
+      return;
+    }
+    // Not far enough: it settles back on the spring, then the stylesheet takes over again.
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      d.style.transition = "";
+      return;
+    }
+    d.style.transition = "transform var(--m-dur-spring) var(--m-spring)";
+    d.addEventListener(
+      "transitionend",
+      () => {
+        d.style.transition = "";
+      },
+      { once: true },
+    );
   };
 
   return (
