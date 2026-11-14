@@ -16,11 +16,8 @@ function Move({ move, label }: { move: MomentMove; label?: string }) {
 
 /** The maths: each goal against its weekly budget (morning) or today's plan (evening). */
 function GoalLines({ moment }: { moment: Moment }) {
-  // Sleep stays outside the maths. A sleep goal in the new shape is health, not rest (#131); the
-  // moment's rows carry no kind yet, so the title decides until they do.
-  const lines = moment.goals.filter(
-    (g) => g.category !== "rest" && !/\bsleep\b/i.test(g.title) && g.budget_minutes !== null,
-  );
+  // Sleep stays outside the maths: the API marks the sleep goal (isSleepGoal, #201).
+  const lines = moment.goals.filter((g) => !g.sleep && g.category !== "rest" && g.budget_minutes !== null);
   if (lines.length === 0) return null;
   return (
     <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-footnote">
