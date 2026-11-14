@@ -1947,8 +1947,8 @@ export type RecordsResponse = z.infer<typeof RecordsResponse>;
 export const ScoreSleep = z.object({
   // The nightly goal in minutes (sleep_hours x 60).
   goal_minutes: Minutes,
-  // Seven entries, Monday first: minutes slept in the night that ended that day. Null for a night
-  // with no sleep data and for nights to come.
+  // Seven entries, Monday first: minutes slept in the night that ended that day, naps left out
+  // (isNap, ./sleep.ts). Null for a night with no sleep data and for nights to come.
   nightly: z.array(Minutes.nullable()),
 });
 export type ScoreSleep = z.infer<typeof ScoreSleep>;
