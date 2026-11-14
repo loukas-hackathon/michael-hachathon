@@ -104,6 +104,9 @@ let lastRefresh = 0;
 let goalsReset = false;
 let inflight: Promise<void> | null = null;
 
+/** True once a refresh has finished since the process started (the week is in the database). */
+export const demoWeekSeeded = () => goalsReset;
+
 /**
  * Called on every demo account request: refreshes the demo week at most every five minutes, so
  * "today" always has data up to about now. Errors are logged and never fail the request.
