@@ -26,6 +26,8 @@ export function BriefView({
   const [suggestions, setSuggestions] = useState(initialSuggestions);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // True once a brief written on this visit lands, so it eases in instead of snapping.
+  const [fresh, setFresh] = useState(false);
   const [, startTransition] = useTransition();
 
   async function ask() {
@@ -45,6 +47,7 @@ export function BriefView({
       return;
     }
     setRun(r.run);
+    setFresh(true);
     setSuggestions(r.suggestions);
     // Today reads the new suggestions.
     startTransition(() => router.refresh());
@@ -60,7 +63,12 @@ export function BriefView({
     >
       <div aria-busy={busy} className="flex flex-col gap-2.5">
         {run?.summary ? (
-          <p className="whitespace-pre-line text-body">{run.summary}</p>
+          <p
+            key={run.finished_at ?? run.summary}
+            className={`whitespace-pre-line text-body ${fresh ? "m-swap" : ""}`}
+          >
+            {run.summary}
+          </p>
         ) : (
           <p className="text-subhead text-label-2">I read your day and tell you what matters now.</p>
         )}
