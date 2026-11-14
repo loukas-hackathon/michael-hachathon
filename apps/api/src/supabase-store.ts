@@ -37,6 +37,7 @@ import {
   type SeedResult,
   type Store,
   sameEvent,
+  type TelegramChat,
   type TimelineFilter,
   type UpsertResult,
 } from "./store";
@@ -867,6 +868,68 @@ export class SupabaseStore implements Store {
         .eq("user_id", currentUserId())
         .eq("endpoint", endpoint),
     );
+  }
+
+  async getTelegramChat(): Promise<TelegramChat | null> {
+    const row = check(
+      await this.db
+        .from("telegram_chats")
+        .select("chat_id, username, connected_at")
+        .eq("user_id", currentUserId())
+        .not("chat_id", "is", null)
+        .maybeSingle(),
+    );
+    return row ? { chat_id: row.chat_id, username: row.username, connected_at: row.connected_at } : null;
+  }
+
+  async bindTelegramChat(chat: { chat_id: string; username: string | null }, link: string) {
+    const userId = currentUserId();
+    const prev = check(
+      await this.db.from("telegram_chats").select("last_link").eq("user_id", userId).maybeSingle(),
+    );
+    if (prev?.last_link === link) return "used" as const;
+    const at = new Date().toISOString();
+    // A chat belongs to whoever bound it last (chat_id is unique).
+    check(
+      await this.db
+        .from("telegram_chats")
+        .update({ chat_id: null, username: null, connected_at: null, updated_at: at })
+        .eq("chat_id", chat.chat_id)
+        .neq("user_id", userId),
+    );
+    check(
+      await this.db.from("telegram_chats").upsert(
+        {
+          user_id: userId,
+          chat_id: chat.chat_id,
+          username: chat.username,
+          connected_at: at,
+          last_link: link,
+          updated_at: at,
+        },
+        { onConflict: "user_id" },
+      ),
+    );
+    return "bound" as const;
+  }
+
+  async unbindTelegramChat() {
+    const rows = check(
+      await this.db
+        .from("telegram_chats")
+        .update({ chat_id: null, username: null, connected_at: null, updated_at: new Date().toISOString() })
+        .eq("user_id", currentUserId())
+        .not("chat_id", "is", null)
+        .select("user_id"),
+    );
+    return (rows ?? []).length > 0;
+  }
+
+  async telegramChatOwner(chatId: string) {
+    const row = check(
+      await this.db.from("telegram_chats").select("user_id").eq("chat_id", chatId).maybeSingle(),
+    );
+    return row?.user_id ?? null;
   }
 
   async activeUserIds(since: string) {

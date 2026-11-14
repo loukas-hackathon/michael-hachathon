@@ -620,7 +620,8 @@ export type NudgeCheckResult = z.infer<typeof NudgeCheckResult>;
 export const NudgeTestResult = z.object({
   text: z.string().min(1),
   reason: z.string(),
-  // Devices that accepted it. 0 when push is not configured or no device has turned nudges on.
+  // Devices that accepted it (push devices plus the Telegram chat, when bound). 0 when nothing
+  // is configured or connected.
   delivered: z.number().int().nonnegative(),
   devices: z.number().int().nonnegative(),
   // The stored nudge (status `test`).
@@ -650,6 +651,23 @@ export const PushConfig = z.object({
   devices: z.number().int().nonnegative(),
 });
 export type PushConfig = z.infer<typeof PushConfig>;
+
+// ---------- telegram (a backup channel for nudges) ----------
+
+// GET /v1/telegram and DELETE /v1/telegram: whether the bot is set up and this user's chat is bound.
+export const TelegramStatus = z.object({
+  // False until the API has a bot token: the button explains it is not set up yet.
+  enabled: z.boolean(),
+  connected: z.boolean(),
+  // The Telegram @username of the bound chat, when it has one.
+  username: z.string().nullable(),
+  connected_at: IsoDateTime.nullable(),
+});
+export type TelegramStatus = z.infer<typeof TelegramStatus>;
+
+// POST /v1/telegram/link: https://t.me/<bot>?start=<one-time token>, opened by the browser.
+export const TelegramLinkResponse = z.object({ url: z.url() });
+export type TelegramLinkResponse = z.infer<typeof TelegramLinkResponse>;
 
 // ---------- score ----------
 

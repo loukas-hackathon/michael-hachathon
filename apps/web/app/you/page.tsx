@@ -5,6 +5,7 @@ import { GoogleCalendarRow } from "./google-calendar";
 import { NudgesButton } from "./nudges-button";
 import { OffTheRecordSwitch } from "./off-the-record-switch";
 import { SourceSwitches } from "./source-switches";
+import { TelegramRow } from "./telegram";
 
 const PROMISES = [
   [
@@ -55,6 +56,9 @@ export default async function YouPage() {
 
       <h2 className="mt-8 mb-2 text-title3 font-bold">Nudges</h2>
       <NudgesButton />
+      <section className="mt-4 overflow-hidden rounded-group bg-fill">
+        <TelegramRow />
+      </section>
 
       <h2 className="mt-8 mb-2 text-title3 font-bold">Sources</h2>
       <section className="mb-4 overflow-hidden rounded-group bg-fill">

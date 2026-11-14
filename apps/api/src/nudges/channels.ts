@@ -1,5 +1,6 @@
 import type { Nudge, NudgeChannel, NudgeStatus } from "@michael/shared";
 import { type PushPayload, pushConfig, pushToCurrentUser } from "./push";
+import { telegramChannel, telegramConfig } from "./telegram";
 
 /**
  * Where a nudge goes. One implementation per channel: Apple Watch and iPhone push (#44),
@@ -39,5 +40,33 @@ export const pushChannel: DeliveryChannel = {
   },
 };
 
-// Push when VAPID keys are set, otherwise the log. Telegram (#43) can become a fallback here.
-export const primaryChannel = (): DeliveryChannel => (pushConfig() ? pushChannel : logChannel);
+/**
+ * Every channel at once: a nudge reaches each place the user turned on (push devices, the
+ * Telegram chat), so one failing service never loses it. `sent` when any channel took it,
+ * `failed` when one tried and none took it, `queued` when none had anywhere to send. Named after
+ * the first channel, which is what the stored nudge shows.
+ */
+export function allOf(channels: DeliveryChannel[]): DeliveryChannel {
+  const [first] = channels;
+  if (!first) return logChannel;
+  if (channels.length === 1) return first;
+  return {
+    name: first.name,
+    async deliver(nudge) {
+      const results = await Promise.all(
+        channels.map((c) =>
+          c.deliver(nudge).catch((err): NudgeStatus => {
+            console.error(`[nudge] ${c.name} delivery failed`, err);
+            return "failed";
+          }),
+        ),
+      );
+      if (results.includes("sent")) return "sent";
+      return results.includes("failed") ? "failed" : "queued";
+    },
+  };
+}
+
+// Push when VAPID keys are set, Telegram when the bot token is set (both when both), else the log.
+export const primaryChannel = (): DeliveryChannel =>
+  allOf([pushConfig() && pushChannel, telegramConfig() && telegramChannel].filter((c) => !!c));

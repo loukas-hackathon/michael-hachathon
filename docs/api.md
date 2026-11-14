@@ -1291,15 +1291,18 @@ per day; none in quiet hours (22:00 to 07:00, dinner 20:00 to 21:00, work goal b
 between nudges. Once 5 went out, the best candidate is stored as `suppressed` (once per key). Off
 the record stops all nudges. Delivery is pluggable (`apps/api/src/nudges/channels.ts`): with VAPID
 keys set, nudges go out as Web Push to every device the user turned nudges on for (`sent` when one
-accepted, `failed` when all refused, `queued` when there is no device); without keys they are only
-logged and stay `queued`.
+accepted, `failed` when all refused, `queued` when there is no device). With `TELEGRAM_BOT_TOKEN`
+set they also go to the user's Telegram chat, when one is connected (see "Telegram" below). With
+both, every nudge goes to both (`sent` when either took it); the stored `channel` is `push`. Without
+either they are only logged and stay `queued`. Channels only deliver: the cap, quiet hours and
+dedupe are the engine's.
 
 Scheduler (`apps/api/src/scheduler.ts`): inside the API process, every `SCHEDULER_INTERVAL_MINUTES`
 (default 5) the check runs once for each user with events received in the last 24 hours, each run
 scoped as that user. On by default when `NODE_ENV=production`, `SCHEDULER_ENABLED` overrides.
 
 `POST /v1/nudges/test` sends the best current candidate (or a sample line) to the caller's devices
-at once, ignoring the cap, quiet hours and dedupe. It is for the stage moment: it stores the nudge
+and Telegram chat (counted as one device in `devices` and `delivered`) at once, ignoring the cap, quiet hours and dedupe. It is for the stage moment: it stores the nudge
 with status `test` (a fresh key each press), so `GET /v1/nudges` and the stage view (`/stage`) show
 the same line as the watch buzzes. `test` nudges never count towards the 5 a day, the 20 minute gap
 or the daily dedupe (`countsTowardsCap` in `@michael/shared`).
@@ -1324,6 +1327,43 @@ Watch. The app's service worker is `apps/web/public/sw.js`.
 | GET    | `/v1/push`               |                                      | `200 PushConfig`                        | live   |
 | POST   | `/v1/push/subscriptions` | `PushSubscriptionInput` (`toJSON()`) | `201 PushConfig` (saved for the caller) | live   |
 | DELETE | `/v1/push/subscriptions` | `{ endpoint }`                       | `200 PushConfig`                        | live   |
+
+### Telegram
+
+A backup channel for nudges (`apps/api/src/nudges/telegram.ts`). Telegram mirrors its
+notifications to the Apple Watch, so a nudge still buzzes when Web Push does not. Setup for the
+team: `docs/sources/telegram.md`.
+
+| Method | Path                    | Body                | Response                                                                | Status |
+| ------ | ----------------------- | ------------------- | ----------------------------------------------------------------------- | ------ |
+| GET    | `/v1/telegram`          |                     | `200 TelegramStatus`                                                    | live   |
+| POST   | `/v1/telegram/link`     |                     | `200 { url }` (`https://t.me/<bot>?start=<token>`); `503` without a bot | live   |
+| DELETE | `/v1/telegram`          |                     | `200 TelegramStatus` (unbinds the caller's chat)                        | live   |
+| POST   | `/v1/webhooks/telegram` | a Telegram `Update` | `200`, with the bot's reply as a `sendMessage` method body              | live   |
+
+```ts
+type TelegramStatus = {
+  enabled: boolean; // false until the API has TELEGRAM_BOT_TOKEN
+  connected: boolean;
+  username: string | null; // the chat's Telegram @username
+  connected_at: string | null;
+};
+type TelegramLinkResponse = { url: string };
+```
+
+- One tap: "Connect Telegram" on You opens the link (web route `/integrations/telegram/connect`),
+  Telegram opens the bot, the user taps Start, and the bot gets `/start <token>`. The token holds
+  the user id, a 15 minute expiry and an HMAC (key derived from `API_KEY`), 61 characters to fit
+  t.me's 64. Each token binds once. The bot answers "Connected. I'll keep it short."
+- The webhook needs no user auth; it checks `X-Telegram-Bot-Api-Secret-Token` against
+  `TELEGRAM_WEBHOOK_SECRET` (default: derived from the bot token) and answers `401` otherwise,
+  `404` when there is no bot. Only private chats. `/stop` unbinds the chat. A chat belongs to
+  whoever bound it last (`telegram_chats`, one row per user).
+- Delivery: `sendMessage` with the nudge text. `sent` when Telegram took it, `failed` when it
+  refused; a `403` (the user blocked the bot) also unbinds the chat.
+- On start, with a token, the API calls `setWebhook` to `${PUBLIC_API_URL}/v1/webhooks/telegram`
+  (https only; a repeat is a no-op). The bot username comes from `TELEGRAM_BOT_USERNAME`, else
+  from `getMe`.
 
 ### Score
 
