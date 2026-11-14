@@ -146,6 +146,11 @@ What happens on merge, with no human involved:
 | new file in `supabase/migrations/`            | `Migrate database` action applies it to production            |
 | anything on `main`                            | Vercel rebuilds the web app (no PR previews, `vercel.json`)   |
 
+Everything runs in the EU next to the database (Frankfurt): the API on Railway in Amsterdam
+(`railway.json` `multiRegionConfig`, `europe-west4-drams3a`), the web functions on Vercel in
+Frankfurt (`apps/web/vercel.json` `regions: ["fra1"]`). Keep them there: a US region adds a
+transatlantic round trip to every query. The API's `Server-Timing` header shows its time and region.
+
 Where configuration lives (values are never committed):
 
 | Place                                        | Keys                                                                                                                                                                                                                                                                                                                                                                                                                                |

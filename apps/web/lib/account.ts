@@ -7,8 +7,9 @@ export async function signedInAs(): Promise<string> {
   if (!authEnabled) return "Local preview, no sign in";
   if ((await cookies()).get(DEMO_COOKIE)?.value === "1") return "The demo week";
   try {
-    const { data } = await (await supabaseServer()).auth.getUser();
-    return data.user?.email ?? "Signed in";
+    // Verified locally from the session JWT (no Auth round trip); the email is one of its claims.
+    const { data } = await (await supabaseServer()).auth.getClaims();
+    return data?.claims?.email ?? "Signed in";
   } catch {
     return "Signed in";
   }
