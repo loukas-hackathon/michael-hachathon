@@ -260,3 +260,53 @@ test("the demo always has blocks ahead to carry out, and advice with other peopl
     }
     await assert.rejects(executeRecommendation(sync), /other people/);
   }));
+
+test("move_calendar_blocks: every block moves together, one undo puts all back, a refusal moves none", () =>
+  asNewUser(async () => {
+    const start = Date.now() + 3 * HOUR;
+    const block = (title: string, at: number, data: Record<string, unknown> = {}) => ({
+      source: "manual" as const,
+      type: "calendar_event" as const,
+      start_at: iso(at),
+      end_at: iso(at + HOUR),
+      title,
+      data,
+    });
+    const { inserted } = await store.insertEvents([
+      block("Gym", start),
+      block("Errand", start + 2 * HOUR),
+      block("Client meeting", start + 4 * HOUR, { attendees: 2 }),
+    ]);
+    const [gym, errand, meeting] = inserted;
+    assert.ok(gym && errand && meeting);
+    await withAction(MOVE_ID, {
+      kind: "move_calendar_blocks",
+      undo_until: iso(start),
+      payload: {
+        moves: [
+          { event_id: gym.id, start_at: iso(start - HOUR) },
+          { event_id: errand.id, start_at: iso(start + 2.5 * HOUR) },
+        ],
+      },
+    });
+    await executeRecommendation(MOVE_ID);
+    assert.equal((await store.getEvent(gym.id))?.start_at, iso(start - HOUR));
+    assert.equal((await store.getEvent(errand.id))?.end_at, iso(start + 3.5 * HOUR));
+    await undoRecommendation(MOVE_ID);
+    assert.equal((await store.getEvent(gym.id))?.start_at, iso(start));
+    assert.equal((await store.getEvent(errand.id))?.start_at, iso(start + 2 * HOUR));
+
+    // A meeting in the list: refused, and the block moved before it goes back.
+    await withAction(MOVE_ID, {
+      kind: "move_calendar_blocks",
+      payload: {
+        moves: [
+          { event_id: gym.id, start_at: iso(start + HOUR) },
+          { event_id: meeting.id, start_at: iso(start + 6 * HOUR) },
+        ],
+      },
+    });
+    await assert.rejects(executeRecommendation(MOVE_ID), /other people/);
+    assert.equal((await store.getEvent(gym.id))?.start_at, iso(start));
+    assert.equal((await store.getEvent(meeting.id))?.start_at, iso(start + 4 * HOUR));
+  }));

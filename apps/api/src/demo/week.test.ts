@@ -37,8 +37,8 @@ for (const now of NOWS) {
       const key = `${e.source}|${e.external_id}`;
       assert.ok(!keys.has(key), `duplicate ${key}`);
       keys.add(key);
-      // Only the calendar is planned ahead; everything else has already happened.
-      if (e.source !== "google_calendar")
+      // Only the calendar and its drives are planned ahead; everything else has already happened.
+      if (e.source !== "google_calendar" && e.source !== "maps")
         assert.ok(Date.parse(e.end_at ?? e.start_at) <= now.getTime(), e.title);
     }
 

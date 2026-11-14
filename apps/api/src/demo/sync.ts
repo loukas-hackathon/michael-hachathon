@@ -2,8 +2,12 @@ import type { DemoSeedResult, Source } from "@michael/shared";
 import { currentUserId } from "../context";
 import { env } from "../env";
 import { HttpError } from "../http";
+import { Zone } from "../patterns/time";
+import { goalForEvent } from "../score/match";
 import type { Store } from "../store";
-import { buildDemoWeek, DEMO_PREFIX, demoGoals } from "./week";
+import { DEMO_TZ, localDate } from "./time";
+import { DEMO_PLACES, demoTravel } from "./travel";
+import { buildDemoWeek, DEMO_PREFIX, type DemoWeek, demoGoals } from "./week";
 
 /**
  * Brings the demo account up to now: the generated week's events (only rows whose external_id
@@ -29,7 +33,55 @@ export async function seedDemoWeek(
 
   const events = await store.syncSeededEvents(DEMO_PREFIX, sources, week.events);
   const goals = await store.seedGoals(demoGoals, { overwrite: opts.overwriteGoals });
+  if (!rules.offTheRecord) await seedDemoTravel(store, week, opts.now ?? new Date());
   return { days: week.days, events, goals_written: goals };
+}
+
+/**
+ * The demo's places (when none are saved) and one travel suggestion for the next drive that
+ * leaving later makes shorter, today or tomorrow, so it shows on Today. Google is never asked.
+ */
+export async function seedDemoTravel(store: Store, week: DemoWeek, now: Date): Promise<void> {
+  if ((await store.listPlaces()).length === 0) await store.replacePlaces(DEMO_PLACES);
+  const zone = new Zone(DEMO_TZ);
+  const today = localDate(now.getTime());
+  const days = [today, zone.nextDay(today)];
+  const calendar = week.events.filter(
+    (e) => e.type === "calendar_event" && days.includes(localDate(Date.parse(e.start_at))),
+  );
+  const trip = demoTravel(calendar).trips.find(
+    (t) => t.wonMinutes >= 10 && Date.parse(t.naive.depart_at) > now.getTime() + 10 * 60_000,
+  );
+  if (!trip) return;
+
+  const clock = (iso: string) => zone.clock(Date.parse(iso));
+  const title = `Leave at ${clock(trip.best.depart_at)} instead of ${clock(trip.naive.depart_at)}, win ${trip.wonMinutes} minutes`;
+  const before = await store.listRecommendations();
+  if (before.some((r) => r.title === title && r.action?.undo_until === trip.best.depart_at)) return;
+
+  const day = localDate(trip.start);
+  const events = await store.listEvents({
+    from: new Date(zone.startOfDay(day)).toISOString(),
+    to: new Date(zone.startOfDay(zone.nextDay(day))).toISOString(),
+    type: ["calendar_event"],
+  });
+  const event = events.find((e) => e.external_id === trip.calendarExternalId);
+  if (!event) return;
+  const goal = goalForEvent(event, await store.listGoals())?.goal ?? null;
+  await store.createRecommendation({
+    goal_id: goal?.id ?? null,
+    title,
+    rationale:
+      `Leaving at ${clock(trip.naive.depart_at)} means ${trip.naive.minutes} minutes on the road to ${trip.to}; ` +
+      `at ${clock(trip.best.depart_at)} it is ${trip.best.minutes} and you still arrive by ` +
+      `${clock(trip.best.arrive_at)} for ${trip.title} at ${zone.clock(trip.start)}.`,
+    action: {
+      kind: "reminder",
+      payload: { event_id: event.id, at: trip.best.depart_at, text: `Leave now for ${trip.to}.` },
+      involves_others: false,
+      undo_until: trip.best.depart_at,
+    },
+  });
 }
 
 const REFRESH_MS = 5 * 60_000;

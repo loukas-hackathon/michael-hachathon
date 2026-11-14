@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { PlacesResponse, PrivacyState, TravelPlanResult } from "@michael/shared";
+import { AddressSearchResponse, PlacesResponse, PrivacyState, TravelPlanResult } from "@michael/shared";
 import { app } from "../app";
 
 const auth = { Authorization: "Bearer dev-key", "content-type": "application/json" };
@@ -41,4 +41,17 @@ test("places: save, read back, opt in to maps, and plan degrades without a key",
   const plan = TravelPlanResult.parse(await res.json());
   assert.equal(plan.status, "maps_unavailable");
   assert.equal(plan.travel.length, 0);
+});
+
+test("places: address search and the whole day plan say maps are not set up, without failing", async () => {
+  let res = await call("GET", "/v1/places/search?q=Ermou%2010");
+  assert.equal(res.status, 200);
+  assert.deepEqual(AddressSearchResponse.parse(await res.json()), { results: [], maps_available: false });
+
+  res = await call("POST", "/v1/travel/plan", { whole_day: true });
+  assert.equal(res.status, 200);
+  const plan = TravelPlanResult.parse(await res.json());
+  assert.equal(plan.status, "maps_unavailable");
+  assert.match(plan.day?.note ?? "", /maps/);
+  assert.equal(plan.day?.recommendation_id, null);
 });

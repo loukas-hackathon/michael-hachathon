@@ -106,6 +106,9 @@ export type RecommendationStatus = z.infer<typeof RecommendationStatus>;
 // with other people, never deletes, and never sends in the user's name. Undo until the event starts.
 export const ActionKind = z.enum([
   "move_calendar_block",
+  // Several of the user's own blocks moved together (the whole day planned around traffic): one
+  // tap carries out every move, one Undo puts every block back.
+  "move_calendar_blocks",
   "create_focus_block",
   "block_mac_app",
   "draft_follow_up",
@@ -352,6 +355,13 @@ export const MoveCalendarBlockPayload = z
   })
   .refine((p) => p.start_at || p.end_at || p.new_title, { message: "Give start_at, end_at or new_title" });
 export type MoveCalendarBlockPayload = z.infer<typeof MoveCalendarBlockPayload>;
+
+// move_calendar_blocks: every move is a move_calendar_block, carried out all or nothing and undone
+// together. Extra fields (the travel maths) ride along for the app.
+export const MoveCalendarBlocksPayload = z.object({
+  moves: z.array(MoveCalendarBlockPayload).min(1).max(10),
+});
+export type MoveCalendarBlocksPayload = z.infer<typeof MoveCalendarBlocksPayload>;
 
 // create_focus_block: a new block on the user's calendar, tagged as Michael's.
 export const CreateFocusBlockPayload = z
@@ -657,6 +667,9 @@ export const Profile = z.object({
   work_days: z.array(Weekday),
   gym_days: z.array(Weekday),
   weak_spots: z.array(WeakSpot),
+  // Calendar titles Michael never moves, even though they are the user's own blocks ("PT session",
+  // booked outside the calendar). Matched like goal calendar titles: equal, or the title starts with it.
+  fixed_titles: z.array(z.string().min(1).max(200)).max(50),
   // Set when onboarding is finished or skipped; null means Today should offer onboarding.
   onboarded_at: IsoDateTime.nullable(),
   // null until the user saves anything (the response is then the defaults).
@@ -674,6 +687,7 @@ export const DEFAULT_PROFILE: Profile = {
   work_days: ["mon", "tue", "wed", "thu", "fri"],
   gym_days: [],
   weak_spots: [],
+  fixed_titles: [],
   onboarded_at: null,
   updated_at: null,
 };
@@ -723,6 +737,20 @@ export const PlacesResponse = z.object({
   travel_enabled: z.boolean(),
 });
 export type PlacesResponse = z.infer<typeof PlacesResponse>;
+
+// GET /v1/places/search?q=: address matches for the Places screen, geocoded on the server.
+export const AddressMatch = z.object({
+  formatted_address: z.string(),
+  place_id: z.string().nullable(),
+  lat: z.number(),
+  lng: z.number(),
+});
+export type AddressMatch = z.infer<typeof AddressMatch>;
+export const AddressSearchResponse = z.object({
+  results: z.array(AddressMatch),
+  maps_available: z.boolean(),
+});
+export type AddressSearchResponse = z.infer<typeof AddressSearchResponse>;
 
 // One sampled departure for a trip.
 export const TravelOption = z.object({
@@ -797,11 +825,49 @@ export type PlaceSuggestionsResponse = z.infer<typeof PlaceSuggestionsResponse>;
 export const TravelPlanInput = z.object({
   from: IsoDateTime.optional(),
   to: IsoDateTime.optional(),
+  // Plan the whole day together: move the user's own blocks out of the rush, meetings stay fixed.
+  // Plans the day `from` falls on (default today); per block suggestions are then left out.
+  whole_day: z.boolean().optional(),
 });
 export type TravelPlanInput = z.infer<typeof TravelPlanInput>;
 
 export const TravelPlanStatus = z.enum(["ok", "maps_unavailable", "travel_off"]);
 export type TravelPlanStatus = z.infer<typeof TravelPlanStatus>;
+
+// One drive of the day, as planned now and as Michael would plan it. `to_event_id` null is home.
+export const TravelLeg = z.object({ depart_at: IsoDateTime, minutes: z.number().int().nonnegative() });
+export type TravelLeg = z.infer<typeof TravelLeg>;
+export const TravelDayDrive = z.object({
+  from: z.string(),
+  to: z.string(),
+  to_event_id: z.string().nullable(),
+  before: TravelLeg.nullable(),
+  after: TravelLeg.nullable(),
+});
+export type TravelDayDrive = z.infer<typeof TravelDayDrive>;
+
+export const TravelDayMove = z.object({
+  event_id: z.string(),
+  title: z.string(),
+  from_start_at: IsoDateTime,
+  start_at: IsoDateTime,
+  end_at: IsoDateTime,
+});
+export type TravelDayMove = z.infer<typeof TravelDayMove>;
+
+// The whole day plan (whole_day: true). `won_minutes` is before minus after; Michael proposes it
+// only at 10 minutes or more. `note` says why there is nothing to propose.
+export const TravelDayPlan = z.object({
+  day: LocalDay,
+  before_minutes: z.number().int().nonnegative(),
+  after_minutes: z.number().int().nonnegative(),
+  won_minutes: z.number().int().nonnegative(),
+  moves: z.array(TravelDayMove),
+  drives: z.array(TravelDayDrive),
+  recommendation_id: z.uuid().nullable(),
+  note: z.string().nullable(),
+});
+export type TravelDayPlan = z.infer<typeof TravelDayPlan>;
 
 export const TravelPlanResult = z.object({
   status: TravelPlanStatus,
@@ -811,6 +877,8 @@ export const TravelPlanResult = z.object({
   recommendations: z.array(Recommendation),
   // Calendar events with a location that got no trip, and why.
   skipped: z.array(z.object({ calendar_event_id: z.string(), reason: z.string() })),
+  // Only with whole_day: true.
+  day: TravelDayPlan.nullable().optional(),
 });
 export type TravelPlanResult = z.infer<typeof TravelPlanResult>;
 
