@@ -61,7 +61,7 @@ Enums:
 - `AgentScope`: `timeline | goals | recommendations | score | write_events`
 - `AgentStatus`: `pending | approved | revoked`
 - `NudgeChannel`: `watch | push | telegram`; `NudgeStatus`: `queued | sent | failed | suppressed`
-- `NudgeKind`: `focus_drift | block_soon | wind_down | goal_behind`; `NudgeSkip`: `nothing_to_say | quiet_hours | daily_cap | too_soon | off_the_record`
+- `NudgeKind`: `focus_drift | block_soon | wind_down | goal_behind | morning | evening`; `NudgeSkip`: `nothing_to_say | quiet_hours | daily_cap | too_soon | off_the_record`
 - `AppCategory`: `work | communication | social | video | news | shopping | travel | ai | music | system | other`
   (one shared categoriser for apps and sites, `packages/shared/src/categories.ts`; unknown = `other`)
 - `IntegrationProvider`: `google_calendar | whoop`
@@ -1198,14 +1198,22 @@ type NudgeCheckResult = {
 | POST   | `/v1/nudges/test`      | `200 NudgeTestResult` (push one nudge to the caller's devices now)      | live   |
 
 Nudge engine (`apps/api/src/nudges/engine.ts`, pure, thresholds in `LIMITS`). Each check picks the
-most urgent candidate of four rules, each tied to a goal:
+most urgent candidate of these rules (in this order):
 
-| Kind          | When                                                                          | Example                                                           |
-| ------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `focus_drift` | inside a work goal block, 3+ of the last 10 min on distractor apps or sites   | "6 min on Instagram in your focus block. Back to it until 12:00." |
-| `block_soon`  | a goal block starts in 2 to 15 min                                            | "Gym at 18:00. Wrap up in 12 min."                                |
-| `wind_down`   | 30 min before the night, 3+ of the last 10 min on screens, a rest goal exists | "Screens off by 22:00. Sleep is on the plan."                     |
-| `goal_behind` | before 19:00, a weekly budget behind its linear pace by 60+ min and 15%+      | "Gym 2h 34m behind this week. Book 90 min today."                 |
+| Kind          | When                                                                                                                         | Example                                                               |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `focus_drift` | inside a work goal block, 3+ of the last 10 min on distractor apps or sites                                                  | "6 min on Instagram in your focus block. Back to it until 12:00."     |
+| `block_soon`  | a goal block starts in 2 to 15 min                                                                                           | "Gym at 18:00. Wrap up in 12 min."                                    |
+| `morning`     | after the night's sleep (3h+) ends today, else from 08:00; until 12:00                                                       | the Morning moment's headline, e.g. "Today holds 2h 00 of goal time." |
+| `evening`     | an hour before the usual bedtime (median of 3+ of the last 8 nights), else 21:00; never later than 45 min before quiet hours | the Evening moment's headline                                         |
+| `wind_down`   | 30 min before the night, 3+ of the last 10 min on screens, a rest goal exists                                                | "Screens off by 22:00. Sleep is on the plan."                         |
+| `goal_behind` | before 19:00, a weekly budget behind its linear pace by 60+ min and 15%+                                                     | "Gym 2h 34m behind this week. Book 90 min today."                     |
+
+`morning` and `evening` carry the Morning and Evening moments (`GET /v1/moments/:kind`, template
+headline, no model): the headline when it is under 15 words, else its first sentence, else a shorter
+line from the same numbers; `reason` holds the maths and when it was sent. Their key is the kind, so
+each goes out at most once a day, and they count toward the 5. The push opens Today (`url: "/"`).
+The night's quiet hours come from the profile (`quiet_hours`, default 22:00 to 07:00).
 
 Goal time spent this week = the goal's calendar blocks so far plus its own events (`work`:
 `focus_session`, `gym`: `workout`, `rest`: `sleep`, `food`: `meal`), counted once. Rules: at most 5

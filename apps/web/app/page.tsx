@@ -7,6 +7,7 @@ import { MomentCard } from "@/components/today/moment-card";
 import { getToday, needsOnboarding } from "@/lib/api";
 import { type DayView, nowIndex, tape, totals } from "@/lib/day";
 import { formatDay, formatTime, hm, minutesPhrase } from "@/lib/format";
+import { momentKindFor } from "@/lib/moments";
 
 const TITLE: Record<DayView["moment"], string> = { morning: "Morning", today: "Today", evening: "Evening" };
 
@@ -17,15 +18,19 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
   const ticks = tape(day);
   const t = totals(day);
   const firstBlock = day.blocks[0];
+  const momentKind = momentKindFor(day);
 
   return (
     <main className="screen">
       <ScreenHeader context={formatDay(day.now)} title={TITLE[day.moment]} />
 
       {day.blocks.length === 0 ? (
-        <EmptyState title="Nothing yet.">
-          Wear the watch tonight and your first brief arrives in the morning.
-        </EmptyState>
+        <>
+          <EmptyState title="Nothing yet.">
+            Wear the watch tonight and your first brief arrives in the morning.
+          </EmptyState>
+          {momentKind && !day.sample ? <MomentCard kind={momentKind} sample={false} /> : null}
+        </>
       ) : (
         <>
           {day.week.scorePct != null ? (
@@ -83,7 +88,7 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
             </p>
           ) : null}
 
-          {day.moment !== "today" ? <MomentCard kind={day.moment} /> : null}
+          {momentKind ? <MomentCard kind={momentKind} sample={day.sample} /> : null}
 
           {day.lead ? <MichaelCard lead={day.lead} /> : null}
 
