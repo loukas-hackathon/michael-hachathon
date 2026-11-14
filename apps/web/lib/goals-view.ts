@@ -80,3 +80,16 @@ export function rank(view: GoalsView): GoalStatus[] {
     })
     .sort((a, b) => b.behindBy - a.behindBy);
 }
+
+/**
+ * How close a goal is to closing for the week, for the "close it" pull on Goals (Apple's rings,
+ * a streak about to land). near: three quarters done or an hour left. last: one block closes it.
+ */
+export type CloseState = "open" | "near" | "last" | "closed";
+export function closeState(budget: number, spent: number, left: number): CloseState {
+  if (budget <= 0) return "open";
+  if (left <= 0) return "closed";
+  if (left <= 30) return "last";
+  if (left <= 60 || spent / budget >= 0.75) return "near";
+  return "open";
+}

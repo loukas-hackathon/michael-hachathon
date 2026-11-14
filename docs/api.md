@@ -1938,7 +1938,10 @@ type AgentQuery = {
   `update_goal`, `propose_goals` = `goals`; `list_recommendations`, `update_recommendation`, `get_nudges` =
   `recommendations`; `get_score`, `get_records`, `get_moments` = `score`; `add_event`, `execute_recommendation`,
   `undo_recommendation`, `create_focus_block`, `block_mac_app`, `plan_travel` = `write_events`;
-  `suggest_app_mute` = `recommendations`. A tool not in that
+  `suggest_app_mute` = `recommendations`; `get_memories` = `timeline`; `remember` = `write_events`.
+  Memories are events of type `memory` (source `manual` from chat, `agent` from MCP); Michael's
+  chat reads the newest 40 into every answer and keeps new ones with its own `remember` and
+  `forget_memory` tools (`apps/api/src/memory.ts`). A tool not in that
   list needs `timeline` if it is read only, else `write_events` (`apps/api/src/mcp-guard.ts`).
 - `queries`: `from` defaults to local midnight today (Europe/Athens), `to` to now; newest first,
   at most 500.
@@ -2527,6 +2530,8 @@ offset. A refused or failed call returns `isError: true` with one plain sentence
 | `list_recommendations`   | `recommendations` | `{ status?: RecommendationStatus }`                                                     | `{ recommendations: Recommendation[] }`                                                    |
 | `get_nudges`             | `recommendations` | `{ date?: LocalDay }` (default today)                                                   | `{ day, nudges: Nudge[] }`                                                                 |
 | `get_moments`            | `score`           | `{ kind?: MomentKind }` (default morning before 15:00 local, evening after)             | `Moment`                                                                                   |
+| `get_memories`           | `timeline`        | `{}`                                                                                    | `{ memories: { id, text, at, from: "chat" \| "agent" }[] }` (newest first, at most 40)     |
+| `remember`               | `write_events`    | `{ fact: string (1..280) }`                                                             | `{ memory }` (same fact twice is kept once; `null` when off the record)                    |
 | `add_event`              | `write_events`    | `EventInput`                                                                            | `{ inserted, duplicates, ignored, events: Event[] }`                                       |
 | `add_goal`               | `goals`           | `{ category, title, description?, weekly_budget_minutes?, target? }`                    | `{ goal: Goal }`                                                                           |
 | `update_goal`            | `goals`           | `{ id, category?, title?, description?, weekly_budget_minutes?, target?, active? }`     | `{ goal: Goal }`, error when not found                                                     |

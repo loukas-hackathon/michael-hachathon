@@ -109,7 +109,7 @@ export function statusFor(c: Connection, x: Inputs, now = Date.now()): Connectio
               ...c,
               state: "attention",
               line: `${who}. Last sync failed.`,
-              action: { kind: "sync-calendar", label: "Sync now" },
+              action: manage,
             }
           : { ...c, state: "on", line: `${otr}${who}${sync}.`, action: manage };
       }
@@ -152,7 +152,7 @@ export function statusFor(c: Connection, x: Inputs, now = Date.now()): Connectio
           ...c,
           state: "attention",
           line: "Waiting for your approval.",
-          action: { kind: "link", label: "Review", href: "/agents" },
+          action: { kind: "link", label: "Manage", href: "/agents" },
         };
       return { ...c, state: "none", line: "Not connected", action: setUp() };
     }

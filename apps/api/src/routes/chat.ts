@@ -23,6 +23,7 @@ import { checkInContext, checkInLine } from "../checkin/service";
 import { env } from "../env";
 import { HttpError, jsonBody, parse } from "../http";
 import { instructionLine } from "../instructions/protected";
+import { listMemories, type Memory, memoryContext } from "../memory";
 import { DEFAULT_TIMEZONE } from "../patterns";
 import { Zone } from "../patterns/time";
 import { store } from "../store";
@@ -75,6 +76,11 @@ Proposing:
 - When the user tells you something that changes their week (exams, an injury, travel, a deadline), propose one concrete change tied to a goal: a goal's weekly budget with propose_goal_change (with until for a temporary change), or this week's blocks with propose_plan_change. Show the maths ("University 4h to 8h a week until 22 December; Business 8h to 4h, so the week still adds up").
 - A proposal changes nothing until the user taps Accept. Never say it is done. Never change goals any other way. One proposal per answer. If a tool says the user declined it this week, do not propose it again.
 
+Memory:
+- "What the user told you before" below is what you remember from earlier conversations. Use it without being asked; it is why the user does not repeat themselves.
+- When the user tells you a lasting fact or preference about themselves, their routine or their goals ("I train best before 08:00", "Fridays are for family"), keep it with remember, in one short line in their words. Not one off plans, not other people's private details, not what is already in the goals.
+- When the user asks you to forget something, use forget_memory with its id.
+
 Check in:
 - "What you told me" below are the user's own answers to earlier check in questions. Use them, quote them, never invent them.
 - When the user answers one of today's open check in questions in chat, keep it with answer_check_in. If the result gives a follow up, ask it word for word.`;
@@ -108,6 +114,8 @@ export interface ChatContextInput {
   undoable?: Recommendation[];
   /** Check in answers from the last week, and today's open questions (#187). */
   checkIns?: { answered: CheckIn[]; open: CheckIn[] };
+  /** Facts the user asked Michael (or an agent) to keep, newest first. */
+  memories?: Memory[];
 }
 
 const pct = (p: number | null) => (p === null ? "no score yet" : `${Math.round(p)}%`);
@@ -281,6 +289,9 @@ export function buildChatContext(input: ChatContextInput): string {
     );
   }
 
+  const remembered = memoryContext(input.memories ?? []);
+  if (remembered) parts.push(remembered);
+
   const headlines = (label: string, r: PatternReport | null) =>
     r?.headlines.length ? [`${label}:\n${r.headlines.map((h) => `- ${h}`).join("\n")}`] : [];
   parts.push(
@@ -299,7 +310,7 @@ async function contextForNow(): Promise<string> {
   const nowIso = new Date(now).toISOString();
   // Pattern reports are best effort: a detector failing must not take the chat down.
   const report = (from: string) => patternReportFor({ from, to: nowIso }).catch(() => null);
-  const [goals, instructions, events, today, week, score, undoable, checkIns] = await Promise.all([
+  const [goals, instructions, events, today, week, score, undoable, checkIns, memories] = await Promise.all([
     store.listGoals(),
     store.listInstructions().catch(() => []),
     store.listEvents({
@@ -315,8 +326,20 @@ async function contextForNow(): Promise<string> {
     }),
     store.listRecommendations({ status: "done" }).catch(() => []),
     checkInContext(now),
+    listMemories().catch(() => []),
   ]);
-  return buildChatContext({ now, goals, instructions, events, today, week, score, undoable, checkIns });
+  return buildChatContext({
+    now,
+    goals,
+    instructions,
+    events,
+    today,
+    week,
+    score,
+    undoable,
+    checkIns,
+    memories,
+  });
 }
 
 let client: Anthropic | null = null;

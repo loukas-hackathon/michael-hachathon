@@ -211,6 +211,18 @@ h3 {
 }
 
 /* Room for the floating tab bar under every screen. */
+/* Installed app: content scrolls under the clock and battery, so the status bar gets the page
+ * colour behind it, as in a native app. Zero height in a browser tab. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 40;
+  height: env(safe-area-inset-top);
+  background: var(--m-bg);
+  pointer-events: none;
+}
+
 .screen {
   padding-top: env(safe-area-inset-top);
   padding-bottom: calc(var(--m-tabbar-h) + 40px + env(safe-area-inset-bottom));
@@ -344,6 +356,35 @@ h3 {
   }
 }
 
+/* Goals: closing the week (components/goals/goal-charts.tsx). The next notch breathes pink when a
+ * goal is nearly closed; a closed tape fills from the left once and its check lands. */
+.m-notch-next {
+  animation: m-notch-breathe 1.8s ease-in-out infinite;
+}
+@keyframes m-notch-breathe {
+  50% {
+    background: color-mix(in srgb, var(--m-spark) 45%, transparent);
+  }
+}
+.m-track-closed {
+  transform-origin: left center;
+  animation: m-track-close var(--m-dur-smooth) var(--m-ease-out) both;
+}
+@keyframes m-track-close {
+  from {
+    transform: scaleX(0.85);
+  }
+}
+.m-check-pop {
+  animation: m-check-pop var(--m-dur-spring) var(--m-ease-out) 180ms both;
+}
+@keyframes m-check-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+
 /* Skeletons (components/skeleton.tsx): nothing for 150ms, then a slow breath. No gradients. */
 .m-skeleton {
   animation: m-fade-in var(--m-dur-ui) var(--m-ease-out) 150ms both;
@@ -369,6 +410,9 @@ h3 {
   .m-live-enter,
   .m-live-stamp,
   .m-bone,
+  .m-notch-next,
+  .m-track-closed,
+  .m-check-pop,
   :root:not([data-counted]) .m-count {
     animation: none;
   }
