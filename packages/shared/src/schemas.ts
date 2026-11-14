@@ -263,12 +263,17 @@ export type GoalUpdate = z.input<typeof GoalUpdate>;
 // setup, changed any time. Michael never plans into the time they protect.
 
 // clear_day: nothing planned on `days`. home_by: nothing planned after `time` (on `days`, or every
-// day). quiet_hours: nothing between `time` and `end_time`. custom: text for the coach only.
+// day), until 05:00 the next morning. quiet_hours: nothing between `time` and `end_time`. custom:
+// text for the coach only.
 export const InstructionKind = z.enum(["clear_day", "home_by", "quiet_hours", "custom"]);
 export type InstructionKind = z.infer<typeof InstructionKind>;
 
 // 0 = Sunday .. 6 = Saturday, as in JavaScript's getDay().
 const Weekdays = z.array(z.number().int().min(0).max(6)).min(1).max(7);
+
+// Calendar titles allowed inside the protected time ("Rhefuel" on a clear Sunday), matched like a
+// goal's `calendar_titles`: equal or starting with the entry, ignoring case and accents.
+const ExceptionTitles = z.array(z.string().trim().min(1, "An exception must not be blank").max(200)).max(50);
 
 export const Instruction = z.object({
   id: z.uuid(),
@@ -278,6 +283,8 @@ export const Instruction = z.object({
   days: Weekdays.optional(),
   time: ClockTime.optional(),
   end_time: ClockTime.optional(),
+  // Left out when there are none.
+  exceptions: ExceptionTitles.optional(),
   active: z.boolean(),
   created_at: IsoDateTime,
   updated_at: IsoDateTime,
@@ -309,6 +316,7 @@ export const InstructionCreate = z
     days: Weekdays.nullish(),
     time: ClockTime.nullish(),
     end_time: ClockTime.nullish(),
+    exceptions: ExceptionTitles.nullish(),
     active: z.boolean().default(true),
   })
   .superRefine((i, ctx) => {
@@ -317,14 +325,15 @@ export const InstructionCreate = z
   });
 export type InstructionCreate = z.input<typeof InstructionCreate>;
 
-// Every field optional; null clears `days`, `time` or `end_time`. The API checks the shape of the
-// result (the stored instruction with the change applied), not of the change alone.
+// Every field optional; null clears `days`, `time`, `end_time` or `exceptions`. The API checks the
+// shape of the result (the stored instruction with the change applied), not of the change alone.
 export const InstructionUpdate = z.object({
   text: instructionText.optional(),
   kind: InstructionKind.optional(),
   days: Weekdays.nullish(),
   time: ClockTime.nullish(),
   end_time: ClockTime.nullish(),
+  exceptions: ExceptionTitles.nullish(),
   active: z.boolean().optional(),
 });
 export type InstructionUpdate = z.input<typeof InstructionUpdate>;

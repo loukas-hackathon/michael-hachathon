@@ -20,6 +20,7 @@ import { streamSSE } from "hono/streaming";
 import { CHAT_TOOLS, runChatTool, undoLine } from "../actions/chat-tools";
 import { env } from "../env";
 import { HttpError, jsonBody, parse } from "../http";
+import { instructionLine } from "../instructions/protected";
 import { DEFAULT_TIMEZONE } from "../patterns";
 import { Zone } from "../patterns/time";
 import { store } from "../store";
@@ -178,7 +179,7 @@ export function buildChatContext(input: ChatContextInput): string {
   if (rules.length > 0) {
     parts.push(
       `Standing instructions (never plan, move or suggest anything inside the time they protect):\n${rules
-        .map((i) => `- ${i.text}`)
+        .map((i) => `- ${instructionLine(i)}`)
         .join("\n")}`,
     );
   }

@@ -26,6 +26,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { z } from "zod";
 import { currentUserId } from "./context";
 import { HttpError } from "./http";
+import { type GuardDeps, guardRecommendation, guardRecommendations } from "./instructions/guard";
 import type { GeocodeHit } from "./integrations/maps";
 import { type PrivacyRules, screenEvents } from "./privacy";
 import {
@@ -126,6 +127,7 @@ const instructionFromRow = (r: Record<string, unknown>): Instruction =>
     days: (r.days as number[] | null) ?? null,
     time: (r.time as string | null) ?? null,
     end_time: (r.end_time as string | null) ?? null,
+    exceptions: (r.exceptions as string[] | null | undefined) ?? null,
     active: r.active as boolean,
     created_at: iso(r.created_at as string) as string,
     updated_at: iso(r.updated_at as string) as string,
@@ -574,6 +576,9 @@ export class SupabaseStore implements Store {
           days: i.days ?? null,
           time: i.time ?? null,
           end_time: i.end_time ?? null,
+          // A newer column: only named when it holds something, so an instruction can still be
+          // stored while its migration is on its way.
+          ...(i.exceptions?.length ? { exceptions: i.exceptions } : {}),
           active: i.active,
         })
         .select("*")
@@ -629,7 +634,14 @@ export class SupabaseStore implements Store {
     return row ? toRecommendation(row) : null;
   }
 
-  async createRecommendation(i: NewRecommendation) {
+  /** What instructions/guard.ts needs to check a new recommendation: the rules and the blocks. */
+  private async guardDeps(): Promise<GuardDeps> {
+    return { instructions: await this.listInstructions(), getEvent: (id) => this.getEvent(id) };
+  }
+
+  async createRecommendation(input: NewRecommendation) {
+    // The choke point: nothing is proposed inside time a standing instruction protects.
+    const i = await guardRecommendation(input, await this.guardDeps());
     const row = check(
       await this.db
         .from("recommendations")
@@ -817,13 +829,15 @@ export class SupabaseStore implements Store {
     );
     const saved = toRun(runRow);
     if (input.recommendations.length === 0) return { run: saved, recommendations: [] };
+    // The choke point: nothing is proposed inside time a standing instruction protects.
+    const recommendations = await guardRecommendations(input.recommendations, await this.guardDeps());
     // Every row of one insert must name the same columns.
-    const withEvidence = input.recommendations.some((r) => r.evidence?.length);
+    const withEvidence = recommendations.some((r) => r.evidence?.length);
     const rows = check(
       await this.db
         .from("recommendations")
         .insert(
-          input.recommendations.map((r) => ({
+          recommendations.map((r) => ({
             user_id: userId,
             analysis_run_id: saved.id,
             goal_id: r.goal_id,

@@ -5,6 +5,7 @@ import { type AgentClient, mockRecommendations, type Recommendation } from "@mic
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { runAsUser } from "./context";
+import { withoutInstructions } from "./instructions/testkit";
 import { createMcpServer } from "./mcp";
 import { toInstant, zone } from "./mcp-format";
 import { summarise } from "./mcp-guard";
@@ -35,6 +36,13 @@ async function connect() {
 
 const asNewUser = <T>(fn: () => Promise<T>, agent?: AgentClient) =>
   runAsUser(randomUUID(), fn, agent ? "mcp_oauth" : "script", agent);
+// The booking tests book "tomorrow", which on a Saturday is the mock's clear Sunday: they start
+// without standing instructions (instructions/guard.test.ts covers the guard).
+const asNewUserWithoutRules = <T>(fn: () => Promise<T>) =>
+  asNewUser(async () => {
+    await withoutInstructions(store);
+    return fn();
+  });
 
 const text = (r: Result) => r.content.map((c) => c.text).join("\n");
 // Tomorrow at a local wall time, so the block is always in the future.
@@ -154,7 +162,7 @@ test("update_recommendation accepts and dismisses, but never a done one", () =>
   }));
 
 test("execute_recommendation and undo_recommendation go through the calendar actions", () =>
-  asNewUser(async () => {
+  asNewUserWithoutRules(async () => {
     const { call } = await connect();
     const rec = (await store.getRecommendation(CREATE_ID)) as Recommendation;
     const start = toInstant(tomorrow("15:00"));
@@ -187,7 +195,7 @@ test("execute_recommendation and undo_recommendation go through the calendar act
   }));
 
 test("create_focus_block books own time in local time, shows in Michael and can be undone", () =>
-  asNewUser(async () => {
+  asNewUserWithoutRules(async () => {
     const { call } = await connect();
     const booked = await call("create_focus_block", {
       start: tomorrow("10:00"),
@@ -211,7 +219,7 @@ test("create_focus_block books own time in local time, shows in Michael and can 
   }));
 
 test("create_focus_block refuses the past and time with other people, and leaves their events alone", () =>
-  asNewUser(async () => {
+  asNewUserWithoutRules(async () => {
     const { call } = await connect();
     const past = await call("create_focus_block", {
       start: new Date(Date.now() - 3600_000).toISOString(),

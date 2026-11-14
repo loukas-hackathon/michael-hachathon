@@ -461,8 +461,26 @@ test("instructions_broken: a block says which standing instructions its time fal
     ["Run", [home.id]], // Saturday's half of the run: after 21:00, not yet Sunday
   ]);
   assert.deepEqual(on("2026-11-15"), [
-    ["Run", [sundays.id]], // Sunday's half
+    // Sunday's half: a clear Sunday, and 00:30 is still Saturday night for "home by 21:00".
+    ["Run", [sundays.id, home.id]],
     ["Gym", [sundays.id]],
+    ["Study", [sundays.id, home.id]],
+  ]);
+
+  // A title named in an instruction's exceptions does not break it ("Gym 45" starts with "Gym");
+  // other instructions still apply to it.
+  const withGym = [{ ...sundays, exceptions: ["gym"] }, home];
+  const exceptionDay = Score.parse(
+    buildScore([...events, calendar("Gym 45", T("2026-11-15 21:00"), T("2026-11-15 21:45"))], goals, {
+      date: "2026-11-15",
+      now: T("2026-11-16 12:00"),
+      instructions: withGym,
+    }),
+  ).day.blocks.map((b) => [b.title, b.instructions_broken]);
+  assert.deepEqual(exceptionDay, [
+    ["Run", [sundays.id, home.id]],
+    ["Gym", []],
+    ["Gym 45", [home.id]],
     ["Study", [sundays.id, home.id]],
   ]);
 

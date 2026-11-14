@@ -26,7 +26,14 @@ const [MOVE_ID, CREATE_ID, NO_ACTION_ID] = mockRecommendations.map((r) => r.id) 
 const iso = (ms: number) => new Date(ms).toISOString();
 
 // Each test acts as a fresh user with its own copy of the mock recommendations.
-const asNewUser = <T>(fn: () => Promise<T>) => runAsUser(randomUUID(), fn);
+const { withoutInstructions } = await import("../instructions/testkit");
+// Each test is a fresh user without standing instructions: they book relative to now, and on a
+// Saturday "tomorrow" is the mock's clear Sunday (instructions/guard.test.ts covers the guard).
+const asNewUser = <T>(fn: () => Promise<T>) =>
+  runAsUser(randomUUID(), async () => {
+    await withoutInstructions(store);
+    return fn();
+  });
 
 async function connect(events: Parameters<typeof fakeGoogle>[0] = []) {
   const g = fakeGoogle(events);

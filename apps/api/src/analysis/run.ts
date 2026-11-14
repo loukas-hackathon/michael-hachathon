@@ -1,5 +1,6 @@
 import type { AnalysisResult, AnalysisRun, AnalysisTrigger, Event, EventType } from "@michael/shared";
 import { HttpError } from "../http";
+import { instructionLine } from "../instructions/protected";
 import { DEFAULT_TIMEZONE } from "../patterns";
 import { DAY, Zone } from "../patterns/time";
 import type { Store } from "../store";
@@ -148,8 +149,9 @@ export async function runAnalysis(request: AnalysisRequest, deps: AnalysisDeps):
       to,
       now,
       trigger,
-      // Active ones only, in the person's own words. A paused instruction protects nothing.
-      instructions: instructions.filter((i) => i.active).map((i) => i.text),
+      // Active ones only, in the person's own words, with their exceptions in words ("Keep
+      // Sundays clear (except: Rhefuel)"). A paused instruction protects nothing.
+      instructions: instructions.filter((i) => i.active).map(instructionLine),
       // Nothing is carried out on a run: every action waits for the person's tap (the execute
       // route). When a run starts applying actions itself, this becomes "applied".
       actionsAre: "offers",

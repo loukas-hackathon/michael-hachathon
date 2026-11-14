@@ -99,14 +99,26 @@ test("clear_day on the days the clocks change: Sunday is 25 hours long in Octobe
   assert.equal(hitAt(SUNDAYS, "2026-03-29T21:00:00Z", "2026-03-29T21:30:00Z"), false); // Monday 00:00
 });
 
-test("home_by: everything after the time until the day ends, on its days or every day", () => {
+test("home_by: everything after the time until 05:00 the next morning, on its days or every day", () => {
   assert.equal(hit(HOME, "2026-11-10 20:00", "2026-11-10 21:00"), false); // ends on the dot
   assert.equal(hit(HOME, "2026-11-10 20:00", "2026-11-10 21:01"), true);
   assert.equal(hit(HOME, "2026-11-10 22:00", "2026-11-10 23:00"), true);
   assert.equal(hit(HOME, "2026-11-15 22:00", "2026-11-15 23:00"), true); // every day, Sunday too
   assert.equal(hit(HOME, "2026-11-10 09:00", "2026-11-10 10:00"), false);
-  // The small hours belong to the next day: not covered (quiet_hours is the tool for that).
-  assert.equal(hit(HOME, "2026-11-11 00:30", "2026-11-11 01:30"), false);
+  // The small hours belong to the evening before: 00:30 is after 21:00 of the day before, until
+  // 05:00 (#191, the gap #182 noted).
+  assert.equal(hit(HOME, "2026-11-11 00:30", "2026-11-11 01:30"), true);
+  assert.equal(hit(HOME, "2026-11-11 04:30", "2026-11-11 05:00"), true);
+  assert.equal(hit(HOME, "2026-11-11 05:00", "2026-11-11 06:00"), false);
+  // On its days only: Friday's night reaches Saturday 00:30, Saturday's does not exist.
+  assert.equal(hit(HOME_WEEKDAYS, "2026-11-14 00:30", "2026-11-14 01:00"), true);
+  assert.equal(hit(HOME_WEEKDAYS, "2026-11-15 00:30", "2026-11-15 01:00"), false);
+  // "Home by 01:00" is that night's small hours, not one in the morning of the same day.
+  const late = rule(8, { text: "Home by 01:00", kind: "home_by", time: "01:00" });
+  assert.equal(hit(late, "2026-11-10 01:30", "2026-11-10 02:00"), true); // Monday night's
+  assert.equal(hit(late, "2026-11-10 23:00", "2026-11-11 00:30"), false);
+  assert.equal(hit(late, "2026-11-11 00:30", "2026-11-11 01:30"), true);
+  assert.equal(hit(late, "2026-11-10 12:00", "2026-11-10 13:00"), false);
   // A block from the evening into the night is caught by its evening part.
   assert.equal(hit(HOME, "2026-11-10 20:30", "2026-11-11 01:00"), true);
 

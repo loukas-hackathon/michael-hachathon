@@ -220,6 +220,8 @@ export const mockInstructions: Instruction[] = [
     text: "Keep Sundays clear",
     kind: "clear_day",
     days: [0],
+    // The Sunday recovery session is the one thing allowed on a clear Sunday.
+    exceptions: ["Rhefuel"],
     active: true,
     created_at: CREATED,
     updated_at: CREATED,
