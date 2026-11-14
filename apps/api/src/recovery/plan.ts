@@ -71,6 +71,9 @@ export const RECOVERY = {
   fragmentShare: 0.5,
 } as const;
 
+/** How every offer line ends; also how an offer that lost its action is recognised. */
+export const OFFER_TAIL = "Still counts.";
+
 export type RecoveryCause = "meeting" | "phone" | "switching" | "short_night" | "unknown";
 
 export interface CauseFinding {
@@ -307,7 +310,7 @@ export interface RecoveryInput {
   /** The profile's quiet hours. */
   quiet: { start: string; end: string } | null;
   /** The user's recommendations so far (any status), to keep one offer per block and per goal a day. */
-  recommendations: Pick<Recommendation, "goal_id" | "action" | "created_at">[];
+  recommendations: (Pick<Recommendation, "goal_id" | "action" | "created_at"> & { title?: string })[];
 }
 
 export interface RecoveryOffer {
@@ -344,7 +347,14 @@ export function planRecovery(input: RecoveryInput): RecoveryOffer | null {
   const offeredGoalsToday = new Set<string>();
   for (const r of input.recommendations) {
     const block = recoveryFor(r);
-    if (!block) continue;
+    if (!block) {
+      // An offer the guard refused keeps its line and loses its action: it still counts as the
+      // goal's offer for the day, so the rule does not try again at every check.
+      if (!r.action && r.goal_id && r.title?.endsWith(OFFER_TAIL) && offerDay(r, zone) === day) {
+        offeredGoalsToday.add(r.goal_id);
+      }
+      continue;
+    }
     offeredBlocks.add(block);
     if (r.goal_id && offerDay(r, zone) === day) offeredGoalsToday.add(r.goal_id);
   }
@@ -384,7 +394,7 @@ export function planRecovery(input: RecoveryInput): RecoveryOffer | null {
       slot,
       recommendation: {
         goal_id: goal.id,
-        title: `${found.line} Take ${RECOVERY.blockMinutes} minutes at ${at}. Still counts.`,
+        title: `${found.line} Take ${RECOVERY.blockMinutes} minutes at ${at}. ${OFFER_TAIL}`,
         rationale: `${block.title}, ${zone.clock(Date.parse(block.start_at))} to ${zone.clock(Date.parse(block.end_at))}: ${voiceDuration(block.spent_minutes)} of ${voiceDuration(block.planned_minutes)} spent; ${found.detail}. ${RECOVERY.blockMinutes} minutes at ${at} still counts towards ${goal.title}.`,
         action: {
           kind: "create_focus_block",

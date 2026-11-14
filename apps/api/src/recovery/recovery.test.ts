@@ -247,6 +247,23 @@ test("at most one offer per block, and one per goal a day", () => {
   assert.equal(offer?.recommendation.action.payload.title, "70.3: 25 minutes");
 });
 
+test("an offer the guard refused still counts as the goal's offer for the day", () => {
+  const events = [sales(), macScroll()];
+  const first = planRecovery(input("12:05", events));
+  assert.ok(first);
+  // The guard strips the action and keeps the line.
+  const refused = {
+    goal_id: first.recommendation.goal_id,
+    title: first.recommendation.title,
+    action: null,
+    created_at: at("12:05"),
+  };
+  assert.equal(planRecovery(input("12:10", events, { recommendations: [refused] })), null);
+  // Other advice without an action does not block the offer.
+  const advice = { ...refused, title: "Move the call to Friday." };
+  assert.ok(planRecovery(input("12:10", events, { recommendations: [advice] })));
+});
+
 test("a block with other people in it gets none", () => {
   // A "Sales" call with a client is a meeting, never the user's own block.
   const call = calendar("Sales", at("10:30"), at("12:00"), { attendees: 1 });
