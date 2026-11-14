@@ -1,5 +1,6 @@
 import "server-only";
 import {
+  type AddressSearchResponse,
   ApiError,
   type ChatHistory,
   type ChatMessage,
@@ -560,6 +561,12 @@ const mockPlaces: PlacesResponse = { places: [], maps_available: false, travel_e
 export async function getPlaces(): Promise<PlacesResponse> {
   if (USE_MOCKS) return structuredClone(mockPlaces);
   return get<PlacesResponse>("/v1/places");
+}
+
+/** Address matches for the Places screen, geocoded by the API (the browser never holds a maps key). */
+export async function searchPlaces(q: string): Promise<AddressSearchResponse> {
+  if (USE_MOCKS) return { results: [], maps_available: false };
+  return get<AddressSearchResponse>(`/v1/places/search?${new URLSearchParams({ q })}`);
 }
 
 /** PUT replaces the whole list; saving places is the user's opt in to travel times. */

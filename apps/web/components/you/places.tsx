@@ -1,8 +1,10 @@
 "use client";
 
 import type { Place, PlaceInput } from "@michael/shared";
+import Link from "next/link";
 import { useActionState, useEffect, useId, useState } from "react";
 import { type FormState, savePlaces } from "@/app/you/places-actions";
+import { PLACES_PATH } from "@/lib/places-path";
 import { input, Row } from "../form-controls";
 import { Sheet } from "../sheet";
 
@@ -103,6 +105,12 @@ export function Places({
           </button>
         )}
       </div>
+      <Link
+        href={PLACES_PATH}
+        className="press mt-1 inline-flex min-h-11 items-center px-4 text-subhead font-semibold text-tint-text"
+      >
+        Find an address, add university
+      </Link>
       {shown.length > 0 && (!mapsAvailable || !travelEnabled) ? (
         <p className="mt-2 px-4 text-footnote text-label-2">
           {!mapsAvailable
