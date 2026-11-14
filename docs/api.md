@@ -14,7 +14,11 @@ returns `501 not_implemented`, `planned` = not routed yet. Update the status whe
   or `...Z`). The API stores and returns instants; display timezone is `Europe/Athens`.
 - IDs are UUIDs.
 - List endpoints wrap results: `{ "goals": [...] }`, `{ "recommendations": [...] }`.
-- **Auth (provisional, MVP only):** single user, one shared secret `API_KEY`.
+- **Auth:** every request acts for one user, and all data is scoped to that user.
+  - Signed-in users (web app): `Authorization: Bearer <Supabase access token>`.
+  - Collectors, webhooks and the demo Claude connector: the shared secret `API_KEY`, which acts as
+    the demo account (`demo@michael.app`). Per-user ingest tokens come later.
+- **Shared secret details:**
   Send `Authorization: Bearer <API_KEY>`. Applies to everything under `/v1/*` and `/mcp`, except
   `/health` and the OAuth connect/callback redirects. Only `/v1/webhooks/*` and `/mcp` also accept
   `?key=<API_KEY>` (for webhook senders and claude.ai connectors that cannot set headers); every

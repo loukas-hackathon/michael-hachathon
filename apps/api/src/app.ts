@@ -2,7 +2,7 @@ import type { Health } from "@michael/shared";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
-import { requireApiKey } from "./auth";
+import { requireUser } from "./auth";
 import { env } from "./env";
 import { errorResponse, HttpError } from "./http";
 import { handleMcpRequest } from "./mcp";
@@ -20,10 +20,10 @@ export const VERSION = "0.1.0";
 
 // Webhook senders often cannot set headers, so they may pass ?key=. Mounted BEFORE v1 so the
 // header-only middleware below never sees /v1/webhooks/* requests.
-const webhooksApp = new Hono().use(requireApiKey({ allowQueryKey: true })).route("/", webhooks);
+const webhooksApp = new Hono().use(requireUser({ allowQueryKey: true })).route("/", webhooks);
 
 const v1 = new Hono()
-  .use(requireApiKey())
+  .use(requireUser())
   .route("/", events)
   .route("/", goals)
   .route("/", recommendations)
@@ -49,7 +49,7 @@ export const app = new Hono()
   .route("/v1/webhooks", webhooksApp)
   .route("/v1", v1)
   // claude.ai custom connectors cannot send headers, so /mcp also accepts ?key=.
-  .all("/mcp", requireApiKey({ allowQueryKey: true }), (c) => handleMcpRequest(c.req.raw))
+  .all("/mcp", requireUser({ allowQueryKey: true }), (c) => handleMcpRequest(c.req.raw))
   .notFound((c) => errorResponse(c, "not_found", `No route for ${c.req.method} ${c.req.path}`))
   .onError((err, c) => {
     if (err instanceof HttpError) return errorResponse(c, err.code, err.message, err.details);

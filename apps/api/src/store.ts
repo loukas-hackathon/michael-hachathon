@@ -15,6 +15,7 @@ import {
   type Source,
 } from "@michael/shared";
 import type { z } from "zod";
+import { currentUserId } from "./context";
 import { env } from "./env";
 import { SupabaseStore } from "./supabase-store";
 
@@ -57,10 +58,40 @@ const overlaps = (e: Event, from: number, to: number) => {
 
 export class MemoryStore implements Store {
   readonly kind = "memory" as const;
-  private events: Event[] = structuredClone(mockEvents);
-  private goals: Goal[] = structuredClone(mockGoals);
-  private recommendations: Recommendation[] = structuredClone(mockRecommendations);
-  private runs: AnalysisRun[] = [structuredClone(mockAnalysisRun)];
+  // One copy of the mock day per user, created on first access, so users never see each other's data.
+  private data = new Map<
+    string,
+    { events: Event[]; goals: Goal[]; recommendations: Recommendation[]; runs: AnalysisRun[] }
+  >();
+  private get d() {
+    const userId = currentUserId();
+    let x = this.data.get(userId);
+    if (!x) {
+      x = {
+        events: structuredClone(mockEvents),
+        goals: structuredClone(mockGoals),
+        recommendations: structuredClone(mockRecommendations),
+        runs: [structuredClone(mockAnalysisRun)],
+      };
+      this.data.set(userId, x);
+    }
+    return x;
+  }
+  private get events() {
+    return this.d.events;
+  }
+  private get goals() {
+    return this.d.goals;
+  }
+  private set goals(v: Goal[]) {
+    this.d.goals = v;
+  }
+  private get recommendations() {
+    return this.d.recommendations;
+  }
+  private get runs() {
+    return this.d.runs;
+  }
 
   async listEvents(f: TimelineFilter) {
     const from = Date.parse(f.from);

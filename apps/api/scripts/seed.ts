@@ -13,6 +13,9 @@ if (!url || !key) {
 }
 
 const db = createClient(url, key, { auth: { persistSession: false } });
+// Seeded rows belong to the demo account (demo@michael.app).
+const userId = process.env.DEMO_USER_ID ?? "2ee12960-e594-456d-85cb-a672d0ff3ac3";
+const owned = <T extends object>(rows: T[]) => rows.map((r) => ({ ...r, user_id: userId }));
 
 async function seed(table: string, rows: Record<string, unknown>[]) {
   const { data, error } = await db
@@ -23,6 +26,6 @@ async function seed(table: string, rows: Record<string, unknown>[]) {
   console.log(`${table}: ${data?.length ?? 0} new, ${rows.length - (data?.length ?? 0)} already there`);
 }
 
-await seed("goals", mockGoals);
-await seed("analysis_runs", [mockAnalysisRun]);
-await seed("recommendations", mockRecommendations);
+await seed("goals", owned(mockGoals));
+await seed("analysis_runs", owned([mockAnalysisRun]));
+await seed("recommendations", owned(mockRecommendations));

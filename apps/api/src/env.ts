@@ -2,8 +2,10 @@ import { z } from "zod";
 
 const Env = z.object({
   PORT: z.coerce.number().int().default(8787),
-  // Provisional MVP auth: one shared secret, sent as `Authorization: Bearer <API_KEY>`.
+  // Shared secret for collectors, webhooks and the demo connector; requests with it act as the demo user.
   API_KEY: z.string().min(1).default("dev-key"),
+  // The demo account (Supabase Auth user) that API-key requests act for.
+  DEMO_USER_ID: z.uuid().default("2ee12960-e594-456d-85cb-a672d0ff3ac3"),
   // Comma-separated origins allowed by CORS (the web app).
   WEB_ORIGIN: z.string().default("http://localhost:3000"),
   // Public base URL of this API, used for OAuth redirect URIs.

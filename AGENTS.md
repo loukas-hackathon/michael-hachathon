@@ -238,7 +238,10 @@ humans' agents take frontend issues too.
 - Only `apps/api` touches the database (via `Store`) and Gemini. The web app calls the API
   server-side (`apps/web/lib/api.ts`); `USE_MOCKS=true` serves mock data until an endpoint exists.
 - API errors: throw `HttpError` (`apps/api/src/http.ts`) so every error has the `ApiError` shape.
-- Auth is a provisional shared `API_KEY`; don't build user accounts.
+- **Every user has their own data.** Users sign in with Google (Supabase Auth). The API resolves
+  the caller in `apps/api/src/auth.ts` (a user's Supabase token, or the shared `API_KEY` which acts
+  as the demo account) and the store scopes every query by that user (`currentUserId()`). Never
+  query a table without the store; never take a user id from the request body.
 - Secrets only in env vars; add new ones to the matching `.env.example`.
 - Next.js 16 is newer than most training data: read `apps/web/AGENTS.md` before web work.
 - Comments in English. When an endpoint goes live, update its status in `docs/api.md`.
