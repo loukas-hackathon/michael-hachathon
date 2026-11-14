@@ -90,7 +90,7 @@ Everything Michael says, from a model or a template, uses `packages/shared/src/v
 sports coach (4 of 5) for founders and executives, number first, one fix, says what he moved and until
 when it can be undone, "I" for Michael, "we" for the shared effort, asks only when data is missing.
 British spelling, 24 hour time, nudges under 15 words, no emoji, no dashes, no exclamation marks.
-Never: productivity, optimise, hustle, crush it, journey, wellness, unlock, potential, amazing, great
+Never: productivity, hustle, crush it, journey, wellness, unlock, potential, amazing, great
 job, pickups, or the name of the Marvel assistant that inspired the idea. Copy lines: Build Hub voice
 sheet. Look: white background, black text, one hot pink for goal time, Apple style, system font in
 the app and Mulish outside it; tokens and rules in `docs/design-guide.md`.

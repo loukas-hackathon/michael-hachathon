@@ -19,11 +19,13 @@ test("the voice check catches what Michael never says", () => {
     "banned word: potential",
     "banned word: great job",
   ]);
-  assert.deepEqual(voiceProblems("Optimise your morning — it pays off 🚀"), [
+  assert.deepEqual(voiceProblems("Hustle through your morning — it pays off 🚀"), [
     "dash",
     "emoji",
-    "banned word: optimise",
+    "banned word: hustle",
   ]);
+  // Allowed since the score is called the optimisation score (Manolis, 15 Nov).
+  assert.deepEqual(voiceProblems("Your optimisation score is 78% this week."), []);
   assert.deepEqual(voiceProblems("You had 114 pickups today."), ["banned word: pickups"]);
   assert.deepEqual(voiceProblems("Protect your productivity this morning."), ["banned word: productivity"]);
   // Hyphens inside words are fine; only dashes as punctuation are not.

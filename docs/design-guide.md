@@ -259,7 +259,7 @@ Animate `transform` and `opacity` only. Content is visible by default; motion ne
 
 The Build Hub voice sheet is the source; paste its lines as written. British spelling, 24 hour time,
 numbers first ("47 minutes", above two hours "2h 15"), no emoji, no exclamation marks, no dashes,
-never "productivity", "optimise" or "wellness". "I" for what Michael did, "we" for shared effort.
+never "productivity" or "wellness". "I" for what Michael did, "we" for shared effort.
 Buttons say the action and keep the word ("Undo until 09:00", then "Undone").
 
 ## Don'ts
