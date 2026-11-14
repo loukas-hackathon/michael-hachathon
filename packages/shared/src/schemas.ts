@@ -265,6 +265,83 @@ export type GoalCreate = z.input<typeof GoalCreate>;
 export const GoalUpdate = GoalCreate.partial();
 export type GoalUpdate = z.input<typeof GoalUpdate>;
 
+// ---------- checklist items (#238) ----------
+// The day's one to three outcomes of a goal of kind `checklist`, in the user's own words. Michael
+// never ticks an item himself: the user does, or the evening check in (`settled_by: "check_in"`).
+
+// open -> done | dropped (settled by the user or the check in); open -> moved (carried to the next
+// day, where a new item continues it with `carried_from`).
+export const ChecklistStatus = z.enum(["open", "done", "dropped", "moved"]);
+export type ChecklistStatus = z.infer<typeof ChecklistStatus>;
+
+export const ChecklistSettledBy = z.enum(["user", "check_in"]);
+export type ChecklistSettledBy = z.infer<typeof ChecklistSettledBy>;
+
+/** At most this many open items per checklist goal and day. */
+export const CHECKLIST_MAX_OPEN = 3;
+
+const checklistText = z
+  .string()
+  .max(200)
+  .refine((t) => t.trim().length > 0, "Text must not be blank");
+
+export const ChecklistItem = z.object({
+  id: z.uuid(),
+  // A goal of kind `checklist`.
+  goal_id: z.uuid(),
+  // The local day, Europe/Athens.
+  date: LocalDay,
+  text: z.string().min(1).max(200),
+  // 0..2: the slot among the day's open items of the goal.
+  position: z
+    .number()
+    .int()
+    .min(0)
+    .max(CHECKLIST_MAX_OPEN - 1),
+  status: ChecklistStatus,
+  settled_at: IsoDateTime.nullable(),
+  settled_by: ChecklistSettledBy.nullable(),
+  // The item of the day before that this one continues (POST /v1/checklist/:id/carry).
+  carried_from: z.uuid().nullable(),
+  created_at: IsoDateTime,
+  updated_at: IsoDateTime,
+});
+export type ChecklistItem = z.infer<typeof ChecklistItem>;
+
+// GET /v1/checklist?date=YYYY-MM-DD (default today in Europe/Athens)
+export const ChecklistQuery = z.object({ date: LocalDay.optional() });
+export type ChecklistQuery = z.infer<typeof ChecklistQuery>;
+
+export const ChecklistResponse = z.object({
+  date: LocalDay,
+  // Every item of the day, any status, by goal and position.
+  items: z.array(ChecklistItem),
+  // Items still open on the day before: candidates to carry. Nothing else in this version.
+  suggestions: z.array(ChecklistItem),
+});
+export type ChecklistResponse = z.infer<typeof ChecklistResponse>;
+
+export const ChecklistItemCreate = z.object({
+  goal_id: z.uuid(),
+  // Default today in Europe/Athens.
+  date: LocalDay.optional(),
+  text: checklistText,
+});
+export type ChecklistItemCreate = z.input<typeof ChecklistItemCreate>;
+
+// `moved` is not set by hand: carry the item instead.
+export const ChecklistItemUpdate = z
+  .object({
+    text: checklistText.optional(),
+    status: ChecklistStatus.exclude(["moved"]).optional(),
+  })
+  .refine((u) => u.text !== undefined || u.status !== undefined, { message: "Send `text` or `status`" });
+export type ChecklistItemUpdate = z.input<typeof ChecklistItemUpdate>;
+
+// POST /v1/checklist/:id/carry: the old item (now `moved`) and the new one on the next day.
+export const ChecklistCarryResponse = z.object({ moved: ChecklistItem, item: ChecklistItem });
+export type ChecklistCarryResponse = z.infer<typeof ChecklistCarryResponse>;
+
 // ---------- standing instructions ----------
 // Not goals: the user's ground rules ("keep Sundays clear", "home every day by 21:00"). Given at
 // setup, changed any time. Michael never plans into the time they protect.
@@ -1686,6 +1763,23 @@ export const ScoreDayDetail = ScoreDay.extend({
 });
 export type ScoreDayDetail = z.infer<typeof ScoreDayDetail>;
 
+// A checklist goal on GET /v1/score (#238): items set and done on the day and in its week. An item
+// carried to the next day counts there, not twice; a dropped one counts as set, not done.
+const SetDone = z.object({ set: z.number().int().nonnegative(), done: z.number().int().nonnegative() });
+export const ScoreChecklist = z.object({ today: SetDone, week: SetDone });
+export type ScoreChecklist = z.infer<typeof ScoreChecklist>;
+
+// A count goal on GET /v1/score (#238): "1 of 2, 3 days left". Occurrences so far this week (own
+// blocks at least half spent, workouts, check ins answered yes, deduplicated per day), the weekly
+// target, what is left, and the days of the week that have not ended yet (today included).
+export const ScoreCount = z.object({
+  done: z.number().int().nonnegative(),
+  target: z.number().int().nonnegative(),
+  left: z.number().int().nonnegative(),
+  days_left: z.number().int().min(0).max(7),
+});
+export type ScoreCount = z.infer<typeof ScoreCount>;
+
 export const ScoreGoal = GoalScore.extend({
   title: z.string(),
   category: GoalCategory,
@@ -1707,6 +1801,9 @@ export const ScoreGoal = GoalScore.extend({
   minutes_left: Minutes,
   // The goal's calendar blocks this week that have not ended yet ("two blocks still open").
   open_blocks: z.number().int().nonnegative(),
+  // Only on goals of kind `checklist` and `count` (#238). Both stay outside the time score.
+  checklist: ScoreChecklist.optional(),
+  count: ScoreCount.optional(),
 });
 export type ScoreGoal = z.infer<typeof ScoreGoal>;
 

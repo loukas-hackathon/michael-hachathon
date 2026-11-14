@@ -89,9 +89,10 @@ const READS = [
   () => "/v1/records",
   () => "/v1/sources/status",
   () => "/v1/targets/current",
+  () => `/v1/checklist?date=${day}`,
 ];
 
-const ids: { goal?: string; instruction?: string; rec?: string; recBefore?: string } = {};
+const ids: { goal?: string; instruction?: string; rec?: string; recBefore?: string; item?: string } = {};
 
 async function ok(res: Response, what: string) {
   const text = await res.text();
@@ -131,6 +132,20 @@ test("A writes through every write route", async () => {
     "POST /v1/instructions",
   );
   ids.instruction = instruction.id;
+  // A checklist goal and one of the day's outcomes (#238).
+  const outcomes = await ok(
+    await request(asA, "POST", "/v1/goals", {
+      category: "business",
+      title: "Outcomes",
+      target: { kind: "checklist" },
+    }),
+    "POST /v1/goals (checklist)",
+  );
+  const item = await ok(
+    await request(asA, "POST", "/v1/checklist", { goal_id: outcomes.id, date: day, text: `${MARK} outcome` }),
+    "POST /v1/checklist",
+  );
+  ids.item = item.id;
   await ok(
     await request(asA, "PUT", "/v1/profile", {
       weak_spots: [],
@@ -197,6 +212,9 @@ for (const [name, who] of [
       ["DELETE", `/v1/goals/${ids.goal}`],
       ["PATCH", `/v1/instructions/${ids.instruction}`, { text: "taken over" }],
       ["DELETE", `/v1/instructions/${ids.instruction}`],
+      ["PATCH", `/v1/checklist/${ids.item}`, { status: "done" }],
+      ["POST", `/v1/checklist/${ids.item}/carry`],
+      ["DELETE", `/v1/checklist/${ids.item}`],
     ];
     for (const [method, path, body] of tries) {
       const res = await request(who, method, path, body);
@@ -209,7 +227,14 @@ for (const [name, who] of [
 
 test("A's data is all still there and unchanged", async () => {
   // The reads above are only meaningful if A's own reads do carry the marker.
-  for (const p of [`/v1/timeline?${range()}`, "/v1/goals", "/v1/instructions", "/v1/places", "/v1/chat"]) {
+  for (const p of [
+    `/v1/timeline?${range()}`,
+    "/v1/goals",
+    "/v1/instructions",
+    "/v1/places",
+    "/v1/chat",
+    `/v1/checklist?date=${day}`,
+  ]) {
     const text = await (await request(asA, "GET", p)).text();
     assert.ok(text.includes(MARK), `A should see their own data at ${p}`);
   }
@@ -267,6 +292,7 @@ for (const [name, userId] of [
         ["get_check_in", {}],
         ["get_memories", {}],
         ["list_drafts", {}],
+        ["get_checklist", { date: day }],
       ];
       const { tools } = await client.listTools();
       for (const t of tools.filter((x) => x.annotations?.readOnlyHint)) {

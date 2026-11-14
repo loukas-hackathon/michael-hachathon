@@ -506,8 +506,8 @@ needs no table change). `goalKind(goal)` reads it:
 | ----------- | ---------------------------------------------------- | ----------------------------------------- |
 | `time`      | Weekly minutes in planned blocks. The default.       | `calendar_titles`, `work_categories`      |
 | `target`    | A value per day: sleep 7.5 hours, screens off 23:00. | `sleep_hours`, `screens_off`, or your own |
-| `count`     | Times a week.                                        | `per_week`                                |
-| `checklist` | The day's one to three business outcomes.            | (the items are not stored on the goal)    |
+| `count`     | Times a week (counted from the timeline, see Score). | `per_week`, `calendar_titles`             |
+| `checklist` | The day's one to three business outcomes.            | (the items live in `/v1/checklist`)       |
 
 **Only `time` goals take part in the time score.** A `target`, `count` or `checklist` goal has no
 planned blocks: `GET /v1/score` lists it with `scored: false` so the Goals screen can show it. One
@@ -552,6 +552,7 @@ One example per category:
 ```
 
 A count goal: `{ "category": "health", "title": "Yoga", "target": { "kind": "count", "per_week": 2 } }`.
+A checklist goal: `{ "category": "business", "title": "Today's outcomes", "target": { "kind": "checklist" } }`.
 
 #### Categories that count as a goal's work
 
@@ -610,6 +611,55 @@ carries that older name). `business`, `health` and `personal` are not title word
 is never the user's own block:** `data.attendees` is the number of other people, and any value
 above 0 makes the event a meeting, whatever its title or `goal_id` says. Each block in
 `GET /v1/score` carries `matched_by`, the rule that tied it to its goal.
+
+### Checklist (#238)
+
+The day's one to three outcomes of a goal of kind `checklist`, in the user's own words. Table
+`checklist_items` (RLS like every table: only the API reads and writes). Rules in
+`apps/api/src/checklist/items.ts`.
+
+| Method | Path                      | Body                       | Response                                 | Status |
+| ------ | ------------------------- | -------------------------- | ---------------------------------------- | ------ |
+| GET    | `/v1/checklist?date=`     |                            | `200 ChecklistResponse`                  | live   |
+| POST   | `/v1/checklist`           | `{ goal_id, date?, text }` | `201 ChecklistItem`, `400`, `404`, `409` | live   |
+| PATCH  | `/v1/checklist/:id`       | `{ text?, status? }`       | `200 ChecklistItem`, `400`, `404`, `409` | live   |
+| DELETE | `/v1/checklist/:id`       |                            | `204`, `404`                             | live   |
+| POST   | `/v1/checklist/:id/carry` |                            | `201 { moved, item }`, `404`, `409`      | live   |
+
+```ts
+type ChecklistItem = {
+  id: string;
+  goal_id: string; // a goal of kind checklist
+  date: string; // local day, YYYY-MM-DD, Europe/Athens
+  text: string; // the user's words, 1..200
+  position: number; // 0..2, the slot among the day's open items of the goal
+  status: "open" | "done" | "dropped" | "moved";
+  settled_at: string | null;
+  settled_by: "user" | "check_in" | null;
+  carried_from: string | null; // id of the item of the day before that this one continues
+  created_at: string;
+  updated_at: string;
+};
+type ChecklistResponse = {
+  date: string;
+  items: ChecklistItem[]; // every item of the day, any status, by goal and position
+  suggestions: ChecklistItem[]; // yesterday's items still open, nothing else in this version
+};
+```
+
+- `date` defaults to today in Athens; `400` on a day that does not exist. `text` is trimmed.
+- `POST`: `404` for an unknown goal, `400` for a goal that is not of kind `checklist`, `409` when
+  the goal already has three open items that day. The item takes the lowest free `position`.
+- `PATCH`: `status` is `open`, `done` or `dropped`. Settling sets `settled_at` and
+  `settled_by: "user"`; reopening clears both and takes a free slot (`409` when three are open).
+  `moved` is never set by hand (`400`): carry instead. A moved item cannot change status (`409`).
+- `carry`: only an open item (`409` otherwise, or when the next day already has three open). The
+  old item becomes `moved`; a new one on the next day continues it with `carried_from`.
+- Michael never ticks an item himself. The evening check in (#187) settles items through the same
+  store method with `settled_by: "check_in"`.
+- Deleting the goal deletes its items. Another user's items are never visible (`404`).
+- The first open item of today gets one offered focus block, at most once a day (see
+  Recommendations, Offers for checklist and count goals).
 
 ### Standing instructions
 
@@ -789,6 +839,8 @@ effort plus one coordinator call.
 | The last 5 recommendations: day, title, status, and whether an analysis made it                                                           |                                                                               |
 | `actions_are`: `offers` (nothing is carried out until the person taps) or `applied`. Runs pass `offers`                                   |                                                                               |
 | `already_asked`: the last 5 questions Michael asked, with their day, so he never asks one twice                                           |                                                                               |
+| `checklist_today`: today's open checklist items in the user's words, with their goal and whether carried (#238)                           |                                                                               |
+| A count goal's pace in its `this_week` (`done`, `target`, `left`, `days_left`, `behind_pace`); a checklist goal's tally (#238)            | Note text: check in answers give only the goal and the instant                |
 
 `pnpm --filter @michael/api analysis:brief --from <iso> --to <iso> --trigger evening --api http://localhost:8787`
 prints the system prompt and the user message exactly as a run would send them, from a local API,
@@ -1470,6 +1522,24 @@ never delete the user's events; never send in the user's name.
   has already ended or names an app off the allowlist, `400` over 12 hours. Undo deletes the guard
   at once and is allowed until the window ends (not until it starts).
 
+#### Offers for checklist and count goals (#238)
+
+Two rules of Michael's own (`apps/api/src/checklist/offers.ts`) store recommendations with a
+`create_focus_block` action, `source: "analysis"`, no analysis run. They are offers: never carried
+out until the user taps execute. A slot is only offered outside the time a standing instruction
+protects (exceptions by title apply), so on a clear Sunday there is no offer at all. Each still goes
+through the store's `createRecommendation`, so the instruction guard has the last word.
+
+- **First outcome:** the first open checklist item of today gets one hour, the first free one from
+  now inside the waking day, titled with the item's text. Title
+  `An hour for your first outcome, Fri 13 Nov`. Checked after an item is added (`POST
+  /v1/checklist`, `add_checklist_item`) and on `GET /v1/score` for the current week.
+- **Behind pace:** a count goal with `left > days_left` gets one slot, the first free one from now
+  on a day without a block of the goal yet, as long as the goal's usual block this week (60
+  minutes without one), titled with the goal's first `calendar_titles` entry so it counts. Title
+  `One more session for <goal>, Fri 13 Nov`. Checked on `GET /v1/score` for the current week.
+- **Once a day:** an offer whose title is already stored, whatever its status, is not made again.
+
 ### Focus guards (block Mac apps, #41)
 
 ```ts
@@ -2000,7 +2070,7 @@ type AgentQuery = {
   the payload. A call outside the agent's scopes, or by an agent that is not `approved`, returns a
   tool result with `isError: true` ("Not allowed. ...") and is logged with `allowed: false`.
 - Scope per tool: `get_timeline`, `get_patterns` = `timeline`; `get_goals`, `add_goal`,
-  `update_goal`, `propose_goals` = `goals`; `list_recommendations`, `update_recommendation`, `get_nudges`,
+  `update_goal`, `propose_goals`, `get_checklist`, `add_checklist_item` = `goals`; `list_recommendations`, `update_recommendation`, `get_nudges`,
   `list_drafts`, `draft_follow_up` = `recommendations`; `get_score`, `get_records`, `get_moments` = `score`; `add_event`, `execute_recommendation`,
   `undo_recommendation`, `create_focus_block`, `block_mac_app`, `plan_travel` = `write_events`;
   `suggest_app_mute` = `recommendations`; `get_memories` = `timeline`; `remember` = `write_events`.
@@ -2164,6 +2234,8 @@ the Today screen draws.
 - Computed on request by pure functions in `apps/api/src/score` (plain rules, no model) from the
   calendar, `workout` events and the single line of attention the patterns build
   (`patterns/timeline.ts`, see "One timeline first"). The same events always give the same score.
+  Count and checklist goals also read the week's checklist items and the check in answers (see
+  "Count goals" below); neither changes a minute of the time score.
 
 ```ts
 type ScoreTotals = {
@@ -2233,6 +2305,11 @@ type ScoreGoal = ScoreTotals & {
   daily: { date: string; planned_minutes: number; spent_minutes: number }[]; // Monday to Sunday
   minutes_left: number; // budget - spent, never below 0; 0 for a goal outside the score
   open_blocks: number; // the goal's blocks this week that have not ended (one block across midnight counts once)
+  // Kind checklist only (#238): items set (open, done or dropped; a carried item counts on the day
+  // it moved to) and done, on `date` and in its week. Outside the time score.
+  checklist?: { today: { set: number; done: number }; week: { set: number; done: number } };
+  // Kind count only (#238): "1 of 2, 3 days left". Outside the time score; the rule is below.
+  count?: { done: number; target: number; left: number; days_left: number };
 };
 
 type ScoreDay = ScoreTotals & { date: string; time_won_back_minutes: number };
@@ -2349,6 +2426,27 @@ Stated here and at the top of `apps/api/src/score/score.ts`; the two change toge
   whatever held most of it. An app goes by its name; a site by its host only when the host is on
   the shared public list, otherwise by its category ("a travel site"). `minutes` is the time lost
   inside the stretch.
+
+#### Count goals (#238)
+
+Stated here and at the top of `apps/api/src/score/count.ts`; the two change together.
+
+- **One occurrence** is any of: an own calendar block of the goal (matched as in "Which calendar
+  events count towards a goal", among the count goals only) that has ended with at least half of
+  it spent by the attribution rule above; a `workout` event that has ended and overlaps one of the
+  goal's own blocks, names the goal in `data.goal_id`, or has a title the goal lists in
+  `calendar_titles`; a check in question (see Check in, #187) answered `yes` that names the goal
+  in `goal_id`, or names one of the goal's own blocks in `event_id` (the question may name the
+  time goal that also lists the block). The check in takes the span of the block it asks about.
+- **Dedupe:** occurrences on the same local day that overlap or are within an hour of each other
+  count once. A check in with no span of its own stands for the day's session and adds one only on
+  a day with no other occurrence.
+- `done` = occurrences so far this week; `target` = `per_week`; `left` = target minus done, never
+  below 0; `days_left` = the days of the week that have not ended yet, today included. Behind pace:
+  `left > days_left`.
+- One function reads the check in's shape for this (`score/check-in.ts`).
+- A block that is also a block of a time goal ("Gym" on a training goal) stays in the time score
+  as before and also counts as a session.
 
 #### Free time and sleep (#117)
 
@@ -2601,6 +2699,8 @@ offset. A refused or failed call returns `isError: true` with one plain sentence
 | `add_event`              | `write_events`    | `EventInput`                                                                            | `{ inserted, duplicates, ignored, events: Event[] }`                                       |
 | `add_goal`               | `goals`           | `{ category, title, description?, weekly_budget_minutes?, target? }`                    | `{ goal: Goal }`                                                                           |
 | `update_goal`            | `goals`           | `{ id, category?, title?, description?, weekly_budget_minutes?, target?, active? }`     | `{ goal: Goal }`, error when not found                                                     |
+| `get_checklist`          | `goals`           | `{ date?: LocalDay }` (default today)                                                   | `ChecklistResponse` (as `GET /v1/checklist`)                                               |
+| `add_checklist_item`     | `goals`           | `{ goal_id, text, date?: LocalDay }` (default today)                                    | `{ item: ChecklistItem }`; refused past three open items                                   |
 | `update_recommendation`  | `recommendations` | `{ id, status: "accepted" \| "dismissed" }`                                             | `{ recommendation }`; a `done` one is refused (undo it)                                    |
 | `execute_recommendation` | `write_events`    | `{ id }`                                                                                | `{ recommendation, undo_until }`                                                           |
 | `undo_recommendation`    | `write_events`    | `{ id }`                                                                                | `{ recommendation }`                                                                       |

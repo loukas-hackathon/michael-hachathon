@@ -1,5 +1,7 @@
 import {
   CheckInValue,
+  type ChecklistItem,
+  ChecklistItemCreate,
   DraftStatus,
   type Event,
   EventInput,
@@ -26,6 +28,8 @@ import { bookFocusBlock, executeRecommendation, undoDeadline, undoRecommendation
 import { draftText, generateDrafts } from "./actions/drafts";
 import { guardMacApps, suggestAppGuard } from "./actions/mac-apps";
 import { answerCheckIn, checkInToday } from "./checkin/service";
+import { addItem, checklistFor, todayOf } from "./checklist/items";
+import { offerGoalActions } from "./checklist/offers";
 import { currentAgent } from "./context";
 import { currentSuggestions } from "./goals/suggestions";
 import { HttpError, parse } from "./http";
@@ -132,7 +136,11 @@ function scoreText(s: Score): string {
     ...s.goals.map((g) =>
       g.scored
         ? `- ${g.area} "${g.title}": budget ${dur(g.budget_minutes)}, planned ${dur(g.planned_minutes)}, spent ${dur(g.spent_minutes)}, lost ${dur(g.lost_minutes)}, ${pct(g.score_pct)}; ${dur(g.minutes_left)} left, ${g.open_blocks} ${g.open_blocks === 1 ? "block" : "blocks"} still open`
-        : `- ${g.area} "${g.title}": a ${g.kind} goal, outside the time score`,
+        : g.count
+          ? `- ${g.area} "${g.title}": ${g.count.done} of ${g.count.target} this week, ${g.count.days_left} ${g.count.days_left === 1 ? "day" : "days"} left (outside the time score)`
+          : g.checklist
+            ? `- ${g.area} "${g.title}": ${g.checklist.today.done} of ${g.checklist.today.set} outcomes done today, ${g.checklist.week.done} of ${g.checklist.week.set} this week (outside the time score)`
+            : `- ${g.area} "${g.title}": a ${g.kind} goal, outside the time score`,
     ),
   ];
   if (s.sleep) {
@@ -556,6 +564,59 @@ export function createMcpServer(): McpServer {
     safe(async (input) => {
       const goal = await store.createGoal(parse(GoalCreate, input));
       return reply(`Goal added.\n${goalLine(goal)}`, { goal });
+    }),
+  );
+
+  server.registerTool(
+    "get_checklist",
+    {
+      title: "Get the day's checklist",
+      description:
+        "The day's outcomes of the user's checklist goals (goals with target.kind checklist): at most three open items per goal and day, in the user's own words, each open, done, dropped or moved (carried to the next day). Also yesterday's items still open, which the user may want to carry. Michael never ticks an item: only the user does. Default day is today in Europe/Athens.",
+      inputSchema: { date: LocalDayInput.optional().describe("Local day, YYYY-MM-DD. Default today") },
+      annotations: { readOnlyHint: true },
+    },
+    safe(async ({ date }) => {
+      const day = date ?? todayOf();
+      const list = await checklistFor(day);
+      const goals = await goalMap();
+      const line = (i: ChecklistItem) =>
+        `- [${i.status}] ${i.text} (${goals.get(i.goal_id)?.title ?? "a goal"}${i.carried_from ? ", carried" : ""}, id ${i.id})`;
+      const lines = [
+        list.items.length
+          ? `${dayLabel(zone.startOfDay(day))}: ${list.items.filter((i) => i.status === "done").length} of ${list.items.filter((i) => i.status !== "moved").length} done.`
+          : `${dayLabel(zone.startOfDay(day))}: no outcomes set.`,
+        ...list.items.map(line),
+      ];
+      if (list.suggestions.length)
+        lines.push("Still open from the day before:", ...list.suggestions.map(line));
+      return reply(lines.join("\n"), list);
+    }),
+  );
+
+  server.registerTool(
+    "add_checklist_item",
+    {
+      title: "Add an outcome to the day",
+      description:
+        "Add one of the day's outcomes to a checklist goal (target.kind checklist; get the id from get_goals), only when the user asked for it. text is the outcome in the user's words, up to 200 characters. At most three open items per goal and day: a fourth is refused. Default day is today in Europe/Athens. Never mark an item done for the user.",
+      inputSchema: {
+        goal_id: Id.describe("A checklist goal's id from get_goals"),
+        text: z
+          .string()
+          .min(1)
+          .max(200)
+          .describe('The outcome in the user\'s words, e.g. "Send the term sheet"'),
+        date: LocalDayInput.optional().describe("Local day, YYYY-MM-DD. Default today"),
+      },
+    },
+    safe(async (input) => {
+      const item = await addItem(parse(ChecklistItemCreate, input));
+      // The first open outcome of today gets an offered hour, as from the app.
+      await offerGoalActions().catch((err) => console.error("mcp: checklist offers", err));
+      return reply(`Added "${item.text}" to ${dayLabel(zone.startOfDay(item.date))} (id ${item.id}).`, {
+        item,
+      });
     }),
   );
 
