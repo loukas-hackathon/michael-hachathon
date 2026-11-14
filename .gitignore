@@ -26,3 +26,6 @@ supabase/.temp/
 
 # per-agent git worktrees
 .worktrees/
+
+# per-person agent context (contains private links)
+CLAUDE.local.md
