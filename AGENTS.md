@@ -38,6 +38,8 @@ Live URLs, dashboards and where every setting lives: README "Live services". Com
   the deployed commit).
 - **Broken beats new.** A failed deploy or migration opens an `incident` issue automatically. Fix it
   forward, then add whatever prevents it next time. Same for anything broken you notice.
+- **Human-only setup** (accounts, consoles, phones) lives in `docs/setup-manual.md`, click by click.
+  Keep it current when you add something a human must do.
 - **Need access you don't have?** Open an `agent-request` issue with the exact steps; any agent that
   can, does it. Ask your human only for product decisions and credentials. Never paste secrets.
 - **Improve the workflow** when something slows us down: small `workflow:` PR, one line in
