@@ -18,7 +18,8 @@ the stage and Claude will each see a different day.
 - [ ] **Production is the build we rehearsed.**
       `curl -s $API/health` shows `"status":"ok"`, `"storage":"supabase"` and a `commit` equal to
       `git rev-parse --short origin/main`. Freeze merges (label open PRs `wip`) until after the pitch.
-- [ ] **Reseed the demo week** (refreshes the seven days up to now, resets goals to the plan; never
+- [ ] **Reseed the demo week** (refreshes the seven days up to now, resets goals and standing
+      instructions to the plan, clears visitor chat, turns off the record off; never
       touches anything that is not a demo row):
       `curl -s -X POST -H "Authorization: Bearer $MICHAEL_API_KEY" $API/v1/demo/reseed`
       Expect `days` ending today and `goals_written` above 0.
@@ -35,11 +36,20 @@ the stage and Claude will each see a different day.
 - [ ] **Watch mirrors it.** iPhone Watch app > Notifications > Michael (or the Home Screen app's
       entry): **Mirror my iPhone alerts**. Lock the iPhone, press **Send a test** from the laptop
       (You > Nudges) and feel the buzz.
-- [ ] **claude.ai connector on the demo account.** In the same laptop browser that holds the demo
-      cookie: claude.ai, Settings > Connectors > Add custom connector, name `Michael`, URL
-      `$API/mcp`, Connect. Michael's page says "Signed in as the demo week"; tap **Allow**. If an
-      older Michael connector exists (Manolis' own account), remove it first.
-      In a throwaway chat ask `Use Michael. What are my goals?`. Then open **Agents**: Claude is
+- [ ] **claude.ai connector on the demo account.** The consent page refuses demo visitors
+      ("This is the demo week"), because connecting an agent grants it full write on the shared
+      account. The presenter answers the consent with the API key instead: 1. claude.ai, Settings > Connectors > Add custom connector, name `Michael`, URL `$API/mcp`,
+      Connect. If an older Michael connector exists (Manolis' own account), remove it first. 2. Michael's consent page opens (it says "This is the demo week"). Copy the id after
+      `request=` in its address bar. 3. In the terminal (the key never leaves it):
+      `bash
+         REQ=paste-the-id
+         curl -s -X POST -H "Authorization: Bearer $MICHAEL_API_KEY" -H "content-type: application/json" \
+           -d '{"allow":true}' $API/v1/connect/requests/$REQ
+         `
+      It answers `{"redirect_to":"https://claude.ai/..."}`. Open that URL in the same browser
+      tab within 5 minutes; claude.ai finishes connecting. The request lives 10 minutes; if it
+      expired, Connect
+      again. 4. In a throwaway chat ask `Use Michael. What are my goals?`. Then open **Agents**: Claude is
       under **Allowed**, and "Who asked about you today" names Claude.
 - [ ] **Google Calendar**, only if you also show a real account: Google Testing mode expires refresh
       tokens after 7 days. You > Sources > Google Calendar: if it says reconnect, tap it and pick the

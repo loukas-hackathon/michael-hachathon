@@ -31,8 +31,6 @@ const ALLOWED: [string, RegExp][] = [
   ["POST", /^\/v1\/push\/subscriptions$/],
   ["DELETE", /^\/v1\/push\/subscriptions$/],
   ["POST", /^\/v1\/nudges\/test$/],
-  // The one tap Claude connector consent on stage. The agent it creates is the demo account's.
-  ["POST", /^\/v1\/connect\/requests\/[^/]+$/],
 ];
 
 // Never for a visitor, not even to read: device keys, ingest and MCP belong to real callers.

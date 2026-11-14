@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import type { EventInput, Goal } from "@michael/shared";
+import type { EventInput, Goal, InstructionCreate } from "@michael/shared";
 import type { z } from "zod";
 import { addDays, at, athensMidnight, iso, localDate, weekday } from "./time";
 import { demoTravel } from "./travel";
@@ -660,4 +660,10 @@ export const demoGoals: Goal[] = [
     target: { calendar_titles: ["Study", "Φροντιστήριο"] },
     weekly_budget_minutes: 360,
   }),
+];
+
+// The demo account's standing instructions, restored by every reset (demo/sync.ts). The Sunday
+// recovery session is the one thing allowed on a clear Sunday.
+export const demoInstructions: z.input<typeof InstructionCreate>[] = [
+  { text: "Keep Sundays clear", kind: "clear_day", days: [0], exceptions: ["Rhefuel"] },
 ];

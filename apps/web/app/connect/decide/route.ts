@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
+import { isDemoVisitor } from "@/lib/caller";
 import { decideConnect } from "@/lib/connect";
 
 // The consent form posts here; the API turns the answer into a redirect back to the client
@@ -12,7 +13,8 @@ export async function POST(request: NextRequest) {
   const form = await request.formData();
   const id = String(form.get("request") ?? "");
   const allow = form.get("allow") === "yes";
-  const target = id ? await decideConnect(id, allow) : null;
+  // Demo visitors cannot connect agents (the API refuses too): back to the page, which says why.
+  const target = id && !(await isDemoVisitor()) ? await decideConnect(id, allow) : null;
   // 303 so the browser follows with a GET.
   return NextResponse.redirect(
     target ?? new URL(`/connect?request=${encodeURIComponent(id)}`, request.url),
