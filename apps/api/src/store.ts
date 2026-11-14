@@ -117,6 +117,13 @@ export interface PushDevice {
   keys: { p256dh: string; auth: string };
 }
 
+/** The Telegram chat a user connected for nudges. Server side only. */
+export interface TelegramChat {
+  chat_id: string;
+  username: string | null;
+  connected_at: string;
+}
+
 // Storage boundary. Routes and MCP tools depend only on this interface.
 // MemoryStore is used when Supabase env vars are missing; SupabaseStore (supabase-store.ts) otherwise.
 export interface Store extends PrivacyBackend {
@@ -180,6 +187,20 @@ export interface Store extends PrivacyBackend {
   /** Saves the device for the current user (a device belongs to whoever subscribed it last). */
   savePushDevice(device: PushDevice, userAgent: string | null): Promise<void>;
   removePushDevice(endpoint: string): Promise<void>;
+  // The Telegram chat of the current user (nudges/telegram.ts), null when none is bound.
+  getTelegramChat(): Promise<TelegramChat | null>;
+  /**
+   * Binds the chat to the current user (a chat belongs to whoever bound it last). `link` is the
+   * start token: "used" when that same token already bound a chat once, so each link works once.
+   */
+  bindTelegramChat(
+    chat: { chat_id: string; username: string | null },
+    link: string,
+  ): Promise<"bound" | "used">;
+  /** False when nothing was bound. */
+  unbindTelegramChat(): Promise<boolean>;
+  /** NOT scoped: the webhook only knows the chat. Whose chat this is, or null. */
+  telegramChatOwner(chatId: string): Promise<string | null>;
   /**
    * The one read that is NOT scoped to the current user: ids of users with events received since
    * `since`. Only the scheduler calls it, outside any request, and then runs each check as that user.
@@ -245,6 +266,7 @@ export class MemoryStore implements Store {
       integrations: IntegrationRecord[];
       nudges: Nudge[];
       push: PushDevice[];
+      telegram: (Partial<TelegramChat> & { last_link?: string }) | null;
       executions: Map<string, unknown>;
       places: Place[];
       geocodes: Map<string, GeocodeHit>;
@@ -265,6 +287,7 @@ export class MemoryStore implements Store {
         integrations: [],
         nudges: [],
         push: [],
+        telegram: null,
         executions: new Map(),
         places: [],
         geocodes: new Map(),
@@ -589,6 +612,35 @@ export class MemoryStore implements Store {
 
   async removePushDevice(endpoint: string) {
     this.d.push = this.d.push.filter((p) => p.endpoint !== endpoint);
+  }
+
+  async getTelegramChat() {
+    const t = this.d.telegram;
+    if (!t?.chat_id) return null;
+    return { chat_id: t.chat_id, username: t.username ?? null, connected_at: t.connected_at ?? now() };
+  }
+
+  async bindTelegramChat(chat: { chat_id: string; username: string | null }, link: string) {
+    const d = this.d;
+    if (d.telegram?.last_link === link) return "used" as const;
+    // The chat moves to the current user, as in the database's unique index.
+    for (const x of this.data.values()) {
+      if (x !== d && x.telegram?.chat_id === chat.chat_id) x.telegram = { last_link: x.telegram.last_link };
+    }
+    d.telegram = { ...chat, connected_at: now(), last_link: link };
+    return "bound" as const;
+  }
+
+  async unbindTelegramChat() {
+    const d = this.d;
+    if (!d.telegram?.chat_id) return false;
+    d.telegram = { last_link: d.telegram.last_link };
+    return true;
+  }
+
+  async telegramChatOwner(chatId: string) {
+    for (const [userId, x] of this.data) if (x.telegram?.chat_id === chatId) return userId;
+    return null;
   }
 
   async activeUserIds(since: string) {

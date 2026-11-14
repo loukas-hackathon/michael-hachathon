@@ -86,7 +86,9 @@ Then each user taps **Connect Google Calendar** in the app once (issues #12, #13
 1. In Telegram search `@BotFather` (blue tick), **Start**.
 2. Send `/newbot`. Name: `Michael`. Username: something free ending in `bot`, e.g. `michael_coach_bot`.
 3. BotFather replies with a token like `123456:ABC...`. Railway: `TELEGRAM_BOT_TOKEN`.
-4. Send the bot username to the team (it goes in the Connections screen, #120).
+4. Railway: `TELEGRAM_BOT_USERNAME` = the username without `@` (optional; the API asks Telegram).
+   Redeploy; the API sets the webhook itself. Then **You > Nudges > Connect Telegram**, tap
+   **Start**. Details: `docs/sources/telegram.md`.
 
 ## 6. Watch buzz on stage (whoever wears the watch, 1 min)
 

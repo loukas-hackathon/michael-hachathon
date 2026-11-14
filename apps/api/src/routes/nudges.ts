@@ -19,6 +19,7 @@ import {
   type QuietHours,
 } from "../nudges/engine";
 import { pushToCurrentUser } from "../nudges/push";
+import { telegramToCurrentUser } from "../nudges/telegram";
 import { store } from "../store";
 import { momentCoreFor } from "./moments";
 import { readProfile } from "./profile";
@@ -136,8 +137,14 @@ export async function testNudge(): Promise<NudgeTestResult> {
     status: "test",
   });
   if (!nudge) throw new HttpError("internal", "Could not store the test nudge");
-  const { devices, delivered } = await pushToCurrentUser(nudgePayload(pick));
-  console.log(`[nudge] test "${pick.text}" pushed to ${delivered} of ${devices} devices`);
+  // Push devices and the Telegram chat at once: either one buzzing the watch is enough on stage.
+  const [push, telegram] = await Promise.all([
+    pushToCurrentUser(nudgePayload(pick)),
+    telegramToCurrentUser(pick.text),
+  ]);
+  const devices = push.devices + telegram.chats;
+  const delivered = push.delivered + telegram.delivered;
+  console.log(`[nudge] test "${pick.text}" delivered to ${delivered} of ${devices} devices and chats`);
   return { text: pick.text, reason: pick.reason, delivered, devices, nudge };
 }
 
