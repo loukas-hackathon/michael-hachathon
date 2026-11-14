@@ -38,6 +38,7 @@ Built at the Gen AI Summit Hackathon, Athens, 14-15 November 2026.
 | --------------------- | ------------------------------------------------------ |
 | `apps/api`            | Hono REST API + MCP server                             |
 | `apps/web`            | Next.js dashboard                                      |
+| `apps/extension`      | browser extension: live time on each site (no build)   |
 | `packages/shared`     | zod schemas, types, mock data (single source of truth) |
 | `supabase/migrations` | database schema                                        |
 | `docs/api.md`         | full API and MCP contract                              |
@@ -83,6 +84,19 @@ curl -H "Authorization: Bearer dev-key" "localhost:8787/v1/timeline?from=2026-11
 | `USE_MOCKS` | `true` serves fixtures from `@michael/shared` |
 | `API_URL`   | base URL of the API                           |
 | `API_KEY`   | same secret as the API                        |
+
+## Browser extension
+
+`apps/extension` records how long the active tab stays on each site and posts `web_visit` events
+(host, page title and seconds, never the full address) to `POST /v1/events/batch`. No build step:
+
+1. Open `chrome://extensions`, switch on Developer mode, choose **Load unpacked** and pick
+   `apps/extension`.
+2. Open the extension's Settings, enter the API address and key, and press **Send a test event**.
+
+It never records incognito windows, banking, health, adult or password manager sites, or anything
+on your own list, and one switch takes it off the record. Rules and permissions:
+[`apps/extension/README.md`](apps/extension/README.md).
 
 ## Live
 

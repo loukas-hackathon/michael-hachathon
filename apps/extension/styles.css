@@ -1,0 +1,482 @@
+/* Michael, browser extension. Tokens are the provisional Forest palette from the Build Hub; a
+   later pick only changes these values. Figtree is the brand face but an extension page cannot
+   load a remote font, so the stack falls back to the closest system faces. */
+:root {
+  --paper: #f6f3ec;
+  --stone: #e7e2d6;
+  --ink: #121311;
+  --muted: #6b675e;
+  --accent: #1f4d3a;
+  --accent-soft: #dce8e0;
+  --lost: #a4553a;
+
+  --font:
+    "Figtree", "Avenir Next", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system,
+    "Helvetica Neue", Arial, sans-serif;
+  --radius: 10px;
+  color-scheme: light;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  font-variant-numeric: tabular-nums;
+}
+
+h1,
+h2,
+p,
+ul,
+ol {
+  margin: 0;
+  padding: 0;
+}
+
+.wordmark {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.quiet {
+  color: var(--muted);
+}
+
+.trouble {
+  color: var(--lost);
+}
+
+a {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* The Off the record switch. Dark when on: the record is closed. */
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  user-select: none;
+}
+
+.switch-input {
+  appearance: none;
+  position: relative;
+  flex: none;
+  width: 38px;
+  height: 22px;
+  margin: 0;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--muted) 34%, var(--stone));
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.switch-input::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--paper);
+  box-shadow: 0 1px 2px rgb(18 19 17 / 0.25);
+  transition: transform 0.15s ease;
+}
+
+.switch-input:checked {
+  background: var(--ink);
+}
+
+.switch-input:checked::after {
+  transform: translateX(16px);
+}
+
+.switch-input:checked + .switch-text {
+  color: var(--ink);
+}
+
+.switch-input:focus-visible {
+  border-radius: 11px;
+}
+
+/* Popup */
+
+.popup {
+  width: 316px;
+  padding: 16px 16px 12px;
+}
+
+.popup-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.today {
+  margin-top: 22px;
+}
+
+.today-number {
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+}
+
+.today-rest {
+  margin-top: 2px;
+  color: var(--muted);
+}
+
+/* The day as one line: each site takes its share of the time. */
+.dayline {
+  display: flex;
+  gap: 2px;
+  height: 10px;
+  margin-top: 16px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--stone);
+}
+
+.dayline-part {
+  min-width: 2px;
+}
+
+.dayline-rest {
+  background: color-mix(in srgb, var(--muted) 28%, var(--stone));
+}
+
+.shade-0 {
+  background: var(--accent);
+}
+
+.shade-1 {
+  background: color-mix(in srgb, var(--accent) 72%, var(--accent-soft));
+}
+
+.shade-2 {
+  background: color-mix(in srgb, var(--accent) 46%, var(--accent-soft));
+}
+
+.shade-3 {
+  background: color-mix(in srgb, var(--accent) 24%, var(--accent-soft));
+}
+
+.shade-4 {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 24%, var(--accent-soft));
+}
+
+.sites {
+  margin-top: 14px;
+  list-style: none;
+}
+
+.sites li {
+  display: grid;
+  grid-template-columns: 10px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+  font-size: 14px;
+}
+
+.sites .swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.sites .host {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.sites .time {
+  color: var(--muted);
+}
+
+.popup-note {
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+.popup-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--stone);
+  font-size: 13px;
+}
+
+.popup-foot button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.popup-foot button:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.is-paused .dayline,
+.is-paused .sites {
+  opacity: 0.45;
+}
+
+/* Settings page */
+
+.sheet {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 44px 24px 72px;
+}
+
+.masthead {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.masthead .wordmark {
+  font-size: 24px;
+}
+
+.record {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-top: 44px;
+}
+
+.record h1 {
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  text-wrap: balance;
+}
+
+.record p {
+  margin-top: 8px;
+  max-width: 44ch;
+}
+
+.record .switch {
+  margin-top: 8px;
+}
+
+.block {
+  margin-top: 44px;
+  padding-top: 20px;
+  border-top: 1px solid var(--stone);
+}
+
+.block h2 {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.block > p {
+  margin-top: 6px;
+  max-width: 58ch;
+}
+
+.field {
+  display: block;
+  margin-top: 16px;
+}
+
+.field span {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+input[type="text"],
+input[type="url"],
+input[type="password"] {
+  width: 100%;
+  height: 42px;
+  padding: 0 12px;
+  border: 1.5px solid var(--stone);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--paper) 55%, white);
+  color: var(--ink);
+  font: inherit;
+}
+
+input::placeholder {
+  color: color-mix(in srgb, var(--muted) 70%, var(--paper));
+}
+
+input[type="text"]:focus-visible,
+input[type="url"]:focus-visible,
+input[type="password"]:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  border-radius: var(--radius);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.button {
+  height: 42px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--stone);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: filter 0.12s ease;
+}
+
+.button:hover {
+  filter: brightness(0.96);
+}
+
+.button.primary {
+  background: var(--accent);
+  color: var(--paper);
+}
+
+.button.primary:hover {
+  filter: brightness(1.12);
+}
+
+.button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.result {
+  min-height: 1.5em;
+  margin-top: 12px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.result.trouble {
+  color: var(--lost);
+}
+
+.add-site {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.add-site input {
+  flex: 1;
+}
+
+.excluded {
+  margin-top: 8px;
+  list-style: none;
+}
+
+.excluded li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--stone);
+  font-weight: 600;
+}
+
+.excluded button {
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.excluded button:hover {
+  color: var(--lost);
+}
+
+.status {
+  margin-top: 44px;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.status-detail {
+  margin-top: 10px;
+  font-size: 14px;
+}
+
+@media (max-width: 520px) {
+  .record {
+    flex-direction: column;
+    gap: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .button,
+  .switch-input,
+  .switch-input::after {
+    transition: none;
+  }
+}

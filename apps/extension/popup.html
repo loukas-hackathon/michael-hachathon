@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en-GB">
+  <head>
+    <meta charset="utf-8" />
+    <title>Michael</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="popup">
+    <header class="popup-head">
+      <p class="wordmark">Michael</p>
+      <label class="switch">
+        <input type="checkbox" class="switch-input" id="paused" />
+        <span class="switch-text">Off the record</span>
+      </label>
+    </header>
+
+    <main>
+      <section class="today" aria-live="polite">
+        <p class="today-number" id="number"></p>
+        <p class="today-rest" id="rest"></p>
+      </section>
+      <div class="dayline" id="dayline" aria-hidden="true"></div>
+      <ol class="sites" id="sites" aria-label="Top sites today"></ol>
+      <p class="popup-note trouble" id="note" hidden></p>
+    </main>
+
+    <footer class="popup-foot">
+      <button type="button" id="settings">Settings</button>
+      <span class="quiet" id="waiting"></span>
+    </footer>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>
