@@ -11,8 +11,8 @@ export function BalanceBars({ balance }: { balance: Balance }) {
     <div className="flex flex-col gap-3">
       {v.line ? <p className="text-body font-semibold">{v.line}</p> : null}
       <ul className="flex flex-col gap-2.5">
-        {AREA_ORDER.map((a) => {
-          const score = balance.areas[a];
+        {AREA_ORDER.filter((a) => balance.areas[a] != null).map((a) => {
+          const score = balance.areas[a] as number;
           const floor = balance.floors[a];
           const under = score < floor;
           return (

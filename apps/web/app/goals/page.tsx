@@ -45,9 +45,15 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
             {anyUnverified ? " Pale pink is time not confirmed by data yet." : ""}
           </p>
 
-          {week.target || week.baseline || week.balance ? (
+          {week.target || week.baseline || week.balance || week.recordLine ? (
             <section className="mt-5 flex flex-col gap-4">
               <TargetCard target={week.target ?? null} baseline={week.baseline ?? null} />
+              {week.recordLine ? (
+                <p className="flex items-center gap-2 text-subhead">
+                  <span aria-hidden="true" className="size-[7px] shrink-0 rotate-45 rounded-[1px] bg-label" />
+                  {week.recordLine}
+                </p>
+              ) : null}
               {week.balance ? (
                 <div className="rounded-group bg-fill px-4 pt-3 pb-3.5">
                   <BalanceBars balance={week.balance} />

@@ -190,6 +190,7 @@ export const sampleEvening: DayView = {
 /** No plan, no data: the first day. */
 export const sampleEmpty: DayView = {
   ...sampleDay,
+  week: { scorePct: null, line: null },
   blocks: [],
   wonBackMinutes: 0,
   lead: null,
