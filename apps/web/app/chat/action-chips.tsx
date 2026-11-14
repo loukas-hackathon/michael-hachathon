@@ -44,16 +44,21 @@ function DoneChip({ action }: { action: Recommendation }) {
       <button
         type="button"
         disabled={pending}
+        aria-busy={pending}
         onClick={() =>
           startTransition(async () => {
-            const res = await undoAction(action.id);
+            setError(null);
+            const res = await undoAction(action.id).catch(() => ({
+              ok: false as const,
+              error: "I could not reach the server. Nothing changed.",
+            }));
             if (res.ok) setUndone(true);
             else setError(res.error);
           })
         }
         className="press min-h-9 rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-3.5 text-subhead font-semibold text-tint-text disabled:opacity-40"
       >
-        Done. Undo{until ? ` until ${formatTime(until)}` : ""}
+        {pending ? "Undoing" : `Done. Undo${until ? ` until ${formatTime(until)}` : ""}`}
       </button>
       {error ? (
         <span role="alert" className="text-footnote text-danger">

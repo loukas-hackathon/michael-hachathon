@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useId, useOptimistic, useState, useTransition } from "react";
+import { useActionState, useCallback, useEffect, useId, useOptimistic, useState, useTransition } from "react";
 import {
   addInstruction,
   editInstruction,
@@ -63,13 +63,18 @@ function InstructionForm({
   item,
   formId,
   onDone,
+  onPending,
 }: {
   item: Instruction | null;
   formId: string;
   onDone: () => void;
+  onPending: (pending: boolean) => void;
 }) {
   const action = item ? editInstruction.bind(null, item.id) : addInstruction;
-  const [state, formAction] = useActionState(action, initial);
+  const [state, formAction, pending] = useActionState(action, initial);
+  useEffect(() => {
+    onPending(pending);
+  }, [pending, onPending]);
   const [kind, setKind] = useState<Kind>(item && item.kind !== "quiet_hours" ? item.kind : "clear_day");
   const [days, setDays] = useState<number[]>(item?.days ?? (kind === "home_by" ? [1, 2, 3, 4, 5] : [0]));
   const [time, setTime] = useState(item?.time ?? "21:00");
@@ -154,13 +159,18 @@ function QuietForm({
   end,
   formId,
   onDone,
+  onPending,
 }: {
   start: string;
   end: string;
   formId: string;
   onDone: () => void;
+  onPending: (pending: boolean) => void;
 }) {
-  const [state, formAction] = useActionState(saveQuietHours, initial);
+  const [state, formAction, pending] = useActionState(saveQuietHours, initial);
+  useEffect(() => {
+    onPending(pending);
+  }, [pending, onPending]);
   const uid = useId();
   useEffect(() => {
     if (state.ok) onDone();
@@ -185,14 +195,17 @@ function QuietForm({
   );
 }
 
-function Save({ formId, label }: { formId: string; label: string }) {
+/** Header Save: outside the form, so the sheet passes pending down (michael-feedback R1). */
+function Save({ formId, label, pending }: { formId: string; label: string; pending: boolean }) {
   return (
     <button
       type="submit"
       form={formId}
-      className="press -mr-2 h-11 px-2 text-body font-semibold text-tint-text"
+      disabled={pending}
+      aria-busy={pending}
+      className="press -mr-2 h-11 min-w-[4.5rem] px-2 text-right text-body font-semibold text-tint-text disabled:opacity-60"
     >
-      {label}
+      {pending ? (label === "Add" ? "Adding" : "Saving") : label}
     </button>
   );
 }
@@ -218,11 +231,14 @@ export function StandingInstructions({
   const [optimistic, setOptimistic] = useOptimistic(items, (list, change: { id: string; active: boolean }) =>
     list.map((i) => (i.id === change.id ? { ...i, active: change.active } : i)),
   );
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const formId = useId();
-  const close = () => {
+  const close = useCallback(() => {
     setSheet(null);
     setConfirm(false);
-  };
+    setError(null);
+  }, []);
   const editing = sheet?.type === "edit" ? sheet.item : null;
 
   return (
@@ -293,10 +309,16 @@ export function StandingInstructions({
         open={sheet?.type === "quiet"}
         onClose={close}
         title="Quiet hours"
-        trailing={<Save formId={`${formId}-q`} label="Save" />}
+        trailing={<Save formId={`${formId}-q`} label="Save" pending={saving} />}
       >
         {quiet ? (
-          <QuietForm start={quiet.start} end={quiet.end} formId={`${formId}-q`} onDone={close} />
+          <QuietForm
+            start={quiet.start}
+            end={quiet.end}
+            formId={`${formId}-q`}
+            onDone={close}
+            onPending={setSaving}
+          />
         ) : null}
       </Sheet>
 
@@ -304,27 +326,48 @@ export function StandingInstructions({
         open={sheet?.type === "edit"}
         onClose={close}
         title={editing ? "Instruction" : "New instruction"}
-        trailing={<Save formId={formId} label={editing ? "Save" : "Add"} />}
+        trailing={<Save formId={formId} label={editing ? "Save" : "Add"} pending={saving} />}
       >
-        <InstructionForm key={editing?.id ?? "new"} item={editing} formId={formId} onDone={close} />
+        <InstructionForm
+          key={editing?.id ?? "new"}
+          item={editing}
+          formId={formId}
+          onDone={close}
+          onPending={setSaving}
+        />
         {editing ? (
           <div className="mt-6 overflow-hidden rounded-group bg-fill">
             <button
               type="button"
               disabled={pending}
-              onClick={() =>
-                confirm
-                  ? start(async () => {
-                      const r = await removeInstruction(editing.id);
-                      if (r.ok) close();
-                    })
-                  : setConfirm(true)
-              }
-              className="press flex min-h-11 w-full items-center px-4 text-body text-danger"
+              aria-busy={pending}
+              onClick={() => {
+                if (!confirm) return setConfirm(true);
+                setError(null);
+                start(async () => {
+                  try {
+                    const r = await removeInstruction(editing.id);
+                    if (r.ok) close();
+                    else setError(r.message ?? "I could not delete it. Nothing changed.");
+                  } catch {
+                    setError("I could not reach the server. Nothing changed.");
+                  }
+                });
+              }}
+              className="press flex min-h-11 w-full items-center px-4 text-body text-danger disabled:opacity-60"
             >
-              {confirm ? "Delete for good? Tap again" : "Delete this instruction"}
+              {pending && confirm
+                ? "Deleting"
+                : confirm
+                  ? "Delete for good? Tap again"
+                  : "Delete this instruction"}
             </button>
           </div>
+        ) : null}
+        {error ? (
+          <p role="alert" className="mt-2 px-1 text-footnote text-danger">
+            {error}
+          </p>
         ) : null}
       </Sheet>
     </section>

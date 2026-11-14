@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useId, useState, useTransition } from "react";
+import { useActionState, useCallback, useEffect, useId, useState, useTransition } from "react";
 import { addGoal, editGoal, type FormState, pauseGoal, removeGoal } from "@/app/goals/actions";
 import { CATEGORY_TITLE, type Category } from "@/lib/categories";
 import { input, Row, Segmented } from "../form-controls";
@@ -48,11 +48,14 @@ function GoalForm({
   draft,
   formId,
   onDone,
+  onPending,
   personalReady,
 }: {
   draft: GoalDraft;
   formId: string;
   onDone: () => void;
+  /** The Save button sits in the sheet header, outside the form, so it hears pending from here. */
+  onPending: (pending: boolean) => void;
   personalReady: boolean;
 }) {
   const action = draft.id ? editGoal.bind(null, draft.id) : addGoal;
@@ -68,6 +71,10 @@ function GoalForm({
   useEffect(() => {
     if (state.ok) onDone();
   }, [state, onDone]);
+
+  useEffect(() => {
+    onPending(pending);
+  }, [pending, onPending]);
 
   useEffect(() => {
     if (kind === "checklist" && category !== "business") setKind("time");
@@ -237,14 +244,16 @@ function GoalForm({
   );
 }
 
-function SaveButton({ formId, label }: { formId: string; label: string }) {
+function SaveButton({ formId, label, pending }: { formId: string; label: string; pending: boolean }) {
   return (
     <button
       type="submit"
       form={formId}
-      className="press -mr-2 h-11 px-2 text-body font-semibold text-tint-text"
+      disabled={pending}
+      aria-busy={pending}
+      className="press -mr-2 h-11 min-w-[4.5rem] px-2 text-right text-body font-semibold text-tint-text disabled:opacity-60"
     >
-      {label}
+      {pending ? (label === "Add" ? "Adding" : "Saving") : label}
     </button>
   );
 }
@@ -253,11 +262,12 @@ function SaveButton({ formId, label }: { formId: string; label: string }) {
 export function AddGoal({ personalReady }: { personalReady: boolean }) {
   const [open, setOpen] = useState(false);
   const [key, setKey] = useState(0);
+  const [saving, setSaving] = useState(false);
   const formId = useId();
-  const close = () => {
+  const close = useCallback(() => {
     setOpen(false);
     setKey((k) => k + 1);
-  };
+  }, []);
   return (
     <>
       <button
@@ -276,9 +286,16 @@ export function AddGoal({ personalReady }: { personalReady: boolean }) {
         open={open}
         onClose={close}
         title="New goal"
-        trailing={<SaveButton formId={formId} label="Add" />}
+        trailing={<SaveButton formId={formId} label="Add" pending={saving} />}
       >
-        <GoalForm key={key} draft={EMPTY} formId={formId} onDone={close} personalReady={personalReady} />
+        <GoalForm
+          key={key}
+          draft={EMPTY}
+          formId={formId}
+          onDone={close}
+          onPending={setSaving}
+          personalReady={personalReady}
+        />
       </Sheet>
     </>
   );
@@ -298,12 +315,14 @@ export function EditGoal({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const [doing, setDoing] = useState<"pause" | "delete" | null>(null);
+  const [saving, setSaving] = useState(false);
   const formId = useId();
-  const close = () => {
+  const close = useCallback(() => {
     setOpen(false);
     setConfirmDelete(false);
     setNote(null);
-  };
+  }, []);
   const id = draft.id as string;
 
   return (
@@ -315,39 +334,66 @@ export function EditGoal({
         open={open}
         onClose={close}
         title={draft.title}
-        trailing={<SaveButton formId={formId} label="Save" />}
+        trailing={<SaveButton formId={formId} label="Save" pending={saving} />}
       >
-        <GoalForm draft={draft} formId={formId} onDone={close} personalReady={personalReady} />
+        <GoalForm
+          draft={draft}
+          formId={formId}
+          onDone={close}
+          onPending={setSaving}
+          personalReady={personalReady}
+        />
         <div className="mt-6 overflow-hidden rounded-group bg-fill">
           <button
             type="button"
             disabled={pending}
-            onClick={() =>
+            aria-busy={pending && doing === "pause"}
+            onClick={() => {
+              setDoing("pause");
               start(async () => {
-                const r = await pauseGoal(id, !draft.active);
-                setNote(r.message);
-                if (r.ok) close();
-              })
-            }
-            className="press flex min-h-11 w-full items-center px-4 text-body text-tint-text"
+                try {
+                  const r = await pauseGoal(id, !draft.active);
+                  setNote(r.message);
+                  if (r.ok) close();
+                } catch {
+                  setNote("I could not reach the server. Nothing changed.");
+                }
+              });
+            }}
+            className="press flex min-h-11 w-full items-center px-4 text-body text-tint-text disabled:opacity-60"
           >
-            {draft.active ? "Pause this goal" : "Resume this goal"}
+            {pending && doing === "pause"
+              ? draft.active
+                ? "Pausing"
+                : "Resuming"
+              : draft.active
+                ? "Pause this goal"
+                : "Resume this goal"}
           </button>
           <button
             type="button"
             disabled={pending}
-            onClick={() =>
-              confirmDelete
-                ? start(async () => {
-                    const r = await removeGoal(id);
-                    setNote(r.message);
-                    if (r.ok) close();
-                  })
-                : setConfirmDelete(true)
-            }
+            aria-busy={pending && doing === "delete"}
+            onClick={() => {
+              if (!confirmDelete) return setConfirmDelete(true);
+              setDoing("delete");
+              start(async () => {
+                try {
+                  const r = await removeGoal(id);
+                  setNote(r.message);
+                  if (r.ok) close();
+                } catch {
+                  setNote("I could not reach the server. Nothing changed.");
+                }
+              });
+            }}
             className="press relative flex min-h-11 w-full items-center px-4 text-body text-danger before:absolute before:inset-x-0 before:top-0 before:ml-4 before:h-[0.5px] before:bg-separator before:content-['']"
           >
-            {confirmDelete ? "Delete for good? Tap again" : "Delete this goal"}
+            {pending && doing === "delete"
+              ? "Deleting"
+              : confirmDelete
+                ? "Delete for good? Tap again"
+                : "Delete this goal"}
           </button>
         </div>
         {note ? (

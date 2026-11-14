@@ -31,8 +31,15 @@ export function BriefView({
   async function ask() {
     setBusy(true);
     setError(null);
-    const r = await askForBrief();
-    setBusy(false);
+    let r: Awaited<ReturnType<typeof askForBrief>>;
+    try {
+      r = await askForBrief();
+    } catch {
+      setError("I could not reach the server. Try again in a minute.");
+      return;
+    } finally {
+      setBusy(false);
+    }
     if (!r.ok) {
       setError(r.error);
       return;

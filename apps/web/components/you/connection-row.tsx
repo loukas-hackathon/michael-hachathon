@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { syncCalendar } from "@/app/you/google-calendar-actions";
+import { ActionButton } from "@/components/action-button";
 import type { ConnectionAction, ConnectionStatus } from "@/lib/connections-status";
 import { ConnectionIcon } from "./connection-icon";
 
@@ -14,11 +15,13 @@ const button =
 function Action({ action, style }: { action: ConnectionAction; style: string }) {
   if (action.kind === "sync-calendar") {
     return (
-      <form action={syncCalendar}>
-        <button type="submit" className={style}>
-          {action.label}
-        </button>
-      </form>
+      <ActionButton
+        action={syncCalendar}
+        label={action.label}
+        pendingLabel="Syncing"
+        className={style}
+        showResult={false}
+      />
     );
   }
   // Plain <a> for the Google hop, so nothing prefetches a route that redirects off site.

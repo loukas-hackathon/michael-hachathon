@@ -73,8 +73,13 @@ export function KeySetup({ keyName, copyAs, steps }: Props) {
           disabled={busy}
           onClick={async () => {
             setBusy(true);
-            setResult(await createDeviceKey(keyName));
-            setBusy(false);
+            try {
+              setResult(await createDeviceKey(keyName));
+            } catch {
+              setResult({ error: "I could not reach the server. Tap Connect again." });
+            } finally {
+              setBusy(false);
+            }
           }}
           className="press mt-4 flex h-11 w-full items-center justify-center rounded-full bg-tint text-body font-semibold text-on-tint disabled:opacity-60"
         >
