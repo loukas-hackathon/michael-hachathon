@@ -38,10 +38,15 @@
       "PowerShell(git push -u origin:*)",
       "PowerShell(gh issue:*)",
       "PowerShell(gh pr:*)",
-      "Bash(git worktree:*)",
-      "PowerShell(git worktree:*)",
       "Bash(git branch -D:*)",
-      "Bash(cp ../../apps/:*)"
+      "Bash(git worktree list)",
+      "Bash(git worktree add .worktrees/:*)",
+      "Bash(git worktree remove .worktrees/:*)",
+      "Bash(git worktree prune)",
+      "PowerShell(git worktree list)",
+      "PowerShell(git worktree add .worktrees/:*)",
+      "PowerShell(git worktree remove .worktrees/:*)",
+      "PowerShell(git worktree prune)"
     ],
     "deny": [
       "Bash(git push origin main:*)",
@@ -50,7 +55,11 @@
       "Bash(git push -f:*)",
       "PowerShell(git push origin main:*)",
       "PowerShell(git push -u origin main:*)",
-      "PowerShell(git push --force:*)"
+      "PowerShell(git push --force:*)",
+      "Bash(git worktree remove --force:*)",
+      "Bash(git worktree remove -f:*)",
+      "PowerShell(git worktree remove --force:*)",
+      "PowerShell(git worktree remove -f:*)"
     ]
   }
 }

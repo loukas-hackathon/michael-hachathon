@@ -85,7 +85,7 @@ git checkout main && git pull
 git worktree add .worktrees/<n>-short-name -b <n>-short-name origin/main
 cd .worktrees/<n>-short-name
 pnpm install                                  # fast, the pnpm store is shared
-cp ../../apps/api/.env apps/api/.env 2>/dev/null; cp ../../apps/web/.env.local apps/web/.env.local 2>/dev/null
+pnpm env:copy                                 # copies the .env files from the main checkout
 ```
 
 - **Never `cd` into or edit another agent's worktree.** Never `git checkout` a different branch
