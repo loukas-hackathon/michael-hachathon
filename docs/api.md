@@ -201,6 +201,7 @@ type ChatMessage = {
   role: "user" | "assistant";
   content: string;
   created_at: string;
+  action_ids: string[]; // on Michael's answers: recommendations done or undone while writing it
 };
 
 type Health = {
@@ -1142,12 +1143,13 @@ travel site" or "an uncategorised site". Structured `data` carries the host for 
 
 | Method | Path                | Body                                  | Response                                                                                                                                                                                                                                                                   | Status |
 | ------ | ------------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| GET    | `/v1/chat?limit=50` |                                       | `200 { messages: ChatMessage[] }` (oldest first, limit 1..100)                                                                                                                                                                                                             | live   |
+| GET    | `/v1/chat?limit=50` |                                       | `200 { messages: ChatMessage[], actions: Recommendation[] }` (oldest first, limit 1..100; `actions` are the ones named in `action_ids`, as they stand now)                                                                                                                 | live   |
 | POST   | `/v1/chat`          | `{ message: string }` (1..2000 chars) | `201 ChatResponse` `{ message, reply, actions: Recommendation[] }`; `503 unavailable` without `ANTHROPIC_API_KEY`; `502 upstream_error` if Claude fails                                                                                                                    | live   |
 | POST   | `/v1/chat/stream`   | `{ message: string }` (1..2000 chars) | `200 text/event-stream`: `event: delta` `{ text }` per piece, `event: action` `Recommendation` per thing done or undone, then `event: done` `ChatResponse`, or `event: error` `ApiError`. Validation and `503 unavailable` come back as plain JSON before the stream opens | live   |
 
 `/v1/chat` stays for callers that want the whole answer (MCP, voice); `/v1/chat/stream` gives the
-first words fast and stores the same pair when it finishes.
+first words fast and stores the same pair when it finishes. The stored answer keeps the ids of what
+it did (`action_ids`), so a client can show the same Undo chips under it after a reload.
 
 The API keeps the history per user (`chat_messages`); the client sends only the new line. Michael
 answers with Claude (`ANTHROPIC_MODEL`, default `claude-opus-5-5`) from a summary built in the API:

@@ -183,6 +183,7 @@ const toChatMessage = (r: Record<string, unknown>): ChatMessage => ({
   role: r.role as ChatRole,
   content: r.content as string,
   created_at: iso(r.created_at as string) as string,
+  action_ids: (r.action_ids as string[] | null | undefined) ?? [],
 });
 
 const toIntegration = (r: Record<string, unknown>): IntegrationRecord => ({
@@ -928,11 +929,13 @@ export class SupabaseStore implements Store {
     return (rows ?? []).map(toChatMessage).reverse();
   }
 
-  async addChatMessage(role: ChatRole, content: string) {
+  async addChatMessage(role: ChatRole, content: string, actionIds: string[] = []) {
+    // action_ids only when there are some, so plain lines still save if the column is not there yet.
+    const extra = actionIds.length ? { action_ids: actionIds } : {};
     const row = check(
       await this.db
         .from("chat_messages")
-        .insert({ user_id: currentUserId(), role, content })
+        .insert({ user_id: currentUserId(), role, content, ...extra })
         .select("*")
         .single(),
     );

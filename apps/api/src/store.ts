@@ -203,7 +203,8 @@ export interface Store extends PrivacyBackend {
   setOffTheRecord(on: boolean): Promise<PrivacyRules>;
   /** The most recent chat messages, oldest first. */
   listChatMessages(limit: number): Promise<ChatMessage[]>;
-  addChatMessage(role: ChatRole, content: string): Promise<ChatMessage>;
+  /** `actionIds`: recommendations done or undone while writing an answer (ChatMessage.action_ids). */
+  addChatMessage(role: ChatRole, content: string, actionIds?: string[]): Promise<ChatMessage>;
 
   // ---- events mirrored from a provider (Google Calendar) ----
   getEvent(id: string): Promise<Event | null>;
@@ -671,8 +672,14 @@ export class MemoryStore implements Store {
     return this.d.chat.slice(-limit);
   }
 
-  async addChatMessage(role: ChatRole, content: string) {
-    const message: ChatMessage = { id: crypto.randomUUID(), role, content, created_at: now() };
+  async addChatMessage(role: ChatRole, content: string, actionIds: string[] = []) {
+    const message: ChatMessage = {
+      id: crypto.randomUUID(),
+      role,
+      content,
+      created_at: now(),
+      action_ids: [...actionIds],
+    };
     this.d.chat.push(message);
     return message;
   }

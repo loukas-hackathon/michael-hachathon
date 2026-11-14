@@ -460,8 +460,16 @@ async function prepare(body: unknown) {
 
 async function save(message: string, { answer, actions }: MichaelAnswer): Promise<ChatResponse> {
   const stored = await store.addChatMessage("user", message);
-  const reply = await store.addChatMessage("assistant", answer);
+  const ids = [...new Set(actions.map((a) => a.id))];
+  const reply = await store.addChatMessage("assistant", answer, ids);
   return { message: stored, reply, actions };
+}
+
+/** The recommendations the lines name, as they stand now. Missing ones (deleted data) are skipped. */
+async function actionsOf(messages: ChatMessage[]): Promise<Recommendation[]> {
+  const ids = [...new Set(messages.flatMap((m) => m.action_ids))];
+  const found = await Promise.all(ids.map((id) => store.getRecommendation(id).catch(() => null)));
+  return found.filter((r): r is Recommendation => r !== null);
 }
 
 /** Stored lines as model turns. The first turn must be the user's, so a leading answer is dropped. */
@@ -475,7 +483,8 @@ export const chat = new Hono()
   .get("/chat", async (c) => {
     const raw = Number(c.req.query("limit") ?? 50);
     const limit = Number.isFinite(raw) ? Math.min(Math.max(Math.trunc(raw), 1), HISTORY_MAX) : 50;
-    const body: ChatHistory = { messages: await store.listChatMessages(limit) };
+    const messages = await store.listChatMessages(limit);
+    const body: ChatHistory = { messages, actions: await actionsOf(messages) };
     return c.json(body);
   })
   // POST /v1/chat { message }  Michael answers from today's timeline, goals and patterns, and acts

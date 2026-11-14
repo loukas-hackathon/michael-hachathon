@@ -377,6 +377,25 @@ h3 {
   }
 }
 
+/* Chat: a still caret follows Michael's words while he writes (no blink: loops are not for UI). */
+.m-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  border-radius: 1px;
+  background: currentColor;
+  opacity: 0.45;
+}
+/* The message field: the text caret shows focus, as in Messages; the field gets a hairline. */
+.m-field:focus-within {
+  box-shadow: 0 0 0 1px var(--m-separator);
+}
+.m-field textarea:focus-visible {
+  outline: none;
+}
+
 /* The iOS switch, drawn for browsers without <input switch>. Tinted when on. */
 .m-switch {
   appearance: none;
