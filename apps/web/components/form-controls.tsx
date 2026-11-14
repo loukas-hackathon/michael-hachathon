@@ -1,0 +1,61 @@
+"use client";
+
+import type { ReactNode } from "react";
+
+// Form pieces in Apple's grouped style, shared by every sheet.
+
+/** Apple style segmented control on radio inputs, so the form posts the value. */
+export function Segmented<T extends string>({
+  name,
+  options,
+  value,
+  onChange,
+  disabled = [],
+}: {
+  name: string;
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (v: T) => void;
+  disabled?: T[];
+}) {
+  return (
+    <div
+      role="radiogroup"
+      className="grid gap-[2px] rounded-[9px] bg-fill p-[2px]"
+      style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
+    >
+      {options.map((o) => (
+        <label
+          key={o.value}
+          className={`press relative flex min-h-9 items-center justify-center rounded-[7px] px-1 text-center text-footnote font-semibold ${
+            value === o.value ? "bg-bg shadow-[0_1px_3px_rgb(0_0_0/0.12)]" : "text-label"
+          } ${disabled.includes(o.value) ? "opacity-40" : ""}`}
+        >
+          <input
+            type="radio"
+            name={name}
+            value={o.value}
+            checked={value === o.value}
+            onChange={() => onChange(o.value)}
+            className="sr-only"
+          />
+          {o.label}
+        </label>
+      ))}
+    </div>
+  );
+}
+
+export function Row({ label, htmlFor, children }: { label: string; htmlFor?: string; children: ReactNode }) {
+  return (
+    <div className="relative flex min-h-11 items-center gap-3 px-4 [&+&]:before:absolute [&+&]:before:inset-x-0 [&+&]:before:top-0 [&+&]:before:ml-4 [&+&]:before:h-[0.5px] [&+&]:before:bg-separator [&+&]:before:content-['']">
+      <label htmlFor={htmlFor} className="shrink-0 text-body">
+        {label}
+      </label>
+      <div className="flex min-w-0 flex-1 justify-end">{children}</div>
+    </div>
+  );
+}
+
+export const input =
+  "w-full min-w-0 bg-transparent text-right text-body text-label outline-none placeholder:text-label-2 focus-visible:outline-none";

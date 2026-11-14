@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { getPrivacy } from "@/lib/api";
+import { StandingInstructions } from "@/components/you/instructions";
+import { getInstructions, getPrivacy, getProfile } from "@/lib/api";
 import { GoogleCalendarRow } from "./google-calendar";
 import { NudgesButton } from "./nudges-button";
 import { OffTheRecordSwitch } from "./off-the-record-switch";
@@ -16,7 +17,11 @@ const PROMISES = [
 
 export default async function YouPage() {
   // The source switches need the API; if it is down, the rest of the page still works.
-  const privacy = await getPrivacy().catch(() => null);
+  const [privacy, instructions, profile] = await Promise.all([
+    getPrivacy().catch(() => null),
+    getInstructions().catch(() => ({ available: false as const })),
+    getProfile().catch(() => null),
+  ]);
   return (
     <main className="screen">
       <header className="flex min-h-11 items-center justify-end pt-2">
@@ -33,6 +38,12 @@ export default async function YouPage() {
         <OffTheRecordSwitch />
       </section>
       <p className="mt-2 px-4 text-footnote text-label-2">One tap stops all collection, on every source.</p>
+
+      <StandingInstructions
+        available={instructions.available}
+        items={instructions.available ? instructions.items : []}
+        quiet={profile?.quiet_hours ?? null}
+      />
 
       <h2 className="mt-8 mb-2 text-title3 font-bold">Nudges</h2>
       <NudgesButton />
