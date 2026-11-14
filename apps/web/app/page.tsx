@@ -9,6 +9,7 @@ import { MichaelCard } from "@/components/today/michael-card";
 import { MomentCard } from "@/components/today/moment-card";
 import { RecommendationsPanel } from "@/components/today/recommendations";
 import { TravelCard } from "@/components/today/travel-card";
+import { WatchLine } from "@/components/today/watch-line";
 import { getToday, needsOnboarding } from "@/lib/api";
 import { type DayView, nowIndex, tape, totals } from "@/lib/day";
 import { formatDay, formatTime, hm, minutesPhrase } from "@/lib/format";
@@ -37,6 +38,7 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
         }
         title={TITLE[day.moment]}
       />
+      <WatchLine demo={demo} />
 
       {day.blocks.length === 0 ? (
         <>

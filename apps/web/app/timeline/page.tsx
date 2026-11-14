@@ -1,10 +1,12 @@
+import { cookies } from "next/headers";
 import Link from "next/link";
 import { EmptyState } from "@/components/empty-state";
 import { LiveRefresh } from "@/components/live-refresh";
 import { ScreenHeader } from "@/components/screen";
-import { DayTimeline, TimelineKey } from "@/components/timeline/day-timeline";
+import { DayTimeline, SleepBand, TimelineKey } from "@/components/timeline/day-timeline";
 import { WeekStrip } from "@/components/timeline/week-strip";
 import { formatDay, formatMonth, hm, minutesPhrase } from "@/lib/format";
+import { HEART_COOKIE } from "@/lib/health";
 import { loadTimeline } from "@/lib/timeline-data";
 
 type Search = { day?: string; date?: string; demo?: string };
@@ -17,6 +19,7 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
   const noon = `${date}T12:00:00+02:00`;
   const sampleParam = demo === "sample" ? "sample" : undefined;
   const plans = day?.plans ?? [];
+  const heartHidden = (await cookies()).get(HEART_COOKIE)?.value === "off";
 
   return (
     <main className="screen">
@@ -79,8 +82,14 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
             goalTime={Boolean(day.sample)}
             hasMichael={plans.some((p) => p.michael)}
             hasDrives={(day.drives ?? []).length > 0}
+            day={day}
+            heartHidden={heartHidden}
           />
-          <DayTimeline day={day} />
+          {day.health?.lastNight ? <SleepBand night={day.health.lastNight} goal={screen.sleepGoal} /> : null}
+          <DayTimeline day={day} heartHidden={heartHidden} />
+          {day.health?.tonight ? (
+            <SleepBand night={day.health.tonight} goal={screen.sleepGoal} tonight />
+          ) : null}
           <p className="mt-6 text-footnote text-label-2">
             {screen.source === "sample"
               ? day.sample
