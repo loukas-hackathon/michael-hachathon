@@ -42,6 +42,7 @@ import type { ChecklistDay, ChecklistItem } from "./checklist";
 import type { DayView } from "./day";
 import type { GoalsView } from "./goals-view";
 import type { Instruction, InstructionInput } from "./instructions";
+import { type KeepWeek, keepWeekFrom, restDaysFrom } from "./keep-day";
 import { causesFrom, type LostWeek, lostWeekFrom } from "./lost-week";
 import { API_URL, USE_MOCKS } from "./mode";
 import { sampleChecklist } from "./sample/checklist";
@@ -432,6 +433,21 @@ const athensDay = (d = new Date()) =>
 const scoreFor = cache((date: string) => get<Score>(`/v1/score?date=${date}`));
 export async function getScore(date = athensDay()): Promise<Score> {
   return scoreFor(date);
+}
+
+/** Keep the Day (Today): this week's days against the line, and the run of days kept. */
+export async function getKeepWeek(variant?: string): Promise<KeepWeek | null> {
+  const instructions = await getInstructions().catch(() => ({ available: false }) as const);
+  const rest = restDaysFrom(instructions.available ? instructions.items : []);
+  if (USE_MOCKS || variant === "sample") return keepWeekFrom(mockScore, null, mockScore.date, rest);
+  try {
+    const today = athensDay();
+    const lastWeek = new Date(Date.parse(`${today}T12:00:00Z`) - 7 * 86_400_000).toISOString().slice(0, 10);
+    const [week, before] = await Promise.all([getScore(today), getScore(lastWeek).catch(() => null)]);
+    return keepWeekFrom(week, before, today, rest);
+  } catch {
+    return null;
+  }
 }
 
 /** Goal time lost per day of the week holding `date` (Timeline chart, Today's week line). */
