@@ -128,14 +128,15 @@ export async function runAnalysis(request: AnalysisRequest, deps: AnalysisDeps):
   let brief: ReturnType<typeof buildBrief>;
   try {
     const window = briefWindow({ from, to, now });
-    const [events, goals, recommendations, asked] = await Promise.all([
+    const [events, goals, recommendations, asked, instructions] = await Promise.all([
       loadEvents(store, window.from, window.to),
       store.listGoals(),
       store.listRecommendations(),
       store.listAnalysisQuestions(5),
+      // The person's ground rules (/v1/instructions). A failed read must not stop the run: the
+      // brief then carries an empty list, as it did before the table existed.
+      store.listInstructions().catch(() => []),
     ]);
-    // Standing instructions have no home yet (the profile endpoint that stores them is not built):
-    // the brief carries the field, empty, so the model's contract does not change when it arrives.
     brief = buildBrief({
       events,
       goals,
@@ -144,7 +145,8 @@ export async function runAnalysis(request: AnalysisRequest, deps: AnalysisDeps):
       to,
       now,
       trigger,
-      instructions: [],
+      // Active ones only, in the person's own words. A paused instruction protects nothing.
+      instructions: instructions.filter((i) => i.active).map((i) => i.text),
       // Nothing is carried out on a run: every action waits for the person's tap (the execute
       // route). When a run starts applying actions itself, this becomes "applied".
       actionsAre: "offers",

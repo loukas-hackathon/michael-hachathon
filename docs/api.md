@@ -570,11 +570,12 @@ Which instructions a span of time falls under is one pure function,
 `protectedBy(instructions, start, end, timezone)` in `apps/api/src/instructions/protected.ts`. It
 returns the active instructions with any part of the span inside their protected time. Ends are
 exclusive (a block that stops at Sunday 00:00 has not touched Sunday), days are local days in the
-timezone given (default Europe/Athens), and the days the clocks change are handled. The analysis and
-the actions use it before they plan or move anything. The score does not count with it: each block
-in `GET /v1/score` only carries `instructions_broken`, the ids of the active instructions its time
-falls under, so the app can flag a work block planned on a clear Sunday. The chat with Michael is
-given the active instructions with the rest of its context.
+timezone given (default Europe/Athens), and the days the clocks change are handled. It is there for
+the analysis and the actions to call before they plan or move anything. The score does not count
+with it: each block in `GET /v1/score` only carries `instructions_broken`, the ids of the active
+instructions its time falls under, so the app can flag a work block planned on a clear Sunday. The
+chat with Michael and the analysis brief are given the active instructions, as the user wrote
+them, with the rest of their context; a paused one is left out.
 
 `mockInstructions` in `packages/shared/src/mocks.ts` holds one example ("Keep Sundays clear").
 
@@ -625,7 +626,7 @@ and their blocks) or `"score"`.
 | ----------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | Now, timezone, trigger, the local range                                                                                                   | Event ids, external ids, raw events                                           |
 | Goals: id, title, category (as data), weekly budget, description, this week's planned, spent, lost and unverified minutes (the score)     | Search terms, page titles, full addresses                                     |
-| Standing instructions, in the user's own words (`instructions`; empty until the profile stores them)                                      | A site's host, unless it is on the shared public list                         |
+| Standing instructions, in the user's own words (`instructions`: the active ones from `/v1/instructions`)                                  | A site's host, unless it is on the shared public list                         |
 | The plan for today and tomorrow (and yesterday in the morning): the user's own goal blocks with title, start, end and the score's numbers | The title of any calendar entry that is not the user's own goal block         |
 | Events with other people: "busy from A to B" only. The user's own entries with no goal: time only                                         | Names, attendees, locations or anything else about an event with other people |
 | Patterns for the last 7 days and for the range: each detector's sentence and a trimmed set of numbers, or the reason it has too little    | Conversations, memories, notes, meals, message text, AI prompts (never read)  |

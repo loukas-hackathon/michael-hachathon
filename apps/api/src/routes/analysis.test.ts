@@ -77,6 +77,44 @@ test("POST /v1/analysis/run stores the run and returns it with its recommendatio
   assert.ok(proposed.recommendations.some((r) => r.id === body.recommendations[0]?.id));
 });
 
+test("POST /v1/analysis/run hands the brief the active standing instructions, never a paused one", async () => {
+  const add = async (body: unknown) => {
+    const res = await app.request("/v1/instructions", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify(body),
+    });
+    assert.equal(res.status, 201);
+    return ((await res.json()) as { id: string }).id;
+  };
+  const active = await add({ text: "Home every day by 21:00", kind: "home_by", time: "21:00" });
+  const paused = await add({ text: "No calls on Friday afternoons", kind: "custom", active: false });
+  try {
+    const model = new FakeModelClient([answer]);
+    useModelClient(model);
+    assert.equal((await post({})).status, 201);
+    const brief = model.requests[0]?.user ?? "";
+    // The mock rule and the new one, in the person's own words, oldest first.
+    assert.match(brief, /"instructions": \[\s*"Keep Sundays clear",\s*"Home every day by 21:00"\s*\]/);
+    assert.ok(!brief.includes("No calls on Friday afternoons"), "a paused instruction reached the brief");
+
+    // Pausing takes an instruction out of the next run.
+    await app.request(`/v1/instructions/${active}`, {
+      method: "PATCH",
+      headers: auth,
+      body: JSON.stringify({ active: false }),
+    });
+    const next = new FakeModelClient([answer]);
+    useModelClient(next);
+    assert.equal((await post({})).status, 201);
+    assert.match(next.requests[0]?.user ?? "", /"instructions": \[\s*"Keep Sundays clear"\s*\]/);
+  } finally {
+    for (const id of [active, paused]) {
+      await app.request(`/v1/instructions/${id}`, { method: "DELETE", headers: auth });
+    }
+  }
+});
+
 test("POST /v1/analysis/run works with no body at all", async () => {
   useModelClient(new FakeModelClient([answer]));
   const res = await app.request("/v1/analysis/run", {
