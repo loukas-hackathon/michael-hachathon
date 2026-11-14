@@ -539,7 +539,7 @@ Before any detector runs, the events become one line of attention (`patterns/tim
 rules live there and nowhere else:
 
 - **Sources used:** `app_usage` from `macos_usage` and `iphone_usage` (needs `bundle_id` and an
-  end), `web_visit`, `search`, `screen`, `notification`, `sleep`, `recovery`, `calendar_event`,
+  end; `device: "watch"` is left out), `web_visit`, `search`, `screen`, `notification`, `sleep`, `recovery`, `calendar_event`,
   `ai_session`. `app_usage` from `ios_shortcuts` and `focus_session` are not used, so the same
   minute is not counted from two sources.
 - **Mac:** one thing in front at a time. If two intervals overlap, the one that started later wins.
@@ -549,9 +549,12 @@ rules live there and nowhere else:
   `other`.
 - **Origin precedence:** for every clock hour in which the extension reported a visit
   (`data.origin = "extension"`), history visits that start in that hour are ignored; where the two
-  still overlap the extension wins. A visit with no `origin` is history. A visit's category comes
-  from the shared host list; if the host is unknown and `data.category` is an `AppCategory`, that
-  is used.
+  still overlap the extension wins. A visit with no `origin` is history.
+- **Unmeasured history visits** (`data.foreground = false`: the length is how long the page stayed
+  open) count only while a browser is in front on the Mac, and lose to any measured visit.
+- **A visit's category** comes from the shared host list. If the host is not on it, the label the
+  collector sent in `data.category` is used: `messaging` and `mail` read as `communication`, `dev`
+  and `docs` as `work`, `finance` and `search` as `other`; the rest keep their name.
 - **Phone over Mac:** when iPhone and Mac use overlap, the phone has the attention. The time is
   counted once, as phone time.
 - Times are rounded to whole seconds, usage is clipped to the range, and anything that crosses

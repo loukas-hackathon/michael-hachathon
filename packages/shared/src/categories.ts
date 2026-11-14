@@ -385,6 +385,8 @@ const HOST_BRANDS: Record<string, AppCategory> = {
 };
 const SECOND_LEVEL_ENDINGS = new Set(["co", "com", "org", "net", "gov", "edu", "ac"]);
 
+const CATEGORY_NAMES = new Set<string>([...Object.keys(APPS), ...Object.keys(HOSTS), "other"]);
+
 const index = (lists: Record<string, string[]>) => {
   const map = new Map<string, AppCategory>();
   for (const [category, keys] of Object.entries(lists)) {
@@ -441,4 +443,33 @@ export function categoriseHost(input: string): AppCategory {
     if (known) return known;
   }
   return "other";
+}
+
+// The collector and the browser extension label well known sites with their own short names
+// (apps/collector/src/site-categories.ts). This is how those names read in our vocabulary.
+// "finance" and "search" say nothing about work or distraction, so they stay "other".
+const SITE_LABELS: Record<string, AppCategory> = {
+  travel: "travel",
+  shopping: "shopping",
+  social: "social",
+  news: "news",
+  video: "video",
+  messaging: "communication",
+  mail: "communication",
+  dev: "work",
+  docs: "work",
+  ai: "ai",
+  finance: "other",
+  search: "other",
+};
+
+/**
+ * Category of a web visit: the shared host list first; when the host is not on it, the label the
+ * collector sent (`data.category`), if it is one we know. Anything else is "other".
+ */
+export function categoriseVisit(host: string, label?: unknown): AppCategory {
+  const known = categoriseHost(host);
+  if (known !== "other" || typeof label !== "string") return known;
+  const key = label.toLowerCase();
+  return SITE_LABELS[key] ?? (CATEGORY_NAMES.has(key) ? (key as AppCategory) : "other");
 }

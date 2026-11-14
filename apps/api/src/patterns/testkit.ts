@@ -69,14 +69,25 @@ export const phone = (bundle: string, start: string, end: string, openedFrom?: s
     },
   });
 
-export const web = (host: string, start: string, end: string, origin?: "history" | "extension"): Event =>
+export const web = (
+  host: string,
+  start: string,
+  end: string,
+  origin?: "history" | "extension",
+  extra: Record<string, unknown> = {},
+): Event =>
   event({
     source: "chrome",
     type: "web_visit",
     start_at: start,
     end_at: end,
     title: "A page title that must never reach a summary",
-    data: { host, seconds: (Date.parse(end) - Date.parse(start)) / 1000, ...(origin ? { origin } : {}) },
+    data: {
+      host,
+      seconds: (Date.parse(end) - Date.parse(start)) / 1000,
+      ...(origin ? { origin } : {}),
+      ...extra,
+    },
   });
 
 export const search = (term: string, at: string): Event =>

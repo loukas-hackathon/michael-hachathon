@@ -1,7 +1,7 @@
 import {
-  AppCategory,
+  type AppCategory,
   categoriseApp,
-  categoriseHost,
+  categoriseVisit,
   type Event,
   isBrowser,
   normaliseHost,
@@ -15,7 +15,8 @@ import { type Span, subtractSpans, sum, union } from "./util";
 // two of them describe the same minute, so the detectors never have to think about it:
 //
 //   1. Mac: one thing in front at a time. A non browser app beats a web visit, a web visit beats
-//      the bare browser, an extension visit beats a history visit. Screen off time is removed.
+//      the bare browser, an extension visit beats a history visit, and a history visit Chrome
+//      measured in front beats one that was only open. Screen off time is removed.
 //   2. Web visits: where the extension reported, history is ignored (`preferExtension`).
 //   3. Across devices: when the phone and the Mac overlap, the phone has the attention.
 
@@ -37,6 +38,12 @@ export interface Segment extends Span {
 
 export interface WebVisit extends Segment {
   origin: WebOrigin;
+  /**
+   * False when the length is how long the page stayed open, not how long it was in front (history
+   * rows Chrome did not measure, `data.foreground = false`). Such a visit only counts while a
+   * browser is in front on the Mac.
+   */
+  measured: boolean;
 }
 
 export interface Timeline {
@@ -88,6 +95,8 @@ export function parseAppUsage(events: Event[]): Segment[] {
     const start = at(e.start_at);
     const end = at(e.end_at);
     if (!(end > start)) continue;
+    // The iPhone collector also reads the Apple Watch. A glance at the watch is not phone use.
+    if (e.data.device === "watch") continue;
     const device: PatternDevice = e.source === "iphone_usage" ? "iphone" : "mac";
     const opened = str(e.data.opened_from);
     out.push({
@@ -119,12 +128,6 @@ export function parseWebVisits(events: Event[]): WebVisit[] {
     const seconds = num(e.data.seconds);
     const end = e.end_at ? at(e.end_at) : seconds !== null ? start + Math.round(seconds) * SECOND : start;
     if (!(end > start)) continue;
-    let category = categoriseHost(host);
-    if (category === "other") {
-      // The collector may carry Chrome's own category. Trust it only if it is one of ours.
-      const given = AppCategory.safeParse(e.data.category);
-      if (given.success) category = given.data;
-    }
     out.push({
       start,
       end,
@@ -132,11 +135,13 @@ export function parseWebVisits(events: Event[]): WebVisit[] {
       kind: "site",
       key: host,
       name: host,
-      category,
+      // The shared host list first, then the label the collector sent, else "other".
+      category: categoriseVisit(host, e.data.category),
       appKey: BROWSER_APP_KEY,
       eventId: e.id,
       openedFrom: null,
       origin: e.data.origin === "extension" ? "extension" : "history",
+      measured: e.data.foreground !== false,
     });
   }
   return out;
@@ -243,11 +248,24 @@ export function buildTimeline(events: Event[], from: number, to: number): Timeli
 
   const allVisits = clip(parseWebVisits(events), from, to);
   const { kept, superseded } = preferExtension(allVisits);
-  const visits = cut(kept, off);
+  // A page that was only "open" may have sat in a background tab for an hour. It is believed
+  // only while a browser is in front, and loses to any visit whose time in front was measured.
+  const browserInFront = union(macApps.filter((s) => s.appKey === BROWSER_APP_KEY));
+  const visits = cut(kept, off).flatMap((v) => {
+    if (v.measured) return [v];
+    const pieces: WebVisit[] = [];
+    for (const b of browserInFront) {
+      const start = Math.max(v.start, b.start);
+      const end = Math.min(v.end, b.end);
+      if (end > start) pieces.push({ ...v, start, end });
+    }
+    return pieces;
+  });
+  const visitPrio = (v: WebVisit) => (v.origin === "extension" ? 3 : v.measured ? 2 : 1);
 
   const mac = flatten<Segment>([
-    ...macApps.map((seg) => ({ seg, prio: seg.appKey === BROWSER_APP_KEY ? 0 : 3 })),
-    ...visits.map((seg) => ({ seg: seg as Segment, prio: seg.origin === "extension" ? 2 : 1 })),
+    ...macApps.map((seg) => ({ seg, prio: seg.appKey === BROWSER_APP_KEY ? 0 : 4 })),
+    ...visits.map((seg) => ({ seg: seg as Segment, prio: visitPrio(seg) })),
   ]);
   const iphone = flatten<Segment>(phoneApps.map((seg) => ({ seg, prio: 0 })));
   const attention = flatten<Segment>([

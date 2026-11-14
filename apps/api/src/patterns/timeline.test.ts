@@ -125,3 +125,54 @@ test("events without a bundle id, an end or a positive length are skipped", () =
   const tl = range([broken, noBundle]);
   assert.equal(tl.mac.length, 0);
 });
+
+test("a history visit that was only open counts only while a browser is in front", () => {
+  // Chrome did not measure this page in front: it "stayed open" from 09:00 to 11:00.
+  const stale = web("news.example", T("2026-11-10 09:00"), T("2026-11-10 11:00"), "history", {
+    foreground: false,
+    category: "news",
+  });
+  const tl = range([
+    stale,
+    mac(APPS.browser, T("2026-11-10 09:00"), T("2026-11-10 09:10")),
+    mac(APPS.editor, T("2026-11-10 09:10"), T("2026-11-10 10:00")),
+    mac(APPS.browser, T("2026-11-10 10:00"), T("2026-11-10 10:10")),
+    // A measured visit in the second browser stay wins over the stale tab.
+    web("github.com", T("2026-11-10 10:02"), T("2026-11-10 10:06"), "history", { foreground: true }),
+  ]);
+  assert.deepEqual(shape(tl.mac), [
+    "news.example 10",
+    "VS Code 50",
+    "news.example 2",
+    "github.com 4",
+    "news.example 4",
+  ]);
+  assert.equal(minutes(tl.mac), 70); // not 120
+
+  // With no Mac data at all there is no browser in front, so the stale tab counts for nothing.
+  assert.equal(range([stale]).mac.length, 0);
+});
+
+test("the label a collector sends is used when the host is not on the shared list", () => {
+  const tl = range([
+    web("flights.example", T("2026-11-10 09:00"), T("2026-11-10 09:05"), "extension", { category: "travel" }),
+    web("chat.example", T("2026-11-10 09:05"), T("2026-11-10 09:10"), "extension", { category: "messaging" }),
+    web("code.example", T("2026-11-10 09:10"), T("2026-11-10 09:15"), "extension", { category: "dev" }),
+    web("bank.example", T("2026-11-10 09:15"), T("2026-11-10 09:20"), "extension", { category: "finance" }),
+    web("odd.example", T("2026-11-10 09:20"), T("2026-11-10 09:25"), "extension", { category: "made up" }),
+    // The shared list wins over the label when it knows the host.
+    web("youtube.com", T("2026-11-10 09:25"), T("2026-11-10 09:30"), "extension", { category: "dev" }),
+  ]);
+  assert.deepEqual(
+    tl.mac.map((s) => s.category),
+    ["travel", "communication", "work", "other", "other", "video"],
+  );
+});
+
+test("Apple Watch intervals from the iPhone collector are not phone use", () => {
+  const watch = phone(APPS.chat, T("2026-11-10 09:00"), T("2026-11-10 09:01"));
+  watch.data.device = "watch";
+  const tl = range([watch, phone(APPS.chat, T("2026-11-10 10:00"), T("2026-11-10 10:01"))]);
+  assert.equal(tl.iphone.length, 1);
+  assert.equal(tl.counts.iphoneAppUsage, 1);
+});
