@@ -80,6 +80,24 @@ test("Timeline shows today's blocks", async ({ page }) => {
   await expect(page.locator('[title*=" to "]').first()).toBeVisible();
 });
 
+test("a night from the watch opens its stages", async ({ page }) => {
+  // The latest night in the demo week belongs to the day it ended on (the night rule, lib/health.ts).
+  const to = new Date();
+  const from = new Date(to.getTime() - 7 * 86_400_000);
+  const { events } = await apiGet<{ events: { end_at: string | null }[] }>(
+    `/v1/timeline?from=${from.toISOString()}&to=${to.toISOString()}&type=sleep`,
+  );
+  const last = events.filter((e) => e.end_at).at(-1);
+  test.skip(!last, "no night in the demo week yet");
+  const day = new Date(last?.end_at as string).toLocaleDateString("en-CA", { timeZone: "Europe/Athens" });
+  await enterDemo(page);
+  await page.goto(`/timeline?day=${day}`);
+  await tap(page.locator('[data-sleep-band="last-night"]'));
+  await expect(page.getByText("Last night, from the watch")).toBeVisible();
+  await expect(page.getByRole("img", { name: /^Awake .*Deep/ })).toBeVisible();
+  await expect(page.getByText("Bedtime")).toBeVisible();
+});
+
 test("Goals shows the demo goals", async ({ page }) => {
   await enterDemo(page);
   await page.goto("/goals");
