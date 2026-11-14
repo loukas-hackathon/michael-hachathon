@@ -98,14 +98,36 @@ It never records incognito windows, banking, health, adult or password manager s
 on your own list, and one switch takes it off the record. Rules and permissions:
 [`apps/extension/README.md`](apps/extension/README.md).
 
-## Live
+## Live services (everything deploys from `main`)
 
-- Web: https://michael-zeta-sand.vercel.app
-- API: https://api-production-16521a26.up.railway.app (`/health`, MCP at `/mcp`)
-- Database: Supabase project `michael`, EU (Frankfurt)
+| What                           | URL                                                                             | Dashboard                                                        |
+| ------------------------------ | ------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| Web app (Vercel)               | https://michael-zeta-sand.vercel.app                                            | https://vercel.com/loukas-hackathon/michael                      |
+| API (Railway)                  | https://api-production-16521a26.up.railway.app                                  | https://railway.com/project/85b0188b-6790-41ef-8529-3f669c8f7955 |
+| Health check                   | https://api-production-16521a26.up.railway.app/health (`commit` = deployed SHA) |                                                                  |
+| MCP server                     | https://api-production-16521a26.up.railway.app/mcp                              |                                                                  |
+| Database (Supabase, Frankfurt) | project `michael`, ref `kpcoadbgevifyvvlhdbt`                                   | https://supabase.com/dashboard/project/kpcoadbgevifyvvlhdbt      |
+| Repo and automation            | https://github.com/loukas-hackathon/michael-hachathon                           | https://github.com/loukas-hackathon/michael-hachathon/actions    |
 
-Merging to `main` deploys everything: Railway rebuilds the API, Vercel rebuilds the web app, and
-the `Migrate database` GitHub Action applies new files in `supabase/migrations/`.
+What happens on merge, with no human involved:
+
+| Trigger                                       | Automation                                                    |
+| --------------------------------------------- | ------------------------------------------------------------- |
+| PR opened, CI green, no conflicts             | `Auto-merge` action squash-merges it                          |
+| API, `packages/shared` or root config changed | `Deploy API` action deploys to Railway, then checks `/health` |
+| new file in `supabase/migrations/`            | `Migrate database` action applies it to production            |
+| anything                                      | Vercel rebuilds the web app (PRs get preview URLs)            |
+
+Where configuration lives (values are never committed):
+
+| Place                                        | Keys                                                                                                                 |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Railway, service `api`                       | `NODE_ENV`, `API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `WEB_ORIGIN`, `PUBLIC_API_URL`, `GEMINI_API_KEY` |
+| Vercel, project `michael`                    | `API_URL`, `API_KEY`, `USE_MOCKS=false`                                                                              |
+| GitHub repo secrets                          | `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`, `RAILWAY_TOKEN`; variable `SUPABASE_PROJECT_REF`                    |
+| Local `apps/api/.env`, `apps/web/.env.local` | copies for local runs (`pnpm env:copy` in worktrees)                                                                 |
+
+The production API key and access notes for the team are on the Build Hub (link in `CLAUDE.local.md`).
 
 ## Deploy (from scratch)
 
