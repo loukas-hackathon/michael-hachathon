@@ -39,6 +39,7 @@ export const app = new Hono()
       version: VERSION,
       time: new Date().toISOString(),
       storage: store.kind,
+      commit: process.env.RAILWAY_GIT_COMMIT_SHA?.slice(0, 7) ?? null,
     };
     return c.json(body);
   })
