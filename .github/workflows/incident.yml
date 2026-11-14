@@ -1,0 +1,32 @@
+# Opens (or updates) an `incident` issue whenever a deploy or migration fails on main, so every
+# agent sees it at the top of its session catch-up and fixes it before anything else.
+name: Incident
+on:
+  workflow_run:
+    workflows: ["Deploy API", "Migrate database"]
+    types: [completed]
+permissions:
+  issues: write
+  actions: read
+jobs:
+  report:
+    if: github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      NAME: ${{ github.event.workflow_run.name }}
+      URL: ${{ github.event.workflow_run.html_url }}
+      SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - run: |
+          title="Incident: $NAME failed on main"
+          body="$NAME failed for ${SHA:0:7}: $URL
+
+          Whoever sees this first: read \`gh run view --log-failed\`, fix forward in a PR, verify production, then add the prevention (test, check or rule) so it cannot happen again, and close this issue with a one line cause."
+          existing=$(gh issue list -R "$REPO" --label incident --state open --search "in:title \"$title\"" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" -R "$REPO" --body "Failed again: $URL (${SHA:0:7})"
+          else
+            gh issue create -R "$REPO" --title "$title" --label incident --body "$body"
+          fi
