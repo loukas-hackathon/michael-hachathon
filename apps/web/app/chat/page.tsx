@@ -14,6 +14,8 @@ export default async function ChatPage() {
   await connection();
   // History is a nicety: if it cannot load, the chat still opens and sending explains what is wrong.
   const voice = getVoiceEnabled();
+  // The score starts with the history instead of after it; it is only read for an empty chat.
+  const scoreLoad = getScore().catch(() => null);
   let history: ChatHistory = { messages: [], actions: [] };
   try {
     history = await getChatHistory();
@@ -22,7 +24,7 @@ export default async function ChatPage() {
   }
   // Starters come from the real day, and only matter before the first line.
   let score: Score | null = null;
-  if (history.messages.length === 0) score = await getScore().catch(() => null);
+  if (history.messages.length === 0) score = await scoreLoad;
   const elevenlabs = await voice;
 
   return (
