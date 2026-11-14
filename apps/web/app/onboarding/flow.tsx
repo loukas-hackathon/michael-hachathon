@@ -1,19 +1,25 @@
 "use client";
 
-import type { GoalCategory, Profile, WeakSpot, Weekday } from "@michael/shared";
+import { GoalCategory, type Profile, type WeakSpot, type Weekday } from "@michael/shared";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { MiMark } from "@/components/brand";
 import { hm } from "@/lib/format";
+import { type Instruction, instructionText } from "@/lib/instructions";
 import { finishOnboarding, skipOnboarding } from "./actions";
 
 // ---------- the questions' options ----------
 
+// Starter goals in the three areas (Business, Health, Personal; Manolis, #131). Keyed by their own
+// id: Training and Sleep are both Health. Sleep stays outside the score.
+export type StarterId = "company" | "training" | "sleep" | "personal";
+
 type GoalOption = {
-  category: GoalCategory;
+  id: StarterId;
+  area: "Business" | "Health" | "Personal";
   name: string;
   what: string;
-  // Rest is asked per night, the others per week. All stored as minutes per week.
+  // Sleep is asked per night, the others per week. All stored as minutes per week.
   unit: "week" | "night";
   min: number;
   max: number;
@@ -23,9 +29,10 @@ type GoalOption = {
 
 const GOALS: GoalOption[] = [
   {
-    category: "work",
-    name: "Deep work",
-    what: "Focus blocks with no meetings and no phone",
+    id: "company",
+    area: "Business",
+    name: "The company",
+    what: "The work that moves it: building, selling, calls",
     unit: "week",
     min: 60,
     max: 50 * 60,
@@ -33,7 +40,8 @@ const GOALS: GoalOption[] = [
     initial: 20 * 60,
   },
   {
-    category: "gym",
+    id: "training",
+    area: "Health",
     name: "Training",
     what: "Gym, runs, swims, anything that counts",
     unit: "week",
@@ -43,7 +51,8 @@ const GOALS: GoalOption[] = [
     initial: 4 * 60,
   },
   {
-    category: "rest",
+    id: "sleep",
+    area: "Health",
     name: "Sleep",
     what: "Enough of it, at a sensible hour",
     unit: "night",
@@ -53,16 +62,37 @@ const GOALS: GoalOption[] = [
     initial: 7.5 * 60,
   },
   {
-    category: "food",
-    name: "Proper meals",
-    what: "Sit down meals, away from the screen",
+    id: "personal",
+    area: "Personal",
+    name: "Time for yourself",
+    what: "Family, friends, a night out",
     unit: "week",
-    min: 60,
-    max: 21 * 60,
+    min: 30,
+    max: 20 * 60,
     step: 30,
-    initial: 5 * 60,
+    initial: 3 * 60,
   },
 ];
+
+// Personal goals need the new categories (#131). Until they land, the option is shown, not saved.
+const PERSONAL_READY = (GoalCategory.options as readonly string[]).includes("personal");
+
+/** Which starter an existing goal came from, for Redo setup. */
+export function starterOf(category: GoalCategory | string): StarterId | null {
+  if (category === "work" || category === "business") return "company";
+  if (category === "gym" || category === "health") return "training";
+  if (category === "rest") return "sleep";
+  if (category === "personal") return "personal";
+  return null;
+}
+
+// One tap standing instructions (rules Michael plans around), plus the user's own words.
+const RULES: Pick<Instruction, "kind" | "days" | "time" | "text">[] = [
+  { kind: "clear_day", days: [0], text: "" },
+  { kind: "clear_day", days: [6], text: "" },
+  { kind: "home_by", days: [1, 2, 3, 4, 5], time: "19:00", text: "" },
+  { kind: "home_by", days: [1, 2, 3, 4, 5], time: "21:00", text: "" },
+].map((r) => ({ ...r, text: instructionText(r) }));
 
 const DAYS: { id: Weekday; short: string; name: string }[] = [
   { id: "mon", short: "M", name: "Monday" },
@@ -104,8 +134,8 @@ const TIMES = Array.from(
   (_, i) => `${String(Math.floor(i / 2)).padStart(2, "0")}:${i % 2 ? "30" : "00"}`,
 );
 
-const STEPS = 6;
-const SAVE_STEP = 3; // answers are saved when leaving quiet hours, before any link can leave the page
+const STEPS = 7;
+const SAVE_STEP = 4; // answers are saved when leaving the house rules, before any link can leave the page
 
 // ---------- small parts ----------
 
@@ -306,6 +336,8 @@ const Separator = () => <span className="absolute inset-x-0 top-0 ml-4 h-[0.5px]
 export type Saved = {
   goals: { category: GoalCategory; weekly_minutes: number }[];
   profile: Profile | null;
+  /** Standing instructions already set, by their text. */
+  rules?: string[];
 };
 
 /** Back from Google: open on the closing screen, and say whether the calendar connected. */
@@ -315,18 +347,23 @@ export function OnboardingFlow({ saved, resume }: { saved?: Saved; resume?: Resu
   const router = useRouter();
   const p = saved?.profile ?? null;
   const [step, setStep] = useState(resume ? STEPS - 1 : 0);
-  const [picked, setPicked] = useState<GoalCategory[]>(() =>
-    GOALS.map((g) => g.category).filter((c) => saved?.goals.some((x) => x.category === c)),
+  const [picked, setPicked] = useState<StarterId[]>(() =>
+    GOALS.map((g) => g.id).filter((id) => saved?.goals.some((x) => starterOf(x.category) === id)),
   );
-  const [minutes, setMinutes] = useState<Record<GoalCategory, number>>(() => {
-    const m = Object.fromEntries(GOALS.map((g) => [g.category, g.initial])) as Record<GoalCategory, number>;
+  const [minutes, setMinutes] = useState<Record<StarterId, number>>(() => {
+    const m = Object.fromEntries(GOALS.map((g) => [g.id, g.initial])) as Record<StarterId, number>;
     for (const g of saved?.goals ?? []) {
-      const opt = GOALS.find((x) => x.category === g.category) as GoalOption;
-      const v = g.category === "rest" ? g.weekly_minutes / 7 : g.weekly_minutes;
-      m[g.category] = Math.min(opt.max, Math.max(opt.min, Math.round(v / opt.step) * opt.step));
+      const id = starterOf(g.category);
+      const opt = GOALS.find((x) => x.id === id);
+      if (!id || !opt) continue;
+      const v = id === "sleep" ? g.weekly_minutes / 7 : g.weekly_minutes;
+      m[id] = Math.min(opt.max, Math.max(opt.min, Math.round(v / opt.step) * opt.step));
     }
     return m;
   });
+  const [ownGoal, setOwnGoal] = useState("");
+  const [rules, setRules] = useState<string[]>(saved?.rules ?? []);
+  const [ownRule, setOwnRule] = useState("");
   const [workStart, setWorkStart] = useState(p?.work_hours.start ?? "09:00");
   const [workEnd, setWorkEnd] = useState(p?.work_hours.end ?? "18:00");
   const [workDays, setWorkDays] = useState<Weekday[]>(p?.work_days ?? ["mon", "tue", "wed", "thu", "fri"]);
@@ -369,16 +406,23 @@ export function OnboardingFlow({ saved, resume }: { saved?: Saved; resume?: Resu
     setStep(to);
   };
 
-  const hasGym = picked.includes("gym");
+  const hasGym = picked.includes("training");
 
   async function save() {
     setBusy(true);
     setFailed(false);
     const res = await finishOnboarding({
-      goals: GOALS.filter((g) => picked.includes(g.category)).map((g) => ({
-        category: g.category,
-        weekly_minutes: g.unit === "night" ? minutes[g.category] * 7 : minutes[g.category],
-      })),
+      goals: [
+        ...GOALS.filter((g) => picked.includes(g.id) && (g.id !== "personal" || PERSONAL_READY)).map((g) => ({
+          key: g.id,
+          weekly_minutes: g.unit === "night" ? minutes[g.id] * 7 : minutes[g.id],
+        })),
+        ...(ownGoal.trim() ? [{ key: "own" as const, title: ownGoal.trim(), weekly_minutes: 5 * 60 }] : []),
+      ],
+      rules: [
+        ...RULES.filter((r) => rules.includes(r.text)),
+        ...(ownRule.trim() ? [{ kind: "custom" as const, text: ownRule.trim() }] : []),
+      ],
       profile: {
         work_hours: { start: workStart, end: workEnd },
         work_days: workDays,
@@ -408,50 +452,74 @@ export function OnboardingFlow({ saved, resume }: { saved?: Saved; resume?: Resu
 
   // ---------- each screen: the question, the line under it, the controls ----------
 
-  const weekly = GOALS.filter((g) => picked.includes(g.category) && g.unit === "week")
-    .map((g) => `${hm(minutes[g.category])} of ${g.name.toLowerCase()}`)
+  const weekly = GOALS.filter((g) => picked.includes(g.id) && g.unit === "week")
+    .map((g) => `${hm(minutes[g.id])} for ${g.id === "company" ? "the company" : g.name.toLowerCase()}`)
     .join(", ")
     .replace(/, ([^,]*)$/, " and $1");
-  const sleep = picked.includes("rest") ? hm(minutes.rest) : null;
+  const sleep = picked.includes("sleep") ? hm(minutes.sleep) : null;
 
   const screens: { q: string; line: ReactNode; body?: ReactNode; cta: string; ready?: boolean }[] = [
     {
-      q: "What are we playing for?",
-      line: "Tap the goals that matter. I guard their time every week.",
-      cta: picked.length === 0 ? "Pick at least one" : "Next",
-      ready: picked.length > 0,
+      // Voice sheet, onboarding 1, as written.
+      q: "What are you working towards?",
+      line: "I'm Michael. I learn how your days really go, then I give you time back for what you want. Your own words.",
+      cta: picked.length === 0 && !ownGoal.trim() ? "Pick at least one" : "Next",
+      ready: picked.length > 0 || ownGoal.trim().length > 0,
       body: (
-        <ul className="overflow-hidden rounded-group bg-fill">
-          {GOALS.map((g, i) => {
-            const on = picked.includes(g.category);
-            return (
-              <li key={g.category} className="relative">
-                {i > 0 ? <Separator /> : null}
-                <button
-                  type="button"
-                  aria-pressed={on}
-                  onClick={() =>
-                    setPicked((p) => (on ? p.filter((c) => c !== g.category) : [...p, g.category]))
-                  }
-                  className="press flex min-h-14 w-full items-center gap-3 px-4 py-3 text-left"
-                >
-                  <Check on={on} />
-                  <span className="flex flex-col">
-                    <span className="text-body font-semibold">{g.name}</span>
-                    <span className="text-footnote text-label-2">{g.what}</span>
-                  </span>
-                </button>
-                {on ? (
-                  <Stepper
-                    option={g}
-                    value={minutes[g.category]}
-                    onChange={(v) => setMinutes((m) => ({ ...m, [g.category]: v }))}
-                  />
-                ) : null}
-              </li>
-            );
-          })}
-        </ul>
+        <div className="flex flex-col gap-2">
+          <ul className="overflow-hidden rounded-group bg-fill">
+            {GOALS.map((g, i) => {
+              const on = picked.includes(g.id);
+              const locked = g.id === "personal" && !PERSONAL_READY;
+              return (
+                <li key={g.id} className="relative">
+                  {i > 0 ? <Separator /> : null}
+                  <button
+                    type="button"
+                    aria-pressed={on}
+                    disabled={locked}
+                    onClick={() => setPicked((p) => (on ? p.filter((c) => c !== g.id) : [...p, g.id]))}
+                    className={`press flex min-h-14 w-full items-center gap-3 px-4 py-3 text-left ${locked ? "opacity-50" : ""}`}
+                  >
+                    <Check on={on} />
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="text-body font-semibold">{g.name}</span>
+                      <span className="text-footnote text-label-2">
+                        {locked ? "Switches on later tonight" : g.what}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-footnote text-label-2">{g.area}</span>
+                  </button>
+                  {on ? (
+                    <Stepper
+                      option={g}
+                      value={minutes[g.id]}
+                      onChange={(v) => setMinutes((m) => ({ ...m, [g.id]: v }))}
+                    />
+                  ) : null}
+                </li>
+              );
+            })}
+            <li className="relative">
+              <Separator />
+              <label htmlFor="own-goal" className="sr-only">
+                Something else, in your own words
+              </label>
+              <input
+                id="own-goal"
+                value={ownGoal}
+                onChange={(e) => setOwnGoal(e.target.value)}
+                maxLength={60}
+                autoComplete="off"
+                placeholder="Something else, in your own words"
+                className="min-h-14 w-full bg-transparent px-4 text-body text-label outline-none placeholder:text-label-2"
+              />
+            </li>
+          </ul>
+          {ownGoal.trim() ? (
+            <p className="px-4 text-footnote text-label-2">5h a week to start, under Business. Change it on Goals.</p>
+          ) : null}
+        </div>
       ),
     },
     {
@@ -493,11 +561,49 @@ export function OnboardingFlow({ saved, resume }: { saved?: Saved; resume?: Resu
     {
       q: "When should I stay quiet?",
       line: "No nudges in these hours. Not even a buzz.",
-      cta: busy ? "Saving" : "Next",
+      cta: "Next",
       body: (
         <div className="flex items-end gap-3">
           <TimeSelect label="Quiet from" value={quietStart} onChange={setQuietStart} />
           <TimeSelect label="Until" value={quietEnd} onChange={setQuietEnd} />
+        </div>
+      ),
+    },
+    {
+      // Copy pending Brand's check (#168 comment): the step for standing instructions.
+      q: "What should I never plan over?",
+      line: "House rules. I plan around them every day, and tell you when a block breaks one.",
+      cta: busy ? "Saving" : rules.length === 0 && !ownRule.trim() ? "None for now" : "Next",
+      body: (
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-wrap gap-2">
+            {RULES.map((r) => {
+              const on = rules.includes(r.text);
+              return (
+                <Chip
+                  key={r.text}
+                  on={on}
+                  onClick={() => setRules((x) => (on ? x.filter((t) => t !== r.text) : [...x, r.text]))}
+                >
+                  {r.text}
+                </Chip>
+              );
+            })}
+          </div>
+          <div className="overflow-hidden rounded-group bg-fill">
+            <label htmlFor="own-rule" className="sr-only">
+              A rule in your own words
+            </label>
+            <input
+              id="own-rule"
+              value={ownRule}
+              onChange={(e) => setOwnRule(e.target.value)}
+              maxLength={140}
+              autoComplete="off"
+              placeholder="Something else, in your own words"
+              className="min-h-14 w-full bg-transparent px-4 text-body text-label outline-none placeholder:text-label-2"
+            />
+          </div>
         </div>
       ),
     },
