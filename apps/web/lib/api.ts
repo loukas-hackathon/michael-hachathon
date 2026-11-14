@@ -28,8 +28,15 @@ import { categoryOf } from "./categories";
 import type { DayView } from "./day";
 import type { GoalsView } from "./goals-view";
 import type { Instruction, InstructionInput } from "./instructions";
-import { sampleDay, sampleEarly, sampleEmpty, sampleEvening, sampleMorning } from "./sample/day";
-import { sampleGoals, sampleGoalsEmpty } from "./sample/goals";
+import {
+  sampleDay,
+  sampleEarly,
+  sampleEmpty,
+  sampleEvening,
+  sampleMissed,
+  sampleMorning,
+} from "./sample/day";
+import { sampleGoals, sampleGoalsBaseline, sampleGoalsEmpty, sampleGoalsMonday } from "./sample/goals";
 import { dayFromScore, goalsFromScore, leadFromPatterns } from "./score-map";
 import { authEnabled, DEMO_COOKIE, supabaseServer } from "./supabase/server";
 
@@ -259,6 +266,7 @@ const SAMPLE_DAYS: Record<string, DayView> = {
   early: sampleEarly,
   evening: sampleEvening,
   empty: sampleEmpty,
+  missed: sampleMissed,
 };
 
 const athensDay = (d = new Date()) =>
@@ -294,6 +302,8 @@ export async function getToday(variant?: string): Promise<DayView> {
 export async function getGoalsWeek(variant?: string): Promise<GoalsView> {
   if (variant === "error") throw new Error("Preview of the error state");
   if (variant === "empty") return sampleGoalsEmpty;
+  if (variant === "monday") return sampleGoalsMonday;
+  if (variant === "baseline") return sampleGoalsBaseline;
   if (variant === "sample") return sampleGoals;
   if (USE_MOCKS) return sampleWeekFromStore();
   return goalsFromScore(await getScore());
@@ -312,6 +322,8 @@ function sampleWeekFromStore(): GoalsView {
         budgetMinutes: g.weekly_budget_minutes ?? 0,
         spentMinutes: known?.spentMinutes ?? 0,
         unverifiedMinutes: known?.unverifiedMinutes ?? 0,
+        plannedMinutes: known?.plannedMinutes,
+        openBlocks: known?.openBlocks,
         daily: known?.daily ?? [0, 0, 0, null, null, null, null],
       };
     });
