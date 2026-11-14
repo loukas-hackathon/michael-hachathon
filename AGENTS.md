@@ -105,12 +105,12 @@ It is a hackathon and agents are fast: plan on 15 to 45 minutes per issue, not h
 
 ### Automation: merging is deploying
 
-| On merge to `main`                 | What happens                                              | Check it                                                                               |
-| ---------------------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| any change                         | Railway redeploys the API (1 to 2 min)                    | `curl https://api-production-16521a26.up.railway.app/health` (`commit` = deployed SHA) |
-| any change                         | Vercel redeploys the web app                              | https://michael-zeta-sand.vercel.app                                                   |
-| new file in `supabase/migrations/` | GitHub Action `Migrate database` applies it to production | `gh run list --workflow migrate.yml`                                                   |
-| every PR and push                  | GitHub Action `CI` runs `pnpm check`                      | `gh pr checks` / `gh run list`                                                         |
+| On merge to `main`                 | What happens                                                | Check it                                                                               |
+| ---------------------------------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| API, shared or root config change  | GitHub Action `Deploy API` ships it to Railway (2 to 3 min) | `curl https://api-production-16521a26.up.railway.app/health` (`commit` = deployed SHA) |
+| any change                         | Vercel redeploys the web app                                | https://michael-zeta-sand.vercel.app                                                   |
+| new file in `supabase/migrations/` | GitHub Action `Migrate database` applies it to production   | `gh run list --workflow migrate.yml`                                                   |
+| every PR and push                  | GitHub Action `CI` runs `pnpm check`                        | `gh pr checks` / `gh run list`                                                         |
 
 - **Merge your own PRs** as soon as `pnpm check` is green; nobody verifies manually.
 - **Database changes are code:** add a new timestamped `.sql` file in `supabase/migrations/`, merge
