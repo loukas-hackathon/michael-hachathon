@@ -15,10 +15,17 @@ By default it posts to `http://localhost:8787` with the key `dev-key`. Point it 
 `MICHAEL_API_URL` and `MICHAEL_API_KEY`. Positions are kept in `~/.michael/collector-state.json`,
 so a restart continues where it stopped, and running a backfill twice never duplicates events.
 
-| Source      | What it reads                                                                          | Needs                                                            |
-| ----------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| `mac-usage` | Which app was in front and when, notifications, screen on and off (about 4 weeks back) | Full Disk Access for the terminal or app that runs the collector |
-| `chrome`    | Sites visited in Chrome, time on each, and what was searched for (months back)         | Nothing: Chrome's history file is readable without a permission  |
+| Source         | What it reads                                                                          | Needs                                                            |
+| -------------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `mac-usage`    | Which app was in front and when, notifications, screen on and off (about 4 weeks back) | Full Disk Access for the terminal or app that runs the collector |
+| `iphone-usage` | iPhone and Apple Watch app usage synced by Screen Time, about a day behind the phone   | Full Disk Access, and Share Across Devices on in Screen Time     |
+| `chrome`       | Sites visited in Chrome, time on each, and what was searched for (months back)         | Nothing: Chrome's history file is readable without a permission  |
+
+`iphone-usage` needs "Share Across Devices" on in Screen Time on both the iPhone and the Mac. It
+gives which app was in front, for how long and where it was opened from, about 4 weeks back. The
+data reaches the Mac roughly once a day, so it is history for patterns, not a live feed. Each pass
+re-reads the last three days in case the sync delivers late. Home screen folders, Control Centre,
+the lock screen and other system surfaces are not counted as apps.
 
 These files are private to macOS and can change between versions. They are the fast route for the
 hackathon. The product replaces them with our own menu bar app, browser extension and phone app,
