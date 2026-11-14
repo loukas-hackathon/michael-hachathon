@@ -181,7 +181,8 @@ export function toCard(rec: Recommendation, goals: Goal[], now: Date): RecCard {
 
 /**
  * What the panel shows: open suggestions whose time is still ahead, and done ones that can still
- * be undone. Executable first, then newest. At most `limit`.
+ * be undone. Executable first, then newest. At most `limit`. Something the user asked for (in chat
+ * or through Claude) and then undid is gone: offering it back as "Do it" would read as Michael's idea.
  */
 export function openRecommendations(recs: Recommendation[], now: Date, limit = 3): Recommendation[] {
   const ahead = (iso: string | null) => iso === null || Date.parse(iso) > now.getTime();
@@ -189,6 +190,7 @@ export function openRecommendations(recs: Recommendation[], now: Date, limit = 3
     .filter((r) => {
       if (r.status === "done") return ahead(undoDeadline(r));
       if (r.status === "dismissed") return false;
+      if (r.status === "undone" && r.source === "chat") return false;
       const t = actionTimes(r);
       return ahead((isGuard(r) ? t.end : t.start) ?? r.action?.undo_until ?? null);
     })

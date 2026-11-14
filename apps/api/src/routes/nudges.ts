@@ -10,12 +10,12 @@ import { HttpError, parse } from "../http";
 import { momentNudge } from "../moments/nudge";
 import { nudgePayload, primaryChannel } from "../nudges/channels";
 import {
-  candidates,
   decide,
   type EngineInput,
   engineWindow,
   momentDue,
   quietFromProfile,
+  testCandidate,
 } from "../nudges/engine";
 import { pushToCurrentUser } from "../nudges/push";
 import { telegramToCurrentUser } from "../nudges/telegram";
@@ -113,7 +113,7 @@ export async function testNudge(): Promise<NudgeTestResult> {
     store.listGoals(),
     readProfile().catch(() => null),
   ]);
-  const pick = candidates({ now, goals, events, today: [], quiet: quietFrom(profile) })[0] ?? SAMPLE_NUDGE;
+  const pick = testCandidate({ now, goals, events, today: [], quiet: quietFrom(profile) }) ?? SAMPLE_NUDGE;
   // Stored first, so the screen can show it as the watch buzzes. A unique key per press keeps
   // the daily dedupe out of the way.
   const nudge = await store.createNudge({

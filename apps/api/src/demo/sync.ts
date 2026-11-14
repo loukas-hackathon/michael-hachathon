@@ -2,12 +2,13 @@ import type { DemoSeedResult, Source } from "@michael/shared";
 import { currentUserId } from "../context";
 import { env } from "../env";
 import { HttpError } from "../http";
+import { refusalFor } from "../instructions/guard";
 import { Zone } from "../patterns/time";
 import { goalForEvent } from "../score/match";
 import type { Store } from "../store";
-import { DEMO_TZ, localDate } from "./time";
+import { at, DEMO_TZ, iso, localDate } from "./time";
 import { DEMO_PLACES, demoTravel } from "./travel";
-import { buildDemoWeek, DEMO_PREFIX, type DemoWeek, demoGoals } from "./week";
+import { buildDemoWeek, calendar, DEMO_PREFIX, type DemoWeek, demoGoals } from "./week";
 
 // How long a demo visitor's chat lives: the life of the visitor cookie.
 const VISITOR_CHAT_MS = 24 * 60 * 60_000;
@@ -48,8 +49,68 @@ export async function seedDemoWeek(
 
   const events = await store.syncSeededEvents(DEMO_PREFIX, sources, week.events);
   const goals = await store.seedGoals(demoGoals, { overwrite: opts.overwriteGoals });
-  if (!rules.offTheRecord) await seedDemoTravel(store, week, opts.now ?? new Date());
+  if (!rules.offTheRecord) {
+    await seedDemoTravel(store, week, opts.now ?? new Date());
+    await seedDemoFocus(store, opts.now ?? new Date());
+  }
   return { days: week.days, events, goals_written: goals };
+}
+
+// Start times tried for the demo's study block, in order; each block is an hour.
+const FOCUS_STARTS = ["09:30", "11:00", "12:30", "14:00", "15:30", "18:00", "19:00"];
+const FOCUS_MINUTES = 60;
+
+/**
+ * One suggestion Michael can do himself, so Today always has a "Do it" to tap on stage (the pitch
+ * shows Do it, then Undo): an hour of study for University, the goal with fewer hours planned than
+ * its budget, at the next free hour in the coming three days that no event and no house rule covers.
+ * Nothing is added while an open focus block suggestion is still ahead.
+ */
+export async function seedDemoFocus(store: Store, now: Date): Promise<void> {
+  const open = await store.listRecommendations({ status: "proposed" });
+  const ahead = (r: (typeof open)[number]) =>
+    r.action?.kind === "create_focus_block" &&
+    !r.action.involves_others &&
+    Date.parse(r.action.undo_until ?? "") > now.getTime() + 10 * 60_000;
+  if (open.some(ahead)) return;
+
+  const goal = (await store.listGoals()).find((g) => g.title === "University");
+  if (!goal) return;
+  const instructions = await store.listInstructions();
+  const zone = new Zone(DEMO_TZ);
+  const today = localDate(now.getTime());
+  for (const day of [today, zone.nextDay(today), zone.nextDay(zone.nextDay(today))]) {
+    // The week only plans to Sunday, so read the generated calendar of the day itself.
+    const busy = calendar(day).map(
+      (e) => [Date.parse(e.start_at), Date.parse(e.end_at ?? e.start_at)] as const,
+    );
+    for (const hhmm of FOCUS_STARTS) {
+      const start = at(day, hhmm);
+      const end = start + FOCUS_MINUTES * 60_000;
+      if (start < now.getTime() + 20 * 60_000) continue;
+      if (busy.some(([s, e]) => s < end && start < e)) continue;
+      const action = {
+        kind: "create_focus_block" as const,
+        payload: { start_at: iso(start), end_at: iso(end), title: "Study" },
+        involves_others: false,
+        undo_until: iso(start),
+      };
+      const verdict = await refusalFor(action, {
+        instructions,
+        getEvent: (id) => store.getEvent(id),
+        timezone: DEMO_TZ,
+      });
+      if (!verdict.allowed) continue;
+      await store.createRecommendation({
+        goal_id: goal.id,
+        title: `Block ${zone.clock(start)} to ${zone.clock(end)} for University`,
+        rationale:
+          "University has fewer hours planned than its weekly budget. This hour is free on your calendar.",
+        action,
+      });
+      return;
+    }
+  }
 }
 
 /**

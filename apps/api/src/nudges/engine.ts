@@ -3,6 +3,7 @@ import {
   type Event,
   type Goal,
   type GoalCategory,
+  goalKind,
   isSleepGoal,
   type Nudge,
   type NudgeKind,
@@ -302,17 +303,21 @@ function windDown(w: World): Candidate | null {
   };
 }
 
-function goalBehind(w: World): Candidate | null {
-  if (w.minute >= LIMITS.goalBehindLatest) return null;
+/** `anyGap`: any gap at any hour (the stage's test nudge), not only a big one before 19:00. */
+function goalBehind(w: World, anyGap = false): Candidate | null {
+  if (!anyGap && w.minute >= LIMITS.goalBehindLatest) return null;
   const elapsed = Math.min(1, (w.now - w.weekStart) / (7 * DAY));
   let worst: { goal: Goal; spent: number; pace: number; gap: number } | null = null;
   for (const goal of w.goals) {
     const budget = goal.weekly_budget_minutes;
     if (!budget) continue;
+    // A target goal (sleep) sits outside the time score: "book 90 min" means nothing for it.
+    if (anyGap && goalKind(goal) === "target") continue;
     const spent = spentThisWeek(w, goal);
     const pace = budget * elapsed;
     const gap = pace - spent;
-    if (gap < Math.max(LIMITS.goalBehindMinMinutes, budget * LIMITS.goalBehindMinShare)) continue;
+    const min = anyGap ? 15 : Math.max(LIMITS.goalBehindMinMinutes, budget * LIMITS.goalBehindMinShare);
+    if (gap < min) continue;
     if (!worst || gap > worst.gap) worst = { goal, spent, pace, gap };
   }
   if (!worst) return null;
@@ -436,6 +441,18 @@ export function candidates(input: EngineInput): Candidate[] {
     const c = RULES[kind](w);
     return c && isValidCopy(c.text) ? [c] : [];
   });
+}
+
+/**
+ * The line for the stage's test nudge: the best candidate now, else the goal furthest behind its
+ * weekly pace whatever the hour or the size of the gap, so the watch says something real and tied
+ * to a goal. Null when every goal is on pace.
+ */
+export function testCandidate(input: EngineInput): Candidate | null {
+  const best = candidates(input)[0];
+  if (best) return best;
+  const c = goalBehind(world(input), true);
+  return c && isValidCopy(c.text) ? c : null;
 }
 
 /** Why now is quiet, or null. Inside a work block only a drift nudge may speak. */

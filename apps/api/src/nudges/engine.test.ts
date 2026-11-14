@@ -11,6 +11,7 @@ import {
   quietFromProfile,
   quietNow,
   shortDuration,
+  testCandidate,
   wordCount,
 } from "./engine";
 
@@ -113,6 +114,17 @@ test("behind with a block later today: keep it", () => {
   assert.equal(d.action, "send");
   if (d.action !== "send") return;
   assert.equal(d.candidate.text, "Gym 3h 34 behind this week. Keep the 18:00 block.");
+});
+
+test("the stage's test nudge speaks about the goal behind even after 19:00, and stays quiet on pace", () => {
+  const behind = [workout(T("2026-11-09 07:00"), T("2026-11-09 08:00"))];
+  assert.equal(candidates(input("20:30", behind, [GYM])).length, 0);
+  assert.equal(
+    testCandidate(input("20:30", behind, [GYM]))?.text,
+    "Gym 3h 05 behind this week. Book 90 min today.",
+  );
+  const onPace = [workout(T("2026-11-09 07:00"), T("2026-11-09 12:00"))];
+  assert.equal(testCandidate(input("20:30", onPace, [GYM])), null);
 });
 
 test("on pace: nothing to say", () => {

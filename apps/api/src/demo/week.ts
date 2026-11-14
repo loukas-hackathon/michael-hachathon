@@ -173,6 +173,8 @@ interface Block {
 const CALENDAR: Record<number, Block[]> = {
   1: [
     { title: "Weekly sync", from: "09:30", to: "10:00", attendees: 1, location: "Google Meet" },
+    // The pitch is on a Monday: a morning block gives Today a score before the 17:00 class.
+    { title: "Cold Outreach / Sales", from: "10:30", to: "12:00", attendees: 0 },
     { title: "Φροντιστήριο", from: "17:00", to: "19:00", attendees: 0, location: "University", fixed: true },
     { title: "Gym", from: "20:30", to: "22:30", attendees: 0, location: "Gym" },
   ],
@@ -216,7 +218,8 @@ const slug = (s: string) =>
     .replace(/[^\p{L}\p{N}]+/gu, "-")
     .replace(/^-|-$/g, "");
 
-function calendar(date: string): EventRow[] {
+/** The demo calendar of one Athens date (also used to find a free hour beyond this week). */
+export function calendar(date: string): EventRow[] {
   return (CALENDAR[weekday(date)] ?? []).map((b) => ({
     source: "google_calendar",
     type: "calendar_event",
