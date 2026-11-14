@@ -5,9 +5,10 @@ import { LiveRefresh } from "@/components/live-refresh";
 import { ScreenHeader } from "@/components/screen";
 import { Tape, TapeKey } from "@/components/tape";
 import { BriefCard } from "@/components/today/brief-card";
+import { MoreFromMichael } from "@/components/today/fold";
 import { MichaelCard } from "@/components/today/michael-card";
 import { MomentCard } from "@/components/today/moment-card";
-import { RecommendationsPanel } from "@/components/today/recommendations";
+import { RecommendationsPanel, todaySuggestions } from "@/components/today/recommendations";
 import { TravelCard } from "@/components/today/travel-card";
 import { WatchLine } from "@/components/today/watch-line";
 import { getToday, needsOnboarding } from "@/lib/api";
@@ -18,6 +19,11 @@ import { momentKindFor } from "@/lib/moments";
 
 const TITLE: Record<DayView["moment"], string> = { morning: "Morning", today: "Today", evening: "Evening" };
 
+// Today reads in three steps (#208): how am I doing (score, maths, time won back), the one thing to
+// do now (one suggestion with the screen's only filled button), and what Michael just did (his lead
+// and the latest nudge). Everything else folds into "More from Michael" as quiet rows. A new user
+// with nothing on the tape gets the empty state (Get started, #181) as the hero instead of the score.
+
 export default async function TodayPage({ searchParams }: { searchParams: Promise<{ demo?: string }> }) {
   const { demo } = await searchParams;
   if (await needsOnboarding()) redirect("/onboarding");
@@ -26,6 +32,7 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
   const t = totals(day);
   const firstBlock = day.blocks[0];
   const momentKind = momentKindFor(day);
+  const { primary } = await todaySuggestions();
 
   return (
     <main className="screen">
@@ -38,15 +45,19 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
         }
         title={TITLE[day.moment]}
       />
-      <WatchLine demo={demo} />
 
       {day.blocks.length === 0 && day.week.scorePct == null ? (
         <>
           <EmptyState title="Nothing yet.">
             Wear the watch tonight and your first brief arrives in the morning.
           </EmptyState>
-          {momentKind && !day.sample ? <MomentCard kind={momentKind} sample={false} /> : null}
-          <RecommendationsPanel />
+          <RecommendationsPanel slot="primary" />
+          <MoreFromMichael>
+            {momentKind && !day.sample ? <MomentCard kind={momentKind} sample={false} /> : null}
+            <WatchLine demo={demo} />
+            <BriefCard sample={day.sample} />
+            <RecommendationsPanel slot="rest" />
+          </MoreFromMichael>
         </>
       ) : (
         <>
@@ -117,32 +128,35 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
             </p>
           ) : null}
 
-          {momentKind ? <MomentCard kind={momentKind} sample={day.sample} /> : null}
+          <RecommendationsPanel slot="primary" />
 
-          {day.lead ? <MichaelCard lead={day.lead} /> : null}
-
-          {day.travelPlan ? <TravelCard plan={day.travelPlan} /> : null}
-
-          <RecommendationsPanel />
-
-          {day.nudge ? (
-            <section className="mt-6">
-              <h2 className="mb-2 text-title3 font-bold">Latest nudge</h2>
-              <div className="grid grid-cols-[auto_1fr] gap-x-3 rounded-group bg-fill px-4 py-3">
-                <time
-                  className="text-footnote leading-5 font-semibold text-label-2 tnum"
-                  dateTime={day.nudge.at}
-                >
-                  {formatTime(day.nudge.at)}
-                </time>
-                <p className="text-subhead">{day.nudge.text}</p>
-              </div>
+          {day.lead || day.nudge ? (
+            <section aria-label="What I did" className="mt-6">
+              {day.lead ? <MichaelCard lead={day.lead} primary={!primary} /> : null}
+              {day.nudge ? (
+                <div className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 rounded-group bg-fill px-4 py-3">
+                  <p className="col-span-2 mb-0.5 text-footnote font-semibold">Latest nudge</p>
+                  <time
+                    className="text-footnote leading-5 font-semibold text-label-2 tnum"
+                    dateTime={day.nudge.at}
+                  >
+                    {formatTime(day.nudge.at)}
+                  </time>
+                  <p className="text-subhead">{day.nudge.text}</p>
+                </div>
+              ) : null}
             </section>
           ) : null}
+
+          <MoreFromMichael>
+            {momentKind ? <MomentCard kind={momentKind} sample={day.sample} /> : null}
+            <WatchLine demo={demo} />
+            {day.sample && day.travelPlan ? <TravelCard plan={day.travelPlan} /> : null}
+            <BriefCard sample={day.sample} />
+            <RecommendationsPanel slot="rest" />
+          </MoreFromMichael>
         </>
       )}
-
-      <BriefCard sample={day.sample} />
 
       {day.sample ? (
         <p className="mt-8 text-footnote text-label-2">
