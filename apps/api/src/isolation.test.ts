@@ -11,6 +11,7 @@ import { DEMO_VISITOR_HEADER, DEMO_VISITOR_MESSAGE, demoVisitorMay } from "./dem
 import { env } from "./env";
 import { errorResponse, HttpError } from "./http";
 import { createMcpServer } from "./mcp";
+import { remember } from "./memory";
 import { store } from "./store";
 
 // Each account sees only its own data (#197). User A writes through every write route; user B,
@@ -163,6 +164,8 @@ test("A writes through every write route", async () => {
   await ok(await request(asA, "PATCH", `/v1/recommendations/${rec.id}`, { status: "dismissed" }), "dismiss");
   // Chat (the route needs a model, so the line is stored the way the route stores it).
   await runAsUser(A, () => store.addChatMessage("user", `${MARK} chat`), "session");
+  // A memory, as the chat's remember tool keeps it.
+  await runAsUser(A, () => remember(`${MARK} trains before 08:00`, "chat"), "session");
 });
 
 for (const [name, who] of [
@@ -262,6 +265,7 @@ for (const [name, userId] of [
         ["propose_goals", {}],
         ["get_records", {}],
         ["get_check_in", {}],
+        ["get_memories", {}],
       ];
       const { tools } = await client.listTools();
       for (const t of tools.filter((x) => x.annotations?.readOnlyHint)) {

@@ -33,6 +33,17 @@ function Action({ action, style }: { action: ConnectionAction; style: string }) 
   );
 }
 
+// The list says the state in the same words on every row; the detail ("Last data 3 min ago",
+// "Connected as ...") is on the connection's own page.
+const STATE_WORDS: Record<ConnectionStatus["state"], string> = {
+  on: "Connected",
+  none: "Not connected",
+  paused: "Paused",
+  attention: "Needs attention",
+  unavailable: "Not available yet",
+  unknown: "Could not check",
+};
+
 export function ConnectionRow({ row }: { row: ConnectionStatus }) {
   const style = button;
   const lineColour = row.state === "attention" ? "text-danger" : "text-label-2";
@@ -44,7 +55,7 @@ export function ConnectionRow({ row }: { row: ConnectionStatus }) {
         </span>
         <span className="flex min-w-0 flex-col">
           <span className="text-body">{row.name}</span>
-          <span className={`text-footnote tnum ${lineColour}`}>{row.line}</span>
+          <span className={`text-footnote ${lineColour}`}>{STATE_WORDS[row.state]}</span>
         </span>
       </Link>
       <Action action={row.action} style={style} />
