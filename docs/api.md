@@ -1006,6 +1006,45 @@ API key get `403 forbidden`. A device key acts for its owner on ingest, webhooks
 (Mac collector, Health Auto Export). Only the sha256 is stored. The web app makes them under
 You > Devices. Claude connects with MCP OAuth instead (no key).
 
+### Profile
+
+The onboarding answers: quiet hours, the usual week and the user's weak spots. Goals themselves go
+through `/v1/goals`.
+
+```ts
+type ClockTime = string; // "HH:MM", 24 hour, Europe/Athens wall clock
+type Weekday = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
+type WeakSpot =
+  | "phone_in_bed"
+  | "late_nights"
+  | "context_switching"
+  | "skipped_lunch"
+  | "doomscrolling"
+  | "back_to_back_meetings"
+  | "inbox_all_day"
+  | "late_caffeine";
+type TimeWindow = { start: ClockTime; end: ClockTime }; // may cross midnight
+type Profile = {
+  quiet_hours: TimeWindow; // no nudges inside; default 22:00 to 07:00
+  work_hours: TimeWindow; // default 09:00 to 18:00
+  work_days: Weekday[]; // default mon to fri
+  gym_days: Weekday[]; // default []
+  weak_spots: WeakSpot[]; // default []
+  onboarded_at: string | null; // set when onboarding is finished or skipped
+  updated_at: string | null; // null until first saved
+};
+type ProfileUpdate = Partial<Omit<Profile, "updated_at">>; // arrays are replaced, not merged
+```
+
+| Method | Path          | Body            | Response                       | Status |
+| ------ | ------------- | --------------- | ------------------------------ | ------ |
+| GET    | `/v1/profile` |                 | `200 Profile` (defaults first) | live   |
+| PUT    | `/v1/profile` | `ProfileUpdate` | `200 Profile`                  | live   |
+
+The web app sends a new user (no goals and `onboarded_at: null`) from Today to `/onboarding`.
+Stored as one jsonb document per user (`user_profiles`); a missing or invalid field reads as its
+default.
+
 ### Michael for agents
 
 ```ts

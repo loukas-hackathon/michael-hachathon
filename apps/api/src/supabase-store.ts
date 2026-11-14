@@ -10,6 +10,7 @@ import type {
   IntegrationProvider,
   Nudge,
   NudgeStatus,
+  Profile,
   Recommendation,
   RecommendationStatus,
   Source,
@@ -315,6 +316,28 @@ export class SupabaseStore implements Store {
       await this.db.from("goals").delete().eq("user_id", currentUserId()).eq("id", id).select("id"),
     );
     return (rows ?? []).length > 0;
+  }
+
+  // Stored as one jsonb document per user; routes/profile.ts validates it and fills in defaults.
+  async getProfile() {
+    const row = check(
+      await this.db.from("user_profiles").select("data").eq("user_id", currentUserId()).maybeSingle(),
+    );
+    return row ? (row.data as Profile) : null;
+  }
+
+  async saveProfile(profile: Profile) {
+    check(
+      await this.db.from("user_profiles").upsert(
+        {
+          user_id: currentUserId(),
+          data: profile,
+          updated_at: profile.updated_at ?? new Date().toISOString(),
+        },
+        { onConflict: "user_id" },
+      ),
+    );
+    return profile;
   }
 
   async listRecommendations(filter?: { status?: RecommendationStatus }) {

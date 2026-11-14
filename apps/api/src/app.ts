@@ -18,6 +18,7 @@ import { connect, oauthPublic } from "./routes/oauth";
 import { patterns } from "./routes/patterns";
 import { privacy } from "./routes/privacy";
 import { product } from "./routes/product";
+import { profile } from "./routes/profile";
 import { push } from "./routes/push";
 import { recommendations } from "./routes/recommendations";
 import { score } from "./routes/score";
@@ -46,6 +47,7 @@ const v1 = new Hono()
   .route("/", nudges)
   .route("/", push)
   .route("/", actions)
+  .route("/", profile)
   .route("/", product)
   .route("/", tokens)
   .route("/", connect);

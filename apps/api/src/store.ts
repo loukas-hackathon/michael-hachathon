@@ -16,6 +16,7 @@ import {
   mockRecommendations,
   type Nudge,
   type NudgeStatus,
+  type Profile,
   type Recommendation,
   type RecommendationStatus,
   type Source,
@@ -112,6 +113,9 @@ export interface Store extends PrivacyBackend {
   createGoal(input: z.output<typeof GoalCreate>): Promise<Goal>;
   updateGoal(id: string, patch: z.output<typeof GoalUpdate>): Promise<Goal | null>;
   deleteGoal(id: string): Promise<boolean>;
+  // The onboarding answers (routes/profile.ts fills in defaults); null until first saved.
+  getProfile(): Promise<Profile | null>;
+  saveProfile(profile: Profile): Promise<Profile>;
   listRecommendations(filter?: { status?: RecommendationStatus }): Promise<Recommendation[]>;
   updateRecommendationStatus(id: string, status: RecommendationStatus): Promise<Recommendation | null>;
   getRecommendation(id: string): Promise<Recommendation | null>;
@@ -322,6 +326,17 @@ export class MemoryStore implements Store {
     const before = this.goals.length;
     this.goals = this.goals.filter((g) => g.id !== id);
     return this.goals.length < before;
+  }
+
+  private profiles = new Map<string, Profile>();
+
+  async getProfile() {
+    return structuredClone(this.profiles.get(currentUserId()) ?? null);
+  }
+
+  async saveProfile(profile: Profile) {
+    this.profiles.set(currentUserId(), structuredClone(profile));
+    return structuredClone(profile);
   }
 
   async listRecommendations(filter?: { status?: RecommendationStatus }) {
