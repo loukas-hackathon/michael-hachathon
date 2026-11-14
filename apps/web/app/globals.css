@@ -145,6 +145,11 @@ textarea {
   outline-offset: 2px;
 }
 
+/* Headings focused by script (tabindex -1, for screen readers on a new step) never show a ring. */
+[tabindex="-1"]:focus-visible {
+  outline: none;
+}
+
 h1,
 h2,
 h3 {
