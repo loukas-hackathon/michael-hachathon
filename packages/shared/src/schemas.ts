@@ -753,6 +753,135 @@ export const PatternReport = z.object({
 });
 export type PatternReport = z.infer<typeof PatternReport>;
 
+// ---------- score (GET /v1/score) ----------
+
+// The rule lives in apps/api/src/score/score.ts and docs/api.md ("Score"). All minutes are whole
+// minutes, rounded per block and then added up, so every total is the sum of its parts:
+// spent = elapsed - lost, ahead = planned - elapsed, unverified = spent - verified.
+
+export const ScoreQuery = z.object({
+  date: LocalDay.optional(),
+  now: IsoDateTime.optional(),
+});
+export type ScoreQuery = z.infer<typeof ScoreQuery>;
+
+// One tick is 5 minutes of a planned block. `unverified` is spent time the data cannot prove
+// (no device data and no workout): it counts as spent, and is never shown as proven.
+export const ScoreTick = z.enum(["spent", "lost", "ahead", "unverified"]);
+export type ScoreTick = z.infer<typeof ScoreTick>;
+
+const Minutes = z.number().int().nonnegative();
+// Null when nothing has elapsed yet: there is no score before the first block, not 0 and not 100.
+const ScorePct = z.number().min(0).max(100).nullable();
+
+// The same seven numbers at every level: a block, a day, a goal's week, the week.
+const scoreTotals = {
+  planned_minutes: Minutes,
+  elapsed_minutes: Minutes,
+  spent_minutes: Minutes,
+  lost_minutes: Minutes,
+  ahead_minutes: Minutes,
+  // The part of spent_minutes the data does not positively show.
+  unverified_minutes: Minutes,
+  score_pct: ScorePct,
+};
+
+// A stretch of lost time inside a block and what took it. `what` is an app name, a well known
+// public site, or a site category ("a travel site"): never a full address.
+export const ScoreLostStretch = z.object({
+  start_at: IsoDateTime,
+  end_at: IsoDateTime,
+  // Time in distracting apps and sites inside the stretch, one decimal.
+  minutes: z.number().nonnegative(),
+  what: z.string(),
+  kind: z.enum(["app", "site"]),
+  category: AppCategory,
+  device: PatternDevice,
+});
+export type ScoreLostStretch = z.infer<typeof ScoreLostStretch>;
+
+export const ScoreBlock = z.object({
+  // The calendar event. A block that crosses local midnight appears once on each day.
+  event_id: z.string(),
+  goal_id: z.uuid(),
+  goal_title: z.string(),
+  // The calendar event's own title ("Cold Outreach / Sales").
+  title: z.string(),
+  // Which rule tied the event to the goal.
+  matched_by: z.enum(["goal_id", "calendar_titles", "goal_category", "goal_title", "category_word"]),
+  start_at: IsoDateTime,
+  end_at: IsoDateTime,
+  ...scoreTotals,
+  // One per 5 minutes from start_at; the last one is shorter when the block is not a multiple of 5.
+  ticks: z.array(ScoreTick),
+  lost: z.array(ScoreLostStretch),
+});
+export type ScoreBlock = z.infer<typeof ScoreBlock>;
+
+export const ScoreDay = z.object({
+  date: LocalDay,
+  ...scoreTotals,
+  time_won_back_minutes: Minutes,
+});
+export type ScoreDay = z.infer<typeof ScoreDay>;
+
+// How "time won back" was worked out for the day, so the maths can be shown.
+export const TimeWonBack = z.object({
+  minutes: Minutes,
+  // Lost / elapsed over the goal blocks of the previous 28 days, 0..1. Null without enough history.
+  usual_loss_rate: z.number().min(0).max(1).nullable(),
+  // Days with goal blocks among the previous 28.
+  history_days: z.number().int().nonnegative(),
+  // Set when the value is 0 because there is not enough history to know the usual day.
+  reason: z.string().nullable(),
+});
+export type TimeWonBack = z.infer<typeof TimeWonBack>;
+
+export const ScoreDayDetail = ScoreDay.extend({
+  // The instant the day was scored at: the boundary between past and ahead on the tape.
+  now: IsoDateTime,
+  time_won_back: TimeWonBack,
+  blocks: z.array(ScoreBlock),
+});
+export type ScoreDayDetail = z.infer<typeof ScoreDayDetail>;
+
+export const ScoreGoal = GoalScore.extend({
+  title: z.string(),
+  category: GoalCategory,
+  // False for sleep (a rest goal whose target describes sleep): listed with its budget for the
+  // Goals screen, outside the score. Its planned and spent minutes are 0 and mean nothing.
+  scored: z.boolean(),
+  elapsed_minutes: Minutes,
+  lost_minutes: Minutes,
+  ahead_minutes: Minutes,
+  unverified_minutes: Minutes,
+  score_pct: ScorePct,
+  // Monday to Sunday.
+  daily: z.array(z.object({ date: LocalDay, planned_minutes: Minutes, spent_minutes: Minutes })),
+});
+export type ScoreGoal = z.infer<typeof ScoreGoal>;
+
+// GET /v1/score. The week has the WeeklyScore fields (score_pct may be null here), then the day.
+export const Score = WeeklyScore.extend({
+  score_pct: ScorePct,
+  goals: z.array(ScoreGoal),
+  timezone: z.string(),
+  generated_at: IsoDateTime,
+  // The local day asked for.
+  date: LocalDay,
+  elapsed_minutes: Minutes,
+  lost_minutes: Minutes,
+  ahead_minutes: Minutes,
+  unverified_minutes: Minutes,
+  // Monday to Sunday of the week that holds `date`.
+  days: z.array(ScoreDay),
+  day: ScoreDayDetail,
+  // The last instant each device reported anything, up to the end of the week (null: nothing).
+  // Lost time after that instant is not known yet: phone data can arrive hours late.
+  data_until: z.object({ mac: IsoDateTime.nullable(), iphone: IsoDateTime.nullable() }),
+});
+export type Score = z.infer<typeof Score>;
+
 // ---------- errors ----------
 
 export const ErrorCode = z.enum([

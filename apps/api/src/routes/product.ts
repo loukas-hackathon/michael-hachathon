@@ -14,6 +14,5 @@ export const product = new Hono()
   .get("/agents", notImplemented("GET /v1/agents"))
   .patch("/agents/:id", notImplemented("PATCH /v1/agents/:id"))
   .get("/agents/queries", notImplemented("GET /v1/agents/queries"))
-  // nudges and score
-  .get("/nudges", notImplemented("GET /v1/nudges"))
-  .get("/score", notImplemented("GET /v1/score"));
+  // nudges (the score lives in routes/score.ts)
+  .get("/nudges", notImplemented("GET /v1/nudges"));

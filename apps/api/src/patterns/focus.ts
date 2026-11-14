@@ -9,7 +9,7 @@ import type {
   RecoveryCost,
   RepeatOffenders,
 } from "@michael/shared";
-import { GoalCategory } from "@michael/shared";
+import { goalForEvent, type MatchRule } from "../score/match";
 import { type Ctx, countedDays, daysTouched, RULES } from "./context";
 import { type Detector, found, notEnough } from "./detector";
 import { count, days as dayCount, duration, label, pct, rate } from "./format";
@@ -218,42 +218,29 @@ function buildStretch(segs: Segment[], from: number, lastWork: number, stop: num
 export interface GoalBlock extends Span {
   eventId: string;
   goal: Goal;
+  /** The calendar event's own title. */
+  title: string;
+  /** Which matching rule tied the event to the goal. */
+  rule: MatchRule;
 }
 
 /**
- * Which goal a calendar block belongs to. Provisional until tagging has its own contract:
- *   1. `data.goal_id` names a goal;
- *   2. `data.goal_category` (or `data.category`) names a goal category;
- *   3. the title starts with a category word ("Gym: upper body", "Work: pitch deck"), or contains
- *      "deep work" or "focus" for work.
- * Blocks with other people in them (attendees of 2 or more) are meetings, not focus blocks.
+ * The user's own calendar blocks that belong to a goal, clipped to [from, to]. Which goal an
+ * event belongs to is decided in one place, `score/match.ts`: `data.goal_id`, then the goal's
+ * `target.calendar_titles`, then the older fallbacks. An event with other people in it is a
+ * meeting, never a block.
  */
 export function goalBlocks(events: Event[], goals: Goal[], from: number, to: number): GoalBlock[] {
   const active = goals.filter((g) => g.active);
   if (active.length === 0) return [];
-  const byCategory = (category: string) => active.find((g) => g.category === category);
   const out: GoalBlock[] = [];
   for (const e of events) {
     if (e.type !== "calendar_event" || !e.end_at) continue;
     const start = Math.max(Date.parse(e.start_at), from);
     const end = Math.min(Date.parse(e.end_at), to);
     if (!(end > start)) continue;
-    const attendees = typeof e.data.attendees === "number" ? e.data.attendees : 0;
-    if (attendees >= 2) continue;
-
-    let goal = active.find((g) => g.id === e.data.goal_id);
-    if (!goal) {
-      const given = GoalCategory.safeParse(e.data.goal_category ?? e.data.category);
-      if (given.success) goal = byCategory(given.data);
-    }
-    if (!goal) {
-      const title = e.title.trim().toLowerCase();
-      const firstWord = title.split(/[\s:]+/)[0] ?? "";
-      const named = GoalCategory.safeParse(firstWord);
-      if (named.success) goal = byCategory(named.data);
-      else if (/\b(deep work|focus)\b/.test(title)) goal = byCategory("work");
-    }
-    if (goal) out.push({ start, end, eventId: e.id, goal });
+    const match = goalForEvent(e, active);
+    if (match) out.push({ start, end, eventId: e.id, goal: match.goal, title: e.title, rule: match.rule });
   }
   // Two blocks over the same time: the earlier one keeps it, so no minute is analysed twice.
   out.sort((a, b) => a.start - b.start);

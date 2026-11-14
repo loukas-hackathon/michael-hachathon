@@ -92,7 +92,7 @@ type Goal = {
   category: GoalCategory;
   title: string;
   description: string | null;
-  target: Record<string, unknown> | null; // e.g. { "sleep_hours": 7.5 }
+  target: Record<string, unknown> | null; // e.g. { "sleep_hours": 7.5 }, { "calendar_titles": ["Gym", "Run"] }
   weekly_budget_minutes: number | null; // e.g. 540 = "9 hours this week"
   active: boolean;
   created_at: string;
@@ -283,6 +283,35 @@ AI tool events (`ai_session`, `ai_prompt`) from `claude_code`:
 | POST   | `/v1/goals`     | `GoalCreate` | `201 Goal`              | live   |
 | PATCH  | `/v1/goals/:id` | `GoalUpdate` | `200 Goal`, `404`       | live   |
 | DELETE | `/v1/goals/:id` |              | `204`, `404`            | live   |
+
+#### Which calendar events count towards a goal
+
+People do not name calendar events after their goals: "Gym", "Swimming 1,500m" and "Run" can all
+mean one training goal. So a goal lists the calendar titles that count towards it, in `target`
+(a free form record, so this needs no schema or database change):
+
+```json
+{ "category": "gym", "title": "70.3", "target": { "calendar_titles": ["Gym", "Swimming", "Run"] } }
+```
+
+A calendar event belongs to the goal when its title **equals an entry or starts with it**, ignoring
+case, accents and extra spaces. An entry ends at a word boundary: `Run` matches `Run` and
+`Run: 8 km`, not `Runway review`. Entries that are not text are skipped.
+
+One matcher decides this for the score and for the patterns' calendar mode
+(`apps/api/src/score/match.ts`). Rules, first hit wins, over the user's active goals:
+
+1. `data.goal_id` on the event names a goal.
+2. `target.calendar_titles` of a goal (the longest matching entry wins).
+3. `data.goal_category` (or `data.category`) names a goal category: the first goal of that category.
+4. The title starts with a goal's own title.
+5. The title starts with a category word (`Gym: legs`, `Work: pitch`), or contains `deep work` or
+   `focus` (work).
+
+Rules 3 to 5 are the older provisional ones, kept as fallbacks. **An event with other people in it
+is never the user's own block:** `data.attendees` is the number of other people, and any value
+above 0 makes the event a meeting, whatever its title or `goal_id` says. Each block in
+`GET /v1/score` carries `matched_by`, the rule that tied it to its goal.
 
 ### Analysis
 
@@ -634,10 +663,10 @@ Roles used by the focus rules: **work** = `work`, `ai`; **distractor** = `commun
   full; clock time counts sessions side by side once. Waiting is capped at the session's own length.
   **Speaks from:** One session. The waiting share needs sessions that report `waiting_seconds`.
 
-Which goal a calendar block belongs to (provisional, until tagging has its own contract in #37):
-`data.goal_id` names a goal; else `data.goal_category` or `data.category` names a goal category;
-else the title starts with a category word (`Gym: legs`, `Work: pitch`) or contains `deep work` or
-`focus` (work). Events with `data.attendees` of 2 or more are meetings and are never focus blocks.
+Which goal a calendar block belongs to is decided by the one matcher described under Goals
+("Which calendar events count towards a goal"): `data.goal_id`, then the goal's
+`target.calendar_titles`, then the older fallbacks. Events with other people in them
+(`data.attendees` above 0) are meetings and are never focus blocks.
 
 Summaries follow the voice basics (numbers first, British spelling, 24 hour time, no dashes). They
 name apps; a site is named only if its host is on the shared public list, otherwise it is "a
@@ -716,7 +745,7 @@ type AgentQuery = {
 A new agent's first MCP request registers it as `pending` and returns `forbidden` until the user
 approves it. Every MCP tool call is logged as an `AgentQuery`.
 
-### Nudges and score
+### Nudges
 
 ```ts
 type Nudge = {
@@ -728,24 +757,155 @@ type Nudge = {
   created_at: string;
   sent_at: string | null;
 };
-type GoalScore = { goal_id: string; budget_minutes: number; planned_minutes: number; spent_minutes: number };
-type WeeklyScore = {
-  week_start: string;
-  planned_minutes: number;
-  spent_minutes: number;
-  score_pct: number;
-  time_won_back_minutes: number;
-  goals: GoalScore[];
-};
 ```
 
-| Method | Path                        | Response                                              | Status |
-| ------ | --------------------------- | ----------------------------------------------------- | ------ |
-| GET    | `/v1/nudges?from=&to=`      | `200 { nudges: Nudge[] }`                             | stub   |
-| GET    | `/v1/score?week=YYYY-MM-DD` | `200 WeeklyScore` (week starts Monday, Europe/Athens) | stub   |
+| Method | Path                   | Response                  | Status |
+| ------ | ---------------------- | ------------------------- | ------ |
+| GET    | `/v1/nudges?from=&to=` | `200 { nudges: Nudge[] }` | stub   |
 
 Nudges: at most 5 per day, under 15 words, none in quiet hours (deep work, dinner, after 22:00);
 extra ones are stored as `suppressed`.
+
+### Score
+
+| Method | Path                                  | Response    | Status |
+| ------ | ------------------------------------- | ----------- | ------ |
+| GET    | `/v1/score?date=YYYY-MM-DD&now=<iso>` | `200 Score` | live   |
+
+The headline number: the share of planned goal time that was spent on the goals, with "time won
+back" beneath it. One call returns the week that holds `date` (Monday to Sunday, Europe/Athens,
+days cut at local midnight, correct across the clock change) and that day in detail, which is what
+the Today screen draws.
+
+- `date` optional, a local day; default is today in Athens. `week` is accepted as its old name.
+- `now` optional, an instant: score the day as it stood then (replaying a past day at 15:20).
+  Default is the current time. `400` on a date that is not a real day or a bad instant.
+- Computed on request by pure functions in `apps/api/src/score` (plain rules, no model) from the
+  calendar, `workout` events and the single line of attention the patterns build
+  (`patterns/timeline.ts`, see "One timeline first"). The same events always give the same score.
+
+```ts
+type ScoreTotals = {
+  planned_minutes: number; // the user's own calendar blocks that belong to a goal
+  elapsed_minutes: number; // the part of planned that has passed (a block in progress counts up to now)
+  spent_minutes: number; // elapsed - lost
+  lost_minutes: number; // time in distracting apps and sites inside elapsed blocks
+  ahead_minutes: number; // planned - elapsed
+  unverified_minutes: number; // the part of spent the data does not positively show
+  score_pct: number | null; // round(spent / elapsed * 100); null when nothing has elapsed
+};
+
+type Score = ScoreTotals & {
+  // the week: the WeeklyScore fields, except that score_pct may be null
+  week_start: string; // Monday 00:00 in Athens, as an instant
+  time_won_back_minutes: number; // the sum of the days
+  goals: ScoreGoal[];
+  timezone: string; // "Europe/Athens"
+  generated_at: string; // the instant it was scored at
+  date: string; // the local day asked for
+  days: ScoreDay[]; // Monday to Sunday
+  day: ScoreDayDetail; // `date` in detail
+  // The last instant each device reported anything. Lost time after it is not known yet (phone
+  // data can arrive hours late), so a fresh score can still drop.
+  data_until: { mac: string | null; iphone: string | null };
+};
+
+type ScoreGoal = ScoreTotals & {
+  goal_id: string;
+  title: string;
+  category: GoalCategory;
+  scored: boolean; // false for sleep: listed with its budget, outside the score
+  budget_minutes: number; // weekly_budget_minutes, 0 when the goal has none
+  daily: { date: string; planned_minutes: number; spent_minutes: number }[]; // Monday to Sunday
+};
+
+type ScoreDay = ScoreTotals & { date: string; time_won_back_minutes: number };
+
+type ScoreDayDetail = ScoreDay & {
+  now: string; // the boundary between past and ahead on the tape
+  time_won_back: {
+    minutes: number;
+    usual_loss_rate: number | null; // 0..1; null without enough history
+    history_days: number; // days with goal blocks among the previous 28
+    reason: string | null; // why the value is 0 when there is not enough history
+  };
+  blocks: ScoreBlock[]; // in order of start
+};
+
+type ScoreBlock = ScoreTotals & {
+  event_id: string; // the calendar event; a block that crosses midnight appears on both days
+  goal_id: string;
+  goal_title: string;
+  title: string; // the calendar event's own title
+  matched_by: "goal_id" | "calendar_titles" | "goal_category" | "goal_title" | "category_word";
+  start_at: string;
+  end_at: string;
+  ticks: ("spent" | "lost" | "ahead" | "unverified")[]; // one per 5 minutes, from start_at
+  lost: {
+    start_at: string;
+    end_at: string;
+    minutes: number; // one decimal
+    what: string; // an app name, a well known public site, or "a travel site": never an address
+    kind: "app" | "site";
+    category: AppCategory;
+    device: "mac" | "iphone";
+  }[];
+};
+```
+
+The zod schemas of the same names are in `packages/shared/src/schemas.ts`; `mockScore` in
+`mocks.ts` is a full example (a made up Wednesday at 15:20). `WeeklyScore` and `GoalScore` stay
+exported: they are the week's part of `Score` with a `score_pct` that is never null.
+
+#### The attribution rule
+
+Stated here and at the top of `apps/api/src/score/score.ts`; the two change together.
+
+- **Planned:** the user's own calendar blocks that belong to a goal (see Goals, "Which calendar
+  events count towards a goal"). An event with other people in it is never a block. Where two
+  blocks overlap, the earlier one keeps the time. A block that crosses local midnight is cut
+  there, and each day gets its part.
+- **Ahead:** planned time that has not started yet. **Elapsed:** planned time that has passed; a
+  block in progress counts up to `now`.
+- **Lost:** time inside an elapsed block spent in a distracting category (`communication`,
+  `social`, `video`, `news`, `shopping`, `travel`) on any device. It is read from the single line
+  of attention, where the phone and the Mac are already one line, so a minute is never lost twice.
+- **Spent:** elapsed minus lost.
+- **Verified:** the part of spent for which the data positively shows the goal. A goal of category
+  `work`: attention in a work category (`work`, `ai`) inside the block. A goal of category `gym`: a
+  `workout` event overlapping the block, minus the lost time inside it. Any other goal has nothing
+  that could prove it.
+- **Unverified:** spent minus verified: no device data there, or only neutral apps (music, the
+  system, anything uncategorised). Reported apart as `unverified_minutes` and as `unverified`
+  ticks; never present it as proven.
+- **A block with no data at all and no workout counts as spent, all of it unverified.** Time in
+  the gym or studying on paper leaves no trace on a screen, and a coach who calls a real session
+  "missed" loses trust. The price: a skipped session also scores as spent until a watch or a check
+  in says otherwise. `unverified_minutes` shows how much of the score rests on that.
+- **Sleep is outside the score.** A goal of category `rest` whose target describes sleep (a key
+  with `sleep` or `bed` in it, or a title with the word) is listed in `goals` with its budget and
+  `scored: false`. It has no blocks and takes no part in any total; its minutes are 0 and mean
+  nothing.
+- **`score_pct`** = spent / elapsed, rounded. `null` when nothing has elapsed (before the first
+  block, or on a day with no plan): not 0 and not 100.
+- **Time won back**, in one sentence: less time lost inside your planned blocks than on your usual
+  day. The usual loss rate is lost / elapsed over the goal blocks of the previous 28 days. It needs
+  3 of those days to have goal blocks; with fewer the value is 0 and `reason` says so. Won back on
+  a day = `max(0, usual rate x the day's elapsed - the day's lost)`. The week is the sum of its
+  days. It only rises while the person is beating their usual self.
+- **Minutes** are whole minutes, rounded per block (a block's part of one day) and added up from
+  there. So every total is the sum of the parts beneath it: the day is the sum of its blocks, the
+  week the sum of its days and of its goals, and `spent + lost = elapsed`,
+  `elapsed + ahead = planned` hold everywhere.
+- **Ticks:** one per 5 minutes of a block, from its start (the last is shorter when the block is
+  not a multiple of 5). `ahead` when the tick starts at or after `now`; `lost` when at least half
+  of it was lost; otherwise `spent` when at least as much of the rest is verified as not, else
+  `unverified`. Ticks are the drawing: totals come from the exact intervals, not from counting
+  ticks.
+- **Lost stretches:** distracting intervals less than 30 seconds apart are one stretch, named after
+  whatever held most of it. An app goes by its name; a site by its host only when the host is on
+  the shared public list, otherwise by its category ("a travel site"). `minutes` is the time lost
+  inside the stretch.
 
 ## MCP server
 
@@ -757,6 +917,7 @@ Streamable HTTP at `POST /mcp` (stateless, JSON responses). Auth: `Authorization
 | `get_goals`           | `{ active_only?: boolean }` (default true)              | `{ goals: Goal[] }`                                                          |
 | `get_recommendations` | `{ status?: RecommendationStatus }`                     | `{ recommendations: Recommendation[] }`                                      |
 | `get_patterns`        | `{ from?, to? }` (default: the last 7 days)             | `PatternReport`                                                              |
+| `get_score`           | `{ date? }` (a local day, default today)                | `Score`                                                                      |
 | `add_event`           | `EventInput`                                            | `{ inserted: number, duplicates: number, ignored: number, events: Event[] }` |
 
 Status: all `live` (Supabase in production, in-memory locally without Supabase keys).
