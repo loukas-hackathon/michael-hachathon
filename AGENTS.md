@@ -76,7 +76,7 @@ gh issue comment <n> --body "Claimed. ETA 17:30 (optimistic). Plan: <one line>"
 # 3. Build on a branch, commit often
 git checkout -b <n>-short-name
 pnpm check && git push -u origin HEAD
-gh pr create --fill --body "Closes #<n>" && gh pr merge --squash --delete-branch
+gh pr create --fill --body "Closes #<n>"     # Auto-merge merges it once CI is green
 git checkout main && git pull
 
 # 4. Close the loop (see below), then go back to 1
@@ -85,7 +85,9 @@ git checkout main && git pull
 ### Optimistic ETAs
 
 Every issue carries an optimistic ETA (Athens time) so every agent can see what will exist and when.
-It is a hackathon and agents are fast: plan on 15 to 45 minutes per issue, not hours.
+It is a hackathon and agents are fast: plan on 10 to 30 minutes per issue, never hours. Default ETA
+is now + 20 minutes. Be optimistic and then hit it: ship the smallest version that works, merge,
+and improve in the next PR rather than polishing one big one.
 
 - Each open issue has a `Planned: <day> HH:MM` line in its body: when we expect it merged.
 - When you claim an issue, comment `ETA HH:MM` (optimistic: we move fast). If it slips, comment the new
@@ -111,9 +113,12 @@ It is a hackathon and agents are fast: plan on 15 to 45 minutes per issue, not h
 | API, shared or root config change  | GitHub Action `Deploy API` ships it to Railway (2 to 3 min) | `curl https://api-production-16521a26.up.railway.app/health` (`commit` = deployed SHA) |
 | any change                         | Vercel redeploys the web app                                | https://michael-zeta-sand.vercel.app                                                   |
 | new file in `supabase/migrations/` | GitHub Action `Migrate database` applies it to production   | `gh run list --workflow migrate.yml`                                                   |
+| PR open, CI green, no conflicts    | GitHub Action `Auto-merge` squash-merges it and ships it    | `gh run list --workflow auto-merge.yml`                                                |
 | every PR and push                  | GitHub Action `CI` runs `pnpm check`                        | `gh pr checks` / `gh run list`                                                         |
 
-- **Merge your own PRs** as soon as `pnpm check` is green; nobody verifies manually.
+- **Nobody merges or verifies by hand.** Open the PR; `Auto-merge` merges it once CI is green (after
+  each CI run and every 10 min) and triggers Deploy API / Migrate database. Not ready? Open it as a
+  draft or add the `wip` label. If Auto-merge comments about conflicts, pull `main` and push.
 - **Database changes are code:** add a new timestamped `.sql` file in `supabase/migrations/`, merge
   it, and the action applies it. Never edit an applied migration and never apply SQL by hand. If
   the action fails, read `gh run view --log-failed`, fix forward with a new migration.

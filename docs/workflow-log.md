@@ -2,6 +2,7 @@
 
 One line per change to how we work (newest first): date, what changed, why.
 
+- Sat 14 Nov 17:50: Auto-merge merges green PRs and dispatches deploys; Deploy API ships to Railway with a project token; ETAs default to now + 20 min. Why: zero manual merging, verification or approvals; speed first.
 - Sat 14 Nov 18:00: `pnpm test` runs unit tests with Node's own runner through tsx (no new dependency); tests sit next to the code as `*.test.ts`. Why: the pattern detectors need answers checked by hand.
 - Sat 14 Nov 17:30: agents read open PRs and remote branches during catch-up and build on in-flight work. Why: avoid duplicate work between parallel agents.
 - Sat 14 Nov 17:15: /health reports the deployed commit. Why: agents verify their merge actually reached production.
