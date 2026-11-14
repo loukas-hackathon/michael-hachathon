@@ -397,13 +397,58 @@ AI tool events (`ai_session`, `ai_prompt`) from `claude_code`:
 
 ### Goals
 
-| Method | Path            | Body         | Response                | Status |
-| ------ | --------------- | ------------ | ----------------------- | ------ |
-| GET    | `/v1/goals`     |              | `200 { goals: Goal[] }` | live   |
-| GET    | `/v1/goals/:id` |              | `200 Goal`, `404`       | live   |
-| POST   | `/v1/goals`     | `GoalCreate` | `201 Goal`              | live   |
-| PATCH  | `/v1/goals/:id` | `GoalUpdate` | `200 Goal`, `404`       | live   |
-| DELETE | `/v1/goals/:id` |              | `204`, `404`            | live   |
+| Method | Path                               | Body                              | Response                      | Status |
+| ------ | ---------------------------------- | --------------------------------- | ----------------------------- | ------ |
+| GET    | `/v1/goals`                        |                                   | `200 { goals: Goal[] }`       | live   |
+| GET    | `/v1/goals/:id`                    |                                   | `200 Goal`, `404`             | live   |
+| POST   | `/v1/goals`                        | `GoalCreate`                      | `201 Goal`                    | live   |
+| PATCH  | `/v1/goals/:id`                    | `GoalUpdate`                      | `200 Goal`, `404`             | live   |
+| DELETE | `/v1/goals/:id`                    |                                   | `204`, `404`                  | live   |
+| GET    | `/v1/goals/suggestions`            |                                   | `200 GoalSuggestionsResponse` | live   |
+| POST   | `/v1/goals/suggestions/:id/accept` | `GoalSuggestionAccept` (optional) | `201 Goal`, `404`             | live   |
+
+#### Goals from the calendar (#134)
+
+People already live by goals they never wrote down. `GET /v1/goals/suggestions` reads the user's own
+calendar blocks (no other people, not all day, not booked by Michael) from four weeks back to a week
+ahead, groups the ones that recur and proposes each as a goal. Pure logic in
+`apps/api/src/goals/suggest.ts`.
+
+```ts
+type GoalSuggestion = {
+  id: string; // stable: "training", "study", "deep_work", "business", "meals", or "title:<slug>"
+  title: string; // "Training", "University", "Deep work", "Business", or the calendar title
+  category: GoalCategory; // always business, health or personal (#131), the same as area
+  area: GoalArea;
+  weekly_budget_minutes: number; // average a week, rounded to 30 minutes
+  target: { kind: "time"; calendar_titles: string[] }; // the titles that count, biggest first
+  evidence: string; // "Gym, Swimming and Run, Mon, Tue and Fri, 4h 30 a week."
+  sessions_per_week: number;
+  days: Weekday[];
+};
+type GoalSuggestionsResponse = { from: string; to: string; suggestions: GoalSuggestion[] };
+type GoalSuggestionAccept = { title?: string; weekly_budget_minutes?: number; calendar_titles?: string[] };
+```
+
+- **Titles:** the part that stays the same each week, as the user wrote it: `Lecture: Statistics`
+  counts as `Lecture`, `Cold Outreach / Sales` as `Cold Outreach`, `Swimming 1,500m` as `Swimming`.
+  The score matches calendar titles as prefixes, so every variant counts.
+- **Grouping:** known words pool into one goal: sport into Training, lectures and study into
+  University or Study, focus into Deep work, outreach, sales, marketing and preparation into
+  Business, meals into Proper meals. Any other title stays a goal of its own, business when most
+  of it falls on weekdays 08:00 to 18:00, personal otherwise. Sleep, commutes and travel are never
+  suggested.
+- **Recurring:** a group on at least two days, or one Google marks as repeating. One-offs are noise.
+  Weekly hours are averaged over the weeks of calendar seen; a block counts at most once a week per
+  weekday it falls on. At most 6 suggestions, biggest first, none under 30 minutes a week.
+- **Already covered:** an event an active goal already counts (the matcher below) is left out, and
+  so is a suggestion with an active goal's name. Accepting one makes it disappear.
+- **Accepting:** `POST /v1/goals` with `category`, `title`, `weekly_budget_minutes` and `target` as
+  given, or `POST /v1/goals/suggestions/:id/accept` with optional edits. The goal's description says
+  where it came from. `404` when the calendar no longer suggests that id.
+- **Where it shows:** the Google Calendar callback syncs four weeks back on first connect and adds
+  `goal_suggestions=<n>` to the redirect when there are any; onboarding's first step, the Goals tab
+  and the calendar row on You list them with one tap to keep. MCP: `propose_goals` (scope `goals`).
 
 #### Three categories, four kinds
 
@@ -1539,7 +1584,7 @@ type AgentQuery = {
   the payload. A call outside the agent's scopes, or by an agent that is not `approved`, returns a
   tool result with `isError: true` ("Not allowed. ...") and is logged with `allowed: false`.
 - Scope per tool: `get_timeline`, `get_patterns` = `timeline`; `get_goals`, `add_goal`,
-  `update_goal` = `goals`; `list_recommendations`, `update_recommendation`, `get_nudges` =
+  `update_goal`, `propose_goals` = `goals`; `list_recommendations`, `update_recommendation`, `get_nudges` =
   `recommendations`; `get_score`, `get_moments` = `score`; `add_event`, `execute_recommendation`,
   `undo_recommendation`, `create_focus_block`, `block_mac_app`, `plan_travel` = `write_events`;
   `suggest_app_mute` = `recommendations`. A tool not in that
@@ -1939,6 +1984,7 @@ offset. A refused or failed call returns `isError: true` with one plain sentence
 | `get_timeline`           | `timeline`        | `{ date?: LocalDay, from?: TimeInput, to?: TimeInput, source?, type? }` (default: 24 h) | `{ from, to, count, truncated, events: Event[] }` (≤ 500) |
 | `get_goals`              | `goals`           | `{ active_only?: boolean }` (default true)                                              | `{ goals: Goal[] }`                                       |
 | `get_instructions`       | `goals`           | `{ active_only?: boolean }` (default true)                                              | `{ instructions: Instruction[] }` (standing instructions) |
+| `propose_goals`          | `goals`           | `{}`                                                                                    | `{ suggestions: GoalSuggestion[] }`                       |
 | `get_score`              | `score`           | `{ date?: LocalDay }` (default today)                                                   | `Score` without `day.blocks[].ticks`                      |
 | `get_patterns`           | `timeline`        | `{ from?: TimeInput, to?: TimeInput }` (default: the last 7 days)                       | `PatternReport`                                           |
 | `list_recommendations`   | `recommendations` | `{ status?: RecommendationStatus }`                                                     | `{ recommendations: Recommendation[] }`                   |

@@ -22,6 +22,7 @@ import { z } from "zod";
 import { bookFocusBlock, executeRecommendation, undoDeadline, undoRecommendation } from "./actions/calendar";
 import { guardMacApps, suggestAppGuard } from "./actions/mac-apps";
 import { currentAgent } from "./context";
+import { currentSuggestions } from "./goals/suggestions";
 import { HttpError, parse } from "./http";
 import {
   dayLabel,
@@ -260,6 +261,30 @@ export function createMcpServer(): McpServer {
           ].join("\n")
         : "No standing instructions.";
       return reply(text, { instructions });
+    }),
+  );
+
+  server.registerTool(
+    "propose_goals",
+    {
+      title: "Propose goals from the calendar",
+      description:
+        "Goals the user already lives by, read from their own recurring calendar blocks (nobody else in them) over the last four weeks and the week ahead: each with a title, category, weekly budget in minutes, the calendar titles that would count towards it and the evidence. Titles an existing goal already counts are left out. Show them to the user and ask which to keep; add each one they keep with add_goal, passing category, title, weekly_budget_minutes and target exactly as given (edits welcome).",
+      annotations: { readOnlyHint: true },
+    },
+    safe(async () => {
+      const { suggestions } = await currentSuggestions();
+      const text = suggestions.length
+        ? [
+            `From the calendar I see ${suggestions.length} goal${suggestions.length === 1 ? "" : "s"}:`,
+            ...suggestions.map(
+              (s) =>
+                `- ${s.title} [${s.category}], ${dur(s.weekly_budget_minutes)} a week. ${s.evidence} Counts: ${s.target.calendar_titles.join(", ")}.`,
+            ),
+            "Ask which to keep, then add each with add_goal.",
+          ].join("\n")
+        : "No recurring own blocks that a goal does not already cover. Ask the user what this week should hold.";
+      return reply(text, { suggestions });
     }),
   );
 

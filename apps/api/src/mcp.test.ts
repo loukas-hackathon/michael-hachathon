@@ -55,6 +55,7 @@ const TOOLS = [
   "get_timeline",
   "list_recommendations",
   "plan_travel",
+  "propose_goals",
   "suggest_app_mute",
   "undo_recommendation",
   "update_goal",
