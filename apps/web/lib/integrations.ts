@@ -9,11 +9,10 @@ import {
   TelegramStatus,
 } from "@michael/shared";
 import { authHeaders } from "./caller";
+import { API_URL, USE_MOCKS } from "./mode";
 
 // Server-side calls for connecting sources (Google Calendar). Tokens stay in the API; the browser
 // only ever sees Google's consent screen and the connection status.
-const USE_MOCKS = process.env.USE_MOCKS !== "false";
-const API_URL = process.env.API_URL ?? "http://localhost:8787";
 
 async function call(method: string, path: string): Promise<Response> {
   const res = await fetch(`${API_URL}${path}`, {

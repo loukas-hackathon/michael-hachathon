@@ -1,8 +1,9 @@
 import type { Event, Goal } from "@michael/shared";
-import { get, usingMocks } from "@/lib/api";
+import { get } from "@/lib/api";
 import { athensDay, dayBounds } from "@/lib/athens";
 import { formatTime, hm } from "@/lib/format";
 import { healthOf, sleepAgainstGoal, sleepGoalMinutes, workoutParts } from "@/lib/health";
+import { USE_MOCKS } from "@/lib/mode";
 import { Fold } from "./fold";
 
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -14,7 +15,7 @@ const iso = (ms: number) => new Date(ms).toISOString();
  * Says nothing on the sample previews, while mocks are on, or when the watch has nothing to say.
  */
 export async function WatchLine({ demo }: { demo?: string }) {
-  if (demo || usingMocks()) return null;
+  if (demo || USE_MOCKS) return null;
   const { start, end } = dayBounds(athensDay());
   const qs = new URLSearchParams({ from: iso(start), to: iso(end), type: "sleep,workout" });
   const [timeline, goals] = await Promise.all([

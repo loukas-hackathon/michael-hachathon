@@ -1,12 +1,10 @@
 import "server-only";
 import { type AnalysisResult, ApiError, mockAnalysisRun, mockRecommendations } from "@michael/shared";
-import { API_URL } from "./api";
 import { authHeaders } from "./caller";
+import { API_URL, USE_MOCKS } from "./mode";
 
 // Michael's brief on demand (POST /v1/analysis/run) and the last one he wrote
 // (GET /v1/analysis/latest). Kept out of lib/api.ts so it can change without touching the shared file.
-
-const USE_MOCKS = process.env.USE_MOCKS !== "false";
 
 export type BriefResult =
   | { ok: true; result: AnalysisResult }

@@ -1,14 +1,15 @@
 import { redirect } from "next/navigation";
 import { CountUp } from "@/components/count-up";
-import { EmptyState } from "@/components/empty-state";
 import { LiveRefresh } from "@/components/live-refresh";
 import { ScreenHeader } from "@/components/screen";
 import { Tape, TapeKey } from "@/components/tape";
 import { BriefCard } from "@/components/today/brief-card";
 import { MoreFromMichael } from "@/components/today/fold";
+import { GetStarted } from "@/components/today/get-started";
 import { MichaelCard } from "@/components/today/michael-card";
 import { MomentCard } from "@/components/today/moment-card";
 import { RecommendationsPanel, todaySuggestions } from "@/components/today/recommendations";
+import { TodayEmpty } from "@/components/today/today-empty";
 import { TravelCard } from "@/components/today/travel-card";
 import { WatchLine } from "@/components/today/watch-line";
 import { getToday, needsOnboarding } from "@/lib/api";
@@ -48,9 +49,8 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
 
       {day.blocks.length === 0 && day.week.scorePct == null ? (
         <>
-          <EmptyState title="Nothing yet.">
-            Wear the watch tonight and your first brief arrives in the morning.
-          </EmptyState>
+          <GetStarted demo={demo} />
+          <TodayEmpty demo={demo} />
           <RecommendationsPanel slot="primary" />
           <MoreFromMichael>
             {momentKind && !day.sample ? <MomentCard kind={momentKind} sample={false} /> : null}
