@@ -26,7 +26,7 @@ export function TabBar() {
   const pathname = usePathname();
   // A quiet dot on Chat while Michael's check in waits: no number, no red.
   const waiting = !useCheckIn().done;
-  if (["/onboarding", "/connect", "/stage"].some((p) => pathname.startsWith(p))) return null;
+  if (["/onboarding", "/connect", "/stage", "/setup"].some((p) => pathname.startsWith(p))) return null;
 
   return (
     <nav

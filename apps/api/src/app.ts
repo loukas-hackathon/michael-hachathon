@@ -28,6 +28,7 @@ import { profile } from "./routes/profile";
 import { push } from "./routes/push";
 import { recommendations } from "./routes/recommendations";
 import { score } from "./routes/score";
+import { setupPublic, setupTokens } from "./routes/setup";
 import { sources } from "./routes/sources";
 import { targets } from "./routes/targets";
 import { telegram, telegramWebhook } from "./routes/telegram";
@@ -65,6 +66,7 @@ const v1 = new Hono()
   .route("/", profile)
   .route("/", product)
   .route("/", tokens)
+  .route("/", setupTokens)
   .route("/", telegram)
   .route("/", connect)
   .route("/", agents)
@@ -100,6 +102,8 @@ export const app = new Hono()
   // Telegram's bot webhook carries no user: verified by its secret token, before the auth below.
   .route("/v1/webhooks/telegram", telegramWebhook)
   .route("/v1/webhooks", webhooksApp)
+  // One tap setup: the token exchange and the Mac installer carry no user; the setup token is the key.
+  .route("/v1", setupPublic)
   .route("/v1", v1)
   // claude.ai signs in with OAuth (routes/oauth.ts); the API key and ?key= keep working.
   .all("/mcp", requireUser({ mcp: true }), (c) => handleMcpRequest(c.req.raw))

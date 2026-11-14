@@ -1878,6 +1878,45 @@ export type PersonalTokenCreate = z.infer<typeof PersonalTokenCreate>;
 
 export const PersonalTokenCreated = z.object({ token: PersonalToken, secret: z.string() });
 export type PersonalTokenCreated = z.infer<typeof PersonalTokenCreated>;
+
+// ---------- one tap setup (setup tokens, #120) ----------
+// A setup token ("ms_...") is short lived (30 minutes), single use and can do one thing: be
+// exchanged for a device key for one connection. It is what goes into a QR code, an install
+// command or a downloaded file, so the long lived device key never sits in a URL or a shell history.
+
+export const SetupConnection = z.enum(["mac", "apple-watch", "iphone"]);
+export type SetupConnection = z.infer<typeof SetupConnection>;
+
+/** The device key name each connection gets, as listed on the Connections pages. */
+export const SETUP_KEY_NAMES: Record<SetupConnection, string> = {
+  mac: "Mac collector",
+  "apple-watch": "Health Auto Export",
+  iphone: "iPhone Shortcuts",
+};
+
+export const SetupTokenCreate = z.object({ connection: SetupConnection });
+export type SetupTokenCreate = z.infer<typeof SetupTokenCreate>;
+
+export const SetupTokenCreated = z.object({
+  token: z.string(), // "ms_..."; shown once
+  connection: SetupConnection,
+  expires_at: IsoDateTime,
+  // The web page that finishes setup on another device (the QR code opens it on the iPhone).
+  setup_url: z.string(),
+  // Mac only: the one line for Terminal. Fetches the public installer and passes the token to it.
+  install_command: z.string().nullable(),
+});
+export type SetupTokenCreated = z.infer<typeof SetupTokenCreated>;
+
+export const SetupTokenExchange = z.object({ token: z.string().min(10).max(200) });
+export type SetupTokenExchange = z.infer<typeof SetupTokenExchange>;
+
+export const SetupTokenExchanged = z.object({
+  connection: SetupConnection,
+  secret: z.string(), // the new device key ("mk_..."), ingest only
+  api_url: z.string(), // where the device sends data
+});
+export type SetupTokenExchanged = z.infer<typeof SetupTokenExchanged>;
 // ---------- voice (POST /v1/voice/speak) ----------
 // Michael's reply read aloud by ElevenLabs. Text in, audio/mpeg out; nothing is stored.
 
