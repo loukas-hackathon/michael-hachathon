@@ -196,10 +196,27 @@ async function navigate(event, url) {
   if (first && first !== "timeout") return first;
 
   // Slow or offline: keep the request alive in memory for the shell to pick up, and paint the shell.
-  const entry = { promise: network, at: Date.now() };
+  // The body is read to the end while this event is still alive: a streamed preload body would be
+  // cut off once the event finishes, leaving a blank page after the hand over.
+  const buffered = network.then(async (response) => {
+    if (!response || response.type === "opaqueredirect" || !response.body || response.status === 304) {
+      return response;
+    }
+    try {
+      const body = await response.blob();
+      return new Response(body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+      });
+    } catch {
+      return null;
+    }
+  });
+  const entry = { promise: buffered, at: Date.now() };
   handoffs.set(key, entry);
   event.waitUntil(
-    network.then((response) => {
+    buffered.then((response) => {
       entry.response = response;
       entry.at = Date.now();
       setTimeout(() => {
@@ -220,11 +237,15 @@ async function shellResponse() {
   );
 }
 
-/** Tells the shell page whether its real page arrived ("ready") or the network is gone ("offline"). */
+/**
+ * Tells the shell page whether its real page arrived ("ready"), the network is gone ("offline"), or
+ * the request was lost and is worth one more try ("retry").
+ */
 async function answerHandoff(url, port) {
   const entry = handoffs.get(url);
   if (!entry) {
-    port.postMessage({ status: "offline" });
+    // The worker restarted and lost the request: the shell tries the page once more.
+    port.postMessage({ status: "retry" });
     return;
   }
   const response = await entry.promise;

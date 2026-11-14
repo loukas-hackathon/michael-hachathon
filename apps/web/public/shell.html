@@ -15,6 +15,7 @@
     <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000" />
     <meta name="robots" content="noindex" />
     <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icon-180.png" />
     <link rel="apple-touch-icon" href="/icon-180.png" />
     <title>Michael</title>
     <style>
@@ -162,6 +163,16 @@
           sessionStorage.setItem("m-splash", "1");
         } catch (_) {}
         var root = document.documentElement;
+        // One retry per 10 seconds at most, so a lost request can never spin into a reload loop.
+        function retriedRecently() {
+          try {
+            const last = Number(sessionStorage.getItem("m-shell-retry") || 0);
+            sessionStorage.setItem("m-shell-retry", String(Date.now()));
+            return Date.now() - last < 10000;
+          } catch (_) {
+            return true;
+          }
+        }
         function reload() {
           location.reload();
         }
@@ -180,8 +191,10 @@
         if (!sw || !navigator.onLine) return offline();
         var channel = new MessageChannel();
         channel.port1.onmessage = (event) => {
-          if (event.data && event.data.status === "ready") reload();
-          else offline();
+          const status = event.data?.status;
+          if (status === "ready") return reload();
+          if (status === "retry" && !retriedRecently()) return reload();
+          offline();
         };
         sw.postMessage({ type: "handoff", url: location.href }, [channel.port2]);
       })();
