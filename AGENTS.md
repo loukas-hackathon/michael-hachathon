@@ -32,7 +32,7 @@ Live URLs, dashboards and where every setting lives: README "Live services". Com
 - **Stay visible.** Claim the issue (assignee + `in-progress`) with an optimistic ETA comment (aim for
   10 to 30 minutes; ship the smallest working version, improve in the next PR). Glance at open PRs
   and in-progress issues before touching shared files; talk through issue and PR comments.
-- **Merging is deploying.** CI runs `pnpm check`; Auto-merge merges green PRs and closes their issues;
+- **Merging is deploying.** CI runs `pnpm check`, `pnpm test`, the web build and a migration timestamp guard; Auto-merge merges green PRs and closes their issues;
   Deploy API ships to Railway; Migrate database applies new migrations; Vercel redeploys the web.
   Use a draft or the `wip` label to hold a PR. After your merge, check production (`/health` reports
   the deployed commit).

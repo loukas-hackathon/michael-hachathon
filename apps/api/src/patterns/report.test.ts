@@ -372,26 +372,37 @@ test("AI waiting can never exceed the session, and is unknown when not reported"
 
 // ---------- the report as a whole ----------
 
-test("28 days and tens of thousands of events compute well under a second", () => {
-  const events = syntheticMonth(28);
-  assert.ok(events.length > 40_000, `only ${events.length} events`);
-  const options = {
-    from: "2026-10-17T00:00:00+03:00",
-    to: "2026-11-14T00:00:00+02:00",
-    now: "2026-11-14T00:00:00+02:00",
+test("28 days and tens of thousands of events compute in linear time", () => {
+  const window = (days: number, to: string) => ({
+    events: syntheticMonth(days),
+    options: { from: "2026-10-17T00:00:00+03:00", to, now: to },
+  });
+  const week = window(7, "2026-10-24T00:00:00+03:00");
+  const month = window(28, "2026-11-14T00:00:00+02:00");
+  assert.ok(month.events.length > 40_000, `only ${month.events.length} events`);
+  // CPU time of this process, not wall time: other processes on the machine do not inflate it.
+  const time = (w: ReturnType<typeof window>) => {
+    const started = process.cpuUsage();
+    buildPatternReport(w.events, w.options);
+    const used = process.cpuUsage(started);
+    return (used.user + used.system) / 1000;
   };
-  buildPatternReport(events, options); // warm up
-  // Best of three, with headroom: CI and busy machines share CPU, so a single timing is noisy.
-  // This still catches an accidental quadratic step, which would take many seconds.
-  let r = buildPatternReport(events, options);
-  let took = Number.POSITIVE_INFINITY;
-  for (let i = 0; i < 3; i++) {
-    const started = performance.now();
-    r = buildPatternReport(events, options);
-    took = Math.min(took, performance.now() - started);
+  time(week); // warm up
+  time(month);
+  // A fixed limit failed whenever CI or parallel test files shared the CPU (a 200 ms run took 3 s
+  // under load). Compare a month with a week instead, interleaved so both see the same conditions:
+  // linear work is about 4x (measured 3.3x), an accidental quadratic step about 16x.
+  let weekBest = Number.POSITIVE_INFINITY;
+  let monthBest = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < 5; i++) {
+    weekBest = Math.min(weekBest, time(week));
+    monthBest = Math.min(monthBest, time(month));
   }
+  const ratio = monthBest / weekBest;
+  assert.ok(ratio < 9, `4x the data took ${ratio.toFixed(1)}x the time (${Math.round(monthBest)} ms)`);
+
+  const r = buildPatternReport(month.events, month.options);
   PatternReport.parse(r);
-  assert.ok(took < 2000, `took ${Math.round(took)} ms`);
   assert.equal(r.days.length, 28);
   for (const key of DETECTORS) assert.equal(r[key].status, "ok", `${key}: ${r[key].reason}`);
 });

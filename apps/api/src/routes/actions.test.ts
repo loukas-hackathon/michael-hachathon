@@ -159,11 +159,11 @@ test("undo is refused once undo_until has passed, and never deletes a block that
     const g = await connect();
     const start = Date.now() + 2 * HOUR;
     await withAction(CREATE_ID, {
-      undo_until: iso(Date.now() + 30),
+      // Already passed: no sleep, so a slow machine cannot make this race.
+      undo_until: iso(Date.now() - 1000),
       payload: { start_at: iso(start), end_at: iso(start + HOUR) },
     });
     await executeRecommendation(CREATE_ID);
-    await new Promise((r) => setTimeout(r, 50));
     await assert.rejects(undoRecommendation(CREATE_ID), /Too late/);
     assert.equal(g.events.size, 1);
 
