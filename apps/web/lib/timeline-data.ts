@@ -1,10 +1,11 @@
 import "server-only";
 import { type Event, EventType, type Goal, type TimelineResponse } from "@michael/shared";
-import { get, usingMocks } from "./api";
+import { get } from "./api";
 import { addDays, athensDay, dayBounds, isLocalDay, weekOf } from "./athens";
 import { DATES_WITH_DATA, getTimelineDay, longestFrom, type Patterns } from "./days";
 import { sleepGoalMinutes } from "./health";
 import { getGoogleCalendar } from "./integrations";
+import { USE_MOCKS } from "./mode";
 import { buildTimeline, type TimelineDay } from "./timeline";
 
 // Loads the Timeline screen for one Athens day: the day itself from GET /v1/timeline, the longest
@@ -12,8 +13,7 @@ import { buildTimeline, type TimelineDay } from "./timeline";
 // One function, so a refresh (polling, a pull down) can call it again with the same arguments.
 // Without ?day= it opens on today for every user, the sample week included.
 //
-// The bundled fixtures (lib/sample) only appear with ?demo=sample, or while USE_MOCKS is on.
-// TODO(first-run): when mocks become opt in through one flag module, swap usingMocks() for it.
+// The bundled fixtures (lib/sample) only appear with ?demo=sample, or with USE_MOCKS (lib/mode.ts).
 
 export type TimelineScreen = {
   date: string;
@@ -55,7 +55,7 @@ const lightScan = (from: number, to: number) =>
   ).catch(() => ({ events: [] as Event[] }));
 
 export async function loadTimeline(asked?: string, demo?: string): Promise<TimelineScreen> {
-  if (demo === "sample" || usingMocks()) return loadSample(asked);
+  if (demo === "sample" || USE_MOCKS) return loadSample(asked);
 
   const today = athensDay();
   const date = isLocalDay(asked) ? asked : today;

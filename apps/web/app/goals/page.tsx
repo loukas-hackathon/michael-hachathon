@@ -1,4 +1,5 @@
 import { type Goal, GoalCategory } from "@michael/shared";
+import Link from "next/link";
 import { EmptyState } from "@/components/empty-state";
 import { BalanceBars } from "@/components/gamification/balance";
 import { TargetCard } from "@/components/gamification/target-card";
@@ -8,6 +9,7 @@ import { AddGoal, EditGoal, type GoalDraft } from "@/components/goals/goal-sheet
 import { ScreenHeader } from "@/components/screen";
 import { getGoals, getGoalsWeek } from "@/lib/api";
 import { CATEGORIES, CATEGORY_TITLE, categoryOf } from "@/lib/categories";
+import { SETUP_LINKS } from "@/lib/first-run";
 import { formatWeekday, hm } from "@/lib/format";
 import { type GoalStatus, pace, rank, todayIndex } from "@/lib/goals-view";
 
@@ -35,8 +37,18 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
       <CalendarGoals className="mt-4" />
 
       {week.goals.length === 0 ? (
-        <EmptyState title="No goals yet.">
-          Tell Michael what you're working towards and how many hours a week it needs.
+        <EmptyState
+          title="No goals yet."
+          action={
+            <Link
+              href={SETUP_LINKS.goals}
+              className="press inline-flex min-h-9 items-center rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint"
+            >
+              Set your first goal
+            </Link>
+          }
+        >
+          Tell me what you're working towards and how many hours a week it needs.
         </EmptyState>
       ) : (
         <>

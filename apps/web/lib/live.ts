@@ -1,8 +1,7 @@
 import "server-only";
 import type { TimelineResponse } from "@michael/shared";
 import { get } from "./api";
-
-const USE_MOCKS = process.env.USE_MOCKS !== "false";
+import { USE_MOCKS } from "./mode";
 
 /**
  * A short fingerprint of what Today and Timeline are drawn from: the last 24 hours of events and

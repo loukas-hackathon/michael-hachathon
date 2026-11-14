@@ -70,7 +70,8 @@ pnpm check          # typecheck + lint
 ```
 
 With no Supabase variables set, the API uses an in-memory store seeded with a mock day, so
-everything works offline. The web app serves mock data while `USE_MOCKS=true`.
+everything works offline. The web app shows real data from `API_URL`; it serves fixtures only with
+`USE_MOCKS=true` (or in `next dev` with no `API_URL`). Any screen previews the sample with `?demo=sample`.
 
 ```bash
 curl localhost:8787/health
@@ -104,14 +105,14 @@ curl -H "Authorization: Bearer dev-key" "localhost:8787/v1/timeline?from=2026-11
 
 `apps/web` (`apps/web/.env.example`). Only `NEXT_PUBLIC_` vars reach the browser:
 
-| Var                                                         | Purpose                                                               |
-| ----------------------------------------------------------- | --------------------------------------------------------------------- |
-| `USE_MOCKS`                                                 | `true` serves fixtures from `@michael/shared`                         |
-| `API_URL`                                                   | base URL of the API                                                   |
-| `API_KEY`                                                   | same secret as the API (the demo week)                                |
-| `PUBLIC_API_URL`                                            | optional: API URL shown in device keys (defaults to `API_URL`)        |
-| `MCP_URL`                                                   | optional: the MCP URL shown on the Agents screen (`API_URL` + `/mcp`) |
-| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Google sign in through Supabase Auth (anon key is public by design)   |
+| Var                                                         | Purpose                                                                   |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `USE_MOCKS`                                                 | only `true` serves fixtures (default: real data, `?demo=sample` previews) |
+| `API_URL`                                                   | base URL of the API                                                       |
+| `API_KEY`                                                   | same secret as the API (the demo week)                                    |
+| `PUBLIC_API_URL`                                            | optional: API URL shown in device keys (defaults to `API_URL`)            |
+| `MCP_URL`                                                   | optional: the MCP URL shown on the Agents screen (`API_URL` + `/mcp`)     |
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Google sign in through Supabase Auth (anon key is public by design)       |
 
 ## Browser extension
 
@@ -156,7 +157,7 @@ Where configuration lives (values are never committed):
 | Place                                        | Keys                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Railway, service `api`                       | `NODE_ENV`, `API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `WEB_ORIGIN`, `PUBLIC_API_URL`, `PUBLIC_WEB_URL`, `WEB_URL`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `CALENDAR_SYNC_MINUTES`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `SCHEDULER_ENABLED`, `SCHEDULER_INTERVAL_MINUTES`, `GOOGLE_MAPS_API_KEY`, `ELEVENLABS_API_KEY` (optional) |
-| Vercel, project `michael`                    | `API_URL`, `API_KEY`, `USE_MOCKS=false`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `MCP_URL` (optional), `PUBLIC_API_URL` (optional)                                                                                                                                                                                                                                                                             |
+| Vercel, project `michael`                    | `API_URL`, `API_KEY`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `MCP_URL` (optional), `PUBLIC_API_URL` (optional)                                                                                                                                                                                                                                                                                                |
 | GitHub repo secrets                          | `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`, `RAILWAY_TOKEN`; variable `SUPABASE_PROJECT_REF`                                                                                                                                                                                                                                                                                                                                   |
 | Local `apps/api/.env`, `apps/web/.env.local` | copies for local runs (`pnpm env:copy` in worktrees)                                                                                                                                                                                                                                                                                                                                                                                |
 
@@ -175,8 +176,8 @@ Seed the demo goals and recommendations (idempotent, never events): `pnpm --filt
    `GEMINI_API_KEY`, `WEB_ORIGIN` (the Vercel URL) and `PUBLIC_API_URL` (the Railway URL).
    Generate a domain, then check `https://<railway-domain>/health`.
 3. **Vercel (web):** import the repo, set the root directory to `apps/web` (framework Next.js).
-   Set `API_URL` (the Railway URL), `API_KEY`, `USE_MOCKS=false`, `NEXT_PUBLIC_SUPABASE_URL` and
-   `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+   Set `API_URL` (the Railway URL), `API_KEY`, `NEXT_PUBLIC_SUPABASE_URL` and
+   `NEXT_PUBLIC_SUPABASE_ANON_KEY`. Leave `USE_MOCKS` unset.
 
 ## Connect the MCP server
 

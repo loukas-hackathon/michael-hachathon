@@ -36,6 +36,7 @@ import { categoryOf } from "./categories";
 import type { DayView } from "./day";
 import type { GoalsView } from "./goals-view";
 import type { Instruction, InstructionInput } from "./instructions";
+import { API_URL, USE_MOCKS } from "./mode";
 import {
   sampleDay,
   sampleEarly,
@@ -49,11 +50,8 @@ import { dayFromScore, goalsFromScore, leadFromPatterns } from "./score-map";
 
 // Server-side data access. The browser never sees API_KEY and never talks to the DB. Each request
 // carries the signed-in user's Supabase token, so the API returns only that user's data.
-// USE_MOCKS=true (default) serves fixtures from @michael/shared until the real endpoint exists.
-const USE_MOCKS = process.env.USE_MOCKS !== "false";
-export const API_URL = process.env.API_URL ?? "http://localhost:8787";
-/** For loaders outside this file (lib/timeline-data.ts). */
-export const usingMocks = () => USE_MOCKS;
+// Fixtures only with USE_MOCKS (lib/mode.ts): real data is the default, ?demo=sample previews.
+export { API_URL };
 
 // Whose data to fetch (a session always beats the demo cookie): authHeaders in lib/caller.ts.
 
