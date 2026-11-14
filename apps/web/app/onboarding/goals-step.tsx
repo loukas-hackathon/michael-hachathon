@@ -1,6 +1,6 @@
 "use client";
 
-import type { GoalCategory, GoalSuggestion } from "@michael/shared";
+import { type GoalArea, type GoalCategory, type GoalSuggestion, goalArea } from "@michael/shared";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ConnectionIcon } from "@/components/you/connection-icon";
@@ -12,6 +12,8 @@ import { OnboardingFrame, primaryButton, Separator } from "./frame";
 // found in the user's own week (#134), ticked and with the hours filled in; the usual starters sit
 // under them, unticked. Without the calendar, the starters lead and the calendar is one tap above
 // them. One tap keeps the lot; hours change with minus and plus, everything else later on Goals.
+// Each row says its area (Business, Health, Personal), and the last row takes a goal in the user's
+// own words (carried over from Manolis' #190).
 
 type Starter = {
   category: GoalCategory;
@@ -66,7 +68,22 @@ const STARTERS: Starter[] = [
     step: 30,
     initial: 5 * 60,
   },
+  {
+    category: "personal",
+    name: "Time for yourself",
+    what: "Family, friends, a night out",
+    unit: "week",
+    min: 30,
+    max: 20 * 60,
+    step: 30,
+    initial: 3 * 60,
+  },
 ];
+
+const AREA_LABEL: Record<GoalArea, string> = { business: "Business", health: "Health", personal: "Personal" };
+
+/** A goal in the user's own words starts here; Goals changes it later. */
+const OWN_GOAL_MINUTES = 5 * 60;
 
 /** At most three suggestions start ticked: two or three goals is a week anyone can hold. */
 const TICKED = 3;
@@ -82,6 +99,7 @@ type Row = {
   initial: number;
   suggestion?: string;
   category?: GoalCategory;
+  area: GoalArea;
 };
 
 /** A goal the user already has (Redo setup): its starter row starts ticked with its own hours. */
@@ -99,6 +117,7 @@ function rowsFor(suggestions: GoalSuggestion[], saved: SavedGoal[]): Row[] {
       step: 30,
       initial: s.weekly_budget_minutes,
       suggestion: s.id,
+      area: s.area,
     }),
   );
   const taken = new Set(found.map((r) => r.title.toLowerCase()));
@@ -118,6 +137,7 @@ function rowsFor(suggestions: GoalSuggestion[], saved: SavedGoal[]): Row[] {
       step: g.step,
       initial: own == null ? g.initial : Math.min(g.max, Math.max(g.min, Math.round(own / g.step) * g.step)),
       category: g.category,
+      area: goalArea(g.category),
     };
   });
   return [...found, ...starters];
@@ -209,6 +229,8 @@ export function GoalsStep({
   const [minutes, setMinutes] = useState<Record<string, number>>(() =>
     Object.fromEntries(rows.map((r) => [r.key, r.initial])),
   );
+  const [own, setOwn] = useState("");
+  const ownTitle = own.trim();
   const [busy, setBusy] = useState<"save" | "skip" | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -238,6 +260,7 @@ export function GoalsStep({
           const m = minutes[r.key] ?? r.initial;
           return { category: r.category as GoalCategory, weekly_minutes: r.unit === "night" ? m * 7 : m };
         }),
+      own: ownTitle ? { title: ownTitle, weekly_minutes: OWN_GOAL_MINUTES } : undefined,
     }).catch(() => ({ ok: false }));
     if (res.ok) {
       // Stays "Saving" until the next screen paints: it reads the week with the new goals.
@@ -255,7 +278,7 @@ export function GoalsStep({
   }
 
   const found = suggestions.length > 0;
-  const n = picked.length;
+  const n = picked.length + (ownTitle ? 1 : 0);
   // Redo setup with nothing new found: the goals are already in, moving on is enough.
   const already = saved.length > 0;
 
@@ -266,7 +289,8 @@ export function GoalsStep({
       line={
         found
           ? "I read it in your calendar. Keep what's right; the hours are a start."
-          : "Tick two or three. I guard their time every week."
+          : // The voice sheet's opening (Manolis, #190), then what to do.
+            "I'm Michael. I learn how your days really go, then give you time back for what you want. Tick two or three."
       }
       right={
         <button
@@ -340,10 +364,11 @@ export function GoalsStep({
                 className="press flex min-h-14 w-full items-center gap-3 px-4 py-3 text-left"
               >
                 <Check on={on} />
-                <span className="flex min-w-0 flex-col">
+                <span className="flex min-w-0 flex-1 flex-col">
                   <span className="text-body font-semibold">{r.title}</span>
                   <span className="text-footnote text-label-2">{r.sub}</span>
                 </span>
+                <span className="shrink-0 text-footnote text-label-2">{AREA_LABEL[r.area]}</span>
               </button>
               {on ? (
                 <Stepper
@@ -355,7 +380,29 @@ export function GoalsStep({
             </li>
           );
         })}
+        <li className="relative">
+          <Separator />
+          <label htmlFor="own-goal" className="sr-only">
+            Something else, in your own words
+          </label>
+          <input
+            id="own-goal"
+            value={own}
+            onChange={(e) => setOwn(e.target.value)}
+            maxLength={60}
+            autoComplete="off"
+            enterKeyHint="done"
+            placeholder="Something else, in your own words"
+            className="min-h-14 w-full bg-transparent px-4 text-body text-label outline-none placeholder:text-label-2"
+          />
+        </li>
       </ul>
+      {ownTitle ? (
+        <p className="mt-2 px-4 text-footnote text-label-2">
+          <span className="tnum">{hm(OWN_GOAL_MINUTES)}</span> a week to start, under Business. Change it on
+          Goals.
+        </p>
+      ) : null}
     </OnboardingFrame>
   );
 }
