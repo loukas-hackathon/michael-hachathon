@@ -24,6 +24,7 @@ export const TOOL_SCOPE: Record<string, AgentScope> = {
   update_recommendation: "recommendations",
   get_nudges: "recommendations",
   get_score: "score",
+  get_records: "score",
   get_moments: "score",
   add_event: "write_events",
   execute_recommendation: "write_events",
@@ -111,6 +112,8 @@ export function summarise(name: string, title: string | undefined, input: unknow
       return "Suggested muting an app";
     case "get_score":
       return typeof a.date === "string" ? `Read your score for ${a.date}` : "Read your score";
+    case "get_records":
+      return "Read your personal records";
     case "add_event":
       return typeof a.title === "string"
         ? `Added "${a.title.slice(0, 80)}" to your day`

@@ -23,12 +23,14 @@ import {
   mockRecommendations,
   type Nudge,
   type NudgeStatus,
+  type PersonalRecord,
   type Place,
   type Profile,
   type Recommendation,
   type RecommendationStatus,
   type Source,
   type SourceSetting,
+  type WeeklyTarget,
 } from "@michael/shared";
 import type { z } from "zod";
 import { currentUserId } from "./context";
@@ -37,6 +39,7 @@ import { env } from "./env";
 import { guardRecommendation, guardRecommendations } from "./instructions/guard";
 import type { GeocodeHit } from "./integrations/maps";
 import { type PrivacyBackend, type PrivacyRules, screenEvents } from "./privacy";
+import type { NewRecord } from "./score/records";
 import { SupabaseStore } from "./supabase-store";
 
 export interface TimelineFilter {
@@ -240,6 +243,20 @@ export interface Store extends PrivacyBackend {
   unbindTelegramChat(): Promise<boolean>;
   /** NOT scoped: the webhook only knows the chat. Whose chat this is, or null. */
   telegramChatOwner(chatId: string): Promise<string | null>;
+
+  // ---- weekly targets (#165), one per Monday ----
+  /** Stored targets with `week_start` in [from, to] (local days), oldest first. */
+  listTargets(from: string, to: string): Promise<WeeklyTarget[]>;
+  /** Insert or replace the week's target; `created_at` stays from the first save. */
+  saveTarget(target: TargetInput): Promise<WeeklyTarget>;
+
+  // ---- personal records (#166) ----
+  /** Every record of the current user, oldest first. */
+  listRecords(): Promise<PersonalRecord[]>;
+  /** Stores new records; a `key` already stored is skipped, so a period sets a record once. */
+  insertRecords(records: NewRecord[]): Promise<PersonalRecord[]>;
+  /** Sets `announced_at` the first time; null when there is no such record. */
+  markRecordAnnounced(id: string): Promise<PersonalRecord | null>;
   /**
    * The one read that is NOT scoped to the current user: ids of users with events received since
    * `since`. Only the scheduler calls it, outside any request, and then runs each check as that user.
@@ -273,6 +290,8 @@ export interface Store extends PrivacyBackend {
   /** NOT scoped: users with events that started before `before`. Only the retention job calls it. */
   usersWithEventsBefore(before: string): Promise<string[]>;
 }
+
+export type TargetInput = Omit<WeeklyTarget, "created_at" | "updated_at">;
 
 export interface AskedQuestion {
   question: string;
@@ -352,6 +371,8 @@ export class MemoryStore implements Store {
       geocodes: Map<string, GeocodeHit>;
       summaries: EventSummary[];
       guards: FocusGuard[];
+      targets: WeeklyTarget[];
+      records: (PersonalRecord & { key: string })[];
     }
   >();
   private fresh(sample: boolean) {
@@ -372,6 +393,8 @@ export class MemoryStore implements Store {
       geocodes: new Map<string, GeocodeHit>(),
       summaries: [] as EventSummary[],
       guards: [] as FocusGuard[],
+      targets: [] as WeeklyTarget[],
+      records: [] as (PersonalRecord & { key: string })[],
     };
   }
   private get d() {
@@ -810,6 +833,51 @@ export class MemoryStore implements Store {
     );
   }
 
+  async listTargets(from: string, to: string) {
+    return structuredClone(
+      this.d.targets
+        .filter((t) => t.week_start >= from && t.week_start <= to)
+        .sort((a, b) => (a.week_start < b.week_start ? -1 : 1)),
+    );
+  }
+
+  async saveTarget(input: TargetInput) {
+    const d = this.d;
+    const found = d.targets.find((t) => t.week_start === input.week_start);
+    const target: WeeklyTarget = {
+      ...structuredClone(input),
+      created_at: found?.created_at ?? now(),
+      updated_at: now(),
+    };
+    d.targets = [...d.targets.filter((t) => t.week_start !== input.week_start), target];
+    return structuredClone(target);
+  }
+
+  async listRecords() {
+    return this.d.records.map(({ key: _key, ...r }) => structuredClone(r));
+  }
+
+  async insertRecords(records: NewRecord[]) {
+    const d = this.d;
+    const out: PersonalRecord[] = [];
+    for (const r of records) {
+      if (d.records.some((x) => x.key === r.key)) continue;
+      const row = { ...structuredClone(r), id: crypto.randomUUID(), announced_at: null, created_at: now() };
+      d.records.push(row);
+      const { key: _key, ...record } = row;
+      out.push(record);
+    }
+    return out;
+  }
+
+  async markRecordAnnounced(id: string) {
+    const row = this.d.records.find((r) => r.id === id);
+    if (!row) return null;
+    row.announced_at ??= now();
+    const { key: _key, ...record } = row;
+    return structuredClone(record);
+  }
+
   async listPlaces() {
     return structuredClone(this.d.places);
   }
@@ -891,6 +959,8 @@ export class MemoryStore implements Store {
         source_settings: Object.keys(d.privacy.sources).length,
         privacy_state: d.privacy.offTheRecord || d.privacy.since ? 1 : 0,
         user_profiles: this.profiles.has(userId) ? 1 : 0,
+        weekly_targets: d.targets.length,
+        records: d.records.length,
       };
       // An empty account, not the sample day a first visit gets.
       this.data.set(userId, this.fresh(false));
