@@ -51,6 +51,8 @@ export function Tape({
                   ) : null}
                   {t === "spent" ? (
                     <span className="absolute inset-0 rounded-[1.5px] bg-spark" />
+                  ) : t === "unverified" ? (
+                    <span className="absolute inset-0 rounded-[1.5px] bg-[color-mix(in_srgb,var(--m-spark)_38%,var(--m-bg))]" />
                   ) : t === "lost" ? (
                     <span className="absolute inset-x-0 bottom-0 h-[45%] rounded-[1.5px] bg-label-2 opacity-75" />
                   ) : (
@@ -77,9 +79,11 @@ export function TapeKey({ items }: { items: { kind: Tick; text: string }[] }) {
             className={
               kind === "spent"
                 ? "h-3 w-1 rounded-[1px] bg-spark"
-                : kind === "lost"
-                  ? "mt-1.5 h-1.5 w-1 rounded-[1px] bg-label-2 opacity-75"
-                  : "h-3 w-1 rounded-[1px] shadow-[inset_0_0_0_1px_var(--m-label-2)]"
+                : kind === "unverified"
+                  ? "h-3 w-1 rounded-[1px] bg-[color-mix(in_srgb,var(--m-spark)_38%,var(--m-bg))]"
+                  : kind === "lost"
+                    ? "mt-1.5 h-1.5 w-1 rounded-[1px] bg-label-2 opacity-75"
+                    : "h-3 w-1 rounded-[1px] shadow-[inset_0_0_0_1px_var(--m-label-2)]"
             }
           />
           {text}

@@ -1,3 +1,5 @@
+import type { Category } from "./categories";
+
 // The week as the Goals tab sees it. GET /v1/score has per goal totals (GoalScore) but not the
 // per day minutes or sleep; until it does (issue for the contract), lib/api.ts serves a sample week
 // in this local shape.
@@ -5,8 +7,11 @@
 export type GoalWeek = {
   id: string;
   title: string;
+  category: Category;
   budgetMinutes: number;
   spentMinutes: number;
+  /** The part of spentMinutes no data proves yet (drawn pale pink). */
+  unverifiedMinutes: number;
   /** Minutes per day, Monday first. Days after today are null. */
   daily: (number | null)[];
 };
@@ -22,8 +27,8 @@ export type GoalsView = {
   /** Monday 00:00 of the week and "now", both ISO. */
   weekStart: string;
   now: string;
-  /** Free hours left this week outside fixed commitments, from the calendar. */
-  freeMinutesLeft: number;
+  /** Free time left this week outside fixed commitments, from the calendar. Null until known. */
+  freeMinutesLeft: number | null;
   goals: GoalWeek[];
   sleep: SleepWeek | null;
 };

@@ -25,10 +25,12 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
         </EmptyState>
       ) : (
         <>
-          <p className="mt-1.5 text-subhead text-label-2">
-            We're at <b className="font-semibold text-label tnum">{day.week.scorePct}%</b> of goal time this
-            week. {day.week.line}
-          </p>
+          {day.week.scorePct != null ? (
+            <p className="mt-1.5 text-subhead text-label-2">
+              We're at <b className="font-semibold text-label tnum">{day.week.scorePct}%</b> of goal time this
+              week.{day.week.line ? ` ${day.week.line}` : ""}
+            </p>
+          ) : null}
 
           <section aria-label="Goal time today" className="mt-5">
             {t.scorePct === null && firstBlock ? (
@@ -50,19 +52,24 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
                 ticks={ticks}
                 nowAt={day.moment === "evening" || t.scorePct === null ? null : nowIndex(ticks)}
                 nowLabel={formatTime(day.now)}
-                label={`${hm(t.spent)} spent, ${hm(t.lost)} lost, ${hm(t.ahead)} still ahead`}
+                label={`${hm(t.spent)} spent (${hm(t.unverified)} unconfirmed), ${hm(t.lost)} lost, ${hm(t.ahead)} still ahead`}
               />
             </div>
             <TapeKey
-              items={[
+              items={
                 t.scorePct === null
-                  ? { kind: "ahead" as const, text: `${hm(t.planned)} planned` }
-                  : { kind: "spent" as const, text: `${hm(t.spent)} spent` },
-                ...(t.lost > 0 ? [{ kind: "lost" as const, text: `${hm(t.lost)} lost` }] : []),
-                ...(t.ahead > 0 && t.scorePct !== null
-                  ? [{ kind: "ahead" as const, text: `${hm(t.ahead)} ahead` }]
-                  : []),
-              ]}
+                  ? [{ kind: "ahead" as const, text: `${hm(t.planned)} planned` }]
+                  : [
+                      ...(t.spent - t.unverified > 0 || t.unverified === 0
+                        ? [{ kind: "spent" as const, text: `${hm(t.spent - t.unverified)} spent` }]
+                        : []),
+                      ...(t.unverified > 0
+                        ? [{ kind: "unverified" as const, text: `${hm(t.unverified)} unconfirmed` }]
+                        : []),
+                      ...(t.lost > 0 ? [{ kind: "lost" as const, text: `${hm(t.lost)} lost` }] : []),
+                      ...(t.ahead > 0 ? [{ kind: "ahead" as const, text: `${hm(t.ahead)} ahead` }] : []),
+                    ]
+              }
             />
           </section>
 

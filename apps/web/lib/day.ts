@@ -24,6 +24,8 @@ export type GoalBlock = {
 
 export type Evidence =
   | { kind: "cadence"; from: string; to: string; sessions: string[]; gapMinutes: number }
+  /** Phone sessions per hour of the day (24 values), with the working window to highlight. */
+  | { kind: "hours"; perHour: number[]; window: [number, number] }
   | { kind: "none" };
 
 export type Lead = {
@@ -45,14 +47,27 @@ export type DayView = {
   moment: Moment;
   /** True for sample data. The screen says so. */
   sample: boolean;
-  week: { scorePct: number; line: string };
+  /** The week line: the score so far this week, and the analysis' one sentence once it exists. */
+  week: { scorePct: number | null; line: string | null };
+  /** From GET /v1/score: the tape and totals as the API worked them out. Sample days compute them. */
+  scored?: { ticks: Tick[][]; totals: Totals };
   blocks: GoalBlock[];
   wonBackMinutes: number;
   lead: Lead | null;
   nudge: Nudge | null;
 };
 
-export type Tick = "spent" | "lost" | "ahead";
+/** Unverified: inside a planned block and not lost, but no data proves it (yet). Drawn pale pink. */
+export type Tick = "spent" | "unverified" | "lost" | "ahead";
+
+export type Totals = {
+  planned: number;
+  spent: number;
+  unverified: number;
+  lost: number;
+  ahead: number;
+  scorePct: number | null;
+};
 export const TICK_MINUTES = 5;
 
 const ms = (iso: string) => new Date(iso).getTime();
@@ -71,6 +86,7 @@ function lostWithin(block: GoalBlock, a: number, b: number) {
 
 /** The tape: one tick per 5 minutes of planned goal time, grouped by block. */
 export function tape(day: DayView): Tick[][] {
+  if (day.scored) return day.scored.ticks;
   const now = ms(day.now);
   return day.blocks.map((block) => {
     const start = ms(block.start);
@@ -85,7 +101,8 @@ export function tape(day: DayView): Tick[][] {
 }
 
 /** Minutes spent, lost and still ahead, from the plan and the interruptions (not from the ticks). */
-export function totals(day: DayView) {
+export function totals(day: DayView): Totals {
+  if (day.scored) return day.scored.totals;
   const now = ms(day.now);
   let planned = 0;
   let elapsed = 0;
@@ -101,7 +118,7 @@ export function totals(day: DayView) {
   const spent = elapsed - lost;
   const ahead = planned - elapsed;
   const scorePct = elapsed > 0 ? Math.round((spent / elapsed) * 100) : null;
-  return { planned, spent, lost, ahead, scorePct };
+  return { planned, spent, unverified: 0, lost, ahead, scorePct };
 }
 
 /** Index of the first tick that is still ahead, across all blocks (for the "now" marker). */
