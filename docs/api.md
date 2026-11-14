@@ -2435,16 +2435,16 @@ Stated here and at the top of `apps/api/src/score/count.ts`; the two change toge
   events count towards a goal", among the count goals only) that has ended with at least half of
   it spent by the attribution rule above; a `workout` event that has ended and overlaps one of the
   goal's own blocks, names the goal in `data.goal_id`, or has a title the goal lists in
-  `calendar_titles`; the evening check in answered yes for the goal.
+  `calendar_titles`; a check in question (see Check in, #187) answered `yes` that names the goal
+  in `goal_id`, or names one of the goal's own blocks in `event_id` (the question may name the
+  time goal that also lists the block). The check in takes the span of the block it asks about.
 - **Dedupe:** occurrences on the same local day that overlap or are within an hour of each other
-  count once. A check in carries no time of its own: it stands for the day's session and adds one
-  only on a day with no block and no workout.
+  count once. A check in with no span of its own stands for the day's session and adds one only on
+  a day with no other occurrence.
 - `done` = occurrences so far this week; `target` = `per_week`; `left` = target minus done, never
   below 0; `days_left` = the days of the week that have not ended yet, today included. Behind pace:
   `left > days_left`.
-- **Check in answers** until #187 defines the real shape: a `note` event with
-  `data.check_in: { goal_id, answer: "yes" }`. One function reads it (`score/check-in.ts`), and
-  only the goal and the instant leave it, never the note's text.
+- One function reads the check in's shape for this (`score/check-in.ts`).
 - A block that is also a block of a time goal ("Gym" on a training goal) stays in the time score
   as before and also counts as a session.
 
