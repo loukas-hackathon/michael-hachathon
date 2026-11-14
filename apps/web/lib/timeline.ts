@@ -1,0 +1,322 @@
+import type { Event } from "@michael/shared";
+
+// Builds the Timeline view of one day from raw timeline events.
+// Mac use becomes blocks: pink where work apps held the screen (goal time, inferred while there is no
+// plan), hatched where messages or social apps took a stretch, grey for everything else. Short breaks
+// inside work cut the block instead of splitting it. Phone sessions and Claude Code sessions sit in
+// their own narrow lanes. Long stretches with no screens collapse to one row.
+
+export type Kind = "work" | "lost" | "other";
+
+export type Cut = { at: number; minutes: number; what: string };
+
+export type Block = {
+  start: number;
+  end: number;
+  kind: Kind;
+  label: string;
+  minutes: number;
+  cuts: Cut[];
+  /** The planned block this time belongs to: drawn as a dashed outline (outline and fill). */
+  plan?: { start: number; end: number; title: string };
+  /** Michael moved the planned end here: a dashed pink extension. */
+  movedEnd?: number;
+  /** Stretches inside the block lost to one thing, hatched with a label. */
+  lostStretches?: { start: number; end: number; what: string }[];
+};
+
+export type Mark = { start: number; end: number; title: string };
+
+export type Segment =
+  | { kind: "hours"; from: number; to: number }
+  | { kind: "quiet"; from: number; to: number };
+
+export type TimelineDay = {
+  date: string;
+  /** Set when the day is today: draws the now pill and leaves the rest of the plan as outline. */
+  now?: number;
+  sample?: boolean;
+  dayStart: number;
+  dayEnd: number;
+  blocks: Block[];
+  phone: Mark[];
+  ai: Mark[];
+  segments: Segment[];
+  totals: { workMinutes: number; lostMinutes: number; phoneSessions: number; phoneMinutes: number };
+};
+
+const MIN = 60_000;
+
+const WORK_APPS = new Set([
+  "VS Code",
+  "Cursor",
+  "Xcode",
+  "Terminal",
+  "iTerm",
+  "Claude",
+  "Notion",
+  "Word",
+  "Excel",
+  "PowerPoint",
+  "Pages",
+  "Numbers",
+  "Keynote",
+  "Figma",
+  "Linear",
+]);
+const MESSAGE_APPS = new Set([
+  "WhatsApp",
+  "WhatsApp Business",
+  "Telegram",
+  "Viber",
+  "Messages",
+  "Messenger",
+  "Mail",
+  "Outlook",
+  "Gmail",
+  "Slack",
+  "Discord",
+]);
+const SOCIAL_APPS = new Set([
+  "Instagram",
+  "Facebook",
+  "TikTok",
+  "YouTube",
+  "Netflix",
+  "LinkedIn",
+  "X",
+  "Reddit",
+]);
+const BROWSERS = new Set(["Chrome", "Safari", "Arc", "Brave Browser", "Browser", "Firefox"]);
+
+const WEB_KIND: Record<string, Kind> = {
+  ai: "work",
+  dev: "work",
+  docs: "work",
+  mail: "lost",
+  messaging: "lost",
+  social: "lost",
+  video: "lost",
+  news: "lost",
+  shopping: "lost",
+  travel: "other",
+  search: "other",
+  finance: "other",
+};
+
+const t = (iso: string) => new Date(iso).getTime();
+
+type Session = { start: number; end: number; app: string; kind: Kind; what: string };
+
+/** What a Chrome session was, from the foreground web visit that overlaps it most. */
+function browserKind(s: { start: number; end: number }, visits: Event[]): { kind: Kind; what: string } {
+  let best: Event | null = null;
+  let bestOverlap = 0;
+  for (const v of visits) {
+    const vs = t(v.start_at);
+    const ve = v.end_at ? t(v.end_at) : vs;
+    const o = Math.min(ve, s.end) - Math.max(vs, s.start);
+    if (o > bestOverlap) {
+      bestOverlap = o;
+      best = v;
+    }
+  }
+  const cat = best ? String(best.data.category ?? "") : "";
+  return { kind: WEB_KIND[cat] ?? "other", what: best?.title ?? "Chrome" };
+}
+
+function classify(app: string): Kind {
+  if (WORK_APPS.has(app)) return "work";
+  if (MESSAGE_APPS.has(app) || SOCIAL_APPS.has(app)) return "lost";
+  return "other";
+}
+
+function topApps(apps: Map<string, number>, n = 2) {
+  return [...apps.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, n)
+    .map(([a]) => a);
+}
+
+export function buildTimeline(
+  date: string,
+  events: Event[],
+  dayStartIso: string,
+  dayEndIso: string,
+): TimelineDay {
+  const dayStart = t(dayStartIso);
+  const dayEnd = t(dayEndIso);
+  const clip = (s: number, e: number) => [Math.max(s, dayStart), Math.min(e, dayEnd)] as const;
+
+  const visits = events.filter((e) => e.type === "web_visit" && e.data.foreground === true);
+
+  // 1. Mac sessions, classified.
+  const sessions: Session[] = [];
+  for (const e of events) {
+    if (e.source !== "macos_usage" || e.type !== "app_usage" || !e.end_at) continue;
+    const [s, en] = clip(t(e.start_at), t(e.end_at));
+    if (en - s < 5_000) continue;
+    if (BROWSERS.has(e.title)) {
+      const k = browserKind({ start: s, end: en }, visits);
+      sessions.push({
+        start: s,
+        end: en,
+        app: e.title,
+        kind: k.kind,
+        what: k.kind === "lost" ? k.what : e.title,
+      });
+    } else {
+      sessions.push({ start: s, end: en, app: e.title, kind: classify(e.title), what: e.title });
+    }
+  }
+  sessions.sort((a, b) => a.start - b.start);
+
+  // 2. Runs of Mac use: sessions with gaps of 3 minutes or less, whatever the app.
+  type Run = { start: number; end: number; sessions: Session[] };
+  const runs: Run[] = [];
+  for (const s of sessions) {
+    const last = runs.at(-1);
+    if (last && s.start - last.end <= 3 * MIN) {
+      last.end = Math.max(last.end, s.end);
+      last.sessions.push(s);
+    } else {
+      runs.push({ start: s.start, end: s.end, sessions: [s] });
+    }
+  }
+
+  // 3. One block per run, coloured by what dominated it. Inside work, messages and social cut the
+  // block (under 3 minutes) or are hatched with a label (3 minutes or more).
+  const blocks: Block[] = [];
+  for (const run of runs) {
+    const total = run.sessions.reduce((n, s) => n + (s.end - s.start), 0);
+    if (total < 2 * MIN) continue;
+    const by: Record<Kind, number> = { work: 0, lost: 0, other: 0 };
+    const apps = new Map<string, number>();
+    const lostApps = new Map<string, number>();
+    for (const s of run.sessions) {
+      by[s.kind] += s.end - s.start;
+      const target = s.kind === "lost" ? lostApps : apps;
+      target.set(s.what, (target.get(s.what) ?? 0) + (s.end - s.start));
+    }
+    const kind: Kind =
+      by.lost >= total * 0.5 ? "lost" : by.work >= total * 0.4 && total >= 5 * MIN ? "work" : "other";
+    const block: Block = {
+      start: run.start,
+      end: run.end,
+      kind,
+      label: kind === "lost" ? (topApps(lostApps, 1)[0] ?? "") : topApps(apps).join(", "),
+      minutes: kind === "work" ? (total - by.lost) / MIN : total / MIN,
+      cuts: [],
+      lostStretches: [],
+    };
+    if (kind !== "lost") {
+      // Merge back to back lost sessions (gaps under a minute) into stretches.
+      let cur: { start: number; end: number; apps: Map<string, number> } | null = null;
+      const flush = () => {
+        if (!cur) return;
+        const what = topApps(cur.apps, 1)[0] ?? "";
+        const len = cur.end - cur.start;
+        if (len >= 3 * MIN) block.lostStretches?.push({ start: cur.start, end: cur.end, what });
+        else if (len >= 20_000) block.cuts.push({ at: cur.start, minutes: len / MIN, what });
+        cur = null;
+      };
+      for (const s of run.sessions) {
+        if (s.kind !== "lost") {
+          if (cur && s.start - cur.end > MIN) flush();
+          continue;
+        }
+        if (cur && s.start - cur.end <= MIN) {
+          cur.end = Math.max(cur.end, s.end);
+          cur.apps.set(s.what, (cur.apps.get(s.what) ?? 0) + (s.end - s.start));
+        } else {
+          flush();
+          cur = { start: s.start, end: s.end, apps: new Map([[s.what, s.end - s.start]]) };
+        }
+      }
+      flush();
+    }
+    blocks.push(block);
+  }
+
+  // 4. Phone sessions and Claude Code sessions.
+  const marks = (pred: (e: Event) => boolean): Mark[] =>
+    events
+      .filter((e) => pred(e) && e.end_at)
+      .map((e) => {
+        const [s, en] = clip(t(e.start_at), t(e.end_at as string));
+        return { start: s, end: en, title: e.title };
+      })
+      .filter((m) => m.end > m.start)
+      .sort((a, b) => a.start - b.start);
+  const phone = marks((e) => e.source === "iphone_usage" && e.type === "app_usage");
+  const ai = marks((e) => e.type === "ai_session");
+
+  // 5. Quiet stretches of 90 minutes or more (no Mac block, no phone session) collapse to one row.
+  const busy = [
+    ...blocks.map((b) => [b.start, b.end] as const),
+    ...phone.map((p) => [p.start, p.end] as const),
+  ].sort((a, b) => a[0] - b[0]);
+  const segments: Segment[] = [];
+  const floorHour = (x: number) => x - ((((x - dayStart) % (60 * MIN)) + 60 * MIN) % (60 * MIN));
+  const ceilHour = (x: number) => {
+    const f = floorHour(x);
+    return f === x ? x : f + 60 * MIN;
+  };
+  let cursor = dayStart;
+  let open = dayStart;
+  for (const [s, e] of busy) {
+    if (s - cursor >= 90 * MIN) {
+      const qFrom = ceilHour(cursor);
+      const qTo = floorHour(s);
+      if (qTo - qFrom >= 60 * MIN) {
+        if (qFrom > open) segments.push({ kind: "hours", from: open, to: qFrom });
+        segments.push({ kind: "quiet", from: qFrom, to: qTo });
+        open = qTo;
+      }
+    }
+    cursor = Math.max(cursor, e);
+  }
+  const lastQuietFrom = ceilHour(cursor);
+  if (dayEnd - lastQuietFrom >= 60 * MIN) {
+    if (lastQuietFrom > open) segments.push({ kind: "hours", from: open, to: lastQuietFrom });
+    segments.push({ kind: "quiet", from: lastQuietFrom, to: dayEnd });
+  } else {
+    segments.push({ kind: "hours", from: open, to: dayEnd });
+  }
+
+  const workMinutes = blocks.filter((b) => b.kind === "work").reduce((n, b) => n + b.minutes, 0);
+  const lostMinutes =
+    blocks.filter((b) => b.kind === "lost").reduce((n, b) => n + b.minutes, 0) +
+    blocks.flatMap((b) => b.cuts).reduce((n, c) => n + c.minutes, 0) +
+    blocks.flatMap((b) => b.lostStretches ?? []).reduce((n, l) => n + (l.end - l.start) / MIN, 0);
+  const phoneMinutes = phone.reduce((n, p) => n + (p.end - p.start) / MIN, 0);
+
+  return {
+    date,
+    dayStart,
+    dayEnd,
+    blocks,
+    phone,
+    ai,
+    segments,
+    totals: { workMinutes, lostMinutes, phoneSessions: phone.length, phoneMinutes },
+  };
+}
+
+/** Maps a time to a y offset, given the segments (hours at `perHour` px, quiet rows at `quiet` px). */
+export function makeY(segments: Segment[], perHour: number, quiet: number) {
+  return (x: number) => {
+    let y = 0;
+    for (const s of segments) {
+      if (x <= s.from) return y;
+      if (s.kind === "quiet") {
+        if (x < s.to) return y + quiet / 2;
+        y += quiet;
+      } else {
+        if (x < s.to) return y + ((x - s.from) / (60 * MIN)) * perHour;
+        y += ((s.to - s.from) / (60 * MIN)) * perHour;
+      }
+    }
+    return y;
+  };
+}
