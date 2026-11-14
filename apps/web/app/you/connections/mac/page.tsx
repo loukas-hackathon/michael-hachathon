@@ -6,11 +6,11 @@ import { getConnection } from "@/lib/connections-status";
 
 export const metadata = { title: "Mac · Michael" };
 
-export default async function MacPage() {
-  const { row } = await getConnection("mac");
+export default async function MacPage({ searchParams }: { searchParams: Promise<{ from?: string }> }) {
+  const [{ row }, { from }] = await Promise.all([getConnection("mac"), searchParams]);
   const c = connection("mac");
   return (
-    <ConnectionPage row={row}>
+    <ConnectionPage row={row} from={from}>
       <SetupSection
         title="Set up"
         note="It only reads. It never changes your files, and sends only to Michael."

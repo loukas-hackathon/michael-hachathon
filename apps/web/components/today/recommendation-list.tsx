@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { useArrival } from "@/components/motion";
+import { NudgePrimer } from "@/components/nudge-primer";
 import { formatTime } from "@/lib/format";
 import {
   dismissRecommendationAction,
@@ -199,6 +200,8 @@ export function RecommendationList({ cards, variant }: { cards: RecCard[]; varia
   const router = useRouter();
   const [local, setLocal] = useState<Record<string, Local>>({});
   const [pinned, setPinned] = useState<RecCard | null>(null);
+  // The first Do it is when a buzz helps: ask for nudges then, never on load (#207).
+  const [primed, setPrimed] = useState(false);
   const pinNow = useSyncExternalStore(subscribePin, readPin, readNoPin);
   // A card that already finished leaving stays gone while it is still hidden.
   const patch = (id: string, next: Local) =>
@@ -221,6 +224,7 @@ export function RecommendationList({ cards, variant }: { cards: RecCard[]; varia
       }),
     );
     if (r.ok) {
+      if (op === "do") setPrimed(true);
       patch(card.id, { ...OPTIMISTIC[op], ...note, status: r.rec.status, hidden: op === "dismiss" });
       router.refresh();
     } else {
@@ -268,6 +272,7 @@ export function RecommendationList({ cards, variant }: { cards: RecCard[]; varia
       <section className="mt-6" aria-label="Your next move">
         <h2 className="mb-2 text-title3 font-bold">Your next move</h2>
         <ul>{items}</ul>
+        {primed ? <NudgePrimer /> : null}
       </section>
     );
   }
@@ -279,6 +284,7 @@ export function RecommendationList({ cards, variant }: { cards: RecCard[]; varia
       preview={visible.map((c) => c.title.replace(/[.!?]$/, "")).join(". ")}
     >
       <ul className="-mt-1 flex flex-col">{items}</ul>
+      {primed ? <NudgePrimer /> : null}
     </Fold>
   );
 }
