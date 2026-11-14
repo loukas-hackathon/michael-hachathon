@@ -13,6 +13,7 @@ import {
   type PushConfig,
   type PushSubscriptionInput,
   type Recommendation,
+  type Score,
   Source,
   type SourceSetting,
   type TimelineResponse,
@@ -22,6 +23,7 @@ import type { DayView } from "./day";
 import type { GoalsView } from "./goals-view";
 import { sampleDay, sampleEarly, sampleEmpty, sampleEvening, sampleMorning } from "./sample/day";
 import { sampleGoals, sampleGoalsEmpty } from "./sample/goals";
+import { dayFromScore, goalsFromScore, leadFromPatterns } from "./score-map";
 import { authEnabled, DEMO_COOKIE, supabaseServer } from "./supabase/server";
 
 // Server-side data access. The browser never sees API_KEY and never talks to the DB. Each request
@@ -156,21 +158,39 @@ const SAMPLE_DAYS: Record<string, DayView> = {
   empty: sampleEmpty,
 };
 
-/**
- * Today: planned goal blocks, what happened in them, and Michael's lead.
- * Sample data until GET /v1/score, /v1/nudges and /v1/patterns are live (docs/api.md).
- * `variant` previews other moments and states of the same screen (?demo=morning|early|evening|empty).
- */
-export async function getToday(variant?: string): Promise<DayView> {
-  if (variant === "error") throw new Error("Preview of the error state");
-  return (variant && SAMPLE_DAYS[variant]) || sampleDay;
+const athensDay = (d = new Date()) =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Athens" }).format(d);
+
+/** GET /v1/score for a local day (default today). */
+export async function getScore(date = athensDay()): Promise<Score> {
+  return get<Score>(`/v1/score?date=${date}`);
 }
 
 /**
- * The week per goal. Sample until GET /v1/score carries per goal, per day minutes and sleep.
- * `variant` previews states (?demo=empty|error).
+ * Today: planned goal blocks, what happened in them, and Michael's lead.
+ * Real: GET /v1/score, with a lead from the week's patterns until the analysis (#17) is live.
+ * `variant` previews the sample day's moments and states (?demo=morning|early|evening|empty|error|sample).
+ */
+export async function getToday(variant?: string): Promise<DayView> {
+  if (variant === "error") throw new Error("Preview of the error state");
+  if (variant && variant in SAMPLE_DAYS) return SAMPLE_DAYS[variant] as DayView;
+  if (USE_MOCKS || variant === "sample") return sampleDay;
+  const score = await getScore();
+  const to = new Date().toISOString();
+  const from = new Date(Date.now() - 7 * 86_400_000).toISOString();
+  const patterns = await get<{ phone_cadence?: { status: string; data: unknown } }>(
+    `/v1/patterns?${new URLSearchParams({ from, to })}`,
+  ).catch(() => ({}));
+  return dayFromScore(score, leadFromPatterns(patterns, score.day.now));
+}
+
+/**
+ * The week per goal. Real: GET /v1/score (per goal, per day). Sample with mocks.
+ * `variant` previews states (?demo=empty|error|sample).
  */
 export async function getGoalsWeek(variant?: string): Promise<GoalsView> {
   if (variant === "error") throw new Error("Preview of the error state");
-  return variant === "empty" ? sampleGoalsEmpty : sampleGoals;
+  if (variant === "empty") return sampleGoalsEmpty;
+  if (USE_MOCKS || variant === "sample") return sampleGoals;
+  return goalsFromScore(await getScore());
 }

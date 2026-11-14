@@ -74,6 +74,31 @@ function CadenceStrip({ evidence }: { evidence: Extract<Evidence, { kind: "caden
   );
 }
 
+/** Sessions per hour across the day: many thin bars, the working window in label colour. */
+function HoursStrip({ evidence }: { evidence: Extract<Evidence, { kind: "hours" }> }) {
+  const max = Math.max(1, ...evidence.perHour);
+  const [from, to] = evidence.window;
+  return (
+    <div role="img" aria-label="Phone sessions per hour of the day" className="select-none">
+      <div className="flex h-12 items-end gap-[2px] border-b border-separator">
+        {evidence.perHour.map((v, hour) => (
+          <span
+            // biome-ignore lint/suspicious/noArrayIndexKey: hours are positional
+            key={hour}
+            className={`min-w-0 flex-1 rounded-t-[2px] ${hour >= from && hour < to ? "bg-label" : "bg-context"}`}
+            style={{ height: `${Math.max(v > 0 ? 2 : 0, (v / max) * 48)}px` }}
+          />
+        ))}
+      </div>
+      <div className="mt-1 flex justify-between text-caption text-label-2 tnum">
+        <span>00:00</span>
+        <span>12:00</span>
+        <span>24:00</span>
+      </div>
+    </div>
+  );
+}
+
 /** Michael's lead: one finding, its evidence, the one fix he already made, and the undo. */
 export function MichaelCard({ lead }: { lead: Lead }) {
   return (
@@ -93,9 +118,12 @@ export function MichaelCard({ lead }: { lead: Lead }) {
         <Rich parts={lead.insight} strongClass="font-semibold text-label" />
       </p>
       {lead.evidence.kind === "cadence" ? <CadenceStrip evidence={lead.evidence} /> : null}
-      <p className="text-subhead">
-        <Rich parts={lead.fix} strongClass="font-semibold" />
-      </p>
+      {lead.evidence.kind === "hours" ? <HoursStrip evidence={lead.evidence} /> : null}
+      {lead.fix.length ? (
+        <p className="text-subhead">
+          <Rich parts={lead.fix} strongClass="font-semibold" />
+        </p>
+      ) : null}
       {lead.action ? <UndoButton label={lead.action.label} done={lead.action.done} /> : null}
     </article>
   );

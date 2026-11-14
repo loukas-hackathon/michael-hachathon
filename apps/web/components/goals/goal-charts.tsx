@@ -10,30 +10,40 @@ const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 export function NotchTrack({
   budget,
   spent,
+  unverified = 0,
   pace,
   label,
 }: {
   budget: number;
   spent: number;
+  unverified?: number;
   pace: number;
   label: string;
 }) {
   const n = Math.max(1, Math.round(budget / NOTCH_MINUTES));
   const filled = spent / NOTCH_MINUTES;
+  const firm = (spent - unverified) / NOTCH_MINUTES;
   const notches = Array.from({ length: n }, (_, i) => ({
     id: `n${i}`,
     fill: Math.max(0, Math.min(1, filled - i)),
+    firm: Math.max(0, Math.min(1, firm - i)),
   }));
   return (
     <div role="img" aria-label={label} className="relative pt-1.5">
       <div className="flex h-3 gap-[2px]">
-        {notches.map(({ id, fill }) => (
+        {notches.map(({ id, fill, firm }) => (
           <span
             key={id}
             className="relative min-w-0 flex-1 overflow-hidden rounded-[3px] shadow-[inset_0_0_0_1px_var(--m-context)]"
           >
             {fill > 0 ? (
-              <span className="absolute inset-y-0 left-0 bg-spark" style={{ width: `${fill * 100}%` }} />
+              <span
+                className="absolute inset-y-0 left-0 bg-[color-mix(in_srgb,var(--m-spark)_38%,var(--m-bg))]"
+                style={{ width: `${fill * 100}%` }}
+              />
+            ) : null}
+            {firm > 0 ? (
+              <span className="absolute inset-y-0 left-0 bg-spark" style={{ width: `${firm * 100}%` }} />
             ) : null}
           </span>
         ))}
