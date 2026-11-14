@@ -2,6 +2,7 @@
 
 import { GoalCategory, ProfileUpdate } from "@michael/shared";
 import { createGoal, getGoals, patchGoal, putProfile } from "@/lib/api";
+import { isDemoVisitor } from "@/lib/caller";
 
 // Server functions behind the onboarding talk. Only the server talks to the API, with the signed in
 // user's token. Everything here comes from the browser, so it is parsed first.
@@ -51,6 +52,8 @@ function targetFor(g: GoalAnswer, gymDays: number): Record<string, unknown> {
 export async function finishOnboarding(input: Answers): Promise<{ ok: boolean }> {
   const goals = parseGoals(input?.goals);
   const profile = ProfileUpdate.parse({ ...input?.profile, onboarded_at: new Date().toISOString() });
+  // The demo week is read mostly: a visitor walks the whole talk, nothing is written (#239).
+  if (await isDemoVisitor()) return { ok: true };
   try {
     const current = await getGoals();
     for (const g of goals) {
@@ -79,6 +82,7 @@ export async function finishOnboarding(input: Answers): Promise<{ ok: boolean }>
 
 /** Skip: keep the defaults and never ask again from Today. */
 export async function skipOnboarding(): Promise<{ ok: boolean }> {
+  if (await isDemoVisitor()) return { ok: true };
   try {
     await putProfile({ onboarded_at: new Date().toISOString() });
     return { ok: true };
