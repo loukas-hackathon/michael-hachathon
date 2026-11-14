@@ -360,7 +360,7 @@ The `data` payload per type:
 | `macos_usage`                 | `notification` | app name                           | `bundle_id`, `device`                                                                                                         |
 | `macos_usage`                 | `screen`       | `Screen on` or `Screen off`        | `state` (`on` or `off`), `device`                                                                                             |
 | `chrome`                      | `web_visit`    | page title                         | `host`, `seconds`, `foreground?`, `category?`, `origin`, `profile?`. Never the full address                                   |
-| `chrome`                      | `search`       | the search term                    | `engine`, `term`, `origin`, `profile?`                                                                                        |
+| `chrome`                      | `search`       | the search term                    | `engine`, `term`, `origin`, `profile?`, `maps?` (Google Maps, below)                                                          |
 | `claude_code`                 | `ai_session`   | session title                      | `tool`, `session_id`, `project`, `model?`, `turns`, `waiting_seconds`, `input_tokens`, `cached_input_tokens`, `output_tokens` |
 | `claude_code`                 | `ai_prompt`    | first 120 characters of the prompt | `tool`, `session_id`, `project`                                                                                               |
 | `claude_code`                 | `notification` | `Claude Code`                      | `tool`, `session_id`, `project`, `kind` (`permission_prompt` or `idle_prompt`). Live hook only                                |
@@ -378,6 +378,30 @@ visit can arrive from both; the patterns layer decides which to trust. From `his
 - Visits to excluded hosts (banking, health, adult, password managers, the local network, and the
   user's own list) are never sent, and neither are their titles or search terms
   (`apps/collector/src/site-privacy.ts`).
+
+Google Maps is the one site whose address is read past the host (`apps/collector/src/maps-url.ts`).
+A search (`/maps/search/`, `?q=`, `?query=`), an opened place (`/maps/place/`) or directions
+(`/maps/dir/`, `?origin=&destination=`, `?saddr=&daddr=`) becomes a `search` event with `engine:
+"google_maps"` and a clean `term` ("gyms near me", "Acropolis Museum", "Pagrati to Kifisia",
+"Directions to Kifisia", "Dropped pin"). The map position (`/@lat,lng,zoom`) and `data=` blob never
+reach the term. Bare map views and short links (`maps.app.goo.gl`) are not searches. Page titles
+that are a position become `Google Maps`.
+
+```ts
+type MapsStop = { name: string | null; lat: number | null; lng: number | null };
+// data.maps of a chrome search event
+type MapsQuery = {
+  kind: "search" | "place" | "directions";
+  place: MapsStop | null; // search and place
+  from: MapsStop | null; // directions
+  to: MapsStop | null;
+};
+```
+
+Coordinates come only from the address: a place's own `!3d!4d` pair (else the map centre), a stop
+or search that is a bare position. A search for words never has coordinates. Location is opt in:
+the API stores every `lat`/`lng` as `null` unless source `maps` is switched on, and drops a `maps`
+field that does not match the contract (`redactLocation` in `apps/api/src/privacy.ts`).
 
 AI tool events (`ai_session`, `ai_prompt`) from `claude_code`:
 
@@ -1585,11 +1609,31 @@ type TravelPlanResult = {
 };
 ```
 
-| Method | Path              | Body                                | Response               | Status |
-| ------ | ----------------- | ----------------------------------- | ---------------------- | ------ |
-| GET    | `/v1/places`      |                                     | `200 PlacesResponse`   | live   |
-| PUT    | `/v1/places`      | `{ places: PlaceInput[] }` (max 20) | `200 PlacesResponse`   | live   |
-| POST   | `/v1/travel/plan` | optional `{ from?, to? }` (ISO)     | `200 TravelPlanResult` | live   |
+| Method | Path                     | Body                                | Response                       | Status |
+| ------ | ------------------------ | ----------------------------------- | ------------------------------ | ------ |
+| GET    | `/v1/places`             |                                     | `200 PlacesResponse`           | live   |
+| PUT    | `/v1/places`             | `{ places: PlaceInput[] }` (max 20) | `200 PlacesResponse`           | live   |
+| GET    | `/v1/places/suggestions` |                                     | `200 PlaceSuggestionsResponse` | live   |
+| POST   | `/v1/travel/plan`        | optional `{ from?, to? }` (ISO)     | `200 TravelPlanResult`         | live   |
+
+```ts
+type PlaceSuggestion = {
+  key: string | null; // "gym", "work", "university", "home" when the name or use says so
+  label: string;
+  lat: number | null;
+  lng: number | null;
+  count: number; // Maps searches, places and directions that mentioned it
+  last_seen_at: string;
+};
+type PlaceSuggestionsResponse = { enabled: boolean; suggestions: PlaceSuggestion[] };
+```
+
+- `GET /v1/places/suggestions` offers places the user looked up in Google Maps (chrome `search`
+  events with `data.maps`) at least twice in the last 30 days, at most 5, most looked up first.
+  Generic searches ("near me", "open now") and places already saved (same name, or within 200 m)
+  are left out. `key` comes from the name (gym, university, office) or, for `home`, from where
+  directions most often start. Nothing is ever saved: the user picks one and saves it with
+  `PUT /v1/places`. With source `maps` off, `enabled` is `false` and the list is empty.
 
 - `PUT /v1/places` replaces the whole list. Addresses are geocoded on save when the server has a
   key (cached per user for 30 days, as Google's terms allow); otherwise coordinates stay `null`.

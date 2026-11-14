@@ -751,6 +751,49 @@ export const TravelData = z.object({
 });
 export type TravelData = z.infer<typeof TravelData>;
 
+// ---------- Google Maps searches (data.maps of a chrome search event) ----------
+
+// One end of a Maps search: a name the user typed or clicked, and coordinates when the address
+// carried them. Coordinates are kept only while source maps is switched on; otherwise the API
+// stores them as null.
+export const MapsStop = z.object({
+  name: z.string().max(200).nullable(),
+  lat: z.number().min(-90).max(90).nullable(),
+  lng: z.number().min(-180).max(180).nullable(),
+});
+export type MapsStop = z.infer<typeof MapsStop>;
+
+// What a Google Maps address said: a search ("gyms near me"), a place that was opened, or
+// directions between two stops. `place` is set for search and place, `from`/`to` for directions.
+export const MapsQuery = z.object({
+  kind: z.enum(["search", "place", "directions"]),
+  place: MapsStop.nullable(),
+  from: MapsStop.nullable(),
+  to: MapsStop.nullable(),
+});
+export type MapsQuery = z.infer<typeof MapsQuery>;
+
+// GET /v1/places/suggestions: places the user often looks up in Maps, offered as saved places.
+// Never saved on their own; the user picks one and saves it with PUT /v1/places.
+export const PlaceSuggestion = z.object({
+  // A key to save it under when the name says what it is ("gym", "work"), else null.
+  key: PlaceKey.nullable(),
+  label: z.string().min(1).max(80),
+  lat: z.number().min(-90).max(90).nullable(),
+  lng: z.number().min(-180).max(180).nullable(),
+  // How many Maps searches, places or directions mentioned it in the window.
+  count: z.number().int().positive(),
+  last_seen_at: IsoDateTime,
+});
+export type PlaceSuggestion = z.infer<typeof PlaceSuggestion>;
+
+export const PlaceSuggestionsResponse = z.object({
+  // False while source maps is switched off: then there are no suggestions.
+  enabled: z.boolean(),
+  suggestions: z.array(PlaceSuggestion),
+});
+export type PlaceSuggestionsResponse = z.infer<typeof PlaceSuggestionsResponse>;
+
 export const TravelPlanInput = z.object({
   from: IsoDateTime.optional(),
   to: IsoDateTime.optional(),

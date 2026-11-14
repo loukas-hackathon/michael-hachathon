@@ -1,4 +1,4 @@
-import { type PrivacyState, Source, type SourceSetting } from "@michael/shared";
+import { MapsQuery, type MapsStop, type PrivacyState, Source, type SourceSetting } from "@michael/shared";
 
 // Privacy rules as stored for the current user: off the record, plus the sources the user has
 // decided on. A source with no entry has never sent anything and has never been switched.
@@ -43,12 +43,35 @@ export async function screenEvents<T extends { source: Source }>(
 ): Promise<{ allowed: T[]; ignored: number }> {
   if (!inputs.length) return { allowed: [], ignored: 0 };
   const rules = await backend.privacyRules();
-  const allowed = inputs.filter((i) => decide(rules, i.source) === "collect");
+  const allowed = inputs
+    .filter((i) => decide(rules, i.source) === "collect")
+    .map((i) => redactLocation(rules, i));
   const firstSeen = new Set(
     allowed.map((i) => i.source).filter((s) => !ALWAYS_ALLOWED.has(s) && !rules.sources[s]),
   );
   for (const s of firstSeen) await backend.setSourceEnabled(s, true);
   return { allowed, ignored: inputs.length - allowed.length };
+}
+
+/**
+ * Location is opt in. A browsing event may carry where a Maps search pointed (`data.maps`, see
+ * docs/api.md); its coordinates are kept only while source maps is switched on, otherwise every
+ * lat and lng is stored as null and only the names stay, like any other search term. A `maps`
+ * field that does not match the contract is dropped whole.
+ */
+export function redactLocation<T extends { source: Source }>(rules: PrivacyRules, input: T): T {
+  const data = (input as { data?: unknown }).data;
+  if (!data || typeof data !== "object" || !("maps" in data)) return input;
+  const { maps, ...rest } = data as Record<string, unknown>;
+  const parsed = MapsQuery.safeParse(maps);
+  if (!parsed.success) return { ...input, data: rest };
+  if (rules.sources.maps?.enabled === true) return { ...input, data: { ...rest, maps: parsed.data } };
+  const blank = (stop: MapsStop | null) => (stop ? { ...stop, lat: null, lng: null } : null);
+  const q = parsed.data;
+  return {
+    ...input,
+    data: { ...rest, maps: { ...q, place: blank(q.place), from: blank(q.from), to: blank(q.to) } },
+  };
 }
 
 /** For webhook code that wants to skip work early. */
