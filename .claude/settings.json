@@ -46,24 +46,24 @@
       "PowerShell(git worktree list)",
       "PowerShell(git worktree add .worktrees/:*)",
       "PowerShell(git worktree remove .worktrees/:*)",
-      "PowerShell(git worktree prune)"
-    ],
-    "deny": [
-      "Bash(git push origin main:*)",
-      "Bash(git push -u origin main:*)",
-      "Bash(git push --force:*)",
-      "Bash(git push -f:*)",
-      "PowerShell(git push origin main:*)",
-      "PowerShell(git push -u origin main:*)",
-      "PowerShell(git push --force:*)",
-      "Bash(git worktree remove --force:*)",
-      "Bash(git worktree remove -f:*)",
-      "PowerShell(git worktree remove --force:*)",
-      "PowerShell(git worktree remove -f:*)",
-      "Bash(git push --set-upstream origin main:*)",
-      "Bash(git push origin HEAD:main:*)",
-      "PowerShell(git push --set-upstream origin main:*)",
-      "PowerShell(git push origin HEAD:main:*)"
+      "PowerShell(git worktree prune)",
+      "Bash(pnpm:*)",
+      "Bash(git:*)",
+      "Bash(gh:*)",
+      "Bash(node:*)",
+      "Bash(npx:*)",
+      "Bash(curl:*)",
+      "Bash(railway:*)",
+      "Bash(vercel:*)",
+      "Bash(supabase:*)",
+      "PowerShell(pnpm:*)",
+      "PowerShell(git:*)",
+      "PowerShell(gh:*)",
+      "PowerShell(node:*)",
+      "PowerShell(npx:*)",
+      "PowerShell(railway:*)",
+      "PowerShell(vercel:*)",
+      "PowerShell(supabase:*)"
     ]
   }
 }
