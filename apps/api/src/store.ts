@@ -2,6 +2,7 @@ import {
   type AnalysisRun,
   type ChatMessage,
   type ChatRole,
+  demoRecommendations,
   type Event,
   type EventInput,
   type EventType,
@@ -243,7 +244,7 @@ export class MemoryStore implements Store {
       x = {
         events: demo ? [] : structuredClone(mockEvents),
         goals: demo ? [] : structuredClone(mockGoals),
-        recommendations: structuredClone(mockRecommendations),
+        recommendations: [...structuredClone(mockRecommendations), ...demoRecommendations()],
         runs: [structuredClone(mockAnalysisRun)],
         privacy: { offTheRecord: false, since: null, sources: {} },
         chat: [],

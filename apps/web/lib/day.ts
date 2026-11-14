@@ -34,7 +34,8 @@ export type Lead = {
   insight: { text: string; strong?: boolean }[];
   evidence: Evidence;
   fix: { text: string; strong?: boolean }[];
-  action: { label: string; done: string } | null;
+  /** The undo for the fix. `recommendationId` makes it real (POST /v1/recommendations/:id/undo). */
+  action: { label: string; done: string; recommendationId?: string } | null;
 };
 
 export type Nudge = { at: string; channel: "watch" | "push" | "telegram"; text: string };

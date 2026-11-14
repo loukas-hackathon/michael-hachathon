@@ -761,3 +761,103 @@ export const mockScore: Score = {
     iphone: "2026-11-11T13:16:00.000Z",
   },
 };
+
+// ---------- demo recommendations, relative to now ----------
+// The fixed recommendations above sit on 14 Nov and go stale once their times pass. These three are
+// placed on the next sensible slot after `now`, so the demo always has something Michael can carry
+// out: two solo blocks he can create (and undo), and one with other people that stays advice.
+
+const DEMO_TZ = "Europe/Athens";
+
+/** "2026-11-15T09:30:00+02:00": a wall clock time in Athens, `days` after now's Athens date. */
+function athensAt(now: Date, days: number, hhmm: string): string {
+  const day = new Intl.DateTimeFormat("en-CA", { timeZone: DEMO_TZ }).format(
+    new Date(now.getTime() + days * 86_400_000),
+  );
+  const noon = new Date(`${day}T12:00:00Z`);
+  const name =
+    new Intl.DateTimeFormat("en-GB", { timeZone: DEMO_TZ, timeZoneName: "longOffset" })
+      .formatToParts(noon)
+      .find((p) => p.type === "timeZoneName")?.value ?? "GMT+02:00";
+  const offset = name.replace("GMT", "") || "+00:00";
+  return `${day}T${hhmm}:00${offset}`;
+}
+
+const athensHour = (now: Date) =>
+  Number(
+    new Intl.DateTimeFormat("en-GB", { timeZone: DEMO_TZ, hour: "2-digit", hourCycle: "h23" }).format(now),
+  );
+
+export const DEMO_RECOMMENDATION_IDS = [
+  "30000000-0000-4000-8000-000000000004",
+  "30000000-0000-4000-8000-000000000005",
+  "30000000-0000-4000-8000-000000000006",
+] as const;
+
+export function demoRecommendations(now: Date = new Date()): Recommendation[] {
+  const hour = athensHour(now);
+  // Today if the slot is still comfortably ahead, otherwise tomorrow.
+  const focusDay = hour < 8 ? 0 : 1;
+  const runDay = hour < 17 ? 0 : 1;
+  const focusStart = athensAt(now, focusDay, "09:30");
+  const runStart = athensAt(now, runDay, "18:30");
+  const syncStart = athensAt(now, 1, "11:00");
+  const stamp = now.toISOString();
+  const base = {
+    analysis_run_id: mockAnalysisRun.id,
+    status: "proposed" as const,
+    executed_at: null,
+    undone_at: null,
+    created_at: stamp,
+    updated_at: stamp,
+  };
+  const [focusId, runId, syncId] = DEMO_RECOMMENDATION_IDS;
+  return [
+    {
+      ...base,
+      id: focusId,
+      goal_id: GOAL_IDS.work,
+      title: "Block 09:30 to 11:00 for deep work",
+      rationale:
+        "Your longest focus runs start before 11:00 and the phone is quiet until 10:00. Ninety minutes there is the cheapest deep work of the day.",
+      action: {
+        kind: "create_focus_block",
+        payload: { start_at: focusStart, end_at: athensAt(now, focusDay, "11:00"), title: "Deep work" },
+        involves_others: false,
+        undo_until: focusStart,
+      },
+    },
+    {
+      ...base,
+      id: runId,
+      goal_id: GOAL_IDS.gym,
+      title: "Book 45 minutes for an easy run at 18:30",
+      rationale:
+        "Training is two sessions behind for the 70.3. Your calendar is clear after 18:00 and an easy run keeps tomorrow's legs fresh.",
+      action: {
+        kind: "create_focus_block",
+        payload: { start_at: runStart, end_at: athensAt(now, runDay, "19:15"), title: "Run: easy 45m" },
+        involves_others: false,
+        undo_until: runStart,
+      },
+    },
+    {
+      ...base,
+      id: syncId,
+      goal_id: GOAL_IDS.work,
+      title: "Ask to move the 11:00 sync to the afternoon",
+      rationale:
+        "It cuts your best focus window in two and costs about 40 minutes of deep work either side. It has other people in it, so the call is yours.",
+      action: {
+        kind: "move_calendar_block",
+        payload: {
+          event_id: "00000000-0000-4000-8000-000000000099",
+          start_at: athensAt(now, 1, "15:00"),
+          end_at: athensAt(now, 1, "15:30"),
+        },
+        involves_others: true,
+        undo_until: syncStart,
+      },
+    },
+  ];
+}

@@ -4,6 +4,7 @@ import { ScreenHeader } from "@/components/screen";
 import { Tape, TapeKey } from "@/components/tape";
 import { MichaelCard } from "@/components/today/michael-card";
 import { MomentCard } from "@/components/today/moment-card";
+import { RecommendationsPanel } from "@/components/today/recommendations";
 import { getToday, needsOnboarding } from "@/lib/api";
 import { type DayView, nowIndex, tape, totals } from "@/lib/day";
 import { formatDay, formatTime, hm, minutesPhrase } from "@/lib/format";
@@ -91,6 +92,8 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
           {momentKind ? <MomentCard kind={momentKind} sample={day.sample} /> : null}
 
           {day.lead ? <MichaelCard lead={day.lead} /> : null}
+
+          <RecommendationsPanel />
 
           {day.nudge ? (
             <section className="mt-6">

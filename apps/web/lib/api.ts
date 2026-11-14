@@ -5,6 +5,7 @@ import {
   type ChatMessage,
   type ChatResponse,
   DEFAULT_PROFILE,
+  demoRecommendations,
   type Goal,
   type GoalCreate,
   type GoalUpdate,
@@ -202,10 +203,85 @@ export async function removeGoalById(id: string): Promise<WriteResult> {
   }
   return write("DELETE", `/v1/goals/${id}`);
 }
+// With mocks, one in-process list so Do it, Undo and Not now still hold while the server runs.
+let mockRecs: Recommendation[] | null = null;
+const mockRecList = () => {
+  mockRecs ??= [...structuredClone(mockRecommendations), ...demoRecommendations()];
+  return mockRecs;
+};
 
 export async function getRecommendations(): Promise<Recommendation[]> {
-  if (USE_MOCKS) return mockRecommendations;
+  if (USE_MOCKS) return structuredClone(mockRecList());
   return (await get<{ recommendations: Recommendation[] }>("/v1/recommendations")).recommendations;
+}
+
+export type RecResult = { ok: true; rec: Recommendation } | { ok: false; status: number; message: string };
+
+/** The same rules the API applies (apps/api/src/actions/calendar.ts), on the in-memory list. */
+function mockRecAction(id: string, op: "execute" | "undo" | "dismiss"): RecResult {
+  const rec = mockRecList().find((r) => r.id === id);
+  if (!rec) return { ok: false, status: 404, message: "Recommendation not found" };
+  const fail = (message: string): RecResult => ({ ok: false, status: 409, message });
+  const now = new Date().toISOString();
+  const start = rec.action?.payload.start_at;
+  if (op === "dismiss") {
+    Object.assign(rec, { status: "dismissed", updated_at: now });
+  } else if (op === "execute") {
+    if (!rec.action) return fail("This recommendation has nothing to carry out");
+    if (rec.status === "done") return fail("Already done");
+    if (rec.status === "dismissed") return fail("This recommendation was dismissed");
+    if (rec.action.involves_others) return fail("This involves other people. I only advise on it.");
+    if (typeof start === "string" && Date.parse(start) <= Date.now())
+      return fail("That time has already started");
+    Object.assign(rec, { status: "done", executed_at: now, undone_at: null, updated_at: now });
+  } else {
+    if (rec.status !== "done") return fail("Only a done recommendation can be undone");
+    const until = rec.action?.undo_until ?? start;
+    if (typeof until === "string" && Date.parse(until) <= Date.now())
+      return fail("Too late to undo: the block has started");
+    Object.assign(rec, { status: "undone", undone_at: now, updated_at: now });
+  }
+  return { ok: true, rec: structuredClone(rec) };
+}
+
+async function recCall(method: "POST" | "PATCH", path: string, body?: unknown): Promise<RecResult> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      method,
+      headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      cache: "no-store",
+    });
+  } catch {
+    return { ok: false, status: 0, message: "Could not reach the API" };
+  }
+  const json: unknown = await res.json().catch(() => null);
+  if (res.ok) return { ok: true, rec: json as Recommendation };
+  const err = ApiError.safeParse(json);
+  return {
+    ok: false,
+    status: res.status,
+    message: err.success ? err.data.error.message : `${method} ${path}`,
+  };
+}
+
+/** POST /v1/recommendations/:id/execute: Michael carries out the action on the user's own time. */
+export async function executeRecommendation(id: string): Promise<RecResult> {
+  if (USE_MOCKS) return mockRecAction(id, "execute");
+  return recCall("POST", `/v1/recommendations/${encodeURIComponent(id)}/execute`);
+}
+
+/** POST /v1/recommendations/:id/undo, allowed until the block starts. */
+export async function undoRecommendation(id: string): Promise<RecResult> {
+  if (USE_MOCKS) return mockRecAction(id, "undo");
+  return recCall("POST", `/v1/recommendations/${encodeURIComponent(id)}/undo`);
+}
+
+/** PATCH /v1/recommendations/:id { status: dismissed }: "Not now". */
+export async function dismissRecommendation(id: string): Promise<RecResult> {
+  if (USE_MOCKS) return mockRecAction(id, "dismiss");
+  return recCall("PATCH", `/v1/recommendations/${encodeURIComponent(id)}`, { status: "dismissed" });
 }
 
 // Privacy. With mocks, one in-process state so the switches still hold while the server runs.
