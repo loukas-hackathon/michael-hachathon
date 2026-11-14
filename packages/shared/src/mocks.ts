@@ -817,12 +817,12 @@ export function demoRecommendations(now: Date = new Date()): Recommendation[] {
       ...base,
       id: focusId,
       goal_id: GOAL_IDS.work,
-      title: "Block 09:30 to 11:00 for deep work",
+      title: "Block 09:30 to 11:00 for cold outreach",
       rationale:
-        "Your longest focus runs start before 11:00 and the phone is quiet until 10:00. Ninety minutes there is the cheapest deep work of the day.",
+        "Your longest focus runs start before 11:00 and the phone is quiet until 10:00. Ninety minutes there is the cheapest company time of the day.",
       action: {
         kind: "create_focus_block",
-        payload: { start_at: focusStart, end_at: athensAt(now, focusDay, "11:00"), title: "Deep work" },
+        payload: { start_at: focusStart, end_at: athensAt(now, focusDay, "11:00"), title: "Cold Outreach" },
         involves_others: false,
         undo_until: focusStart,
       },
@@ -847,7 +847,7 @@ export function demoRecommendations(now: Date = new Date()): Recommendation[] {
       goal_id: GOAL_IDS.work,
       title: "Ask to move the 11:00 sync to the afternoon",
       rationale:
-        "It cuts your best focus window in two and costs about 40 minutes of deep work either side. It has other people in it, so the call is yours.",
+        "It cuts your best focus window in two and costs about 40 minutes of focus either side. It has other people in it, so the call is yours.",
       action: {
         kind: "move_calendar_block",
         payload: {

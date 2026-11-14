@@ -31,6 +31,7 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
             Wear the watch tonight and your first brief arrives in the morning.
           </EmptyState>
           {momentKind && !day.sample ? <MomentCard kind={momentKind} sample={false} /> : null}
+          <RecommendationsPanel />
         </>
       ) : (
         <>

@@ -35,9 +35,12 @@ export function dayWord(iso: string, now: Date) {
   return weekday.format(d);
 }
 
-/** The short name of a goal: the first calendar title that counts towards it ("Deep work"), or its title. */
+/** The short name of a goal for the maths line. */
 export function goalName(goal: Goal | undefined): string | null {
   if (!goal) return null;
+  // Short titles read well in a sentence ("Wins 45 min for 70.3."); long ones give way to the
+  // first calendar title that counts towards the goal ("Deep work").
+  if (goal.title.length <= 16) return goal.title;
   const titles = goal.target?.calendar_titles;
   if (Array.isArray(titles) && typeof titles[0] === "string") return titles[0];
   return goal.title;
