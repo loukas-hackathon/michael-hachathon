@@ -182,8 +182,14 @@ test("past times and other action kinds are refused", () =>
       payload: { start_at: iso(Date.now() - HOUR), end_at: iso(Date.now() + HOUR) },
     });
     await assert.rejects(executeRecommendation(CREATE_ID), /already started/);
-    await withAction(CREATE_ID, { kind: "block_mac_app", payload: { app: "com.apple.Safari" } });
+    await withAction(CREATE_ID, { kind: "draft_follow_up", payload: { text: "Thanks" } });
     await assert.rejects(executeRecommendation(CREATE_ID), /cannot be carried out yet/);
+    // Safari is a browser, not on the list of apps Michael may close.
+    await withAction(CREATE_ID, {
+      kind: "block_mac_app",
+      payload: { app: "com.apple.Safari", start_at: iso(Date.now()), end_at: iso(Date.now() + HOUR) },
+    });
+    await assert.rejects(executeRecommendation(CREATE_ID), /not on my list/);
   }));
 
 test("without Google Calendar: Michael's block lives on the timeline only, and undo removes it", () =>

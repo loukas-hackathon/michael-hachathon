@@ -20,6 +20,8 @@ export type RecCard = {
   status: Recommendation["status"];
   /** Undo is allowed until then (ISO), for a done recommendation. */
   undoUntil: string | null;
+  /** What the card says once undone. */
+  undoneNote: string;
 };
 
 const TZ = "Europe/Athens";
@@ -52,14 +54,30 @@ function actionTimes(rec: Recommendation) {
   return { start: str(p.start_at), end: str(p.end_at) };
 }
 
+// A Mac app guard keeps working until its window ends, so it can be undone (and is still worth
+// doing) until then; a calendar change only until the block starts.
+const isGuard = (rec: Recommendation) => rec.action?.kind === "block_mac_app";
+
+/** The apps a block_mac_app suggestion names ("WhatsApp and Slack"). */
+export function guardedApps(rec: Recommendation): string {
+  const p = rec.action?.payload ?? {};
+  const names = [p.app, ...(Array.isArray(p.apps) ? p.apps : [])].filter(
+    (x): x is string => typeof x === "string" && x.length > 0,
+  );
+  const unique = [...new Set(names)];
+  if (unique.length <= 1) return unique[0] ?? "those apps";
+  return `${unique.slice(0, -1).join(", ")} and ${unique.at(-1)}`;
+}
+
 export function undoDeadline(rec: Recommendation): string | null {
-  const { start } = actionTimes(rec);
+  const { start, end } = actionTimes(rec);
+  if (isGuard(rec)) return end ?? rec.action?.undo_until ?? null;
   const until = [rec.action?.undo_until ?? null, start].filter((x): x is string => Boolean(x));
   if (until.length === 0) return null;
   return new Date(Math.min(...until.map((x) => Date.parse(x)))).toISOString();
 }
 
-const EXECUTABLE = new Set(["create_focus_block", "move_calendar_block"]);
+const EXECUTABLE = new Set(["create_focus_block", "move_calendar_block", "block_mac_app"]);
 
 export function toCard(rec: Recommendation, goals: Goal[], now: Date): RecCard {
   const goal = goalName(goals.find((g) => g.id === rec.goal_id));
@@ -78,7 +96,7 @@ export function toCard(rec: Recommendation, goals: Goal[], now: Date): RecCard {
     goal,
     maths,
     when: start
-      ? creates
+      ? creates || isGuard(rec)
         ? `${day}, ${span}`
         : `Moves to ${/^To/.test(day) ? day.toLowerCase() : day}, ${span}`
       : null,
@@ -86,6 +104,9 @@ export function toCard(rec: Recommendation, goals: Goal[], now: Date): RecCard {
     involvesOthers,
     status: rec.status,
     undoUntil: undoDeadline(rec),
+    undoneNote: isGuard(rec)
+      ? `Undone. ${guardedApps(rec)} can open again.`
+      : "Undone. Your calendar is back as it was.",
   };
 }
 
@@ -99,7 +120,8 @@ export function openRecommendations(recs: Recommendation[], now: Date, limit = 3
     .filter((r) => {
       if (r.status === "done") return ahead(undoDeadline(r));
       if (r.status === "dismissed") return false;
-      return ahead(actionTimes(r).start ?? r.action?.undo_until ?? null);
+      const t = actionTimes(r);
+      return ahead((isGuard(r) ? t.end : t.start) ?? r.action?.undo_until ?? null);
     })
     .sort((a, b) => {
       const ex = (r: Recommendation) => (r.action && !r.action.involves_others ? 0 : 1);

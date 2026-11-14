@@ -5,6 +5,7 @@ import type {
   Event,
   EventInput,
   EventSummary,
+  FocusGuard,
   Goal,
   GoalCreate,
   GoalUpdate,
@@ -36,6 +37,7 @@ import {
   type IntegrationPatch,
   type IntegrationRecord,
   type NewAnalysis,
+  type NewFocusGuard,
   type NewRecommendation,
   type NudgeCreate,
   type PushDevice,
@@ -69,6 +71,18 @@ const toEvent = (r: Record<string, unknown>): Event => ({
   title: r.title as string,
   data: (r.data as Record<string, unknown>) ?? {},
   external_id: (r.external_id as string | null) ?? null,
+  created_at: iso(r.created_at as string) as string,
+});
+
+const toFocusGuard = (r: Record<string, unknown>): FocusGuard => ({
+  id: r.id as string,
+  recommendation_id: (r.recommendation_id as string | null) ?? null,
+  apps: (r.apps as string[]) ?? [],
+  bundle_ids: (r.bundle_ids as string[]) ?? [],
+  start_at: iso(r.start_at as string) as string,
+  end_at: iso(r.end_at as string) as string,
+  goal_id: (r.goal_id as string | null) ?? null,
+  back_to: (r.back_to as string | null) ?? null,
   created_at: iso(r.created_at as string) as string,
 });
 
@@ -185,6 +199,7 @@ export const USER_TABLES = [
   "oauth_tokens",
   "oauth_grants",
   "agent_clients",
+  "focus_guards",
   "nudges",
   "recommendations",
   "analysis_runs",
@@ -629,6 +644,38 @@ export class SupabaseStore implements Store {
         .maybeSingle(),
     );
     return row ? toRecommendation(row) : null;
+  }
+
+  async createFocusGuard(input: NewFocusGuard) {
+    const row = check(
+      await this.db
+        .from("focus_guards")
+        .insert({ ...input, user_id: currentUserId() })
+        .select("*")
+        .single(),
+    );
+    return toFocusGuard(row);
+  }
+
+  async deleteFocusGuard(id: string) {
+    const rows = check(
+      await this.db.from("focus_guards").delete().eq("user_id", currentUserId()).eq("id", id).select("id"),
+    );
+    return (rows ?? []).length > 0;
+  }
+
+  async listFocusGuards(f: { endsAfter: string; startsBefore: string }) {
+    const rows = check(
+      await this.db
+        .from("focus_guards")
+        .select("*")
+        .eq("user_id", currentUserId())
+        .gt("end_at", f.endsAfter)
+        .lt("start_at", f.startsBefore)
+        .order("start_at")
+        .limit(50),
+    );
+    return (rows ?? []).map(toFocusGuard);
   }
 
   async listPlaces() {

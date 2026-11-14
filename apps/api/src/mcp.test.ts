@@ -43,6 +43,7 @@ const tomorrow = (hhmm: string) => `${zone.nextDay(zone.dayOf(Date.now()))}T${hh
 const TOOLS = [
   "add_event",
   "add_goal",
+  "block_mac_app",
   "create_focus_block",
   "execute_recommendation",
   "get_goals",
@@ -54,6 +55,7 @@ const TOOLS = [
   "get_timeline",
   "list_recommendations",
   "plan_travel",
+  "suggest_app_mute",
   "undo_recommendation",
   "update_goal",
   "update_recommendation",
@@ -270,3 +272,30 @@ test("local times are Europe/Athens wall time; summaries stay plain", () => {
   );
   assert.equal(summarise("update_recommendation", undefined, { status: "dismissed" }), "Dismissed my advice");
 });
+
+test("block_mac_app mutes an allowlisted app now, shows in Michael and can be undone", () =>
+  asNewUser(async () => {
+    const { call } = await connect();
+    const r = await call("block_mac_app", {
+      apps: ["WhatsApp"],
+      end: new Date(Date.now() + 3600_000).toISOString(),
+    });
+    assert.equal(r.isError, undefined, text(r));
+    assert.match(text(r), /Muted: "Mute WhatsApp/);
+    const rec = r.structuredContent?.recommendation as Recommendation;
+    assert.equal(rec.status, "done");
+    assert.equal(rec.action?.kind, "block_mac_app");
+    const { guards } = await (await import("./actions/focus-guard")).activeFocusGuards();
+    assert.deepEqual(guards[0]?.apps, ["WhatsApp"]);
+
+    const undone = await call("undo_recommendation", { id: rec.id });
+    assert.equal(undone.isError, undefined, text(undone));
+    assert.equal((await (await import("./actions/focus-guard")).activeFocusGuards()).guards.length, 0);
+
+    const refused = await call("block_mac_app", {
+      apps: ["Finder"],
+      end: new Date(Date.now() + 3600_000).toISOString(),
+    });
+    assert.equal(refused.isError, true);
+    assert.match(text(refused), /not on my list/);
+  }));

@@ -6,6 +6,7 @@ import { DEFAULT_TIMEZONE } from "../patterns";
 import { Zone } from "../patterns/time";
 import { store } from "../store";
 import { executeRecommendation, undoRecommendation } from "./calendar";
+import { guardMacApps } from "./mac-apps";
 
 // Tools the chat model can call so Michael acts, not only advises. Each action is a recommendation
 // (source "chat") carried out by the same code as POST /v1/recommendations/:id/execute and undone by
@@ -64,9 +65,24 @@ export const CHAT_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "block_mac_app",
+    description:
+      "Close distracting apps on the user's Mac for a stretch of time, for example WhatsApp or Slack during a focus block. While it runs, the app is closed when it comes to the front and the user sees why. Only chat, social, music, video and game apps can be named (WhatsApp, Telegram, Messages, Slack, Discord, Mail, Instagram, X, Spotify, Music, TV, Netflix, Steam and similar). Only when the user asked for it or clearly agreed. It can be undone until it ends.",
+    input_schema: {
+      type: "object",
+      properties: {
+        apps: { type: "array", items: { type: "string" }, description: "App names, e.g. ['WhatsApp']" },
+        start_at: { type: "string", description: "ISO 8601 with offset; now or later" },
+        end_at: { type: "string", description: "ISO 8601 with offset, after start_at" },
+        goal_id: { type: "string", description: "Id of the goal this protects, from the goals list" },
+      },
+      required: ["apps", "start_at", "end_at"],
+    },
+  },
+  {
     name: "undo_action",
     description:
-      "Take back something Michael did on the calendar (a block he created or moved), by its recommendation id from the list of things that can still be undone or from an earlier tool result.",
+      "Take back something Michael did on the calendar or the Mac (a block he created or moved, or apps he muted), by its recommendation id from the list of things that can still be undone or from an earlier tool result.",
     input_schema: {
       type: "object",
       properties: { recommendation_id: { type: "string" } },
@@ -89,6 +105,12 @@ const MoveInput = z.object({
   new_title: z.string().trim().min(1).max(200).nullish(),
 });
 const UndoInput = z.object({ recommendation_id: z.uuid() });
+const GuardInput = z.object({
+  apps: z.array(z.string().trim().min(1).max(80)).min(1).max(10),
+  start_at: IsoDateTime,
+  end_at: IsoDateTime,
+  goal_id: z.string().nullish(),
+});
 
 export interface ToolOutcome {
   /** What the model reads back. */
@@ -207,6 +229,18 @@ async function moveBlock(input: unknown): Promise<ToolOutcome> {
   return carryOut(rec);
 }
 
+async function guardApps(input: unknown): Promise<ToolOutcome> {
+  const p = GuardInput.safeParse(input);
+  if (!p.success) return invalid(p.error);
+  const goalId = p.data.goal_id && z.uuid().safeParse(p.data.goal_id).success ? p.data.goal_id : null;
+  const done = await guardMacApps({ ...p.data, goal_id: goalId, requested_by: "chat with Michael" });
+  return {
+    content: `Done: ${done.title}. ${undoLine(done) ?? "No undo deadline"}. Recommendation id ${done.id}.`,
+    isError: false,
+    action: done,
+  };
+}
+
 async function undo(input: unknown): Promise<ToolOutcome> {
   const p = UndoInput.safeParse(input);
   if (!p.success) return invalid(p.error);
@@ -227,6 +261,8 @@ export async function runChatTool(name: string, input: unknown): Promise<ToolOut
         return await createBlock(input);
       case "move_calendar_block":
         return await moveBlock(input);
+      case "block_mac_app":
+        return await guardApps(input);
       case "undo_action":
         return await undo(input);
       default:

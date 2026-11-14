@@ -20,6 +20,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 import { bookFocusBlock, executeRecommendation, undoDeadline, undoRecommendation } from "./actions/calendar";
+import { guardMacApps, suggestAppGuard } from "./actions/mac-apps";
 import { currentAgent } from "./context";
 import { HttpError, parse } from "./http";
 import {
@@ -467,7 +468,7 @@ export function createMcpServer(): McpServer {
     {
       title: "Carry out a recommendation",
       description:
-        "Carry out one of Michael's recommendations on the user's own calendar: book a focus block or move one of their solo blocks. Use it once the user says yes. Refused when it involves other people, has already started, or has nothing to carry out. Never deletes the user's events and never sends anything. The change can be undone with undo_recommendation until the block starts.",
+        "Carry out one of Michael's recommendations on the user's own time: book a focus block, move one of their solo blocks, or mute distracting Mac apps (block_mac_app). Use it once the user says yes. Refused when it involves other people, has already started, or has nothing to carry out. Never deletes the user's events and never sends anything. The change can be undone with undo_recommendation until the block starts.",
       inputSchema: { id: Id.describe("Recommendation id from list_recommendations") },
     },
     safe(async ({ id }) => {
@@ -481,7 +482,7 @@ export function createMcpServer(): McpServer {
     {
       title: "Undo a recommendation",
       description:
-        "Put back what execute_recommendation or create_focus_block changed: removes the block Michael booked, or moves a moved block back. Works until the block starts. Only ever removes a block Michael created himself.",
+        "Put back what execute_recommendation, create_focus_block or block_mac_app changed: removes the block Michael booked, moves a moved block back, or lets muted apps open again. Works until the block starts (a mute: until it ends). Only ever removes a block Michael created himself.",
       inputSchema: { id: Id.describe("Recommendation id") },
     },
     safe(async ({ id }) => {
@@ -519,6 +520,48 @@ export function createMcpServer(): McpServer {
         recommendation: rec,
         undo_until: await undoDeadline(rec.id),
       });
+    }),
+  );
+
+  server.registerTool(
+    "block_mac_app",
+    {
+      title: "Mute distracting Mac apps",
+      description: `Close distracting apps on the user's Mac for a stretch of time, straight away, for example WhatsApp and Slack during a focus block. While it runs, Michael's Mac helper closes the app when it comes to the front and tells the user why. Only chat, social, music, video and game apps can be named (WhatsApp, Telegram, Messages, Slack, Discord, Mail, Instagram, X, Spotify, Music, TV, Netflix, Steam and similar); anything else is refused. 5 minutes to 12 hours. Use it when the user asks you to protect focus time. Undo with undo_recommendation until it ends. ${TZ_NOTE}`,
+      inputSchema: {
+        apps: z.array(z.string().min(1).max(80)).min(1).max(10).describe('App names, e.g. ["WhatsApp"]'),
+        start: TimeInput.optional().describe("Start, e.g. 2026-11-14T14:00. Default now"),
+        end: TimeInput.describe("End, e.g. 2026-11-14T16:00"),
+        goal_id: Id.optional().describe("The goal it protects, from get_goals"),
+      },
+    },
+    safe(async ({ apps, start, end, goal_id }) => {
+      const rec = await guardMacApps({
+        apps,
+        start_at: start ? toInstant(start) : new Date().toISOString(),
+        end_at: toInstant(end),
+        goal_id,
+        requested_by: currentAgent()?.name ?? "an AI tool",
+      });
+      return reply(await doneText(rec, "Muted:"), {
+        recommendation: rec,
+        undo_until: await undoDeadline(rec.id),
+      });
+    }),
+  );
+
+  server.registerTool(
+    "suggest_app_mute",
+    {
+      title: "Suggest muting the worst offender",
+      description:
+        "Look at the week's patterns and propose muting the Mac app that broke the user's focus most, during today's next work block. It only proposes: the suggestion shows in Michael and in list_recommendations, and nothing happens until the user (or you, once they say yes) runs execute_recommendation.",
+      inputSchema: {},
+    },
+    safe(async () => {
+      const rec = await suggestAppGuard();
+      if (!rec) return reply("Nothing to suggest: no Mac app stands out, or it is already muted.", {});
+      return reply(`Suggested: "${rec.title}". ${rec.rationale} Id ${rec.id}.`, { recommendation: rec });
     }),
   );
 
