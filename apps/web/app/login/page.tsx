@@ -1,4 +1,5 @@
 import { Wordmark } from "@/components/brand";
+import { InstallApp } from "@/components/install-app";
 import { GoogleButton } from "./google-button";
 
 export const metadata = { title: "Sign in · Michael" };
@@ -20,6 +21,9 @@ export default function LoginPage() {
         >
           Try the demo week
         </a>
+      </div>
+      <div className="mt-6">
+        <InstallApp />
       </div>
       <p className="mt-4 text-footnote text-label-2">
         One client: I work for you only. Your timeline is yours to see and delete.
