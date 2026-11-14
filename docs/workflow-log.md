@@ -2,6 +2,7 @@
 
 One line per change to how we work (newest first): date, what changed, why.
 
+- Sat 14 Nov 23:00: Vercel pull request previews back on (main only `git.deploymentEnabled` removed from apps/web/vercel.json). Why: the team is on Vercel Pro, so previews no longer eat a daily deployment limit (#283).
 - Sat 14 Nov 20:10: CI runs `pnpm test` (hermetic: `apps/api/src/test-env.ts` clears real keys), `pnpm --filter @michael/web build` and a migrations guard (unique timestamps, new files sort after main; Auto-merge rechecks against main before merging). Why: regressions slipped through untested merges, a web build break blocked API deploys, and duplicate migration timestamps stopped production migrations (#178).
 - Sat 14 Nov 20:05: Vercel builds only main (apps/web/vercel.json); PR previews off. Why: previews plus merges hit the Hobby daily deployment limit and production stopped updating (#161).
 - Sat 14 Nov 18:25: AGENTS.md rewritten lean (247 to about 90 lines): goals, facts and a few principles instead of scripts. Why: strong models need context, not step-by-step rules.
