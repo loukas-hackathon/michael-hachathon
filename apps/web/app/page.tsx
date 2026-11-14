@@ -6,6 +6,7 @@ import { BriefCard } from "@/components/today/brief-card";
 import { MichaelCard } from "@/components/today/michael-card";
 import { MomentCard } from "@/components/today/moment-card";
 import { RecommendationsPanel } from "@/components/today/recommendations";
+import { TravelCard } from "@/components/today/travel-card";
 import { getToday, needsOnboarding } from "@/lib/api";
 import { type DayView, nowIndex, tape, totals } from "@/lib/day";
 import { formatDay, formatTime, hm, minutesPhrase } from "@/lib/format";
@@ -105,6 +106,8 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
           {momentKind ? <MomentCard kind={momentKind} sample={day.sample} /> : null}
 
           {day.lead ? <MichaelCard lead={day.lead} /> : null}
+
+          {day.travelPlan ? <TravelCard plan={day.travelPlan} /> : null}
 
           <RecommendationsPanel />
 

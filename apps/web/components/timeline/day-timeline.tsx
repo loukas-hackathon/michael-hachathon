@@ -211,6 +211,40 @@ export function DayTimeline({ day }: { day: TimelineDay }) {
         );
       })}
 
+      {/* Drives: the empty road in grey, the traffic on top hatched, as time lost. */}
+      {(day.drives ?? []).map((d) => {
+        const top = y(d.start);
+        const h = Math.max(4, y(d.end) - top);
+        const trafficH = (d.trafficMinutes / Math.max(1, d.minutes)) * h;
+        return (
+          <div
+            key={`d${d.start}`}
+            className="absolute right-4 left-[50px] overflow-hidden rounded-block bg-fill"
+            style={{ top, height: h }}
+            title={`Drive to ${d.to}, ${d.minutes} minutes, ${d.trafficMinutes} in traffic`}
+          >
+            {trafficH > 0 ? (
+              <span
+                className="hatch absolute inset-x-0 bottom-0 bg-bg shadow-[inset_0_0_0_1px_var(--m-label-2)]"
+                style={{ height: trafficH }}
+              />
+            ) : null}
+            {h >= 17 ? (
+              <p className="absolute top-1 right-2 left-2 flex items-center justify-between gap-2 text-footnote leading-4 font-semibold">
+                <span className="truncate">
+                  Drive to {d.to} · {d.minutes}&nbsp;min
+                </span>
+                {d.trafficMinutes > 0 ? (
+                  <span className="shrink-0 rounded-[4px] bg-bg px-1 text-caption">
+                    Traffic {d.trafficMinutes}&nbsp;min
+                  </span>
+                ) : null}
+              </p>
+            ) : null}
+          </div>
+        );
+      })}
+
       {lossLabels.map((l) => (
         <span
           key={l.key}
@@ -250,9 +284,12 @@ export function TimelineKey({
   hasPlan,
   goalTime = hasPlan,
   hasMichael = false,
+  hasDrives = false,
 }: {
   hasAi: boolean;
   hasPlan: boolean;
+  /** Planned drives on the day (travel events). */
+  hasDrives?: boolean;
   /** Pink means goal time against a plan (the sample day); otherwise it is time in work apps. */
   goalTime?: boolean;
   hasMichael?: boolean;
@@ -286,6 +323,12 @@ export function TimelineKey({
           Other
         </li>
       )}
+      {hasDrives ? (
+        <li className={item}>
+          <span className="h-3 w-4 rounded-[3px] bg-fill shadow-[inset_0_0_0_0.5px_var(--m-separator)]" />
+          Drive
+        </li>
+      ) : null}
       <li className={item}>
         <span className="h-3 w-1.5 rounded-[1px] bg-label-2" />
         Phone

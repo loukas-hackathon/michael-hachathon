@@ -59,6 +59,34 @@ export const sampleDay: DayView = {
   ],
   wonBackMinutes: 47,
   record: { tick: 21, line: "91%, your best Business week since you started. Do it again." },
+  drives: [
+    {
+      start: d("17:25"),
+      end: d("18:00"),
+      to: "the pool",
+      minutes: 35,
+      freeFlowMinutes: 20,
+      parking: {
+        hard: true,
+        carPark: "the car park on Ilia Iliou",
+        walkMinutes: 4,
+        url: "https://www.google.com/maps/search/?api=1&query=parking+near+Olympic+Aquatic+Centre+Athens",
+      },
+    },
+  ],
+  travelPlan: {
+    block: "swim",
+    before: { departAt: d("17:25"), minutes: 35, trafficMinutes: 15 },
+    after: { departAt: d("18:40"), minutes: 20, trafficMinutes: 0, blockStart: d("19:00") },
+    wonMinutes: 15,
+    undoUntil: d("17:25"),
+    parking: {
+      hard: true,
+      carPark: "the car park on Ilia Iliou",
+      walkMinutes: 4,
+      url: "https://www.google.com/maps/search/?api=1&query=parking+near+Olympic+Aquatic+Centre+Athens",
+    },
+  },
   balance: {
     overall: 64,
     target: 65,

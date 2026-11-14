@@ -1,4 +1,5 @@
 import type { Event } from "@michael/shared";
+import { driveFromEvent } from "./travel";
 
 // Builds the Timeline view of one day from raw timeline events.
 // Mac use becomes blocks: pink where work apps held the screen (goal time, inferred while there is no
@@ -38,8 +39,18 @@ export type Segment =
   | { kind: "hours"; from: number; to: number }
   | { kind: "quiet"; from: number; to: number };
 
+export type TimelineDrive = {
+  start: number;
+  end: number;
+  to: string;
+  minutes: number;
+  trafficMinutes: number;
+};
+
 export type TimelineDay = {
   date: string;
+  /** Planned drives (source maps, type travel): the traffic part reads as lost time. */
+  drives?: TimelineDrive[];
   /** Set when the day is today: draws the now pill and leaves the rest of the plan as outline. */
   now?: number;
   sample?: boolean;
@@ -329,8 +340,26 @@ export function buildTimeline(
     blocks.flatMap((b) => b.lostStretches ?? []).reduce((n, l) => n + (l.end - l.start) / MIN, 0);
   const phoneMinutes = phone.reduce((n, p) => n + (p.end - p.start) / MIN, 0);
 
+  // 6. Planned drives (source maps, type travel; TravelData in docs/api.md).
+  const drives = events
+    .filter((e) => e.type === "travel")
+    .map((e) => driveFromEvent(e))
+    .filter((d): d is NonNullable<typeof d> => d !== null)
+    .map((d) => {
+      const [s, en] = clip(t(d.start), t(d.end));
+      return {
+        start: s,
+        end: en,
+        to: d.to,
+        minutes: d.minutes,
+        trafficMinutes: Math.max(0, d.minutes - d.freeFlowMinutes),
+      };
+    })
+    .filter((d) => d.end > d.start);
+
   return {
     date,
+    drives,
     now: now != null && now > dayStart && now < dayEnd ? now : undefined,
     dayStart,
     dayEnd,

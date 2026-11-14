@@ -1,4 +1,5 @@
 import type { Balance, RecordMark, Recovery } from "./gamification";
+import type { Drive, TravelPlan } from "./travel";
 
 export type { Recovery };
 
@@ -63,6 +64,9 @@ export type DayView = {
   /** A personal best on today's tape (#166). */
   record?: RecordMark | null;
   balance?: Balance | null;
+  /** Today's drives and Michael's plan for them (#157). */
+  drives?: Drive[];
+  travelPlan?: TravelPlan | null;
   lead: Lead | null;
   nudge: Nudge | null;
 };

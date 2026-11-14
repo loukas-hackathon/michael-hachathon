@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { StandingInstructions } from "@/components/you/instructions";
-import { getInstructions, getPrivacy, getProfile } from "@/lib/api";
+import { Places } from "@/components/you/places";
+import { getInstructions, getPlaces, getPrivacy, getProfile } from "@/lib/api";
 import { DeleteDataRow } from "./delete-data-row";
 import { GoogleCalendarRow } from "./google-calendar";
 import { NudgesButton } from "./nudges-button";
@@ -24,6 +25,7 @@ export default async function YouPage() {
     getInstructions().catch(() => ({ available: false as const })),
     getProfile().catch(() => null),
   ]);
+  const places = await getPlaces().catch(() => null);
   return (
     <main className="screen">
       <header className="flex min-h-11 items-center justify-end pt-2">
@@ -65,6 +67,13 @@ export default async function YouPage() {
       </section>
 
       <h2 className="mt-8 mb-2 text-title3 font-bold">Sources</h2>
+      {places ? (
+        <Places
+          places={places.places}
+          mapsAvailable={places.maps_available}
+          travelEnabled={places.travel_enabled}
+        />
+      ) : null}
       <section className="mb-4 overflow-hidden rounded-group bg-fill">
         <GoogleCalendarRow />
       </section>

@@ -69,6 +69,7 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
             hasPlan={Boolean(day.sample) || plans.length > 0}
             goalTime={Boolean(day.sample)}
             hasMichael={plans.some((p) => p.michael)}
+            hasDrives={(day.drives ?? []).length > 0}
           />
           <DayTimeline day={day} />
           <p className="mt-6 text-footnote text-label-2">

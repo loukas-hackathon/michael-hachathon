@@ -13,6 +13,8 @@ import {
   mockGoals,
   mockRecommendations,
   type NudgeTestResult,
+  type PlacesResponse,
+  type PlacesUpdate,
   type PrivacyState,
   type Profile,
   type ProfileUpdate,
@@ -502,4 +504,45 @@ export async function deleteInstruction(id: string): Promise<WriteResult> {
     return { ok: true };
   }
   return write("DELETE", `/v1/instructions/${id}`);
+}
+
+// ---------- places (GET/PUT /v1/places, #115) ----------
+
+const mockPlaces: PlacesResponse = { places: [], maps_available: false, travel_enabled: false };
+
+export async function getPlaces(): Promise<PlacesResponse> {
+  if (USE_MOCKS) return structuredClone(mockPlaces);
+  return get<PlacesResponse>("/v1/places");
+}
+
+/** PUT replaces the whole list; saving places is the user's opt in to travel times. */
+export async function putPlaces(update: PlacesUpdate): Promise<WriteResult> {
+  if (USE_MOCKS) {
+    const t = new Date().toISOString();
+    mockPlaces.places = update.places.map((p) => ({
+      key: p.key,
+      label: p.label ?? p.key,
+      address: p.address ?? null,
+      lat: p.lat ?? null,
+      lng: p.lng ?? null,
+      updated_at: t,
+    }));
+    return { ok: true };
+  }
+  try {
+    const res = await fetch(`${API_URL}/v1/places`, {
+      method: "PUT",
+      headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
+      body: JSON.stringify(update),
+      cache: "no-store",
+    });
+    if (res.ok) return { ok: true };
+    const err = ApiError.safeParse(await res.json().catch(() => null));
+    return {
+      ok: false,
+      message: err.success ? err.data.error.message : `PUT /v1/places failed: ${res.status}`,
+    };
+  } catch {
+    return { ok: false, message: "Michael's server can't be reached." };
+  }
 }
