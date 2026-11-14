@@ -40,6 +40,7 @@ export interface TimelineFilter {
 
 export type NewRecommendation = Pick<Recommendation, "goal_id" | "title" | "rationale" | "action"> & {
   analysis_run_id?: string | null;
+  source?: Recommendation["source"];
 };
 
 export interface SeedResult {
@@ -136,7 +137,7 @@ export interface Store extends PrivacyBackend {
   getRecommendationExecution(id: string): Promise<unknown>;
   recordRecommendationAction(id: string, update: RecommendationActionUpdate): Promise<Recommendation | null>;
   latestAnalysisRun(): Promise<AnalysisRun | null>;
-  // Proposed by Michael's own rules (e.g. travel); status starts at proposed.
+  // Proposed by Michael's own rules (e.g. travel) or asked for in chat; status starts at proposed.
   createRecommendation(input: NewRecommendation): Promise<Recommendation>;
   // Saved places (home, work, gym). replacePlaces swaps the whole list.
   listPlaces(): Promise<Place[]>;
@@ -386,6 +387,25 @@ export class MemoryStore implements Store {
     return this.recommendations.find((r) => r.id === id) ?? null;
   }
 
+  async createRecommendation(i: NewRecommendation) {
+    const rec: Recommendation = {
+      id: crypto.randomUUID(),
+      analysis_run_id: i.analysis_run_id ?? null,
+      goal_id: i.goal_id,
+      title: i.title,
+      rationale: i.rationale,
+      action: i.action,
+      status: "proposed",
+      executed_at: null,
+      undone_at: null,
+      source: i.source ?? "analysis",
+      created_at: now(),
+      updated_at: now(),
+    };
+    this.recommendations.push(rec);
+    return rec;
+  }
+
   async getRecommendationExecution(id: string) {
     return this.d.executions.get(id) ?? null;
   }
@@ -530,24 +550,6 @@ export class MemoryStore implements Store {
     return [...this.data.entries()]
       .filter(([, x]) => x.events.some((e) => Date.parse(e.created_at) >= from))
       .map(([userId]) => userId);
-  }
-
-  async createRecommendation(i: NewRecommendation) {
-    const rec: Recommendation = {
-      id: crypto.randomUUID(),
-      analysis_run_id: i.analysis_run_id ?? null,
-      goal_id: i.goal_id,
-      title: i.title,
-      rationale: i.rationale,
-      action: i.action,
-      status: "proposed",
-      executed_at: null,
-      undone_at: null,
-      created_at: now(),
-      updated_at: now(),
-    };
-    this.recommendations.push(rec);
-    return rec;
   }
 
   async listPlaces() {
