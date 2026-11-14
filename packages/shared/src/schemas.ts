@@ -3,6 +3,8 @@ import { z } from "zod";
 // ---------- primitives ----------
 
 export const IsoDateTime = z.iso.datetime({ offset: true });
+// "YYYY-MM-DD", a day in the user's timezone.
+export const LocalDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 // ---------- enums ----------
 
@@ -303,17 +305,51 @@ export type NudgeChannel = z.infer<typeof NudgeChannel>;
 export const NudgeStatus = z.enum(["queued", "sent", "failed", "suppressed"]);
 export type NudgeStatus = z.infer<typeof NudgeStatus>;
 
-// At most 5 per day, under 15 words, never during quiet hours.
+// What a nudge is about. Each kind is one rule of the engine (apps/api/src/nudges).
+export const NudgeKind = z.enum(["focus_drift", "block_soon", "wind_down", "goal_behind"]);
+export type NudgeKind = z.infer<typeof NudgeKind>;
+
+// At most 5 per day, under 15 words, never during quiet hours, each tied to a goal.
 export const Nudge = z.object({
   id: z.uuid(),
   recommendation_id: z.uuid().nullable(),
+  goal_id: z.uuid().nullable(),
+  kind: NudgeKind,
+  // Dedupe key: the same key never nudges twice on one local day.
+  key: z.string(),
+  // Local day (user's timezone) the nudge belongs to.
+  day: LocalDay,
   channel: NudgeChannel,
   text: z.string().min(1),
+  // The maths behind it, one line, e.g. "3h 10m of 9h done; the pace by now is 5h 20m."
+  reason: z.string(),
   status: NudgeStatus,
   created_at: IsoDateTime,
   sent_at: IsoDateTime.nullable(),
 });
 export type Nudge = z.infer<typeof Nudge>;
+
+export const NudgesQuery = z.object({ from: IsoDateTime.optional(), to: IsoDateTime.optional() });
+export type NudgesQuery = z.infer<typeof NudgesQuery>;
+
+export const NudgesResponse = z.object({ nudges: z.array(Nudge) });
+export type NudgesResponse = z.infer<typeof NudgesResponse>;
+
+// Why the engine stayed silent (or suppressed) on a check.
+export const NudgeSkip = z.enum(["nothing_to_say", "quiet_hours", "daily_cap", "too_soon", "off_the_record"]);
+export type NudgeSkip = z.infer<typeof NudgeSkip>;
+
+// POST /v1/nudges/check: runs the engine once for the caller.
+export const NudgeCheckResult = z.object({
+  checked_at: IsoDateTime,
+  // The nudge created by this check (sent, queued or suppressed), or null.
+  nudge: Nudge.nullable(),
+  // Set when no nudge went out.
+  skipped: NudgeSkip.nullable(),
+  // Nudges today that count towards the cap of 5 (everything but suppressed).
+  sent_today: z.number().int().nonnegative(),
+});
+export type NudgeCheckResult = z.infer<typeof NudgeCheckResult>;
 
 // ---------- score ----------
 
@@ -358,8 +394,6 @@ export type AppCategory = z.infer<typeof AppCategory>;
 
 export const PatternDevice = z.enum(["mac", "iphone"]);
 export type PatternDevice = z.infer<typeof PatternDevice>;
-
-export const LocalDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 // What was in front: an app (key = bundle id) or a site (key = host, never a full address).
 export const PatternSubject = z.object({

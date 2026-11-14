@@ -10,6 +10,8 @@ import {
   mockEvents,
   mockGoals,
   mockRecommendations,
+  type Nudge,
+  type NudgeStatus,
   type Recommendation,
   type RecommendationStatus,
   type Source,
@@ -33,6 +35,8 @@ export interface InsertResult {
   ignored: number;
 }
 
+export type NudgeCreate = Omit<Nudge, "id" | "created_at" | "sent_at">;
+
 // Storage boundary. Routes and MCP tools depend only on this interface.
 // MemoryStore is used when Supabase env vars are missing; SupabaseStore (supabase-store.ts) otherwise.
 export interface Store {
@@ -47,6 +51,11 @@ export interface Store {
   listRecommendations(filter?: { status?: RecommendationStatus }): Promise<Recommendation[]>;
   updateRecommendationStatus(id: string, status: RecommendationStatus): Promise<Recommendation | null>;
   latestAnalysisRun(): Promise<AnalysisRun | null>;
+  /** Nudges created in [from, to), oldest first. */
+  listNudges(filter: { from: string; to: string }): Promise<Nudge[]>;
+  /** Null when this key was already used on that day (the dedupe guard). */
+  createNudge(input: NudgeCreate): Promise<Nudge | null>;
+  updateNudgeStatus(id: string, status: NudgeStatus): Promise<Nudge | null>;
 }
 
 const now = () => new Date().toISOString();
@@ -61,7 +70,13 @@ export class MemoryStore implements Store {
   // One copy of the mock day per user, created on first access, so users never see each other's data.
   private data = new Map<
     string,
-    { events: Event[]; goals: Goal[]; recommendations: Recommendation[]; runs: AnalysisRun[] }
+    {
+      events: Event[];
+      goals: Goal[];
+      recommendations: Recommendation[];
+      runs: AnalysisRun[];
+      nudges: Nudge[];
+    }
   >();
   private get d() {
     const userId = currentUserId();
@@ -72,6 +87,7 @@ export class MemoryStore implements Store {
         goals: structuredClone(mockGoals),
         recommendations: structuredClone(mockRecommendations),
         runs: [structuredClone(mockAnalysisRun)],
+        nudges: [],
       };
       this.data.set(userId, x);
     }
@@ -181,6 +197,30 @@ export class MemoryStore implements Store {
 
   async latestAnalysisRun() {
     return this.runs.at(-1) ?? null;
+  }
+
+  async listNudges(f: { from: string; to: string }) {
+    const from = Date.parse(f.from);
+    const to = Date.parse(f.to);
+    return this.d.nudges.filter((n) => {
+      const t = Date.parse(n.created_at);
+      return t >= from && t < to;
+    });
+  }
+
+  async createNudge(i: NudgeCreate) {
+    if (this.d.nudges.some((n) => n.day === i.day && n.key === i.key)) return null;
+    const nudge: Nudge = { ...i, id: crypto.randomUUID(), created_at: now(), sent_at: null };
+    this.d.nudges.push(nudge);
+    return nudge;
+  }
+
+  async updateNudgeStatus(id: string, status: NudgeStatus) {
+    const nudge = this.d.nudges.find((n) => n.id === id);
+    if (!nudge) return null;
+    nudge.status = status;
+    if (status === "sent") nudge.sent_at = now();
+    return nudge;
   }
 }
 

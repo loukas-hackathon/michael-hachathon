@@ -5,6 +5,8 @@ import type {
   Goal,
   GoalCreate,
   GoalUpdate,
+  Nudge,
+  NudgeStatus,
   Recommendation,
   RecommendationStatus,
 } from "@michael/shared";
@@ -12,7 +14,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { z } from "zod";
 import { currentUserId } from "./context";
 import { HttpError } from "./http";
-import type { InsertResult, Store, TimelineFilter } from "./store";
+import type { InsertResult, NudgeCreate, Store, TimelineFilter } from "./store";
 
 type EventRow = z.output<typeof EventInput>;
 
@@ -69,6 +71,21 @@ const toRun = (r: Record<string, unknown>): AnalysisRun => ({
   error: (r.error as string | null) ?? null,
   started_at: iso(r.started_at as string) as string,
   finished_at: iso(r.finished_at as string | null),
+});
+
+const toNudge = (r: Record<string, unknown>): Nudge => ({
+  id: r.id as string,
+  recommendation_id: (r.recommendation_id as string | null) ?? null,
+  goal_id: (r.goal_id as string | null) ?? null,
+  kind: r.kind as Nudge["kind"],
+  key: (r.key as string | null) ?? "",
+  day: r.day as string,
+  channel: r.channel as Nudge["channel"],
+  text: r.text as string,
+  reason: (r.reason as string | null) ?? "",
+  status: r.status as NudgeStatus,
+  created_at: iso(r.created_at as string) as string,
+  sent_at: iso(r.sent_at as string | null),
 });
 
 function check<T>(res: { data: T; error: { message: string; code?: string } | null }): T {
@@ -244,5 +261,42 @@ export class SupabaseStore implements Store {
         .maybeSingle(),
     );
     return row ? toRun(row) : null;
+  }
+
+  async listNudges(f: { from: string; to: string }) {
+    const rows = check(
+      await this.db
+        .from("nudges")
+        .select("*")
+        .eq("user_id", currentUserId())
+        .gte("created_at", f.from)
+        .lt("created_at", f.to)
+        .order("created_at", { ascending: true }),
+    );
+    return (rows ?? []).map(toNudge);
+  }
+
+  async createNudge(i: NudgeCreate) {
+    const res = await this.db
+      .from("nudges")
+      .insert({ ...i, user_id: currentUserId() })
+      .select("*")
+      .single();
+    // Unique (user_id, day, key): another check got there first.
+    if (res.error?.code === "23505") return null;
+    return toNudge(check(res));
+  }
+
+  async updateNudgeStatus(id: string, status: NudgeStatus) {
+    const row = check(
+      await this.db
+        .from("nudges")
+        .update({ status, ...(status === "sent" ? { sent_at: new Date().toISOString() } : {}) })
+        .eq("user_id", currentUserId())
+        .eq("id", id)
+        .select("*")
+        .maybeSingle(),
+    );
+    return row ? toNudge(row) : null;
   }
 }

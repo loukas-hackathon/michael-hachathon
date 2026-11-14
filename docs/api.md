@@ -58,6 +58,7 @@ Enums:
 - `AgentScope`: `timeline | goals | recommendations | score | write_events`
 - `AgentStatus`: `pending | approved | revoked`
 - `NudgeChannel`: `watch | push | telegram`; `NudgeStatus`: `queued | sent | failed | suppressed`
+- `NudgeKind`: `focus_drift | block_soon | wind_down | goal_behind`; `NudgeSkip`: `nothing_to_say | quiet_hours | daily_cap | too_soon | off_the_record`
 - `AppCategory`: `work | communication | social | video | news | shopping | travel | ai | music | system | other`
   (one shared categoriser for apps and sites, `packages/shared/src/categories.ts`; unknown = `other`)
 - `IntegrationProvider`: `google_calendar | whoop`
@@ -722,11 +723,22 @@ approves it. Every MCP tool call is logged as an `AgentQuery`.
 type Nudge = {
   id: string;
   recommendation_id: string | null;
+  goal_id: string | null; // the goal it serves
+  kind: NudgeKind;
+  key: string; // dedupe key: never twice on one local day
+  day: string; // local day, "YYYY-MM-DD"
   channel: NudgeChannel;
-  text: string;
+  text: string; // under 15 words
+  reason: string; // the maths, e.g. "70.3 training: 1h of 10h done; the pace by now is 3h 34m."
   status: NudgeStatus;
   created_at: string;
   sent_at: string | null;
+};
+type NudgeCheckResult = {
+  checked_at: string;
+  nudge: Nudge | null; // created by this check (queued, sent, failed or suppressed)
+  skipped: NudgeSkip | null; // why nothing went out
+  sent_today: number; // nudges today that count towards the cap (all but suppressed)
 };
 type GoalScore = { goal_id: string; budget_minutes: number; planned_minutes: number; spent_minutes: number };
 type WeeklyScore = {
@@ -739,13 +751,30 @@ type WeeklyScore = {
 };
 ```
 
-| Method | Path                        | Response                                              | Status |
-| ------ | --------------------------- | ----------------------------------------------------- | ------ |
-| GET    | `/v1/nudges?from=&to=`      | `200 { nudges: Nudge[] }`                             | stub   |
-| GET    | `/v1/score?week=YYYY-MM-DD` | `200 WeeklyScore` (week starts Monday, Europe/Athens) | stub   |
+| Method | Path                        | Response                                                                | Status |
+| ------ | --------------------------- | ----------------------------------------------------------------------- | ------ |
+| GET    | `/v1/nudges?from=&to=`      | `200 { nudges: Nudge[] }` (default: today, Europe/Athens, oldest first) | live   |
+| POST   | `/v1/nudges/check`          | `200 NudgeCheckResult` (runs the engine once, no body)                  | live   |
+| GET    | `/v1/score?week=YYYY-MM-DD` | `200 WeeklyScore` (week starts Monday, Europe/Athens)                   | stub   |
 
-Nudges: at most 5 per day, under 15 words, none in quiet hours (deep work, dinner, after 22:00);
-extra ones are stored as `suppressed`.
+Nudge engine (`apps/api/src/nudges/engine.ts`, pure, thresholds in `LIMITS`). Each check picks the
+most urgent candidate of four rules, each tied to a goal:
+
+| Kind          | When                                                                          | Example                                                           |
+| ------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `focus_drift` | inside a work goal block, 3+ of the last 10 min on distractor apps or sites   | "6 min on Instagram in your focus block. Back to it until 12:00." |
+| `block_soon`  | a goal block starts in 2 to 15 min                                            | "Gym at 18:00. Wrap up in 12 min."                                |
+| `wind_down`   | 30 min before the night, 3+ of the last 10 min on screens, a rest goal exists | "Screens off by 22:00. Sleep is on the plan."                     |
+| `goal_behind` | before 19:00, a weekly budget behind its linear pace by 60+ min and 15%+      | "Gym 2h 34m behind this week. Book 90 min today."                 |
+
+Goal time spent this week = the goal's calendar blocks so far plus its own events (`work`:
+`focus_session`, `gym`: `workout`, `rest`: `sleep`, `food`: `meal`), counted once. Rules: at most 5
+per day; none in quiet hours (22:00 to 07:00, dinner 20:00 to 21:00, work goal blocks except
+`focus_drift`); one key once per local day (`goal_behind` once per day in all); at least 20 min
+between nudges. Once 5 went out, the best candidate is stored as `suppressed` (once per key). Off
+the record stops all nudges. Delivery is pluggable (`apps/api/src/nudges/channels.ts`); until a
+real channel is plugged in, nudges are logged and stay `queued`. Nothing calls the check on a
+schedule yet: call it from a cron, the collector or the app.
 
 ## MCP server
 
