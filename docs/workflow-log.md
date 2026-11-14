@@ -9,3 +9,4 @@ One line per change to how we work (newest first): date, what changed, why.
 - Sat 14 Nov 17:00: merging is deploying (Railway, Vercel, migration action); `agent-request` label for work that needs access; agents improve the workflow themselves. Why: fully agentic, no manual steps.
 - Sat 14 Nov 16:30: no area ownership; optimistic ETAs of 15 to 45 minutes per issue. Why: both people run many agents in parallel.
 - Sat 14 Nov 16:10: agents read the Build Hub and GitHub before every task and sync the board after merges. Why: product and code stay in sync without humans relaying.
+- Sat 14 Nov: the Build Hub now has a `findings` collection for status, findings and research; agents update it after every merge. Why: Manolis wants everything we learn on the shared hub, not only in the repo.
