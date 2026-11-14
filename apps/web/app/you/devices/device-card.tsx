@@ -7,16 +7,22 @@ type Props = {
   title: string;
   body: string;
   keyName: string;
-  // What to copy: the bare key, or a full webhook URL built from it.
-  copy: (r: { secret: string; webhookBase: string }) => string;
+  // What to copy: the bare key, or a full webhook URL built from it. A plain value, not a
+  // function, because server components cannot pass functions to client components.
+  copyAs: { kind: "key" } | { kind: "webhook"; path: string };
   steps: string[];
 };
 
-export function DeviceCard({ title, body, keyName, copy, steps }: Props) {
+export function DeviceCard({ title, body, keyName, copyAs, steps }: Props) {
   const [result, setResult] = useState<KeyResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
-  const value = result && "secret" in result ? copy(result) : null;
+  const value =
+    result && "secret" in result
+      ? copyAs.kind === "key"
+        ? result.secret
+        : `${result.webhookBase}/${copyAs.path}?key=${result.secret}`
+      : null;
 
   return (
     <section className="rounded-group bg-fill px-4 py-4">

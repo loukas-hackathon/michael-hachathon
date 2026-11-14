@@ -25,14 +25,14 @@ export default function DevicesPage() {
           title="Your Mac"
           body="App time, iPhone screen time, Chrome and Claude Code, sent from your Mac."
           keyName="Mac collector"
-          copy={(r) => r.secret}
+          copyAs={{ kind: "key" }}
           steps={["Paste it into the Michael collector when it asks for your key."]}
         />
         <DeviceCard
           title="Apple Watch"
           body="Sleep, workouts and heart rate through the Health Auto Export app."
           keyName="Health Auto Export"
-          copy={(r) => `${r.webhookBase}/health-auto-export?key=${r.secret}`}
+          copyAs={{ kind: "webhook", path: "health-auto-export" }}
           steps={[
             "Open Health Auto Export, then Automations, then New, then REST API.",
             "Paste this as the URL. Format JSON, every 5 minutes.",
