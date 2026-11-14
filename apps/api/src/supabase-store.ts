@@ -10,6 +10,7 @@ import type {
 } from "@michael/shared";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { z } from "zod";
+import { currentUserId } from "./context";
 import { HttpError } from "./http";
 import type { InsertResult, Store, TimelineFilter } from "./store";
 
@@ -91,6 +92,7 @@ export class SupabaseStore implements Store {
     let q = this.db
       .from("events")
       .select("*")
+      .eq("user_id", currentUserId())
       .lte("start_at", f.to)
       .or(`end_at.gte.${f.from},and(end_at.is.null,start_at.gte.${f.from})`)
       .order("start_at", { ascending: true })
@@ -102,7 +104,9 @@ export class SupabaseStore implements Store {
 
   async insertEvents(inputs: EventRow[]): Promise<InsertResult> {
     if (!inputs.length) return { inserted: [], duplicates: 0, ignored: 0 };
+    const userId = currentUserId();
     const rows = inputs.map((i) => ({
+      user_id: userId,
       source: i.source,
       type: i.type,
       start_at: i.start_at,
@@ -121,6 +125,7 @@ export class SupabaseStore implements Store {
         await this.db
           .from("events")
           .select("source, external_id")
+          .eq("user_id", userId)
           .in(
             "external_id",
             withExt.map((r) => r.external_id as string),
@@ -154,11 +159,15 @@ export class SupabaseStore implements Store {
   }
 
   async listGoals() {
-    return (check(await this.db.from("goals").select("*").order("created_at")) ?? []).map(toGoal);
+    return (
+      check(await this.db.from("goals").select("*").eq("user_id", currentUserId()).order("created_at")) ?? []
+    ).map(toGoal);
   }
 
   async getGoal(id: string) {
-    const row = check(await this.db.from("goals").select("*").eq("id", id).maybeSingle());
+    const row = check(
+      await this.db.from("goals").select("*").eq("user_id", currentUserId()).eq("id", id).maybeSingle(),
+    );
     return row ? toGoal(row) : null;
   }
 
@@ -167,6 +176,7 @@ export class SupabaseStore implements Store {
       await this.db
         .from("goals")
         .insert({
+          user_id: currentUserId(),
           category: i.category,
           title: i.title,
           description: i.description ?? null,
@@ -185,6 +195,7 @@ export class SupabaseStore implements Store {
       await this.db
         .from("goals")
         .update(withoutUndefined(patch as Record<string, unknown>))
+        .eq("user_id", currentUserId())
         .eq("id", id)
         .select("*")
         .maybeSingle(),
@@ -193,19 +204,31 @@ export class SupabaseStore implements Store {
   }
 
   async deleteGoal(id: string) {
-    const rows = check(await this.db.from("goals").delete().eq("id", id).select("id"));
+    const rows = check(
+      await this.db.from("goals").delete().eq("user_id", currentUserId()).eq("id", id).select("id"),
+    );
     return (rows ?? []).length > 0;
   }
 
   async listRecommendations(filter?: { status?: RecommendationStatus }) {
-    let q = this.db.from("recommendations").select("*").order("created_at", { ascending: false });
+    let q = this.db
+      .from("recommendations")
+      .select("*")
+      .eq("user_id", currentUserId())
+      .order("created_at", { ascending: false });
     if (filter?.status) q = q.eq("status", filter.status);
     return (check(await q) ?? []).map(toRecommendation);
   }
 
   async updateRecommendationStatus(id: string, status: RecommendationStatus) {
     const row = check(
-      await this.db.from("recommendations").update({ status }).eq("id", id).select("*").maybeSingle(),
+      await this.db
+        .from("recommendations")
+        .update({ status })
+        .eq("user_id", currentUserId())
+        .eq("id", id)
+        .select("*")
+        .maybeSingle(),
     );
     return row ? toRecommendation(row) : null;
   }
@@ -215,6 +238,7 @@ export class SupabaseStore implements Store {
       await this.db
         .from("analysis_runs")
         .select("*")
+        .eq("user_id", currentUserId())
         .order("started_at", { ascending: false })
         .limit(1)
         .maybeSingle(),
