@@ -89,7 +89,15 @@ export const places = new Hono()
           lng = hit?.lng ?? null;
         }
       }
-      rows.push({ key: p.key, label: p.label ?? DEFAULT_LABEL[p.key] ?? p.key, address, lat, lng });
+      // Wi-Fi mappings are set on the Location page (routes/location.ts) and kept across edits.
+      rows.push({
+        key: p.key,
+        label: p.label ?? DEFAULT_LABEL[p.key] ?? p.key,
+        address,
+        lat,
+        lng,
+        wifi: before?.wifi ?? [],
+      });
     }
     const saved = await store.replacePlaces(rows);
     // Saving a place is the user's own opt in to travel times; the privacy switch turns it off.

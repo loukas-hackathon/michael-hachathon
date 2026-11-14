@@ -22,6 +22,7 @@ import { moments } from "./routes/moments";
 import { nudges } from "./routes/nudges";
 import { connect, oauthPublic } from "./routes/oauth";
 import { patterns } from "./routes/patterns";
+import { location } from "./routes/location";
 import { places } from "./routes/places";
 import { privacy } from "./routes/privacy";
 import { product } from "./routes/product";
@@ -73,6 +74,7 @@ export const v1Routes = new Hono()
   .route("/", connect)
   .route("/", agents)
   .route("/", places)
+  .route("/", location)
   .route("/", meData)
   .route("/", demo);
 

@@ -25,6 +25,8 @@ export const Source = z.enum([
   "claude_code",
   // Travel times from Google Maps, computed by the API between the user's places (opt in).
   "maps",
+  // Where the user was: place visits made by the API from Mac Wi-Fi and phone positions (opt in).
+  "location",
 ]);
 export type Source = z.infer<typeof Source>;
 
@@ -789,6 +791,8 @@ export const Place = z.object({
   // Null until geocoded (no maps key yet, or the address was not found).
   lat: z.number().min(-90).max(90).nullable(),
   lng: z.number().min(-180).max(180).nullable(),
+  // Wi-Fi networks the user said belong to this place (network ids from LocationSignal).
+  wifi: z.array(z.string()).optional(),
   updated_at: IsoDateTime,
 });
 export type Place = z.infer<typeof Place>;
@@ -818,6 +822,86 @@ export const PlacesResponse = z.object({
   travel_enabled: z.boolean(),
 });
 export type PlacesResponse = z.infer<typeof PlacesResponse>;
+
+// ---------- location (POST /v1/location/signals, GET /v1/location) ----------
+
+// One sign of where the user is. The API turns signals into place visits (events of type
+// `location`, source `location`) and keeps no raw trail: a point near no saved place is rounded.
+//   point: a phone position, sent when the user opens Michael (throttled) or taps on the Location page.
+//   wifi:  the Mac's current network, from the collector. `network` is an opaque id (a hash);
+//          `name` is the network name when the Mac can read it.
+export const LocationSignal = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("point"),
+    at: IsoDateTime,
+    lat: z.number().min(-90).max(90),
+    lng: z.number().min(-180).max(180),
+    accuracy_m: z.number().nonnegative().max(100_000).nullish(),
+  }),
+  z.object({
+    kind: z.literal("wifi"),
+    at: IsoDateTime,
+    network: z.string().trim().min(1).max(128),
+    name: z.string().trim().min(1).max(64).nullish(),
+  }),
+]);
+export type LocationSignal = z.infer<typeof LocationSignal>;
+
+export const LocationSignalsInput = z.object({ signals: z.array(LocationSignal).min(1).max(500) });
+export type LocationSignalsInput = z.input<typeof LocationSignalsInput>;
+
+export const LocationSignalsResponse = z.object({
+  // Signals turned into visits (new or extended); the rest were dropped by privacy.
+  recorded: z.number().int().nonnegative(),
+  ignored: z.number().int().nonnegative(),
+  // Where the last signal put the user: a place label, a calendar location, or "Out".
+  at: z.string().nullable(),
+});
+export type LocationSignalsResponse = z.infer<typeof LocationSignalsResponse>;
+
+// What a visit event (type `location`, source `location`) carries in `data`.
+export const VisitData = z.object({
+  // The saved place, or null when the user was somewhere else ("Out").
+  place_key: PlaceKey.nullable(),
+  // How we know: Mac Wi-Fi, a phone position, or both.
+  evidence: z.array(z.enum(["wifi", "phone"])),
+  // Wi-Fi network ids seen during the visit, and the names the Mac could read.
+  networks: z.array(z.string()),
+  names: z.record(z.string(), z.string()).optional(),
+  // Only for visits away from saved places: rounded to about a kilometre, never a trail.
+  lat: z.number().nullish(),
+  lng: z.number().nullish(),
+});
+export type VisitData = z.infer<typeof VisitData>;
+
+export const WifiNetwork = z.object({
+  network: z.string(),
+  name: z.string().nullable(),
+  // The saved place it belongs to, or null while unmapped.
+  place_key: PlaceKey.nullable(),
+  // For an unmapped network: the place the user was at while on it (from the phone), if any.
+  suggested_place_key: PlaceKey.nullable(),
+  last_seen_at: IsoDateTime,
+});
+export type WifiNetwork = z.infer<typeof WifiNetwork>;
+
+export const LocationStatus = z.object({
+  // The newest location signal, from any source; null when none has arrived yet.
+  last_signal_at: IsoDateTime.nullable(),
+  // The visit going on now (a signal in the last 30 minutes), else null.
+  now: z.object({ label: z.string(), since: IsoDateTime }).nullable(),
+  // Networks seen in the last 14 days, newest first.
+  networks: z.array(WifiNetwork),
+  collecting: z.boolean(),
+});
+export type LocationStatus = z.infer<typeof LocationStatus>;
+
+// PUT /v1/location/networks: "This is Home's Wi-Fi". A null place_key forgets the mapping.
+export const WifiMappingInput = z.object({
+  network: z.string().trim().min(1).max(128),
+  place_key: PlaceKey.nullable(),
+});
+export type WifiMappingInput = z.input<typeof WifiMappingInput>;
 
 // GET /v1/places/search?q=: address matches for the Places screen, geocoded on the server.
 export const AddressMatch = z.object({

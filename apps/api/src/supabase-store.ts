@@ -183,6 +183,7 @@ const toPlace = (r: Record<string, unknown>): Place => ({
   address: (r.address as string | null) ?? null,
   lat: (r.lat as number | null) ?? null,
   lng: (r.lng as number | null) ?? null,
+  wifi: Array.isArray(r.wifi) ? (r.wifi as string[]) : [],
   updated_at: iso(r.updated_at as string) as string,
 });
 
@@ -889,7 +890,7 @@ export class SupabaseStore implements Store {
       await this.db
         .from("places")
         .upsert(
-          places.map((p) => ({ ...p, user_id: userId, updated_at })),
+          places.map((p) => ({ ...p, wifi: p.wifi ?? [], user_id: userId, updated_at })),
           { onConflict: "user_id,key" },
         )
         .select("*")

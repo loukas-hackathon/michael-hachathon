@@ -70,6 +70,7 @@ const READS = [
   () => "/v1/recommendations",
   () => "/v1/profile",
   () => "/v1/places",
+  () => "/v1/location",
   () => "/v1/privacy",
   () => "/v1/push",
   () => "/v1/chat?limit=200",
@@ -143,6 +144,20 @@ test("A writes through every write route", async () => {
       places: [{ key: "home", label: `${MARK} home`, lat: 37.98, lng: 23.72 }],
     }),
     "PUT /v1/places",
+  );
+  // Where A was: a visit titled with A's place label, and a Wi-Fi network named after A.
+  await ok(
+    await request(asA, "POST", "/v1/location/signals", {
+      signals: [
+        { kind: "point", at: new Date(Date.now() - 600_000).toISOString(), lat: 37.98, lng: 23.72 },
+        { kind: "wifi", at: new Date(Date.now() - 540_000).toISOString(), network: MARK, name: MARK },
+      ],
+    }),
+    "POST /v1/location/signals",
+  );
+  await ok(
+    await request(asA, "PUT", "/v1/location/networks", { network: MARK, place_key: "home" }),
+    "PUT /v1/location/networks",
   );
   await ok(
     await request(asA, "PUT", "/v1/privacy/off-the-record", { off_the_record: true }),

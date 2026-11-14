@@ -944,7 +944,7 @@ export class MemoryStore implements Store {
 
   async replacePlaces(places: Omit<Place, "updated_at">[]) {
     this.d.places = places
-      .map((p) => ({ ...p, updated_at: now() }))
+      .map((p) => ({ ...p, wifi: p.wifi ?? [], updated_at: now() }))
       .sort((a, b) => a.key.localeCompare(b.key));
     return structuredClone(this.d.places);
   }
