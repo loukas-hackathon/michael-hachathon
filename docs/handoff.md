@@ -24,18 +24,37 @@ draft hold unfinished work: continue on that branch.
 - The launch animation plays every time the app opens (#273).
 - WHOOP and Meetings (Omi) are out of the app for now.
 
-## Workstreams (each one is a GitHub issue; read its latest comment)
+## Workstreams (status at 22:40 UTC, 14 Nov; each issue's latest comment is the live state)
 
-| Workstream                                     | Issues                                                    |
-| ---------------------------------------------- | --------------------------------------------------------- |
-| MCP OAuth: add Michael to Claude with one link | #121, then #156                                           |
-| Motion and feedback                            | #244 (shipped #264), #249, #246                           |
-| Performance                                    | #234, #255, #241                                          |
-| Timeline layout, Goals, calm New goal sheet    | #262 (shipped #263), #117                                 |
-| Mobile sweep: Today, You, Chat, Agents, Delete | #239, #219, #27, #11                                      |
-| Location on the timeline, no setup             | its own issue ("Location: ...")                           |
-| Edit the calendar in the app                   | its own issue ("Timeline: edit your calendar in the app") |
-| Onboarding redesign                            | its own issue ("Onboarding: ...")                         |
+| Workstream                                     | Issue(s)                      | State                                              |
+| ---------------------------------------------- | ----------------------------- | -------------------------------------------------- |
+| MCP OAuth: add Michael to Claude with one link | #121                          | Shipped (#268). Needs the human test below         |
+| Timeline layout, calm New goal sheet           | #262, #269, #117              | Shipped (#263, #265, #274); #117 closed as covered |
+| Motion and feedback                            | #244, #249, #246              | #244 shipped (#264); #249 and #246 in progress     |
+| Performance                                    | #234, #255, #241              | #234 shipped (#266); #255 and #241 in progress     |
+| Mobile sweep: Today, You, Chat, Agents, Delete | #239, #219, #27, #11          | #239 shipped (#272); #219, #27, #11 in progress    |
+| Location on the timeline, no setup             | #267                          | In progress: contract and visits module            |
+| Edit the calendar in the app                   | #271                          | In progress: API undo plumbing for in app edits    |
+| Onboarding redesign                            | its issue ("Onboarding: ...") | In progress                                        |
+| Parking near the destination                   | #156                          | Not started                                        |
+
+Unfinished work sits on each session's branch, in a draft PR or one labelled `wip`. Continue on
+that branch; drop the `wip` label or mark the PR ready when done, and it auto-merges on green.
+
+## Human test still needed
+
+Claude connector with no key (#121): sign out of Michael, add
+`https://api-production-16521a26.up.railway.app/mcp` as a custom connector on claude.ai (web) and in
+the Claude iPhone app, sign in with Google, tap Allow, and ask one question in each.
+
+## Prompt to continue from another account
+
+Paste this into a new Claude Code session on the repo:
+
+> Read docs/handoff.md and AGENTS.md. For each workstream that is not shipped, read its issue's
+> latest comment, check out its branch, and finish it end to end (small PRs, CI green, auto-merge).
+> Work in parallel sessions, one per workstream. Keep Loukas' product direction above. Before your
+> own limit ends, push everything and update the issue comments and this file.
 
 Left on purpose: #238, #167 and #84 belong to Manolis. #221, #206, #40 and #114 have open PRs by
 others. #28 needs hardware. #229 (moving API and web to the EU) is a hosting decision for a human.
