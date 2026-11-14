@@ -12,3 +12,4 @@ One line per change to how we work (newest first): date, what changed, why.
 - Sat 14 Nov 16:30: no area ownership; optimistic ETAs of 15 to 45 minutes per issue. Why: both people run many agents in parallel.
 - Sat 14 Nov 16:10: agents read the Build Hub and GitHub before every task and sync the board after merges. Why: product and code stay in sync without humans relaying.
 - Sat 14 Nov: the Build Hub now has a `findings` collection for status, findings and research; agents update it after every merge. Why: Manolis wants everything we learn on the shared hub, not only in the repo.
+- Sat 14 Nov: `/idea` command (`.claude/commands/idea.md`). Why: ideas were told to one chat and reached the Build Hub, the repo and the other chats unevenly. One procedure now records the idea everywhere and tells each chat what changes for it.
