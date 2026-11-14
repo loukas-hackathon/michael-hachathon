@@ -104,8 +104,13 @@ export function DeleteFlow() {
               disabled={busy}
               onClick={async () => {
                 setBusy(true);
-                setOutcome(await deleteEverything());
-                setBusy(false);
+                try {
+                  setOutcome(await deleteEverything());
+                } catch {
+                  setOutcome({ error: "I could not reach the server. Nothing was deleted. Try again." });
+                } finally {
+                  setBusy(false);
+                }
               }}
               className="press flex h-11 flex-1 items-center justify-center rounded-group bg-danger text-body font-semibold text-on-tint disabled:opacity-60"
             >

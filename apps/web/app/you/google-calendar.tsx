@@ -1,3 +1,4 @@
+import { ActionButton } from "@/components/action-button";
 import { CalendarGoals } from "@/components/goals/calendar-goals";
 import { getGoalSuggestions } from "@/lib/api";
 import { formatTime } from "@/lib/format";
@@ -43,17 +44,19 @@ export async function GoogleCalendarRow() {
           {cal.error ? ` Last sync failed: ${cal.error}` : ""}
         </span>
       </span>
-      <span className="flex gap-4">
-        <form action={syncCalendar}>
-          <button type="submit" className="press h-9 text-subhead font-semibold text-tint-text">
-            Sync now
-          </button>
-        </form>
-        <form action={disconnectCalendar}>
-          <button type="submit" className="press h-9 text-subhead font-semibold text-danger">
-            Disconnect
-          </button>
-        </form>
+      <span className="flex items-start gap-4">
+        <ActionButton
+          action={syncCalendar}
+          label="Sync now"
+          pendingLabel="Syncing"
+          className="press h-9 min-w-[4.5rem] text-left text-subhead font-semibold text-tint-text"
+        />
+        <ActionButton
+          action={disconnectCalendar}
+          label="Disconnect"
+          pendingLabel="Disconnecting"
+          className="press h-9 text-left text-subhead font-semibold text-danger"
+        />
       </span>
       {suggestions.length > 0 ? <CalendarGoals initial={suggestions} className="pb-2" /> : null}
     </div>
