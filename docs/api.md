@@ -767,6 +767,90 @@ today's screen time totals, 7 day totals per type and the pattern headlines for 
 conversations and memories stay out. Nothing is stored when the call fails. The chat only advises;
 it never changes the calendar.
 
+### Moments (Morning and Evening)
+
+| Method | Path                           | Response     | Status |
+| ------ | ------------------------------ | ------------ | ------ |
+| GET    | `/v1/moments/morning?at=<iso>` | `200 Moment` | live   |
+| GET    | `/v1/moments/evening?at=<iso>` | `200 Moment` | live   |
+
+`at` is optional (default now) and shows the moment as of another instant. `400` for another kind
+or a bad `at`. Days, weeks (Monday first) and hours are Europe/Athens.
+
+```ts
+type MomentKind = "morning" | "evening";
+type MomentGoal = {
+  goal_id: string;
+  title: string;
+  category: GoalCategory;
+  budget_minutes: number | null;
+  spent_week_minutes: number; // Monday 00:00 until now
+  planned_today_minutes: number; // goal blocks today; rest: a seventh of the weekly budget
+  spent_today_minutes: number;
+  lost_today_minutes: number; // interruptions inside this goal's blocks
+  planned_ahead_minutes: number; // from now to the end of the week
+  unplanned_minutes: number | null; // budget - spent - planned ahead; null without a budget and for rest
+};
+type MomentStretch = {
+  start_at: string;
+  end_at: string;
+  title: string; // the block's calendar title, or "Unbooked time"
+  goal_id: string | null;
+  block_event_id: string | null;
+  expected_lost_minutes: number;
+  history_days: number;
+  usual_trigger: string | null; // app name or site label
+};
+type MomentMove = {
+  title: string; // "Book 60 minutes of deep work at 08:00"
+  rationale: string; // the maths
+  action_kind: ActionKind | null;
+  start_at: string | null;
+  end_at: string | null;
+  goal_id: string | null;
+};
+type Moment = {
+  kind: MomentKind;
+  day: string; // YYYY-MM-DD
+  timezone: string;
+  generated_at: string;
+  headline: string;
+  phrased_by: "template" | "model";
+  goals: MomentGoal[];
+  totals: {
+    planned_minutes: number; // goal blocks today, rest excluded
+    spent_minutes: number;
+    lost_minutes: number; // interruptions in focus time today
+    baseline_lost_minutes: number | null; // daily average on the last 7 days with device data
+    won_back_minutes: number; // evening: baseline - lost, at least 0; morning: 0
+  };
+  at_risk: MomentStretch | null; // morning only
+  suggestions: MomentMove[]; // morning: at most 2; evening: []
+  lesson: string | null; // evening only
+  first_move: MomentMove | null; // evening only
+};
+```
+
+How the numbers are made (`apps/api/src/moments/compute.ts`, pure, with tests):
+
+- **Planned** is goal blocks (the same matching as Patterns: `data.goal_id`, `data.goal_category`,
+  or a category word or "deep work"/"focus" in the title; meetings with any other attendee never count).
+- **Spent**: rest is sleep, counted on the day it ends; gym is workouts when the watch reported any;
+  everything else is elapsed block time less the minutes lost to interruptions inside it.
+- **Lost** comes from the focus analysis behind `focus_disruptions`. **Won back** (evening) is the
+  daily average lost on the last 7 days with device data less what was lost today.
+- **At risk** (morning): for each block still ahead today, the minutes usually lost in those hours
+  (per hour of day, averaged over the history days) scaled to the block; the largest wins. With no
+  block, the costliest remaining hour between 08:00 and 21:00. Null without history.
+- **Moves**: silence the usual trigger during the stretch at risk (a phone trigger becomes "phone in
+  another room"), and book the goal with the most unplanned budget in the first free slot from 08:00
+  to 21:00 (its length is the gap spread over the days left, 30 to 90 minutes in quarters).
+  Evening: tomorrow's first goal block, or that booking for tomorrow.
+
+Only `headline` may be phrased by Claude (`ANTHROPIC_MODEL`, when `ANTHROPIC_API_KEY` is set). The model sees the computed
+facts only, and its line is used only if it keeps the voice rules and every number in it appears in
+the facts; otherwise `phrased_by` is `template`. Lines are cached per user, kind, day and facts.
+
 ### Recommendations
 
 | Method | Path                                  | Body                               | Response                                    | Status |

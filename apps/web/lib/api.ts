@@ -37,7 +37,7 @@ export async function bearer(): Promise<string> {
   return data.session.access_token;
 }
 
-async function get<T>(path: string): Promise<T> {
+export async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     headers: { authorization: `Bearer ${await bearer()}` },
     cache: "no-store",

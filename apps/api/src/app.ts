@@ -11,6 +11,7 @@ import { chat } from "./routes/chat";
 import { events } from "./routes/events";
 import { goals } from "./routes/goals";
 import { integrations, oauth } from "./routes/integrations";
+import { moments } from "./routes/moments";
 import { connect, oauthPublic } from "./routes/oauth";
 import { patterns } from "./routes/patterns";
 import { privacy } from "./routes/privacy";
@@ -35,6 +36,7 @@ const v1 = new Hono()
   .route("/", patterns)
   .route("/", score)
   .route("/", chat)
+  .route("/", moments)
   .route("/", integrations)
   .route("/", privacy)
   .route("/", product)
