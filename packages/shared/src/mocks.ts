@@ -1,4 +1,13 @@
-import type { AnalysisRun, Event, Goal, Integration, Recommendation, Score, ScoreTick } from "./schemas";
+import type {
+  AnalysisRun,
+  Event,
+  Goal,
+  Instruction,
+  Integration,
+  Recommendation,
+  Score,
+  ScoreTick,
+} from "./schemas";
 
 // Deterministic mock day (Athens, UTC+02:00) used by apps/web until real endpoints exist,
 // and by apps/api's in-memory store when Supabase is not configured.
@@ -138,16 +147,19 @@ const GOAL_IDS = {
   gym: "10000000-0000-4000-8000-000000000002",
   rest: "10000000-0000-4000-8000-000000000003",
   food: "10000000-0000-4000-8000-000000000004",
+  fun: "10000000-0000-4000-8000-000000000005",
 } as const;
 
+// One goal of each shape, in the three categories (docs/api.md, Goals). `target.kind` says what a
+// goal measures; without it a goal is `time`.
 export const mockGoals: Goal[] = [
   {
     id: GOAL_IDS.work,
-    category: "work",
+    category: "business",
     title: "4h of deep work per day",
     description: "Uninterrupted focus blocks of 90 minutes or more.",
-    // calendar_titles: the calendar event titles that count towards this goal (docs/api.md, Goals).
-    target: { deep_work_hours: 4, calendar_titles: ["Deep work", "Study"] },
+    // calendar_titles: the calendar event titles that count towards this goal.
+    target: { kind: "time", deep_work_hours: 4, calendar_titles: ["Deep work", "Study"] },
     weekly_budget_minutes: 1200,
     active: true,
     created_at: CREATED,
@@ -155,10 +167,10 @@ export const mockGoals: Goal[] = [
   },
   {
     id: GOAL_IDS.gym,
-    category: "gym",
+    category: "health",
     title: "70.3 training: 9 hours this week",
     description: null,
-    target: { sessions_per_week: 4, calendar_titles: ["Gym", "Run", "Swim"] },
+    target: { kind: "time", sessions_per_week: 4, calendar_titles: ["Gym", "Run", "Swim"] },
     weekly_budget_minutes: 540,
     active: true,
     created_at: CREATED,
@@ -166,10 +178,11 @@ export const mockGoals: Goal[] = [
   },
   {
     id: GOAL_IDS.rest,
-    category: "rest",
+    category: "health",
     title: "Sleep 7.5h+",
     description: "In bed before 00:30.",
-    target: { sleep_hours: 7.5, bedtime_before: "00:30" },
+    // A value per day, not planned minutes: listed on the Goals screen, outside the time score.
+    target: { kind: "target", sleep_hours: 7.5, screens_off: "23:30", bedtime_before: "00:30" },
     weekly_budget_minutes: 3150,
     active: true,
     created_at: CREATED,
@@ -177,11 +190,36 @@ export const mockGoals: Goal[] = [
   },
   {
     id: GOAL_IDS.food,
-    category: "food",
+    category: "health",
     title: "High-protein meals",
     description: null,
-    target: { protein_g_per_day: 140 },
+    target: { kind: "target", protein_g_per_day: 140 },
     weekly_budget_minutes: null,
+    active: true,
+    created_at: CREATED,
+    updated_at: CREATED,
+  },
+  {
+    id: GOAL_IDS.fun,
+    category: "personal",
+    title: "Evenings out",
+    description: null,
+    // A personal goal carries a free label: fun, family, hobby.
+    target: { kind: "time", label: "fun", calendar_titles: ["Night out", "Dinner out"] },
+    weekly_budget_minutes: 180,
+    active: true,
+    created_at: CREATED,
+    updated_at: CREATED,
+  },
+];
+
+// Standing instructions: the user's ground rules, not goals (docs/api.md, Standing instructions).
+export const mockInstructions: Instruction[] = [
+  {
+    id: "50000000-0000-4000-8000-000000000001",
+    text: "Keep Sundays clear",
+    kind: "clear_day",
+    days: [0],
     active: true,
     created_at: CREATED,
     updated_at: CREATED,
@@ -300,7 +338,9 @@ export const mockScore: Score = {
     {
       goal_id: "10000000-0000-4000-8000-000000000001",
       title: "4h of deep work per day",
-      category: "work",
+      category: "business",
+      area: "business",
+      kind: "time",
       scored: true,
       budget_minutes: 1200,
       planned_minutes: 840,
@@ -351,7 +391,9 @@ export const mockScore: Score = {
     {
       goal_id: "10000000-0000-4000-8000-000000000002",
       title: "70.3 training: 9 hours this week",
-      category: "gym",
+      category: "health",
+      area: "health",
+      kind: "time",
       scored: true,
       budget_minutes: 540,
       planned_minutes: 160,
@@ -402,7 +444,9 @@ export const mockScore: Score = {
     {
       goal_id: "10000000-0000-4000-8000-000000000003",
       title: "Sleep 7.5h+",
-      category: "rest",
+      category: "health",
+      area: "health",
+      kind: "target",
       scored: false,
       budget_minutes: 3150,
       planned_minutes: 0,
@@ -453,9 +497,64 @@ export const mockScore: Score = {
     {
       goal_id: "10000000-0000-4000-8000-000000000004",
       title: "High-protein meals",
-      category: "food",
-      scored: true,
+      category: "health",
+      area: "health",
+      kind: "target",
+      scored: false,
       budget_minutes: 0,
+      planned_minutes: 0,
+      elapsed_minutes: 0,
+      spent_minutes: 0,
+      lost_minutes: 0,
+      ahead_minutes: 0,
+      unverified_minutes: 0,
+      score_pct: null,
+      daily: [
+        {
+          date: "2026-11-09",
+          planned_minutes: 0,
+          spent_minutes: 0,
+        },
+        {
+          date: "2026-11-10",
+          planned_minutes: 0,
+          spent_minutes: 0,
+        },
+        {
+          date: "2026-11-11",
+          planned_minutes: 0,
+          spent_minutes: 0,
+        },
+        {
+          date: "2026-11-12",
+          planned_minutes: 0,
+          spent_minutes: 0,
+        },
+        {
+          date: "2026-11-13",
+          planned_minutes: 0,
+          spent_minutes: 0,
+        },
+        {
+          date: "2026-11-14",
+          planned_minutes: 0,
+          spent_minutes: 0,
+        },
+        {
+          date: "2026-11-15",
+          planned_minutes: 0,
+          spent_minutes: 0,
+        },
+      ],
+    },
+    {
+      goal_id: "10000000-0000-4000-8000-000000000005",
+      title: "Evenings out",
+      category: "personal",
+      area: "personal",
+      kind: "time",
+      scored: true,
+      budget_minutes: 180,
       planned_minutes: 0,
       elapsed_minutes: 0,
       spent_minutes: 0,
@@ -505,6 +604,45 @@ export const mockScore: Score = {
   timezone: "Europe/Athens",
   generated_at: "2026-11-11T13:20:00.000Z",
   date: "2026-11-11",
+  areas: [
+    {
+      area: "business",
+      goal_ids: ["10000000-0000-4000-8000-000000000001"],
+      planned_minutes: 840,
+      elapsed_minutes: 590,
+      spent_minutes: 366,
+      lost_minutes: 224,
+      ahead_minutes: 250,
+      unverified_minutes: 0,
+      score_pct: 62,
+    },
+    {
+      area: "health",
+      goal_ids: [
+        "10000000-0000-4000-8000-000000000002",
+        "10000000-0000-4000-8000-000000000003",
+        "10000000-0000-4000-8000-000000000004",
+      ],
+      planned_minutes: 160,
+      elapsed_minutes: 60,
+      spent_minutes: 50,
+      lost_minutes: 10,
+      ahead_minutes: 100,
+      unverified_minutes: 0,
+      score_pct: 83,
+    },
+    {
+      area: "personal",
+      goal_ids: ["10000000-0000-4000-8000-000000000005"],
+      planned_minutes: 0,
+      elapsed_minutes: 0,
+      spent_minutes: 0,
+      lost_minutes: 0,
+      ahead_minutes: 0,
+      unverified_minutes: 0,
+      score_pct: null,
+    },
+  ],
   days: [
     {
       date: "2026-11-09",
@@ -638,6 +776,7 @@ export const mockScore: Score = {
             device: "mac",
           },
         ],
+        instructions_broken: [],
       },
       {
         event_id: "40000000-0000-4000-8000-000000000025",
@@ -666,6 +805,7 @@ export const mockScore: Score = {
             device: "iphone",
           },
         ],
+        instructions_broken: [],
       },
       {
         event_id: "40000000-0000-4000-8000-000000000028",
@@ -739,6 +879,7 @@ export const mockScore: Score = {
             device: "iphone",
           },
         ],
+        instructions_broken: [],
       },
       {
         event_id: "40000000-0000-4000-8000-000000000036",
@@ -757,6 +898,46 @@ export const mockScore: Score = {
         score_pct: null,
         ticks: tape("aaaaaaaa"),
         lost: [],
+        instructions_broken: [],
+      },
+    ],
+    areas: [
+      {
+        area: "business",
+        goal_ids: ["10000000-0000-4000-8000-000000000001"],
+        planned_minutes: 270,
+        elapsed_minutes: 260,
+        spent_minutes: 213,
+        lost_minutes: 47,
+        ahead_minutes: 10,
+        unverified_minutes: 0,
+        score_pct: 82,
+      },
+      {
+        area: "health",
+        goal_ids: [
+          "10000000-0000-4000-8000-000000000002",
+          "10000000-0000-4000-8000-000000000003",
+          "10000000-0000-4000-8000-000000000004",
+        ],
+        planned_minutes: 40,
+        elapsed_minutes: 0,
+        spent_minutes: 0,
+        lost_minutes: 0,
+        ahead_minutes: 40,
+        unverified_minutes: 0,
+        score_pct: null,
+      },
+      {
+        area: "personal",
+        goal_ids: ["10000000-0000-4000-8000-000000000005"],
+        planned_minutes: 0,
+        elapsed_minutes: 0,
+        spent_minutes: 0,
+        lost_minutes: 0,
+        ahead_minutes: 0,
+        unverified_minutes: 0,
+        score_pct: null,
       },
     ],
   },

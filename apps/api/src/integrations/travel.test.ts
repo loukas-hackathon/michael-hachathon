@@ -146,7 +146,7 @@ test("travel: leave later to skip the rush, stored on the timeline and proposed"
     assert.equal(rec.action?.kind, "reminder");
     assert.equal(rec.status, "proposed");
     const goals = await store.listGoals();
-    assert.equal(rec.goal_id, goals.find((g) => g.category === "gym")?.id);
+    assert.equal(rec.goal_id, goals.find((g) => g.title.startsWith("70.3 training"))?.id);
 
     // Planning again adds nothing and calls Google no more.
     const before = calls.length;

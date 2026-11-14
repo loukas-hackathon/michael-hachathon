@@ -7,6 +7,9 @@ import type {
   Goal,
   GoalCreate,
   GoalUpdate,
+  Instruction,
+  InstructionCreate,
+  InstructionUpdate,
   IntegrationProvider,
   Nudge,
   NudgeStatus,
@@ -39,6 +42,7 @@ import {
   sameEvent,
   type TelegramChat,
   type TimelineFilter,
+  toInstruction,
   type UpsertResult,
 } from "./store";
 
@@ -74,6 +78,19 @@ const toGoal = (r: Record<string, unknown>): Goal => ({
   created_at: iso(r.created_at as string) as string,
   updated_at: iso(r.updated_at as string) as string,
 });
+
+const instructionFromRow = (r: Record<string, unknown>): Instruction =>
+  toInstruction({
+    id: r.id as string,
+    text: r.text as string,
+    kind: r.kind as Instruction["kind"],
+    days: (r.days as number[] | null) ?? null,
+    time: (r.time as string | null) ?? null,
+    end_time: (r.end_time as string | null) ?? null,
+    active: r.active as boolean,
+    created_at: iso(r.created_at as string) as string,
+    updated_at: iso(r.updated_at as string) as string,
+  });
 
 const toRecommendation = (r: Record<string, unknown>): Recommendation => ({
   id: r.id as string,
@@ -453,6 +470,52 @@ export class SupabaseStore implements Store {
       ),
     );
     return profile;
+  }
+
+  async listInstructions() {
+    return (
+      check(
+        await this.db.from("instructions").select("*").eq("user_id", currentUserId()).order("created_at"),
+      ) ?? []
+    ).map(instructionFromRow);
+  }
+
+  async createInstruction(i: z.output<typeof InstructionCreate>) {
+    const row = check(
+      await this.db
+        .from("instructions")
+        .insert({
+          user_id: currentUserId(),
+          text: i.text,
+          kind: i.kind,
+          days: i.days ?? null,
+          time: i.time ?? null,
+          end_time: i.end_time ?? null,
+          active: i.active,
+        })
+        .select("*")
+        .single(),
+    );
+    return instructionFromRow(row);
+  }
+
+  async updateInstruction(id: string, patch: z.output<typeof InstructionUpdate>) {
+    const changes = withoutUndefined(patch as Record<string, unknown>);
+    // An empty update is not a write: answer with the row as it is.
+    const q = this.db.from("instructions");
+    const row = check(
+      Object.keys(changes).length === 0
+        ? await q.select("*").eq("user_id", currentUserId()).eq("id", id).maybeSingle()
+        : await q.update(changes).eq("user_id", currentUserId()).eq("id", id).select("*").maybeSingle(),
+    );
+    return row ? instructionFromRow(row) : null;
+  }
+
+  async deleteInstruction(id: string) {
+    const rows = check(
+      await this.db.from("instructions").delete().eq("user_id", currentUserId()).eq("id", id).select("id"),
+    );
+    return (rows ?? []).length > 0;
   }
 
   async listRecommendations(filter?: { status?: RecommendationStatus }) {

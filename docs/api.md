@@ -53,7 +53,11 @@ Enums:
 
 - `Source`: `omi | whoop | health_auto_export | ios_shortcuts | activitywatch | google_calendar | owntracks | manual | agent | macos_usage | iphone_usage | chrome | claude_code | maps`
 - `EventType`: `sleep | workout | recovery | biometric | app_usage | focus_session | conversation | memory | calendar_event | location | meal | note | web_visit | search | notification | screen | ai_session | ai_prompt | travel`
-- `GoalCategory`: `work | gym | rest | food`
+- `GoalCategory`: `business | health | personal`, plus the four older values, still accepted and
+  readable: `work` (means business), `gym`, `rest`, `food` (mean health). Group with `goalArea`.
+- `GoalArea`: `business | health | personal` (what `goalArea(category)` returns)
+- `GoalKind`: `time | target | count | checklist` (in `goal.target.kind`; `time` when absent)
+- `InstructionKind`: `clear_day | home_by | quiet_hours | custom`
 - `RecommendationStatus`: `proposed | accepted | dismissed | done | undone` (`done` = action executed)
 - `ActionKind`: `move_calendar_block | create_focus_block | block_mac_app | draft_follow_up | reminder`
 - `AnalysisStatus`: `queued | running | succeeded | failed`
@@ -96,21 +100,53 @@ type Goal = {
   category: GoalCategory;
   title: string;
   description: string | null;
-  target: Record<string, unknown> | null; // e.g. { "sleep_hours": 7.5 }, { "calendar_titles": ["Gym", "Run"] }
+  target: Record<string, unknown> | null; // free form; the keys the API understands are GoalTarget
   weekly_budget_minutes: number | null; // e.g. 540 = "9 hours this week"
   active: boolean;
   created_at: string;
   updated_at: string;
 };
+// The known keys of `goal.target`. Any other key is allowed and kept as it is.
+type GoalTarget = {
+  kind?: GoalKind; // what the goal measures; absent = "time"
+  label?: string; // a free label for a personal goal: "fun", "family", "hobby" (1 to 40 characters)
+  calendar_titles?: string[]; // calendar event titles that count towards the goal
+  work_categories?: AppCategory[]; // attention categories that count as this goal's work in its blocks
+  sleep_hours?: number; // kind "target": hours a night
+  screens_off?: string; // kind "target": "HH:MM"
+  per_week?: number; // kind "count": times a week
+  [key: string]: unknown;
+};
 type GoalCreate = {
-  category: GoalCategory;
+  category: GoalCategory; // any of the seven values
   title: string;
   description?: string | null;
-  target?: Record<string, unknown> | null;
+  target?: GoalTarget | null; // known keys are checked (400 on a wrong type), unknown keys are kept
   weekly_budget_minutes?: number | null;
   active?: boolean /* default true */;
 };
 type GoalUpdate = Partial<GoalCreate>;
+
+type Instruction = {
+  id: string;
+  text: string; // the user's own words, kept exactly as written
+  kind: InstructionKind;
+  days?: number[]; // 0 = Sunday .. 6 = Saturday; left out when not set
+  time?: string; // "HH:MM", 24 hour clock, local time; left out when not set
+  end_time?: string; // "HH:MM"; left out when not set
+  active: boolean; // false = paused: it protects nothing
+  created_at: string;
+  updated_at: string;
+};
+type InstructionCreate = {
+  text: string; // 1 to 500 characters, not blank
+  kind?: InstructionKind; // default "custom"
+  days?: number[] | null;
+  time?: string | null;
+  end_time?: string | null;
+  active?: boolean; // default true
+};
+type InstructionUpdate = Partial<InstructionCreate>; // null clears days, time or end_time
 
 type RecommendationAction = {
   kind: ActionKind;
@@ -369,6 +405,94 @@ AI tool events (`ai_session`, `ai_prompt`) from `claude_code`:
 | PATCH  | `/v1/goals/:id` | `GoalUpdate` | `200 Goal`, `404`       | live   |
 | DELETE | `/v1/goals/:id` |              | `204`, `404`            | live   |
 
+#### Three categories, four kinds
+
+Goals sit in three categories: `business`, `health`, `personal`. The four older values are still
+accepted and readable, so nothing stored breaks: `work` means business; `gym`, `rest` and `food`
+mean health. `goalArea(category)` in `@michael/shared` returns the one of the three for any of the
+seven values; the API groups and reasons with it everywhere (score, patterns, moments, chat).
+New goals may use any of the seven; use the three. The older values will be removed in a later
+change, once every client has moved and the stored rows have been rewritten.
+
+What a goal measures is its **kind**, in `target.kind` (`target` is a free form record, so this
+needs no table change). `goalKind(goal)` reads it:
+
+| Kind        | Measures                                             | In `target`                               |
+| ----------- | ---------------------------------------------------- | ----------------------------------------- |
+| `time`      | Weekly minutes in planned blocks. The default.       | `calendar_titles`, `work_categories`      |
+| `target`    | A value per day: sleep 7.5 hours, screens off 23:00. | `sleep_hours`, `screens_off`, or your own |
+| `count`     | Times a week.                                        | `per_week`                                |
+| `checklist` | The day's one to three business outcomes.            | (the items are not stored on the goal)    |
+
+**Only `time` goals take part in the time score.** A `target`, `count` or `checklist` goal has no
+planned blocks: `GET /v1/score` lists it with `scored: false` so the Goals screen can show it. One
+fallback keeps older data right: a goal with no kind, category `rest`, and a sleep or bed key in
+its target (or the word sleep in its title) reads as `target`. `isSleepGoal(goal)` says whether a
+goal is the sleep goal (health, kind `target`, describes sleep).
+
+`target` is checked softly on `POST` and `PATCH`: the known keys (`GoalTarget` above) must have the
+right type, or the answer is `400`; any other key is stored as it is. A personal goal carries a
+free `label` (fun, family, hobby); there is no enum for it.
+
+One example per category:
+
+```json
+{
+  "category": "business",
+  "title": "The company",
+  "weekly_budget_minutes": 480,
+  "target": {
+    "kind": "time",
+    "calendar_titles": ["Cold Outreach / Sales", "Call Leads"],
+    "work_categories": ["communication"]
+  }
+}
+```
+
+```json
+{
+  "category": "health",
+  "title": "Sleep",
+  "target": { "kind": "target", "sleep_hours": 7.5, "screens_off": "23:00" }
+}
+```
+
+```json
+{
+  "category": "personal",
+  "title": "Fun",
+  "weekly_budget_minutes": 120,
+  "target": { "kind": "time", "label": "fun", "calendar_titles": ["Night out"] }
+}
+```
+
+A count goal: `{ "category": "health", "title": "Yoga", "target": { "kind": "count", "per_week": 2 } }`.
+
+#### Categories that count as a goal's work
+
+Communication is a distraction in most blocks, but inside a sales block mail and messages are the
+work. A goal says so in `target.work_categories`, a list of `AppCategory` values:
+
+```json
+{ "target": { "calendar_titles": ["Call Leads"], "work_categories": ["communication"] } }
+```
+
+Inside that goal's blocks, time in those categories is **spent and verified, not lost**. Other
+goals' blocks are unchanged. One function decides what attention means inside a block
+(`apps/api/src/score/purpose.ts`), and both the score and the patterns' calendar mode read it, so
+the two numbers agree:
+
+| Attention in the block                          | Business goal     | Health or personal goal |
+| ----------------------------------------------- | ----------------- | ----------------------- |
+| A category the goal lists in `work_categories`  | spent, verified   | spent, verified         |
+| `work`, `ai`                                    | spent, verified   | **lost**                |
+| `communication`, `social`, `video`, `news`, ... | lost              | lost                    |
+| `music`, `system`, `other`                      | spent, unverified | spent, unverified       |
+
+Work apps inside a training block are lost: a sales call during the gym session is not training.
+The same goes for a personal block. A goal that really does use such a category (a follow along
+video in a yoga block) lists it in `work_categories`.
+
 #### Which calendar events count towards a goal
 
 People do not name calendar events after their goals: "Gym", "Swimming 1,500m" and "Run" can all
@@ -376,7 +500,7 @@ mean one training goal. So a goal lists the calendar titles that count towards i
 (a free form record, so this needs no schema or database change):
 
 ```json
-{ "category": "gym", "title": "70.3", "target": { "calendar_titles": ["Gym", "Swimming", "Run"] } }
+{ "category": "health", "title": "70.3", "target": { "calendar_titles": ["Gym", "Swimming", "Run"] } }
 ```
 
 A calendar event belongs to the goal when its title **equals an entry or starts with it**, ignoring
@@ -384,19 +508,75 @@ case, accents and extra spaces. An entry ends at a word boundary: `Run` matches 
 `Run: 8 km`, not `Runway review`. Entries that are not text are skipped.
 
 One matcher decides this for the score and for the patterns' calendar mode
-(`apps/api/src/score/match.ts`). Rules, first hit wins, over the user's active goals:
+(`apps/api/src/score/match.ts`). Rules, first hit wins, over the user's active goals of kind `time`:
 
 1. `data.goal_id` on the event names a goal.
 2. `target.calendar_titles` of a goal (the longest matching entry wins).
 3. `data.goal_category` (or `data.category`) names a goal category: the first goal of that category.
 4. The title starts with a goal's own title.
-5. The title starts with a category word (`Gym: legs`, `Work: pitch`), or contains `deep work` or
-   `focus` (work).
+5. The title starts with one of the older category words (`Gym: legs`, `Work: pitch`), or contains
+   `deep work` or `focus` (work).
 
-Rules 3 to 5 are the older provisional ones, kept as fallbacks. **An event with other people in it
+Rules 3 to 5 are the older provisional ones, kept as fallbacks. In rules 3 and 5 a category means
+the first goal with exactly that category, or else the first goal in the same one of the three:
+`work` finds a business goal, `gym` a health goal (`rest` and `food` only find a goal that still
+carries that older name). `business`, `health` and `personal` are not title words, so
+"Personal training" does not land on a personal goal. **An event with other people in it
 is never the user's own block:** `data.attendees` is the number of other people, and any value
 above 0 makes the event a meeting, whatever its title or `goal_id` says. Each block in
 `GET /v1/score` carries `matched_by`, the rule that tied it to its goal.
+
+### Standing instructions
+
+Some things are not goals: they are the user's ground rules, such as "keep Sundays clear" or "home
+every day by 21:00". The user gives a few at setup and can change, pause or remove them later.
+**Michael never plans or moves anything into the time an active instruction protects**, and flags
+what already sits there.
+
+| Method | Path                   | Body                | Response                              | Status |
+| ------ | ---------------------- | ------------------- | ------------------------------------- | ------ |
+| GET    | `/v1/instructions`     |                     | `200 { instructions: Instruction[] }` | live   |
+| POST   | `/v1/instructions`     | `InstructionCreate` | `201 Instruction`, `400`              | live   |
+| PATCH  | `/v1/instructions/:id` | `InstructionUpdate` | `200 Instruction`, `400`, `404`       | live   |
+| DELETE | `/v1/instructions/:id` |                     | `204`, `404`                          | live   |
+
+Per user, behind the normal auth, oldest first. The list has its own table and its own endpoints
+rather than a place inside the profile (`GET/PUT /v1/profile`): the profile is one document saved
+whole, and an instruction is a row the user adds, edits, pauses and removes by id. The night
+window for nudges stays in the profile (`quiet_hours`); an instruction of kind `quiet_hours` is
+about planning, not about nudges.
+
+| Kind          | Protects, in the user's local time                                          | Needs                 |
+| ------------- | --------------------------------------------------------------------------- | --------------------- |
+| `clear_day`   | The whole day, midnight to midnight, on each of `days`                      | `days`                |
+| `home_by`     | From `time` until the day ends, on `days` (every day when `days` is absent) | `time`                |
+| `quiet_hours` | From `time` to `end_time`, on `days` (every day when absent)                | `time` and `end_time` |
+| `custom`      | Nothing: it is text for the coach to read                                   |                       |
+
+- `text` is always the user's own words and is never rewritten. `kind` defaults to `custom`, so a
+  client may send only the words.
+- `days`: 0 = Sunday to 6 = Saturday. `time` and `end_time`: `"HH:MM"`, 24 hour clock.
+- When `end_time` is not after `time`, quiet hours run past midnight (22:00 to 07:00) and belong to
+  the day they start on. `home_by` stops at midnight: the small hours belong to the next day.
+- A kind must have what it needs, on create and after a change (`400` otherwise). `null` in a
+  `PATCH` clears `days`, `time` or `end_time`. Pause with `{ "active": false }`.
+- `days`, `time` and `end_time` are left out of the answer when they are not set.
+
+```json
+{ "text": "Keep Sundays clear", "kind": "clear_day", "days": [0] }
+```
+
+Which instructions a span of time falls under is one pure function,
+`protectedBy(instructions, start, end, timezone)` in `apps/api/src/instructions/protected.ts`. It
+returns the active instructions with any part of the span inside their protected time. Ends are
+exclusive (a block that stops at Sunday 00:00 has not touched Sunday), days are local days in the
+timezone given (default Europe/Athens), and the days the clocks change are handled. The analysis and
+the actions use it before they plan or move anything. The score does not count with it: each block
+in `GET /v1/score` only carries `instructions_broken`, the ids of the active instructions its time
+falls under, so the app can flag a work block planned on a clear Sunday. The chat with Michael is
+given the active instructions with the rest of its context.
+
+`mockInstructions` in `packages/shared/src/mocks.ts` holds one example ("Keep Sundays clear").
 
 ### Analysis
 
@@ -742,7 +922,8 @@ rules live there and nowhere else:
   local midnight is split by day.
 
 Roles used by the focus rules: **work** = `work`, `ai`; **distractor** = `communication`, `social`,
-`video`, `news`, `shopping`, `travel`; **neutral** = `music`, `system`, `other`.
+`video`, `news`, `shopping`, `travel`; **neutral** = `music`, `system`, `other`. Inside a planned
+goal block the goal has a say: see Goals, "Categories that count as a goal's work".
 
 #### Definitions and minimum samples
 
@@ -770,8 +951,11 @@ Roles used by the focus rules: **work** = `work`, `ai`; **distractor** = `commun
   least half of it. A trip away from work that touches a distractor is a disruption; a distractor
   that comes up within 60 seconds after the last work app, with no return inside 10 minutes, is the
   disruption that ended the stretch (`ended_stretch`, minutes capped at 10). **With a calendar:**
-  inside each `calendar_event` that belongs to a goal (see below), every off purpose visit (work
-  block: distractors; any other block: distractors and work apps) is a disruption. Planned blocks
+  inside each `calendar_event` that belongs to a goal (see below), every off purpose visit is a
+  disruption. Off purpose is the same rule the score calls lost (Goals, "Categories that count as a
+  goal's work"): distractors the goal does not list in `target.work_categories`, and work apps
+  inside a block of a health or personal goal. A category the goal lists counts as time on purpose
+  in a business block, and browsing in it is not drift there. Planned blocks
   own their time: stretches are inferred only outside them. Intervals under 3 seconds are ignored.
   The longest uninterrupted stretch is the longest work run with no disruption and no idle break in
   it. **Speaks from:** One focus stretch or one goal block with device data.
@@ -804,7 +988,8 @@ Roles used by the focus rules: **work** = `work`, `ai`; **distractor** = `commun
 Which goal a calendar block belongs to is decided by the one matcher described under Goals
 ("Which calendar events count towards a goal"): `data.goal_id`, then the goal's
 `target.calendar_titles`, then the older fallbacks. Events with other people in them
-(`data.attendees` above 0) are meetings and are never focus blocks.
+(`data.attendees` above 0) are meetings and are never focus blocks. Only goals of kind `time` have
+blocks: a sleep target, a count or a checklist never owns a calendar event.
 
 Summaries follow the voice basics (numbers first, British spelling, 24 hour time, no dashes). They
 name apps; a site is named only if its host is on the shared public list, otherwise it is "a
@@ -912,8 +1097,9 @@ How the numbers are made (`apps/api/src/moments/compute.ts`, pure, with tests):
 
 - **Planned** is goal blocks (the same matching as Patterns: `data.goal_id`, `data.goal_category`,
   or a category word or "deep work"/"focus" in the title; meetings with any other attendee never count).
-- **Spent**: rest is sleep, counted on the day it ends; gym is workouts when the watch reported any;
-  everything else is elapsed block time less the minutes lost to interruptions inside it.
+- **Spent**: the sleep goal (`isSleepGoal`) is sleep, counted on the day it ends; a health goal of
+  kind `time` is workouts when the watch reported any; everything else is elapsed block time less
+  the minutes lost inside it (the same rule as the score, so the two agree).
 - **Lost** comes from the focus analysis behind `focus_disruptions`. **Won back** (evening) is the
   daily average lost on the last 7 days with device data less what was lost today.
 - **At risk** (morning): for each block still ahead today, the minutes usually lost in those hours
@@ -1402,6 +1588,7 @@ type Score = ScoreTotals & {
   timezone: string; // "Europe/Athens"
   generated_at: string; // the instant it was scored at
   date: string; // the local day asked for
+  areas: ScoreArea[]; // the week per category; they add up to the week
   days: ScoreDay[]; // Monday to Sunday
   day: ScoreDayDetail; // `date` in detail
   // The last instant each device reported anything. Lost time after it is not known yet (phone
@@ -1409,11 +1596,19 @@ type Score = ScoreTotals & {
   data_until: { mac: string | null; iphone: string | null };
 };
 
+// One of the three categories. Always three entries, in the order business, health, personal.
+type ScoreArea = ScoreTotals & {
+  area: GoalArea;
+  goal_ids: string[]; // every active goal in the category, scored or not
+};
+
 type ScoreGoal = ScoreTotals & {
   goal_id: string;
   title: string;
   category: GoalCategory;
-  scored: boolean; // false for sleep: listed with its budget, outside the score
+  area: GoalArea; // goalArea(category)
+  kind: GoalKind; // goalKind(goal)
+  scored: boolean; // true only for kind "time"; a target (sleep), count or checklist is listed, outside the score
   budget_minutes: number; // weekly_budget_minutes, 0 when the goal has none
   daily: { date: string; planned_minutes: number; spent_minutes: number }[]; // Monday to Sunday
 };
@@ -1429,6 +1624,7 @@ type ScoreDayDetail = ScoreDay & {
     reason: string | null; // why the value is 0 when there is not enough history
   };
   blocks: ScoreBlock[]; // in order of start
+  areas: ScoreArea[]; // the day per category; they add up to the day
 };
 
 type ScoreBlock = ScoreTotals & {
@@ -1449,6 +1645,9 @@ type ScoreBlock = ScoreTotals & {
     category: AppCategory;
     device: "mac" | "iphone";
   }[];
+  // Ids of the active standing instructions the block's time falls under (a block planned on a
+  // clear Sunday). Empty when it breaks none. It never changes the block's minutes.
+  instructions_broken: string[];
 };
 ```
 
@@ -1460,20 +1659,31 @@ exported: they are the week's part of `Score` with a `score_pct` that is never n
 
 Stated here and at the top of `apps/api/src/score/score.ts`; the two change together.
 
+- **Goals:** three categories, business, health and personal (the older `work` reads as business,
+  `gym`, `rest` and `food` as health). Only goals of kind `time` take part. A `target` (sleep), a
+  `count` or a `checklist` has no planned minutes: it is listed with `scored: false` and has no
+  blocks.
 - **Planned:** the user's own calendar blocks that belong to a goal (see Goals, "Which calendar
   events count towards a goal"). An event with other people in it is never a block. Where two
   blocks overlap, the earlier one keeps the time. A block that crosses local midnight is cut
   there, and each day gets its part.
 - **Ahead:** planned time that has not started yet. **Elapsed:** planned time that has passed; a
   block in progress counts up to `now`.
-- **Lost:** time inside an elapsed block spent in a distracting category (`communication`,
-  `social`, `video`, `news`, `shopping`, `travel`) on any device. It is read from the single line
-  of attention, where the phone and the Mac are already one line, so a minute is never lost twice.
+- **Lost:** time inside an elapsed block that was off purpose for the block's goal, on any device
+  (Goals, "Categories that count as a goal's work"; one function, which the patterns read too):
+  - a distracting category (`communication`, `social`, `video`, `news`, `shopping`, `travel`),
+    unless the goal lists it in `target.work_categories`;
+  - a work category (`work`, `ai`) inside a block of a health or personal goal that does not list
+    it. A sales call during the gym session is not training.
+
+  It is read from the single line of attention, where the phone and the Mac are already one line,
+  so a minute is never lost twice.
+
 - **Spent:** elapsed minus lost.
-- **Verified:** the part of spent for which the data positively shows the goal. A goal of category
-  `work`: attention in a work category (`work`, `ai`) inside the block. A goal of category `gym`: a
-  `workout` event overlapping the block, minus the lost time inside it. Any other goal has nothing
-  that could prove it.
+- **Verified:** the part of spent for which the data positively shows the goal. Any goal: attention
+  in a category it lists in `target.work_categories`. A business goal: attention in a work category
+  (`work`, `ai`) inside the block. A health goal: a `workout` event overlapping the block, minus
+  the lost time inside it. Nothing else can prove a goal.
 - **Unverified:** spent minus verified: no device data there, or only neutral apps (music, the
   system, anything uncategorised). Reported apart as `unverified_minutes` and as `unverified`
   ticks; never present it as proven.
@@ -1481,10 +1691,17 @@ Stated here and at the top of `apps/api/src/score/score.ts`; the two change toge
   the gym or studying on paper leaves no trace on a screen, and a coach who calls a real session
   "missed" loses trust. The price: a skipped session also scores as spent until a watch or a check
   in says otherwise. `unverified_minutes` shows how much of the score rests on that.
-- **Sleep is outside the score.** A goal of category `rest` whose target describes sleep (a key
-  with `sleep` or `bed` in it, or a title with the word) is listed in `goals` with its budget and
-  `scored: false`. It has no blocks and takes no part in any total; its minutes are 0 and mean
-  nothing.
+- **Sleep is outside the score.** It is a goal of kind `target` (an older goal of category `rest`
+  with a `sleep` or `bed` key in its target, or the word in its title, reads as one). It is listed
+  in `goals` with its budget and `scored: false`. It has no blocks and takes no part in any total;
+  its minutes are 0 and mean nothing. The same holds for every `target`, `count` and `checklist`
+  goal.
+- **Areas:** `areas` (the week) and `day.areas` (the day) hold the same totals for each of the three
+  categories, always in the order business, health, personal, with the ids of every active goal in
+  the category. They add up to the week and to the day. A category with nothing elapsed has
+  `score_pct: null`, so a strong business week with no personal time does not read as a win.
+- **Standing instructions never change a minute of the score.** Each block only carries
+  `instructions_broken`: the active instructions its time falls under (see Standing instructions).
 - **`score_pct`** = spent / elapsed, rounded. `null` when nothing has elapsed (before the first
   block, or on a day with no plan): not 0 and not 100.
 - **Time won back**, in one sentence: less time lost inside your planned blocks than on your usual
@@ -1501,7 +1718,7 @@ Stated here and at the top of `apps/api/src/score/score.ts`; the two change toge
   of it was lost; otherwise `spent` when at least as much of the rest is verified as not, else
   `unverified`. Ticks are the drawing: totals come from the exact intervals, not from counting
   ticks.
-- **Lost stretches:** distracting intervals less than 30 seconds apart are one stretch, named after
+- **Lost stretches:** off purpose intervals less than 30 seconds apart are one stretch, named after
   whatever held most of it. An app goes by its name; a site by its host only when the host is on
   the shared public list, otherwise by its category ("a travel site"). `minutes` is the time lost
   inside the stretch.
@@ -1595,6 +1812,7 @@ offset. A refused or failed call returns `isError: true` with one plain sentence
 | ------------------------ | ----------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------- |
 | `get_timeline`           | `timeline`        | `{ date?: LocalDay, from?: TimeInput, to?: TimeInput, source?, type? }` (default: 24 h) | `{ from, to, count, truncated, events: Event[] }` (≤ 500) |
 | `get_goals`              | `goals`           | `{ active_only?: boolean }` (default true)                                              | `{ goals: Goal[] }`                                       |
+| `get_instructions`       | `goals`           | `{ active_only?: boolean }` (default true)                                              | `{ instructions: Instruction[] }` (standing instructions) |
 | `get_score`              | `score`           | `{ date?: LocalDay }` (default today)                                                   | `Score` without `day.blocks[].ticks`                      |
 | `get_patterns`           | `timeline`        | `{ from?: TimeInput, to?: TimeInput }` (default: the last 7 days)                       | `PatternReport`                                           |
 | `list_recommendations`   | `recommendations` | `{ status?: RecommendationStatus }`                                                     | `{ recommendations: Recommendation[] }`                   |

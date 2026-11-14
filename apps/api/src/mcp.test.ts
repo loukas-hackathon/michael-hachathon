@@ -46,6 +46,7 @@ const TOOLS = [
   "create_focus_block",
   "execute_recommendation",
   "get_goals",
+  "get_instructions",
   "get_moments",
   "get_nudges",
   "get_patterns",
@@ -69,7 +70,14 @@ test("the tool set is complete and every tool explains itself", () =>
 test("reads answer with short text and structured content", () =>
   asNewUser(async () => {
     const { call } = await connect();
-    for (const name of ["get_goals", "get_score", "get_nudges", "get_timeline", "list_recommendations"]) {
+    for (const name of [
+      "get_goals",
+      "get_instructions",
+      "get_score",
+      "get_nudges",
+      "get_timeline",
+      "list_recommendations",
+    ]) {
       const r = await call(name);
       assert.notEqual(r.isError, true, `${name}: ${text(r)}`);
       assert.ok(text(r).length > 0);
@@ -77,6 +85,19 @@ test("reads answer with short text and structured content", () =>
     }
     const goals = await call("get_goals");
     assert.match(text(goals), /a week/);
+    // The three categories, and what a goal measures when it is not time.
+    assert.match(text(goals), /- business: "4h of deep work per day", 20h a week/);
+    assert.match(text(goals), /- health: "Sleep 7.5h\+", .*a target goal/);
+    assert.match(text(goals), /- personal: "Evenings out"/);
+    // Standing instructions: the user's ground rules, active ones only.
+    const rules = await call("get_instructions");
+    assert.match(text(rules), /1 standing instructions:\n- "Keep Sundays clear" \(clear_day, id /);
+    assert.deepEqual(
+      (
+        (rules.structuredContent?.instructions ?? []) as { text: string; kind: string; days?: number[] }[]
+      ).map((i) => [i.text, i.kind, i.days]),
+      [["Keep Sundays clear", "clear_day", [0]]],
+    );
     const moment = await call("get_moments", { kind: "evening" });
     assert.notEqual(moment.isError, true, text(moment));
     assert.match(text(moment), /^Evening/);

@@ -6,6 +6,8 @@ import {
   GoalCategory,
   GoalCreate,
   GoalUpdate,
+  goalArea,
+  goalKind,
   type Moment,
   MomentKind,
   type Recommendation,
@@ -84,7 +86,9 @@ function eventLine(e: Event): string {
 function goalLine(g: Goal): string {
   const budget =
     g.weekly_budget_minutes == null ? "no weekly budget" : `${dur(g.weekly_budget_minutes)} a week`;
-  return `- ${g.category}: "${g.title}", ${budget}${g.active ? "" : ", paused"} (id ${g.id})`;
+  // The one of the three categories (an older `work` goal reads as business), and what it measures.
+  const kind = goalKind(g) === "time" ? "" : `, a ${goalKind(g)} goal`;
+  return `- ${goalArea(g.category)}: "${g.title}", ${budget}${kind}${g.active ? "" : ", paused"} (id ${g.id})`;
 }
 
 function recommendationLine(r: Recommendation, goals: Map<string, Goal>): string {
@@ -110,8 +114,8 @@ function scoreText(s: Score): string {
     "Goals this week:",
     ...s.goals.map((g) =>
       g.scored
-        ? `- ${g.category} "${g.title}": budget ${dur(g.budget_minutes)}, planned ${dur(g.planned_minutes)}, spent ${dur(g.spent_minutes)}, lost ${dur(g.lost_minutes)}, ${pct(g.score_pct)}`
-        : `- ${g.category} "${g.title}": budget ${dur(g.budget_minutes)} (sleep, outside the score)`,
+        ? `- ${g.area} "${g.title}": budget ${dur(g.budget_minutes)}, planned ${dur(g.planned_minutes)}, spent ${dur(g.spent_minutes)}, lost ${dur(g.lost_minutes)}, ${pct(g.score_pct)}`
+        : `- ${g.area} "${g.title}": a ${g.kind} goal, outside the time score`,
     ),
   ];
   if (s.day.blocks.length) {
@@ -136,7 +140,7 @@ function momentText(m: Moment): string {
     `Today: ${dur(t.planned_minutes)} planned for goals, ${dur(t.spent_minutes)} spent, ${dur(t.lost_minutes)} lost, ${dur(t.won_back_minutes)} won back${t.baseline_lost_minutes == null ? "" : ` (usual loss ${dur(t.baseline_lost_minutes)} a day)`}.`,
     ...m.goals.map(
       (g) =>
-        `- ${g.category} "${g.title}": ${dur(g.spent_week_minutes)} this week of ${g.budget_minutes == null ? "no budget" : dur(g.budget_minutes)}; today ${dur(g.planned_today_minutes)} planned, ${dur(g.spent_today_minutes)} spent`,
+        `- ${goalArea(g.category)} "${g.title}": ${dur(g.spent_week_minutes)} this week of ${g.budget_minutes == null ? "no budget" : dur(g.budget_minutes)}; today ${dur(g.planned_today_minutes)} planned, ${dur(g.spent_today_minutes)} spent`,
     ),
   ];
   if (m.at_risk) {
@@ -222,7 +226,7 @@ export function createMcpServer(): McpServer {
     {
       title: "Get goals",
       description:
-        "The user's goals with their weekly time budgets (minutes). Categories: work, gym, rest, food. Read these before judging the day or proposing changes, and use the ids with update_goal, create_focus_block or add_event.",
+        "The user's goals with their weekly time budgets (minutes). Three categories: business, health, personal (an older goal may say work, which is business, or gym, rest or food, which are health). `target.kind` says what a goal measures: time (weekly minutes in planned blocks, the default), target (a value per day, such as sleep), count (times a week) or checklist. Read these before judging the day or proposing changes, and use the ids with update_goal, create_focus_block or add_event.",
       inputSchema: { active_only: z.boolean().optional().describe("Default true: leave out paused goals") },
       annotations: { readOnlyHint: true },
     },
@@ -233,6 +237,28 @@ export function createMcpServer(): McpServer {
         ? [`${goals.length} goals:`, ...goals.map(goalLine)].join("\n")
         : "No goals yet. Ask the user what they want this week to hold, then use add_goal.";
       return reply(text, { goals });
+    }),
+  );
+
+  server.registerTool(
+    "get_instructions",
+    {
+      title: "Get standing instructions",
+      description:
+        "The user's standing instructions: ground rules in their own words, such as keeping Sundays clear or being home by 21:00. They are not goals. Read them before proposing, booking or moving anything, and never put anything inside the time an active instruction protects. Kinds: clear_day (nothing on `days`, 0 = Sunday to 6 = Saturday), home_by (nothing after `time`), quiet_hours (`time` to `end_time`), custom (read the text).",
+      inputSchema: { active_only: z.boolean().optional().describe("Default true: leave out paused ones") },
+      annotations: { readOnlyHint: true },
+    },
+    safe(async ({ active_only }) => {
+      const all = await store.listInstructions();
+      const instructions = active_only === false ? all : all.filter((i) => i.active);
+      const text = instructions.length
+        ? [
+            `${instructions.length} standing instructions:`,
+            ...instructions.map((i) => `- "${i.text}" (${i.kind}${i.active ? "" : ", paused"}, id ${i.id})`),
+          ].join("\n")
+        : "No standing instructions.";
+      return reply(text, { instructions });
     }),
   );
 
@@ -367,7 +393,7 @@ export function createMcpServer(): McpServer {
     {
       title: "Add goal",
       description:
-        'Create a goal for the user, only when they asked for it or agreed to it. Category: work, gym, rest or food. weekly_budget_minutes is the time they want to give it each week (9 hours = 540). target is an optional measurable aim, e.g. { "gym_sessions_per_week": 4 } or { "sleep_hours": 8 }.',
+        'Create a goal for the user, only when they asked for it or agreed to it. Category: business, health or personal. weekly_budget_minutes is the time they want to give it each week (9 hours = 540). target is optional: kind (time, target, count or checklist; time when left out), calendar_titles (calendar event titles that count towards the goal), work_categories (attention categories that are this goal\'s work, e.g. ["communication"] for sales), label (a personal goal: fun, family, hobby), and values such as { "kind": "target", "sleep_hours": 8 } or { "kind": "count", "per_week": 2 }.',
       inputSchema: {
         category: GoalCategory,
         title: z.string().min(1).max(120).describe('Short, in the user\'s words, e.g. "Ship the pitch deck"'),

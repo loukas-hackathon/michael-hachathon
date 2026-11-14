@@ -9,7 +9,9 @@ import type {
   RecoveryCost,
   RepeatOffenders,
 } from "@michael/shared";
+import { goalKind } from "@michael/shared";
 import { goalForEvent, type MatchRule } from "../score/match";
+import { isBusinessGoal, purposeFor, type Role, roleOf, workCategories } from "../score/purpose";
 import { type Ctx, countedDays, daysTouched, RULES } from "./context";
 import { type Detector, found, notEnough } from "./detector";
 import { count, days as dayCount, duration, label, pct, rate } from "./format";
@@ -33,23 +35,12 @@ import {
 
 // ---------- roles ----------
 
-export type Role = "work" | "distractor" | "neutral";
+// Which categories are work, which distract, and what either means inside a goal's block is
+// decided in one place, score/purpose.ts, so the patterns and the score agree.
+export { type Role, roleOf };
 
-const WORK: ReadonlySet<AppCategory> = new Set(["work", "ai"]);
-const DISTRACTOR: ReadonlySet<AppCategory> = new Set([
-  "communication",
-  "social",
-  "video",
-  "news",
-  "shopping",
-  "travel",
-]);
 /** Browsing categories that count as drift during focus. */
 export const DRIFT: ReadonlySet<AppCategory> = new Set(["travel", "shopping", "video", "social", "news"]);
-
-/** Music, the system itself and anything unknown are neutral: they neither make nor break focus. */
-export const roleOf = (category: AppCategory): Role =>
-  WORK.has(category) ? "work" : DISTRACTOR.has(category) ? "distractor" : "neutral";
 
 // ---------- shared shapes ----------
 
@@ -68,6 +59,8 @@ export interface RawDisruption extends Span {
 
 export interface FocusWindow extends Span {
   during: "focus_stretch" | "work_block";
+  /** Categories the block's goal counts as its work (`target.work_categories`): never drift there. */
+  allowed?: ReadonlySet<AppCategory>;
 }
 
 export interface FocusAnalysis {
@@ -228,10 +221,11 @@ export interface GoalBlock extends Span {
  * The user's own calendar blocks that belong to a goal, clipped to [from, to]. Which goal an
  * event belongs to is decided in one place, `score/match.ts`: `data.goal_id`, then the goal's
  * `target.calendar_titles`, then the older fallbacks. An event with other people in it is a
- * meeting, never a block.
+ * meeting, never a block. Only active goals of kind `time` have blocks: a target (sleep), a count
+ * or a checklist is not measured in planned minutes.
  */
 export function goalBlocks(events: Event[], goals: Goal[], from: number, to: number): GoalBlock[] {
-  const active = goals.filter((g) => g.active);
+  const active = goals.filter((g) => g.active && goalKind(g) === "time");
   if (active.length === 0) return [];
   const out: GoalBlock[] = [];
   for (const e of events) {
@@ -254,20 +248,18 @@ export function goalBlocks(events: Event[], goals: Goal[], from: number, to: num
   return trimmed;
 }
 
-/** Inside a work block anything distracting is off purpose; inside any other block work is too. */
-const offPurpose = (goal: Goal, seg: Segment) => {
-  const role = roleOf(seg.category);
-  return goal.category === "work" ? role === "distractor" : role !== "neutral";
-};
-
+// What is off purpose inside a block is the rule in score/purpose.ts, the same one the score
+// reads: distractors the goal does not list in `target.work_categories`, and work inside a block
+// of a health or personal goal.
 function analyseBlock(block: GoalBlock, attention: Segment[]) {
+  const purpose = purposeFor(block.goal);
   const segs: Segment[] = [];
   for (const s of attention) {
     if (s.end <= block.start) continue;
     if (s.start >= block.end) break;
     segs.push({ ...s, start: Math.max(s.start, block.start), end: Math.min(s.end, block.end) });
   }
-  const isWorkBlock = block.goal.category === "work";
+  const isWorkBlock = isBusinessGoal(block.goal);
   const disruptions: RawDisruption[] = [];
   const runs: Span[] = [];
   const onSpans: Span[] = [];
@@ -314,7 +306,8 @@ function analyseBlock(block: GoalBlock, attention: Segment[]) {
     if (!seg) continue;
     const prev = segs[k - 1];
     const idle = prev !== undefined && seg.start - prev.end > RULES.idleBreakMs;
-    if (offPurpose(block.goal, seg)) {
+    const what = purpose(seg.category);
+    if (what === "off") {
       // One visit = off purpose segments in a row, less than 30 seconds apart.
       const lastOff = visit[visit.length - 1];
       if (lastOff && (prev !== lastOff || seg.start - lastOff.end >= RULES.sessionGapMs)) closeVisit(k);
@@ -328,7 +321,8 @@ function analyseBlock(block: GoalBlock, attention: Segment[]) {
       runs.push(run);
       run = null;
     }
-    if (isWorkBlock && roleOf(seg.category) === "work") {
+    // Time on purpose in a work block: work apps, and whatever the goal counts as its work.
+    if (isWorkBlock && what === "on") {
       onSpans.push({ start: seg.start, end: seg.end });
       if (run) run.end = seg.end;
       else run = { start: seg.start, end: seg.end };
@@ -359,8 +353,15 @@ export function analyseFocus(ctx: Ctx): FocusAnalysis {
     disruptions.push(...result.disruptions);
     runs.push(...result.runs);
     focusSpans.push(...result.onSpans);
-    if (block.goal.category === "work")
-      windows.push({ start: block.start, end: block.end, during: "work_block" });
+    if (isBusinessGoal(block.goal)) {
+      const allowed = new Set(workCategories(block.goal));
+      windows.push({
+        start: block.start,
+        end: block.end,
+        during: "work_block",
+        ...(allowed.size > 0 ? { allowed } : {}),
+      });
+    }
   }
 
   // Planned blocks own their time. Stretches are inferred from what is left.
@@ -695,7 +696,8 @@ export function drift(ctx: Ctx, focus: FocusAnalysis): Detector<Drift> {
       const window = focus.windows[k];
       if (!window || window.start >= seg.end) break;
       const ms = Math.min(seg.end, window.end) - Math.max(seg.start, window.start);
-      if (ms <= 0) continue;
+      // Browsing the block's goal counts as its work is not drift.
+      if (ms <= 0 || window.allowed?.has(seg.category)) continue;
       // One visit can be cut in pieces by a phone pick up. Pieces of one event are one item.
       const item = items.get(seg.eventId);
       if (item) item.ms += ms;

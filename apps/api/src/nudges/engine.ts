@@ -3,16 +3,18 @@ import {
   type Event,
   type Goal,
   type GoalCategory,
+  isSleepGoal,
   type Nudge,
   type NudgeKind,
   type NudgeSkip,
   voiceShortDuration,
 } from "@michael/shared";
 import { DEFAULT_TIMEZONE } from "../patterns/context";
-import { goalBlocks, roleOf } from "../patterns/focus";
+import { goalBlocks } from "../patterns/focus";
 import { DAY, MINUTE, Zone } from "../patterns/time";
 import { buildTimeline, type Segment } from "../patterns/timeline";
 import { type Span, union, unionLength } from "../patterns/util";
+import { isBusinessGoal, purposeFor } from "../score/purpose";
 
 // The nudge engine. Pure: the clock, the events, the goals and today's nudges are passed in, so
 // the same input always gives the same decision. The route (routes/nudges.ts) does the I/O.
@@ -107,11 +109,30 @@ export type Decision =
 // The Morning and Evening moments come after anything happening right now.
 const PRIORITY: NudgeKind[] = ["focus_drift", "block_soon", "morning", "evening", "wind_down", "goal_behind"];
 
-const LABEL: Record<GoalCategory, string> = { work: "Focus block", gym: "Gym", rest: "Rest", food: "Meal" };
-const SHORT: Record<GoalCategory, string> = { work: "Work", gym: "Gym", rest: "Rest", food: "Food" };
+// The three goal categories, and the four older names goals may still carry.
+const LABEL: Record<GoalCategory, string> = {
+  business: "Focus block",
+  health: "Training",
+  personal: "Your own time",
+  work: "Focus block",
+  gym: "Gym",
+  rest: "Rest",
+  food: "Meal",
+};
+const SHORT: Record<GoalCategory, string> = {
+  business: "Work",
+  health: "Training",
+  personal: "Your own time",
+  work: "Work",
+  gym: "Gym",
+  rest: "Rest",
+  food: "Food",
+};
 
-// Events that are real time spent on a goal, besides its calendar blocks.
-const SPENT_TYPES: Record<GoalCategory, Event["type"]> = {
+// Events that are real time spent on a goal, besides its calendar blocks. A personal goal has none.
+const SPENT_TYPES: Partial<Record<GoalCategory, Event["type"]>> = {
+  business: "focus_session",
+  health: "workout",
   work: "focus_session",
   gym: "workout",
   rest: "sleep",
@@ -173,8 +194,10 @@ export function spentThisWeek(w: World, goal: Goal): number {
   const spans: Span[] = goalBlocks(w.events, w.goals, w.weekStart, w.now)
     .filter((b) => b.goal.id === goal.id)
     .map((b) => ({ start: b.start, end: b.end }));
+  // Sleep is a health goal measured by nights, not by workouts.
+  const spentType = isSleepGoal(goal) ? "sleep" : SPENT_TYPES[goal.category];
   for (const e of w.events) {
-    if (e.type !== SPENT_TYPES[goal.category] || !e.end_at) continue;
+    if (e.type !== spentType || !e.end_at) continue;
     const start = Math.max(Date.parse(e.start_at), w.weekStart);
     const end = Math.min(Date.parse(e.end_at), w.now);
     if (end > start) spans.push({ start, end });
@@ -190,14 +213,16 @@ function recentAttention(w: World, from: number): Segment[] {
 
 function focusDrift(w: World): Candidate | null {
   const block = goalBlocks(w.events, w.goals, w.dayStart, w.dayEnd).find(
-    (b) => b.goal.category === "work" && b.start <= w.now && w.now < b.end,
+    (b) => isBusinessGoal(b.goal) && b.start <= w.now && w.now < b.end,
   );
   if (!block) return null;
   const from = Math.max(block.start, w.now - LIMITS.driftWindowMs);
   const byApp = new Map<string, number>();
   let total = 0;
+  // Off purpose for this goal (score/purpose.ts): mail inside a sales block is not a drift.
+  const purpose = purposeFor(block.goal);
   for (const s of recentAttention(w, from)) {
-    if (roleOf(s.category) !== "distractor") continue;
+    if (purpose(s.category) !== "off") continue;
     const ms = s.end - s.start;
     total += ms;
     byApp.set(s.name, (byApp.get(s.name) ?? 0) + ms);
@@ -241,7 +266,8 @@ function blockSoon(w: World): Candidate | null {
 }
 
 function windDown(w: World): Candidate | null {
-  const rest = w.goals.find((g) => g.category === "rest");
+  // The sleep goal, or a goal that still carries the older `rest` category.
+  const rest = w.goals.find((g) => g.category === "rest" || isSleepGoal(g));
   if (!rest) return null;
   const nightAt = w.zone.at(w.day, w.quiet.nightStart);
   const lead = nightAt - w.now;
@@ -403,7 +429,7 @@ export function quietNow(input: EngineInput): "night" | "dinner" | "deep_work" |
   if (
     w.quiet.deepWork &&
     goalBlocks(w.events, w.goals, w.dayStart, w.dayEnd).some(
-      (b) => b.goal.category === "work" && b.start <= w.now && w.now < b.end,
+      (b) => isBusinessGoal(b.goal) && b.start <= w.now && w.now < b.end,
     )
   ) {
     return "deep_work";
