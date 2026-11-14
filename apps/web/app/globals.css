@@ -178,6 +178,20 @@ textarea {
   outline: 2px solid var(--m-tint);
   outline-offset: 2px;
 }
+/*
+ * Rings follow each control's own radius. Plain text buttons and links with no radius of their own
+ * get a soft one while focused, so the ring is never a sharp box. They have no fill, so nothing else
+ * changes.
+ */
+:where(button:not([class*="rounded"]), a:not([class*="rounded"])):focus-visible {
+  border-radius: 8px;
+}
+
+/* Chips and segments drawn on a label around a visually hidden input carry the input's ring. */
+label:has(> input.sr-only:focus-visible) {
+  outline: 2px solid var(--m-tint);
+  outline-offset: 2px;
+}
 
 /* Headings focused by script (tabindex -1, for screen readers on a new step) never show a ring. */
 [tabindex="-1"]:focus-visible {
@@ -188,6 +202,19 @@ h1,
 h2,
 h3 {
   text-wrap: balance;
+}
+
+/*
+ * A 44 by 44 hit area for controls drawn smaller (36px capsules, the mic): an invisible layer that
+ * grows the target without moving a pixel of the design. Only on controls not already positioned.
+ */
+.hit {
+  position: relative;
+}
+.hit::before {
+  content: "";
+  position: absolute;
+  inset: min(0px, calc(50% - 22px)) min(0px, calc(50% - 22px));
 }
 
 /*
@@ -241,6 +268,13 @@ body::before {
 
 ::view-transition {
   pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none;
+  }
 }
 
 /* Push to talk: a calm breathing ring while Michael listens. */

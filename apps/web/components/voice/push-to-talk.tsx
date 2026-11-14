@@ -142,7 +142,7 @@ export function PushToTalk({ disabled, onInterim, onFinal, onListeningChange, on
       onKeyDown={onKeyDown}
       onKeyUp={onKeyUp}
       onContextMenu={(e) => e.preventDefault()}
-      className={`press relative grid h-9 w-9 shrink-0 touch-none select-none place-items-center rounded-full [-webkit-touch-callout:none] disabled:opacity-40 ${
+      className={`hit press relative grid h-9 w-9 shrink-0 touch-none select-none place-items-center rounded-full [-webkit-touch-callout:none] disabled:opacity-40 ${
         listening ? "bg-tint text-on-tint" : "bg-bg text-tint-text"
       } ${supported ? "" : "opacity-50"}`}
     >

@@ -46,3 +46,14 @@ export function hm(minutes: number) {
   const r = m % 60;
   return r === 0 ? `${h}h` : `${h}h ${String(r).padStart(2, "0")}`;
 }
+
+/** For screen readers, where "3h 33" reads badly: "3 hours 33 minutes", "47 minutes", "1 hour". */
+export function spokenDuration(minutes: number) {
+  const m = Math.round(minutes);
+  const h = Math.floor(m / 60);
+  const r = m % 60;
+  const mins = `${r} ${r === 1 ? "minute" : "minutes"}`;
+  if (h === 0) return mins;
+  const hours = `${h} ${h === 1 ? "hour" : "hours"}`;
+  return r === 0 ? hours : `${hours} ${mins}`;
+}

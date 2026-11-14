@@ -145,7 +145,7 @@ function Speaker() {
 function Progress({ step }: { step: number }) {
   return (
     <div
-      className="flex flex-1 justify-center gap-1.5"
+      className="flex min-w-0 flex-1 justify-center gap-1.5"
       role="progressbar"
       aria-valuemin={1}
       aria-valuemax={STEPS}

@@ -86,11 +86,21 @@ export function Tape({
 
 /**
  * The small key under the tape. Given `minutes`, the figure ("1h 20") moves to its new value on a
- * live refresh instead of snapping, followed by `text` ("spent").
+ * live refresh instead of snapping, followed by `text` ("spent"). `hidden` when the tape's own label
+ * already says the same in full words, so VoiceOver does not read the numbers twice.
  */
-export function TapeKey({ items }: { items: { kind: Tick; text: string; minutes?: number }[] }) {
+export function TapeKey({
+  items,
+  hidden = false,
+}: {
+  items: { kind: Tick; text: string; minutes?: number }[];
+  hidden?: boolean;
+}) {
   return (
-    <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-footnote text-label-2 tnum">
+    <ul
+      aria-hidden={hidden || undefined}
+      className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-footnote text-label-2 tnum"
+    >
       {items.map(({ kind, text, minutes }) => (
         <li key={kind} className="inline-flex items-center gap-1.5">
           <span

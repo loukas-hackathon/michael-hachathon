@@ -2,7 +2,7 @@
 
 import { type ReactNode, useState } from "react";
 import { Sheet } from "@/components/sheet";
-import { formatTime, hm, minutesPhrase } from "@/lib/format";
+import { formatTime, hm, minutesPhrase, spokenDuration } from "@/lib/format";
 import { type HeartPoint, type Night, sleepAgainstGoal, workoutParts } from "@/lib/health";
 import {
   type Block,
@@ -34,6 +34,76 @@ function blockMeta(b: Block) {
     parts.push(`${breaks.length} ${breaks.length === 1 ? "interruption" : "interruptions"}, ${hm(lost)}`);
   }
   return parts.join(" · ");
+}
+
+/**
+ * The same day as a plain list for VoiceOver: one item per block, plan, workout and drive, in time
+ * order, in full words ("09:00 to 10:30. Deep work, goal time, 1 hour 30 minutes, 2 interruptions").
+ * The drawing's positions and textures mean nothing read aloud; its blocks stay buttons for detail.
+ */
+export function DayTimelineList({ day }: { day: TimelineDay }) {
+  const KIND = { work: "goal time", lost: "time lost", other: "other activity" } as const;
+  const when = (a: number, b: number) =>
+    `${formatTime(iso(a))} to ${b - a >= 24 * HOUR - 60_000 ? "24:00" : formatTime(iso(b))}`;
+  const plans = day.plans ?? [];
+  const items: { at: number; key: string; text: string }[] = [];
+  for (const b of day.blocks) {
+    if (b.end <= b.start) continue;
+    const { title } = blockTitle(b, plans);
+    const parts = [`${title}, ${KIND[b.kind]}, ${spokenDuration(b.minutes)}`];
+    const breaks = [
+      ...b.cuts.map((c) => c.minutes),
+      ...(b.lostStretches ?? []).map((l) => (l.end - l.start) / 60_000),
+    ];
+    if (b.kind !== "lost" && breaks.length > 0) {
+      const lost = breaks.reduce((n, m) => n + m, 0);
+      parts.push(
+        `${breaks.length} ${breaks.length === 1 ? "interruption" : "interruptions"}, ${spokenDuration(lost)}`,
+      );
+    }
+    if (b.movedEnd) parts.push(`I moved the end to ${formatTime(iso(b.movedEnd))}`);
+    items.push({ at: b.start, key: `b${b.start}`, text: `${when(b.start, b.end)}. ${parts.join(", ")}.` });
+  }
+  for (const p of plans) {
+    const who = `${p.michael ? ", booked by Michael" : ""}${p.withOthers ? ", with other people" : ""}`;
+    items.push({
+      at: p.start,
+      key: `p${p.start}${p.title}`,
+      text: `${when(p.start, p.end)}. Planned: ${p.title}${who}.`,
+    });
+  }
+  for (const w of day.health?.workouts ?? []) {
+    items.push({ at: w.start, key: `w${w.start}`, text: `${when(w.start, w.end)}. Workout: ${w.name}.` });
+  }
+  for (const d of day.drives ?? []) {
+    const traffic = d.trafficMinutes > 0 ? `, ${spokenDuration(d.trafficMinutes)} in traffic` : "";
+    items.push({
+      at: d.start,
+      key: `d${d.start}`,
+      text: `${when(d.start, d.end)}. Drive to ${d.to}, ${spokenDuration(d.minutes)}${traffic}.`,
+    });
+  }
+  for (const q of day.segments) {
+    if (q.kind === "quiet")
+      items.push({ at: q.from, key: `q${q.from}`, text: `${when(q.from, q.to)}. Nothing on screen.` });
+  }
+  items.sort((a, b) => a.at - b.at);
+  return (
+    <div className="sr-only">
+      <ol aria-label="The day in order">
+        {items.map((i) => (
+          <li key={i.key}>{i.text}</li>
+        ))}
+      </ol>
+      {day.phone.length > 0 ? (
+        <p>
+          {day.phone.length} phone {day.phone.length === 1 ? "session" : "sessions"},{" "}
+          {spokenDuration(day.totals.phoneMinutes)} in all.
+        </p>
+      ) : null}
+      {day.now != null ? <p>Now {formatTime(iso(day.now))}. Tap a block below for its detail.</p> : null}
+    </div>
+  );
 }
 
 /**
@@ -96,6 +166,7 @@ export function DayTimeline({
           s.kind === "quiet" ? (
             <div
               key={`q${s.from}`}
+              aria-hidden="true"
               className="dots absolute inset-x-0 flex items-center justify-between rounded-block bg-fill px-2.5 text-footnote text-label-2"
               style={{ top: y(s.from) + 3, height: QUIET - 6 }}
             >
@@ -118,6 +189,7 @@ export function DayTimeline({
         {hours.map((h) => (
           <div
             key={`h${h}`}
+            aria-hidden="true"
             className="absolute inset-x-0 border-t-[0.5px] border-separator"
             style={{ top: y(h) }}
           >
@@ -228,6 +300,7 @@ export function DayTimeline({
                     style={{ top: y(b.plan.end), height: Math.max(6, y(b.movedEnd) - y(b.plan.end)) }}
                   />
                   <span
+                    aria-hidden="true"
                     className="absolute left-[50px] rounded-[4px] bg-bg px-1 text-caption font-semibold text-tint-text"
                     style={{ top: y(b.movedEnd) + 3 }}
                   >
@@ -246,6 +319,7 @@ export function DayTimeline({
           return (
             <div
               key={`w${w.start}`}
+              aria-hidden="true"
               data-live-key={`w${w.start}-${w.end}`}
               className="absolute right-(--lane-r) left-[50px] overflow-hidden rounded-block bg-spark"
               style={{ top, height: h }}
@@ -273,7 +347,7 @@ export function DayTimeline({
             (b) => y(b.start) < top + 18 && y(b.end) > top + 2,
           );
           return (
-            <div key={`calt${p.start}${p.title}`} className="pointer-events-none">
+            <div key={`calt${p.start}${p.title}`} aria-hidden="true" className="pointer-events-none">
               {!covered && h >= 17 ? (
                 <p
                   className="absolute right-[calc(var(--lane-r)+60px)] left-[58px] truncate text-footnote leading-4 font-semibold text-label-2"
@@ -302,6 +376,7 @@ export function DayTimeline({
           return (
             <div
               key={`d${d.start}`}
+              aria-hidden="true"
               className="absolute right-(--lane-r) left-[50px] overflow-hidden rounded-block bg-fill"
               style={{ top, height: h }}
               title={`Drive to ${d.to}, ${d.minutes} minutes, ${d.trafficMinutes} in traffic`}
@@ -331,6 +406,7 @@ export function DayTimeline({
         {lossLabels.map((l) => (
           <span
             key={l.key}
+            aria-hidden="true"
             className="pointer-events-none absolute right-[calc(var(--lane-r)+6px)] rounded-[4px] bg-bg px-1 text-caption font-semibold text-label"
             style={{ top: l.top }}
           >
@@ -351,6 +427,7 @@ export function DayTimeline({
 
         {day.now != null && nowY != null ? (
           <div
+            aria-hidden="true"
             className="pointer-events-none absolute right-0 left-[34px] border-t-[1.5px] border-label"
             style={{ top: nowY }}
           >

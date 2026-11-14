@@ -65,7 +65,9 @@ export default async function YouPage({
             <span className="text-body">Agents</span>
             <span className="text-footnote text-label-2">Who asks about you, and what they may see</span>
           </span>
-          <span className="text-label-2">›</span>
+          <span aria-hidden="true" className="text-label-2">
+            ›
+          </span>
         </Link>
         <DeleteDataRow />
       </section>
@@ -81,7 +83,9 @@ export default async function YouPage({
               <span className="text-body">Redo setup</span>
               <span className="text-footnote text-label-2">Goals, usual week and quiet hours</span>
             </span>
-            <span className="text-label-2">›</span>
+            <span aria-hidden="true" className="text-label-2">
+              ›
+            </span>
           </Link>
         </div>
       </section>
@@ -101,7 +105,7 @@ export default async function YouPage({
           </p>
           <a
             href="/auth/signout"
-            className="press relative flex h-12 items-center px-4 text-body font-semibold text-danger"
+            className="press relative flex h-12 items-center px-4 text-body font-semibold text-label"
           >
             <span className={separator} />
             Sign out

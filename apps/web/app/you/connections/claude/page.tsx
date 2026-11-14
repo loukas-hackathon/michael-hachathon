@@ -17,7 +17,9 @@ export default async function ClaudePage() {
           className="press flex h-12 items-center justify-between rounded-group bg-fill px-4 text-body"
         >
           What Claude asked today, and what it may see
-          <span className="text-label-2">›</span>
+          <span aria-hidden="true" className="text-label-2">
+            ›
+          </span>
         </Link>
       </SetupSection>
     </ConnectionPage>

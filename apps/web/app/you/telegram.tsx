@@ -10,7 +10,7 @@ export async function TelegramRow() {
   if (!tg?.enabled) {
     return (
       <div className="flex min-h-14 items-center justify-between gap-4 px-4 py-2">
-        <span className="flex flex-col">
+        <span className="flex min-w-0 flex-col">
           <span className="text-body">Telegram</span>
           <span className="text-footnote text-label-2">Not set up on our side yet. Push still works.</span>
         </span>
@@ -27,13 +27,13 @@ export async function TelegramRow() {
   if (!tg.connected) {
     return (
       <div className="flex min-h-14 items-center justify-between gap-4 px-4 py-2">
-        <span className="flex flex-col">
+        <span className="flex min-w-0 flex-col">
           <span className="text-body">Telegram</span>
           <span className="text-footnote text-label-2">Nudges in a chat too. Tap Start in Telegram.</span>
         </span>
         <a
           href="/integrations/telegram/connect"
-          className="press flex h-9 shrink-0 items-center rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint"
+          className="hit press flex h-9 shrink-0 items-center rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint"
         >
           Connect Telegram
         </a>
@@ -54,13 +54,13 @@ export async function TelegramRow() {
           action={sendTelegramTest}
           label="Send a test"
           pendingLabel="Sending"
-          className="press h-9 min-w-[5.5rem] text-left text-subhead font-semibold text-tint-text"
+          className="hit press h-9 min-w-[5.5rem] text-left text-subhead font-semibold text-tint-text"
         />
         <ActionButton
           action={disconnectTelegramChat}
           label="Disconnect"
           pendingLabel="Disconnecting"
-          className="press h-9 text-left text-subhead font-semibold text-danger"
+          className="hit press h-9 text-left text-subhead font-semibold text-label"
         />
       </span>
     </div>

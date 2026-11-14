@@ -264,13 +264,13 @@ export function StandingInstructions({
             <button
               type="button"
               onClick={() => setSheet({ type: "edit", item: i })}
-              className={`press min-w-0 flex-1 py-2.5 pl-4 text-left text-body ${i.active ? "" : "text-label-2"}`}
+              className={`press min-h-11 min-w-0 flex-1 self-stretch py-2.5 pl-4 text-left text-body ${i.active ? "" : "text-label-2"}`}
             >
               {i.text}
             </button>
             <input
               type="checkbox"
-              aria-label={`${i.text}: ${i.active ? "on" : "paused"}`}
+              aria-label={i.text}
               checked={i.active}
               disabled={pending}
               onChange={(e) => {
@@ -280,7 +280,7 @@ export function StandingInstructions({
                   await toggleInstruction(i.id, active);
                 });
               }}
-              className="m-switch shrink-0"
+              className="hit m-switch shrink-0"
             />
           </li>
         ))}
@@ -354,7 +354,7 @@ export function StandingInstructions({
                   }
                 });
               }}
-              className="press flex min-h-11 w-full items-center px-4 text-body text-danger disabled:opacity-60"
+              className="press flex min-h-11 w-full items-center px-4 text-body font-semibold text-label disabled:opacity-60"
             >
               {pending && confirm
                 ? "Deleting"

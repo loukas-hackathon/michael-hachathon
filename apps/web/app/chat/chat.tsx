@@ -39,6 +39,14 @@ export function Chat({
   const session = useChatSession();
   const { draft, error, pending, streamingId } = session;
   const lines = mergeLines(initial, session.lines);
+  // What VoiceOver hears: the whole reply once it is written, never the stream token by token.
+  // Only lines added since the page loaded, so the history is not read out on arrival.
+  const last = session.lines.at(-1);
+  const announce = pending
+    ? "Looking at your day"
+    : last?.role === "assistant" && !streamingId
+      ? `Michael: ${last.content}`
+      : "";
   const input = useRef<HTMLTextAreaElement>(null);
   // What Michael did while answering, by reply id: shown as "Done. Undo" chips under that reply.
   const stored = useMemo(() => actedFrom(initial, initialActions), [initial, initialActions]);
@@ -84,7 +92,10 @@ export function Chat({
 
   return (
     <div className="flex flex-1 flex-col">
-      <div className="flex-1 pt-4" aria-live="polite" aria-busy={pending}>
+      <p role="status" className="sr-only">
+        {announce}
+      </p>
+      <div className="flex-1 pt-4" aria-busy={pending}>
         {lines.length === 0 ? (
           <div className="pt-6">
             <p className="text-insight font-semibold">Ask me about your day.</p>
@@ -104,7 +115,7 @@ export function Chat({
             </ul>
           </div>
         ) : (
-          <ol className="flex flex-col gap-2">
+          <ol aria-label="Conversation" className="flex flex-col gap-2">
             {lines.map((m) => (
               <MessageBubble
                 key={m.key ?? m.id}
@@ -143,7 +154,7 @@ export function Chat({
             <button
               type="button"
               onClick={() => toEnd()}
-              className="press m-pop-in pointer-events-auto min-h-9 rounded-full bg-bg px-3.5 text-footnote font-semibold text-label shadow-[0_0_0_0.5px_var(--m-separator),0_4px_12px_-6px_rgb(0_0_0/0.3)]"
+              className="hit press m-pop-in pointer-events-auto min-h-9 rounded-full bg-bg px-3.5 text-footnote font-semibold text-label shadow-[0_0_0_0.5px_var(--m-separator),0_4px_12px_-6px_rgb(0_0_0/0.3)]"
             >
               Jump to latest
             </button>
@@ -157,14 +168,15 @@ export function Chat({
                 type="button"
                 onClick={() => send(draft)}
                 disabled={pending}
-                className="press min-h-9 shrink-0 rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-3.5 text-footnote font-semibold text-tint-text disabled:opacity-40"
+                className="hit press min-h-9 shrink-0 rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-3.5 text-footnote font-semibold text-tint-text disabled:opacity-40"
               >
                 Try again
               </button>
             ) : null}
           </div>
         ) : null}
-        <div className="m-field flex items-end gap-2 rounded-card bg-fill p-1.5 pl-4">
+        {/* At 200% text the field keeps a usable width and the buttons wrap under it. */}
+        <div className="m-field flex flex-wrap items-end justify-end gap-2 rounded-card bg-fill p-1.5 pl-4">
           <label htmlFor="chat-input" className="sr-only">
             Message Michael
           </label>
@@ -183,7 +195,7 @@ export function Chat({
                 send(draft);
               }
             }}
-            className="max-h-32 min-h-9 flex-1 resize-none bg-transparent py-1.5 text-body outline-none [field-sizing:content] placeholder:text-label-2"
+            className="max-h-32 min-h-9 min-w-32 flex-1 resize-none bg-transparent py-1.5 text-body outline-none [field-sizing:content] placeholder:text-label-2"
           />
           <PushToTalk
             disabled={pending}
@@ -198,7 +210,7 @@ export function Chat({
           <button
             type="submit"
             disabled={pending || !draft.trim()}
-            className="press h-9 shrink-0 rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint disabled:opacity-40"
+            className="hit press h-9 shrink-0 rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint disabled:opacity-40"
           >
             Send
           </button>

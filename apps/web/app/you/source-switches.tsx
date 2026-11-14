@@ -35,7 +35,7 @@ export function SourceSwitches({ initial, sources }: { initial: SourceSetting[];
           <li key={source} className="relative">
             {i > 0 ? <span className="absolute inset-x-0 top-0 ml-4 h-[0.5px] bg-separator" /> : null}
             <label htmlFor={id} className="flex min-h-14 items-center justify-between gap-4 px-4 py-2">
-              <span className="flex flex-col">
+              <span className="flex min-w-0 flex-col">
                 <span className="text-body">{name}</span>
                 <span className="text-footnote text-label-2">
                   {failed === source ? "I could not save that. Try again." : what}
