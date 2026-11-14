@@ -133,6 +133,18 @@ const SCOPE_WORDS: Record<AgentScope, string> = {
 
 type Callback = (...args: unknown[]) => unknown;
 
+/** Tools whose change the user can undo from the Agents screen. */
+export const UNDOABLE_TOOLS = new Set(["execute_recommendation", "create_focus_block", "block_mac_app"]);
+
+/** The recommendation an undoable tool's successful result carries, if any. */
+export function changedRecommendation(name: string, result: unknown): string | null {
+  if (!UNDOABLE_TOOLS.has(name) || !result || typeof result !== "object") return null;
+  const r = result as { isError?: boolean; structuredContent?: { recommendation?: { id?: unknown } } };
+  if (r.isError) return null;
+  const id = r.structuredContent?.recommendation?.id;
+  return typeof id === "string" ? id : null;
+}
+
 export function guardTools(server: McpServer): void {
   const register = server.registerTool.bind(server) as unknown as (
     n: string,
@@ -146,17 +158,21 @@ export function guardTools(server: McpServer): void {
       const scope = scopeFor(name, config);
       const allowed = agent.status === "approved" && agent.scopes.includes(scope);
       const input = config.inputSchema ? args[0] : undefined;
-      try {
-        await agentsStore.logQuery({
-          agent_id: agent.id,
-          tool: name,
-          summary: summarise(name, config.title, input),
-          allowed,
-        });
-      } catch (err) {
-        console.error("agent query log failed", err);
-      }
+      const log = async (recommendation_id: string | null) => {
+        try {
+          await agentsStore.logQuery({
+            agent_id: agent.id,
+            tool: name,
+            summary: summarise(name, config.title, input),
+            allowed,
+            recommendation_id,
+          });
+        } catch (err) {
+          console.error("agent query log failed", err);
+        }
+      };
       if (!allowed) {
+        await log(null);
         const why =
           agent.status === "approved"
             ? `The user has not shared ${SCOPE_WORDS[scope]} with ${agent.name}.`
@@ -171,7 +187,15 @@ export function guardTools(server: McpServer): void {
           ],
         };
       }
-      return cb(...args);
+      // Allowed calls are logged once they finish, so a change carries the recommendation that
+      // holds it and the Agents screen can offer Undo next to the line.
+      let result: unknown;
+      try {
+        result = await cb(...args);
+        return result;
+      } finally {
+        await log(changedRecommendation(name, result));
+      }
     });
   (server as unknown as { registerTool: typeof guarded }).registerTool = guarded;
 }
