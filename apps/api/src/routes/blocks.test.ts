@@ -59,6 +59,7 @@ test("without Google: create with a goal, move, rename, remove, and undo each", 
       category: "business",
       title: "Ship it",
       weekly_budget_minutes: 300,
+      active: true,
     });
     const created = await call("POST", "/blocks", {
       start_at: iso(at(9)),
@@ -154,7 +155,12 @@ test("with Google: the block, its goal and the move land in Google; remove and u
       refresh_token: "refresh-1",
       expires_at: iso(Date.now() + HOUR),
     });
-    const goal = await store.createGoal({ category: "health", title: "Run", weekly_budget_minutes: 120 });
+    const goal = await store.createGoal({
+      category: "health",
+      title: "Run",
+      weekly_budget_minutes: 120,
+      active: true,
+    });
     const created = await call("POST", "/blocks", {
       start_at: iso(at(7)),
       end_at: iso(at(8)),

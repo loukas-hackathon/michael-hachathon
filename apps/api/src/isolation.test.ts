@@ -126,6 +126,16 @@ test("A writes through every write route", async () => {
     await request(asA, "PATCH", `/v1/goals/${goal.id}`, { description: `${MARK} description` }),
     "PATCH /v1/goals",
   );
+  // A block on the Timeline (#271), tomorrow so it can still change. Before off the record, which stops new events.
+  const block = await ok(
+    await request(asA, "POST", "/v1/blocks", {
+      start_at: new Date(Date.now() + 26 * 3_600_000).toISOString(),
+      end_at: new Date(Date.now() + 27 * 3_600_000).toISOString(),
+      title: `${MARK} block`,
+    }),
+    "POST /v1/blocks",
+  );
+  ids.block = block.event.id;
   const instruction = await ok(
     await request(asA, "POST", "/v1/instructions", { text: `${MARK} keep Sundays clear` }),
     "POST /v1/instructions",
@@ -162,16 +172,6 @@ test("A writes through every write route", async () => {
   ids.rec = rec.id;
   ids.recBefore = rec.status;
   await ok(await request(asA, "PATCH", `/v1/recommendations/${rec.id}`, { status: "dismissed" }), "dismiss");
-  // A block on the Timeline (#271), tomorrow so it can still change.
-  const block = await ok(
-    await request(asA, "POST", "/v1/blocks", {
-      start_at: new Date(Date.now() + 26 * 3_600_000).toISOString(),
-      end_at: new Date(Date.now() + 27 * 3_600_000).toISOString(),
-      title: `${MARK} block`,
-    }),
-    "POST /v1/blocks",
-  );
-  ids.block = block.event.id;
   // Chat (the route needs a model, so the line is stored the way the route stores it).
   await runAsUser(A, () => store.addChatMessage("user", `${MARK} chat`), "session");
   // A memory, as the chat's remember tool keeps it.
