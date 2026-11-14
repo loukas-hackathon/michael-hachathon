@@ -196,13 +196,13 @@ A duplicate `(source, external_id)` is skipped and counted in `duplicates` (not 
 All `POST`, auth required, body is the provider's native payload. Each maps to `EventInput[]` and
 ingests idempotently. Response `200 IngestResponse`. Status: `stub`, except where a row says `live`.
 
-| Path                              | Sender                                                     | Maps to                         |
-| --------------------------------- | ---------------------------------------------------------- | ------------------------------- |
-| `/v1/webhooks/omi`                | Omi app (memory created / transcript)                      | `conversation`, `memory`        |
-| `/v1/webhooks/health-auto-export` | Health Auto Export iOS app (**live**)                      | `sleep`, `workout`, `biometric` |
-| `/v1/webhooks/ios-shortcuts`      | iPhone Shortcuts automations (app open/close)              | `app_usage`                     |
-| `/v1/webhooks/activitywatch`      | local sync script reading the ActivityWatch API on the Mac | `app_usage`, `focus_session`    |
-| `/v1/webhooks/claude-code`        | Claude Code `type: "http"` hooks (**live**)                | `ai_prompt`, `notification`     |
+| Path                              | Sender                                                  | Maps to                         |
+| --------------------------------- | ------------------------------------------------------- | ------------------------------- |
+| `/v1/webhooks/omi`                | Omi app, "conversation created" (**live**)              | `conversation`                  |
+| `/v1/webhooks/health-auto-export` | Health Auto Export iOS app (**live**)                   | `sleep`, `workout`, `biometric` |
+| `/v1/webhooks/ios-shortcuts`      | iPhone Shortcuts automations, app open/close (**live**) | `app_usage`                     |
+| `/v1/webhooks/activitywatch`      | a forwarder reading ActivityWatch on the Mac (**live**) | `app_usage`, `focus_session`    |
+| `/v1/webhooks/claude-code`        | Claude Code `type: "http"` hooks (**live**)             | `ai_prompt`, `notification`     |
 
 The exact provider payload for each is documented in the issue that implements it, then copied here.
 
@@ -226,6 +226,55 @@ https://help.healthyapps.dev/en/health-auto-export/export-format). Setup:
   ended 20 minutes ago. The next export picks up the rest. All times are stored in UTC.
 - A sample or workout that does not fit is skipped; the rest of the export is still stored. A body
   without `data` is `400`.
+
+`POST /v1/webhooks/omi` takes the Omi "conversation created" (memory creation) webhook body as is
+(format: https://docs.omi.me/doc/developer/apps/Integrations). Setup: `docs/sources/omi.md`.
+Omi appends `?uid=`; it is ignored. Mapping (`apps/api/src/ingest/omi.ts`): one `conversation`
+event, `start_at`/`end_at` = `started_at`/`finished_at`, `title` = `structured.title`, `data`:
+`summary` (`structured.overview`), `category`, `action_items` (descriptions), `action_items_done`,
+`duration_min`. `external_id` = `omi:<id>`. Only those fields are read: transcript segments, speaker
+names, app results and folders are never stored. A `discarded` conversation, a real time transcript
+batch (a JSON array) or any other Omi payload answers `200` with nothing inserted.
+
+`POST /v1/webhooks/ios-shortcuts` takes our own tiny body, sent by a Shortcuts personal automation
+("App is opened" / "App is closed", then "Get Contents of URL"). Setup: `docs/sources/ios-shortcuts.md`.
+
+```ts
+type ShortcutsPayload = {
+  app: string; // the Shortcuts "App" value, e.g. "Instagram"
+  action: "open" | "close"; // "opened", "closed", any case also accepted
+  at?: string; // ISO 8601; missing or unreadable = time of arrival
+  bundle_id?: string; // optional, e.g. "com.burbn.instagram"
+};
+```
+
+- An `open` is held until its `close`; the pair becomes one `app_usage` event (`source:
+  ios_shortcuts`, `title` = app, `data`: `app`, `device: "iphone"`, `seconds`, `bundle_id?`,
+  `external_id` = `sc:<app lowercased>:<start, UTC second>`). The open alone answers `200` with
+  nothing inserted.
+- Opening another app closes the held one at that moment. A close with no open, or a session longer
+  than two hours, is dropped. Held opens live in the API's memory, so a deploy in the middle of a
+  session loses that session.
+- While off the record or with the source off, a call answers `ignored: 1` and an open is not held.
+- The patterns layer reads `iphone_usage` only for now; these events show on the timeline.
+
+`POST /v1/webhooks/activitywatch` takes ActivityWatch bucket events exactly as
+`GET /api/0/buckets/<id>/events` returns them (`{ timestamp, duration, data: { app, title } }`
+for `aw-watcher-window`, `data: { status: "afk" | "not-afk" }` for `aw-watcher-afk`), as either
+`{ window: AwEvent[], afk?: AwEvent[] }` or the body of `GET /api/0/export` (`{ buckets: {...} }`).
+Format: https://docs.activitywatch.net/en/latest/buckets-and-events.html. Mapping
+(`apps/api/src/ingest/activitywatch.ts`):
+
+- Away time (`afk`) is cut out, then the same app within 10 seconds is one run: one `app_usage`
+  event (`title` = app, `data`: `app`, `device: "mac"`, `seconds`; `external_id` =
+  `aw:<app lowercased>:<start, UTC second>`). Window titles are never stored.
+- Focus rule: work app runs (editors, terminals, design and writing tools, see `WORK_APPS`) where
+  every gap or non work stretch between them is at most 3 minutes, lasting at least 25 minutes from
+  the first work run to the last, with work apps at least 70% of that time. Browsers neither break
+  nor count. Gives a `focus_session` (`title` `Deep work: Code + Terminal (36m)`, `data`: `apps`
+  (minutes per app), `switches`, `minutes`, `work_share`; `external_id` = `aw:focus:<start minute>`).
+- Runs and stretches that ended in the last two minutes wait for the next post. Send ranges that
+  start where the last post ended, so a run is not cut in two.
 
 `POST /v1/webhooks/claude-code` takes the hook payload Claude Code posts (see "Connect Claude Code"
 in the README). Fields read: `hook_event_name`, `session_id`, `prompt_id`, `cwd`, `prompt`,

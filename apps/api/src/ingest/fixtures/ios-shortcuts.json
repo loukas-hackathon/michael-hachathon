@@ -1,0 +1,12 @@
+[
+  { "app": "Instagram", "action": "open", "at": "2026-11-14T12:22:00+02:00" },
+  { "app": "Instagram", "action": "close", "at": "2026-11-14T12:47:00+02:00" },
+  { "app": "WhatsApp", "action": "opened", "at": "2026-11-14T13:01:10+02:00" },
+  {
+    "app": "Safari",
+    "action": "Open",
+    "at": "2026-11-14T13:03:40+02:00",
+    "bundle_id": "com.apple.mobilesafari"
+  },
+  { "app": "Safari", "action": "close", "at": "2026-11-14T13:05:00+02:00" }
+]
