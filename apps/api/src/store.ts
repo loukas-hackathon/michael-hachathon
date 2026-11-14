@@ -2,6 +2,7 @@ import {
   type AnalysisRun,
   type ChatMessage,
   type ChatRole,
+  type ChatThread,
   type CheckIn,
   type CheckInValue,
   type ChecklistItem,
@@ -118,6 +119,20 @@ export interface DataDeleteScope {
 /** Rows deleted per table. */
 export type DeleteCounts = Record<string, number>;
 
+/** What PATCH /v1/chat/threads/:id may change. */
+export type ChatThreadChange = Partial<Pick<ChatThread, "title" | "pinned" | "archived">>;
+
+/** The thread title before the first line: the model or the template names it after that. */
+export const NEW_THREAD_TITLE = "New chat";
+/** Characters of the last line kept as the thread's preview. */
+export const PREVIEW_CHARS = 140;
+export const previewOf = (content: string) => content.replace(/\s+/g, " ").trim().slice(0, PREVIEW_CHARS);
+
+/** Pinned first, then the latest line (creation while empty), newest first. */
+export const threadOrder = (a: ChatThread, b: ChatThread) =>
+  Number(b.pinned) - Number(a.pinned) ||
+  Date.parse(b.last_message_at ?? b.created_at) - Date.parse(a.last_message_at ?? a.created_at);
+
 /** UTC days a summary row must fall in to match a [from, to) range. */
 export const summaryDayRange = (from?: string, to?: string) => ({
   from: from ? new Date(from).toISOString().slice(0, 10) : undefined,
@@ -226,14 +241,29 @@ export interface Store extends PrivacyBackend {
   // Privacy (privacy.ts holds the rules; insertEvents applies them).
   setOffTheRecord(on: boolean): Promise<PrivacyRules>;
   /**
-   * The most recent chat messages, oldest first. Chat is per demo visitor on the demo account
-   * (`currentDemoVisitor()`): a visitor sees only their own lines, everyone else only the
-   * account's own lines (visitor null).
+   * Chat threads, pinned first then latest activity first. Chat is per demo visitor on the demo
+   * account (`currentDemoVisitor()`): a visitor sees only their own threads and lines, everyone
+   * else only the account's own (visitor null). `q` matches titles and line text.
    */
-  listChatMessages(limit: number): Promise<ChatMessage[]>;
-  /** `actionIds`: recommendations done or undone while writing an answer (ChatMessage.action_ids). */
-  addChatMessage(role: ChatRole, content: string, actionIds?: string[]): Promise<ChatMessage>;
-  /** Deletes the current user's demo visitor chat lines written at or before `before`. */
+  listChatThreads(opts?: { archived?: boolean; q?: string; limit?: number }): Promise<ChatThread[]>;
+  getChatThread(id: string): Promise<ChatThread | null>;
+  createChatThread(title?: string): Promise<ChatThread>;
+  updateChatThread(id: string, patch: ChatThreadChange): Promise<ChatThread | null>;
+  /** Deletes the thread and every line in it. The number of lines, or null when not found. */
+  deleteChatThread(id: string): Promise<number | null>;
+  /** The most recent lines of one thread, oldest first. Empty for someone else's thread. */
+  listChatMessages(threadId: string, limit: number): Promise<ChatMessage[]>;
+  /**
+   * Adds a line to one of the caller's threads and moves the thread's preview and time.
+   * `actionIds`: recommendations done or undone while writing an answer (ChatMessage.action_ids).
+   */
+  addChatMessage(
+    threadId: string,
+    role: ChatRole,
+    content: string,
+    actionIds?: string[],
+  ): Promise<ChatMessage>;
+  /** Deletes the current user's demo visitor threads (and lines) last active at or before `before`. */
   clearVisitorChat(before: string): Promise<number>;
   // Follow up drafts (actions/drafts.ts), newest first. Never sent anywhere.
   listDrafts(filter?: { status?: DraftStatus }): Promise<Draft[]>;
@@ -439,7 +469,8 @@ export class MemoryStore implements Store {
       recommendations: Recommendation[];
       runs: AnalysisRun[];
       privacy: PrivacyRules;
-      chat: (ChatMessage & { visitor: string | null })[];
+      chat: (ChatMessage & { visitor: string | null; thread: string })[];
+      threads: (ChatThread & { visitor: string | null })[];
       drafts: Draft[];
       integrations: IntegrationRecord[];
       nudges: Nudge[];
@@ -464,7 +495,8 @@ export class MemoryStore implements Store {
       recommendations: sample ? [...structuredClone(mockRecommendations), ...demoRecommendations()] : [],
       runs: sample ? [structuredClone(mockAnalysisRun)] : [],
       privacy: { offTheRecord: false, since: null, sources: {} } as PrivacyRules,
-      chat: [] as (ChatMessage & { visitor: string | null })[],
+      chat: [] as (ChatMessage & { visitor: string | null; thread: string })[],
+      threads: [] as (ChatThread & { visitor: string | null })[],
       drafts: [] as Draft[],
       integrations: [] as IntegrationRecord[],
       nudges: [] as Nudge[],
@@ -750,15 +782,80 @@ export class MemoryStore implements Store {
     return { run, recommendations };
   }
 
-  async listChatMessages(limit: number) {
+  /** The caller's own threads: the account's, or this demo visitor's. */
+  private ownThreads() {
     const visitor = currentDemoVisitor();
-    return this.d.chat
-      .filter((m) => m.visitor === visitor)
-      .slice(-limit)
-      .map(({ visitor: _v, ...m }): ChatMessage => m);
+    return this.d.threads.filter((t) => t.visitor === visitor);
   }
 
-  async addChatMessage(role: ChatRole, content: string, actionIds: string[] = []) {
+  private ownThread(id: string) {
+    return this.ownThreads().find((t) => t.id === id) ?? null;
+  }
+
+  async listChatThreads(opts: { archived?: boolean; q?: string; limit?: number } = {}) {
+    const q = opts.q?.trim().toLowerCase();
+    const hits = q
+      ? new Set(this.d.chat.filter((m) => m.content.toLowerCase().includes(q)).map((m) => m.thread))
+      : null;
+    return this.ownThreads()
+      .filter((t) => t.archived === (opts.archived ?? false))
+      .filter((t) => !q || t.title.toLowerCase().includes(q) || hits?.has(t.id))
+      .map(({ visitor: _v, ...t }): ChatThread => ({ ...t }))
+      .sort(threadOrder)
+      .slice(0, opts.limit ?? 100);
+  }
+
+  async getChatThread(id: string) {
+    const t = this.ownThread(id);
+    if (!t) return null;
+    const { visitor: _v, ...thread } = t;
+    return { ...thread };
+  }
+
+  async createChatThread(title?: string) {
+    const at = now();
+    const thread: ChatThread = {
+      id: crypto.randomUUID(),
+      title: title ?? NEW_THREAD_TITLE,
+      pinned: false,
+      archived: false,
+      preview: null,
+      last_message_at: null,
+      created_at: at,
+      updated_at: at,
+    };
+    this.d.threads.push({ ...thread, visitor: currentDemoVisitor() });
+    return { ...thread };
+  }
+
+  async updateChatThread(id: string, patch: ChatThreadChange) {
+    const t = this.ownThread(id);
+    if (!t) return null;
+    const changes = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined));
+    Object.assign(t, changes, { updated_at: now() });
+    return this.getChatThread(id);
+  }
+
+  async deleteChatThread(id: string) {
+    const d = this.d;
+    if (!this.ownThread(id)) return null;
+    const before = d.chat.length;
+    d.chat = d.chat.filter((m) => m.thread !== id);
+    d.threads = d.threads.filter((t) => t.id !== id);
+    return before - d.chat.length;
+  }
+
+  async listChatMessages(threadId: string, limit: number) {
+    if (!this.ownThread(threadId)) return [];
+    return this.d.chat
+      .filter((m) => m.thread === threadId)
+      .slice(-limit)
+      .map(({ visitor: _v, thread: _t, ...m }): ChatMessage => m);
+  }
+
+  async addChatMessage(threadId: string, role: ChatRole, content: string, actionIds: string[] = []) {
+    const thread = this.ownThread(threadId);
+    if (!thread) throw new HttpError("not_found", "Chat thread not found");
     const message: ChatMessage = {
       id: crypto.randomUUID(),
       role,
@@ -766,14 +863,25 @@ export class MemoryStore implements Store {
       created_at: now(),
       action_ids: [...actionIds],
     };
-    this.d.chat.push({ ...message, visitor: currentDemoVisitor() });
+    this.d.chat.push({ ...message, visitor: currentDemoVisitor(), thread: threadId });
+    Object.assign(thread, {
+      preview: previewOf(content),
+      last_message_at: message.created_at,
+      updated_at: message.created_at,
+    });
     return message;
   }
 
   async clearVisitorChat(before: string) {
     const d = this.d;
     const cut = Date.parse(before);
-    const kept = d.chat.filter((m) => m.visitor === null || Date.parse(m.created_at) > cut);
+    const gone = new Set(
+      d.threads
+        .filter((t) => t.visitor !== null && Date.parse(t.last_message_at ?? t.created_at) <= cut)
+        .map((t) => t.id),
+    );
+    d.threads = d.threads.filter((t) => !gone.has(t.id));
+    const kept = d.chat.filter((m) => !gone.has(m.thread));
     const removed = d.chat.length - kept.length;
     d.chat = kept;
     return removed;
@@ -1137,8 +1245,8 @@ export class MemoryStore implements Store {
         goals: d.goals.length,
         focus_guards: d.guards.length,
         recommendations: d.recommendations.length,
-        analysis_runs: d.runs.length,
         chat_messages: d.chat.length,
+        chat_threads: d.threads.length,
         check_ins: d.checkIns.length,
         drafts: d.drafts.length,
         instructions: d.instructions.length,

@@ -48,7 +48,7 @@ test("hold to talk: live words, let go sends, the answer streams and is spoken o
 
   const sent = page.waitForRequest("**/chat/stream");
   await page.mouse.up();
-  expect((await sent).postDataJSON()).toEqual({ message: "How much deep work have I done today" });
+  expect((await sent).postDataJSON()).toMatchObject({ message: "How much deep work have I done today" });
   await expect(mic).toHaveAttribute("aria-pressed", "false");
   await expect(page.getByText("You have done")).toBeVisible();
   await expect(page.locator("#chat-input")).toHaveValue("");
@@ -133,7 +133,7 @@ test("keyboard: hold Space to talk", async ({ page }) => {
   await voice(page, `r.say("When should I train")`);
   const sent = page.waitForRequest("**/chat/stream");
   await page.keyboard.up(" ");
-  expect((await sent).postDataJSON()).toEqual({ message: "When should I train" });
+  expect((await sent).postDataJSON()).toMatchObject({ message: "When should I train" });
   await expect(page.getByText("Train at 18:00.")).toBeVisible();
 });
 

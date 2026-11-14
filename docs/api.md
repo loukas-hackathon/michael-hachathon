@@ -24,6 +24,7 @@ returns `501 not_implemented`, `planned` = not routed yet. Update the status whe
     `X-Michael-Demo-Visitor: <uuid>`, one random id per visitor. Same demo account, but read
     mostly: chat is stored and read per visitor (a visitor never sees another's, nor the
     account's own), and only these writes are allowed: `POST /v1/chat`, `/v1/chat/stream`,
+    `POST /v1/chat/threads`, `PATCH|DELETE /v1/chat/threads/:id` (their own threads),
     `/v1/recommendations/:id/execute|undo`, `PATCH /v1/recommendations/:id`, `POST /v1/analysis/run`,
     `/v1/travel/plan`, `/v1/focus-guards/suggest`, `/v1/voice/speak`, `/v1/records/:id/announced`, `POST|DELETE /v1/push/subscriptions`, `POST /v1/nudges/test` and
     `POST /v1/connect/requests/:id`. Anything else that writes (privacy, goals, instructions,
@@ -1244,11 +1245,15 @@ travel site" or "an uncategorised site". Structured `data` carries the host for 
 
 ### Chat
 
-| Method | Path                | Body                                                    | Response                                                                                                                                                                                                                                                                   | Status |
-| ------ | ------------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| GET    | `/v1/chat?limit=50` |                                                         | `200 { messages: ChatMessage[], actions: Recommendation[] }` (oldest first, limit 1..100; `actions` are the ones named in `action_ids`, as they stand now)                                                                                                                 | live   |
-| POST   | `/v1/chat`          | `{ message: string, spoken?: boolean }` (1..2000 chars) | `201 ChatResponse` `{ message, reply, actions: Recommendation[] }`; `503 unavailable` without `ANTHROPIC_API_KEY`; `502 upstream_error` if Claude fails                                                                                                                    | live   |
-| POST   | `/v1/chat/stream`   | `{ message: string, spoken?: boolean }` (1..2000 chars) | `200 text/event-stream`: `event: delta` `{ text }` per piece, `event: action` `Recommendation` per thing done or undone, then `event: done` `ChatResponse`, or `event: error` `ApiError`. Validation and `503 unavailable` come back as plain JSON before the stream opens | live   |
+| Method | Path                                           | Body                                                                               | Response                                                                                                                                                                                                                                                                                       | Status |
+| ------ | ---------------------------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| GET    | `/v1/chat?thread_id=&limit=50`                 |                                                                                    | `200 { messages: ChatMessage[], actions: Recommendation[], thread: ChatThread \| null }` (one thread's lines, oldest first, limit 1..100; without `thread_id` the latest thread; `actions` are the ones named in `action_ids`, as they stand now); `404` for a thread that is not the caller's | live   |
+| POST   | `/v1/chat`                                     | `{ message: string, spoken?: boolean, thread_id?: uuid \| "new" }` (1..2000 chars) | `201 ChatResponse` `{ message, reply, actions: Recommendation[], thread: ChatThread }`; `404` unknown thread; `503 unavailable` without `ANTHROPIC_API_KEY`; `502 upstream_error` if Claude fails                                                                                              | live   |
+| POST   | `/v1/chat/stream`                              | same as `POST /v1/chat`                                                            | `200 text/event-stream`: `event: delta` `{ text }` per piece, `event: action` `Recommendation` per thing done or undone, then `event: done` `ChatResponse`, or `event: error` `ApiError`. Validation, `404` and `503 unavailable` come back as plain JSON before the stream opens              | live   |
+| GET    | `/v1/chat/threads?archived=false&q=&limit=100` |                                                                                    | `200 ChatThreadList` `{ threads: ChatThread[] }`, pinned first, then latest line first. `q` (1..100 chars) matches titles and line text                                                                                                                                                        | live   |
+| POST   | `/v1/chat/threads`                             | `{ title? }` (or no body)                                                          | `201 ChatThread`, empty, titled "New chat" unless named                                                                                                                                                                                                                                        | live   |
+| PATCH  | `/v1/chat/threads/:id`                         | `{ title?, pinned?, archived? }` (at least one)                                    | `200 ChatThread`; `404` when not the caller's                                                                                                                                                                                                                                                  | live   |
+| DELETE | `/v1/chat/threads/:id`                         |                                                                                    | `200 { id, messages }`: the thread and every line in it, really deleted; `404` when not the caller's                                                                                                                                                                                           | live   |
 
 `spoken: true` means the answer will be read aloud (the app's conversation mode): Michael keeps it
 to one or two short sentences with no lists or markdown, and says numbers as a person would.
@@ -1257,7 +1262,19 @@ to one or two short sentences with no lists or markdown, and says numbers as a p
 first words fast and stores the same pair when it finishes. The stored answer keeps the ids of what
 it did (`action_ids`), so a client can show the same Undo chips under it after a reload.
 
-The API keeps the history per user (`chat_messages`); the client sends only the new line. Michael
+**Threads (#308).** Conversations are separate, as in Messages: `ChatThread { id, title, pinned,
+archived, preview, last_message_at, created_at, updated_at }` (`preview` is the last line, cut to
+140 characters). `thread_id` omitted writes in the latest thread (a new one when there is none);
+`"new"` starts one, made only once the answer is stored, so a failed call leaves no empty thread.
+The first line names a thread: the model writes 2 to 5 words in Michael's voice in parallel with
+the answer (only the user's own line is sent), and the first words of the line are the fallback;
+a name the user gave is never overwritten. Michael sees the lines of the current thread only; he
+knows the others through memories, check ins and the titles of the 5 latest other threads
+("Other conversations (titles only)"), never their lines. Lines from before threads sit in one
+"Earlier" thread per user (and per demo visitor). Demo visitors get threads of their own, like
+their lines. `DELETE /v1/me/data` counts `chat_threads` too.
+
+The API keeps the history per user and thread (`chat_threads`, `chat_messages`); the client sends only the new line. Michael
 answers with Claude (`ANTHROPIC_MODEL`, default `claude-opus-5-5`) from a summary built in the API:
 the week's score with the same figures as `GET /v1/score` (built in process by `scoreFor`, not over
 HTTP: score, spent of elapsed, lost, ahead, time won back, and per goal spent of budget and what is

@@ -1,10 +1,8 @@
-import type { ChatHistory, Score } from "@michael/shared";
+import type { ChatHistory, ChatThread, Score } from "@michael/shared";
 import { connection } from "next/server";
 import { CheckIn } from "@/components/chat/check-in";
 import { LiveCheckIn } from "@/components/chat/live-check-in";
-import { ScreenHeader } from "@/components/screen";
-import { TalkButton } from "@/components/voice/conversation-sheet";
-import { getChatHistory, getCheckIn, getScore, getVoiceEnabled } from "@/lib/api";
+import { getChatHistory, getChatThreads, getCheckIn, getScore, getVoiceEnabled } from "@/lib/api";
 import { SAMPLE_QUESTIONS } from "@/lib/check-in-data";
 import { Chat } from "./chat";
 import { startersFrom } from "./starters";
@@ -21,26 +19,35 @@ export default async function ChatPage() {
     console.error("check in:", err);
     return null;
   });
-  let history: ChatHistory = { messages: [], actions: [] };
-  try {
-    history = await getChatHistory();
-  } catch (err) {
-    console.error("chat history:", err);
-  }
-  // Starters come from the real day, and only matter before the first line.
-  let score: Score | null = null;
-  if (history.messages.length === 0) score = await getScore().catch(() => null);
-  const [elevenlabs, today] = await Promise.all([voice, checkIn]);
+  // The latest conversation opens, as Messages does; the rest are one tap away in the list.
+  const [history, threads] = await Promise.all([
+    getChatHistory().catch((err): ChatHistory => {
+      console.error("chat history:", err);
+      return { messages: [], actions: [], thread: null };
+    }),
+    getChatThreads().catch((err): ChatThread[] => {
+      console.error("chat threads:", err);
+      return [];
+    }),
+  ]);
+  // Starters from the real day matter before the first line; a later new chat gets the plain ones,
+  // so the score is not fetched on every visit.
+  const score =
+    history.messages.length === 0 ? getScore().catch((): Score | null => null) : Promise.resolve(null);
+  const [elevenlabs, today, day] = await Promise.all([voice, checkIn, score]);
 
   return (
     <main className="screen flex min-h-dvh flex-col">
-      <ScreenHeader context={null} title="Chat" actions={<TalkButton elevenlabs={elevenlabs} />} />
-      {today ? <LiveCheckIn initial={today.questions} /> : <CheckIn questions={SAMPLE_QUESTIONS} sample />}
       <Chat
+        thread={history.thread}
         initial={history.messages}
         initialActions={history.actions}
-        starters={startersFrom(score)}
+        threads={threads}
+        starters={startersFrom(day)}
         elevenlabs={elevenlabs}
+        checkIn={
+          today ? <LiveCheckIn initial={today.questions} /> : <CheckIn questions={SAMPLE_QUESTIONS} sample />
+        }
       />
     </main>
   );
