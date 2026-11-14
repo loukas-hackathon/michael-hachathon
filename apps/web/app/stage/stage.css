@@ -322,10 +322,13 @@
   display: flex;
   gap: calc(var(--u) * 40);
   min-width: 0;
+  /* Newest first; whatever does not fit in full wraps onto a hidden second line. */
+  flex-wrap: wrap;
+  height: calc(var(--u) * 30);
+  overflow: hidden;
 }
 .stage-ticker li {
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex-shrink: 0;
 }
 .stage-ticker li b {
   color: var(--m-label);

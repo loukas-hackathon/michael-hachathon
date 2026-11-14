@@ -34,10 +34,9 @@ export function latestNudge(nudges: Nudge[]): StageNudge | null {
 }
 
 export async function getStageFeed(): Promise<StageFeed> {
-  const dayStart = new Date(Date.now() - 24 * 3_600_000).toISOString();
   const [nudges, queries, agents] = await Promise.all([
     call<{ nudges: Nudge[] }>("/v1/nudges"),
-    call<{ queries: AgentQuery[] }>(`/v1/agents/queries?from=${encodeURIComponent(dayStart)}`),
+    call<{ queries: AgentQuery[] }>("/v1/agents/queries"),
     call<{ agents: AgentClient[] }>("/v1/agents"),
   ]);
   const names = new Map((agents?.agents ?? []).map((a) => [a.id, a.name]));

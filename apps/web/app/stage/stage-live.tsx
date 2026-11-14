@@ -146,8 +146,8 @@ export function StageLive({
             <ul>
               {feed.queries.map((q) => (
                 <li key={q.id} className={firstQueries.current.has(q.id) ? undefined : "stage-ticker-new"}>
-                  <span className="tnum">{formatTime(q.at)}</span> <b>{q.agent}</b> {q.summary}
-                  {q.allowed ? "" : " Not shared."}
+                  <span className="tnum">{formatTime(q.at)}</span> <b>{q.agent}</b> {sentence(q.summary)}
+                  {q.allowed ? "" : ", not shared"}
                 </li>
               ))}
             </ul>
@@ -171,6 +171,11 @@ export function StageLive({
       </p>
     </div>
   );
+}
+
+/** "Read your score" reads on after the agent's name: "Claude read your score". */
+function sentence(summary: string) {
+  return summary.charAt(0).toLowerCase() + summary.slice(1).replace(/\.$/, "");
 }
 
 function toStage(n: StageNudge): StageNudge {
