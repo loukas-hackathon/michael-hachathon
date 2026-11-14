@@ -1,11 +1,16 @@
 import { GoalCreate, GoalSuggestionAccept, GoalUpdate } from "@michael/shared";
 import { Hono } from "hono";
+import { revertExpiredGoalChanges } from "../actions/calendar";
 import { acceptSuggestion, currentSuggestions } from "../goals/suggestions";
 import { HttpError, jsonBody, parse } from "../http";
 import { store } from "../store";
 
 export const goals = new Hono()
-  .get("/goals", async (c) => c.json({ goals: await store.listGoals() }))
+  .get("/goals", async (c) => {
+    // A temporary change from chat (#188) whose end has passed goes back first. Best effort.
+    await revertExpiredGoalChanges().catch((err) => console.error("goal change revert failed", err));
+    return c.json({ goals: await store.listGoals() });
+  })
   // Goals Michael reads off the user's own calendar (#134). Before /goals/:id on purpose.
   .get("/goals/suggestions", async (c) => c.json(await currentSuggestions()))
   .post("/goals/suggestions/:id/accept", async (c) => {

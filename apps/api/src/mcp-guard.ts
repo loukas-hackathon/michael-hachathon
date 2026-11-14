@@ -33,6 +33,8 @@ export const TOOL_SCOPE: Record<string, AgentScope> = {
   block_mac_app: "write_events",
   suggest_app_mute: "recommendations",
   plan_travel: "write_events",
+  get_check_in: "timeline",
+  answer_check_in: "timeline",
 };
 
 type ToolConfig = { title?: string; inputSchema?: unknown; annotations?: { readOnlyHint?: boolean } };
@@ -73,6 +75,10 @@ export function summarise(name: string, title: string | undefined, input: unknow
       return `Read your day${range}`;
     case "get_patterns":
       return `Read your patterns${range}`;
+    case "get_check_in":
+      return "Read your check in";
+    case "answer_check_in":
+      return "Kept an answer to your check in";
     case "get_goals":
       return "Read your goals";
     case "get_instructions":
