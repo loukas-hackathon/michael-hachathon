@@ -2,7 +2,8 @@
 
 **On your side.** Michael finds the time you lose every day and gives it back to your goals.
 
-Michael is a coach for the whole day. He builds **one timeline of your day** from your Apple Watch,
+Michael is a coach for the whole working day, for founders and executives whose time is the business.
+He builds **one timeline of your day** from your Apple Watch,
 calendar, Mac, iPhone, browser and Claude Code, checks it against your goals (business, health,
 personal), and recommends or makes concrete changes, each tied to a goal.
 
@@ -10,7 +11,7 @@ personal), and recommends or makes concrete changes, each tied to a goal.
   leaked away and to what, and the time won back. Goals have weekly budgets and show the sums.
 - **Claude works with your day.** Paste one link into claude.ai and tap Allow: Claude reads your
   day and goals, books focus blocks on your own time, and undoes them. Every agent's question is
-  logged on the Agents screen ("who asked about me today").
+  logged under Agents in the Mi button ("who asked about me today").
 - **A nudge on your wrist.** At most five a day, never in quiet hours, under fifteen words. They
   land on the iPhone and the Apple Watch; Morning and Evening moments open and close the day.
 
@@ -28,7 +29,7 @@ event with other people.
 Pitch script: [`docs/pitch.md`](docs/pitch.md). Pre-stage checklist:
 [`docs/demo-runbook.md`](docs/demo-runbook.md).
 
-Built at the Gen AI Summit Hackathon, Athens, 14-15 November 2026.
+Built at the Gen AI Summit Hackathon, Athens, 14 and 15 November 2026.
 
 ## Architecture
 
