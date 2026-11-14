@@ -31,7 +31,7 @@ import {
   type TargetUpdate,
   type TimelineResponse,
 } from "@michael/shared";
-import { cookies } from "next/headers";
+import { authHeaders } from "./caller";
 import { categoryOf } from "./categories";
 import type { DayView } from "./day";
 import type { GoalsView } from "./goals-view";
@@ -46,29 +46,20 @@ import {
 } from "./sample/day";
 import { sampleGoals, sampleGoalsBaseline, sampleGoalsEmpty, sampleGoalsMonday } from "./sample/goals";
 import { dayFromScore, goalsFromScore, leadFromPatterns } from "./score-map";
-import { authEnabled, DEMO_COOKIE, supabaseServer } from "./supabase/server";
 
 // Server-side data access. The browser never sees API_KEY and never talks to the DB. Each request
 // carries the signed-in user's Supabase token, so the API returns only that user's data.
 // USE_MOCKS=true (default) serves fixtures from @michael/shared until the real endpoint exists.
 const USE_MOCKS = process.env.USE_MOCKS !== "false";
 export const API_URL = process.env.API_URL ?? "http://localhost:8787";
-const API_KEY = process.env.API_KEY ?? "dev-key";
 /** For loaders outside this file (lib/timeline-data.ts). */
 export const usingMocks = () => USE_MOCKS;
 
-// Whose data to fetch: the signed-in user's own token, or the API key for the demo week.
-export async function bearer(): Promise<string> {
-  if (!authEnabled) return API_KEY;
-  if ((await cookies()).get(DEMO_COOKIE)?.value === "1") return API_KEY;
-  const { data } = await (await supabaseServer()).auth.getSession();
-  if (!data.session) throw new Error("Not signed in");
-  return data.session.access_token;
-}
+// Whose data to fetch (a session always beats the demo cookie): authHeaders in lib/caller.ts.
 
 export async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
-    headers: { authorization: `Bearer ${await bearer()}` },
+    headers: await authHeaders(),
     cache: "no-store",
   });
   if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
@@ -78,7 +69,7 @@ export async function get<T>(path: string): Promise<T> {
 async function send<T>(method: "PUT" | "PATCH" | "POST", path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     method,
-    headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
+    headers: { ...(await authHeaders()), "content-type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
     cache: "no-store",
   });
@@ -93,7 +84,7 @@ async function send<T>(method: "PUT" | "PATCH" | "POST", path: string, body?: un
 export async function openChatStream(message: string): Promise<Response> {
   return fetch(`${API_URL}/v1/chat/stream`, {
     method: "POST",
-    headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
+    headers: { ...(await authHeaders()), "content-type": "application/json" },
     body: JSON.stringify({ message }),
     cache: "no-store",
   });
@@ -116,7 +107,7 @@ export async function sendChat(message: string): Promise<ChatResult> {
   try {
     res = await fetch(`${API_URL}/v1/chat`, {
       method: "POST",
-      headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
+      headers: { ...(await authHeaders()), "content-type": "application/json" },
       body: JSON.stringify({ message }),
       cache: "no-store",
     });
@@ -145,7 +136,7 @@ export async function speak(text: string): Promise<Response | null> {
   try {
     const res = await fetch(`${API_URL}/v1/voice/speak`, {
       method: "POST",
-      headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
+      headers: { ...(await authHeaders()), "content-type": "application/json" },
       body: JSON.stringify({ text }),
       cache: "no-store",
     });
@@ -194,7 +185,7 @@ async function write(
   try {
     const res = await fetch(`${API_URL}${path}`, {
       method,
-      headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
+      headers: { ...(await authHeaders()), "content-type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
       cache: "no-store",
     });
@@ -313,7 +304,7 @@ async function recCall(method: "POST" | "PATCH", path: string, body?: unknown): 
   try {
     res = await fetch(`${API_URL}${path}`, {
       method,
-      headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
+      headers: { ...(await authHeaders()), "content-type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
       cache: "no-store",
     });
@@ -486,7 +477,7 @@ export async function createGoal(input: GoalCreate): Promise<Goal | null> {
   if (USE_MOCKS) return null;
   const res = await fetch(`${API_URL}/v1/goals`, {
     method: "POST",
-    headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
+    headers: { ...(await authHeaders()), "content-type": "application/json" },
     body: JSON.stringify(input),
     cache: "no-store",
   });
@@ -525,7 +516,7 @@ export type InstructionsResult = { available: true; items: Instruction[] } | { a
 export async function getInstructions(): Promise<InstructionsResult> {
   if (USE_MOCKS) return { available: true, items: structuredClone(mockInstructions) };
   const res = await fetch(`${API_URL}/v1/instructions`, {
-    headers: { authorization: `Bearer ${await bearer()}` },
+    headers: await authHeaders(),
     cache: "no-store",
   }).catch(() => null);
   if (!res || res.status === 404 || res.status === 501) return { available: false };
@@ -600,7 +591,7 @@ export async function putPlaces(update: PlacesUpdate): Promise<WriteResult> {
   try {
     const res = await fetch(`${API_URL}/v1/places`, {
       method: "PUT",
-      headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
+      headers: { ...(await authHeaders()), "content-type": "application/json" },
       body: JSON.stringify(update),
       cache: "no-store",
     });
@@ -627,7 +618,7 @@ export async function putTarget(weekStart: string, update: TargetUpdate): Promis
   try {
     const res = await fetch(`${API_URL}/v1/targets/${weekStart}`, {
       method: "PUT",
-      headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
+      headers: { ...(await authHeaders()), "content-type": "application/json" },
       body: JSON.stringify(update),
       cache: "no-store",
     });

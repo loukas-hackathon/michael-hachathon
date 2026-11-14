@@ -1,6 +1,7 @@
 import "server-only";
 import type { AgentClient, AgentClientUpdate, AgentQuery, AgentScope } from "@michael/shared";
-import { API_URL, bearer } from "./api";
+import { API_URL } from "./api";
+import { authHeaders } from "./caller";
 
 // Michael for agents, from the user's side. Shapes are the contract's (AgentClient, AgentQuery).
 // Real data from the API; the sample below is for USE_MOCKS and ?demo=sample.
@@ -120,7 +121,7 @@ const USE_MOCKS = process.env.USE_MOCKS !== "false";
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
-    headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
+    headers: { ...(await authHeaders()), "content-type": "application/json" },
     cache: "no-store",
   });
   if (!res.ok) throw new Error(`${init?.method ?? "GET"} ${path} failed: ${res.status}`);

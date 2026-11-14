@@ -6,10 +6,9 @@ import {
   SetupTokenCreated,
   SetupTokenExchanged,
 } from "@michael/shared";
-import { cookies } from "next/headers";
 import QRCode from "qrcode";
-import { API_URL, bearer } from "./api";
-import { DEMO_COOKIE } from "./supabase/server";
+import { API_URL } from "./api";
+import { authHeaders, isDemoVisitor } from "./caller";
 
 // One tap setup (#120). Two ways to get a device key, both through a short lived setup token:
 // - connectHere: on the device itself (the iPhone opening Health Auto Export, Shortcuts), the web
@@ -27,10 +26,10 @@ export type LinkResult =
 const SIGN_IN = "Sign in with Google to connect your own devices.";
 
 async function mint(connection: SetupConnection) {
-  if ((await cookies()).get(DEMO_COOKIE)?.value === "1") throw new Error(SIGN_IN);
+  if (await isDemoVisitor()) throw new Error(SIGN_IN);
   const res = await fetch(`${API_URL}/v1/setup-tokens`, {
     method: "POST",
-    headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
+    headers: { ...(await authHeaders()), "content-type": "application/json" },
     body: JSON.stringify({ connection: SetupConnectionSchema.parse(connection) }),
     cache: "no-store",
   });

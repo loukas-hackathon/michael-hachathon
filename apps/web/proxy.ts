@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
+import { AUTH_MISSING_MESSAGE, DEMO_COOKIE, demoVisitorId, localFallbackAllowed } from "./lib/auth-mode";
 
 const URL_ = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
@@ -9,7 +10,15 @@ const PUBLIC_PATHS = ["/login", "/auth", "/setup"];
 // Refreshes the Supabase session cookie on every navigation and sends signed out visitors to
 // /login. An optimistic check only: the API verifies the token on every call.
 export async function proxy(request: NextRequest) {
-  if (!URL_ || !KEY) return NextResponse.next(); // auth not configured (local mock mode)
+  if (!URL_ || !KEY) {
+    // Auth not configured: fine on a developer's machine (mock mode), closed on a deployment,
+    // where it would otherwise make every visitor the demo account.
+    if (localFallbackAllowed()) return NextResponse.next();
+    return new NextResponse(AUTH_MISSING_MESSAGE, {
+      status: 503,
+      headers: { "content-type": "text/plain; charset=utf-8" },
+    });
+  }
 
   let response = NextResponse.next({ request });
   const supabase = createServerClient(URL_, KEY, {
@@ -30,7 +39,10 @@ export async function proxy(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
   const isPublic = PUBLIC_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
-  const isDemo = request.cookies.get("michael_demo")?.value === "1";
+  const isDemo = demoVisitorId(request.cookies.get(DEMO_COOKIE)?.value) !== null;
+  // A session always wins: a leftover demo cookie goes, so the two never mix. Not on /auth/*,
+  // where /auth/demo signs out and sets the cookie itself.
+  if (signedIn && !isPublic && request.cookies.has(DEMO_COOKIE)) response.cookies.delete(DEMO_COOKIE);
   if (!signedIn && !isDemo && !isPublic) {
     const login = request.nextUrl.clone();
     login.pathname = "/login";

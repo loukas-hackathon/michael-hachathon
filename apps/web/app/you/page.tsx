@@ -54,6 +54,13 @@ export default async function YouPage({
         </Link>
       </header>
       <h1 className="text-large-title font-bold tracking-[0.01em]">You</h1>
+      {account === "The demo week" ? (
+        // The API refuses account changes from demo visitors; say so before a switch bounces back.
+        <Link href="/login" className="press mt-4 block rounded-group bg-fill px-4 py-3">
+          <span className="block text-body font-semibold">This is the demo week.</span>
+          <span className="block text-subhead text-label-2">Sign in with Google to make it yours.</span>
+        </Link>
+      ) : null}
 
       <ConnectionsList view={connections} flash={flash} />
 
