@@ -1,0 +1,190 @@
+<!doctype html>
+<!--
+  The app shell the service worker (public/sw.js) paints when a page is slow or the network is gone.
+  It holds no data at all, so it is safe to keep on the device for anyone. It mirrors the Today
+  skeleton (app/loading.tsx) and the tokens in app/globals.css, then swaps itself for the real page
+  the moment it arrives. Offline, it says so calmly and updates by itself when the network returns.
+-->
+<html lang="en-GB">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Michael" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000" />
+    <meta name="robots" content="noindex" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-180.png" />
+    <title>Michael</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --m-bg: #ffffff;
+        --m-fill: #f2f2f7;
+        --m-label: #000000;
+        --m-label-2: #6c6c70;
+        --m-tint: #e6007a;
+        --m-on-tint: #ffffff;
+        --m-glass: rgb(249 249 251 / 0.82);
+        --m-separator: #c6c6c8;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --m-bg: #000000;
+          --m-fill: #1c1c1e;
+          --m-label: #ffffff;
+          --m-label-2: #98989f;
+          --m-glass: rgb(30 30 32 / 0.82);
+          --m-separator: #38383a;
+        }
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+      }
+      html,
+      body {
+        background: var(--m-bg);
+        color: var(--m-label);
+        font: 17px/22px -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -webkit-text-size-adjust: 100%;
+      }
+      main {
+        max-width: 560px;
+        margin: 0 auto;
+        padding: env(safe-area-inset-top) max(16px, env(safe-area-inset-right)) 120px
+          max(16px, env(safe-area-inset-left));
+      }
+      .bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        min-height: 44px;
+        padding-top: 8px;
+      }
+      .bone {
+        display: block;
+        background: var(--m-fill);
+        border-radius: 7px;
+        animation: breathe 1.6s ease-in-out 350ms infinite;
+      }
+      .round {
+        border-radius: 999px;
+      }
+      .card {
+        border-radius: 16px;
+      }
+      .tabbar {
+        position: fixed;
+        inset: auto 0 0 0;
+        height: calc(60px + env(safe-area-inset-bottom));
+        background: var(--m-glass);
+        border-top: 0.5px solid var(--m-separator);
+        -webkit-backdrop-filter: blur(20px);
+        backdrop-filter: blur(20px);
+      }
+      .offline {
+        display: none;
+        padding-top: 32px;
+      }
+      .offline h1 {
+        font-size: 28px;
+        line-height: 34px;
+        font-weight: 700;
+      }
+      .offline p {
+        margin-top: 12px;
+        color: var(--m-label-2);
+      }
+      .offline button {
+        margin-top: 24px;
+        min-height: 50px;
+        padding: 0 24px;
+        border: 0;
+        border-radius: 999px;
+        background: var(--m-tint);
+        color: var(--m-on-tint);
+        font: inherit;
+        font-weight: 600;
+      }
+      [data-state="offline"] .skeleton {
+        display: none;
+      }
+      [data-state="offline"] .offline {
+        display: block;
+      }
+      @keyframes breathe {
+        50% {
+          opacity: 0.55;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .bone {
+          animation: none;
+        }
+      }
+      @media (min-width: 1024px) {
+        .tabbar {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="skeleton" role="status" aria-busy="true" aria-label="Loading your day">
+        <div class="bar">
+          <span class="bone" style="height: 14px; width: 144px"></span>
+          <span class="bone round" style="height: 30px; width: 30px"></span>
+        </div>
+        <span class="bone" style="margin-top: 4px; height: 36px; width: 128px"></span>
+        <span class="bone" style="margin-top: 12px; height: 16px; width: 288px; max-width: 100%"></span>
+        <span class="bone" style="margin-top: 24px; height: 64px; width: 160px"></span>
+        <span class="bone" style="margin-top: 8px; height: 20px; width: 208px"></span>
+        <span class="bone" style="margin-top: 28px; height: 30px; width: 100%"></span>
+        <span class="bone" style="margin-top: 10px; height: 14px; width: 256px; max-width: 100%"></span>
+        <span class="bone card" style="margin-top: 24px; height: 224px; width: 100%"></span>
+      </div>
+      <section class="offline" role="status" aria-live="polite">
+        <h1>Offline</h1>
+        <p>I can't reach your day right now. I'll update when you're back online.</p>
+        <button type="button" id="retry">Try again</button>
+      </section>
+    </main>
+    <div class="tabbar" aria-hidden="true"></div>
+    <script>
+      (() => {
+        // The real page plays the launch animation only once per session; the shell already
+        // stood in for it, so skip it when the page arrives.
+        try {
+          sessionStorage.setItem("m-splash", "1");
+        } catch (_) {}
+        var root = document.documentElement;
+        function reload() {
+          location.reload();
+        }
+        function offline() {
+          root.setAttribute("data-state", "offline");
+        }
+        document.getElementById("retry").addEventListener("click", reload);
+        addEventListener("online", () => {
+          if (root.getAttribute("data-state") === "offline") reload();
+        });
+        // While offline, look again now and then; the worker answers fast when there is no network.
+        setInterval(() => {
+          if (navigator.onLine && root.getAttribute("data-state") === "offline") reload();
+        }, 15000);
+        var sw = navigator.serviceWorker?.controller;
+        if (!sw || !navigator.onLine) return offline();
+        var channel = new MessageChannel();
+        channel.port1.onmessage = (event) => {
+          if (event.data && event.data.status === "ready") reload();
+          else offline();
+        };
+        sw.postMessage({ type: "handoff", url: location.href }, [channel.port2]);
+      })();
+    </script>
+  </body>
+</html>
