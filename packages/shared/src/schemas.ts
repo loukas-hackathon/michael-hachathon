@@ -1535,6 +1535,14 @@ export const ScoreLostStretch = z.object({
 });
 export type ScoreLostStretch = z.infer<typeof ScoreLostStretch>;
 
+// What took the week's lost time: the lost stretches summed by `what`, most first, whole minutes.
+export const ScoreLostCause = z.object({
+  what: z.string(),
+  category: AppCategory,
+  minutes: Minutes,
+});
+export type ScoreLostCause = z.infer<typeof ScoreLostCause>;
+
 export const ScoreBlock = z.object({
   // The calendar event. A block that crosses local midnight appears once on each day.
   event_id: z.string(),
@@ -1784,6 +1792,8 @@ export const Score = WeeklyScore.extend({
   unverified_minutes: Minutes,
   // The week per category, with its target and floor. The three add up to the week.
   areas: z.array(ScoreWeekArea),
+  // What took the week's lost time, most first, at most five. Optional for older servers.
+  lost_causes: z.array(ScoreLostCause).optional(),
   // Monday to Sunday of the week that holds `date`.
   days: z.array(ScoreDay),
   day: ScoreDayDetail,

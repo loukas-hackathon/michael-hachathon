@@ -1,5 +1,6 @@
 import type { Category } from "./categories";
 import type { Balance, Baseline, WeeklyTarget } from "./gamification";
+import type { ScoreExplain } from "./score-explain";
 
 // The week as the Goals tab sees it. GET /v1/score has per goal totals (GoalScore) but not the
 // per day minutes or sleep; until it does (issue for the contract), lib/api.ts serves a sample week
@@ -38,6 +39,8 @@ export type GoalsView = {
   target?: WeeklyTarget | null;
   baseline?: Baseline | null;
   balance?: Balance | null;
+  /** The week's maths for the "How I count" sheet (#206). */
+  explain?: ScoreExplain | null;
 };
 
 const WEEK_MS = 7 * 86_400_000;

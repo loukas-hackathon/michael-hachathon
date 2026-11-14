@@ -38,6 +38,7 @@ import {
   sampleEarly,
   sampleEmpty,
   sampleEvening,
+  sampleLearning,
   sampleMissed,
   sampleMorning,
 } from "./sample/day";
@@ -392,6 +393,7 @@ const SAMPLE_DAYS: Record<string, DayView> = {
   evening: sampleEvening,
   empty: sampleEmpty,
   missed: sampleMissed,
+  learning: sampleLearning,
 };
 
 const athensDay = (d = new Date()) =>

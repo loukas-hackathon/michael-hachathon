@@ -1940,6 +1940,9 @@ type Score = ScoreTotals & {
   // the week: the WeeklyScore fields, except that score_pct may be null
   week_start: string; // Monday 00:00 in Athens, as an instant
   time_won_back_minutes: number; // the sum of the days
+  // What took the week's lost time: the lost stretches summed by name, most first, at most five.
+  // Whole minutes. Optional so a client tolerates an older server; the API always sends it.
+  lost_causes?: { what: string; category: AppCategory; minutes: number }[];
   goals: ScoreGoal[];
   timezone: string; // "Europe/Athens"
   generated_at: string; // the instant it was scored at
@@ -2109,6 +2112,9 @@ Stated here and at the top of `apps/api/src/score/score.ts`; the two change toge
   whatever held most of it. An app goes by its name; a site by its host only when the host is on
   the shared public list, otherwise by its category ("a travel site"). `minutes` is the time lost
   inside the stretch.
+- **Lost causes:** the week's lost stretches summed by `what`, rounded to whole minutes, most first
+  (ties by name), at most five, names that round to 0 left out. They explain the lost minutes; they
+  do not add up to `lost_minutes` exactly (stretches round to one decimal and the list is cut).
 
 #### Free time and sleep (#117)
 

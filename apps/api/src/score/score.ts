@@ -11,6 +11,7 @@ import {
   type ScoreBlock,
   type ScoreDay,
   type ScoreGoal,
+  type ScoreLostCause,
   type ScoreLostStretch,
   type ScoreTick,
   type TimeWonBack,
@@ -102,6 +103,8 @@ export const SCORE_RULES = {
   minHistoryDays: 3,
   // Distracting segments less than this apart are one lost stretch.
   stretchGapMs: 30 * SECOND,
+  // How many named causes of the week's lost time `lost_causes` lists.
+  lostCauses: 5,
 } as const;
 
 export interface ScoreOptions {
@@ -358,6 +361,26 @@ const areaRows = (pieces: Piece[], goals: Goal[]): ScoreArea[] =>
     ...totals(pieces.filter((p) => goalArea(p.block.goal.category) === area).reduce(plus, ZERO)),
   }));
 
+/**
+ * What took the week's lost time, summed by name over every lost stretch, most first. Whole
+ * minutes; names that round to 0 are left out. At most `SCORE_RULES.lostCauses` entries.
+ */
+function lostCauses(pieces: Piece[]): ScoreLostCause[] {
+  const by = new Map<string, { minutes: number; category: ScoreLostCause["category"] }>();
+  for (const p of pieces) {
+    for (const s of p.stretches) {
+      const row = by.get(s.what);
+      if (row) row.minutes += s.minutes;
+      else by.set(s.what, { minutes: s.minutes, category: s.category });
+    }
+  }
+  return [...by.entries()]
+    .map(([what, r]) => ({ what, category: r.category, minutes: Math.round(r.minutes) }))
+    .filter((c) => c.minutes > 0)
+    .sort((a, b) => b.minutes - a.minutes || a.what.localeCompare(b.what))
+    .slice(0, SCORE_RULES.lostCauses);
+}
+
 const toBlock = (p: Piece, instructions: Instruction[], zone: Zone): ScoreBlock => ({
   event_id: p.block.eventId,
   goal_id: p.block.goal.id,
@@ -561,6 +584,7 @@ export function scoreWithHistory(
       week_start: iso(zone.startOfDay(monday)),
       ...totals(week),
       time_won_back_minutes: days.reduce((t, d) => t + d.time_won_back_minutes, 0),
+      lost_causes: lostCauses(weekPieces),
       goals: goalRows,
       timezone: zone.name,
       generated_at: iso(now),

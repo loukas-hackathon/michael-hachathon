@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { CountUp } from "@/components/count-up";
 import { EmptyState } from "@/components/empty-state";
 import { LiveRefresh } from "@/components/live-refresh";
+import { HowICount, ScoreLearning } from "@/components/score/how-i-count";
 import { ScreenHeader } from "@/components/screen";
 import { Tape, TapeKey } from "@/components/tape";
 import { BriefCard } from "@/components/today/brief-card";
@@ -26,6 +27,23 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
   const t = totals(day);
   const firstBlock = day.blocks[0];
   const momentKind = momentKindFor(day);
+  // Too little to count yet (#206): no week figure, the day's number in grey, what Michael needs.
+  const learning = day.explain?.learning ?? false;
+  const weekLine =
+    learning && day.explain ? (
+      <HowICount explain={day.explain} hint={false}>
+        <ScoreLearning explain={day.explain} className="mt-3" />
+      </HowICount>
+    ) : day.week.scorePct != null ? (
+      <div className="mt-1.5">
+        <HowICount explain={day.explain} hint={day.blocks.length === 0}>
+          <p className="text-subhead text-label-2">
+            We're at <b className="font-semibold text-label tnum">{day.week.scorePct}%</b> of goal time this
+            week.{day.week.line ? ` ${day.week.line}` : ""}
+          </p>
+        </HowICount>
+      </div>
+    ) : null;
 
   return (
     <main className="screen">
@@ -42,6 +60,7 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
 
       {day.blocks.length === 0 ? (
         <>
+          {weekLine}
           <EmptyState title="Nothing yet.">
             Wear the watch tonight and your first brief arrives in the morning.
           </EmptyState>
@@ -50,12 +69,7 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
         </>
       ) : (
         <>
-          {day.week.scorePct != null ? (
-            <p className="mt-1.5 text-subhead text-label-2">
-              We're at <b className="font-semibold text-label tnum">{day.week.scorePct}%</b> of goal time this
-              week.{day.week.line ? ` ${day.week.line}` : ""}
-            </p>
-          ) : null}
+          {weekLine}
           {day.balance && verdict(day.balance).line ? (
             <p className="mt-1 text-subhead font-semibold">{verdict(day.balance).line}</p>
           ) : null}
@@ -66,14 +80,18 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
                 Your first block starts at <span className="tnum">{formatTime(firstBlock.start)}</span>.
               </p>
             ) : (
-              <h2 className="flex flex-col">
-                <span className="font-num text-score font-extrabold tracking-[-0.02em] tnum">
-                  <CountUp value={t.scorePct ?? 0} suffix="%" />
-                </span>
-                <span className="text-title3 font-semibold">
-                  of your goal time {day.moment === "evening" ? "today" : "so far"}.
-                </span>
-              </h2>
+              <HowICount explain={day.explain}>
+                <h2 className="flex flex-col">
+                  <span
+                    className={`font-num text-score font-extrabold tracking-[-0.02em] tnum ${learning ? "text-label-2" : ""}`}
+                  >
+                    <CountUp value={t.scorePct ?? 0} suffix="%" />
+                  </span>
+                  <span className="text-title3 font-semibold">
+                    of your goal time {day.moment === "evening" ? "today" : "so far"}.
+                  </span>
+                </h2>
+              </HowICount>
             )}
             <div className="mt-3">
               <Tape

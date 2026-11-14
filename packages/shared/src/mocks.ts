@@ -336,6 +336,11 @@ export const mockScore: Score = {
   unverified_minutes: 0,
   score_pct: 64,
   time_won_back_minutes: 47,
+  lost_causes: [
+    { what: "Instagram", category: "social", minutes: 148 },
+    { what: "WhatsApp", category: "communication", minutes: 81 },
+    { what: "Mail", category: "communication", minutes: 5 },
+  ],
   goals: [
     {
       goal_id: "10000000-0000-4000-8000-000000000001",

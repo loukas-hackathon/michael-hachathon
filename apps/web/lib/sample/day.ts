@@ -1,4 +1,6 @@
+import { mockScore } from "@michael/shared";
 import type { DayView } from "../day";
+import { sampleExplain, sampleExplainLearning, sampleExplainNew } from "../score-explain";
 
 // SAMPLE DATA, not the user's. A Wednesday shaped like the demo user's week (the company, university,
 // 70.3 training), built so every number adds up: planned goal time 310 minutes; at 15:20 spent 213,
@@ -12,6 +14,7 @@ export const sampleDay: DayView = {
   moment: "today",
   sample: true,
   week: { scorePct: 64, line: "Thursday decides it." },
+  explain: sampleExplain(mockScore),
   blocks: [
     {
       id: "b1",
@@ -190,6 +193,8 @@ export const sampleEvening: DayView = {
 /** No plan, no data: the first day. */
 export const sampleEmpty: DayView = {
   ...sampleDay,
+  week: { scorePct: null, line: null },
+  explain: sampleExplainNew,
   blocks: [],
   wonBackMinutes: 0,
   lead: null,
@@ -212,4 +217,16 @@ export const sampleMissed: DayView = {
     action: null,
     recovery: { slotStart: d("16:00"), slotEnd: d("16:25"), undoUntil: d("16:00") },
   },
+};
+
+/** Day two of a new account: today's blocks are real, the week is still being learnt (#206). */
+export const sampleLearning: DayView = {
+  ...sampleDay,
+  week: { scorePct: null, line: null },
+  explain: sampleExplainLearning,
+  wonBackMinutes: 0,
+  record: null,
+  balance: null,
+  lead: null,
+  nudge: null,
 };

@@ -5,6 +5,7 @@ import { TargetCard } from "@/components/gamification/target-card";
 import { CalendarGoals } from "@/components/goals/calendar-goals";
 import { DayColumns, NotchTrack, SleepBars, SplitBar } from "@/components/goals/goal-charts";
 import { AddGoal, EditGoal, type GoalDraft } from "@/components/goals/goal-sheets";
+import { HowICount, ScoreLearning } from "@/components/score/how-i-count";
 import { ScreenHeader } from "@/components/screen";
 import { getGoals, getGoalsWeek } from "@/lib/api";
 import { CATEGORIES, CATEGORY_TITLE, categoryOf } from "@/lib/categories";
@@ -40,6 +41,20 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
         </EmptyState>
       ) : (
         <>
+          {week.explain?.learning ? (
+            <HowICount explain={week.explain} hint={false}>
+              <ScoreLearning explain={week.explain} className="mt-3" />
+            </HowICount>
+          ) : week.explain?.scorePct != null ? (
+            <div className="mt-1.5">
+              <HowICount explain={week.explain}>
+                <p className="text-body">
+                  <b className="font-num text-title3 font-bold tnum">{week.explain.scorePct}%</b> of your goal
+                  time this week.
+                </p>
+              </HowICount>
+            </div>
+          ) : null}
           <p className="mt-1.5 text-subhead text-label-2">
             Furthest behind first. The black tick is where you should be by now.
             {anyUnverified ? " Pale pink is time not confirmed by data yet." : ""}

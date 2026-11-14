@@ -2,6 +2,7 @@ import type { Score, ScoreBlock } from "@michael/shared";
 import { categoryOf } from "./categories";
 import type { DayView, GoalBlock, Lead, Moment, Tick } from "./day";
 import type { GoalsView } from "./goals-view";
+import { explainFromScore } from "./score-explain";
 
 // Maps GET /v1/score (and the week's patterns) onto the views Today and Goals draw.
 
@@ -52,6 +53,7 @@ export function dayFromScore(score: Score, lead: Lead | null): DayView {
     },
     blocks: blocks.map(block),
     wonBackMinutes: d.time_won_back_minutes,
+    explain: explainFromScore(score),
     lead,
     nudge: null,
   };
@@ -77,6 +79,7 @@ export function goalsFromScore(score: Score): GoalsView {
         daily: g.daily.map((x) => (x.date > today ? null : x.spent_minutes)),
       })),
     sleep: sleep ? { goalMinutes: Math.round(sleep.budget_minutes / 7), nightly: Array(7).fill(null) } : null,
+    explain: explainFromScore(score),
   };
 }
 
