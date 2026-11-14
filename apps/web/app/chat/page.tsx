@@ -1,4 +1,5 @@
 import type { ChatMessage } from "@michael/shared";
+import { connection } from "next/server";
 import { ScreenHeader } from "@/components/screen";
 import { getChatHistory } from "@/lib/api";
 import { Chat } from "./chat";
@@ -6,6 +7,8 @@ import { Chat } from "./chat";
 export const metadata = { title: "Chat with Michael" };
 
 export default async function ChatPage() {
+  // Always per request: the history is the signed-in user's own.
+  await connection();
   // History is a nicety: if it cannot load, the chat still opens and sending explains what is wrong.
   let history: ChatMessage[] = [];
   try {

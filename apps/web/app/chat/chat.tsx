@@ -3,7 +3,7 @@
 import type { ChatMessage } from "@michael/shared";
 import { type FormEvent, useEffect, useRef, useState, useTransition } from "react";
 import { formatTime } from "@/lib/format";
-import { sendMessage } from "./actions";
+import { streamChat } from "./stream-chat";
 
 const STARTERS = [
   "How is my day going?",
@@ -35,13 +35,25 @@ export function Chat({ initial }: { initial: ChatMessage[] }) {
     setError(null);
     setDraft("");
     setLines((l) => [...l, { id: tempId, role: "user", content: message, created_at: null }]);
+    const replyId = `${tempId}-reply`;
     startTransition(async () => {
-      const res = await sendMessage(message);
+      // Michael's answer grows in its own bubble as it is written, then swaps for the stored pair.
+      let streamed = "";
+      const res = await streamChat(message, (text) => {
+        streamed += text;
+        const content = streamed;
+        setLines((l) => [
+          ...l.filter((x) => x.id !== replyId),
+          { id: replyId, role: "assistant", content, created_at: null },
+        ]);
+        end.current?.scrollIntoView({ block: "end" });
+      });
+      const temp = (x: Line) => x.id !== tempId && x.id !== replyId;
       if (res.ok) {
-        setLines((l) => [...l.filter((x) => x.id !== tempId), res.data.message, res.data.reply]);
+        setLines((l) => [...l.filter(temp), res.data.message, res.data.reply]);
       } else {
         // Nothing was stored: take the line back and put it in the box so it can be sent again.
-        setLines((l) => l.filter((x) => x.id !== tempId));
+        setLines((l) => l.filter(temp));
         setDraft(message);
         setError(res.error);
         input.current?.focus();
@@ -96,7 +108,7 @@ export function Chat({ initial }: { initial: ChatMessage[] }) {
                 ) : null}
               </li>
             ))}
-            {pending ? (
+            {pending && lines.at(-1)?.role === "user" ? (
               <li className="flex items-start">
                 <p className="rounded-card bg-fill px-3.5 py-2 text-body text-label-2">
                   Looking at your day…
