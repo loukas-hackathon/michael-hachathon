@@ -1,16 +1,19 @@
 # Michael
 
-A personal Jarvis. Michael builds **one timeline of your day** from your wearables, devices,
-conversations and calendar, checks it often against your goals (work, gym, rest, food), and
-recommends concrete changes, each tied to a goal. Other AI agents can read and write the same
-timeline through an **MCP server**.
+**On your side.** Michael finds the time you lose every day and gives it back to your goals.
+
+Michael is a coach for the whole day. He builds **one timeline of your day** from your watch,
+devices, conversations and calendar, checks it often against your goals (work, gym, rest, food),
+and recommends or makes concrete changes, each tied to a goal. Other AI agents can ask Michael
+about you through an **MCP server**, within scopes you choose.
 
 - **Collect:** WHOOP or Apple Health (via Health Auto Export), ActivityWatch (Mac), iPhone
   Shortcuts, Omi wearable (transcripts, memories), Google Calendar.
 - **Understand:** every source writes timestamped events into one shared timeline; Gemini
   analyses it against your goals.
-- **Optimise:** recommendations with a rationale and, optionally, a proposed action
-  (for example "move this calendar block"). Actions are advise-only for now.
+- **Optimise:** recommendations with a rationale and, optionally, an action on your own calendar
+  or Mac (move a block, add a focus block). Anything involving other people needs your approval,
+  and every action can be undone.
 
 Built at the Gen AI Summit Hackathon, Athens, 14-15 November 2026.
 
