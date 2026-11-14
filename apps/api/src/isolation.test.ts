@@ -91,7 +91,7 @@ const READS = [
   () => "/v1/targets/current",
 ];
 
-const ids: { goal?: string; instruction?: string; rec?: string; recBefore?: string } = {};
+const ids: { goal?: string; instruction?: string; rec?: string; recBefore?: string; block?: string } = {};
 
 async function ok(res: Response, what: string) {
   const text = await res.text();
@@ -162,6 +162,16 @@ test("A writes through every write route", async () => {
   ids.rec = rec.id;
   ids.recBefore = rec.status;
   await ok(await request(asA, "PATCH", `/v1/recommendations/${rec.id}`, { status: "dismissed" }), "dismiss");
+  // A block on the Timeline (#271), tomorrow so it can still change.
+  const block = await ok(
+    await request(asA, "POST", "/v1/blocks", {
+      start_at: new Date(Date.now() + 26 * 3_600_000).toISOString(),
+      end_at: new Date(Date.now() + 27 * 3_600_000).toISOString(),
+      title: `${MARK} block`,
+    }),
+    "POST /v1/blocks",
+  );
+  ids.block = block.event.id;
   // Chat (the route needs a model, so the line is stored the way the route stores it).
   await runAsUser(A, () => store.addChatMessage("user", `${MARK} chat`), "session");
   // A memory, as the chat's remember tool keeps it.
@@ -197,6 +207,8 @@ for (const [name, who] of [
       ["DELETE", `/v1/goals/${ids.goal}`],
       ["PATCH", `/v1/instructions/${ids.instruction}`, { text: "taken over" }],
       ["DELETE", `/v1/instructions/${ids.instruction}`],
+      ["PATCH", `/v1/blocks/${ids.block}`, { title: "taken over" }],
+      ["DELETE", `/v1/blocks/${ids.block}`],
     ];
     for (const [method, path, body] of tries) {
       const res = await request(who, method, path, body);

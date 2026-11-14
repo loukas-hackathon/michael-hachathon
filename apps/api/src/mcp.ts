@@ -407,7 +407,9 @@ export function createMcpServer(): McpServer {
       annotations: { readOnlyHint: true },
     },
     safe(async ({ status }) => {
-      const [recommendations, goals] = await Promise.all([store.listRecommendations({ status }), goalMap()]);
+      const [all, goals] = await Promise.all([store.listRecommendations({ status }), goalMap()]);
+      // The user's own Timeline edits (#271) are kept for Undo only; they are not advice.
+      const recommendations = all.filter((r) => r.source !== "user");
       const text = recommendations.length
         ? [
             `${recommendations.length} recommendations:`,

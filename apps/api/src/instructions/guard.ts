@@ -141,6 +141,8 @@ export async function guardRecommendation<
   R extends { action: RecommendationAction | null; source?: string | null },
 >(rec: R, deps: GuardDeps & { log?: Log }): Promise<R> {
   if (!rec.action) return rec;
+  // The user's own change on the Timeline (#271): their instructions bind Michael, not them.
+  if (rec.source === "user") return rec;
   const verdict = await refusalFor(rec.action, deps);
   if (verdict.allowed) return rec;
   (deps.log ?? defaultLog)({

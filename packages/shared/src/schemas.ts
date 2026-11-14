@@ -117,6 +117,8 @@ export const ActionKind = z.enum([
   // or new blocks on the user's own calendar. Payloads below.
   "change_goal",
   "plan_change",
+  // The user removed one of Michael's blocks on the Timeline (#271). Undo puts it back.
+  "remove_calendar_block",
 ]);
 export type ActionKind = z.infer<typeof ActionKind>;
 
@@ -356,8 +358,12 @@ export const MoveCalendarBlockPayload = z
     start_at: IsoDateTime.optional(),
     end_at: IsoDateTime.optional(),
     new_title: z.string().min(1).max(200).optional(),
+    // The goal the block counts for (#271); null clears it.
+    goal_id: z.uuid().nullable().optional(),
   })
-  .refine((p) => p.start_at || p.end_at || p.new_title, { message: "Give start_at, end_at or new_title" });
+  .refine((p) => p.start_at || p.end_at || p.new_title || p.goal_id !== undefined, {
+    message: "Give start_at, end_at, new_title or goal_id",
+  });
 export type MoveCalendarBlockPayload = z.infer<typeof MoveCalendarBlockPayload>;
 
 // move_calendar_blocks: every move is a move_calendar_block, carried out all or nothing and undone
@@ -373,6 +379,8 @@ export const CreateFocusBlockPayload = z
     start_at: IsoDateTime,
     end_at: IsoDateTime,
     title: z.string().min(1).max(200).optional(),
+    // The goal the block counts for (#271): saved as data.goal_id, so the score counts it.
+    goal_id: z.uuid().nullable().optional(),
   })
   .refine((p) => Date.parse(p.end_at) > Date.parse(p.start_at), { message: "end_at must be after start_at" });
 export type CreateFocusBlockPayload = z.infer<typeof CreateFocusBlockPayload>;
@@ -494,7 +502,9 @@ export type RecommendationAction = z.infer<typeof RecommendationAction>;
 
 // Where a recommendation came from: the analysis run, or the user asking in chat (or by voice), in
 // which case Michael carried it out straight away.
-export const RecommendationSource = z.enum(["analysis", "chat"]);
+// "user": the user changed their own calendar on the Timeline (#271). Kept only so Undo works; never
+// listed as advice.
+export const RecommendationSource = z.enum(["analysis", "chat", "user"]);
 export type RecommendationSource = z.infer<typeof RecommendationSource>;
 
 // The specialist of the analysis (mode `specialists`) whose finding a recommendation came from.
@@ -633,6 +643,44 @@ export const CalendarEventData = z.object({
   updated: z.string().nullable(),
 });
 export type CalendarEventData = z.infer<typeof CalendarEventData>;
+
+// ---------- calendar blocks edited on the Timeline (#271) ----------
+
+export const RemoveCalendarBlockPayload = z.object({ event_id: z.uuid() });
+export type RemoveCalendarBlockPayload = z.infer<typeof RemoveCalendarBlockPayload>;
+
+// POST /v1/blocks: a new block on the user's own time.
+export const BlockCreate = z
+  .object({
+    start_at: IsoDateTime,
+    end_at: IsoDateTime,
+    title: z.string().trim().min(1).max(200).optional(),
+    goal_id: z.uuid().nullable().optional(),
+  })
+  .refine((p) => Date.parse(p.end_at) > Date.parse(p.start_at), { message: "end_at must be after start_at" });
+export type BlockCreate = z.infer<typeof BlockCreate>;
+
+// PATCH /v1/blocks/:id: move, resize, rename or change the goal of one of the user's solo blocks.
+export const BlockUpdate = z
+  .object({
+    start_at: IsoDateTime.optional(),
+    end_at: IsoDateTime.optional(),
+    title: z.string().trim().min(1).max(200).optional(),
+    goal_id: z.uuid().nullable().optional(),
+  })
+  .refine((p) => p.start_at || p.end_at || p.title || p.goal_id !== undefined, {
+    message: "Give start_at, end_at, title or goal_id",
+  });
+export type BlockUpdate = z.infer<typeof BlockUpdate>;
+
+// What every /v1/blocks write answers: the block as it is now (null once removed) and the
+// recommendation that holds the change, for POST /v1/recommendations/:id/undo until `undo_until`.
+export const BlockChange = z.object({
+  event: Event.nullable(),
+  recommendation_id: z.uuid(),
+  undo_until: IsoDateTime,
+});
+export type BlockChange = z.infer<typeof BlockChange>;
 
 // ---------- privacy: sources and off the record ----------
 
