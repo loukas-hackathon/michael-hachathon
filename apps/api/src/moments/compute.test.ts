@@ -206,6 +206,8 @@ test("a model line is used only when it keeps the voice and invents no number", 
   );
   assert.ok(!acceptable("Guard 10:00 to 12:00, it costs you 35 minutes.", facts));
   assert.ok(!acceptable("Big day ahead! Guard your block.", facts));
+  // A line cut off by the token limit is never shown (seen in production, 14 Nov).
+  assert.ok(!acceptable("Two hours of goal time today and 20 minutes l", facts));
   assert.ok(!acceptable("Guard your block — it matters.", facts));
   assert.ok(!acceptable("Protect your productivity this morning.", facts));
 });

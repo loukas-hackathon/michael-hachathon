@@ -34,6 +34,8 @@ export function factsFor(m: MomentCore): string {
 /** True when a model line keeps the voice rules and invents no number. */
 export function acceptable(line: string, facts: string): boolean {
   if (line.length < 10 || line.length > 220 || line.includes("\n")) return false;
+  // A cut off line ("... and 19 minutes l") is not a sentence: it must end like one.
+  if (!/[.!?]$/.test(line)) return false;
   if (voiceProblems(line).length > 0) return false;
   const known = new Set(facts.match(/\d+/g) ?? []);
   return (line.match(/\d+/g) ?? []).every((n) => known.has(n));
@@ -67,7 +69,8 @@ export async function phraseHeadline(
       },
       { timeout: TIMEOUT_MS, maxRetries: 0 },
     );
-    if (res.stop_reason === "refusal") return template;
+    // Anything but a finished turn (refusal, max_tokens) leaves a partial line: keep the template.
+    if (res.stop_reason !== "end_turn") return template;
     const line = res.content
       .flatMap((b) => (b.type === "text" ? [b.text] : []))
       .join("")

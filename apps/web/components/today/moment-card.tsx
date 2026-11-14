@@ -18,7 +18,14 @@ function Move({ move, label }: { move: MomentMove; label?: string }) {
 /** The maths: each goal against its weekly budget (morning) or today's plan (evening). */
 function GoalLines({ moment }: { moment: Moment }) {
   // Sleep stays outside the maths: the API marks the sleep goal (isSleepGoal, #201).
-  const lines = moment.goals.filter((g) => !g.sleep && g.category !== "rest" && g.budget_minutes !== null);
+  // In the evening a goal with nothing planned or spent today would read "0 min of 0 min held": skip it.
+  const lines = moment.goals.filter(
+    (g) =>
+      !g.sleep &&
+      g.category !== "rest" &&
+      g.budget_minutes !== null &&
+      (moment.kind === "morning" || g.planned_today_minutes > 0 || g.spent_today_minutes > 0),
+  );
   if (lines.length === 0) return null;
   return (
     <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-footnote">
