@@ -1,14 +1,19 @@
+import { type Goal, GoalCategory } from "@michael/shared";
 import { EmptyState } from "@/components/empty-state";
 import { DayColumns, NotchTrack, SleepBars, SplitBar } from "@/components/goals/goal-charts";
+import { AddGoal, EditGoal, type GoalDraft } from "@/components/goals/goal-sheets";
 import { ScreenHeader } from "@/components/screen";
-import { getGoalsWeek } from "@/lib/api";
-import { CATEGORIES, CATEGORY_TITLE } from "@/lib/categories";
+import { getGoals, getGoalsWeek } from "@/lib/api";
+import { CATEGORIES, CATEGORY_TITLE, categoryOf } from "@/lib/categories";
 import { formatWeekday, hm } from "@/lib/format";
 import { type GoalStatus, pace, rank, todayIndex } from "@/lib/goals-view";
 
 export default async function GoalsPage({ searchParams }: { searchParams: Promise<{ demo?: string }> }) {
   const { demo } = await searchParams;
-  const week = await getGoalsWeek(demo);
+  const [week, all] = await Promise.all([getGoalsWeek(demo), getGoals().catch(() => [] as Goal[])]);
+  const personalReady = (GoalCategory.options as readonly string[]).includes("personal");
+  const drafts = new Map(all.map((g) => [g.id, draftOf(g)]));
+  const paused = all.filter((g) => !g.active);
   const p = pace(week);
   const today = todayIndex(week);
   const daysLeft = 7 - today - 1;
@@ -23,7 +28,7 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
 
   return (
     <main className="screen">
-      <ScreenHeader context={context} title="Goals" />
+      <ScreenHeader context={context} title="Goals" actions={<AddGoal personalReady={personalReady} />} />
 
       {week.goals.length === 0 ? (
         <EmptyState title="No goals yet.">
@@ -48,9 +53,21 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
                   </p>
                 </div>
                 <ul className="overflow-hidden rounded-group bg-fill">
-                  {items.map((r, i) => (
-                    <GoalRow key={r.goal.id} status={r} first={i === 0} pace={p} today={today} cap={cap} />
-                  ))}
+                  {items.map((r, i) => {
+                    const row = (
+                      <GoalRow key={r.goal.id} status={r} first={i === 0} pace={p} today={today} cap={cap} />
+                    );
+                    const draft = drafts.get(r.goal.id);
+                    return draft ? (
+                      <li key={r.goal.id}>
+                        <EditGoal draft={draft} personalReady={personalReady}>
+                          {row}
+                        </EditGoal>
+                      </li>
+                    ) : (
+                      <li key={r.goal.id}>{row}</li>
+                    );
+                  })}
                 </ul>
               </section>
             );
@@ -78,6 +95,29 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
           ) : null}
 
           {week.sleep ? <SleepSection sleep={week.sleep} /> : null}
+
+          {paused.length ? (
+            <section className="mt-6">
+              <h2 className="mb-2 text-title3 font-bold">Paused</h2>
+              <ul className="overflow-hidden rounded-group bg-fill">
+                {paused.map((g, i) => (
+                  <li key={g.id} className="relative">
+                    {i > 0 ? (
+                      <span className="absolute inset-x-0 top-0 z-10 ml-4 h-[0.5px] bg-separator" />
+                    ) : null}
+                    <EditGoal draft={draftOf(g)} personalReady={personalReady}>
+                      <div className="flex min-h-11 items-center justify-between gap-3 px-4 py-2.5">
+                        <span className="text-body text-label-2">{g.title}</span>
+                        <span className="text-footnote text-label-2">
+                          {CATEGORY_TITLE[categoryOf(g.category)]}
+                        </span>
+                      </div>
+                    </EditGoal>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
         </>
       )}
 
@@ -105,7 +145,7 @@ function GoalRow({
 }) {
   const { goal, behind, leftMinutes } = status;
   return (
-    <li className="relative px-4 pt-3 pb-3.5">
+    <div className="relative px-4 pt-3 pb-3.5">
       {first ? null : <span className="absolute inset-x-0 top-0 ml-4 h-[0.5px] bg-separator" />}
       <div className="flex items-baseline justify-between gap-3">
         <h3 className="text-body font-semibold">{goal.title}</h3>
@@ -135,7 +175,7 @@ function GoalRow({
           </>
         )}
       </p>
-    </li>
+    </div>
   );
 }
 
@@ -160,4 +200,30 @@ function SleepSection({ sleep }: { sleep: { goalMinutes: number; nightly: (numbe
       </div>
     </section>
   );
+}
+
+/** The edit sheet's starting values, from the goal as the API stores it. */
+function draftOf(g: Goal): GoalDraft {
+  const t = (g.target ?? {}) as Record<string, unknown>;
+  const kind = (
+    ["time", "target", "count", "checklist"].includes(String(t.kind)) ? t.kind : "time"
+  ) as GoalDraft["kind"];
+  const unit = (
+    ["hours_a_day", "by_time", "number_a_day"].includes(String(t.unit)) ? t.unit : "hours_a_day"
+  ) as GoalDraft["unit"];
+  return {
+    id: g.id,
+    category: categoryOf(g.category),
+    title: g.title,
+    kind,
+    hours: g.weekly_budget_minutes ? String(Math.round((g.weekly_budget_minutes / 60) * 10) / 10) : "",
+    calendarTitles: Array.isArray(t.calendar_titles) ? (t.calendar_titles as string[]).join(", ") : "",
+    unit,
+    value: t.value != null ? String(t.value) : "",
+    perWeek: t.per_week != null ? String(t.per_week) : "",
+    label: typeof t.label === "string" ? t.label : "",
+    messagesCount:
+      Array.isArray(t.work_categories) && (t.work_categories as string[]).includes("communication"),
+    active: g.active,
+  };
 }
