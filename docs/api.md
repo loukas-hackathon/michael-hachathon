@@ -134,6 +134,7 @@ type Instruction = {
   days?: number[]; // 0 = Sunday .. 6 = Saturday; left out when not set
   time?: string; // "HH:MM", 24 hour clock, local time; left out when not set
   end_time?: string; // "HH:MM"; left out when not set
+  exceptions?: string[]; // calendar titles allowed inside the protected time; left out when none
   active: boolean; // false = paused: it protects nothing
   created_at: string;
   updated_at: string;
@@ -144,9 +145,10 @@ type InstructionCreate = {
   days?: number[] | null;
   time?: string | null;
   end_time?: string | null;
+  exceptions?: string[] | null; // up to 50 titles, each 1 to 200 characters, not blank
   active?: boolean; // default true
 };
-type InstructionUpdate = Partial<InstructionCreate>; // null clears days, time or end_time
+type InstructionUpdate = Partial<InstructionCreate>; // null clears days, time, end_time or exceptions
 
 type RecommendationAction = {
   kind: ActionKind;
@@ -531,7 +533,9 @@ above 0 makes the event a meeting, whatever its title or `goal_id` says. Each bl
 Some things are not goals: they are the user's ground rules, such as "keep Sundays clear" or "home
 every day by 21:00". The user gives a few at setup and can change, pause or remove them later.
 **Michael never plans or moves anything into the time an active instruction protects**, and flags
-what already sits there.
+what already sits there. An instruction is a rule he obeys everywhere, not only a flag on the score:
+no path may create, move or propose a block there, and nothing may be carried out there (see "The
+guard" below).
 
 | Method | Path                   | Body                | Response                              | Status |
 | ------ | ---------------------- | ------------------- | ------------------------------------- | ------ |
@@ -549,7 +553,7 @@ about planning, not about nudges.
 | Kind          | Protects, in the user's local time                                          | Needs                 |
 | ------------- | --------------------------------------------------------------------------- | --------------------- |
 | `clear_day`   | The whole day, midnight to midnight, on each of `days`                      | `days`                |
-| `home_by`     | From `time` until the day ends, on `days` (every day when `days` is absent) | `time`                |
+| `home_by`     | From `time` until 05:00 the next morning, on `days` (every day when absent) | `time`                |
 | `quiet_hours` | From `time` to `end_time`, on `days` (every day when absent)                | `time` and `end_time` |
 | `custom`      | Nothing: it is text for the coach to read                                   |                       |
 
@@ -557,27 +561,65 @@ about planning, not about nudges.
   client may send only the words.
 - `days`: 0 = Sunday to 6 = Saturday. `time` and `end_time`: `"HH:MM"`, 24 hour clock.
 - When `end_time` is not after `time`, quiet hours run past midnight (22:00 to 07:00) and belong to
-  the day they start on. `home_by` stops at midnight: the small hours belong to the next day.
+  the day they start on. `home_by` runs on until 05:00: a block at 00:30 counts as after 21:00 of
+  the day before. A `time` before 05:00 ("home by 01:00") is that night's small hours.
+- `exceptions`: calendar titles allowed inside the protected time, such as the Sunday recovery
+  session on "Keep Sundays clear". Matched exactly like a goal's `calendar_titles` (equal or starting
+  with the entry at a word boundary, ignoring case and accents; one matcher, `score/match.ts`). A
+  block that matches one is not listed in `instructions_broken` and may be planned. Set with `POST`
+  or `PATCH`; `null` clears them.
 - A kind must have what it needs, on create and after a change (`400` otherwise). `null` in a
   `PATCH` clears `days`, `time` or `end_time`. Pause with `{ "active": false }`.
 - `days`, `time` and `end_time` are left out of the answer when they are not set.
 
 ```json
-{ "text": "Keep Sundays clear", "kind": "clear_day", "days": [0] }
+{ "text": "Keep Sundays clear", "kind": "clear_day", "days": [0], "exceptions": ["Rhefuel"] }
 ```
 
 Which instructions a span of time falls under is one pure function,
 `protectedBy(instructions, start, end, timezone)` in `apps/api/src/instructions/protected.ts`. It
 returns the active instructions with any part of the span inside their protected time. Ends are
 exclusive (a block that stops at Sunday 00:00 has not touched Sunday), days are local days in the
-timezone given (default Europe/Athens), and the days the clocks change are handled. It is there for
-the analysis and the actions to call before they plan or move anything. The score does not count
-with it: each block in `GET /v1/score` only carries `instructions_broken`, the ids of the active
-instructions its time falls under, so the app can flag a work block planned on a clear Sunday. The
-chat with Michael and the analysis brief are given the active instructions, as the user wrote
-them, with the rest of their context; a paused one is left out.
+timezone given (default Europe/Athens), and the days the clocks change are handled. `forbiddenBy`
+in the same file is the same with a block's title: it leaves out the instructions whose
+`exceptions` name the block. The score does not count with it: each block in `GET /v1/score` only
+carries `instructions_broken`, the ids of the active instructions its time falls under (less those
+whose exceptions name it), so the app can flag a work block planned on a clear Sunday. The chat with
+Michael and the analysis brief are given the active instructions, as the user wrote them, with their
+exceptions in words ("Keep Sundays clear (except: Rhefuel)"); a paused one is left out.
 
-`mockInstructions` in `packages/shared/src/mocks.ts` holds one example ("Keep Sundays clear").
+#### The guard
+
+One pure function decides, `checkAction(action, instructions, timezone)` in
+`apps/api/src/instructions/guard.ts`: an action (its kind, the span it lands on, the block's title)
+is allowed, or refused with the instruction that forbids it and one line in Michael's voice derived
+from it: "Sundays are kept clear." (clear_day), "You're home by 21:00." (home_by), "That's in your
+quiet hours." (quiet_hours). A `custom` instruction never refuses anything.
+
+| Action                                      | Refused when                                                                  |
+| ------------------------------------------- | ----------------------------------------------------------------------------- |
+| `create_focus_block`, `move_calendar_block` | Where the block lands is protected and its title is not one of the exceptions |
+| `reminder`                                  | It falls inside `quiet_hours`                                                 |
+| `block_mac_app`                             | Never: it protects the time                                                   |
+| `draft_follow_up`                           | Never: it is not planning                                                     |
+
+Only where a block lands counts, so moving a block out of protected time is always allowed. Where
+it is enforced:
+
+- **When a recommendation is stored** (one choke point: both stores call `guardRecommendation` in
+  `createRecommendation` and `saveAnalysis`). Covers the analysis, the travel rules, the chat tools
+  and an agent's `create_focus_block`. A refused action is dropped and the recommendation stays as
+  advice, its words untouched; the refusal is logged (`instruction_guard_refused`). A
+  recommendation asked for in chat (`source: "chat"`) is carried out at once, so it is refused
+  instead: `409 conflict` with the reason, and nothing is stored or booked.
+- **When a recommendation is carried out**: `POST /v1/recommendations/:id/execute` checks again
+  against the instructions as they are now and answers `409 conflict` with the reason, in case an
+  instruction was added after the recommendation was made.
+- **The Morning and Evening moments** (and the nudge built from them) leave out a move whose action
+  is refused.
+
+`mockInstructions` in `packages/shared/src/mocks.ts` holds one example ("Keep Sundays clear", with
+the exception "Rhefuel").
 
 ### Analysis
 
@@ -1177,7 +1219,8 @@ never delete the user's events; never send in the user's name.
   private extended property `michael=1`) and the timeline mirror follows at once. Without it, the
   change happens on the timeline only (a created block is a `calendar_event` with `source: "agent"`).
 - `409 conflict` when: the action is `null`; the recommendation is already `done` or `dismissed`;
-  `involves_others` is true; the block has `data.with_others` or 2 or more attendees, or Google
+  `involves_others` is true; the action falls in time an active standing instruction protects (the
+  message is the reason, e.g. "Sundays are kept clear."; see Standing instructions, The guard); the block has `data.with_others` or 2 or more attendees, or Google
   itself now shows someone else on it (checked live before every write); the block or the new
   time has already started; it is an all day event.
 - Undo: a moved block goes back to its original time and title; a created block is deleted, and
@@ -1772,7 +1815,8 @@ type ScoreBlock = ScoreTotals & {
     device: "mac" | "iphone";
   }[];
   // Ids of the active standing instructions the block's time falls under (a block planned on a
-  // clear Sunday). Empty when it breaks none. It never changes the block's minutes.
+  // clear Sunday), less those whose `exceptions` name the block. Empty when it breaks none. It
+  // never changes the block's minutes.
   instructions_broken: string[];
 };
 ```

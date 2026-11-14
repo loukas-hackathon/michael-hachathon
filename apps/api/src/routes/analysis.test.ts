@@ -94,8 +94,12 @@ test("POST /v1/analysis/run hands the brief the active standing instructions, ne
     useModelClient(model);
     assert.equal((await post({})).status, 201);
     const brief = model.requests[0]?.user ?? "";
-    // The mock rule and the new one, in the person's own words, oldest first.
-    assert.match(brief, /"instructions": \[\s*"Keep Sundays clear",\s*"Home every day by 21:00"\s*\]/);
+    // The mock rule and the new one, in the person's own words, oldest first, with the mock's
+    // exception in words.
+    assert.match(
+      brief,
+      /"instructions": \[\s*"Keep Sundays clear \(except: Rhefuel\)",\s*"Home every day by 21:00"\s*\]/,
+    );
     assert.ok(!brief.includes("No calls on Friday afternoons"), "a paused instruction reached the brief");
 
     // Pausing takes an instruction out of the next run.
@@ -107,7 +111,10 @@ test("POST /v1/analysis/run hands the brief the active standing instructions, ne
     const next = new FakeModelClient([answer]);
     useModelClient(next);
     assert.equal((await post({})).status, 201);
-    assert.match(next.requests[0]?.user ?? "", /"instructions": \[\s*"Keep Sundays clear"\s*\]/);
+    assert.match(
+      next.requests[0]?.user ?? "",
+      /"instructions": \[\s*"Keep Sundays clear \(except: Rhefuel\)"\s*\]/,
+    );
   } finally {
     for (const id of [active, paused]) {
       await app.request(`/v1/instructions/${id}`, { method: "DELETE", headers: auth });

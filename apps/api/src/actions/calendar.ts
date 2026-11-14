@@ -7,6 +7,7 @@ import {
 } from "@michael/shared";
 import { z } from "zod";
 import { HttpError, parse } from "../http";
+import { refusalFor } from "../instructions/guard";
 import { toTimelineEvent } from "../integrations/calendar-sync";
 import {
   createdByMichael,
@@ -185,6 +186,12 @@ export async function executeRecommendation(id: string): Promise<Recommendation>
   if (rec.status === "done") throw conflict("Already done");
   if (rec.status === "dismissed") throw conflict("This recommendation was dismissed");
   if (action.involves_others) throw conflict("This involves other people. I only advise on it.");
+  // Checked again now: an instruction added after the recommendation was made still holds.
+  const verdict = await refusalFor(action, {
+    instructions: await store.listInstructions(),
+    getEvent: (eventId) => store.getEvent(eventId),
+  });
+  if (!verdict.allowed) throw conflict(verdict.reason);
 
   let execution: Execution;
   if (action.kind === "create_focus_block") execution = await createFocusBlock(rec, action);

@@ -34,6 +34,7 @@ import type { z } from "zod";
 import { currentUserId } from "./context";
 import { stableUuid } from "./demo/week";
 import { env } from "./env";
+import { guardRecommendation, guardRecommendations } from "./instructions/guard";
 import type { GeocodeHit } from "./integrations/maps";
 import { type PrivacyBackend, type PrivacyRules, screenEvents } from "./privacy";
 import { SupabaseStore } from "./supabase-store";
@@ -302,6 +303,7 @@ export const toInstruction = (r: {
   days?: number[] | null;
   time?: string | null;
   end_time?: string | null;
+  exceptions?: string[] | null;
   active: boolean;
   created_at: string;
   updated_at: string;
@@ -312,6 +314,7 @@ export const toInstruction = (r: {
   ...(r.days?.length ? { days: [...r.days].sort((a, b) => a - b) } : {}),
   ...(r.time ? { time: r.time } : {}),
   ...(r.end_time ? { end_time: r.end_time } : {}),
+  ...(r.exceptions?.length ? { exceptions: [...r.exceptions] } : {}),
   active: r.active,
   created_at: r.created_at,
   updated_at: r.updated_at,
@@ -541,7 +544,9 @@ export class MemoryStore implements Store {
     return this.recommendations.find((r) => r.id === id) ?? null;
   }
 
-  async createRecommendation(i: NewRecommendation) {
+  async createRecommendation(input: NewRecommendation) {
+    // The choke point: nothing is proposed inside time a standing instruction protects.
+    const i = await guardRecommendation(input, this.guardDeps());
     const rec: Recommendation = {
       id: crypto.randomUUID(),
       analysis_run_id: i.analysis_run_id ?? null,
@@ -594,11 +599,17 @@ export class MemoryStore implements Store {
       .slice(0, limit);
   }
 
+  /** What instructions/guard.ts needs to check a new recommendation: the rules and the blocks. */
+  private guardDeps() {
+    return { instructions: this.d.instructions, getEvent: (id: string) => this.getEvent(id) };
+  }
+
   async saveAnalysis(input: NewAnalysis) {
     const run: AnalysisRun = { id: crypto.randomUUID(), ...input.run };
+    const guarded = await guardRecommendations(input.recommendations, this.guardDeps());
     this.runs.push(run);
     const at = run.finished_at ?? now();
-    const recommendations = input.recommendations.map(
+    const recommendations = guarded.map(
       (r): Recommendation => ({
         id: crypto.randomUUID(),
         analysis_run_id: run.id,

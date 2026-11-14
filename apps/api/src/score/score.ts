@@ -15,7 +15,7 @@ import {
   type ScoreTick,
   type TimeWonBack,
 } from "@michael/shared";
-import { protectedBy } from "../instructions/protected";
+import { forbiddenBy } from "../instructions/protected";
 import { DEFAULT_TIMEZONE } from "../patterns/context";
 import { type GoalBlock, goalBlocks } from "../patterns/focus";
 import { label } from "../patterns/format";
@@ -74,7 +74,8 @@ export { isSleepGoal };
 //
 //   Standing instructions ("keep Sundays clear") never change a minute of the score. Each block
 //   only carries `instructions_broken`: the active instructions its time falls under
-//   (instructions/protected.ts), so the app can flag a block planned on a clear day.
+//   (instructions/protected.ts), so the app can flag a block planned on a clear day. A block named
+//   in an instruction's `exceptions` ("Rhefuel" on a clear Sunday) does not break it.
 //
 //   score_pct = spent / elapsed, rounded. Null when nothing has elapsed: not 0 and not 100.
 //
@@ -365,7 +366,7 @@ const toBlock = (p: Piece, instructions: Instruction[], zone: Zone): ScoreBlock 
   ...totals(p),
   ticks: p.ticks,
   lost: p.stretches,
-  instructions_broken: protectedBy(instructions, p.start, p.end, zone).map((i) => i.id),
+  instructions_broken: forbiddenBy(instructions, p.block.title, p.start, p.end, zone).map((i) => i.id),
 });
 
 /**
