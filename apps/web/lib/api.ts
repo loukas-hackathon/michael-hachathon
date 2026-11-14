@@ -43,7 +43,7 @@ import type { DayView } from "./day";
 import type { GoalsView } from "./goals-view";
 import type { Instruction, InstructionInput } from "./instructions";
 import { type KeepWeek, keepWeekFrom, restDaysFrom } from "./keep-day";
-import { causesFrom, type LostWeek, lostWeekFrom } from "./lost-week";
+import { type LostWeek, lostWeekFrom } from "./lost-week";
 import { API_URL, USE_MOCKS } from "./mode";
 import { sampleChecklist } from "./sample/checklist";
 import {
@@ -452,17 +452,9 @@ export async function getKeepWeek(variant?: string): Promise<KeepWeek | null> {
 
 /** Goal time lost per day of the week holding `date` (Timeline chart, Today's week line). */
 export async function getLostWeek(date?: string, variant?: string): Promise<LostWeek | null> {
-  if (USE_MOCKS || variant === "sample") {
-    return { ...lostWeekFrom(mockScore, mockScore.date), causes: causesFrom([mockScore]) };
-  }
+  if (USE_MOCKS || variant === "sample") return lostWeekFrom(mockScore, mockScore.date);
   try {
-    const today = athensDay();
-    const week = lostWeekFrom(await getScore(date ?? today), today);
-    // What took it: the score names causes for one day at a time, so read each past day that lost
-    // time (at most seven, in parallel, deduped with the call above). TODO: a week total from the API.
-    const days = week.days.filter((d) => (d.lost ?? 0) > 0).map((d) => d.date);
-    const scores = await Promise.all(days.map((d) => getScore(d).catch(() => null)));
-    return { ...week, causes: causesFrom(scores.filter((x): x is Score => x != null)) };
+    return lostWeekFrom(await getScore(date ?? athensDay()), athensDay());
   } catch {
     return null;
   }
