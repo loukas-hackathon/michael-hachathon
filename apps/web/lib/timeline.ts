@@ -1,4 +1,5 @@
 import type { Event } from "@michael/shared";
+import { type DayHealth, healthOf } from "./health";
 import { driveFromEvent } from "./travel";
 
 // Builds the Timeline view of one day from raw timeline events.
@@ -62,6 +63,8 @@ export type TimelineDay = {
   phone: Mark[];
   ai: Mark[];
   segments: Segment[];
+  /** The Apple Watch: last night, tonight, workouts and heart rate per hour. */
+  health?: DayHealth;
   totals: { workMinutes: number; lostMinutes: number; phoneSessions: number; phoneMinutes: number };
 };
 
@@ -297,11 +300,13 @@ export function buildTimeline(
   const phone = marks((e) => e.source === "iphone_usage" && e.type === "app_usage");
   const ai = marks((e) => e.type === "ai_session");
   const plans = plansOf(events, dayStart, dayEnd);
+  const health = healthOf(events, dayStart, dayEnd);
 
-  // 5. Quiet stretches of 90 minutes or more (no Mac block, no phone session, nothing planned)
-  // collapse to one row.
+  // 5. Quiet stretches of 90 minutes or more (no Mac block, no phone session, nothing planned, no
+  // workout) collapse to one row.
   const busy = [
     ...blocks.map((b) => [b.start, b.end] as const),
+    ...health.workouts.map((w) => [Math.max(w.start, dayStart), Math.min(w.end, dayEnd)] as const),
     ...phone.map((p) => [p.start, p.end] as const),
     ...plans.map((p) => [p.start, p.end] as const),
   ].sort((a, b) => a[0] - b[0]);
@@ -368,6 +373,7 @@ export function buildTimeline(
     phone,
     ai,
     segments,
+    health,
     totals: { workMinutes, lostMinutes, phoneSessions: phone.length, phoneMinutes },
   };
 }

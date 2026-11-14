@@ -1,8 +1,9 @@
 import "server-only";
-import { type Event, EventType, type TimelineResponse } from "@michael/shared";
+import { type Event, EventType, type Goal, type TimelineResponse } from "@michael/shared";
 import { get, usingMocks } from "./api";
 import { athensDay, dayBounds, isLocalDay, weekOf } from "./athens";
 import { DATES_WITH_DATA, DEFAULT_DATE, getTimelineDay, longestFrom, type Patterns } from "./days";
+import { sleepGoalMinutes } from "./health";
 import { buildTimeline, type TimelineDay } from "./timeline";
 
 // Loads the Timeline screen for one Athens day: the day itself from GET /v1/timeline, the longest
@@ -23,6 +24,8 @@ export type TimelineScreen = {
   available: string[];
   /** The most recent day with data up to today, for the empty state's way out. */
   latest: string | null;
+  /** Minutes a night the Sleep goal asks for, to set the watch's nights against; null without one. */
+  sleepGoal: number | null;
 };
 
 // The heavy per-second streams (app use, web visits, prompts, heart rate) are left out of the week
@@ -47,7 +50,7 @@ export async function loadTimeline(asked?: string, demo?: string): Promise<Timel
   const weekStart = dayBounds(week[0] as string).start;
   const weekEnd = dayBounds(week[6] as string).end;
 
-  const [timeline, patterns, light] = await Promise.all([
+  const [timeline, patterns, light, goals] = await Promise.all([
     get<TimelineResponse>(`/v1/timeline?${new URLSearchParams({ from: iso(start), to: iso(end) })}`),
     get<Patterns>(`/v1/patterns?${new URLSearchParams({ from: iso(start), to: iso(end) })}`).catch(
       () => ({}) as Patterns,
@@ -55,6 +58,7 @@ export async function loadTimeline(asked?: string, demo?: string): Promise<Timel
     get<TimelineResponse>(
       `/v1/timeline?${new URLSearchParams({ from: iso(weekStart), to: iso(weekEnd), type: LIGHT_TYPES.join(",") })}`,
     ).catch(() => ({ events: [] as Event[] })),
+    get<{ goals: Goal[] }>("/v1/goals").catch(() => ({ goals: [] as Goal[] })),
   ]);
 
   const events = timeline.events;
@@ -70,6 +74,7 @@ export async function loadTimeline(asked?: string, demo?: string): Promise<Timel
     longestUninterrupted: longestFrom(patterns),
     available,
     latest,
+    sleepGoal: sleepGoalMinutes(goals.goals),
   };
 }
 
@@ -83,5 +88,6 @@ function loadSample(asked?: string): TimelineScreen {
     longestUninterrupted: result?.longestUninterrupted ?? null,
     available: DATES_WITH_DATA,
     latest: DEFAULT_DATE,
+    sleepGoal: null,
   };
 }

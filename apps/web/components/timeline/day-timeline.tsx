@@ -1,5 +1,7 @@
 import { formatTime, hm } from "@/lib/format";
+import { type HeartPoint, type Night, sleepAgainstGoal, workoutParts } from "@/lib/health";
 import { type Block, makeY, type TimelineDay } from "@/lib/timeline";
+import { HeartToggle } from "./heart-toggle";
 
 const PER_HOUR = 56;
 const QUIET = 32;
@@ -24,8 +26,19 @@ function blockMeta(b: Block) {
  * hatched is time lost, grey is everything else. Interruptions cut a block's right edge.
  * Phone sessions run down the right edge, Claude Code sessions down the left.
  */
-export function DayTimeline({ day }: { day: TimelineDay }) {
+export function DayTimeline({
+  day,
+  heartHidden = false,
+}: {
+  day: TimelineDay;
+  /** The heart rate lane starts hidden (the viewer turned it off). */
+  heartHidden?: boolean;
+}) {
   const y = makeY(day.segments, PER_HOUR, QUIET);
+  const health = day.health;
+  const nights = [health?.lastNight, health?.tonight].filter((n): n is Night => Boolean(n));
+  const workouts = health?.workouts ?? [];
+  const heart = health?.heart ?? [];
   const height = y(day.dayEnd);
   const plans = day.plans ?? [];
   const hours: number[] = [];
@@ -49,7 +62,12 @@ export function DayTimeline({ day }: { day: TimelineDay }) {
   }
 
   return (
-    <div className="relative mt-3 tnum" style={{ height }}>
+    <div
+      id={TIMELINE_ID}
+      data-hr={heart.length > 1 && !heartHidden ? "on" : "off"}
+      className="group/tl relative mt-3 tnum [--lane-r:16px] data-[hr=on]:[--lane-r:44px]"
+      style={{ height }}
+    >
       {/* Quiet stretches, collapsed. */}
       {day.segments.map((s) =>
         s.kind === "quiet" ? (
@@ -62,7 +80,7 @@ export function DayTimeline({ day }: { day: TimelineDay }) {
               {formatTime(iso(s.from))} to{" "}
               {s.to - s.from >= 24 * HOUR - 60_000 ? "24:00" : formatTime(iso(s.to))}
             </span>
-            <span>No screens</span>
+            <span>{nights.some((n) => n.start < s.to && n.end > s.from) ? "Asleep" : "No screens"}</span>
           </div>
         ) : null,
       )}
@@ -93,7 +111,7 @@ export function DayTimeline({ day }: { day: TimelineDay }) {
       {plans.map((p) => (
         <div
           key={`cal${p.start}${p.title}`}
-          className={`absolute right-4 left-[50px] rounded-block border-[1.5px] border-dashed ${
+          className={`absolute right-(--lane-r) left-[50px] rounded-block border-[1.5px] border-dashed ${
             p.michael ? "border-tint" : "border-label-2"
           }`}
           style={{ top: y(p.start), height: Math.max(4, y(p.end) - y(p.start)) }}
@@ -104,7 +122,7 @@ export function DayTimeline({ day }: { day: TimelineDay }) {
         b.plan ? (
           <div
             key={`p${b.plan.start}`}
-            className="absolute right-4 left-[50px] rounded-block border-[1.5px] border-dashed border-label-2"
+            className="absolute right-(--lane-r) left-[50px] rounded-block border-[1.5px] border-dashed border-label-2"
             style={{ top: y(b.plan.start), height: Math.max(4, y(b.plan.end) - y(b.plan.start)) }}
           />
         ) : null,
@@ -125,7 +143,7 @@ export function DayTimeline({ day }: { day: TimelineDay }) {
           <div key={`b${b.start}`}>
             <div
               data-live-key={`b${b.kind}${b.start}-${b.end}`}
-              className={`absolute right-4 left-[50px] overflow-hidden rounded-block ${fill}`}
+              className={`absolute right-(--lane-r) left-[50px] overflow-hidden rounded-block ${fill}`}
               style={{ top, height: h }}
               title={`${b.label}, ${formatTime(iso(b.start))} to ${formatTime(iso(b.end))}`}
             >
@@ -170,7 +188,7 @@ export function DayTimeline({ day }: { day: TimelineDay }) {
             {b.plan && b.movedEnd ? (
               <>
                 <div
-                  className="absolute right-4 left-[50px] rounded-b-block border-[1.5px] border-dashed border-tint"
+                  className="absolute right-(--lane-r) left-[50px] rounded-b-block border-[1.5px] border-dashed border-tint"
                   style={{ top: y(b.plan.end), height: Math.max(6, y(b.movedEnd) - y(b.plan.end)) }}
                 />
                 <span
@@ -185,16 +203,42 @@ export function DayTimeline({ day }: { day: TimelineDay }) {
         );
       })}
 
+      {/* Workouts from the watch: goal time, so pink, with what it was and how hard. */}
+      {workouts.map((w) => {
+        const top = y(Math.max(w.start, day.dayStart));
+        const h = Math.max(3, y(Math.min(w.end, day.dayEnd)) - top);
+        return (
+          <div
+            key={`w${w.start}`}
+            data-live-key={`w${w.start}-${w.end}`}
+            className="absolute right-(--lane-r) left-[50px] overflow-hidden rounded-block bg-spark"
+            style={{ top, height: h }}
+            title={`${w.name}, ${formatTime(iso(w.start))} to ${formatTime(iso(w.end))}`}
+          >
+            {h >= 17 ? (
+              <p className="absolute top-1 right-2 left-2 truncate text-footnote leading-4 font-semibold text-[#000]">
+                {w.name}
+              </p>
+            ) : null}
+            {h >= 36 ? (
+              <p className="absolute top-[21px] right-2 left-2 truncate text-[12px] leading-4 font-medium text-[#000] opacity-80">
+                {workoutParts(w).join(" · ")}
+              </p>
+            ) : null}
+          </div>
+        );
+      })}
+
       {/* Plan titles where nothing happened over their first lines, and Michael's marker always. */}
       {plans.map((p) => {
         const top = y(p.start);
         const h = y(p.end) - top;
-        const covered = day.blocks.some((b) => y(b.start) < top + 18 && y(b.end) > top + 2);
+        const covered = [...day.blocks, ...workouts].some((b) => y(b.start) < top + 18 && y(b.end) > top + 2);
         return (
           <div key={`calt${p.start}${p.title}`}>
             {!covered && h >= 17 ? (
               <p
-                className="absolute right-[76px] left-[58px] truncate text-footnote leading-4 font-semibold text-label-2"
+                className="absolute right-[calc(var(--lane-r)+60px)] left-[58px] truncate text-footnote leading-4 font-semibold text-label-2"
                 style={{ top: top + 4 }}
               >
                 {p.title}
@@ -202,7 +246,7 @@ export function DayTimeline({ day }: { day: TimelineDay }) {
             ) : null}
             {p.michael ? (
               <span
-                className="absolute right-[22px] rounded-[4px] bg-bg px-1 text-caption font-semibold text-tint-text"
+                className="absolute right-[calc(var(--lane-r)+6px)] rounded-[4px] bg-bg px-1 text-caption font-semibold text-tint-text"
                 style={{ top: top + (h >= 17 ? 3 : -8) }}
               >
                 Michael
@@ -220,7 +264,7 @@ export function DayTimeline({ day }: { day: TimelineDay }) {
         return (
           <div
             key={`d${d.start}`}
-            className="absolute right-4 left-[50px] overflow-hidden rounded-block bg-fill"
+            className="absolute right-(--lane-r) left-[50px] overflow-hidden rounded-block bg-fill"
             style={{ top, height: h }}
             title={`Drive to ${d.to}, ${d.minutes} minutes, ${d.trafficMinutes} in traffic`}
           >
@@ -249,12 +293,14 @@ export function DayTimeline({ day }: { day: TimelineDay }) {
       {lossLabels.map((l) => (
         <span
           key={l.key}
-          className="absolute right-[22px] rounded-[4px] bg-bg px-1 text-caption font-semibold text-label"
+          className="absolute right-[calc(var(--lane-r)+6px)] rounded-[4px] bg-bg px-1 text-caption font-semibold text-label"
           style={{ top: l.top }}
         >
           {l.text}
         </span>
       ))}
+
+      {heart.length > 1 ? <HeartLane points={heart} y={y} height={height} /> : null}
 
       {/* Phone lane. */}
       {day.phone.map((m) => (
@@ -279,6 +325,96 @@ export function DayTimeline({ day }: { day: TimelineDay }) {
   );
 }
 
+/** The day's container: the heart rate toggle in the key flips its data-hr. */
+export const TIMELINE_ID = "day-timeline";
+
+/**
+ * A night from the watch, collapsed to one calm row with the dot texture: when, how long, and the
+ * Sleep goal's verdict. Last night sits above the day, tonight below it.
+ */
+export function SleepBand({
+  night,
+  goal,
+  tonight = false,
+}: {
+  night: Night;
+  goal: number | null;
+  tonight?: boolean;
+}) {
+  const verdict = sleepAgainstGoal(night.minutes, goal);
+  return (
+    <div
+      className={`dots flex items-center justify-between gap-3 rounded-block bg-fill px-2.5 py-1.5 text-footnote text-label-2 tnum ${
+        tonight ? "mt-2" : "mt-3"
+      }`}
+    >
+      <span className="min-w-0">
+        <span className="font-semibold text-label">Sleep</span> {formatTime(iso(night.start))} to{" "}
+        {formatTime(iso(night.end))}
+        <span className="sr-only">, {tonight ? "tonight" : "last night"}</span>
+      </span>
+      <span className="shrink-0 text-right">
+        <b className="font-semibold text-label">{hm(night.minutes)}</b>
+        {verdict ? `, ${verdict.replace(/ (of )?your goal$/, "")}` : ""}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Heart rate per hour as a quiet vertical line in its own lane, between the blocks and the phone
+ * ticks. Higher is further left. Hours without a reading break the line.
+ */
+function HeartLane({
+  points,
+  y,
+  height,
+}: {
+  points: HeartPoint[];
+  y: (x: number) => number;
+  height: number;
+}) {
+  const lo = Math.min(...points.map((p) => p.avg));
+  const hi = Math.max(...points.map((p) => p.avg));
+  const W = 24;
+  const x = (v: number) => (hi === lo ? W / 2 : 3 + ((hi - v) / (hi - lo)) * (W - 6));
+  const runs: HeartPoint[][] = [];
+  for (const p of points) {
+    const run = runs.at(-1);
+    const last = run?.at(-1);
+    if (run && last && p.at - last.at <= HOUR + 60_000) run.push(p);
+    else runs.push([p]);
+  }
+  const peak = points.reduce((a, b) => (b.avg > a.avg ? b : a));
+  return (
+    <svg
+      aria-label={`Heart rate, ${Math.round(lo)} to ${Math.round(hi)} bpm an hour on average`}
+      role="img"
+      className="pointer-events-none absolute top-0 right-3 overflow-visible text-label-2 group-data-[hr=off]/tl:hidden"
+      width={W}
+      height={height}
+    >
+      {runs.map((r) => {
+        const first = r[0] as HeartPoint;
+        return r.length === 1 ? (
+          <circle key={`hr${first.at}`} cx={x(first.avg)} cy={y(first.at)} r={1.5} fill="currentColor" />
+        ) : (
+          <polyline
+            key={`hr${first.at}`}
+            points={r.map((p) => `${x(p.avg).toFixed(1)},${y(p.at).toFixed(1)}`).join(" ")}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.25}
+            strokeLinejoin="round"
+            strokeLinecap="round"
+          />
+        );
+      })}
+      <circle cx={x(peak.avg)} cy={y(peak.at)} r={2} fill="currentColor" />
+    </svg>
+  );
+}
+
 /** Key for the lanes, shown once above the day. */
 export function TimelineKey({
   hasAi,
@@ -286,7 +422,12 @@ export function TimelineKey({
   goalTime = hasPlan,
   hasMichael = false,
   hasDrives = false,
+  day,
+  heartHidden = false,
 }: {
+  /** The day, for the watch's entries (workouts, heart rate). */
+  day?: TimelineDay;
+  heartHidden?: boolean;
   hasAi: boolean;
   hasPlan: boolean;
   /** Planned drives on the day (travel events). */
@@ -296,6 +437,10 @@ export function TimelineKey({
   hasMichael?: boolean;
 }) {
   const item = "inline-flex items-center gap-1.5";
+  const hasWorkouts = (day?.health?.workouts.length ?? 0) > 0;
+  const heart = day?.health?.heart ?? [];
+  const lo = heart.length > 1 ? Math.round(Math.min(...heart.map((p) => p.avg))) : 0;
+  const hi = heart.length > 1 ? Math.round(Math.max(...heart.map((p) => p.avg))) : 0;
   return (
     <ul className="mt-3 flex flex-wrap gap-x-3 gap-y-1.5 text-footnote text-label-2">
       {hasPlan ? (
@@ -312,7 +457,7 @@ export function TimelineKey({
       ) : null}
       <li className={item}>
         <span className="h-3 w-4 rounded-[3px] bg-spark" />
-        {goalTime ? "Goal time" : "Work apps"}
+        {goalTime ? "Goal time" : hasWorkouts ? "Work apps, workouts" : "Work apps"}
       </li>
       <li className={item}>
         <span className="hatch h-3 w-4 rounded-[3px] shadow-[inset_0_0_0_1px_var(--m-label-2)]" />
@@ -338,6 +483,11 @@ export function TimelineKey({
         <li className={item}>
           <span className="h-3 w-[3px] rounded-full bg-label opacity-40" />
           Claude Code
+        </li>
+      ) : null}
+      {heart.length > 1 ? (
+        <li className={item}>
+          <HeartToggle target={TIMELINE_ID} hidden={heartHidden} range={`${lo} to ${hi}`} />
         </li>
       ) : null}
     </ul>
