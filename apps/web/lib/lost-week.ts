@@ -33,18 +33,17 @@ export function lostWeekFrom(score: Score, today: string): LostWeek {
   const iphone = score.data_until?.iphone ?? null;
   const phoneUntil =
     iphone && iphone.slice(0, 10) <= today && days.some((d) => d.date === today) ? iphone : null;
-  return { date: score.date, today, days, total: score.lost_minutes, phoneUntil, causes: [] };
+  return { date: score.date, today, days, total: score.lost_minutes, phoneUntil, causes: causesOf(score) };
 }
 
-/** Adds up `day.blocks[].lost[]` over the days given, by what took it, most first. */
-export function causesFrom(dayScores: Score[]): LostCause[] {
-  const by = new Map<string, number>();
-  for (const s of dayScores)
-    for (const b of s.day.blocks) for (const l of b.lost) by.set(l.what, (by.get(l.what) ?? 0) + l.minutes);
-  return [...by]
-    .map(([what, minutes]) => ({ what, minutes: Math.round(minutes) }))
+/**
+ * What took the week's lost time: `lost_by` from the score, most first. The total shown stays
+ * `lost_minutes`; entries are rounded one by one and can differ from it by a few minutes.
+ */
+export function causesOf(score: Score): LostCause[] {
+  return (score.lost_by ?? [])
     .filter((c) => c.minutes > 0)
-    .sort((a, b) => b.minutes - a.minutes);
+    .map((c) => ({ what: c.what, minutes: c.minutes }));
 }
 
 /** The day with the most goal time lost, for "Most on Tuesday." Null when nothing is lost. */
