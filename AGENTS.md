@@ -100,6 +100,12 @@ and improve in the next PR rather than polishing one big one.
 
 - Comment on issues that depended on yours ("#12 is merged: `/v1/...` is live").
 - Update `docs/api.md` status (stub -> live) in your PR when an endpoint goes live.
+- **Everything we learn goes on the Build Hub**, not only in the repo. Its section "Status, findings
+  and research" is rendered from the ArtifactData collection `findings`: one document per entry with
+  `group` (`status` | `findings` | `research`), `order`, `title`, `summary`, `body` and `updated` (ms).
+  The body is plain text: `## ` starts a sub heading, `- ` a bullet, `| a | b |` a table row. After
+  a merge, update `status-now` (what is merged and tested) and add or update an entry for any
+  finding, research or test result. Update with ArtifactData; do not republish the page for this.
 - Update the Build Hub board: move the matching task to `doing` when work starts and to `done` when
   the feature is live. Add a `note` of kind `decision` for any product-visible choice you made, and
   a `link` for new deploy URLs. Keep entries short and in the Build Hub's voice (British spelling,
