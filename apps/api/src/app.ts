@@ -38,6 +38,7 @@ import { tokens } from "./routes/tokens";
 import { voice } from "./routes/voice";
 import { webhooks } from "./routes/webhooks";
 import { store } from "./store";
+import { runTimed, serverTimingEntries } from "./timing";
 
 export const VERSION = "0.1.0";
 
@@ -83,11 +84,14 @@ const v1 = new Hono().use(requireUser()).route("/", v1Routes);
 export const app = new Hono()
   .use(logger())
   // Server time and region on every response, so latency can be measured from anywhere (#229).
+  // Database round trips and auth time too (#234): `db;desc="3 round trips";dur=290`.
   .use(async (c, next) => {
     const start = performance.now();
-    await next();
+    const { t, result } = runTimed(() => next());
+    await result;
     const region = process.env.RAILWAY_REPLICA_REGION ?? "local";
     c.res.headers.append("Server-Timing", `app;dur=${(performance.now() - start).toFixed(1)}`);
+    for (const entry of serverTimingEntries(t)) c.res.headers.append("Server-Timing", entry);
     c.res.headers.append("Server-Timing", `region;desc="${region}"`);
   })
   .use(cors({ origin: env.WEB_ORIGIN.split(",").map((s) => s.trim()) }))

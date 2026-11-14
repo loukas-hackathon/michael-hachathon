@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { syncCalendar } from "@/app/you/google-calendar-actions";
+import { ActionButton } from "@/components/action-button";
 import type { ConnectionAction, ConnectionStatus } from "@/lib/connections-status";
 import { ConnectionIcon } from "./connection-icon";
 
@@ -8,17 +9,19 @@ import { ConnectionIcon } from "./connection-icon";
 
 // One button for every row: same shape, same colour, same width. "Connect" until it sends, then
 // "Manage". Only the label changes, so the list reads as one calm column.
-const button =
+export const CONNECTION_BUTTON =
   "press flex h-9 w-[6.5rem] shrink-0 items-center justify-center rounded-full bg-tint/14 text-subhead font-semibold text-tint-text";
 
 function Action({ action, style }: { action: ConnectionAction; style: string }) {
   if (action.kind === "sync-calendar") {
     return (
-      <form action={syncCalendar}>
-        <button type="submit" className={style}>
-          {action.label}
-        </button>
-      </form>
+      <ActionButton
+        action={syncCalendar}
+        label={action.label}
+        pendingLabel="Syncing"
+        className={style}
+        showResult={false}
+      />
     );
   }
   // Plain <a> for the Google hop, so nothing prefetches a route that redirects off site.
@@ -45,7 +48,7 @@ const STATE_WORDS: Record<ConnectionStatus["state"], string> = {
 };
 
 export function ConnectionRow({ row }: { row: ConnectionStatus }) {
-  const style = button;
+  const style = CONNECTION_BUTTON;
   const lineColour = row.state === "attention" ? "text-danger" : "text-label-2";
   return (
     <div className="flex min-h-16 items-center gap-3 pr-4">

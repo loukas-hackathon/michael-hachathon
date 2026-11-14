@@ -6,6 +6,8 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { MiMark } from "@/components/brand";
 import { CalendarGoals } from "@/components/goals/calendar-goals";
 import { InstallSteps } from "@/components/nudge-primer";
+import { ConnectionIcon } from "@/components/you/connection-icon";
+import { CONNECTION_BUTTON } from "@/components/you/connection-row";
 import { CONNECTION_ROUTES } from "@/lib/connections";
 import type { FirstInsight } from "@/lib/first-insight";
 import { hm } from "@/lib/format";
@@ -98,21 +100,21 @@ export const RESUME_PATH = "/onboarding?step=connect";
 const CALENDAR_CONNECT = `/integrations/google/connect?return_to=${encodeURIComponent(RESUME_PATH)}`;
 const SOURCES = [
   {
-    id: "calendar",
+    id: "google-calendar",
     name: "Google Calendar",
-    what: "Your plans, so I know what the day was meant to be",
+    what: "What the day was meant to be",
     href: CALENDAR_CONNECT,
   },
   {
-    id: "watch",
+    id: "apple-watch",
     name: "Apple Watch",
-    what: "Sleep, workouts and heart rate",
+    what: "Sleep and workouts",
     href: `${CONNECTION_ROUTES["apple-watch"]}?from=onboarding`,
   },
   {
     id: "mac",
     name: "Mac",
-    what: "Which apps you use, and for how long",
+    what: "Apps and how long",
     href: `${CONNECTION_ROUTES.mac}?from=onboarding`,
   },
 ] as const;
@@ -604,7 +606,7 @@ export function OnboardingFlow({
         ? "Your calendar is in. That's enough for a first number."
         : calendarFailed
           ? "Google Calendar did not connect. Try once more, or later from You."
-          : "Start with your calendar: it's what the day was meant to be. Every source stays off until you connect it.",
+          : "Start with your calendar. Nothing is read until you connect it.",
       // The recommended action is the filled button; skipping is a quiet "Later" (#205).
       cta: calendarOn ? "Next" : "Connect Google Calendar",
       href: calendarOn ? undefined : CALENDAR_CONNECT,
@@ -614,34 +616,31 @@ export function OnboardingFlow({
           {insight ? <FirstInsightCard insight={insight} /> : null}
           <ul className="overflow-hidden rounded-group bg-fill">
             {SOURCES.map((src, i) => {
-              const connected = src.id === "calendar" && calendarOn;
-              const row = "flex min-h-14 items-center gap-3 px-4 py-3";
-              const text = (
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="text-body font-semibold">{src.name}</span>
-                  <span className="text-footnote text-label-2">{src.what}</span>
-                </span>
-              );
+              const connected = src.id === "google-calendar" && calendarOn;
+              // The same row as on You (#260): icon, name, one line, one pill.
               return (
                 <li key={src.id} className="relative">
                   {i > 0 ? <Separator /> : null}
-                  {connected ? (
-                    <div className={row}>
-                      {text}
+                  <div className="flex min-h-16 items-center gap-3 px-4 py-2.5">
+                    <span className={connected ? "text-label" : "text-label-2"}>
+                      <ConnectionIcon id={src.id} />
+                    </span>
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="text-body">{src.name}</span>
+                      <span className="text-footnote text-label-2">{src.what}</span>
+                    </span>
+                    {connected ? (
                       <span className="flex items-center gap-1.5 text-subhead text-label-2">
                         <Check on />
                         Connected
                       </span>
-                    </div>
-                  ) : (
-                    // Plain <a>: a route handler that redirects must never be prefetched.
-                    <a href={src.href} className={`press ${row}`}>
-                      {text}
-                      <span className="shrink-0 text-subhead text-label-2">
-                        {src.id === "calendar" ? "Connect" : "Set up"} <span aria-hidden="true">›</span>
-                      </span>
-                    </a>
-                  )}
+                    ) : (
+                      // Plain <a>: a route handler that redirects must never be prefetched.
+                      <a href={src.href} className={CONNECTION_BUTTON} aria-label={`Connect ${src.name}`}>
+                        Connect
+                      </a>
+                    )}
+                  </div>
                 </li>
               );
             })}

@@ -1,6 +1,5 @@
 "use client";
 
-import { createBrowserClient } from "@supabase/ssr";
 import { useEffect, useState } from "react";
 import "./google-button.css";
 
@@ -28,6 +27,10 @@ function GoogleG() {
   );
 }
 
+// supabase-js (about 70 kB gzipped) is only needed for the tap, so it is not in the page's first
+// load (#255): it starts loading just after first paint and is ready long before a thumb lands.
+const loadSupabase = () => import("@supabase/ssr");
+
 const NOT_SET_UP = "Google sign in is not set up here yet. See the demo week instead.";
 const NO_REACH = "I couldn't reach Google. Check your connection and try again.";
 
@@ -41,7 +44,12 @@ export function GoogleButton({ initialError }: { initialError?: string | null })
       if (e.persisted) setBusy(false);
     };
     window.addEventListener("pageshow", reset);
-    return () => window.removeEventListener("pageshow", reset);
+    // Shortly after first paint (Safari has no requestIdleCallback).
+    const warm = window.setTimeout(() => void loadSupabase().catch(() => {}), 300);
+    return () => {
+      window.removeEventListener("pageshow", reset);
+      window.clearTimeout(warm);
+    };
   }, []);
 
   async function signIn() {
@@ -55,6 +63,7 @@ export function GoogleButton({ initialError }: { initialError?: string | null })
       return;
     }
     try {
+      const { createBrowserClient } = await loadSupabase();
       const supabase = createBrowserClient(url, key);
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",

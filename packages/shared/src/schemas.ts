@@ -1118,6 +1118,7 @@ export const countsTowardsCap = (status: NudgeStatus) => status !== "suppressed"
 
 // What a nudge is about. Each kind is one rule of the engine (apps/api/src/nudges).
 // morning and evening carry the Morning and Evening moments (GET /v1/moments/:kind), once each a day.
+// recovery_block carries a recovery offer (#167): a goal block slipped, 25 minutes later today.
 export const NudgeKind = z.enum([
   "focus_drift",
   "block_soon",
@@ -1125,6 +1126,7 @@ export const NudgeKind = z.enum([
   "goal_behind",
   "morning",
   "evening",
+  "recovery_block",
 ]);
 export type NudgeKind = z.infer<typeof NudgeKind>;
 

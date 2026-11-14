@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { FlipList } from "@/components/flip-list";
 import { useArrival } from "@/components/motion";
 import { NudgePrimer } from "@/components/nudge-primer";
 import { formatTime } from "@/lib/format";
@@ -254,6 +255,8 @@ export function RecommendationList({ cards, variant }: { cards: RecCard[]; varia
           ...cards.filter((c) => c.id !== pinNow.id),
         ];
   const visible = shown.filter((c) => !local[c.id]?.removed);
+  // The cards below slide up into the gap a dismissed card leaves.
+  const flipKey = visible.map((c) => c.id).join();
   if (visible.length === 0) return null;
   const items = visible.map((c) => (
     <Card
@@ -271,7 +274,7 @@ export function RecommendationList({ cards, variant }: { cards: RecCard[]; varia
     return (
       <section className="mt-6" aria-label="Your next move">
         <h2 className="mb-2 text-title3 font-bold">Your next move</h2>
-        <ul>{items}</ul>
+        <FlipList flipKey={flipKey}>{items}</FlipList>
         {primed ? <NudgePrimer /> : null}
       </section>
     );
@@ -283,7 +286,9 @@ export function RecommendationList({ cards, variant }: { cards: RecCard[]; varia
       label="More suggestions"
       preview={visible.map((c) => c.title.replace(/[.!?]$/, "")).join(". ")}
     >
-      <ul className="-mt-1 flex flex-col">{items}</ul>
+      <FlipList flipKey={flipKey} className="-mt-1 flex flex-col">
+        {items}
+      </FlipList>
       {primed ? <NudgePrimer /> : null}
     </Fold>
   );

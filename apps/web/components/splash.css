@@ -16,6 +16,7 @@
   animation: m-splash-out 300ms cubic-bezier(0.23, 1, 0.32, 1) 950ms both;
 }
 
+/* The script also sets the inline display (splash.tsx), which the first paint layout needs. */
 #m-splash[data-done] {
   display: none;
 }
@@ -74,19 +75,6 @@
     opacity: 0;
     visibility: hidden;
   }
-}
-
-/* Opened from the Home Screen: iOS already showed the mark on its launch image, so hold it still
- * and hand over to the app sooner. */
-#m-splash[data-standalone] {
-  animation-delay: 450ms;
-}
-#m-splash[data-standalone] .m-splash-mark {
-  animation-delay: 450ms;
-}
-#m-splash[data-standalone] .m-splash-body,
-#m-splash[data-standalone] .m-splash-dot {
-  animation: none;
 }
 
 /* Hold the hand over while the screen behind is still a skeleton (aria-busy), so the mark gives

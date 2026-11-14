@@ -414,11 +414,14 @@ async function revertGoalChange(ex: Execution & { kind: "change_goal" }) {
  * The scheduler calls it per user; GET /v1/goals calls it too so the screen never shows a stale budget.
  */
 export async function revertExpiredGoalChanges(now = Date.now()): Promise<number> {
-  const done = await store.listRecommendations({ status: "done" });
+  const done = (await store.listRecommendations({ status: "done" })).filter(
+    (rec) => rec.action?.kind === "change_goal",
+  );
+  // Every execution in one wave of round trips, not one after another.
+  const executions = await Promise.all(done.map((rec) => store.getRecommendationExecution(rec.id)));
   let reverted = 0;
-  for (const rec of done) {
-    if (rec.action?.kind !== "change_goal") continue;
-    const parsed = Execution.safeParse(await store.getRecommendationExecution(rec.id));
+  for (const [i, rec] of done.entries()) {
+    const parsed = Execution.safeParse(executions[i]);
     if (!parsed.success || parsed.data.kind !== "change_goal" || !parsed.data.until) continue;
     if (Date.parse(parsed.data.until) > now) continue;
     await revertGoalChange(parsed.data);

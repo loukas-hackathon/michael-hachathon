@@ -1,3 +1,4 @@
+import { ActionButton } from "@/components/action-button";
 import { getTelegram } from "@/lib/integrations";
 import { disconnectTelegramChat, sendTelegramTest } from "./telegram-actions";
 
@@ -48,17 +49,19 @@ export async function TelegramRow() {
           {tg.username ? `Connected as @${tg.username}.` : "Connected."} Nudges arrive there too.
         </span>
       </span>
-      <span className="flex gap-4">
-        <form action={sendTelegramTest}>
-          <button type="submit" className="press h-9 text-subhead font-semibold text-tint-text">
-            Send a test
-          </button>
-        </form>
-        <form action={disconnectTelegramChat}>
-          <button type="submit" className="press h-9 text-subhead font-semibold text-danger">
-            Disconnect
-          </button>
-        </form>
+      <span className="flex items-start gap-4">
+        <ActionButton
+          action={sendTelegramTest}
+          label="Send a test"
+          pendingLabel="Sending"
+          className="press h-9 min-w-[5.5rem] text-left text-subhead font-semibold text-tint-text"
+        />
+        <ActionButton
+          action={disconnectTelegramChat}
+          label="Disconnect"
+          pendingLabel="Disconnecting"
+          className="press h-9 text-left text-subhead font-semibold text-danger"
+        />
       </span>
     </div>
   );
