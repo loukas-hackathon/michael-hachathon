@@ -44,6 +44,25 @@ const KINDS: { value: GoalDraft["kind"]; label: string; business?: boolean }[] =
 
 const initial: FormState = { ok: false, message: null };
 
+// A placeholder that reads as a hint, never as a filled value.
+const field = `${input} placeholder:text-label-2/50`;
+
+/** Whether an existing goal uses anything behind "More options", so its sheet opens with it shown. */
+function usesMore(d: GoalDraft): boolean {
+  const titles = d.calendarTitles.trim();
+  return (
+    d.kind !== "time" ||
+    (titles !== "" && titles.toLowerCase() !== d.title.trim().toLowerCase()) ||
+    d.messagesCount ||
+    (d.category === "personal" && d.label !== "" && d.label !== "fun")
+  );
+}
+
+/**
+ * Area, name and hours a week; everything else waits behind one "More options" row. The fields in
+ * there stay mounted (only hidden) so the form always posts them. A new goal's calendar blocks
+ * follow its name until edited, so a "Gym" goal counts "Gym" blocks without a second thought.
+ */
 function GoalForm({
   draft,
   formId,
@@ -66,6 +85,11 @@ function GoalForm({
   const [label, setLabel] = useState<"fun" | "family" | "hobby">(
     (["fun", "family", "hobby"].includes(draft.label) ? draft.label : "fun") as "fun" | "family" | "hobby",
   );
+  const [title, setTitle] = useState(draft.title);
+  const [titles, setTitles] = useState(draft.calendarTitles);
+  // An existing goal keeps its blocks as they are; a new one follows its name until edited.
+  const [titlesEdited, setTitlesEdited] = useState(Boolean(draft.id));
+  const [more, setMore] = useState(() => Boolean(draft.id) && usesMore(draft));
   const uid = useId();
 
   useEffect(() => {
@@ -92,148 +116,147 @@ function GoalForm({
         }))}
         disabled={personalReady ? [] : ["personal"]}
       />
-      {category === "personal" && !personalReady ? (
-        <p className="-mt-4 px-1 text-footnote text-label-2">
-          Personal goals switch on later tonight, with the new categories.
-        </p>
-      ) : null}
 
       <div className="overflow-hidden rounded-group bg-fill">
         <Row label="Name" htmlFor={`${uid}-title`}>
           <input
             id={`${uid}-title`}
             name="title"
-            defaultValue={draft.title}
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
             required
             maxLength={60}
             autoComplete="off"
-            placeholder={
-              category === "business"
-                ? "The company"
-                : category === "health"
-                  ? "70.3 training"
-                  : "Rock N Roll"
-            }
-            className={input}
+            placeholder="What is it?"
+            className={field}
           />
         </Row>
+        {kind === "time" ? (
+          <Row label="Hours a week" htmlFor={`${uid}-hours`}>
+            <input
+              id={`${uid}-hours`}
+              name="hours"
+              inputMode="decimal"
+              defaultValue={draft.hours}
+              placeholder="0"
+              className={`${field} tnum`}
+            />
+          </Row>
+        ) : kind === "target" ? (
+          <Row
+            label={unit === "by_time" ? "By" : unit === "hours_a_day" ? "Hours a day" : "A day"}
+            htmlFor={`${uid}-value`}
+          >
+            <input
+              id={`${uid}-value`}
+              name="value"
+              type={unit === "by_time" ? "time" : "text"}
+              inputMode={unit === "by_time" ? undefined : "decimal"}
+              defaultValue={draft.value}
+              placeholder="0"
+              className={`${field} tnum`}
+            />
+          </Row>
+        ) : kind === "count" ? (
+          <Row label="Times a week" htmlFor={`${uid}-n`}>
+            <input
+              id={`${uid}-n`}
+              name="per_week"
+              inputMode="numeric"
+              defaultValue={draft.perWeek}
+              placeholder="0"
+              className={`${field} tnum`}
+            />
+          </Row>
+        ) : null}
       </div>
 
-      <div className="flex flex-col gap-2">
-        <Segmented<GoalDraft["kind"]>
-          name="kind"
-          value={kind}
-          onChange={setKind}
-          options={KINDS.filter((k) => !k.business || category === "business")}
-        />
-        <div className="overflow-hidden rounded-group bg-fill">
+      <div className="flex flex-col gap-3">
+        <button
+          type="button"
+          onClick={() => setMore((m) => !m)}
+          aria-expanded={more}
+          aria-controls={`${uid}-more`}
+          className="press flex min-h-11 items-center justify-between px-1 text-body text-label-2"
+        >
+          More options
+          <svg
+            viewBox="0 0 12 12"
+            aria-hidden="true"
+            className={`size-3 transition-transform duration-200 ${more ? "rotate-90" : ""}`}
+          >
+            <path
+              d="M4 2l4 4-4 4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
+
+        <div id={`${uid}-more`} hidden={!more} className="m-live-enter flex flex-col gap-3">
+          <Segmented<GoalDraft["kind"]>
+            name="kind"
+            value={kind}
+            onChange={setKind}
+            options={KINDS.filter((k) => !k.business || category === "business")}
+          />
+          {kind === "target" ? (
+            <Segmented
+              name="unit"
+              value={unit}
+              onChange={setUnit}
+              options={[
+                { value: "hours_a_day", label: "Hours a day" },
+                { value: "by_time", label: "By a time" },
+                { value: "number_a_day", label: "A number" },
+              ]}
+            />
+          ) : null}
           {kind === "time" ? (
-            <>
-              <Row label="Hours a week" htmlFor={`${uid}-hours`}>
-                <input
-                  id={`${uid}-hours`}
-                  name="hours"
-                  inputMode="decimal"
-                  defaultValue={draft.hours}
-                  placeholder="9"
-                  className={`${input} tnum`}
-                />
-              </Row>
+            <div className="overflow-hidden rounded-group bg-fill">
               <Row label="Calendar blocks" htmlFor={`${uid}-cal`}>
                 <input
                   id={`${uid}-cal`}
                   name="calendar_titles"
-                  defaultValue={draft.calendarTitles}
-                  placeholder="Cold Outreach, Call Leads"
+                  value={titlesEdited ? titles : title}
+                  onChange={(e) => {
+                    setTitles(e.target.value);
+                    setTitlesEdited(true);
+                  }}
+                  placeholder="Same as the name"
                   autoComplete="off"
-                  className={input}
+                  className={field}
                 />
               </Row>
-            </>
-          ) : kind === "target" ? (
-            <>
-              <div className="px-4 py-2">
-                <Segmented
-                  name="unit"
-                  value={unit}
-                  onChange={setUnit}
-                  options={[
-                    { value: "hours_a_day", label: "Hours a day" },
-                    { value: "by_time", label: "By a time" },
-                    { value: "number_a_day", label: "A number" },
-                  ]}
-                />
-              </div>
-              <Row label="Target" htmlFor={`${uid}-value`}>
-                <input
-                  id={`${uid}-value`}
-                  name="value"
-                  type={unit === "by_time" ? "time" : "text"}
-                  inputMode={unit === "by_time" ? undefined : "decimal"}
-                  defaultValue={draft.value}
-                  placeholder={unit === "hours_a_day" ? "7.5" : unit === "by_time" ? "23:00" : "2500"}
-                  className={`${input} tnum`}
-                />
-              </Row>
-            </>
-          ) : kind === "count" ? (
-            <Row label="Times a week" htmlFor={`${uid}-n`}>
-              <input
-                id={`${uid}-n`}
-                name="per_week"
-                inputMode="numeric"
-                defaultValue={draft.perWeek}
-                placeholder="1"
-                className={`${input} tnum`}
-              />
-            </Row>
-          ) : (
-            <p className="px-4 py-3 text-subhead text-label-2">
-              You set the day's items each Morning. Michael counts how many get done.
-            </p>
-          )}
+              {category === "business" ? (
+                <Row label="Messages count as work" htmlFor={`${uid}-msg`}>
+                  <input
+                    id={`${uid}-msg`}
+                    name="messages_count"
+                    type="checkbox"
+                    defaultChecked={draft.messagesCount}
+                    className="m-switch"
+                  />
+                </Row>
+              ) : null}
+            </div>
+          ) : null}
+          {category === "personal" && personalReady ? (
+            <Segmented
+              name="label"
+              value={label}
+              onChange={setLabel}
+              options={[
+                { value: "fun", label: "Fun" },
+                { value: "family", label: "Family" },
+                { value: "hobby", label: "Hobby" },
+              ]}
+            />
+          ) : null}
         </div>
-        {kind === "time" ? (
-          <p className="px-4 text-footnote text-label-2">
-            Blocks in your calendar whose title starts with one of these count for this goal.
-          </p>
-        ) : null}
       </div>
-
-      {category === "business" && kind === "time" ? (
-        <div className="flex flex-col gap-2">
-          <div className="overflow-hidden rounded-group bg-fill">
-            <Row label="Messages count as work" htmlFor={`${uid}-msg`}>
-              <input
-                id={`${uid}-msg`}
-                name="messages_count"
-                type="checkbox"
-                defaultChecked={draft.messagesCount}
-                className="m-switch"
-              />
-            </Row>
-          </div>
-          <p className="px-4 text-footnote text-label-2">
-            For sales and outreach, mail and WhatsApp are the work, not a distraction.
-          </p>
-        </div>
-      ) : null}
-
-      {category === "personal" && personalReady ? (
-        <div className="flex flex-col gap-2">
-          <p className="px-4 text-footnote font-semibold text-label-2">Kind of time</p>
-          <Segmented
-            name="label"
-            value={label}
-            onChange={setLabel}
-            options={[
-              { value: "fun", label: "Fun" },
-              { value: "family", label: "Family" },
-              { value: "hobby", label: "Hobby" },
-            ]}
-          />
-        </div>
-      ) : null}
 
       {state.message && !state.ok ? (
         <p role="alert" className="px-1 text-subhead text-danger">
