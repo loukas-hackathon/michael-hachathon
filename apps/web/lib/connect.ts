@@ -1,6 +1,7 @@
 import "server-only";
 import { ConnectDecisionResponse, ConnectRequest } from "@michael/shared";
-import { API_URL, bearer } from "./api";
+import { API_URL } from "./api";
+import { authHeaders } from "./caller";
 
 // Connecting Claude (or another MCP client) with OAuth. The API checks the request; this page
 // only asks the signed in user to allow it. Always talks to the real API, also with USE_MOCKS.
@@ -10,7 +11,7 @@ export const MCP_URL = process.env.MCP_URL || `${API_URL.replace(/\/$/, "")}/mcp
 
 export async function getConnectRequest(id: string): Promise<ConnectRequest | null> {
   const res = await fetch(`${API_URL}/v1/connect/requests/${encodeURIComponent(id)}`, {
-    headers: { authorization: `Bearer ${await bearer()}` },
+    headers: await authHeaders(),
     cache: "no-store",
   });
   if (res.status === 404 || res.status === 400) return null;
@@ -22,7 +23,7 @@ export async function getConnectRequest(id: string): Promise<ConnectRequest | nu
 export async function decideConnect(id: string, allow: boolean): Promise<string | null> {
   const res = await fetch(`${API_URL}/v1/connect/requests/${encodeURIComponent(id)}`, {
     method: "POST",
-    headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
+    headers: { ...(await authHeaders()), "content-type": "application/json" },
     body: JSON.stringify({ allow }),
     cache: "no-store",
   });

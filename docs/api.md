@@ -20,6 +20,17 @@ returns `501 not_implemented`, `planned` = not routed yet. Update the status whe
     server (see "MCP authorization" below), bound to the user who allowed it. Only `/mcp` takes it.
   - Collectors, webhooks and our own tools: the shared secret `API_KEY`, which acts as the demo
     account (`demo@michael.app`). Per-user ingest tokens come later.
+  - Demo visitors (the web app's "See the demo week", server to server only): `API_KEY` plus
+    `X-Michael-Demo-Visitor: <uuid>`, one random id per visitor. Same demo account, but read
+    mostly: chat is stored and read per visitor (a visitor never sees another's, nor the
+    account's own), and only these writes are allowed: `POST /v1/chat`, `/v1/chat/stream`,
+    `/v1/recommendations/:id/execute|undo`, `PATCH /v1/recommendations/:id`, `POST /v1/analysis/run`,
+    `/v1/travel/plan`, `/v1/focus-guards/suggest`, `/v1/voice/speak`, `/v1/records/:id/announced`, `POST|DELETE /v1/push/subscriptions`, `POST /v1/nudges/test` and
+    `POST /v1/connect/requests/:id`. Anything else that writes (privacy, goals, instructions,
+    places, profile, integrations, Telegram, agents, keys, data deletion, ingest, `/mcp`) answers
+    `403 forbidden` with the message "This is the demo week. Sign in with Google to make it yours."
+    and `details: { demo: true }`. A malformed visitor id is `401`. MCP OAuth tokens bound to the
+    demo account and the bare `API_KEY` keep full access.
 - **Shared secret details:**
   Send `Authorization: Bearer <API_KEY>`. Applies to everything under `/v1/*` and `/mcp`, except
   `/health` and the OAuth callback redirect (`/oauth/google/callback`). Only `/v1/webhooks/*` and `/mcp` also accept
@@ -2329,7 +2340,9 @@ starting `demo:`; only those rows are ever added or removed, so nothing else in 
 touched; days that leave the window are removed. The API refreshes the week on demo requests at
 most every 5 minutes (the first refresh after a deploy resets the goals to the Build Hub plan,
 later ones keep edits; `DEMO_WEEK=off` turns it off). `POST /v1/demo/reseed` also resets the goals.
-Any other account gets `403 forbidden`. Off the record, nothing changes. Per source switches are
+Any other account gets `403 forbidden`. The reseed (and the first refresh after a deploy) also
+deletes all demo visitor chat and turns off the record off; every refresh deletes visitor chat
+older than a day. Off the record, nothing changes. Per source switches are
 not applied: on the demo account they keep real collectors out (#114). From a terminal:
 `pnpm --filter @michael/api seed:demo` (or `--dry` to print the week without a database).
 

@@ -4,6 +4,7 @@ import type { MiddlewareHandler } from "hono";
 import { agentsStore } from "./agents-store";
 import { type AuthMethod, runAsUser } from "./context";
 import { keepDemoWeekFresh } from "./demo/sync";
+import { DEMO_VISITOR_HEADER, DEMO_VISITOR_MESSAGE, DemoVisitorId, demoVisitorMay } from "./demo/visitor";
 import { env } from "./env";
 import { errorResponse } from "./http";
 import { mcpResource, resourceMetadataUrl } from "./public-url";
@@ -53,6 +54,8 @@ export async function deleteAuthUser(userId: string): Promise<boolean> {
  * Resolves who the request acts for and runs the rest of the request as that user:
  * - a signed-in user's Supabase access token (`Authorization: Bearer <jwt>`) -> that user
  * - the shared API key -> the demo account (collectors, webhooks, our own tools)
+ * - the API key with X-Michael-Demo-Visitor -> the demo account for one anonymous web visitor:
+ *   read mostly, chat of their own (demo/visitor.ts)
  * - with `mcp`, an OAuth access token issued by routes/oauth.ts for this MCP resource -> the user
  *   who allowed it (the claude.ai connector). A 401 then carries the WWW-Authenticate pointer to
  *   the protected resource metadata, which is how claude.ai starts sign in.
@@ -85,9 +88,21 @@ export const requireUser =
     let userId: string | null;
     let via: AuthMethod;
     let agentId: string | null = null;
+    let visitor: string | undefined;
     if (isApiKey(token)) {
       userId = env.DEMO_USER_ID;
       via = "api_key";
+      // The web app browsing the demo week for one anonymous visitor: read mostly, own chat.
+      const raw = c.req.header(DEMO_VISITOR_HEADER);
+      if (raw !== undefined) {
+        const id = DemoVisitorId.safeParse(raw.trim());
+        if (!id.success) return deny("Invalid demo visitor");
+        visitor = id.data;
+        via = "demo_visitor";
+        if (!demoVisitorMay(c.req.method, c.req.path)) {
+          return errorResponse(c, "forbidden", DEMO_VISITOR_MESSAGE, { demo: true });
+        }
+      }
     } else if (isPersonalToken(token)) {
       // Device keys (Mac collector, Health Auto Export) made by the person in the app.
       userId = await userForPersonalToken(token);
@@ -118,5 +133,5 @@ export const requireUser =
       await runAsUser(uid, () => next(), via, agent);
       return;
     }
-    await runAsUser(userId, () => next(), via);
+    await runAsUser(userId, () => next(), via, undefined, visitor);
   };

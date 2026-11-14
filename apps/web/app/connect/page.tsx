@@ -1,8 +1,8 @@
-import { cookies } from "next/headers";
 import { Wordmark } from "@/components/brand";
 import { SCOPE_LABEL } from "@/lib/agents";
+import { isDemoVisitor } from "@/lib/caller";
 import { getConnectRequest } from "@/lib/connect";
-import { authEnabled, DEMO_COOKIE, supabaseServer } from "@/lib/supabase/server";
+import { authEnabled, supabaseServer } from "@/lib/supabase/server";
 
 export const metadata = { title: "Connect · Michael" };
 
@@ -76,7 +76,8 @@ export default async function ConnectPage({ searchParams }: { searchParams: Prom
 
 async function signedInAs(): Promise<string | null> {
   if (!authEnabled) return "the demo account";
-  if ((await cookies()).get(DEMO_COOKIE)?.value === "1") return "the demo week";
+  // A session wins over the demo cookie, as in lib/caller.ts.
   const { data } = await (await supabaseServer()).auth.getClaims();
-  return data?.claims?.email ?? null;
+  if (data?.claims?.sub) return data.claims.email ?? null;
+  return (await isDemoVisitor()) ? "the demo week" : null;
 }

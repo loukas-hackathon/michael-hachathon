@@ -12,7 +12,7 @@ export async function POST(request: Request) {
     upstream = await openChatStream(message);
   } catch (err) {
     console.error("chat stream:", err);
-    // bearer() throws when signed out; fetch throws when the API is down.
+    // authHeaders() throws when signed out; fetch throws when the API is down.
     const signedOut = err instanceof Error && err.message === "Not signed in";
     return signedOut
       ? error(401, "unauthorized", "Not signed in")

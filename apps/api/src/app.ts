@@ -43,8 +43,8 @@ export const VERSION = "0.1.0";
 // header-only middleware below never sees /v1/webhooks/* requests.
 const webhooksApp = new Hono().use(requireUser({ allowQueryKey: true })).route("/", webhooks);
 
-const v1 = new Hono()
-  .use(requireUser())
+// Every /v1 route, without the auth in front (the isolation test mounts it as several users).
+export const v1Routes = new Hono()
   .route("/", events)
   .route("/", goals)
   .route("/", instructions)
@@ -73,6 +73,8 @@ const v1 = new Hono()
   .route("/", places)
   .route("/", meData)
   .route("/", demo);
+
+const v1 = new Hono().use(requireUser()).route("/", v1Routes);
 
 export const app = new Hono()
   .use(logger())
