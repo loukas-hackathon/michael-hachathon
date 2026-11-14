@@ -11,30 +11,41 @@ export function NotchTrack({
   budget,
   spent,
   unverified = 0,
+  planned,
   pace,
   label,
 }: {
   budget: number;
   spent: number;
   unverified?: number;
+  /** Minutes planned in blocks: those notches are dashed until filled. */
+  planned?: number;
   pace: number;
   label: string;
 }) {
   const n = Math.max(1, Math.round(budget / NOTCH_MINUTES));
   const filled = spent / NOTCH_MINUTES;
   const firm = (spent - unverified) / NOTCH_MINUTES;
+  const plannedN = (planned ?? 0) / NOTCH_MINUTES;
   const notches = Array.from({ length: n }, (_, i) => ({
     id: `n${i}`,
     fill: Math.max(0, Math.min(1, filled - i)),
     firm: Math.max(0, Math.min(1, firm - i)),
+    dashed: i < Math.round(plannedN),
   }));
   return (
     <div role="img" aria-label={label} className="relative pt-1.5">
       <div className="flex h-3 gap-[2px]">
-        {notches.map(({ id, fill, firm }) => (
+        {notches.map(({ id, fill, firm, dashed }) => (
           <span
             key={id}
-            className="relative min-w-0 flex-1 overflow-hidden rounded-[3px] shadow-[inset_0_0_0_1px_var(--m-context)]"
+            className={`relative min-w-0 flex-1 overflow-hidden rounded-[3px] ${
+              dashed
+                ? n <= 18
+                  ? "border border-dashed border-label-2"
+                  : "shadow-[inset_0_0_0_1px_var(--m-label-2)]"
+                : "shadow-[inset_0_0_0_1px_var(--m-context)]"
+            }`}
           >
             {fill > 0 ? (
               <span

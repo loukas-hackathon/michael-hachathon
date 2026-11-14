@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Evidence, Lead } from "@/lib/day";
 import { formatTime } from "@/lib/format";
 import { MiMark } from "../brand";
+import { RecoveryAction } from "./recovery";
 import { UndoButton } from "./undo-button";
 
 function Rich({ parts, strongClass }: { parts: Lead["insight"]; strongClass: string }) {
@@ -126,6 +127,7 @@ export function MichaelCard({ lead }: { lead: Lead }) {
         </p>
       ) : null}
       <div className="flex flex-wrap items-center gap-2">
+        {lead.recovery ? <RecoveryAction recovery={lead.recovery} /> : null}
         {lead.action ? (
           <UndoButton
             label={lead.action.label}

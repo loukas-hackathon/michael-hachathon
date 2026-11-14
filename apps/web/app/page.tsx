@@ -9,6 +9,7 @@ import { RecommendationsPanel } from "@/components/today/recommendations";
 import { getToday, needsOnboarding } from "@/lib/api";
 import { type DayView, nowIndex, tape, totals } from "@/lib/day";
 import { formatDay, formatTime, hm, minutesPhrase } from "@/lib/format";
+import { verdict } from "@/lib/gamification";
 import { momentKindFor } from "@/lib/moments";
 
 const TITLE: Record<DayView["moment"], string> = { morning: "Morning", today: "Today", evening: "Evening" };
@@ -42,6 +43,9 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
               week.{day.week.line ? ` ${day.week.line}` : ""}
             </p>
           ) : null}
+          {day.balance && verdict(day.balance).line ? (
+            <p className="mt-1 text-subhead font-semibold">{verdict(day.balance).line}</p>
+          ) : null}
 
           <section aria-label="Goal time today" className="mt-5">
             {t.scorePct === null && firstBlock ? (
@@ -63,6 +67,7 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
                 ticks={ticks}
                 nowAt={day.moment === "evening" || t.scorePct === null ? null : nowIndex(ticks)}
                 nowLabel={formatTime(day.now)}
+                recordAt={day.record?.tick ?? null}
                 label={`${hm(t.spent)} spent (${hm(t.unverified)} unconfirmed), ${hm(t.lost)} lost, ${hm(t.ahead)} still ahead`}
               />
             </div>
@@ -82,6 +87,12 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
                     ]
               }
             />
+            {day.record ? (
+              <p className="mt-2 flex items-center gap-2 text-subhead">
+                <span aria-hidden="true" className="size-[7px] shrink-0 rotate-45 rounded-[1px] bg-label" />
+                {day.record.line}
+              </p>
+            ) : null}
           </section>
 
           {day.wonBackMinutes > 0 ? (
