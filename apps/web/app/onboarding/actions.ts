@@ -1,7 +1,7 @@
 "use server";
 
 import { GoalCategory, ProfileUpdate } from "@michael/shared";
-import { createGoal, getGoals, putProfile } from "@/lib/api";
+import { createGoal, getGoals, patchGoal, putProfile } from "@/lib/api";
 
 // Server functions behind the onboarding talk. Only the server talks to the API, with the signed in
 // user's token. Everything here comes from the browser, so it is parsed first.
@@ -43,14 +43,25 @@ function targetFor(g: GoalAnswer, gymDays: number): Record<string, unknown> {
   return base;
 }
 
-/** Saves the answers: one goal per category (never a duplicate on a second pass), then the profile. */
+/**
+ * Saves the answers, then the profile. One goal per category: a category the user already has gets
+ * its weekly budget updated (Redo setup), never a duplicate. Goals left unpicked are not touched:
+ * Michael never deletes.
+ */
 export async function finishOnboarding(input: Answers): Promise<{ ok: boolean }> {
   const goals = parseGoals(input?.goals);
   const profile = ProfileUpdate.parse({ ...input?.profile, onboarded_at: new Date().toISOString() });
   try {
-    const existing = new Set((await getGoals()).map((g) => g.category));
+    const current = await getGoals();
     for (const g of goals) {
-      if (existing.has(g.category)) continue;
+      const mine = current.find((x) => x.category === g.category && x.active);
+      if (mine) {
+        if (mine.weekly_budget_minutes !== g.weekly_minutes) {
+          const res = await patchGoal(mine.id, { weekly_budget_minutes: g.weekly_minutes });
+          if (!res.ok) throw new Error(res.message);
+        }
+        continue;
+      }
       await createGoal({
         category: g.category,
         title: GOAL_TEMPLATE[g.category].title,

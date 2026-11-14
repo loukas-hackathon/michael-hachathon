@@ -11,12 +11,11 @@ import { momentNudge } from "../moments/nudge";
 import { nudgePayload, primaryChannel } from "../nudges/channels";
 import {
   candidates,
-  DEFAULT_QUIET,
   decide,
   type EngineInput,
   engineWindow,
   momentDue,
-  type QuietHours,
+  quietFromProfile,
 } from "../nudges/engine";
 import { pushToCurrentUser } from "../nudges/push";
 import { telegramToCurrentUser } from "../nudges/telegram";
@@ -24,19 +23,9 @@ import { store } from "../store";
 import { momentCoreFor } from "./moments";
 import { readProfile } from "./profile";
 
-const minutesOf = (clock: string) => {
-  const [h, m] = clock.split(":").map(Number);
-  return (h ?? 0) * 60 + (m ?? 0);
-};
-
-/** The night's quiet hours come from the user's profile; dinner and deep work keep their defaults. */
-export function quietFrom(profile: { quiet_hours: { start: string; end: string } }): QuietHours {
-  return {
-    ...DEFAULT_QUIET,
-    nightStart: minutesOf(profile.quiet_hours.start),
-    nightEnd: minutesOf(profile.quiet_hours.end),
-  };
-}
+/** The night's quiet hours from the profile; dinner and deep work keep their defaults. */
+export const quietFrom = (profile: { quiet_hours?: { start: string; end: string } | null } | null) =>
+  quietFromProfile(profile?.quiet_hours);
 
 /**
  * Runs the engine once for the current user: reads the week so far, decides, stores the nudge
@@ -50,7 +39,8 @@ export async function checkNudges(): Promise<NudgeCheckResult> {
     store.listGoals(),
     store.listNudges({ from: win.dayStart, to: win.dayEnd }),
     store.privacyRules(),
-    readProfile(),
+    // The user's own quiet hours (onboarding); 22:00 to 07:00 if unset or unreadable.
+    readProfile().catch(() => null),
   ]);
   const input: EngineInput = {
     now,
@@ -118,11 +108,12 @@ export const SAMPLE_NUDGE = {
 export async function testNudge(): Promise<NudgeTestResult> {
   const now = new Date().toISOString();
   const win = engineWindow(now);
-  const [events, goals] = await Promise.all([
+  const [events, goals, profile] = await Promise.all([
     store.listEvents({ from: win.weekStart, to: win.dayEnd }),
     store.listGoals(),
+    readProfile().catch(() => null),
   ]);
-  const pick = candidates({ now, goals, events, today: [] })[0] ?? SAMPLE_NUDGE;
+  const pick = candidates({ now, goals, events, today: [], quiet: quietFrom(profile) })[0] ?? SAMPLE_NUDGE;
   // Stored first, so the screen can show it as the watch buzzes. A unique key per press keeps
   // the daily dedupe out of the way.
   const nudge = await store.createNudge({

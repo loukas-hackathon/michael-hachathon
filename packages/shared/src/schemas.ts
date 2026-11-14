@@ -529,6 +529,18 @@ export type IntegrationsResponse = z.infer<typeof IntegrationsResponse>;
 export const OAuthConnectResponse = z.object({ url: z.url() });
 export type OAuthConnectResponse = z.infer<typeof OAuthConnectResponse>;
 
+// Where the web app lands after the callback: a path on the web app itself, never another site.
+// "/onboarding?step=done" is fine; "//evil.example", "/\\evil", "https://..." are not.
+export const ReturnPath = z
+  .string()
+  .max(200)
+  .regex(/^\/(?![/\\])[A-Za-z0-9\-._~/?=&%]*$/, "Expected a path on this site");
+export type ReturnPath = z.infer<typeof ReturnPath>;
+
+// Optional body of POST /v1/integrations/:provider/connect. Default return: /you.
+export const OAuthConnectRequest = z.object({ return_to: ReturnPath.optional() });
+export type OAuthConnectRequest = z.infer<typeof OAuthConnectRequest>;
+
 // POST /v1/integrations/google_calendar/sync and the sync that runs after connecting.
 export const CalendarSyncResult = z.object({
   from: IsoDateTime,

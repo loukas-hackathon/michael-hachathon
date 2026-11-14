@@ -1,6 +1,6 @@
 "use client";
 
-import type { GoalCategory, WeakSpot, Weekday } from "@michael/shared";
+import type { GoalCategory, Profile, WeakSpot, Weekday } from "@michael/shared";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { MiMark } from "@/components/brand";
@@ -86,13 +86,14 @@ const WEAK_SPOTS: { id: WeakSpot; label: string }[] = [
   { id: "late_caffeine", label: "Coffee after 16:00" },
 ];
 
-// Google Calendar goes straight to Google's consent screen (and back to You). The watch and the Mac
-// are set up from the You screen until they have their own one tap connect.
+// Google Calendar goes straight to Google's consent screen and comes back to the closing screen.
+// The watch and the Mac are set up from the You screen until they have their own one tap connect.
+export const RESUME_PATH = "/onboarding?step=done";
 const SOURCES = [
   {
     name: "Google Calendar",
     what: "Your plans, so I know what the day was meant to be",
-    href: "/integrations/google/connect",
+    href: `/integrations/google/connect?return_to=${encodeURIComponent(RESUME_PATH)}`,
   },
   { name: "Apple Watch", what: "Sleep, workouts and heart rate", href: "/you" },
   { name: "Mac", what: "Which apps you use, and for how long", href: "/you" },
@@ -302,37 +303,53 @@ const Separator = () => <span className="absolute inset-x-0 top-0 ml-4 h-[0.5px]
 
 // ---------- the flow ----------
 
-export function OnboardingFlow() {
+/** What is already saved: the answers start from it, so "Redo setup" shows the user's own week. */
+export type Saved = {
+  goals: { category: GoalCategory; weekly_minutes: number }[];
+  profile: Profile | null;
+};
+
+/** Back from Google: open on the closing screen, and say whether the calendar connected. */
+export type Resume = { calendar: "connected" | "failed" | null };
+
+export function OnboardingFlow({ saved, resume }: { saved?: Saved; resume?: Resume }) {
   const router = useRouter();
-  const [step, setStep] = useState(0);
-  const [picked, setPicked] = useState<GoalCategory[]>([]);
+  const p = saved?.profile ?? null;
+  const [step, setStep] = useState(resume ? STEPS - 1 : 0);
+  const [picked, setPicked] = useState<GoalCategory[]>(() =>
+    GOALS.map((g) => g.category).filter((c) => saved?.goals.some((x) => x.category === c)),
+  );
   // Goals kept from the calendar (#134) count as an answer to the first question.
   const [keptFromCalendar, setKeptFromCalendar] = useState(0);
-  const [minutes, setMinutes] = useState<Record<GoalCategory, number>>(
-    () => Object.fromEntries(GOALS.map((g) => [g.category, g.initial])) as Record<GoalCategory, number>,
-  );
-  const [workStart, setWorkStart] = useState("09:00");
-  const [workEnd, setWorkEnd] = useState("18:00");
-  const [workDays, setWorkDays] = useState<Weekday[]>(["mon", "tue", "wed", "thu", "fri"]);
-  const [gymDays, setGymDays] = useState<Weekday[]>(["tue", "thu", "sat"]);
-  const [weakSpots, setWeakSpots] = useState<WeakSpot[]>([]);
-  const [quietStart, setQuietStart] = useState("22:00");
-  const [quietEnd, setQuietEnd] = useState("07:00");
+  const [minutes, setMinutes] = useState<Record<GoalCategory, number>>(() => {
+    const m = Object.fromEntries(GOALS.map((g) => [g.category, g.initial])) as Record<GoalCategory, number>;
+    for (const g of saved?.goals ?? []) {
+      const opt = GOALS.find((x) => x.category === g.category) as GoalOption;
+      const v = g.category === "rest" ? g.weekly_minutes / 7 : g.weekly_minutes;
+      m[g.category] = Math.min(opt.max, Math.max(opt.min, Math.round(v / opt.step) * opt.step));
+    }
+    return m;
+  });
+  const [workStart, setWorkStart] = useState(p?.work_hours.start ?? "09:00");
+  const [workEnd, setWorkEnd] = useState(p?.work_hours.end ?? "18:00");
+  const [workDays, setWorkDays] = useState<Weekday[]>(p?.work_days ?? ["mon", "tue", "wed", "thu", "fri"]);
+  const [gymDays, setGymDays] = useState<Weekday[]>(p?.gym_days.length ? p.gym_days : ["tue", "thu", "sat"]);
+  const [weakSpots, setWeakSpots] = useState<WeakSpot[]>(p?.weak_spots ?? []);
+  const [quietStart, setQuietStart] = useState(p?.quiet_hours.start ?? "22:00");
+  const [quietEnd, setQuietEnd] = useState(p?.quiet_hours.end ?? "07:00");
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
 
   const panel = useRef<HTMLDivElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const direction = useRef(1);
-  const mounted = useRef(false);
+  const shown = useRef(step);
 
   // A calm entrance for each question; opacity only when the user asks for less motion.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: runs on every step change
+  // Compares with the last step shown, so the first render (and a re-run of the effect) stays put.
   useEffect(() => {
-    if (!mounted.current) {
-      mounted.current = true;
-      return;
-    }
+    if (shown.current === step) return;
+    shown.current = step;
     heading.current?.focus({ preventScroll: true });
     window.scrollTo({ top: 0 });
     const el = panel.current;
@@ -513,6 +530,8 @@ export function OnboardingFlow() {
       q: "Right. Let's get to work.",
       line: (
         <>
+          {resume?.calendar === "connected" ? <>Google Calendar is connected. </> : null}
+          {resume?.calendar === "failed" ? <>Google Calendar did not connect. Try again from You.</> : null}
           {weekly ? <>{weekly.charAt(0).toUpperCase() + weekly.slice(1)} a week. </> : null}
           {sleep ? <>Sleep {sleep} a night. </> : null}I find the time you lose and give it back. First brief
           tomorrow at <span className="tnum">{quietEnd}</span>.
@@ -560,7 +579,9 @@ export function OnboardingFlow() {
           <h1
             ref={heading}
             tabIndex={-1}
-            className="mt-3 text-large-title font-bold tracking-[0.01em] outline-none"
+            // Focus lands here for screen readers on every step; a ring on a heading means nothing.
+            style={{ outline: "none" }}
+            className="mt-3 text-large-title font-bold tracking-[0.01em]"
           >
             {s.q}
           </h1>
