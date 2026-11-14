@@ -2,9 +2,8 @@ import Link from "next/link";
 import { formatTime, hm } from "@/lib/format";
 import { type LostCause, type LostWeek, worstDay } from "@/lib/lost-week";
 
-const LETTER = ["M", "T", "W", "T", "F", "S", "S"];
 const NAME = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-const CHART_PX = 132;
+const CHART_PX = 64;
 
 /** A round top for the scale, so the tallest bar never touches the labels. */
 function niceMax(n: number) {
@@ -14,8 +13,10 @@ function niceMax(n: number) {
 }
 
 /**
- * Goal time lost per day of the week (Timeline, top). Bars are grey and hatched, the lost colour
- * everywhere in the app; days to come are empty slots, never zero bars. A bar opens that day.
+ * Goal time lost per day of the week (Timeline, top). Shown only when something was lost this week.
+ * Bars are grey and hatched, the lost colour everywhere in the app; days to come are empty slots,
+ * never zero bars. A bar opens that day. Day letters live in the week strip right below, which uses
+ * the same seven columns, so there is never a second row of dates.
  */
 export function LostWeekChart({
   week,
@@ -56,7 +57,7 @@ export function LostWeekChart({
             <>
               <span
                 className="relative flex w-full items-end justify-center"
-                style={{ height: CHART_PX + 20 }}
+                style={{ height: CHART_PX + 18 }}
               >
                 {future ? (
                   <span className="absolute inset-x-1 bottom-0 h-0 border-b border-dashed border-separator" />
@@ -77,13 +78,6 @@ export function LostWeekChart({
                     )}
                   </span>
                 )}
-              </span>
-              <span
-                className={`mt-1.5 grid size-7 place-items-center rounded-full text-footnote font-semibold ${
-                  isSelected ? "bg-label text-bg" : isToday ? "text-label" : "text-label-2"
-                }`}
-              >
-                {LETTER[i]}
               </span>
             </>
           );
@@ -112,9 +106,7 @@ export function LostWeekChart({
       {week.causes.length ? <LostCauses causes={week.causes} total={week.total} /> : null}
 
       <p className="mt-2 text-footnote text-label-2 tnum">
-        {worst
-          ? `Most on ${NAME[worstIdx]}, ${hm(worst.lost ?? 0)}. `
-          : "Nothing lost from goal blocks yet. "}
+        {worst ? `Most on ${NAME[worstIdx]}, ${hm(worst.lost ?? 0)}. ` : null}
         {week.phoneUntil
           ? `Phone data up to ${week.phoneUntil.slice(0, 10) === week.today ? formatTime(week.phoneUntil) : `${NAME[(new Date(`${week.phoneUntil.slice(0, 10)}T12:00:00Z`).getUTCDay() + 6) % 7]} ${formatTime(week.phoneUntil)}`}, so today can still grow.`
           : null}
