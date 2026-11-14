@@ -41,13 +41,18 @@ Done when: you are signed in as yourself. Tick "google-oauth-client" on the boar
 
 ## 2. Your Claude connector (Loukas and Manolis, 2 min each, after step 1)
 
-1. In the app: **You > Connect Claude and your devices > Claude > Create my link > Copy link**.
-2. claude.ai (web or desktop): **Settings > Connectors > Add custom connector**.
-   Name `Michael`, URL: paste. **Add**. Leave OAuth fields empty.
-3. New chat, tools menu, make sure **Michael** is on. Ask: "What are my goals and how did today go?"
-4. Claude Code instead (terminal): `claude mcp add --transport http michael <the link>`.
+No key: Claude signs in to Michael like any built-in connector, and sees only your own data.
 
-The phone app and voice mode use the same connector automatically.
+1. claude.ai (web or desktop): **Settings > Connectors > Add custom connector**.
+2. Name `Michael`, URL `https://api-production-16521a26.up.railway.app/mcp` (nothing after `/mcp`).
+   Leave the OAuth fields empty. **Add**, then **Connect**.
+3. A Michael page opens: sign in with Google if asked, check what Claude may see, tap **Allow**.
+4. New chat, tools menu, make sure **Michael** is on. Ask: "What are my goals and how did today go?"
+5. Claude Code instead (terminal): `claude mcp add --transport http michael https://api-production-16521a26.up.railway.app/mcp`,
+   then type `/mcp` inside Claude Code, pick `michael`, **Authenticate**, and Allow in the browser.
+   If you added it earlier with the shared key, run `claude mcp remove michael` first: that one is the demo account.
+
+The phone app and voice mode use the same connector automatically. Revoke it any time under Agents.
 
 ## 3. Google Calendar (Loukas, 3 min, same Google project as step 1)
 
@@ -86,13 +91,13 @@ Then each user taps **Connect Google Calendar** in the app once (issues #12, #13
 ## 7. Apple Watch data (Manolis, 5 min, after #8 ships)
 
 1. App Store: **Health Auto Export - JSON+CSV** (paid, has a trial). Allow Health access.
-2. In Michael: **You > Connect > Apple Watch > Create my link** (or use a personal token).
-3. Health Auto Export: **Automations > New > REST API**. URL: the link from step 2. Format JSON.
+2. In Michael: **You > Devices > Apple Watch > Connect > Copy** (a URL with your own key).
+3. Health Auto Export: **Automations > New > REST API**. URL: paste. Format JSON.
    Metrics: sleep analysis, workouts, heart rate, HRV, steps. Interval: 5 minutes. **Save**.
 
 ## 8. Your Mac (Manolis and Loukas, 2 min)
 
-In Michael: **You > Connect > Your Mac > Create my link > Copy**, then paste it into the collector
+In Michael: **You > Devices > Your Mac > Connect > Copy**, then paste it into the collector
 when it asks for the key (see `apps/collector` README). Real data then goes to your own account.
 
 ## 9. Team access (Loukas, 2 min)
