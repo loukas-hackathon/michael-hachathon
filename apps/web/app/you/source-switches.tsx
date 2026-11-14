@@ -18,6 +18,7 @@ const LABEL: Partial<Record<Source, [name: string, what: string]>> = {
   ios_shortcuts: ["Shortcuts", "Moments you log from your iPhone"],
   owntracks: ["Location", "Where you are, for gym and commute"],
   omi: ["Meetings", "Only when you start meetings mode"],
+  maps: ["Travel times", "Traffic between your saved places and plans"],
 };
 const ORDER = Object.keys(LABEL) as Source[];
 

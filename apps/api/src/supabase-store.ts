@@ -10,6 +10,7 @@ import type {
   IntegrationProvider,
   Nudge,
   NudgeStatus,
+  Place,
   Profile,
   Recommendation,
   RecommendationStatus,
@@ -20,12 +21,14 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { z } from "zod";
 import { currentUserId } from "./context";
 import { HttpError } from "./http";
+import type { GeocodeHit } from "./integrations/maps";
 import { type PrivacyRules, screenEvents } from "./privacy";
 import {
   type EventPatch,
   type InsertResult,
   type IntegrationPatch,
   type IntegrationRecord,
+  type NewRecommendation,
   type NudgeCreate,
   type PushDevice,
   type RecommendationActionUpdate,
@@ -76,6 +79,15 @@ const toRecommendation = (r: Record<string, unknown>): Recommendation => ({
   executed_at: iso(r.executed_at as string | null),
   undone_at: iso(r.undone_at as string | null),
   created_at: iso(r.created_at as string) as string,
+  updated_at: iso(r.updated_at as string) as string,
+});
+
+const toPlace = (r: Record<string, unknown>): Place => ({
+  key: r.key as string,
+  label: r.label as string,
+  address: (r.address as string | null) ?? null,
+  lat: (r.lat as number | null) ?? null,
+  lng: (r.lng as number | null) ?? null,
   updated_at: iso(r.updated_at as string) as string,
 });
 
@@ -398,6 +410,78 @@ export class SupabaseStore implements Store {
         .maybeSingle(),
     );
     return row ? toRecommendation(row) : null;
+  }
+
+  async createRecommendation(i: NewRecommendation) {
+    const row = check(
+      await this.db
+        .from("recommendations")
+        .insert({
+          user_id: currentUserId(),
+          analysis_run_id: i.analysis_run_id ?? null,
+          goal_id: i.goal_id,
+          title: i.title,
+          rationale: i.rationale,
+          action: i.action,
+        })
+        .select("*")
+        .single(),
+    );
+    return toRecommendation(row);
+  }
+
+  async listPlaces() {
+    const rows = check(await this.db.from("places").select("*").eq("user_id", currentUserId()).order("key"));
+    return (rows ?? []).map(toPlace);
+  }
+
+  async replacePlaces(places: Omit<Place, "updated_at">[]) {
+    const userId = currentUserId();
+    const keys = places.map((p) => p.key);
+    // Remove places no longer in the list, then upsert the rest.
+    let del = this.db.from("places").delete().eq("user_id", userId);
+    if (keys.length) del = del.not("key", "in", `(${keys.map((k) => `"${k}"`).join(",")})`);
+    check(await del);
+    if (!places.length) return [];
+    const updated_at = new Date().toISOString();
+    const rows = check(
+      await this.db
+        .from("places")
+        .upsert(
+          places.map((p) => ({ ...p, user_id: userId, updated_at })),
+          { onConflict: "user_id,key" },
+        )
+        .select("*")
+        .order("key"),
+    );
+    return (rows ?? []).map(toPlace);
+  }
+
+  async cachedGeocode(query: string) {
+    const r = check(
+      await this.db
+        .from("geocode_cache")
+        .select("*")
+        .eq("user_id", currentUserId())
+        .eq("query", query)
+        .maybeSingle(),
+    );
+    if (!r) return null;
+    return {
+      lat: r.lat as number,
+      lng: r.lng as number,
+      formatted_address: r.formatted_address as string,
+      place_id: (r.place_id as string | null) ?? null,
+      fetched_at: iso(r.fetched_at as string) as string,
+    };
+  }
+
+  async saveGeocode(query: string, hit: GeocodeHit) {
+    check(
+      await this.db
+        .from("geocode_cache")
+        .upsert({ user_id: currentUserId(), query, ...hit }, { onConflict: "user_id,query" }),
+    );
   }
 
   async latestAnalysisRun() {

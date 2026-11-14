@@ -66,14 +66,20 @@ The phone app and voice mode use the same connector automatically. Revoke it any
 
 Then each user taps **Connect Google Calendar** in the app once (issues #12, #13).
 
-## 4. Maps and traffic (Loukas, 5 min, optional until #115 is built)
+## 4. Maps and traffic (Loukas, 5 min; #115 is built, travel is skipped until the key is set)
 
 1. https://console.cloud.google.com/billing: link a billing account to project `Michael`
-   (the free monthly usage covers the demo).
-2. https://console.cloud.google.com/apis/library/routes.googleapis.com: **Enable**.
+   (the free monthly usage covers the demo: 5,000 traffic aware routes and 10,000 geocodes).
+2. Enable both APIs:
+   https://console.cloud.google.com/apis/library/routes.googleapis.com **Enable**, and
+   https://console.cloud.google.com/apis/library/geocoding-backend.googleapis.com **Enable**.
 3. **APIs & Services > Credentials > Create credentials > API key**. Then **Edit API key >
-   API restrictions > Restrict key > Routes API**. **Save**.
-4. Railway: `GOOGLE_MAPS_API_KEY`.
+   API restrictions > Restrict key > Routes API + Geocoding API**. Application restrictions:
+   none (Railway has no fixed IP). **Save**.
+4. Caps so a bug can never bill much: **Google Maps Platform > Quotas**, pick **Routes API**,
+   set `ComputeRoutes requests per day` to 150; pick **Geocoding API**, set requests per day
+   to 300. Billing > Budgets & alerts: a 10 EUR budget with an email alert.
+5. Railway: `GOOGLE_MAPS_API_KEY`.
 
 ## 5. Telegram bot (Loukas, 3 min)
 

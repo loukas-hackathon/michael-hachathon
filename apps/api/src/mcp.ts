@@ -1,9 +1,10 @@
-import { EventInput, EventType, RecommendationStatus, Source } from "@michael/shared";
+import { EventInput, EventType, RecommendationStatus, Source, TravelPlanInput } from "@michael/shared";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 import { guardTools } from "./mcp-guard";
 import { patternReportFor } from "./routes/patterns";
+import { travelPlanFor } from "./routes/places";
 import { scoreFor } from "./routes/score";
 import { store } from "./store";
 
@@ -97,6 +98,17 @@ export function createMcpServer(): McpServer {
       annotations: { readOnlyHint: true },
     },
     async ({ date }) => json(await scoreFor({ date })),
+  );
+
+  server.registerTool(
+    "plan_travel",
+    {
+      title: "Plan travel",
+      description:
+        "Work out the drives between the user's calendar events with live traffic (Google Maps), put them on the timeline and propose leaving later or moving the user's own block past the rush. Defaults to today (Europe/Athens). Status maps_unavailable or travel_off means nothing was computed.",
+      inputSchema: TravelPlanInput.shape,
+    },
+    async (input) => json(await travelPlanFor(TravelPlanInput.parse(input))),
   );
 
   server.registerTool(
