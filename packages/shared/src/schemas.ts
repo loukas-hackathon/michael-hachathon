@@ -219,6 +219,10 @@ export const Recommendation = z.object({
   title: z.string().min(1),
   rationale: z.string(),
   action: RecommendationAction.nullable(),
+  // What supports this recommendation, so the app can show the proof next to the claim: names of
+  // patterns (keys of PatternReport, e.g. "phone_cadence"), "plan" (the goals and their blocks) or
+  // "score". Absent on older rows.
+  evidence: z.array(z.string()).optional(),
   status: RecommendationStatus,
   executed_at: IsoDateTime.nullable(),
   undone_at: IsoDateTime.nullable(),
@@ -243,7 +247,10 @@ export const AnalysisRun = z.object({
   range_start: IsoDateTime,
   range_end: IsoDateTime,
   model: z.string(),
+  // Michael's short brief for the moment (at most four lines).
   summary: z.string().nullable(),
+  // One short question about a missing fact that would change the advice. Usually null.
+  question: z.string().nullable().optional(),
   error: z.string().nullable(),
   started_at: IsoDateTime,
   finished_at: IsoDateTime.nullable(),
@@ -253,6 +260,8 @@ export type AnalysisRun = z.infer<typeof AnalysisRun>;
 export const AnalysisTriggerInput = z.object({
   from: IsoDateTime.optional(),
   to: IsoDateTime.optional(),
+  // Which moment this run is for. Default: manual.
+  trigger: AnalysisTrigger.optional(),
 });
 export type AnalysisTriggerInput = z.infer<typeof AnalysisTriggerInput>;
 

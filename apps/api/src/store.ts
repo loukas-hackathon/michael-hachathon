@@ -138,6 +138,10 @@ export interface Store extends PrivacyBackend {
   getRecommendationExecution(id: string): Promise<unknown>;
   recordRecommendationAction(id: string, update: RecommendationActionUpdate): Promise<Recommendation | null>;
   latestAnalysisRun(): Promise<AnalysisRun | null>;
+  /** The questions Michael asked in earlier analysis runs, newest first. */
+  listAnalysisQuestions(limit: number): Promise<AskedQuestion[]>;
+  /** Stores one finished analysis run and the recommendations it produced (all `proposed`). */
+  saveAnalysis(input: NewAnalysis): Promise<{ run: AnalysisRun; recommendations: Recommendation[] }>;
   // Proposed by Michael's own rules (e.g. travel) or asked for in chat; status starts at proposed.
   createRecommendation(input: NewRecommendation): Promise<Recommendation>;
   // Saved places (home, work, gym). replacePlaces swaps the whole list.
@@ -193,6 +197,16 @@ export interface Store extends PrivacyBackend {
   ): Promise<SeedResult>;
   // Writes goals with their fixed ids. `overwrite: false` only adds the missing ones.
   seedGoals(goals: Goal[], opts: { overwrite: boolean }): Promise<number>;
+}
+
+export interface AskedQuestion {
+  question: string;
+  asked_at: string;
+}
+
+export interface NewAnalysis {
+  run: Omit<AnalysisRun, "id">;
+  recommendations: Pick<Recommendation, "goal_id" | "title" | "rationale" | "action" | "evidence">[];
 }
 
 export const emptyIntegration = (provider: IntegrationProvider): IntegrationRecord => ({
@@ -432,6 +446,37 @@ export class MemoryStore implements Store {
 
   async latestAnalysisRun() {
     return this.runs.at(-1) ?? null;
+  }
+
+  async listAnalysisQuestions(limit: number) {
+    return this.runs
+      .flatMap((r) => (r.question ? [{ question: r.question, asked_at: r.started_at }] : []))
+      .reverse()
+      .slice(0, limit);
+  }
+
+  async saveAnalysis(input: NewAnalysis) {
+    const run: AnalysisRun = { id: crypto.randomUUID(), ...input.run };
+    this.runs.push(run);
+    const at = run.finished_at ?? now();
+    const recommendations = input.recommendations.map(
+      (r): Recommendation => ({
+        id: crypto.randomUUID(),
+        analysis_run_id: run.id,
+        goal_id: r.goal_id,
+        title: r.title,
+        rationale: r.rationale,
+        action: r.action,
+        evidence: r.evidence ?? [],
+        status: "proposed",
+        executed_at: null,
+        undone_at: null,
+        created_at: at,
+        updated_at: at,
+      }),
+    );
+    this.recommendations.push(...recommendations);
+    return { run, recommendations };
   }
 
   async listChatMessages(limit: number) {
