@@ -109,6 +109,11 @@ export async function sendChat(message: string): Promise<ChatResult> {
     : { ok: false, code: "internal", message: `POST /v1/chat failed: ${res.status}` };
 }
 
+/** POST /v1/recommendations/:id/undo: takes back something Michael did on the calendar. */
+export async function undoRecommendation(id: string): Promise<Recommendation> {
+  return send<Recommendation>("POST", `/v1/recommendations/${encodeURIComponent(id)}/undo`);
+}
+
 export async function getTimeline(from: string, to: string): Promise<TimelineResponse> {
   if (USE_MOCKS) return { from, to, events: mockEvents };
   const qs = new URLSearchParams({ from, to });

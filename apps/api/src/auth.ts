@@ -3,10 +3,12 @@ import { createClient } from "@supabase/supabase-js";
 import type { MiddlewareHandler } from "hono";
 import { agentsStore } from "./agents-store";
 import { type AuthMethod, runAsUser } from "./context";
+import { keepDemoWeekFresh } from "./demo/sync";
 import { env } from "./env";
 import { errorResponse } from "./http";
 import { mcpResource, resourceMetadataUrl } from "./public-url";
 import { verifyAccessToken } from "./routes/oauth";
+import { store } from "./store";
 import { isPersonalToken, userForPersonalToken } from "./tokens";
 
 const digest = (s: string) => createHash("sha256").update(s).digest();
@@ -81,6 +83,9 @@ export const requireUser =
       via = "session";
     }
     if (!userId) return deny("Invalid or expired credentials");
+
+    // The demo account's generated week follows the clock (at most one refresh per 5 minutes).
+    if (userId === env.DEMO_USER_ID) await runAsUser(userId, () => keepDemoWeekFresh(store), via);
 
     if (agentId) {
       // The agent behind the token: its current scopes apply and every tool call is logged.

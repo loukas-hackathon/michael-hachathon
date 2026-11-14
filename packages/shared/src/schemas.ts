@@ -23,6 +23,8 @@ export const Source = z.enum([
   "iphone_usage",
   "chrome",
   "claude_code",
+  // Travel times from Google Maps, computed by the API between the user's places (opt in).
+  "maps",
 ]);
 export type Source = z.infer<typeof Source>;
 
@@ -46,6 +48,8 @@ export const EventType = z.enum([
   "screen",
   "ai_session",
   "ai_prompt",
+  // A planned trip between two places, with traffic (source maps). Payload in docs/api.md.
+  "travel",
 ]);
 export type EventType = z.infer<typeof EventType>;
 
@@ -203,6 +207,11 @@ export const RecommendationAction = z.object({
 });
 export type RecommendationAction = z.infer<typeof RecommendationAction>;
 
+// Where a recommendation came from: the analysis run, or the user asking in chat (or by voice), in
+// which case Michael carried it out straight away.
+export const RecommendationSource = z.enum(["analysis", "chat"]);
+export type RecommendationSource = z.infer<typeof RecommendationSource>;
+
 export const Recommendation = z.object({
   id: z.uuid(),
   analysis_run_id: z.uuid().nullable(),
@@ -213,6 +222,8 @@ export const Recommendation = z.object({
   status: RecommendationStatus,
   executed_at: IsoDateTime.nullable(),
   undone_at: IsoDateTime.nullable(),
+  // Absent on older rows: read as "analysis".
+  source: RecommendationSource.optional(),
   created_at: IsoDateTime,
   updated_at: IsoDateTime,
 });
@@ -383,6 +394,99 @@ export const DEFAULT_PROFILE: Profile = {
   updated_at: null,
 };
 
+// ---------- places and travel (GET/PUT /v1/places, POST /v1/travel/plan) ----------
+
+// The user's saved places. `key` is a short slug ("home", "work", "gym", "university").
+export const PlaceKey = z
+  .string()
+  .regex(/^[a-z][a-z0-9_]{0,31}$/, "lower case letters, digits and underscores");
+export type PlaceKey = z.infer<typeof PlaceKey>;
+
+export const Place = z.object({
+  key: PlaceKey,
+  label: z.string().min(1).max(80),
+  // What the user typed. Null when the place was set from coordinates only.
+  address: z.string().nullable(),
+  // Null until geocoded (no maps key yet, or the address was not found).
+  lat: z.number().min(-90).max(90).nullable(),
+  lng: z.number().min(-180).max(180).nullable(),
+  updated_at: IsoDateTime,
+});
+export type Place = z.infer<typeof Place>;
+
+export const PlaceInput = z
+  .object({
+    key: PlaceKey,
+    label: z.string().min(1).max(80).optional(),
+    address: z.string().min(1).max(300).nullish(),
+    lat: z.number().min(-90).max(90).nullish(),
+    lng: z.number().min(-180).max(180).nullish(),
+  })
+  .refine((p) => p.address || (typeof p.lat === "number" && typeof p.lng === "number"), {
+    message: "Give an address, or both lat and lng",
+  });
+export type PlaceInput = z.input<typeof PlaceInput>;
+
+// PUT replaces the whole list. Saving places is the user's opt in to travel times (source maps).
+export const PlacesUpdate = z.object({ places: z.array(PlaceInput).max(20) });
+export type PlacesUpdate = z.input<typeof PlacesUpdate>;
+
+export const PlacesResponse = z.object({
+  places: z.array(Place),
+  // True when the server has a maps key; without it places are kept but nothing is computed.
+  maps_available: z.boolean(),
+  // The user's switch for source maps (privacy). Travel is computed only when true.
+  travel_enabled: z.boolean(),
+});
+export type PlacesResponse = z.infer<typeof PlacesResponse>;
+
+// One sampled departure for a trip.
+export const TravelOption = z.object({
+  depart_at: IsoDateTime,
+  arrive_at: IsoDateTime,
+  minutes: z.number().int().nonnegative(),
+});
+export type TravelOption = z.infer<typeof TravelOption>;
+
+// `data` of an event with source maps and type travel.
+export const TravelData = z.object({
+  calendar_event_id: z.string(),
+  from: z.object({ label: z.string(), place_key: PlaceKey.nullable() }),
+  to: z.object({ label: z.string(), place_key: PlaceKey.nullable() }),
+  mode: z.literal("drive"),
+  // The planned trip (the event's start and end).
+  minutes: z.number().int().nonnegative(),
+  // The same trip with empty roads; minutes minus this is time lost to traffic.
+  free_flow_minutes: z.number().int().nonnegative(),
+  distance_km: z.number().nonnegative(),
+  // Leaving as soon as the user is free, and what that would cost.
+  naive_depart_at: IsoDateTime,
+  naive_minutes: z.number().int().nonnegative(),
+  won_minutes: z.number().int().nonnegative(),
+  options: z.array(TravelOption),
+});
+export type TravelData = z.infer<typeof TravelData>;
+
+export const TravelPlanInput = z.object({
+  from: IsoDateTime.optional(),
+  to: IsoDateTime.optional(),
+});
+export type TravelPlanInput = z.infer<typeof TravelPlanInput>;
+
+export const TravelPlanStatus = z.enum(["ok", "maps_unavailable", "travel_off"]);
+export type TravelPlanStatus = z.infer<typeof TravelPlanStatus>;
+
+export const TravelPlanResult = z.object({
+  status: TravelPlanStatus,
+  from: IsoDateTime,
+  to: IsoDateTime,
+  travel: z.array(Event),
+  recommendations: z.array(Recommendation),
+  // Calendar events with a location that got no trip, and why.
+  skipped: z.array(z.object({ calendar_event_id: z.string(), reason: z.string() })),
+});
+export type TravelPlanResult = z.infer<typeof TravelPlanResult>;
+
 // ---------- Michael for agents ----------
 
 export const AgentScope = z.enum(["timeline", "goals", "recommendations", "score", "write_events"]);
@@ -444,7 +548,15 @@ export const NudgeStatus = z.enum(["queued", "sent", "failed", "suppressed"]);
 export type NudgeStatus = z.infer<typeof NudgeStatus>;
 
 // What a nudge is about. Each kind is one rule of the engine (apps/api/src/nudges).
-export const NudgeKind = z.enum(["focus_drift", "block_soon", "wind_down", "goal_behind"]);
+// morning and evening carry the Morning and Evening moments (GET /v1/moments/:kind), once each a day.
+export const NudgeKind = z.enum([
+  "focus_drift",
+  "block_soon",
+  "wind_down",
+  "goal_behind",
+  "morning",
+  "evening",
+]);
 export type NudgeKind = z.infer<typeof NudgeKind>;
 
 // At most 5 per day, under 15 words, never during quiet hours, each tied to a goal.
@@ -1110,6 +1222,9 @@ export const ChatResponse = z.object({
   // The user's line as stored, then Michael's answer.
   message: ChatMessage,
   reply: ChatMessage,
+  // What Michael did on the user's own calendar while answering (source "chat"): status "done"
+  // with `action.undo_until` as the undo deadline, or "undone" when the user asked to take one back.
+  actions: z.array(Recommendation).default([]),
 });
 export type ChatResponse = z.infer<typeof ChatResponse>;
 
@@ -1136,6 +1251,21 @@ export type PersonalTokenCreate = z.infer<typeof PersonalTokenCreate>;
 
 export const PersonalTokenCreated = z.object({ token: PersonalToken, secret: z.string() });
 export type PersonalTokenCreated = z.infer<typeof PersonalTokenCreated>;
+
+// ---------- demo account ----------
+
+// POST /v1/demo/reseed: what bringing the demo week up to now changed.
+export const DemoSeedResult = z.object({
+  // Athens local dates covered, oldest first; the last one is today.
+  days: z.array(LocalDay),
+  events: z.object({
+    inserted: z.number().int().nonnegative(),
+    removed: z.number().int().nonnegative(),
+    kept: z.number().int().nonnegative(),
+  }),
+  goals_written: z.number().int().nonnegative(),
+});
+export type DemoSeedResult = z.infer<typeof DemoSeedResult>;
 
 // ---------- errors ----------
 

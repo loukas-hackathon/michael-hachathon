@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { Evidence, Lead } from "@/lib/day";
 import { formatTime } from "@/lib/format";
 import { MiMark } from "../brand";
@@ -124,7 +125,15 @@ export function MichaelCard({ lead }: { lead: Lead }) {
           <Rich parts={lead.fix} strongClass="font-semibold" />
         </p>
       ) : null}
-      {lead.action ? <UndoButton label={lead.action.label} done={lead.action.done} /> : null}
+      <div className="flex flex-wrap items-center gap-2">
+        {lead.action ? <UndoButton label={lead.action.label} done={lead.action.done} /> : null}
+        <Link
+          href="/chat"
+          className="press inline-flex min-h-9 items-center rounded-full px-2 text-subhead font-semibold text-tint-text"
+        >
+          Ask Michael
+        </Link>
+      </div>
     </article>
   );
 }

@@ -51,8 +51,8 @@ Every non-2xx response:
 
 Enums:
 
-- `Source`: `omi | whoop | health_auto_export | ios_shortcuts | activitywatch | google_calendar | owntracks | manual | agent | macos_usage | iphone_usage | chrome | claude_code`
-- `EventType`: `sleep | workout | recovery | biometric | app_usage | focus_session | conversation | memory | calendar_event | location | meal | note | web_visit | search | notification | screen | ai_session | ai_prompt`
+- `Source`: `omi | whoop | health_auto_export | ios_shortcuts | activitywatch | google_calendar | owntracks | manual | agent | macos_usage | iphone_usage | chrome | claude_code | maps`
+- `EventType`: `sleep | workout | recovery | biometric | app_usage | focus_session | conversation | memory | calendar_event | location | meal | note | web_visit | search | notification | screen | ai_session | ai_prompt | travel`
 - `GoalCategory`: `work | gym | rest | food`
 - `RecommendationStatus`: `proposed | accepted | dismissed | done | undone` (`done` = action executed)
 - `ActionKind`: `move_calendar_block | create_focus_block | block_mac_app | draft_follow_up | reminder`
@@ -61,7 +61,7 @@ Enums:
 - `AgentScope`: `timeline | goals | recommendations | score | write_events`
 - `AgentStatus`: `pending | approved | revoked`
 - `NudgeChannel`: `watch | push | telegram`; `NudgeStatus`: `queued | sent | failed | suppressed`
-- `NudgeKind`: `focus_drift | block_soon | wind_down | goal_behind`; `NudgeSkip`: `nothing_to_say | quiet_hours | daily_cap | too_soon | off_the_record`
+- `NudgeKind`: `focus_drift | block_soon | wind_down | goal_behind | morning | evening`; `NudgeSkip`: `nothing_to_say | quiet_hours | daily_cap | too_soon | off_the_record`
 - `AppCategory`: `work | communication | social | video | news | shopping | travel | ai | music | system | other`
   (one shared categoriser for apps and sites, `packages/shared/src/categories.ts`; unknown = `other`)
 - `IntegrationProvider`: `google_calendar | whoop`
@@ -128,6 +128,7 @@ type Recommendation = {
   status: RecommendationStatus;
   executed_at: string | null;
   undone_at: string | null;
+  source?: "analysis" | "chat"; // "chat": asked for in chat or by voice and carried out at once
   created_at: string;
   updated_at: string;
 };
@@ -756,11 +757,11 @@ travel site" or "an uncategorised site". Structured `data` carries the host for 
 
 ### Chat
 
-| Method | Path                | Body                                  | Response                                                                                                                                                                                                        | Status |
-| ------ | ------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| GET    | `/v1/chat?limit=50` |                                       | `200 { messages: ChatMessage[] }` (oldest first, limit 1..100)                                                                                                                                                  | live   |
-| POST   | `/v1/chat`          | `{ message: string }` (1..2000 chars) | `201 { message: ChatMessage, reply: ChatMessage }`; `503 unavailable` without `ANTHROPIC_API_KEY`; `502 upstream_error` if Claude fails                                                                         | live   |
-| POST   | `/v1/chat/stream`   | `{ message: string }` (1..2000 chars) | `200 text/event-stream`: `event: delta` `{ text }` per piece, then `event: done` `ChatResponse`, or `event: error` `ApiError`. Validation and `503 unavailable` come back as plain JSON before the stream opens | live   |
+| Method | Path                | Body                                  | Response                                                                                                                                                                                                                                                                   | Status |
+| ------ | ------------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| GET    | `/v1/chat?limit=50` |                                       | `200 { messages: ChatMessage[] }` (oldest first, limit 1..100)                                                                                                                                                                                                             | live   |
+| POST   | `/v1/chat`          | `{ message: string }` (1..2000 chars) | `201 ChatResponse` `{ message, reply, actions: Recommendation[] }`; `503 unavailable` without `ANTHROPIC_API_KEY`; `502 upstream_error` if Claude fails                                                                                                                    | live   |
+| POST   | `/v1/chat/stream`   | `{ message: string }` (1..2000 chars) | `200 text/event-stream`: `event: delta` `{ text }` per piece, `event: action` `Recommendation` per thing done or undone, then `event: done` `ChatResponse`, or `event: error` `ApiError`. Validation and `503 unavailable` come back as plain JSON before the stream opens | live   |
 
 `/v1/chat` stays for callers that want the whole answer (MCP, voice); `/v1/chat/stream` gives the
 first words fast and stores the same pair when it finishes.
@@ -773,8 +774,20 @@ left; today's score and biggest losses inside goal blocks),
 the active goals with weekly budgets, today's calendar, workout, sleep, meal and focus entries,
 today's screen time totals, 7 day totals per type and the pattern headlines for today and the last
 7 days, plus the last 20 lines of chat. Raw app, web and AI events are never sent, only totals, and
-conversations and memories stay out. Nothing is stored when the call fails. The chat only advises;
-it never changes the calendar.
+conversations and memories stay out. Nothing is stored when the call fails.
+
+**Chat acts on the user's own time (#46).** Claude gets four tools, run server side inside the
+request (no HTTP self calls): `find_calendar_blocks { from, to }` (ids and whether a block may be
+moved), `create_focus_block { title, start_at, end_at, goal_id? }`, `move_calendar_block { event_id,
+start_at, end_at?, new_title? }` and `undo_action { recommendation_id }`. Each action becomes a
+recommendation with `source: "chat"` that is carried out at once by the same code as
+`POST /v1/recommendations/:id/execute` (and `/undo`), so every guard rail holds: events with other
+people and anything already started are refused (the model hears the 409 and advises instead;
+the refused recommendation is stored as `dismissed`), Michael never deletes the user's events, and
+undo works until the block starts. `ChatResponse.actions` lists what was done (`status: "done"`,
+deadline in `action.undo_until`) or undone in this answer, and the reply always ends with
+"Undo until HH:MM." for each thing done. The context gives Claude ids only for the user's own blocks
+that have not started, goal ids, and the things that can still be undone.
 
 ### Moments (Morning and Evening)
 
@@ -1045,6 +1058,83 @@ The web app sends a new user (no goals and `onboarded_at: null`) from Today to `
 Stored as one jsonb document per user (`user_profiles`); a missing or invalid field reads as its
 default.
 
+### Places and travel
+
+Time in traffic is time lost. The API learns drive times between the user's places with Google
+Maps (one server side key, `GOOGLE_MAPS_API_KEY`; the user never sees a key) and proposes leaving
+later, or moving the user's own block past the rush.
+
+```ts
+type Place = {
+  key: string; // slug: "home" | "work" | "gym" | "university" | ...
+  label: string; // "Home", or what the user called it
+  address: string | null;
+  lat: number | null; // null until geocoded
+  lng: number | null;
+  updated_at: string;
+};
+type PlaceInput = {
+  key: string;
+  label?: string;
+  address?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+};
+// address, or both lat and lng
+type PlacesResponse = { places: Place[]; maps_available: boolean; travel_enabled: boolean };
+
+type TravelOption = { depart_at: string; arrive_at: string; minutes: number };
+// `data` of an event { source: "maps", type: "travel" }; the event spans the planned drive.
+type TravelData = {
+  calendar_event_id: string;
+  from: { label: string; place_key: string | null };
+  to: { label: string; place_key: string | null };
+  mode: "drive";
+  minutes: number; // the planned drive
+  free_flow_minutes: number; // empty roads; minutes minus this is traffic
+  distance_km: number;
+  naive_depart_at: string; // leaving as soon as the user is free
+  naive_minutes: number;
+  won_minutes: number; // naive_minutes minus minutes
+  options: TravelOption[]; // every departure sampled
+};
+type TravelPlanResult = {
+  status: "ok" | "maps_unavailable" | "travel_off";
+  from: string;
+  to: string;
+  travel: Event[]; // newly stored travel events
+  recommendations: Recommendation[]; // newly proposed
+  skipped: { calendar_event_id: string; reason: string }[];
+};
+```
+
+| Method | Path              | Body                                | Response               | Status |
+| ------ | ----------------- | ----------------------------------- | ---------------------- | ------ |
+| GET    | `/v1/places`      |                                     | `200 PlacesResponse`   | live   |
+| PUT    | `/v1/places`      | `{ places: PlaceInput[] }` (max 20) | `200 PlacesResponse`   | live   |
+| POST   | `/v1/travel/plan` | optional `{ from?, to? }` (ISO)     | `200 TravelPlanResult` | live   |
+
+- `PUT /v1/places` replaces the whole list. Addresses are geocoded on save when the server has a
+  key (cached per user for 30 days, as Google's terms allow); otherwise coordinates stay `null`.
+  The first save switches source `maps` on: that is the user's opt in. The privacy switch
+  (`PATCH /v1/privacy/sources/maps`) turns it off again, and off the record stops it too.
+- `POST /v1/travel/plan` defaults to today (Europe/Athens). For each calendar event with a
+  physical location (Meet, Zoom and links are skipped) it finds the place before it: the previous
+  event that day with a location, else `home`. A location matches a saved place by label or key
+  word ("Local gym" is `gym`), else it is geocoded. It samples departures from when the user is
+  free, every 15 minutes (at most 6 Routes calls), stores the fastest drive that still arrives 5
+  minutes early as a travel event (idempotent per calendar event), and proposes:
+  - **leave later** when it saves 10 minutes or more: `reminder` action at the new departure
+    (`"Leave at 18:00 instead of 17:00, win 30 minutes"`);
+  - otherwise, for the user's own block (no attendees) stuck in 15 minutes or more of traffic,
+    **move the block** after the rush when it saves 15 minutes or more and fits before the next
+    event: `move_calendar_block` with `{ event_id, start_at, end_at, from_start_at }` (`MoveCalendarBlockPayload`),
+    `undo_until` = the original start. Meetings with other people are never moved.
+    Recommendations carry the goal the block serves (`apps/api/src/score/match.ts`).
+- Without `GOOGLE_MAPS_API_KEY` the status is `maps_unavailable` and nothing is computed; without
+  the opt in it is `travel_off`. Code: `apps/api/src/integrations/maps.ts` (Geocoding, Routes
+  `computeRoutes` with `TRAFFIC_AWARE` and `departureTime`) and `integrations/travel.ts`.
+
 ### Michael for agents
 
 ```ts
@@ -1121,14 +1211,22 @@ type NudgeCheckResult = {
 | POST   | `/v1/nudges/test`      | `200 NudgeTestResult` (push one nudge to the caller's devices now)      | live   |
 
 Nudge engine (`apps/api/src/nudges/engine.ts`, pure, thresholds in `LIMITS`). Each check picks the
-most urgent candidate of four rules, each tied to a goal:
+most urgent candidate of these rules (in this order):
 
-| Kind          | When                                                                          | Example                                                           |
-| ------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `focus_drift` | inside a work goal block, 3+ of the last 10 min on distractor apps or sites   | "6 min on Instagram in your focus block. Back to it until 12:00." |
-| `block_soon`  | a goal block starts in 2 to 15 min                                            | "Gym at 18:00. Wrap up in 12 min."                                |
-| `wind_down`   | 30 min before the night, 3+ of the last 10 min on screens, a rest goal exists | "Screens off by 22:00. Sleep is on the plan."                     |
-| `goal_behind` | before 19:00, a weekly budget behind its linear pace by 60+ min and 15%+      | "Gym 2h 34m behind this week. Book 90 min today."                 |
+| Kind          | When                                                                                                                         | Example                                                               |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `focus_drift` | inside a work goal block, 3+ of the last 10 min on distractor apps or sites                                                  | "6 min on Instagram in your focus block. Back to it until 12:00."     |
+| `block_soon`  | a goal block starts in 2 to 15 min                                                                                           | "Gym at 18:00. Wrap up in 12 min."                                    |
+| `morning`     | after the night's sleep (3h+) ends today, else from 08:00; until 12:00                                                       | the Morning moment's headline, e.g. "Today holds 2h 00 of goal time." |
+| `evening`     | an hour before the usual bedtime (median of 3+ of the last 8 nights), else 21:00; never later than 45 min before quiet hours | the Evening moment's headline                                         |
+| `wind_down`   | 30 min before the night, 3+ of the last 10 min on screens, a rest goal exists                                                | "Screens off by 22:00. Sleep is on the plan."                         |
+| `goal_behind` | before 19:00, a weekly budget behind its linear pace by 60+ min and 15%+                                                     | "Gym 2h 34m behind this week. Book 90 min today."                     |
+
+`morning` and `evening` carry the Morning and Evening moments (`GET /v1/moments/:kind`, template
+headline, no model): the headline when it is under 15 words, else its first sentence, else a shorter
+line from the same numbers; `reason` holds the maths and when it was sent. Their key is the kind, so
+each goes out at most once a day, and they count toward the 5. The push opens Today (`url: "/"`).
+The night's quiet hours come from the profile (`quiet_hours`, default 22:00 to 07:00).
 
 Goal time spent this week = the goal's calendar blocks so far plus its own events (`work`:
 `focus_session`, `gym`: `workout`, `rest`: `sleep`, `food`: `meal`), counted once. Rules: at most 5
@@ -1309,6 +1407,39 @@ Stated here and at the top of `apps/api/src/score/score.ts`; the two change toge
   the shared public list, otherwise by its category ("a travel site"). `minutes` is the time lost
   inside the stretch.
 
+### Demo account
+
+| Method | Path              | Response             | Status |
+| ------ | ----------------- | -------------------- | ------ |
+| POST   | `/v1/demo/reseed` | `200 DemoSeedResult` | live   |
+
+```ts
+type DemoSeedResult = {
+  days: string[]; // Athens dates covered, oldest first; the last is today
+  events: { inserted: number; removed: number; kept: number };
+  goals_written: number;
+};
+```
+
+The demo account (`API_KEY`) carries a generated week (`apps/api/src/demo`): the seven Athens days
+ending now, plus its calendar planned to Sunday. The Mac, iPhone, Chrome and Claude Code lanes
+replay Manolis' anonymised real days (`apps/web/lib/sample/real`); Apple Watch, Google Calendar,
+Omi conversations and meals are generated around them. Every generated event has an `external_id`
+starting `demo:`; only those rows are ever added or removed, so nothing else in the account is
+touched; days that leave the window are removed. The API refreshes the week on demo requests at
+most every 5 minutes (the first refresh after a deploy resets the goals to the Build Hub plan,
+later ones keep edits; `DEMO_WEEK=off` turns it off). `POST /v1/demo/reseed` also resets the goals.
+Any other account gets `403 forbidden`. Off the record, nothing changes. Per source switches are
+not applied: on the demo account they keep real collectors out (#114). From a terminal:
+`pnpm --filter @michael/api seed:demo` (or `--dry` to print the week without a database).
+
+Generated events use exactly the titles and `data` of the real ingest paths (Health Auto Export
+sleep, workouts and hourly `heart_rate`, `step_count`, `heart_rate_variability`,
+`resting_heart_rate`; Omi conversations; the collector's lanes); a test compares them with the
+webhook mappers. Calendar events carry `attendees` (the number of other people, 0 for the user's
+own blocks), `calendar`, `location?`, `status`, `all_day`. Meals are `manual` `meal` events with
+`estimated_kcal`, `protein_g`; typed notes are `manual` `note` events with `category`.
+
 ## MCP server
 
 Streamable HTTP at `POST /mcp` (stateless, JSON responses). Auth: `Authorization: Bearer <token>`,
@@ -1363,5 +1494,6 @@ On allow, `redirect_to` carries a one time `code` (5 minutes), `state` and `iss`
 | `get_patterns`        | `{ from?, to? }` (default: the last 7 days)             | `PatternReport`                                                              |
 | `get_score`           | `{ date? }` (a local day, default today)                | `Score`                                                                      |
 | `add_event`           | `EventInput`                                            | `{ inserted: number, duplicates: number, ignored: number, events: Event[] }` |
+| `plan_travel`         | `{ from?, to? }` (default today)                        | `TravelPlanResult` (see Places and travel)                                   |
 
 Status: all `live` (Supabase in production, in-memory locally without Supabase keys).

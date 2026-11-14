@@ -6,6 +6,8 @@ const Env = z.object({
   API_KEY: z.string().min(1).default("dev-key"),
   // The demo account (Supabase Auth user) that API-key requests act for.
   DEMO_USER_ID: z.uuid().default("2ee12960-e594-456d-85cb-a672d0ff3ac3"),
+  // "on": the demo account carries the generated demo week (src/demo), kept up to now. "off": not.
+  DEMO_WEEK: z.enum(["on", "off"]).default("on"),
   // Comma-separated origins allowed by CORS (the web app).
   WEB_ORIGIN: z.string().default("http://localhost:3000"),
   // Public base URL of this API, used for OAuth redirect URIs.
@@ -38,6 +40,8 @@ const Env = z.object({
     .optional()
     .transform((v) => (v ? v === "true" : process.env.NODE_ENV === "production")),
   SCHEDULER_INTERVAL_MINUTES: z.coerce.number().positive().default(5),
+  // Google Maps Platform (Routes API + Geocoding API), server side only. Empty = no travel times.
+  GOOGLE_MAPS_API_KEY: z.string().optional(),
 });
 
 export type Env = z.infer<typeof Env>;

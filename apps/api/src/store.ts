@@ -16,6 +16,7 @@ import {
   mockRecommendations,
   type Nudge,
   type NudgeStatus,
+  type Place,
   type Profile,
   type Recommendation,
   type RecommendationStatus,
@@ -24,7 +25,9 @@ import {
 } from "@michael/shared";
 import type { z } from "zod";
 import { currentUserId } from "./context";
+import { stableUuid } from "./demo/week";
 import { env } from "./env";
+import type { GeocodeHit } from "./integrations/maps";
 import { type PrivacyBackend, type PrivacyRules, screenEvents } from "./privacy";
 import { SupabaseStore } from "./supabase-store";
 
@@ -33,6 +36,17 @@ export interface TimelineFilter {
   to: string;
   source?: Source[];
   type?: EventType[];
+}
+
+export type NewRecommendation = Pick<Recommendation, "goal_id" | "title" | "rationale" | "action"> & {
+  analysis_run_id?: string | null;
+  source?: Recommendation["source"];
+};
+
+export interface SeedResult {
+  inserted: number;
+  removed: number;
+  kept: number;
 }
 
 export interface InsertResult {
@@ -123,6 +137,14 @@ export interface Store extends PrivacyBackend {
   getRecommendationExecution(id: string): Promise<unknown>;
   recordRecommendationAction(id: string, update: RecommendationActionUpdate): Promise<Recommendation | null>;
   latestAnalysisRun(): Promise<AnalysisRun | null>;
+  // Proposed by Michael's own rules (e.g. travel) or asked for in chat; status starts at proposed.
+  createRecommendation(input: NewRecommendation): Promise<Recommendation>;
+  // Saved places (home, work, gym). replacePlaces swaps the whole list.
+  listPlaces(): Promise<Place[]>;
+  replacePlaces(places: Omit<Place, "updated_at">[]): Promise<Place[]>;
+  // Geocoding cache, per user, keyed by the normalised query (integrations/maps.ts).
+  cachedGeocode(query: string): Promise<GeocodeHit | null>;
+  saveGeocode(query: string, hit: GeocodeHit): Promise<void>;
   // Privacy (privacy.ts holds the rules; insertEvents applies them).
   setOffTheRecord(on: boolean): Promise<PrivacyRules>;
   /** The most recent chat messages, oldest first. */
@@ -158,6 +180,18 @@ export interface Store extends PrivacyBackend {
    * `since`. Only the scheduler calls it, outside any request, and then runs each check as that user.
    */
   activeUserIds(since: string): Promise<string[]>;
+
+  // Seeding (the demo week, src/demo). Makes the current user's events whose external_id starts
+  // with `prefix` and whose source is in `sources` exactly `events`: missing ones are inserted,
+  // ones no longer listed are removed. Events without the prefix or of other sources are never
+  // touched. No privacy screening here: the caller decides which sources to pass.
+  syncSeededEvents(
+    prefix: string,
+    sources: Source[],
+    events: z.output<typeof EventInput>[],
+  ): Promise<SeedResult>;
+  // Writes goals with their fixed ids. `overwrite: false` only adds the missing ones.
+  seedGoals(goals: Goal[], opts: { overwrite: boolean }): Promise<number>;
 }
 
 export const emptyIntegration = (provider: IntegrationProvider): IntegrationRecord => ({
@@ -183,6 +217,7 @@ const overlaps = (e: Event, from: number, to: number) => {
 export class MemoryStore implements Store {
   readonly kind = "memory" as const;
   // One copy of the mock day per user, created on first access, so users never see each other's data.
+  // The demo account starts empty instead: the demo week (src/demo) fills it on its first request.
   private data = new Map<
     string,
     {
@@ -196,15 +231,18 @@ export class MemoryStore implements Store {
       nudges: Nudge[];
       push: PushDevice[];
       executions: Map<string, unknown>;
+      places: Place[];
+      geocodes: Map<string, GeocodeHit>;
     }
   >();
   private get d() {
     const userId = currentUserId();
     let x = this.data.get(userId);
     if (!x) {
+      const demo = userId === env.DEMO_USER_ID && env.DEMO_WEEK === "on";
       x = {
-        events: structuredClone(mockEvents),
-        goals: structuredClone(mockGoals),
+        events: demo ? [] : structuredClone(mockEvents),
+        goals: demo ? [] : structuredClone(mockGoals),
         recommendations: structuredClone(mockRecommendations),
         runs: [structuredClone(mockAnalysisRun)],
         privacy: { offTheRecord: false, since: null, sources: {} },
@@ -213,6 +251,8 @@ export class MemoryStore implements Store {
         nudges: [],
         push: [],
         executions: new Map(),
+        places: [],
+        geocodes: new Map(),
       };
       this.data.set(userId, x);
     }
@@ -345,6 +385,25 @@ export class MemoryStore implements Store {
 
   async getRecommendation(id: string) {
     return this.recommendations.find((r) => r.id === id) ?? null;
+  }
+
+  async createRecommendation(i: NewRecommendation) {
+    const rec: Recommendation = {
+      id: crypto.randomUUID(),
+      analysis_run_id: i.analysis_run_id ?? null,
+      goal_id: i.goal_id,
+      title: i.title,
+      rationale: i.rationale,
+      action: i.action,
+      status: "proposed",
+      executed_at: null,
+      undone_at: null,
+      source: i.source ?? "analysis",
+      created_at: now(),
+      updated_at: now(),
+    };
+    this.recommendations.push(rec);
+    return rec;
   }
 
   async getRecommendationExecution(id: string) {
@@ -491,6 +550,77 @@ export class MemoryStore implements Store {
     return [...this.data.entries()]
       .filter(([, x]) => x.events.some((e) => Date.parse(e.created_at) >= from))
       .map(([userId]) => userId);
+  }
+
+  async listPlaces() {
+    return structuredClone(this.d.places);
+  }
+
+  async replacePlaces(places: Omit<Place, "updated_at">[]) {
+    this.d.places = places
+      .map((p) => ({ ...p, updated_at: now() }))
+      .sort((a, b) => a.key.localeCompare(b.key));
+    return structuredClone(this.d.places);
+  }
+
+  async cachedGeocode(query: string) {
+    return this.d.geocodes.get(query) ?? null;
+  }
+
+  async saveGeocode(query: string, hit: GeocodeHit) {
+    this.d.geocodes.set(query, hit);
+  }
+
+  async syncSeededEvents(
+    prefix: string,
+    sources: Source[],
+    inputs: z.output<typeof EventInput>[],
+  ): Promise<SeedResult> {
+    const key = (e: { source: string; external_id?: string | null }) => `${e.source}|${e.external_id}`;
+    const scope = new Set(sources);
+    const wanted = new Map(inputs.filter((i) => scope.has(i.source)).map((i) => [key(i), i]));
+    const d = this.d;
+    let removed = 0;
+    const existing = new Set<string>();
+    d.events = d.events.filter((e) => {
+      if (!e.external_id?.startsWith(prefix) || !scope.has(e.source)) return true;
+      if (wanted.has(key(e))) {
+        existing.add(key(e));
+        return true;
+      }
+      removed++;
+      return false;
+    });
+    let inserted = 0;
+    for (const [k, i] of wanted) {
+      if (existing.has(k)) continue;
+      d.events.push({
+        // Stable ids, so a recommendation pointing at a seeded event survives a reseed.
+        id: stableUuid(k),
+        source: i.source,
+        type: i.type,
+        start_at: i.start_at,
+        end_at: i.end_at ?? null,
+        title: i.title,
+        data: i.data,
+        external_id: i.external_id ?? null,
+        created_at: now(),
+      });
+      inserted++;
+    }
+    return { inserted, removed, kept: existing.size };
+  }
+
+  async seedGoals(goals: Goal[], opts: { overwrite: boolean }) {
+    let written = 0;
+    for (const g of goals) {
+      const i = this.goals.findIndex((x) => x.id === g.id);
+      if (i === -1) this.goals.push(structuredClone(g));
+      else if (opts.overwrite) this.goals[i] = structuredClone(g);
+      else continue;
+      written++;
+    }
+    return written;
   }
 }
 

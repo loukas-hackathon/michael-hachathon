@@ -10,6 +10,7 @@ import type {
   IntegrationProvider,
   Nudge,
   NudgeStatus,
+  Place,
   Profile,
   Recommendation,
   RecommendationStatus,
@@ -20,15 +21,18 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { z } from "zod";
 import { currentUserId } from "./context";
 import { HttpError } from "./http";
+import type { GeocodeHit } from "./integrations/maps";
 import { type PrivacyRules, screenEvents } from "./privacy";
 import {
   type EventPatch,
   type InsertResult,
   type IntegrationPatch,
   type IntegrationRecord,
+  type NewRecommendation,
   type NudgeCreate,
   type PushDevice,
   type RecommendationActionUpdate,
+  type SeedResult,
   type Store,
   sameEvent,
   type TimelineFilter,
@@ -36,6 +40,9 @@ import {
 } from "./store";
 
 type EventRow = z.output<typeof EventInput>;
+
+const EVENT_PAGE = 1000;
+const MAX_EVENTS = 20_000;
 
 // Postgres returns "2026-11-14 07:40:00+00" style values via PostgREST as ISO strings with offset,
 // which already satisfy the shared IsoDateTime schema; normalise to a canonical ISO string anyway.
@@ -75,7 +82,17 @@ const toRecommendation = (r: Record<string, unknown>): Recommendation => ({
   status: r.status as RecommendationStatus,
   executed_at: iso(r.executed_at as string | null),
   undone_at: iso(r.undone_at as string | null),
+  source: (r.source as Recommendation["source"]) ?? "analysis",
   created_at: iso(r.created_at as string) as string,
+  updated_at: iso(r.updated_at as string) as string,
+});
+
+const toPlace = (r: Record<string, unknown>): Place => ({
+  key: r.key as string,
+  label: r.label as string,
+  address: (r.address as string | null) ?? null,
+  lat: (r.lat as number | null) ?? null,
+  lng: (r.lng as number | null) ?? null,
   updated_at: iso(r.updated_at as string) as string,
 });
 
@@ -144,18 +161,111 @@ export class SupabaseStore implements Store {
   }
 
   async listEvents(f: TimelineFilter) {
-    // Overlap with [from, to]: starts before `to` and ends (or, if instant, starts) after `from`.
-    let q = this.db
-      .from("events")
-      .select("*")
-      .eq("user_id", currentUserId())
-      .lte("start_at", f.to)
-      .or(`end_at.gte.${f.from},and(end_at.is.null,start_at.gte.${f.from})`)
-      .order("start_at", { ascending: true })
-      .limit(5000);
-    if (f.source?.length) q = q.in("source", f.source);
-    if (f.type?.length) q = q.in("type", f.type);
-    return (check(await q) ?? []).map(toEvent);
+    // PostgREST caps every response (1000 rows by default) and a real workday is 1,200 to 1,500
+    // events, so read page by page. Ordered by start_at then id, so pages never skip or repeat.
+    const userId = currentUserId();
+    const events: Event[] = [];
+    for (let offset = 0; offset < MAX_EVENTS; offset += EVENT_PAGE) {
+      // Overlap with [from, to]: starts before `to` and ends (or, if instant, starts) after `from`.
+      let q = this.db
+        .from("events")
+        .select("*")
+        .eq("user_id", userId)
+        .lte("start_at", f.to)
+        .or(`end_at.gte.${f.from},and(end_at.is.null,start_at.gte.${f.from})`)
+        .order("start_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(offset, offset + EVENT_PAGE - 1);
+      if (f.source?.length) q = q.in("source", f.source);
+      if (f.type?.length) q = q.in("type", f.type);
+      const page = check(await q) ?? [];
+      events.push(...page.map(toEvent));
+      if (page.length < EVENT_PAGE) break;
+    }
+    return events;
+  }
+
+  async syncSeededEvents(prefix: string, sources: Source[], inputs: EventRow[]): Promise<SeedResult> {
+    const userId = currentUserId();
+    if (!sources.length) return { inserted: 0, removed: 0, kept: 0 };
+    const scope = new Set<string>(sources);
+    // What is already there under the prefix, page by page.
+    const existing = new Set<string>();
+    for (let offset = 0; ; offset += EVENT_PAGE) {
+      const page =
+        check(
+          await this.db
+            .from("events")
+            .select("source, external_id")
+            .eq("user_id", userId)
+            .in("source", sources)
+            .like("external_id", `${prefix}%`)
+            .order("id", { ascending: true })
+            .range(offset, offset + EVENT_PAGE - 1),
+        ) ?? [];
+      for (const r of page) existing.add(`${r.source}|${r.external_id}`);
+      if (page.length < EVENT_PAGE) break;
+    }
+
+    const wanted = new Map<string, EventRow>();
+    for (const i of inputs) {
+      if (!i.external_id?.startsWith(prefix)) throw new Error(`Seeded event without the ${prefix} prefix`);
+      if (scope.has(i.source)) wanted.set(`${i.source}|${i.external_id}`, i);
+    }
+
+    // Remove seeded rows that are no longer wanted (days that left the window).
+    const stale = [...existing].filter((k) => !wanted.has(k)).map((k) => k.slice(k.indexOf("|") + 1));
+    for (let i = 0; i < stale.length; i += 200) {
+      check(
+        await this.db
+          .from("events")
+          .delete()
+          .eq("user_id", userId)
+          .in("source", sources)
+          .like("external_id", `${prefix}%`)
+          .in("external_id", stale.slice(i, i + 200)),
+      );
+    }
+
+    const fresh = [...wanted.entries()]
+      .filter(([k]) => !existing.has(k))
+      .map(([, i]) => ({
+        user_id: userId,
+        source: i.source,
+        type: i.type,
+        start_at: i.start_at,
+        end_at: i.end_at ?? null,
+        title: i.title,
+        data: i.data,
+        external_id: i.external_id,
+      }));
+    for (let i = 0; i < fresh.length; i += 500) {
+      const res = await this.db.from("events").insert(fresh.slice(i, i + 500));
+      // A concurrent sync inserted some of these already: harmless, the next sync settles it.
+      if (res.error && res.error.code !== "23505") check(res);
+    }
+    return { inserted: fresh.length, removed: stale.length, kept: existing.size - stale.length };
+  }
+
+  async seedGoals(goals: Goal[], opts: { overwrite: boolean }): Promise<number> {
+    const userId = currentUserId();
+    const rows = goals.map((g) => ({
+      id: g.id,
+      user_id: userId,
+      category: g.category,
+      title: g.title,
+      description: g.description,
+      target: g.target,
+      weekly_budget_minutes: g.weekly_budget_minutes,
+      active: g.active,
+    }));
+    const data = check(
+      await this.db
+        .from("goals")
+        .upsert(rows, { onConflict: "id", ignoreDuplicates: !opts.overwrite })
+        .select("id"),
+    );
+    return (data ?? []).length;
   }
 
   async privacyRules(): Promise<PrivacyRules> {
@@ -362,6 +472,25 @@ export class SupabaseStore implements Store {
     return row ? toRecommendation(row) : null;
   }
 
+  async createRecommendation(i: NewRecommendation) {
+    const row = check(
+      await this.db
+        .from("recommendations")
+        .insert({
+          user_id: currentUserId(),
+          analysis_run_id: i.analysis_run_id ?? null,
+          goal_id: i.goal_id,
+          title: i.title,
+          rationale: i.rationale,
+          action: i.action,
+          source: i.source ?? "analysis",
+        })
+        .select("*")
+        .single(),
+    );
+    return toRecommendation(row);
+  }
+
   async getRecommendationExecution(id: string) {
     const row = check(
       await this.db
@@ -398,6 +527,60 @@ export class SupabaseStore implements Store {
         .maybeSingle(),
     );
     return row ? toRecommendation(row) : null;
+  }
+
+  async listPlaces() {
+    const rows = check(await this.db.from("places").select("*").eq("user_id", currentUserId()).order("key"));
+    return (rows ?? []).map(toPlace);
+  }
+
+  async replacePlaces(places: Omit<Place, "updated_at">[]) {
+    const userId = currentUserId();
+    const keys = places.map((p) => p.key);
+    // Remove places no longer in the list, then upsert the rest.
+    let del = this.db.from("places").delete().eq("user_id", userId);
+    if (keys.length) del = del.not("key", "in", `(${keys.map((k) => `"${k}"`).join(",")})`);
+    check(await del);
+    if (!places.length) return [];
+    const updated_at = new Date().toISOString();
+    const rows = check(
+      await this.db
+        .from("places")
+        .upsert(
+          places.map((p) => ({ ...p, user_id: userId, updated_at })),
+          { onConflict: "user_id,key" },
+        )
+        .select("*")
+        .order("key"),
+    );
+    return (rows ?? []).map(toPlace);
+  }
+
+  async cachedGeocode(query: string) {
+    const r = check(
+      await this.db
+        .from("geocode_cache")
+        .select("*")
+        .eq("user_id", currentUserId())
+        .eq("query", query)
+        .maybeSingle(),
+    );
+    if (!r) return null;
+    return {
+      lat: r.lat as number,
+      lng: r.lng as number,
+      formatted_address: r.formatted_address as string,
+      place_id: (r.place_id as string | null) ?? null,
+      fetched_at: iso(r.fetched_at as string) as string,
+    };
+  }
+
+  async saveGeocode(query: string, hit: GeocodeHit) {
+    check(
+      await this.db
+        .from("geocode_cache")
+        .upsert({ user_id: currentUserId(), query, ...hit }, { onConflict: "user_id,query" }),
+    );
   }
 
   async latestAnalysisRun() {

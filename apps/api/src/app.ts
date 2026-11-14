@@ -10,6 +10,7 @@ import { actions } from "./routes/actions";
 import { agents } from "./routes/agents";
 import { analysis } from "./routes/analysis";
 import { chat } from "./routes/chat";
+import { demo } from "./routes/demo";
 import { events } from "./routes/events";
 import { goals } from "./routes/goals";
 import { integrations, oauth } from "./routes/integrations";
@@ -17,6 +18,7 @@ import { moments } from "./routes/moments";
 import { nudges } from "./routes/nudges";
 import { connect, oauthPublic } from "./routes/oauth";
 import { patterns } from "./routes/patterns";
+import { places } from "./routes/places";
 import { privacy } from "./routes/privacy";
 import { product } from "./routes/product";
 import { profile } from "./routes/profile";
@@ -52,7 +54,9 @@ const v1 = new Hono()
   .route("/", product)
   .route("/", tokens)
   .route("/", connect)
-  .route("/", agents);
+  .route("/", agents)
+  .route("/", places)
+  .route("/", demo);
 
 export const app = new Hono()
   .use(logger())

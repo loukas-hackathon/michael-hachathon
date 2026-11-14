@@ -16,6 +16,7 @@ export const TOOL_SCOPE: Record<string, AgentScope> = {
   get_recommendations: "recommendations",
   get_score: "score",
   add_event: "write_events",
+  plan_travel: "write_events",
 };
 
 type ToolConfig = { title?: string; inputSchema?: unknown; annotations?: { readOnlyHint?: boolean } };
@@ -55,6 +56,8 @@ export function summarise(name: string, title: string | undefined, input: unknow
       return typeof a.title === "string"
         ? `Added "${a.title.slice(0, 80)}" to your day`
         : "Added to your day";
+    case "plan_travel":
+      return `Planned your drives${range}`;
     default:
       return title ?? name;
   }

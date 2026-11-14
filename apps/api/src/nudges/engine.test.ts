@@ -87,14 +87,14 @@ test("half an hour before the night, screens on, the rest goal speaks", () => {
 });
 
 test("behind on a weekly budget shows the maths", () => {
-  // Wednesday 12:00 is 2.5 of 7 days: the pace for 10h is 3h 34m. One 60 minute run on Monday.
+  // Wednesday 12:00 is 2.5 of 7 days: the pace for 10h is 3h 34. One 60 minute run on Monday.
   const events = [workout(T("2026-11-09 07:00"), T("2026-11-09 08:00"))];
   const d = decide(input("12:00", events, [GYM]));
   assert.equal(d.action, "send");
   if (d.action !== "send") return;
   assert.equal(d.candidate.kind, "goal_behind");
-  assert.equal(d.candidate.text, "Gym 2h 34m behind this week. Book 90 min today.");
-  assert.equal(d.candidate.reason, "70.3 training: 1h of 10h done; the pace by now is 3h 34m.");
+  assert.equal(d.candidate.text, "Gym 2h 34 behind this week. Book 90 min today.");
+  assert.equal(d.candidate.reason, "70.3 training: 1h of 10h done; the pace by now is 3h 34.");
 });
 
 test("behind with a block later today: keep it", () => {
@@ -102,7 +102,7 @@ test("behind with a block later today: keep it", () => {
   const d = decide(input("12:00", events, [GYM]));
   assert.equal(d.action, "send");
   if (d.action !== "send") return;
-  assert.equal(d.candidate.text, "Gym 3h 34m behind this week. Keep the 18:00 block.");
+  assert.equal(d.candidate.text, "Gym 3h 34 behind this week. Keep the 18:00 block.");
 });
 
 test("on pace: nothing to say", () => {
@@ -153,5 +153,5 @@ test("copy rules: under 15 words, no dashes", () => {
   );
   assert.equal(shortDuration(45), "45 min");
   assert.equal(shortDuration(120), "2h");
-  assert.equal(shortDuration(130), "2h 10m");
+  assert.equal(shortDuration(130), "2h 10");
 });
