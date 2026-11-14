@@ -116,7 +116,8 @@ function withSignal(v: Visit, s: Classified): Visit {
     data: {
       ...v.data,
       evidence: v.data.evidence.includes(evidence) ? v.data.evidence : [...v.data.evidence, evidence],
-      networks: s.network && !v.data.networks.includes(s.network) ? [...v.data.networks, s.network] : v.data.networks,
+      networks:
+        s.network && !v.data.networks.includes(s.network) ? [...v.data.networks, s.network] : v.data.networks,
       ...(s.network && s.name ? { names: { ...v.data.names, [s.network]: s.name } } : {}),
     },
   };

@@ -179,6 +179,31 @@ test("verified against unverified: a workout proves training, an empty block is 
   assert.deepEqual(proven.day.blocks[0]?.ticks, ticks("??##x#####??"));
 });
 
+test("place visits are proof: the gym backs training, the office backs work, minus lost time", () => {
+  const visit = (key: string, label: string, start: string, end: string): Event => ({
+    ...workout(start, end, label),
+    source: "location",
+    type: "location",
+    data: { place_key: key, evidence: ["wifi"], networks: ["n1"] },
+  });
+  const s = score(
+    [
+      calendar("Gym", T("2026-11-10 18:00"), T("2026-11-10 19:00")),
+      visit("gym", "Gym", T("2026-11-10 18:05"), T("2026-11-10 18:55")),
+      calendar("Cold Outreach", T("2026-11-10 10:00"), T("2026-11-10 11:00")),
+      visit("work", "Office", T("2026-11-10 09:30"), T("2026-11-10 10:30")),
+      phone(APPS.social, T("2026-11-10 10:10"), T("2026-11-10 10:15")),
+    ],
+    "2026-11-10",
+    "2026-11-10 20:00",
+  );
+  const [work, gym] = s.day.blocks;
+  // Office 10:00 to 10:30 minus 5 lost: 25 verified, 30 unverified.
+  assert.deepEqual([work?.lost_minutes, work?.unverified_minutes], [5, 30]);
+  // Gym 18:05 to 18:55: 50 verified, 10 unverified.
+  assert.equal(gym?.unverified_minutes, 10);
+});
+
 test("a work block is verified by work apps only: neutral apps and no data stay unverified", () => {
   const s = score(
     [

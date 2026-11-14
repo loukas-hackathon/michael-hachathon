@@ -6,6 +6,7 @@ import {
   goalKind,
   type Instruction,
   isSleepGoal,
+  type Place,
   type Score,
   type ScoreArea,
   type ScoreBlock,
@@ -16,13 +17,14 @@ import {
   type TimeWonBack,
 } from "@michael/shared";
 import { forbiddenBy } from "../instructions/protected";
+import { placeProof } from "../location/visits";
 import { DEFAULT_TIMEZONE } from "../patterns/context";
 import { type GoalBlock, goalBlocks } from "../patterns/focus";
 import { label } from "../patterns/format";
 import { MINUTE, SECOND, Zone } from "../patterns/time";
 import { buildTimeline, type Segment, subjectOf } from "../patterns/timeline";
 import { iso, overlapWith, round1, type Span, subtractSpans, union } from "../patterns/util";
-import { isTrainingGoal, purposeFor } from "./purpose";
+import { isBusinessGoal, isTrainingGoal, purposeFor } from "./purpose";
 import type { BlockRun, RecordWeek } from "./records";
 import { type TargetWeek, withTarget } from "./targets";
 import { commitments, committedMinutes, freeMinutesLeft, sleepWeek, wakingDay } from "./week";
@@ -113,6 +115,9 @@ export interface ScoreOptions {
   timezone?: string;
   /** The user's standing instructions, for `instructions_broken` on each block. Default none. */
   instructions?: Instruction[];
+  /** The user's saved places, so location visits at a gym or the office count as proof. Default none
+   * (a visit's own place key and label still say what it is). */
+  places?: Place[];
 }
 
 export interface ScoreRange {
@@ -249,7 +254,7 @@ function evaluate(
   block: GoalBlock,
   part: { day: string; start: number; end: number },
   attention: Segment[],
-  workouts: Span[],
+  proof: { training: Span[]; business: Span[] },
   now: number,
 ): Piece {
   const { start, end } = part;
@@ -271,9 +276,15 @@ function evaluate(
     }
   }
   const lost = union(distractors.map((s) => ({ start: s.start, end: s.end })));
-  if (isTrainingGoal(block.goal) && elapsedEnd > start) {
-    // A recorded workout proves training time, except the minutes that went to a distractor.
-    for (const w of workouts) {
+  // A recorded workout or a visit to the gym proves training time; being at work or university
+  // proves business time (location/visits.ts placeRole). Minus the minutes that went to a distractor.
+  const shown = isTrainingGoal(block.goal)
+    ? proof.training
+    : isBusinessGoal(block.goal)
+      ? proof.business
+      : [];
+  if (elapsedEnd > start) {
+    for (const w of shown) {
       const piece = { start: Math.max(w.start, start), end: Math.min(w.end, elapsedEnd) };
       if (piece.end > piece.start) verified.push(...subtractSpans(piece, lost));
     }
@@ -463,16 +474,23 @@ export function scoreWithHistory(
   const blocks = goalBlocks(events, active, range.from, range.to);
   const instructions = (options.instructions ?? []).filter((i) => i.active);
   const tl = buildTimeline(events, range.from, range.to);
-  const workouts = union(
-    events.flatMap((e) =>
-      e.type === "workout" && e.end_at ? [{ start: Date.parse(e.start_at), end: Date.parse(e.end_at) }] : [],
-    ),
-  );
+  const atPlaces = placeProof(events, options.places ?? []);
+  const proof = {
+    training: union([
+      ...events.flatMap((e) =>
+        e.type === "workout" && e.end_at
+          ? [{ start: Date.parse(e.start_at), end: Date.parse(e.end_at) }]
+          : [],
+      ),
+      ...atPlaces.training,
+    ]),
+    business: union(atPlaces.business),
+  };
 
   const pieces: Piece[] = [];
   for (const block of blocks) {
     for (const part of zone.splitByDay(block.start, block.end)) {
-      pieces.push(evaluate(block, part, tl.attention, workouts, now));
+      pieces.push(evaluate(block, part, tl.attention, proof, now));
     }
   }
   pieces.sort((a, b) => a.start - b.start);

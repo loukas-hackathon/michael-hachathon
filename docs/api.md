@@ -1790,6 +1790,7 @@ type Place = {
   address: string | null;
   lat: number | null; // null until geocoded
   lng: number | null;
+  wifi?: string[]; // Wi-Fi network ids the user said belong here (see Location)
   updated_at: string;
 };
 type PlaceInput = {
@@ -1912,6 +1913,65 @@ type PlaceSuggestionsResponse = { enabled: boolean; suggestions: PlaceSuggestion
 - Without `GOOGLE_MAPS_API_KEY` the status is `maps_unavailable` and nothing is computed (with
   `whole_day`, `day.note` says maps need setting up); without the opt in it is `travel_off`. Code: `apps/api/src/integrations/maps.ts` (Geocoding, Routes
   `computeRoutes` with `TRAFFIC_AWARE` and `departureTime`) and `integrations/travel.ts`.
+
+### Location (#267)
+
+Where the user was, with no setup: the Mac's Wi-Fi (collector) and the phone's position when the
+user opens Michael (after a one tap ask on the Location page, never on launch). The API turns
+signals into place visits on the timeline and keeps no raw trail. Code: `apps/api/src/location/visits.ts`
+(pure model) and `routes/location.ts`. More in `docs/location.md`.
+
+```ts
+type LocationSignal =
+  | { kind: "point"; at: string; lat: number; lng: number; accuracy_m?: number | null }
+  | { kind: "wifi"; at: string; network: string; name?: string | null }; // network: opaque hash
+type LocationSignalsInput = { signals: LocationSignal[] }; // 1 to 500
+type LocationSignalsResponse = { recorded: number; ignored: number; at: string | null }; // at: where the last signal put the user
+// `data` of a visit event { source: "location", type: "location" }; the event spans the visit.
+type VisitData = {
+  place_key: string | null; // null: "Out" (or the overlapping calendar location)
+  evidence: ("wifi" | "phone")[];
+  networks: string[];
+  names?: Record<string, string>; // network id -> name, when the Mac could read it
+  lat?: number | null; // only away from saved places, rounded to 2 decimals (about 1 km)
+  lng?: number | null;
+};
+type WifiNetwork = {
+  network: string;
+  name: string | null;
+  place_key: string | null; // mapped place
+  suggested_place_key: string | null; // where the phone put the user while on it
+  last_seen_at: string;
+};
+type LocationStatus = {
+  last_signal_at: string | null;
+  now: { label: string; since: string } | null; // a signal in the last 30 minutes
+  networks: WifiNetwork[]; // last 14 days, newest first
+  collecting: boolean;
+};
+type WifiMappingInput = { network: string; place_key: string | null }; // null forgets
+```
+
+| Method | Path                     | Body                   | Response                       | Status |
+| ------ | ------------------------ | ---------------------- | ------------------------------ | ------ |
+| POST   | `/v1/location/signals`   | `LocationSignalsInput` | `200 LocationSignalsResponse`  | live   |
+| GET    | `/v1/location`           |                        | `200 LocationStatus`           | live   |
+| PUT    | `/v1/location/networks`  | `WifiMappingInput`     | `200 LocationStatus`           | live   |
+
+- A point within 150 m of a saved place (plus its accuracy, up to 100 m) is a visit there; a
+  network mapped to a place is that place. An unmapped network joins the visit going on, unless
+  that visit already has another network. Anything else is "Out", or the location of the calendar
+  event at that time. The same place again within 20 minutes (Wi-Fi) or 3 hours (phone) extends the
+  visit (`external_id` `visit:<place_key|out>:<start>`), so a Mac reporting every pass makes one event.
+- Privacy: source `location`. The first signal is the opt in; the privacy switch and off the
+  record drop signals (`recorded: 0`, `ignored: n`). Device keys may post signals. Demo visitors
+  cannot.
+- `PUT /v1/location/networks` maps a network to a saved place and relabels its "Out" visits from
+  the last 14 days.
+- Calendar events whose location names a saved place count as planned visits where no signal
+  covers them: chat and MCP `get_timeline` list them as "planned in the calendar, not confirmed".
+- Score: visits at a training place (gym, pool, yoga ...) count as workouts for training goals;
+  visits at work or university back business blocks.
 
 ### Michael for agents
 

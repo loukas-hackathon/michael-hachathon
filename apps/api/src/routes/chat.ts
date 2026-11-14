@@ -27,6 +27,7 @@ import { listMemories, type Memory, memoryContext } from "../memory";
 import { DEFAULT_TIMEZONE } from "../patterns";
 import { Zone } from "../patterns/time";
 import { store } from "../store";
+import { plannedVisitLines } from "./location";
 import { patternReportFor } from "./patterns";
 import { scoreFor } from "./score";
 
@@ -48,6 +49,8 @@ const LISTED_TYPES = new Set<Event["type"]>([
   "focus_session",
   "recovery",
   "note",
+  // Place visits (#267): "at Gym".
+  "location",
 ]);
 // Types totalled over the week so Michael can talk budgets.
 const WEEK_TYPES = ["workout", "sleep", "focus_session", "meal"] as const;
@@ -116,6 +119,8 @@ export interface ChatContextInput {
   checkIns?: { answered: CheckIn[]; open: CheckIn[] };
   /** Facts the user asked Michael (or an agent) to keep, newest first. */
   memories?: Memory[];
+  /** Calendar events at saved places with no location signal over them, as lines (#267). */
+  plannedVisits?: string[];
 }
 
 const pct = (p: number | null) => (p === null ? "no score yet" : `${Math.round(p)}%`);
@@ -227,8 +232,10 @@ export function buildChatContext(input: ChatContextInput): string {
           : others
             ? " [with other people, advice only]"
             : ` {event_id ${e.id}}`;
+      if (e.type === "location") return `- ${when} at ${e.title}`;
       return `- ${when} ${e.type.replace("_", " ")}: ${e.title}${planned}${tag}`;
-    });
+    })
+    .concat((input.plannedVisits ?? []).map((line) => `- ${line}`));
   parts.push(
     todayLines.length
       ? `Today:\n${todayLines.join("\n")}`
@@ -310,24 +317,28 @@ async function contextForNow(): Promise<string> {
   const nowIso = new Date(now).toISOString();
   // Pattern reports are best effort: a detector failing must not take the chat down.
   const report = (from: string) => patternReportFor({ from, to: nowIso }).catch(() => null);
-  const [goals, instructions, events, today, week, score, undoable, checkIns, memories] = await Promise.all([
-    store.listGoals(),
-    store.listInstructions().catch(() => []),
-    store.listEvents({
-      from: new Date(now - WEEK_MS).toISOString(),
-      to: new Date(dayEnd).toISOString(),
-      type: [...LISTED_TYPES],
-    }),
-    now - dayStart > 60_000 ? report(new Date(dayStart).toISOString()) : Promise.resolve(null),
-    report(new Date(now - WEEK_MS).toISOString()),
-    scoreFor({ now: nowIso }).catch((err) => {
-      console.error("chat: score failed", err);
-      return null;
-    }),
-    store.listRecommendations({ status: "done" }).catch(() => []),
-    checkInContext(now),
-    listMemories().catch(() => []),
-  ]);
+  const [goals, instructions, events, today, week, score, undoable, checkIns, memories, plannedVisits] =
+    await Promise.all([
+      store.listGoals(),
+      store.listInstructions().catch(() => []),
+      store.listEvents({
+        from: new Date(now - WEEK_MS).toISOString(),
+        to: new Date(dayEnd).toISOString(),
+        type: [...LISTED_TYPES],
+      }),
+      now - dayStart > 60_000 ? report(new Date(dayStart).toISOString()) : Promise.resolve(null),
+      report(new Date(now - WEEK_MS).toISOString()),
+      scoreFor({ now: nowIso }).catch((err) => {
+        console.error("chat: score failed", err);
+        return null;
+      }),
+      store.listRecommendations({ status: "done" }).catch(() => []),
+      checkInContext(now),
+      listMemories().catch(() => []),
+      plannedVisitLines(new Date(dayStart).toISOString(), new Date(dayEnd).toISOString(), (ms) =>
+        zone.clock(ms),
+      ).catch(() => []),
+    ]);
   return buildChatContext({
     now,
     goals,
@@ -339,6 +350,7 @@ async function contextForNow(): Promise<string> {
     undoable,
     checkIns,
     memories,
+    plannedVisits,
   });
 }
 

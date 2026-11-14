@@ -31,7 +31,12 @@ const GYM = place("gym", "Gym", 38.0, 23.8);
 const WORK = place("work", "Office", 37.97, 23.73);
 const PLACES = [HOME, GYM, WORK];
 
-const point = (hm: string, lat: number, lng: number): LocationSignal => ({ kind: "point", at: at(hm), lat, lng });
+const point = (hm: string, lat: number, lng: number): LocationSignal => ({
+  kind: "point",
+  at: at(hm),
+  lat,
+  lng,
+});
 const wifi = (hm: string, network: string, name?: string): LocationSignal => ({
   kind: "wifi",
   at: at(hm),
@@ -75,7 +80,11 @@ test("a mapped Wi-Fi network extends Home; a silence over 20 minutes starts a ne
 });
 
 test("an unmapped network joins the visit the phone placed, which is how a mapping is suggested", () => {
-  const [v] = run(null, [point("09:00", 37.97, 23.73), wifi("09:01", "net-office", "Acme"), wifi("09:15", "net-office")]);
+  const [v] = run(null, [
+    point("09:00", 37.97, 23.73),
+    wifi("09:01", "net-office", "Acme"),
+    wifi("09:15", "net-office"),
+  ]);
   assert.equal(v?.label, "Office");
   assert.deepEqual(v?.data.networks, ["net-office"]);
   assert.deepEqual(v?.data.names, { "net-office": "Acme" });
@@ -138,7 +147,13 @@ test("a visit survives the trip to an event and back", () => {
 
 test("calendar events at a saved place are planned visits, unless a signal covers them", () => {
   const cal = (title: string, from: string, to: string, location: string) =>
-    ({ type: "calendar_event", title, start_at: at(from), end_at: at(to), data: { location } }) as unknown as Event;
+    ({
+      type: "calendar_event",
+      title,
+      start_at: at(from),
+      end_at: at(to),
+      data: { location },
+    }) as unknown as Event;
   const calendar = [
     cal("Gym", "07:00", "08:00", "Gym"),
     cal("Standup", "09:00", "09:15", "https://meet.google.com/abc"),
@@ -146,7 +161,12 @@ test("calendar events at a saved place are planned visits, unless a signal cover
     cal("Deep work", "14:00", "16:00", "Office"),
   ];
   const confirmed: Visit[] = [
-    { start: ms("14:10"), end: ms("15:50"), label: "Office", data: { place_key: "work", evidence: ["wifi"], networks: [] } },
+    {
+      start: ms("14:10"),
+      end: ms("15:50"),
+      label: "Office",
+      data: { place_key: "work", evidence: ["wifi"], networks: [] },
+    },
   ];
   const planned = plannedVisits(calendar, PLACES, confirmed);
   // No university saved, the call is online, the office block is confirmed by Wi-Fi.

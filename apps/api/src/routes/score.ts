@@ -29,7 +29,16 @@ import { store } from "../store";
 
 // What the score is built from: the plan (calendar), proof of training (workouts), sleep (outside
 // the score, for the week's nights) and the device events the single line of attention is made of.
-const TYPES: EventType[] = ["calendar_event", "workout", "sleep", "app_usage", "web_visit", "screen"];
+const TYPES: EventType[] = [
+  "calendar_event",
+  "workout",
+  "sleep",
+  "app_usage",
+  "web_visit",
+  "screen",
+  // Place visits: the gym backs training goals, work or university business ones (#267).
+  "location",
+];
 const WEEK_MS = 7 * 24 * 3600_000;
 export interface Week {
   score: Score;
@@ -62,15 +71,16 @@ export async function loadWeek(query: { date?: string; now?: string }): Promise<
       store.listEvents({ from: iso(start), to: iso(Math.min(start + WEEK_MS, range.to)), type: TYPES }),
     );
   }
-  const [goals, instructions, ...pages] = await Promise.all([
+  const [goals, instructions, places, ...pages] = await Promise.all([
     store.listGoals(),
     // The flags on the blocks are an extra: a failed read here must never take the score down.
     store.listInstructions().catch(() => []),
+    store.listPlaces().catch(() => []),
     ...chunks,
   ]);
   const events = new Map<string, Event>();
   for (const page of pages) for (const e of page) events.set(e.id, e);
-  const built = scoreWithHistory([...events.values()], goals, { date, now, instructions });
+  const built = scoreWithHistory([...events.values()], goals, { date, now, instructions, places });
   return { ...built, goals, now, real: Date.parse(now) <= clock };
 }
 
