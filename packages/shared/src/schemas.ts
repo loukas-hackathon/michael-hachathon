@@ -2248,3 +2248,61 @@ export const CheckInAnswerResponse = z.object({
   follow_up: CheckIn.nullable(),
 });
 export type CheckInAnswerResponse = z.infer<typeof CheckInAnswerResponse>;
+
+// ---------- follow up drafts ----------
+
+// Short follow ups Michael drafts after a conversation or a meeting with other people, for the user
+// to copy and send themselves. Stored, never sent anywhere. Written from summaries only: no raw
+// transcript is ever stored or sent to a model.
+// proposed -> done (the user sent it themselves) | dismissed
+export const DraftStatus = z.enum(["proposed", "done", "dismissed"]);
+export type DraftStatus = z.infer<typeof DraftStatus>;
+
+export const DraftChannel = z.enum(["email", "chat"]);
+export type DraftChannel = z.infer<typeof DraftChannel>;
+
+// Who wrote the words: Claude, the template (no model key, or the demo week), or the analysis run
+// (a draft_follow_up recommendation the user carried out).
+export const DraftAuthor = z.enum(["model", "template", "analysis"]);
+export type DraftAuthor = z.infer<typeof DraftAuthor>;
+
+export const Draft = z.object({
+  id: z.uuid(),
+  // The conversation or meeting it follows up (a timeline event id); null when it came from a recommendation.
+  event_id: z.uuid().nullable(),
+  recommendation_id: z.uuid().nullable(),
+  // "Customer call: onboarding feedback", the event's title as the timeline has it.
+  title: z.string().min(1),
+  // When the conversation or meeting happened (its start); null when unknown.
+  event_at: IsoDateTime.nullable(),
+  channel: DraftChannel,
+  // Email subject; null for a chat message.
+  subject: z.string().nullable(),
+  body: z.string().min(1),
+  written_by: DraftAuthor,
+  status: DraftStatus,
+  created_at: IsoDateTime,
+  updated_at: IsoDateTime,
+});
+export type Draft = z.infer<typeof Draft>;
+
+export const DraftList = z.object({ drafts: z.array(Draft) });
+export type DraftList = z.infer<typeof DraftList>;
+
+export const DraftStatusUpdate = z.object({ status: DraftStatus });
+export type DraftStatusUpdate = z.infer<typeof DraftStatusUpdate>;
+
+export const DraftGenerateInput = z.object({
+  // Draft for this conversation or meeting only. Default: every one that ended in the last 24 hours
+  // and has no draft yet (at most 3).
+  event_id: z.uuid().optional(),
+});
+export type DraftGenerateInput = z.infer<typeof DraftGenerateInput>;
+
+export const DraftGenerateResult = z.object({
+  // Drafts written by this call (an event that already has a draft is not drafted again).
+  drafts: z.array(Draft),
+  // Events looked at that already had a draft.
+  skipped: z.number().int().nonnegative(),
+});
+export type DraftGenerateResult = z.infer<typeof DraftGenerateResult>;

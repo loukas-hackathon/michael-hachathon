@@ -1,5 +1,6 @@
 import {
   CheckInValue,
+  DraftStatus,
   type Event,
   EventInput,
   EventType,
@@ -22,6 +23,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 import { bookFocusBlock, executeRecommendation, undoDeadline, undoRecommendation } from "./actions/calendar";
+import { draftText, generateDrafts } from "./actions/drafts";
 import { guardMacApps, suggestAppGuard } from "./actions/mac-apps";
 import { answerCheckIn, checkInToday } from "./checkin/service";
 import { currentAgent } from "./context";
@@ -419,6 +421,24 @@ export function createMcpServer(): McpServer {
   );
 
   server.registerTool(
+    "list_drafts",
+    {
+      title: "List follow up drafts",
+      description:
+        "Follow up messages Michael drafted after the user's conversations and meetings with other people, newest first, for the user to copy and send themselves. Michael never sends them. Status: proposed (waiting), done (the user sent it), dismissed. Default: proposed only.",
+      inputSchema: { status: DraftStatus.optional().describe("Only this status. Default proposed") },
+      annotations: { readOnlyHint: true },
+    },
+    safe(async ({ status }) => {
+      const drafts = await store.listDrafts({ status: status ?? "proposed" });
+      const text = drafts.length
+        ? [`${drafts.length} follow up drafts:`, ...drafts.map(draftText)].join("\n\n")
+        : `No ${status ?? "proposed"} follow up drafts.`;
+      return reply(text, { drafts });
+    }),
+  );
+
+  server.registerTool(
     "get_nudges",
     {
       title: "Get nudges",
@@ -735,6 +755,30 @@ export function createMcpServer(): McpServer {
       const rec = await suggestAppGuard();
       if (!rec) return reply("Nothing to suggest: no Mac app stands out, or it is already muted.", {});
       return reply(`Suggested: "${rec.title}". ${rec.rationale} Id ${rec.id}.`, { recommendation: rec });
+    }),
+  );
+
+  server.registerTool(
+    "draft_follow_up",
+    {
+      title: "Draft a follow up",
+      description:
+        "Draft short follow up messages (email or chat) after the user's conversations and meetings with other people, from the summary and the user's own commitments, and store them in Michael for the user to copy. Nothing is ever sent. With event_id (from get_timeline), that conversation or meeting only; without it, everything that ended in the last 24 hours and has no draft yet (at most 3). Show the user the text so they can send it themselves.",
+      inputSchema: {
+        event_id: Id.optional().describe("A conversation or meeting id from get_timeline"),
+      },
+    },
+    safe(async ({ event_id }) => {
+      const { drafts, skipped } = await generateDrafts({ eventId: event_id });
+      const text = drafts.length
+        ? [
+            `Drafted ${drafts.length}. Nothing was sent: the user copies and sends them.`,
+            ...drafts.map(draftText),
+          ].join("\n\n")
+        : skipped
+          ? "Those already have drafts. Use list_drafts to read them."
+          : "Nothing to follow up: no conversation or meeting with other people ended in the last 24 hours.";
+      return reply(text, { drafts, skipped });
     }),
   );
 

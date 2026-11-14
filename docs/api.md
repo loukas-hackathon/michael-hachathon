@@ -81,6 +81,7 @@ Enums:
   (one shared categoriser for apps and sites, `packages/shared/src/categories.ts`; unknown = `other`)
 - `IntegrationProvider`: `google_calendar | whoop`
 - `IntegrationStatus`: `connected | disconnected | error`
+- `DraftStatus`: `proposed | done | dismissed`; `DraftChannel`: `email | chat`; `DraftAuthor`: `model | template | analysis`
 
 ```ts
 type Event = {
@@ -1374,8 +1375,10 @@ Changing status never executes `action`; use the routes below.
 | POST   | `/v1/recommendations/:id/undo`    | `200 Recommendation` (`status: undone`, `undone_at` set). `409` see below | live   |
 
 Kinds carried out: `move_calendar_block`, `move_calendar_blocks`, `create_focus_block`,
-`block_mac_app`, and the two chat proposals `change_goal` and `plan_change` (#188, below); other
-kinds answer `501`.
+`block_mac_app`, the two chat proposals `change_goal` and `plan_change` (#188, below), and
+`draft_follow_up` (its `payload.text` is stored as a follow up draft, see "Follow up drafts";
+nothing is sent and nothing on the calendar changes, so its undo is `409`); other kinds answer
+`501`.
 
 ```ts
 // move_calendar_block: one of the user's own solo blocks (a timeline event id). A new start keeps
@@ -1506,6 +1509,50 @@ type FocusGuardsResponse = { now: string; off_the_record: boolean; guards: Focus
   no block: "Mute WhatsApp 14:00 to 16:00", rationale "... took 47 min.". It is a `proposed`
   recommendation (`source: "analysis"`); nothing happens until Do it. Not repeated while an open one
   for the same app has not ended.
+
+### Follow up drafts
+
+After a conversation (Omi: summary and the user's own commitments) or a calendar meeting with other
+people that has ended, Michael drafts a short follow up for the user to copy and send themselves.
+Michael never sends it: no mail or chat integration exists. Only the event's title, time, size,
+summary and the user's commitments go to Claude; no transcript is stored or sent.
+
+```ts
+type Draft = {
+  id: string;
+  event_id: string | null; // the conversation or meeting (timeline event id)
+  recommendation_id: string | null; // set when it came from a carried out draft_follow_up
+  title: string; // the event's title
+  event_at: string | null; // the event's start
+  channel: DraftChannel; // email | chat
+  subject: string | null; // email subject; null for chat
+  body: string; // about 90 words at most, British spelling, no emoji, no dashes
+  written_by: DraftAuthor; // model (Claude) | template (no key, model failed, demo week) | analysis
+  status: DraftStatus; // proposed -> done (the user sent it) | dismissed
+  created_at: string;
+  updated_at: string;
+};
+type DraftGenerateResult = { drafts: Draft[]; skipped: number }; // skipped: already had a draft
+```
+
+| Method | Path                         | Body                      | Response                                        | Status |
+| ------ | ---------------------------- | ------------------------- | ----------------------------------------------- | ------ |
+| GET    | `/v1/drafts?status=proposed` |                           | `200 { drafts: Draft[] }`, newest first (≤ 100) | live   |
+| POST   | `/v1/drafts/generate`        | `{ event_id?: string }`   | `201 DraftGenerateResult`; `404`, `409`         | live   |
+| PATCH  | `/v1/drafts/:id`             | `{ status: DraftStatus }` | `200 Draft`, `404`                              | live   |
+
+- Without `event_id` (or with no body), `generate` drafts every conversation and every meeting with
+  other people (2 to 10 attendees, not all day, not cancelled) that ended in the last 24 hours and
+  has no draft yet, newest first, at most 3. A meeting overlapped by a recorded conversation is
+  left to the conversation's draft. One draft per event, ever: generating again never duplicates.
+- With `event_id`: `404` when it is not on the timeline, `409` when it has not ended or is not a
+  conversation or meeting with others.
+- Claude writes the words (`ANTHROPIC_API_KEY`); without a key, or if the model fails, a plain
+  template writes them from the summary and commitments. The scheduler drafts what ended in the
+  last 2 hours for active users. The demo week carries template drafts for its two latest
+  conversations.
+- MCP: `list_drafts`, `draft_follow_up` (scope `recommendations`). Chat: the `draft_follow_up` tool.
+- Web: one "Follow ups" row under "More from Michael" on Today, with Copy, Done and Not now.
 
 ### Integrations (OAuth)
 
@@ -1953,8 +2000,8 @@ type AgentQuery = {
   the payload. A call outside the agent's scopes, or by an agent that is not `approved`, returns a
   tool result with `isError: true` ("Not allowed. ...") and is logged with `allowed: false`.
 - Scope per tool: `get_timeline`, `get_patterns` = `timeline`; `get_goals`, `add_goal`,
-  `update_goal`, `propose_goals` = `goals`; `list_recommendations`, `update_recommendation`, `get_nudges` =
-  `recommendations`; `get_score`, `get_records`, `get_moments` = `score`; `add_event`, `execute_recommendation`,
+  `update_goal`, `propose_goals` = `goals`; `list_recommendations`, `update_recommendation`, `get_nudges`,
+  `list_drafts`, `draft_follow_up` = `recommendations`; `get_score`, `get_records`, `get_moments` = `score`; `add_event`, `execute_recommendation`,
   `undo_recommendation`, `create_focus_block`, `block_mac_app`, `plan_travel` = `write_events`;
   `suggest_app_mute` = `recommendations`; `get_memories` = `timeline`; `remember` = `write_events`.
   Memories are events of type `memory` (source `manual` from chat, `agent` from MCP); Michael's
@@ -2561,6 +2608,8 @@ offset. A refused or failed call returns `isError: true` with one plain sentence
 | `block_mac_app`          | `write_events`    | `{ apps: string[], start?: TimeInput, end: TimeInput, goal_id? }` (start default now)   | `{ recommendation, undo_until }`                                                           |
 | `suggest_app_mute`       | `recommendations` | `{}`                                                                                    | `{ recommendation }` or `{}` when nothing stands out                                       |
 | `plan_travel`            | `write_events`    | `{ from?, to? }` (default today)                                                        | `TravelPlanResult` (see Places and travel)                                                 |
+| `list_drafts`            | `recommendations` | `{ status?: DraftStatus }` (default proposed)                                           | `{ drafts: Draft[] }`                                                                      |
+| `draft_follow_up`        | `recommendations` | `{ event_id? }` (default: what ended in the last 24 h)                                  | `DraftGenerateResult`                                                                      |
 
 - `execute_recommendation` / `undo_recommendation` call the same functions as
   `POST /v1/recommendations/:id/execute` and `/undo` (`apps/api/src/actions/calendar.ts`), with the
@@ -2573,6 +2622,7 @@ offset. A refused or failed call returns `isError: true` with one plain sentence
 - `block_mac_app` mutes straight away the same way (`source: "chat"`, `status: "done"`, see Focus
   guards); `undo_recommendation` lets the apps open again until the window ends. Apps off the
   allowlist are refused. `suggest_app_mute` only proposes.
+- `draft_follow_up` stores drafts for the user to copy (see "Follow up drafts"); it never sends.
 - No tool deletes anything, sends anything in the user's name, or touches an event with other
   people. Goals are paused with `update_goal { active: false }`, never deleted.
 - `get_recommendations` was renamed `list_recommendations`.

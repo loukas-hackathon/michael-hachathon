@@ -23,6 +23,9 @@ export const TOOL_SCOPE: Record<string, AgentScope> = {
   list_recommendations: "recommendations",
   update_recommendation: "recommendations",
   get_nudges: "recommendations",
+  // Drafts are Michael's advice for the user to send themselves; nothing is sent or booked.
+  list_drafts: "recommendations",
+  draft_follow_up: "recommendations",
   get_score: "score",
   get_records: "score",
   get_moments: "score",
@@ -91,6 +94,10 @@ export function summarise(name: string, title: string | undefined, input: unknow
       return "Read my advice";
     case "get_nudges":
       return "Read your nudges";
+    case "list_drafts":
+      return "Read your follow up drafts";
+    case "draft_follow_up":
+      return "Drafted a follow up for you to send";
     case "get_moments":
       return a.kind === "evening" ? "Read your evening moment" : "Read your morning moment";
     case "add_goal":

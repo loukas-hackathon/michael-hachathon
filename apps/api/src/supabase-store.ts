@@ -3,6 +3,8 @@ import type {
   ChatMessage,
   ChatRole,
   CheckInValue,
+  Draft,
+  DraftStatus,
   Event,
   EventInput,
   EventSummary,
@@ -44,6 +46,7 @@ import {
   type IntegrationRecord,
   type NewAnalysis,
   type NewCheckIn,
+  type NewDraft,
   type NewFocusGuard,
   type NewRecommendation,
   type NudgeCreate,
@@ -266,6 +269,21 @@ const toRecord = (r: Record<string, unknown>): PersonalRecord => ({
   created_at: iso(r.created_at as string) as string,
 });
 
+const toDraft = (r: Record<string, unknown>): Draft => ({
+  id: r.id as string,
+  event_id: (r.event_id as string | null) ?? null,
+  recommendation_id: (r.recommendation_id as string | null) ?? null,
+  title: r.title as string,
+  event_at: iso((r.event_at as string | null) ?? null),
+  channel: r.channel as Draft["channel"],
+  subject: (r.subject as string | null) ?? null,
+  body: r.body as string,
+  written_by: r.written_by as Draft["written_by"],
+  status: r.status as DraftStatus,
+  created_at: iso(r.created_at as string) as string,
+  updated_at: iso(r.updated_at as string) as string,
+});
+
 function check<T>(res: { data: T; error: { message: string; code?: string } | null }): T {
   if (res.error) throw new HttpError("upstream_error", `Database error: ${res.error.message}`);
   return res.data;
@@ -282,6 +300,7 @@ export const USER_TABLES = [
   "agent_clients",
   "focus_guards",
   "nudges",
+  "drafts",
   "recommendations",
   "analysis_runs",
   "goals",
@@ -1030,6 +1049,41 @@ export class SupabaseStore implements Store {
         .select("id"),
     );
     return (rows ?? []).length;
+  }
+
+  async listDrafts(filter?: { status?: DraftStatus }) {
+    let q = this.db
+      .from("drafts")
+      .select("*")
+      .eq("user_id", currentUserId())
+      .order("created_at", { ascending: false })
+      .limit(100);
+    if (filter?.status) q = q.eq("status", filter.status);
+    return (check(await q) ?? []).map(toDraft);
+  }
+
+  async createDraft(input: NewDraft) {
+    const res = await this.db
+      .from("drafts")
+      .insert({ ...input, user_id: currentUserId() })
+      .select("*")
+      .single();
+    // 23505: that event already has a draft (drafts_user_event_idx).
+    if (res.error?.code === "23505") return null;
+    return toDraft(check(res));
+  }
+
+  async updateDraftStatus(id: string, status: DraftStatus) {
+    const row = check(
+      await this.db
+        .from("drafts")
+        .update({ status, updated_at: new Date().toISOString() })
+        .eq("user_id", currentUserId())
+        .eq("id", id)
+        .select("*")
+        .maybeSingle(),
+    );
+    return row ? toDraft(row) : null;
   }
 
   async getEvent(id: string) {

@@ -4,6 +4,8 @@ import {
   type ChatRole,
   type CheckIn,
   type CheckInValue,
+  type Draft,
+  type DraftStatus,
   demoRecommendations,
   type Event,
   type EventInput,
@@ -142,6 +144,9 @@ export const sameEvent = (e: Event, i: z.output<typeof EventInput>) =>
 
 export type NudgeCreate = Omit<Nudge, "id" | "created_at" | "sent_at">;
 
+/** A follow up draft to store; it starts as `proposed`. */
+export type NewDraft = Omit<Draft, "id" | "status" | "created_at" | "updated_at">;
+
 /** A device that turned nudges on (Web Push). Server side only, never sent to the browser. */
 export interface PushDevice {
   endpoint: string;
@@ -213,6 +218,11 @@ export interface Store extends PrivacyBackend {
   addChatMessage(role: ChatRole, content: string, actionIds?: string[]): Promise<ChatMessage>;
   /** Deletes the current user's demo visitor chat lines written at or before `before`. */
   clearVisitorChat(before: string): Promise<number>;
+  // Follow up drafts (actions/drafts.ts), newest first. Never sent anywhere.
+  listDrafts(filter?: { status?: DraftStatus }): Promise<Draft[]>;
+  /** Null when that event already has a draft (one per event). */
+  createDraft(input: NewDraft): Promise<Draft | null>;
+  updateDraftStatus(id: string, status: DraftStatus): Promise<Draft | null>;
 
   // ---- events mirrored from a provider (Google Calendar) ----
   getEvent(id: string): Promise<Event | null>;
@@ -400,6 +410,7 @@ export class MemoryStore implements Store {
       runs: AnalysisRun[];
       privacy: PrivacyRules;
       chat: (ChatMessage & { visitor: string | null })[];
+      drafts: Draft[];
       integrations: IntegrationRecord[];
       nudges: Nudge[];
       push: PushDevice[];
@@ -423,6 +434,7 @@ export class MemoryStore implements Store {
       runs: sample ? [structuredClone(mockAnalysisRun)] : [],
       privacy: { offTheRecord: false, since: null, sources: {} } as PrivacyRules,
       chat: [] as (ChatMessage & { visitor: string | null })[],
+      drafts: [] as Draft[],
       integrations: [] as IntegrationRecord[],
       nudges: [] as Nudge[],
       push: [] as PushDevice[],
@@ -733,6 +745,34 @@ export class MemoryStore implements Store {
     return removed;
   }
 
+  async listDrafts(filter?: { status?: DraftStatus }) {
+    return this.d.drafts
+      .filter((x) => !filter?.status || x.status === filter.status)
+      .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+  }
+
+  async createDraft(input: NewDraft) {
+    if (input.event_id && this.d.drafts.some((x) => x.event_id === input.event_id)) return null;
+    const at = now();
+    const draft: Draft = {
+      ...input,
+      id: crypto.randomUUID(),
+      status: "proposed",
+      created_at: at,
+      updated_at: at,
+    };
+    this.d.drafts.push(draft);
+    return draft;
+  }
+
+  async updateDraftStatus(id: string, status: DraftStatus) {
+    const draft = this.d.drafts.find((x) => x.id === id);
+    if (!draft) return null;
+    draft.status = status;
+    draft.updated_at = now();
+    return draft;
+  }
+
   async getEvent(id: string) {
     return this.events.find((e) => e.id === id) ?? null;
   }
@@ -1010,6 +1050,7 @@ export class MemoryStore implements Store {
         analysis_runs: d.runs.length,
         chat_messages: d.chat.length,
         check_ins: d.checkIns.length,
+        drafts: d.drafts.length,
         instructions: d.instructions.length,
         telegram_chats: d.telegram?.chat_id ? 1 : 0,
         nudges: d.nudges.length,
