@@ -190,6 +190,21 @@ line to `docs/workflow-log.md` (what changed and why). No permission needed. Kee
 - **Demo:** Manolis is the demo user with real data (private names edited out) and wears an Apple
   Watch on stage; the live moment is the watch buzzing while Michael's message shows on the big screen.
 
+- **Everything lives in the database.** All data goes to Supabase through the API, never only on a
+  device, so the user and any AI tool (Claude via MCP first) can reach it from anywhere.
+- **Simplicity is the product.** Connecting a source, an integration or an AI tool must be one tap or
+  one link for a non-technical user: no keys, URLs, JSON or terminal steps in the user's path. If a
+  provider forces setup (Health Auto Export, Shortcuts), ship a one-tap install link or QR plus a
+  three-step screen. Technical setup is for us, never for the user.
+- **Claude first:** the claude.ai connector (read and write the day) is the headline demo moment.
+
+### Picking work: demo path first
+
+Before opening a new issue of your own, check the planned backlog. The demo path wins over new
+sources: real data by Sunday (#8 Apple Watch, #12 and #13 Calendar, Mac and iPhone collectors),
+analysis (#17), the Claude connector, then the web screens (Today, Timeline, Goals, Agents). Both
+humans' agents take frontend issues too.
+
 ## Privacy rules (build them in, don't bolt them on)
 
 - Watch data is health data: explicit opt-in and one on/off switch per source.
