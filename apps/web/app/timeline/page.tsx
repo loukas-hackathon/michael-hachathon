@@ -43,7 +43,10 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
         }
         title="Timeline"
       />
-      {lostWeek ? <LostWeekChart week={lostWeek} selected={date} hrefFor={dayHref} /> : null}
+      {/* Only when something was actually lost: an empty chart of zeros is noise. */}
+      {lostWeek && lostWeek.total > 0 ? (
+        <LostWeekChart week={lostWeek} selected={date} hrefFor={dayHref} />
+      ) : null}
       <WeekStrip date={date} today={today} available={screen.available} demo={sampleParam} />
 
       <div className="mt-4">
