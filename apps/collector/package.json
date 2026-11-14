@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "tsx src/index.ts",
+    "check:chrome": "tsx src/checks/chrome.check.ts",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {

@@ -202,10 +202,24 @@ The `data` payload per type:
 | `macos_usage`, `iphone_usage` | `app_usage`    | app name                           | `bundle_id`, `device` (`mac` or `iphone`), `seconds`, `opened_from?` (`home_screen`, `app_switcher`, `notification`, `other`) |
 | `macos_usage`                 | `notification` | app name                           | `bundle_id`, `device`                                                                                                         |
 | `macos_usage`                 | `screen`       | `Screen on` or `Screen off`        | `state` (`on` or `off`), `device`                                                                                             |
-| `chrome`                      | `web_visit`    | page title                         | `host`, `category?`, `seconds` (foreground time). Never the full address                                                      |
-| `chrome`                      | `search`       | the search term                    | `engine`, `term`                                                                                                              |
+| `chrome`                      | `web_visit`    | page title                         | `host`, `seconds`, `foreground?`, `category?`, `origin`, `profile?`. Never the full address                                   |
+| `chrome`                      | `search`       | the search term                    | `engine`, `term`, `origin`, `profile?`                                                                                        |
 | `claude_code`                 | `ai_session`   | session title                      | `tool`, `project`, `model?`, `turns`, `waiting_seconds?`, `input_tokens?`, `output_tokens?`                                   |
 | `claude_code`                 | `ai_prompt`    | first 120 characters of the prompt | `tool`, `session_id`, `project`                                                                                               |
+
+Browsing events (`web_visit`, `search`) carry `origin`: `history` when they come from Chrome's own
+history file (`apps/collector`), `extension` when the browser extension saw them live. The same
+visit can arrive from both; the patterns layer decides which to trust. From `history`:
+
+- `foreground` is `true` when `seconds` is the time Chrome measured the page in front, and `false`
+  when Chrome did not measure it and `seconds` is how long the page stayed open. Capped at two hours.
+- `category` is one of `travel`, `shopping`, `social`, `news`, `video`, `messaging`, `mail`, `dev`,
+  `ai`, `docs`, `finance`, `search`, from a short built in list of well known sites
+  (`apps/collector/src/site-categories.ts`). A site we do not know has no category.
+- `profile` is the Chrome profile folder (`Default`, `Profile 1`).
+- Visits to excluded hosts (banking, health, adult, password managers, the local network, and the
+  user's own list) are never sent, and neither are their titles or search terms
+  (`apps/collector/src/site-privacy.ts`).
 
 ### Goals
 
