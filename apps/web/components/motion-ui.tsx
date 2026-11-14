@@ -73,18 +73,11 @@ const FORMATS = {
 } as const;
 
 /**
- * Renders a tweening number with tabular figures. The real value is always in the DOM for screen
- * readers; the moving one is hidden from them, so nothing reads out every frame.
+ * Renders a tweening number with tabular figures, formatted as the sentence around it needs.
  */
 export function Tween({ value, format = "int" }: { value: number; format?: keyof typeof FORMATS }) {
   const shown = useTween(value);
-  const text = FORMATS[format];
-  return (
-    <>
-      <span className="sr-only">{text(value)}</span>
-      <span aria-hidden="true" className="tnum">
-        {text(shown)}
-      </span>
-    </>
-  );
+  // One text node, so the sentence reads (and matches) as one; it is the real value at rest and
+  // moves for under half a second only after a change. Not a live region, so nothing reads per frame.
+  return <span className="tnum">{FORMATS[format](shown)}</span>;
 }
