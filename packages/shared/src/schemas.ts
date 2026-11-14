@@ -23,6 +23,8 @@ export const Source = z.enum([
   "iphone_usage",
   "chrome",
   "claude_code",
+  // Travel times from Google Maps, computed by the API between the user's places (opt in).
+  "maps",
 ]);
 export type Source = z.infer<typeof Source>;
 
@@ -46,6 +48,8 @@ export const EventType = z.enum([
   "screen",
   "ai_session",
   "ai_prompt",
+  // A planned trip between two places, with traffic (source maps). Payload in docs/api.md.
+  "travel",
 ]);
 export type EventType = z.infer<typeof EventType>;
 
@@ -382,6 +386,99 @@ export const DEFAULT_PROFILE: Profile = {
   onboarded_at: null,
   updated_at: null,
 };
+
+// ---------- places and travel (GET/PUT /v1/places, POST /v1/travel/plan) ----------
+
+// The user's saved places. `key` is a short slug ("home", "work", "gym", "university").
+export const PlaceKey = z
+  .string()
+  .regex(/^[a-z][a-z0-9_]{0,31}$/, "lower case letters, digits and underscores");
+export type PlaceKey = z.infer<typeof PlaceKey>;
+
+export const Place = z.object({
+  key: PlaceKey,
+  label: z.string().min(1).max(80),
+  // What the user typed. Null when the place was set from coordinates only.
+  address: z.string().nullable(),
+  // Null until geocoded (no maps key yet, or the address was not found).
+  lat: z.number().min(-90).max(90).nullable(),
+  lng: z.number().min(-180).max(180).nullable(),
+  updated_at: IsoDateTime,
+});
+export type Place = z.infer<typeof Place>;
+
+export const PlaceInput = z
+  .object({
+    key: PlaceKey,
+    label: z.string().min(1).max(80).optional(),
+    address: z.string().min(1).max(300).nullish(),
+    lat: z.number().min(-90).max(90).nullish(),
+    lng: z.number().min(-180).max(180).nullish(),
+  })
+  .refine((p) => p.address || (typeof p.lat === "number" && typeof p.lng === "number"), {
+    message: "Give an address, or both lat and lng",
+  });
+export type PlaceInput = z.input<typeof PlaceInput>;
+
+// PUT replaces the whole list. Saving places is the user's opt in to travel times (source maps).
+export const PlacesUpdate = z.object({ places: z.array(PlaceInput).max(20) });
+export type PlacesUpdate = z.input<typeof PlacesUpdate>;
+
+export const PlacesResponse = z.object({
+  places: z.array(Place),
+  // True when the server has a maps key; without it places are kept but nothing is computed.
+  maps_available: z.boolean(),
+  // The user's switch for source maps (privacy). Travel is computed only when true.
+  travel_enabled: z.boolean(),
+});
+export type PlacesResponse = z.infer<typeof PlacesResponse>;
+
+// One sampled departure for a trip.
+export const TravelOption = z.object({
+  depart_at: IsoDateTime,
+  arrive_at: IsoDateTime,
+  minutes: z.number().int().nonnegative(),
+});
+export type TravelOption = z.infer<typeof TravelOption>;
+
+// `data` of an event with source maps and type travel.
+export const TravelData = z.object({
+  calendar_event_id: z.string(),
+  from: z.object({ label: z.string(), place_key: PlaceKey.nullable() }),
+  to: z.object({ label: z.string(), place_key: PlaceKey.nullable() }),
+  mode: z.literal("drive"),
+  // The planned trip (the event's start and end).
+  minutes: z.number().int().nonnegative(),
+  // The same trip with empty roads; minutes minus this is time lost to traffic.
+  free_flow_minutes: z.number().int().nonnegative(),
+  distance_km: z.number().nonnegative(),
+  // Leaving as soon as the user is free, and what that would cost.
+  naive_depart_at: IsoDateTime,
+  naive_minutes: z.number().int().nonnegative(),
+  won_minutes: z.number().int().nonnegative(),
+  options: z.array(TravelOption),
+});
+export type TravelData = z.infer<typeof TravelData>;
+
+export const TravelPlanInput = z.object({
+  from: IsoDateTime.optional(),
+  to: IsoDateTime.optional(),
+});
+export type TravelPlanInput = z.infer<typeof TravelPlanInput>;
+
+export const TravelPlanStatus = z.enum(["ok", "maps_unavailable", "travel_off"]);
+export type TravelPlanStatus = z.infer<typeof TravelPlanStatus>;
+
+export const TravelPlanResult = z.object({
+  status: TravelPlanStatus,
+  from: IsoDateTime,
+  to: IsoDateTime,
+  travel: z.array(Event),
+  recommendations: z.array(Recommendation),
+  // Calendar events with a location that got no trip, and why.
+  skipped: z.array(z.object({ calendar_event_id: z.string(), reason: z.string() })),
+});
+export type TravelPlanResult = z.infer<typeof TravelPlanResult>;
 
 // ---------- Michael for agents ----------
 

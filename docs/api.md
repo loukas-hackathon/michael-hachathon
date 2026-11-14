@@ -51,8 +51,8 @@ Every non-2xx response:
 
 Enums:
 
-- `Source`: `omi | whoop | health_auto_export | ios_shortcuts | activitywatch | google_calendar | owntracks | manual | agent | macos_usage | iphone_usage | chrome | claude_code`
-- `EventType`: `sleep | workout | recovery | biometric | app_usage | focus_session | conversation | memory | calendar_event | location | meal | note | web_visit | search | notification | screen | ai_session | ai_prompt`
+- `Source`: `omi | whoop | health_auto_export | ios_shortcuts | activitywatch | google_calendar | owntracks | manual | agent | macos_usage | iphone_usage | chrome | claude_code | maps`
+- `EventType`: `sleep | workout | recovery | biometric | app_usage | focus_session | conversation | memory | calendar_event | location | meal | note | web_visit | search | notification | screen | ai_session | ai_prompt | travel`
 - `GoalCategory`: `work | gym | rest | food`
 - `RecommendationStatus`: `proposed | accepted | dismissed | done | undone` (`done` = action executed)
 - `ActionKind`: `move_calendar_block | create_focus_block | block_mac_app | draft_follow_up | reminder`
@@ -1045,6 +1045,83 @@ The web app sends a new user (no goals and `onboarded_at: null`) from Today to `
 Stored as one jsonb document per user (`user_profiles`); a missing or invalid field reads as its
 default.
 
+### Places and travel
+
+Time in traffic is time lost. The API learns drive times between the user's places with Google
+Maps (one server side key, `GOOGLE_MAPS_API_KEY`; the user never sees a key) and proposes leaving
+later, or moving the user's own block past the rush.
+
+```ts
+type Place = {
+  key: string; // slug: "home" | "work" | "gym" | "university" | ...
+  label: string; // "Home", or what the user called it
+  address: string | null;
+  lat: number | null; // null until geocoded
+  lng: number | null;
+  updated_at: string;
+};
+type PlaceInput = {
+  key: string;
+  label?: string;
+  address?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+};
+// address, or both lat and lng
+type PlacesResponse = { places: Place[]; maps_available: boolean; travel_enabled: boolean };
+
+type TravelOption = { depart_at: string; arrive_at: string; minutes: number };
+// `data` of an event { source: "maps", type: "travel" }; the event spans the planned drive.
+type TravelData = {
+  calendar_event_id: string;
+  from: { label: string; place_key: string | null };
+  to: { label: string; place_key: string | null };
+  mode: "drive";
+  minutes: number; // the planned drive
+  free_flow_minutes: number; // empty roads; minutes minus this is traffic
+  distance_km: number;
+  naive_depart_at: string; // leaving as soon as the user is free
+  naive_minutes: number;
+  won_minutes: number; // naive_minutes minus minutes
+  options: TravelOption[]; // every departure sampled
+};
+type TravelPlanResult = {
+  status: "ok" | "maps_unavailable" | "travel_off";
+  from: string;
+  to: string;
+  travel: Event[]; // newly stored travel events
+  recommendations: Recommendation[]; // newly proposed
+  skipped: { calendar_event_id: string; reason: string }[];
+};
+```
+
+| Method | Path              | Body                                | Response               | Status |
+| ------ | ----------------- | ----------------------------------- | ---------------------- | ------ |
+| GET    | `/v1/places`      |                                     | `200 PlacesResponse`   | live   |
+| PUT    | `/v1/places`      | `{ places: PlaceInput[] }` (max 20) | `200 PlacesResponse`   | live   |
+| POST   | `/v1/travel/plan` | optional `{ from?, to? }` (ISO)     | `200 TravelPlanResult` | live   |
+
+- `PUT /v1/places` replaces the whole list. Addresses are geocoded on save when the server has a
+  key (cached per user for 30 days, as Google's terms allow); otherwise coordinates stay `null`.
+  The first save switches source `maps` on: that is the user's opt in. The privacy switch
+  (`PATCH /v1/privacy/sources/maps`) turns it off again, and off the record stops it too.
+- `POST /v1/travel/plan` defaults to today (Europe/Athens). For each calendar event with a
+  physical location (Meet, Zoom and links are skipped) it finds the place before it: the previous
+  event that day with a location, else `home`. A location matches a saved place by label or key
+  word ("Local gym" is `gym`), else it is geocoded. It samples departures from when the user is
+  free, every 15 minutes (at most 6 Routes calls), stores the fastest drive that still arrives 5
+  minutes early as a travel event (idempotent per calendar event), and proposes:
+  - **leave later** when it saves 10 minutes or more: `reminder` action at the new departure
+    (`"Leave at 18:00 instead of 17:00, win 30 minutes"`);
+  - otherwise, for the user's own block (no attendees) stuck in 15 minutes or more of traffic,
+    **move the block** after the rush when it saves 15 minutes or more and fits before the next
+    event: `move_calendar_block` with `{ event_id, start_at, end_at, from_start_at }` (`MoveCalendarBlockPayload`),
+    `undo_until` = the original start. Meetings with other people are never moved.
+    Recommendations carry the goal the block serves (`apps/api/src/score/match.ts`).
+- Without `GOOGLE_MAPS_API_KEY` the status is `maps_unavailable` and nothing is computed; without
+  the opt in it is `travel_off`. Code: `apps/api/src/integrations/maps.ts` (Geocoding, Routes
+  `computeRoutes` with `TRAFFIC_AWARE` and `departureTime`) and `integrations/travel.ts`.
+
 ### Michael for agents
 
 ```ts
@@ -1363,5 +1440,6 @@ On allow, `redirect_to` carries a one time `code` (5 minutes), `state` and `iss`
 | `get_patterns`        | `{ from?, to? }` (default: the last 7 days)             | `PatternReport`                                                              |
 | `get_score`           | `{ date? }` (a local day, default today)                | `Score`                                                                      |
 | `add_event`           | `EventInput`                                            | `{ inserted: number, duplicates: number, ignored: number, events: Event[] }` |
+| `plan_travel`         | `{ from?, to? }` (default today)                        | `TravelPlanResult` (see Places and travel)                                   |
 
 Status: all `live` (Supabase in production, in-memory locally without Supabase keys).

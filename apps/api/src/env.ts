@@ -38,6 +38,8 @@ const Env = z.object({
     .optional()
     .transform((v) => (v ? v === "true" : process.env.NODE_ENV === "production")),
   SCHEDULER_INTERVAL_MINUTES: z.coerce.number().positive().default(5),
+  // Google Maps Platform (Routes API + Geocoding API), server side only. Empty = no travel times.
+  GOOGLE_MAPS_API_KEY: z.string().optional(),
 });
 
 export type Env = z.infer<typeof Env>;

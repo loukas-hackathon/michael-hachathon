@@ -16,6 +16,7 @@ import {
   mockRecommendations,
   type Nudge,
   type NudgeStatus,
+  type Place,
   type Profile,
   type Recommendation,
   type RecommendationStatus,
@@ -25,6 +26,7 @@ import {
 import type { z } from "zod";
 import { currentUserId } from "./context";
 import { env } from "./env";
+import type { GeocodeHit } from "./integrations/maps";
 import { type PrivacyBackend, type PrivacyRules, screenEvents } from "./privacy";
 import { SupabaseStore } from "./supabase-store";
 
@@ -34,6 +36,10 @@ export interface TimelineFilter {
   source?: Source[];
   type?: EventType[];
 }
+
+export type NewRecommendation = Pick<Recommendation, "goal_id" | "title" | "rationale" | "action"> & {
+  analysis_run_id?: string | null;
+};
 
 export interface InsertResult {
   inserted: Event[];
@@ -123,6 +129,14 @@ export interface Store extends PrivacyBackend {
   getRecommendationExecution(id: string): Promise<unknown>;
   recordRecommendationAction(id: string, update: RecommendationActionUpdate): Promise<Recommendation | null>;
   latestAnalysisRun(): Promise<AnalysisRun | null>;
+  // Proposed by Michael's own rules (e.g. travel); status starts at proposed.
+  createRecommendation(input: NewRecommendation): Promise<Recommendation>;
+  // Saved places (home, work, gym). replacePlaces swaps the whole list.
+  listPlaces(): Promise<Place[]>;
+  replacePlaces(places: Omit<Place, "updated_at">[]): Promise<Place[]>;
+  // Geocoding cache, per user, keyed by the normalised query (integrations/maps.ts).
+  cachedGeocode(query: string): Promise<GeocodeHit | null>;
+  saveGeocode(query: string, hit: GeocodeHit): Promise<void>;
   // Privacy (privacy.ts holds the rules; insertEvents applies them).
   setOffTheRecord(on: boolean): Promise<PrivacyRules>;
   /** The most recent chat messages, oldest first. */
@@ -196,6 +210,8 @@ export class MemoryStore implements Store {
       nudges: Nudge[];
       push: PushDevice[];
       executions: Map<string, unknown>;
+      places: Place[];
+      geocodes: Map<string, GeocodeHit>;
     }
   >();
   private get d() {
@@ -213,6 +229,8 @@ export class MemoryStore implements Store {
         nudges: [],
         push: [],
         executions: new Map(),
+        places: [],
+        geocodes: new Map(),
       };
       this.data.set(userId, x);
     }
@@ -491,6 +509,43 @@ export class MemoryStore implements Store {
     return [...this.data.entries()]
       .filter(([, x]) => x.events.some((e) => Date.parse(e.created_at) >= from))
       .map(([userId]) => userId);
+  }
+
+  async createRecommendation(i: NewRecommendation) {
+    const rec: Recommendation = {
+      id: crypto.randomUUID(),
+      analysis_run_id: i.analysis_run_id ?? null,
+      goal_id: i.goal_id,
+      title: i.title,
+      rationale: i.rationale,
+      action: i.action,
+      status: "proposed",
+      executed_at: null,
+      undone_at: null,
+      created_at: now(),
+      updated_at: now(),
+    };
+    this.recommendations.push(rec);
+    return rec;
+  }
+
+  async listPlaces() {
+    return structuredClone(this.d.places);
+  }
+
+  async replacePlaces(places: Omit<Place, "updated_at">[]) {
+    this.d.places = places
+      .map((p) => ({ ...p, updated_at: now() }))
+      .sort((a, b) => a.key.localeCompare(b.key));
+    return structuredClone(this.d.places);
+  }
+
+  async cachedGeocode(query: string) {
+    return this.d.geocodes.get(query) ?? null;
+  }
+
+  async saveGeocode(query: string, hit: GeocodeHit) {
+    this.d.geocodes.set(query, hit);
   }
 }
 
