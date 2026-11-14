@@ -76,14 +76,6 @@
   }
 }
 
-/* Hold the hand over while the screen behind is still a skeleton (aria-busy), so the mark gives
- * way to the real day, not to grey bars. The script caps the hold at 3.5s. Only the out and lift
- * animations pause; the mark itself still settles. */
-body:has(main[aria-busy="true"]) #m-splash:not([data-done]),
-body:has(main[aria-busy="true"]) #m-splash:not([data-done]) .m-splash-mark {
-  animation-play-state: paused;
-}
-
 /* Opened from the Home Screen: iOS already showed the mark on its launch image, so hold it still
  * and hand over to the app sooner. */
 #m-splash[data-standalone] {
