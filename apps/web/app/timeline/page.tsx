@@ -69,7 +69,7 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
             </Link>
           }
         >
-          Michael only shows days your sources were connected. Pick a day in bold above.
+          I only show days when a source was connected. Pick a day in bold above.
         </EmptyState>
       )}
     </main>

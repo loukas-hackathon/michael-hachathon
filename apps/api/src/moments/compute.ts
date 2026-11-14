@@ -210,8 +210,8 @@ export function computeMoment(input: MomentInput): MomentCore {
         : `Find ${minutes} minutes for ${what}${when}`,
       rationale:
         gap.planned_ahead_minutes > 0
-          ? `${left} of ${gap.budget_minutes} minutes for ${gap.title} left this week and ${gap.planned_ahead_minutes} planned, so ${gap.unplanned_minutes} are not booked.`
-          : `${left} of ${gap.budget_minutes} minutes for ${gap.title} left this week and none of it booked.`,
+          ? `${duration(left)} of ${duration(gap.budget_minutes ?? 0)} for ${gap.title} left this week and ${duration(gap.planned_ahead_minutes)} planned, so ${duration(gap.unplanned_minutes ?? 0)} is not booked.`
+          : `${duration(left)} of ${duration(gap.budget_minutes ?? 0)} for ${gap.title} left this week and none of it booked.`,
       action_kind: slot ? "create_focus_block" : null,
       start_at: slot ? iso(slot.start) : null,
       end_at: slot ? iso(slot.end) : null,

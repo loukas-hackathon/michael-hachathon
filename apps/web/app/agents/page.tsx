@@ -1,7 +1,6 @@
 import { AgentRow } from "@/components/agents/agent-row";
 import { ApprovalCard } from "@/components/agents/approval-card";
 import { ConnectClaude } from "@/components/agents/connect-claude";
-import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen";
 import { getAgents, SCOPE_LABEL, whoAsked } from "@/lib/agents";
 import { MCP_URL } from "@/lib/connect";
@@ -20,9 +19,14 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
       <ScreenHeader context="Who asks about you" title="Agents" />
 
       {view.agents.length === 0 ? (
-        <EmptyState title="No agent has asked about you yet.">
-          When Claude or another agent asks Michael about you, you approve it here with one tap.
-        </EmptyState>
+        // Nothing to approve yet, so connecting Claude is the one thing to do here: put it first.
+        <>
+          <ConnectClaude url={MCP_URL} />
+          <p className="mt-2 px-4 text-footnote text-label-2">
+            Once Claude is connected, every question it asks about you shows here, and you approve it with one
+            tap.
+          </p>
+        </>
       ) : (
         <>
           <p className="mt-1.5 text-subhead text-label-2">
@@ -33,7 +37,7 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
             ) : (
               "Nobody has asked about you today."
             )}{" "}
-            Michael answers only within what you allow.
+            I answer only within what you allow.
           </p>
 
           {pending.map((a) => (
@@ -98,7 +102,7 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
         </>
       )}
 
-      <ConnectClaude url={MCP_URL} />
+      {view.agents.length > 0 ? <ConnectClaude url={MCP_URL} /> : null}
 
       {view.sample ? (
         <p className="mt-8 text-footnote text-label-2">

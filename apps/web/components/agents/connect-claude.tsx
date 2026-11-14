@@ -21,9 +21,14 @@ export function ConnectClaude({ url }: { url: string }) {
       aria-label="Connect Claude"
       className="mt-5 flex flex-col gap-3 rounded-card bg-fill px-4 pt-3.5 pb-4"
     >
-      <p className="text-title3 font-semibold tracking-[-0.01em]">Connect Claude</p>
+      <div>
+        <p className="text-title3 font-semibold tracking-[-0.01em]">Connect Claude</p>
+        <p className="text-subhead text-label-2">
+          Ask Claude about your day and let it book your own blocks. About a minute.
+        </p>
+      </div>
       <ol className="list-decimal pl-5 text-subhead text-label-2">
-        <li>Copy this link.</li>
+        <li>Copy the link below.</li>
         <li>
           In Claude, open Settings, Connectors,{" "}
           <b className="font-semibold text-label">Add custom connector</b>, name it Michael and paste.
