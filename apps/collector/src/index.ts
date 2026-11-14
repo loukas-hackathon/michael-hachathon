@@ -5,6 +5,7 @@ import { parseArgs } from "node:util";
 import type { EventInput } from "@michael/shared";
 import { startFocusGuardian } from "./focus-guard";
 import { readers } from "./readers/index";
+import { readWifi } from "./wifi";
 
 // Michael's collector: runs on the user's own Mac, reads what the Mac already knows about the day
 // and posts it to Michael's timeline. It only reads; it never changes the files it looks at.
@@ -66,7 +67,30 @@ async function post(events: EventInput[]) {
   return totals;
 }
 
-async function runOnce(selected: typeof readers, dryRun: boolean, backfillDays: number) {
+/** Where the Mac is: its current network, as one location signal (#267). Silent when unreadable. */
+async function postWifi(dryRun: boolean) {
+  const log = (message: string) => console.log(`[wifi] ${message}`);
+  try {
+    const wifi = await readWifi();
+    if (!wifi) return;
+    if (dryRun) return log(`dry run: on network ${wifi.network}${wifi.name ? ` (${wifi.name})` : ""}`);
+    const response = await fetch(`${API_URL}/v1/location/signals`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${API_KEY}` },
+      body: JSON.stringify({
+        signals: [{ kind: "wifi", at: new Date().toISOString(), network: wifi.network, name: wifi.name }],
+      }),
+    });
+    if (!response.ok) throw new Error(`API answered ${response.status}`);
+    const body = (await response.json()) as { recorded: number; at: string | null };
+    if (body.recorded) log(`at ${body.at ?? "an unknown place"}`);
+  } catch (error) {
+    log(`failed: ${(error as Error).message}`);
+  }
+}
+
+async function runOnce(selected: typeof readers, dryRun: boolean, backfillDays: number, wifi = true) {
+  if (wifi) await postWifi(dryRun);
   const state = loadState();
   const tmpDir = mkdtempSync(join(tmpdir(), "michael-collector-"));
   try {
@@ -126,6 +150,7 @@ async function main() {
   }
   if (values.list) {
     for (const reader of readers) console.log(`${reader.name.padEnd(14)} ${reader.describe}`);
+    console.log(`${"wifi".padEnd(14)} the network this Mac is on, so Michael knows where you are (Mac only)`);
     return;
   }
   if (values.reset) {
@@ -136,12 +161,13 @@ async function main() {
 
   const wanted = values.sources?.split(",").map((s) => s.trim());
   const selected = wanted ? readers.filter((r) => wanted.includes(r.name)) : readers;
-  if (selected.length === 0) throw new Error(`No such source. Try --list.`);
+  const wifi = !wanted || wanted.includes("wifi");
+  if (selected.length === 0 && !wifi) throw new Error(`No such source. Try --list.`);
   const backfillDays = Number(values["backfill-days"]);
   const dryRun = values["dry-run"];
 
   console.log(`Posting to ${API_URL}${dryRun ? " (dry run: nothing is sent)" : ""}`);
-  await runOnce(selected, dryRun, backfillDays);
+  await runOnce(selected, dryRun, backfillDays, wifi);
   if (values.once || dryRun) return;
 
   const seconds = Math.max(10, Number(values.interval));
@@ -150,7 +176,7 @@ async function main() {
     console.log("Focus guards on: muted apps close when they come to the front.");
     startFocusGuardian({ apiUrl: API_URL, apiKey: API_KEY });
   }
-  setInterval(() => void runOnce(selected, false, backfillDays), seconds * 1000);
+  setInterval(() => void runOnce(selected, false, backfillDays, wifi), seconds * 1000);
 }
 
 main().catch((error) => {
