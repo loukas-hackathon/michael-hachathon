@@ -94,6 +94,13 @@ function fromSample(view: DayView): TimelineDay {
     blocks,
     phone,
     ai: [],
+    drives: (view.drives ?? []).map((dr) => ({
+      start: t(dr.start),
+      end: t(dr.end),
+      to: dr.to,
+      minutes: dr.minutes,
+      trafficMinutes: Math.max(0, dr.minutes - dr.freeFlowMinutes),
+    })),
     segments: [
       { kind: "quiet", from: dayStart, to: from },
       { kind: "hours", from, to },
