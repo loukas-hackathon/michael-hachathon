@@ -15,9 +15,11 @@ returns `501 not_implemented`, `planned` = not routed yet. Update the status whe
 - IDs are UUIDs.
 - List endpoints wrap results: `{ "goals": [...] }`, `{ "recommendations": [...] }`.
 - **Auth (provisional, MVP only):** single user, one shared secret `API_KEY`.
-  Send `Authorization: Bearer <API_KEY>`. Webhook senders that cannot set headers may use
-  `?key=<API_KEY>`. Applies to everything under `/v1/*` and `/mcp`, except `/health` and the
-  OAuth connect/callback redirects. To be replaced by real auth if we go multi-user.
+  Send `Authorization: Bearer <API_KEY>`. Applies to everything under `/v1/*` and `/mcp`, except
+  `/health` and the OAuth connect/callback redirects. Only `/v1/webhooks/*` and `/mcp` also accept
+  `?key=<API_KEY>` (for webhook senders and claude.ai connectors that cannot set headers); every
+  other route rejects it. To be replaced by real auth (per-source secrets / HMAC, OAuth for MCP)
+  if we go multi-user.
 
 ### Error shape
 

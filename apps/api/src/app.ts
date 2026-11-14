@@ -16,14 +16,17 @@ import { store } from "./store";
 
 export const VERSION = "0.1.0";
 
+// Webhook senders often cannot set headers, so they may pass ?key=. Mounted BEFORE v1 so the
+// header-only middleware below never sees /v1/webhooks/* requests.
+const webhooksApp = new Hono().use(requireApiKey({ allowQueryKey: true })).route("/", webhooks);
+
 const v1 = new Hono()
-  .use(requireApiKey)
+  .use(requireApiKey())
   .route("/", events)
   .route("/", goals)
   .route("/", recommendations)
   .route("/", analysis)
-  .route("/", integrations)
-  .route("/webhooks", webhooks);
+  .route("/", integrations);
 
 export const app = new Hono()
   .use(logger())
@@ -38,8 +41,10 @@ export const app = new Hono()
     return c.json(body);
   })
   .route("/v1", oauth)
+  .route("/v1/webhooks", webhooksApp)
   .route("/v1", v1)
-  .all("/mcp", requireApiKey, (c) => handleMcpRequest(c.req.raw))
+  // claude.ai custom connectors cannot send headers, so /mcp also accepts ?key=.
+  .all("/mcp", requireApiKey({ allowQueryKey: true }), (c) => handleMcpRequest(c.req.raw))
   .notFound((c) => errorResponse(c, "not_found", `No route for ${c.req.method} ${c.req.path}`))
   .onError((err, c) => {
     if (err instanceof HttpError) return errorResponse(c, err.code, err.message, err.details);
