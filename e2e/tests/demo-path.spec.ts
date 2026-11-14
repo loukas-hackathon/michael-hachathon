@@ -34,7 +34,7 @@ test("Today shows the demo week's real numbers, not the sample day", async ({ pa
   // The same numbers the API computes for the demo account.
   const score = await apiGet<Score>("/v1/score");
   if (score.score_pct != null) {
-    await expect(page.getByText(`We're at ${score.score_pct}% of goal time this week.`)).toBeVisible();
+    await expect(page.getByText(`${score.score_pct}% optimisation score this week.`)).toBeVisible();
   }
   if (score.day.blocks.length > 0 && score.day.score_pct != null) {
     await expect(page.getByText(/of your goal time (today|so far)\./)).toBeVisible();

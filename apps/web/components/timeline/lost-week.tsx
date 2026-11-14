@@ -90,7 +90,8 @@ export function LostWeekChart({
           return (
             <li key={d.date} className="min-w-0">
               {future ? (
-                <span aria-label={label} className="flex flex-col items-center">
+                <span className="flex flex-col items-center">
+                  <span className="sr-only">{label}</span>
                   {body}
                 </span>
               ) : (
