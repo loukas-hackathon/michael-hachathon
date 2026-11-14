@@ -1,4 +1,4 @@
-import type { NudgeCheckResult } from "@michael/shared";
+import { countsTowardsCap, type NudgeCheckResult } from "@michael/shared";
 import { runAsUser } from "./context";
 import { env } from "./env";
 import { HOUR } from "./patterns/time";
@@ -40,7 +40,7 @@ export async function runNudgeChecks(now = Date.now()): Promise<UserCheck[] | nu
         out.push({ userId, error: err instanceof Error ? err.message : String(err) });
       }
     }
-    const sent = out.filter((c) => c.result?.nudge && c.result.nudge.status !== "suppressed").length;
+    const sent = out.filter((c) => c.result?.nudge && countsTowardsCap(c.result.nudge.status)).length;
     if (users.length) console.log(`[scheduler] checked ${users.length} users, ${sent} nudges`);
     return out;
   } catch (err) {

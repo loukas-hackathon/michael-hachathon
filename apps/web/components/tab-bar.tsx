@@ -23,7 +23,7 @@ function isActive(pathname: string, href: string) {
  */
 export function TabBar() {
   const pathname = usePathname();
-  if (pathname.startsWith("/onboarding") || pathname.startsWith("/connect")) return null;
+  if (["/onboarding", "/connect", "/stage"].some((p) => pathname.startsWith(p))) return null;
 
   return (
     <nav

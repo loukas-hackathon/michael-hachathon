@@ -60,7 +60,7 @@ Enums:
 - `AnalysisTrigger`: `manual | scheduled | mcp | morning | evening`
 - `AgentScope`: `timeline | goals | recommendations | score | write_events`
 - `AgentStatus`: `pending | approved | revoked`
-- `NudgeChannel`: `watch | push | telegram`; `NudgeStatus`: `queued | sent | failed | suppressed`
+- `NudgeChannel`: `watch | push | telegram`; `NudgeStatus`: `queued | sent | failed | suppressed | test`
 - `NudgeKind`: `focus_drift | block_soon | wind_down | goal_behind | morning | evening`; `NudgeSkip`: `nothing_to_say | quiet_hours | daily_cap | too_soon | off_the_record`
 - `AppCategory`: `work | communication | social | video | news | shopping | travel | ai | music | system | other`
   (one shared categoriser for apps and sites, `packages/shared/src/categories.ts`; unknown = `other`)
@@ -1201,7 +1201,7 @@ type NudgeCheckResult = {
   checked_at: string;
   nudge: Nudge | null; // created by this check (queued, sent, failed or suppressed)
   skipped: NudgeSkip | null; // why nothing went out
-  sent_today: number; // nudges today that count towards the cap (all but suppressed)
+  sent_today: number; // nudges today that count towards the cap (all but suppressed and test)
 };
 ```
 
@@ -1244,10 +1244,13 @@ Scheduler (`apps/api/src/scheduler.ts`): inside the API process, every `SCHEDULE
 scoped as that user. On by default when `NODE_ENV=production`, `SCHEDULER_ENABLED` overrides.
 
 `POST /v1/nudges/test` sends the best current candidate (or a sample line) to the caller's devices
-at once, ignoring the cap, quiet hours and dedupe, and stores nothing. It is for the stage moment.
+at once, ignoring the cap, quiet hours and dedupe. It is for the stage moment: it stores the nudge
+with status `test` (a fresh key each press), so `GET /v1/nudges` and the stage view (`/stage`) show
+the same line as the watch buzzes. `test` nudges never count towards the 5 a day, the 20 minute gap
+or the daily dedupe (`countsTowardsCap` in `@michael/shared`).
 
 ```ts
-type NudgeTestResult = { text: string; reason: string; delivered: number; devices: number };
+type NudgeTestResult = { text: string; reason: string; delivered: number; devices: number; nudge: Nudge };
 type PushSubscriptionInput = {
   endpoint: string;
   expirationTime?: number | null;
