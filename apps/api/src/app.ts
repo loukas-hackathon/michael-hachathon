@@ -1,0 +1,48 @@
+import type { Health } from "@michael/shared";
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { logger } from "hono/logger";
+import { requireApiKey } from "./auth";
+import { env } from "./env";
+import { errorResponse, HttpError } from "./http";
+import { handleMcpRequest } from "./mcp";
+import { analysis } from "./routes/analysis";
+import { events } from "./routes/events";
+import { goals } from "./routes/goals";
+import { integrations, oauth } from "./routes/integrations";
+import { recommendations } from "./routes/recommendations";
+import { webhooks } from "./routes/webhooks";
+import { store } from "./store";
+
+export const VERSION = "0.1.0";
+
+const v1 = new Hono()
+  .use(requireApiKey)
+  .route("/", events)
+  .route("/", goals)
+  .route("/", recommendations)
+  .route("/", analysis)
+  .route("/", integrations)
+  .route("/webhooks", webhooks);
+
+export const app = new Hono()
+  .use(logger())
+  .use(cors({ origin: env.WEB_ORIGIN.split(",").map((s) => s.trim()) }))
+  .get("/health", (c) => {
+    const body: Health = {
+      status: "ok",
+      version: VERSION,
+      time: new Date().toISOString(),
+      storage: store.kind,
+    };
+    return c.json(body);
+  })
+  .route("/v1", oauth)
+  .route("/v1", v1)
+  .all("/mcp", requireApiKey, (c) => handleMcpRequest(c.req.raw))
+  .notFound((c) => errorResponse(c, "not_found", `No route for ${c.req.method} ${c.req.path}`))
+  .onError((err, c) => {
+    if (err instanceof HttpError) return errorResponse(c, err.code, err.message, err.details);
+    console.error(err);
+    return errorResponse(c, "internal", "Internal server error");
+  });

@@ -1,0 +1,90 @@
+import { EventInput, EventType, RecommendationStatus, Source } from "@michael/shared";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import { z } from "zod";
+import { store } from "./store";
+
+const json = (value: unknown) => ({
+  content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }],
+});
+
+export function createMcpServer(): McpServer {
+  const server = new McpServer({ name: "michael", version: "0.1.0" });
+
+  server.registerTool(
+    "get_timeline",
+    {
+      title: "Get timeline",
+      description:
+        "Return the user's day timeline: timestamped events from all sources (body, attention, speech, calendar, place). Defaults to the last 24 hours.",
+      inputSchema: {
+        from: z.iso.datetime({ offset: true }).optional().describe("ISO 8601 start, inclusive"),
+        to: z.iso.datetime({ offset: true }).optional().describe("ISO 8601 end, inclusive"),
+        source: z.array(Source).optional().describe("Only these sources"),
+        type: z.array(EventType).optional().describe("Only these event types"),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ from, to, source, type }) => {
+      const end = to ?? new Date().toISOString();
+      const start = from ?? new Date(Date.parse(end) - 24 * 3600_000).toISOString();
+      return json({
+        from: start,
+        to: end,
+        events: await store.listEvents({ from: start, to: end, source, type }),
+      });
+    },
+  );
+
+  server.registerTool(
+    "get_goals",
+    {
+      title: "Get goals",
+      description: "Return the user's goals (categories: work, gym, rest, food).",
+      inputSchema: { active_only: z.boolean().optional().describe("Default true") },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ active_only }) => {
+      const goals = await store.listGoals();
+      return json({ goals: active_only === false ? goals : goals.filter((g) => g.active) });
+    },
+  );
+
+  server.registerTool(
+    "get_recommendations",
+    {
+      title: "Get recommendations",
+      description: "Return recommendations produced by analysis, each optionally tied to a goal.",
+      inputSchema: { status: RecommendationStatus.optional().describe("Filter by status") },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ status }) => json({ recommendations: await store.listRecommendations({ status }) }),
+  );
+
+  server.registerTool(
+    "add_event",
+    {
+      title: "Add event",
+      description:
+        "Add one event to the user's timeline. Use source 'agent' when the event comes from an AI agent.",
+      inputSchema: EventInput.shape,
+    },
+    async (input) => {
+      const { inserted, duplicates } = await store.insertEvents([EventInput.parse(input)]);
+      return json({ inserted: inserted.length, duplicates, events: inserted });
+    },
+  );
+
+  return server;
+}
+
+// Stateless Streamable HTTP: a fresh server + transport per request (no session affinity needed on Railway).
+export async function handleMcpRequest(req: Request): Promise<Response> {
+  const server = createMcpServer();
+  const transport = new WebStandardStreamableHTTPServerTransport({
+    sessionIdGenerator: undefined,
+    enableJsonResponse: true,
+  });
+  await server.connect(transport);
+  return transport.handleRequest(req);
+}
