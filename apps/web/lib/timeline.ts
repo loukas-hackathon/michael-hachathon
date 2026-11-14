@@ -302,13 +302,31 @@ export function buildTimeline(
   const plans = plansOf(events, dayStart, dayEnd);
   const health = healthOf(events, dayStart, dayEnd);
 
-  // 5. Quiet stretches of 90 minutes or more (no Mac block, no phone session, nothing planned, no
-  // workout) collapse to one row.
+  // 5. Planned drives (source maps, type travel; TravelData in docs/api.md).
+  const drives = events
+    .filter((e) => e.type === "travel")
+    .map((e) => driveFromEvent(e))
+    .filter((d): d is NonNullable<typeof d> => d !== null)
+    .map((d) => {
+      const [s, en] = clip(t(d.start), t(d.end));
+      return {
+        start: s,
+        end: en,
+        to: d.to,
+        minutes: d.minutes,
+        trafficMinutes: Math.max(0, d.minutes - d.freeFlowMinutes),
+      };
+    })
+    .filter((d) => d.end > d.start);
+
+  // 6. Quiet stretches of 90 minutes or more (no Mac block, no phone session, nothing planned, no
+  // workout, no drive) collapse to one row.
   const busy = [
     ...blocks.map((b) => [b.start, b.end] as const),
     ...health.workouts.map((w) => [Math.max(w.start, dayStart), Math.min(w.end, dayEnd)] as const),
     ...phone.map((p) => [p.start, p.end] as const),
     ...plans.map((p) => [p.start, p.end] as const),
+    ...drives.map((d) => [d.start, d.end] as const),
   ];
   // The hour around now always stays open, so the now pill never sits on a collapsed row.
   const nowIn = now != null && now > dayStart && now < dayEnd ? now : undefined;
@@ -348,23 +366,6 @@ export function buildTimeline(
     blocks.flatMap((b) => b.cuts).reduce((n, c) => n + c.minutes, 0) +
     blocks.flatMap((b) => b.lostStretches ?? []).reduce((n, l) => n + (l.end - l.start) / MIN, 0);
   const phoneMinutes = phone.reduce((n, p) => n + (p.end - p.start) / MIN, 0);
-
-  // 6. Planned drives (source maps, type travel; TravelData in docs/api.md).
-  const drives = events
-    .filter((e) => e.type === "travel")
-    .map((e) => driveFromEvent(e))
-    .filter((d): d is NonNullable<typeof d> => d !== null)
-    .map((d) => {
-      const [s, en] = clip(t(d.start), t(d.end));
-      return {
-        start: s,
-        end: en,
-        to: d.to,
-        minutes: d.minutes,
-        trafficMinutes: Math.max(0, d.minutes - d.freeFlowMinutes),
-      };
-    })
-    .filter((d) => d.end > d.start);
 
   return {
     date,
