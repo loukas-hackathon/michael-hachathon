@@ -801,6 +801,13 @@ export const GoalSuggestionAccept = z.object({
 });
 export type GoalSuggestionAccept = z.input<typeof GoalSuggestionAccept>;
 
+// Book time for a goal from the Goals tab (#309): the first free slot of this length from now
+// until the end of the week, booked at once and undoable until it starts.
+export const GoalBook = z.object({
+  minutes: z.number().int().min(15).max(360).default(60),
+});
+export type GoalBook = z.input<typeof GoalBook>;
+
 // Where the user says their time leaks. Analysis and nudges can look for these first.
 export const WeakSpot = z.enum([
   "phone_in_bed",

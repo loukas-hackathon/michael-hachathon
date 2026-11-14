@@ -449,6 +449,20 @@ AI tool events (`ai_session`, `ai_prompt`) from `claude_code`:
 | DELETE | `/v1/goals/:id`                    |                                   | `204`, `404`                  | live   |
 | GET    | `/v1/goals/suggestions`            |                                   | `200 GoalSuggestionsResponse` | live   |
 | POST   | `/v1/goals/suggestions/:id/accept` | `GoalSuggestionAccept` (optional) | `201 Goal`, `404`             | live   |
+| POST   | `/v1/goals/:id/book`               | `GoalBook` (optional)             | `201 Recommendation`, `409`   | live   |
+
+#### Book time for a goal (#309)
+
+The Goals tab's one action. `type GoalBook = { minutes?: number }` (15 to 360, default 60). Michael
+takes the first free slot of that length from now (at least 5 minutes ahead, on the quarter hour)
+to Sunday night, inside the waking day (the sleep goal sets it), clear of every calendar entry that
+holds time and of time an active standing instruction protects for the goal's block title. The
+block is titled with the goal's first `calendar_titles` entry (else its title), so the score counts
+it, and is booked at once as a `create_focus_block` recommendation (`status: "done"`, rationale
+"Booked at your request through Goals."), the same path as the MCP `create_focus_block` tool.
+Undo with `POST /v1/recommendations/:id/undo` until it starts. `404` for an unknown or paused goal,
+`409` "No free 90 minutes left this week" when nothing fits. Pure slot logic: `goalSlot` in
+`apps/api/src/goals/book.ts`.
 
 #### Goals from the calendar (#134)
 

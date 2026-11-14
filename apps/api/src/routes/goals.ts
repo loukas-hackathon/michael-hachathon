@@ -1,6 +1,7 @@
-import { GoalCreate, GoalSuggestionAccept, GoalUpdate } from "@michael/shared";
+import { GoalBook, GoalCreate, GoalSuggestionAccept, GoalUpdate } from "@michael/shared";
 import { Hono } from "hono";
 import { revertExpiredGoalChanges } from "../actions/calendar";
+import { bookGoalTime } from "../goals/book";
 import { acceptSuggestion, currentSuggestions } from "../goals/suggestions";
 import { HttpError, jsonBody, parse } from "../http";
 import { store } from "../store";
@@ -32,6 +33,12 @@ export const goals = new Hono()
     const goal = await store.getGoal(c.req.param("id"));
     if (!goal) throw new HttpError("not_found", "Goal not found");
     return c.json(goal);
+  })
+  // Book time for the goal now (#309): the first free slot this week, undoable until it starts.
+  .post("/goals/:id/book", async (c) => {
+    const body = (await c.req.text()).trim() ? await jsonBody(c) : {};
+    const { minutes } = parse(GoalBook, body);
+    return c.json(await bookGoalTime(c.req.param("id"), minutes), 201);
   })
   .post("/goals", async (c) => {
     const goal = await store.createGoal(parse(GoalCreate, await jsonBody(c)));
