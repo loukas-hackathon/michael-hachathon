@@ -76,7 +76,7 @@ export async function loadEvents(
   return [...byId.values()].sort((a, b) => Date.parse(a.start_at) - Date.parse(b.start_at));
 }
 
-interface Checked {
+export interface Checked {
   enforced: Enforced;
   violations: CopyViolation[];
   /** Actions the code had to drop: the text may now describe a change that was not made. */
@@ -84,7 +84,7 @@ interface Checked {
   reply: ModelReply;
 }
 
-function check(reply: ModelReply, context: BriefContext): Checked {
+export function check(reply: ModelReply, context: BriefContext): Checked {
   const enforced = enforce(parseAnswer(reply.text), context);
   return {
     enforced,
@@ -94,10 +94,10 @@ function check(reply: ModelReply, context: BriefContext): Checked {
   };
 }
 
-const problems = (c: Checked) => c.violations.length + c.dropped.length;
+export const problems = (c: Checked) => c.violations.length + c.dropped.length;
 
 /** The second and last request: the same brief, the first answer, and exactly what was wrong. */
-function retryMessage(user: string, first: Checked): string {
+export function retryMessage(user: string, first: Checked): string {
   return [
     user,
     "",
@@ -116,9 +116,22 @@ function retryMessage(user: string, first: Checked): string {
   ].join("\n");
 }
 
-export async function runAnalysis(request: AnalysisRequest, deps: AnalysisDeps): Promise<AnalysisResult> {
-  const { store, model } = deps;
-  const log = deps.log ?? ((entry) => console.log(JSON.stringify(entry)));
+/** The brief for one run, and the range and trigger it was built for. */
+export interface PreparedBrief {
+  brief: ReturnType<typeof buildBrief>;
+  from: string;
+  to: string;
+  trigger: AnalysisTrigger;
+  /** The clock at the start of the run. */
+  started: Date;
+}
+
+/** Reads the user's data and writes the brief. A bad range is a 400. Shared by both modes. */
+export async function prepareBrief(
+  request: AnalysisRequest,
+  deps: Pick<AnalysisDeps, "store" | "now">,
+): Promise<PreparedBrief> {
+  const { store } = deps;
   const clock = (deps.now ?? (() => new Date()))();
   const zone = new Zone(DEFAULT_TIMEZONE);
   const trigger = request.trigger ?? "manual";
@@ -161,6 +174,18 @@ export async function runAnalysis(request: AnalysisRequest, deps: AnalysisDeps):
     if (err instanceof RangeError) throw new HttpError("bad_request", `Bad range: ${err.message}`);
     throw err;
   }
+  return { brief, from, to, trigger, started: clock };
+}
+
+export async function runAnalysis(
+  request: AnalysisRequest,
+  deps: AnalysisDeps,
+  /** A brief already built for this request (the specialists' fallback), so it is not read twice. */
+  prepared?: PreparedBrief,
+): Promise<AnalysisResult> {
+  const { store, model } = deps;
+  const log = deps.log ?? ((entry) => console.log(JSON.stringify(entry)));
+  const { brief, from, to, trigger, started: clock } = prepared ?? (await prepareBrief(request, deps));
 
   const user = renderUserMessage(brief.brief);
   const base = {

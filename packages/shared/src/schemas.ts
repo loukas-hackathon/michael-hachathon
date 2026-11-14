@@ -429,6 +429,15 @@ export type RecommendationAction = z.infer<typeof RecommendationAction>;
 export const RecommendationSource = z.enum(["analysis", "chat"]);
 export type RecommendationSource = z.infer<typeof RecommendationSource>;
 
+// The specialist of the analysis (mode `specialists`) whose finding a recommendation came from.
+export const AnalysisSpecialist = z.enum(["work", "training", "rest", "food"]);
+export type AnalysisSpecialist = z.infer<typeof AnalysisSpecialist>;
+
+// How POST /v1/analysis/run thinks: one pass with the whole brief (the default), or four
+// specialists in parallel and a coordinator that merges them.
+export const AnalysisMode = z.enum(["single", "specialists"]);
+export type AnalysisMode = z.infer<typeof AnalysisMode>;
+
 export const Recommendation = z.object({
   id: z.uuid(),
   analysis_run_id: z.uuid().nullable(),
@@ -445,6 +454,8 @@ export const Recommendation = z.object({
   undone_at: IsoDateTime.nullable(),
   // Absent on older rows: read as "analysis".
   source: RecommendationSource.optional(),
+  // Which specialist found it, on runs in mode `specialists`. Null or absent otherwise.
+  specialist: AnalysisSpecialist.nullable().optional(),
   created_at: IsoDateTime,
   updated_at: IsoDateTime,
 });

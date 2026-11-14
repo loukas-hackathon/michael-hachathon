@@ -1,13 +1,16 @@
-import { AnalysisTriggerInput } from "@michael/shared";
+import { AnalysisMode, AnalysisTriggerInput } from "@michael/shared";
 import { Hono } from "hono";
 import { ModelNotConfiguredError, modelClient } from "../analysis/model";
 import { runAnalysis } from "../analysis/run";
+import { runSpecialistAnalysis } from "../analysis/specialists";
 import { HttpError, parse } from "../http";
 import { store } from "../store";
 
 export const analysis = new Hono()
-  // POST /v1/analysis/run  { from?, to?, trigger? }  (default: today so far in Europe/Athens, manual)
+  // POST /v1/analysis/run?mode=single|specialists  { from?, to?, trigger? }
+  // (default: single pass, today so far in Europe/Athens, manual)
   .post("/analysis/run", async (c) => {
+    const mode = parse(AnalysisMode, c.req.query("mode") ?? "single");
     // The body is optional: no body means every default.
     const text = await c.req.text();
     let raw: unknown = {};
@@ -28,7 +31,8 @@ export const analysis = new Hono()
       if (err instanceof ModelNotConfiguredError) throw new HttpError("unavailable", err.message);
       throw err;
     }
-    return c.json(await runAnalysis(input, { store, model }), 201);
+    const run = mode === "specialists" ? runSpecialistAnalysis : runAnalysis;
+    return c.json(await run(input, { store, model }), 201);
   })
   .get("/analysis/latest", async (c) => {
     const run = await store.latestAnalysisRun();

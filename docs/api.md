@@ -168,6 +168,7 @@ type Recommendation = {
   executed_at: string | null;
   undone_at: string | null;
   source?: "analysis" | "chat"; // "chat": asked for in chat or by voice and carried out at once
+  specialist?: "work" | "training" | "rest" | "food" | null; // runs in mode specialists only
   created_at: string;
   updated_at: string;
 };
@@ -692,10 +693,10 @@ the exception "Rhefuel").
 
 ### Analysis
 
-| Method | Path                  | Body                                               | Response                                                                                                                                                                                 | Status |
-| ------ | --------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| POST   | `/v1/analysis/run`    | `{ from?, to?, trigger? }`, or no body (see below) | `201 { run: AnalysisRun, recommendations: Recommendation[] }`; `400` bad range; `502 upstream_error` if the model fails or its answer is unusable; `503 unavailable` without a model key | live   |
-| GET    | `/v1/analysis/latest` |                                                    | `200 { run, recommendations }`, `404` if none                                                                                                                                            | live   |
+| Method | Path                  | Body                                                                            | Response                                                                                                                                                                                 | Status |
+| ------ | --------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| POST   | `/v1/analysis/run`    | `?mode=single\|specialists`; `{ from?, to?, trigger? }`, or no body (see below) | `201 { run: AnalysisRun, recommendations: Recommendation[] }`; `400` bad range; `502 upstream_error` if the model fails or its answer is unusable; `503 unavailable` without a model key | live   |
+| GET    | `/v1/analysis/latest` |                                                                                 | `200 { run, recommendations }`, `404` if none                                                                                                                                            | live   |
 
 `POST /v1/analysis/run` is how Michael speaks. One run reads the caller's data, writes an
 **analysis brief**, asks Claude once, checks the answer and stores an `AnalysisRun` (`summary` is
@@ -729,6 +730,36 @@ and their blocks) or `"score"`.
   moved") is a violation too. On a violation, or a dropped action, the model is asked once more and
   told exactly what was wrong; if the second answer is no better the run is stored anyway and the
   violations are logged.
+
+**Mode `specialists`** (`?mode=specialists`, issue #20; the default stays `single`). Same body,
+same response, same storage; each recommendation also carries `specialist`. Code in
+`apps/api/src/analysis/specialists.ts`.
+
+1. The brief is built once, as above. Four specialists (`work`: business and study goals and focus;
+   `training`; `rest`: sleep, late screens, time off; `food`) each get only their slice: their goals,
+   their goals' blocks, busy time, the patterns of their domain, the data notes. A specialist with
+   nothing to read (no goals, or no blocks, scored goals or patterns) is not asked.
+2. They run in parallel at effort `low` and return up to 4 findings each (structured output, zod):
+   `finding`, `maths`, `evidence_numbers`, `goal_id`, `confidence` (0 to 1), `evidence`, `action`
+   (an existing kind). Code drops a finding with a number that is not in its slice, nulls a goal
+   that is not the specialist's, and drops an action that fails the usual action rules.
+3. Code merges them: duplicates go (same sentence, or the same goal asking for the same change at
+   the same time), and two actions from different specialists that want the same time are settled:
+   the higher confidence wins; within 0.1, rest beats training beats work beats food. The loser
+   keeps its finding, not its action. The best 6 go on.
+4. A coordinator (the coach instructions plus a short section on specialists, effort `medium`)
+   gets the full brief and the merged findings and writes the usual answer, naming the finding
+   behind each recommendation. Same checks as the single pass (at most 3, enforce, copy rules, one
+   retry), plus the **number guard** (`analysis/numbers.ts`): every number and time in the copy must
+   be in the brief or the findings, or be a minutes to hours conversion of one, or a time the
+   answer's own action proposes. An invented number in a recommendation drops it; in the summary
+   or question after the retry, the run falls back.
+
+**Fallback and cost.** If any specialist or the coordinator fails, the same brief goes through the
+single pass, so the person always gets a brief (logged as `analysis_specialists_fallback`).
+Findings are cached in memory per user per day by a hash of the model, prompt and slice: a second
+tap with no new data asks no specialist again. A typical run is 2 to 4 specialist calls at low
+effort plus one coordinator call.
 
 **Privacy: what is sent to the model.** Only the brief, built by one pure function
 (`analysis/brief.ts`, held in place by `brief.test.ts`). It holds summaries, never raw events:
