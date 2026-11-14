@@ -12,7 +12,8 @@ pnpm collect                       # backfill, then check for new data every min
 ```
 
 By default it posts to `http://localhost:8787` with the key `dev-key`. Point it elsewhere with
-`MICHAEL_API_URL` and `MICHAEL_API_KEY`. Positions are kept in `~/.michael/collector-state.json`,
+`MICHAEL_API_URL` and `MICHAEL_API_KEY` (your own device key from You > Devices in the web app, so the
+data lands in your account, not the demo week). Positions are kept in `~/.michael/collector-state.json`,
 so a restart continues where it stopped, and running a backfill twice never duplicates events.
 
 | Source         | What it reads                                                                                                | Needs                                                            |

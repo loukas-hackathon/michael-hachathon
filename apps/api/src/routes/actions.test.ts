@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
-import { mockRecommendations, type Recommendation, type RecommendationAction } from "@michael/shared";
+import {
+  DEMO_RECOMMENDATION_IDS,
+  mockRecommendations,
+  type Recommendation,
+  type RecommendationAction,
+} from "@michael/shared";
 
 // env.ts reads process.env on import, so configure Google before loading the app.
 process.env.GOOGLE_CLIENT_ID = "client-123.apps.googleusercontent.com";
@@ -232,3 +237,13 @@ test("routes: bad id, unknown id, nothing to do, undo before execute", async () 
   const early = await app.request(`/v1/recommendations/${CREATE_ID}/undo`, { method: "POST", headers: auth });
   assert.equal(early.status, 409);
 });
+
+test("the demo always has blocks ahead to carry out, and advice with other people stays advice", () =>
+  asNewUser(async () => {
+    const [focus, run, sync] = DEMO_RECOMMENDATION_IDS;
+    for (const id of [focus, run]) {
+      assert.equal((await executeRecommendation(id)).status, "done");
+      assert.equal((await undoRecommendation(id)).status, "undone");
+    }
+    await assert.rejects(executeRecommendation(sync), /other people/);
+  }));

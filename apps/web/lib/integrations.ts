@@ -1,5 +1,11 @@
 import "server-only";
-import { type Integration, IntegrationsResponse, OAuthConnectResponse } from "@michael/shared";
+import {
+  type Integration,
+  IntegrationsResponse,
+  OAuthConnectResponse,
+  TelegramLinkResponse,
+  TelegramStatus,
+} from "@michael/shared";
 import { bearer } from "./api";
 
 // Server-side calls for connecting sources (Google Calendar). Tokens stay in the API; the browser
@@ -40,4 +46,24 @@ export async function syncGoogleCalendar(): Promise<void> {
 
 export async function disconnectGoogleCalendar(): Promise<void> {
   await call("DELETE", "/v1/integrations/google_calendar");
+}
+
+/** The Telegram nudges chat, or null when it cannot be read (mocks, API down). */
+export async function getTelegram(): Promise<TelegramStatus | null> {
+  if (USE_MOCKS) return null;
+  try {
+    return TelegramStatus.parse(await (await call("GET", "/v1/telegram")).json());
+  } catch {
+    return null;
+  }
+}
+
+/** https://t.me/<bot>?start=<one-time token> for the signed-in user. */
+export async function telegramConnectUrl(): Promise<string> {
+  const res = await call("POST", "/v1/telegram/link");
+  return TelegramLinkResponse.parse(await res.json()).url;
+}
+
+export async function disconnectTelegram(): Promise<void> {
+  await call("DELETE", "/v1/telegram");
 }

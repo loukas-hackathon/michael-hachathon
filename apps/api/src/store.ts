@@ -2,17 +2,22 @@ import {
   type AnalysisRun,
   type ChatMessage,
   type ChatRole,
+  demoRecommendations,
   type Event,
   type EventInput,
   type EventType,
   type Goal,
   type GoalCreate,
   type GoalUpdate,
+  type Instruction,
+  type InstructionCreate,
+  type InstructionUpdate,
   type Integration,
   type IntegrationProvider,
   mockAnalysisRun,
   mockEvents,
   mockGoals,
+  mockInstructions,
   mockRecommendations,
   type Nudge,
   type NudgeStatus,
@@ -116,6 +121,13 @@ export interface PushDevice {
   keys: { p256dh: string; auth: string };
 }
 
+/** The Telegram chat a user connected for nudges. Server side only. */
+export interface TelegramChat {
+  chat_id: string;
+  username: string | null;
+  connected_at: string;
+}
+
 // Storage boundary. Routes and MCP tools depend only on this interface.
 // MemoryStore is used when Supabase env vars are missing; SupabaseStore (supabase-store.ts) otherwise.
 export interface Store extends PrivacyBackend {
@@ -130,6 +142,12 @@ export interface Store extends PrivacyBackend {
   // The onboarding answers (routes/profile.ts fills in defaults); null until first saved.
   getProfile(): Promise<Profile | null>;
   saveProfile(profile: Profile): Promise<Profile>;
+  // ---- standing instructions (the user's ground rules), oldest first ----
+  listInstructions(): Promise<Instruction[]>;
+  createInstruction(input: z.output<typeof InstructionCreate>): Promise<Instruction>;
+  /** A null in the patch clears `days`, `time` or `end_time`; a missing key leaves it alone. */
+  updateInstruction(id: string, patch: z.output<typeof InstructionUpdate>): Promise<Instruction | null>;
+  deleteInstruction(id: string): Promise<boolean>;
   listRecommendations(filter?: { status?: RecommendationStatus }): Promise<Recommendation[]>;
   updateRecommendationStatus(id: string, status: RecommendationStatus): Promise<Recommendation | null>;
   getRecommendation(id: string): Promise<Recommendation | null>;
@@ -137,6 +155,10 @@ export interface Store extends PrivacyBackend {
   getRecommendationExecution(id: string): Promise<unknown>;
   recordRecommendationAction(id: string, update: RecommendationActionUpdate): Promise<Recommendation | null>;
   latestAnalysisRun(): Promise<AnalysisRun | null>;
+  /** The questions Michael asked in earlier analysis runs, newest first. */
+  listAnalysisQuestions(limit: number): Promise<AskedQuestion[]>;
+  /** Stores one finished analysis run and the recommendations it produced (all `proposed`). */
+  saveAnalysis(input: NewAnalysis): Promise<{ run: AnalysisRun; recommendations: Recommendation[] }>;
   // Proposed by Michael's own rules (e.g. travel) or asked for in chat; status starts at proposed.
   createRecommendation(input: NewRecommendation): Promise<Recommendation>;
   // Saved places (home, work, gym). replacePlaces swaps the whole list.
@@ -175,6 +197,20 @@ export interface Store extends PrivacyBackend {
   /** Saves the device for the current user (a device belongs to whoever subscribed it last). */
   savePushDevice(device: PushDevice, userAgent: string | null): Promise<void>;
   removePushDevice(endpoint: string): Promise<void>;
+  // The Telegram chat of the current user (nudges/telegram.ts), null when none is bound.
+  getTelegramChat(): Promise<TelegramChat | null>;
+  /**
+   * Binds the chat to the current user (a chat belongs to whoever bound it last). `link` is the
+   * start token: "used" when that same token already bound a chat once, so each link works once.
+   */
+  bindTelegramChat(
+    chat: { chat_id: string; username: string | null },
+    link: string,
+  ): Promise<"bound" | "used">;
+  /** False when nothing was bound. */
+  unbindTelegramChat(): Promise<boolean>;
+  /** NOT scoped: the webhook only knows the chat. Whose chat this is, or null. */
+  telegramChatOwner(chatId: string): Promise<string | null>;
   /**
    * The one read that is NOT scoped to the current user: ids of users with events received since
    * `since`. Only the scheduler calls it, outside any request, and then runs each check as that user.
@@ -194,6 +230,16 @@ export interface Store extends PrivacyBackend {
   seedGoals(goals: Goal[], opts: { overwrite: boolean }): Promise<number>;
 }
 
+export interface AskedQuestion {
+  question: string;
+  asked_at: string;
+}
+
+export interface NewAnalysis {
+  run: Omit<AnalysisRun, "id">;
+  recommendations: Pick<Recommendation, "goal_id" | "title" | "rationale" | "action" | "evidence">[];
+}
+
 export const emptyIntegration = (provider: IntegrationProvider): IntegrationRecord => ({
   provider,
   status: "disconnected",
@@ -205,6 +251,29 @@ export const emptyIntegration = (provider: IntegrationProvider): IntegrationReco
   refresh_token: null,
   expires_at: null,
   scope: null,
+});
+
+/** An instruction as the contract has it: `days`, `time` and `end_time` are left out when not set. */
+export const toInstruction = (r: {
+  id: string;
+  text: string;
+  kind: Instruction["kind"];
+  days?: number[] | null;
+  time?: string | null;
+  end_time?: string | null;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}): Instruction => ({
+  id: r.id,
+  text: r.text,
+  kind: r.kind,
+  ...(r.days?.length ? { days: [...r.days].sort((a, b) => a - b) } : {}),
+  ...(r.time ? { time: r.time } : {}),
+  ...(r.end_time ? { end_time: r.end_time } : {}),
+  active: r.active,
+  created_at: r.created_at,
+  updated_at: r.updated_at,
 });
 
 const now = () => new Date().toISOString();
@@ -223,6 +292,7 @@ export class MemoryStore implements Store {
     {
       events: Event[];
       goals: Goal[];
+      instructions: Instruction[];
       recommendations: Recommendation[];
       runs: AnalysisRun[];
       privacy: PrivacyRules;
@@ -230,6 +300,7 @@ export class MemoryStore implements Store {
       integrations: IntegrationRecord[];
       nudges: Nudge[];
       push: PushDevice[];
+      telegram: (Partial<TelegramChat> & { last_link?: string }) | null;
       executions: Map<string, unknown>;
       places: Place[];
       geocodes: Map<string, GeocodeHit>;
@@ -243,13 +314,15 @@ export class MemoryStore implements Store {
       x = {
         events: demo ? [] : structuredClone(mockEvents),
         goals: demo ? [] : structuredClone(mockGoals),
-        recommendations: structuredClone(mockRecommendations),
+        instructions: structuredClone(mockInstructions),
+        recommendations: [...structuredClone(mockRecommendations), ...demoRecommendations()],
         runs: [structuredClone(mockAnalysisRun)],
         privacy: { offTheRecord: false, since: null, sources: {} },
         chat: [],
         integrations: [],
         nudges: [],
         push: [],
+        telegram: null,
         executions: new Map(),
         places: [],
         geocodes: new Map(),
@@ -379,6 +452,39 @@ export class MemoryStore implements Store {
     return structuredClone(profile);
   }
 
+  async listInstructions() {
+    return this.d.instructions;
+  }
+
+  async createInstruction(i: z.output<typeof InstructionCreate>) {
+    const instruction = toInstruction({
+      id: crypto.randomUUID(),
+      ...i,
+      created_at: now(),
+      updated_at: now(),
+    });
+    this.d.instructions.push(instruction);
+    return instruction;
+  }
+
+  async updateInstruction(id: string, patch: z.output<typeof InstructionUpdate>) {
+    const list = this.d.instructions;
+    const at = list.findIndex((i) => i.id === id);
+    const found = list[at];
+    if (!found) return null;
+    const changes = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined));
+    const updated = toInstruction({ ...found, ...changes, updated_at: now() });
+    list[at] = updated;
+    return updated;
+  }
+
+  async deleteInstruction(id: string) {
+    const d = this.d;
+    const before = d.instructions.length;
+    d.instructions = d.instructions.filter((i) => i.id !== id);
+    return d.instructions.length < before;
+  }
+
   async listRecommendations(filter?: { status?: RecommendationStatus }) {
     return this.recommendations.filter((r) => !filter?.status || r.status === filter.status);
   }
@@ -431,6 +537,37 @@ export class MemoryStore implements Store {
 
   async latestAnalysisRun() {
     return this.runs.at(-1) ?? null;
+  }
+
+  async listAnalysisQuestions(limit: number) {
+    return this.runs
+      .flatMap((r) => (r.question ? [{ question: r.question, asked_at: r.started_at }] : []))
+      .reverse()
+      .slice(0, limit);
+  }
+
+  async saveAnalysis(input: NewAnalysis) {
+    const run: AnalysisRun = { id: crypto.randomUUID(), ...input.run };
+    this.runs.push(run);
+    const at = run.finished_at ?? now();
+    const recommendations = input.recommendations.map(
+      (r): Recommendation => ({
+        id: crypto.randomUUID(),
+        analysis_run_id: run.id,
+        goal_id: r.goal_id,
+        title: r.title,
+        rationale: r.rationale,
+        action: r.action,
+        evidence: r.evidence ?? [],
+        status: "proposed",
+        executed_at: null,
+        undone_at: null,
+        created_at: at,
+        updated_at: at,
+      }),
+    );
+    this.recommendations.push(...recommendations);
+    return { run, recommendations };
   }
 
   async listChatMessages(limit: number) {
@@ -543,6 +680,35 @@ export class MemoryStore implements Store {
 
   async removePushDevice(endpoint: string) {
     this.d.push = this.d.push.filter((p) => p.endpoint !== endpoint);
+  }
+
+  async getTelegramChat() {
+    const t = this.d.telegram;
+    if (!t?.chat_id) return null;
+    return { chat_id: t.chat_id, username: t.username ?? null, connected_at: t.connected_at ?? now() };
+  }
+
+  async bindTelegramChat(chat: { chat_id: string; username: string | null }, link: string) {
+    const d = this.d;
+    if (d.telegram?.last_link === link) return "used" as const;
+    // The chat moves to the current user, as in the database's unique index.
+    for (const x of this.data.values()) {
+      if (x !== d && x.telegram?.chat_id === chat.chat_id) x.telegram = { last_link: x.telegram.last_link };
+    }
+    d.telegram = { ...chat, connected_at: now(), last_link: link };
+    return "bound" as const;
+  }
+
+  async unbindTelegramChat() {
+    const d = this.d;
+    if (!d.telegram?.chat_id) return false;
+    d.telegram = { last_link: d.telegram.last_link };
+    return true;
+  }
+
+  async telegramChatOwner(chatId: string) {
+    for (const [userId, x] of this.data) if (x.telegram?.chat_id === chatId) return userId;
+    return null;
   }
 
   async activeUserIds(since: string) {

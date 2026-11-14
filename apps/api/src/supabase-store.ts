@@ -7,6 +7,9 @@ import type {
   Goal,
   GoalCreate,
   GoalUpdate,
+  Instruction,
+  InstructionCreate,
+  InstructionUpdate,
   IntegrationProvider,
   Nudge,
   NudgeStatus,
@@ -24,10 +27,12 @@ import { HttpError } from "./http";
 import type { GeocodeHit } from "./integrations/maps";
 import { type PrivacyRules, screenEvents } from "./privacy";
 import {
+  type AskedQuestion,
   type EventPatch,
   type InsertResult,
   type IntegrationPatch,
   type IntegrationRecord,
+  type NewAnalysis,
   type NewRecommendation,
   type NudgeCreate,
   type PushDevice,
@@ -35,7 +40,9 @@ import {
   type SeedResult,
   type Store,
   sameEvent,
+  type TelegramChat,
   type TimelineFilter,
+  toInstruction,
   type UpsertResult,
 } from "./store";
 
@@ -72,6 +79,19 @@ const toGoal = (r: Record<string, unknown>): Goal => ({
   updated_at: iso(r.updated_at as string) as string,
 });
 
+const instructionFromRow = (r: Record<string, unknown>): Instruction =>
+  toInstruction({
+    id: r.id as string,
+    text: r.text as string,
+    kind: r.kind as Instruction["kind"],
+    days: (r.days as number[] | null) ?? null,
+    time: (r.time as string | null) ?? null,
+    end_time: (r.end_time as string | null) ?? null,
+    active: r.active as boolean,
+    created_at: iso(r.created_at as string) as string,
+    updated_at: iso(r.updated_at as string) as string,
+  });
+
 const toRecommendation = (r: Record<string, unknown>): Recommendation => ({
   id: r.id as string,
   analysis_run_id: (r.analysis_run_id as string | null) ?? null,
@@ -79,6 +99,7 @@ const toRecommendation = (r: Record<string, unknown>): Recommendation => ({
   title: r.title as string,
   rationale: (r.rationale as string) ?? "",
   action: (r.action as Recommendation["action"]) ?? null,
+  evidence: (r.evidence as string[] | null) ?? [],
   status: r.status as RecommendationStatus,
   executed_at: iso(r.executed_at as string | null),
   undone_at: iso(r.undone_at as string | null),
@@ -104,6 +125,7 @@ const toRun = (r: Record<string, unknown>): AnalysisRun => ({
   range_end: iso(r.range_end as string) as string,
   model: r.model as string,
   summary: (r.summary as string | null) ?? null,
+  question: (r.question as string | null) ?? null,
   error: (r.error as string | null) ?? null,
   started_at: iso(r.started_at as string) as string,
   finished_at: iso(r.finished_at as string | null),
@@ -450,6 +472,52 @@ export class SupabaseStore implements Store {
     return profile;
   }
 
+  async listInstructions() {
+    return (
+      check(
+        await this.db.from("instructions").select("*").eq("user_id", currentUserId()).order("created_at"),
+      ) ?? []
+    ).map(instructionFromRow);
+  }
+
+  async createInstruction(i: z.output<typeof InstructionCreate>) {
+    const row = check(
+      await this.db
+        .from("instructions")
+        .insert({
+          user_id: currentUserId(),
+          text: i.text,
+          kind: i.kind,
+          days: i.days ?? null,
+          time: i.time ?? null,
+          end_time: i.end_time ?? null,
+          active: i.active,
+        })
+        .select("*")
+        .single(),
+    );
+    return instructionFromRow(row);
+  }
+
+  async updateInstruction(id: string, patch: z.output<typeof InstructionUpdate>) {
+    const changes = withoutUndefined(patch as Record<string, unknown>);
+    // An empty update is not a write: answer with the row as it is.
+    const q = this.db.from("instructions");
+    const row = check(
+      Object.keys(changes).length === 0
+        ? await q.select("*").eq("user_id", currentUserId()).eq("id", id).maybeSingle()
+        : await q.update(changes).eq("user_id", currentUserId()).eq("id", id).select("*").maybeSingle(),
+    );
+    return row ? instructionFromRow(row) : null;
+  }
+
+  async deleteInstruction(id: string) {
+    const rows = check(
+      await this.db.from("instructions").delete().eq("user_id", currentUserId()).eq("id", id).select("id"),
+    );
+    return (rows ?? []).length > 0;
+  }
+
   async listRecommendations(filter?: { status?: RecommendationStatus }) {
     let q = this.db
       .from("recommendations")
@@ -594,6 +662,60 @@ export class SupabaseStore implements Store {
         .maybeSingle(),
     );
     return row ? toRun(row) : null;
+  }
+
+  async listAnalysisQuestions(limit: number): Promise<AskedQuestion[]> {
+    const res = await this.db
+      .from("analysis_runs")
+      .select("question, started_at")
+      .eq("user_id", currentUserId())
+      .not("question", "is", null)
+      .order("started_at", { ascending: false })
+      .limit(limit);
+    // `question` is a newer column. Until its migration has run there is nothing to list, and a
+    // missing column must not stop an analysis.
+    if (res.error) return [];
+    return (res.data ?? []).flatMap((r) =>
+      typeof r.question === "string" && r.question
+        ? [{ question: r.question, asked_at: iso(r.started_at as string) as string }]
+        : [],
+    );
+  }
+
+  async saveAnalysis(input: NewAnalysis) {
+    const userId = currentUserId();
+    const { question, ...run } = input.run;
+    const runRow = check(
+      await this.db
+        .from("analysis_runs")
+        // `question` and `evidence` are newer columns: they are only named when they hold
+        // something, so a run can still be stored while their migration is on its way.
+        .insert({ user_id: userId, ...run, ...(question ? { question } : {}) })
+        .select("*")
+        .single(),
+    );
+    const saved = toRun(runRow);
+    if (input.recommendations.length === 0) return { run: saved, recommendations: [] };
+    // Every row of one insert must name the same columns.
+    const withEvidence = input.recommendations.some((r) => r.evidence?.length);
+    const rows = check(
+      await this.db
+        .from("recommendations")
+        .insert(
+          input.recommendations.map((r) => ({
+            user_id: userId,
+            analysis_run_id: saved.id,
+            goal_id: r.goal_id,
+            title: r.title,
+            rationale: r.rationale,
+            action: r.action,
+            ...(withEvidence ? { evidence: r.evidence ?? [] } : {}),
+            status: "proposed",
+          })),
+        )
+        .select("*"),
+    );
+    return { run: saved, recommendations: (rows ?? []).map(toRecommendation) };
   }
 
   async listChatMessages(limit: number) {
@@ -809,6 +931,68 @@ export class SupabaseStore implements Store {
         .eq("user_id", currentUserId())
         .eq("endpoint", endpoint),
     );
+  }
+
+  async getTelegramChat(): Promise<TelegramChat | null> {
+    const row = check(
+      await this.db
+        .from("telegram_chats")
+        .select("chat_id, username, connected_at")
+        .eq("user_id", currentUserId())
+        .not("chat_id", "is", null)
+        .maybeSingle(),
+    );
+    return row ? { chat_id: row.chat_id, username: row.username, connected_at: row.connected_at } : null;
+  }
+
+  async bindTelegramChat(chat: { chat_id: string; username: string | null }, link: string) {
+    const userId = currentUserId();
+    const prev = check(
+      await this.db.from("telegram_chats").select("last_link").eq("user_id", userId).maybeSingle(),
+    );
+    if (prev?.last_link === link) return "used" as const;
+    const at = new Date().toISOString();
+    // A chat belongs to whoever bound it last (chat_id is unique).
+    check(
+      await this.db
+        .from("telegram_chats")
+        .update({ chat_id: null, username: null, connected_at: null, updated_at: at })
+        .eq("chat_id", chat.chat_id)
+        .neq("user_id", userId),
+    );
+    check(
+      await this.db.from("telegram_chats").upsert(
+        {
+          user_id: userId,
+          chat_id: chat.chat_id,
+          username: chat.username,
+          connected_at: at,
+          last_link: link,
+          updated_at: at,
+        },
+        { onConflict: "user_id" },
+      ),
+    );
+    return "bound" as const;
+  }
+
+  async unbindTelegramChat() {
+    const rows = check(
+      await this.db
+        .from("telegram_chats")
+        .update({ chat_id: null, username: null, connected_at: null, updated_at: new Date().toISOString() })
+        .eq("user_id", currentUserId())
+        .not("chat_id", "is", null)
+        .select("user_id"),
+    );
+    return (rows ?? []).length > 0;
+  }
+
+  async telegramChatOwner(chatId: string) {
+    const row = check(
+      await this.db.from("telegram_chats").select("user_id").eq("chat_id", chatId).maybeSingle(),
+    );
+    return row?.user_id ?? null;
   }
 
   async activeUserIds(since: string) {

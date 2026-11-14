@@ -13,6 +13,7 @@ import { chat } from "./routes/chat";
 import { demo } from "./routes/demo";
 import { events } from "./routes/events";
 import { goals } from "./routes/goals";
+import { instructions } from "./routes/instructions";
 import { integrations, oauth } from "./routes/integrations";
 import { moments } from "./routes/moments";
 import { nudges } from "./routes/nudges";
@@ -25,6 +26,7 @@ import { profile } from "./routes/profile";
 import { push } from "./routes/push";
 import { recommendations } from "./routes/recommendations";
 import { score } from "./routes/score";
+import { telegram, telegramWebhook } from "./routes/telegram";
 import { tokens } from "./routes/tokens";
 import { webhooks } from "./routes/webhooks";
 import { store } from "./store";
@@ -39,6 +41,7 @@ const v1 = new Hono()
   .use(requireUser())
   .route("/", events)
   .route("/", goals)
+  .route("/", instructions)
   .route("/", recommendations)
   .route("/", analysis)
   .route("/", patterns)
@@ -53,6 +56,7 @@ const v1 = new Hono()
   .route("/", profile)
   .route("/", product)
   .route("/", tokens)
+  .route("/", telegram)
   .route("/", connect)
   .route("/", agents)
   .route("/", places)
@@ -75,6 +79,8 @@ export const app = new Hono()
   .route("/", oauthPublic)
   // Google Calendar OAuth callback (/oauth/google/callback), validated by its signed state.
   .route("/", oauth)
+  // Telegram's bot webhook carries no user: verified by its secret token, before the auth below.
+  .route("/v1/webhooks/telegram", telegramWebhook)
   .route("/v1/webhooks", webhooksApp)
   .route("/v1", v1)
   // claude.ai signs in with OAuth (routes/oauth.ts); the API key and ?key= keep working.

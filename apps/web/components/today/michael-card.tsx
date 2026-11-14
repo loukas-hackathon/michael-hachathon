@@ -128,7 +128,13 @@ export function MichaelCard({ lead }: { lead: Lead }) {
       ) : null}
       <div className="flex flex-wrap items-center gap-2">
         {lead.recovery ? <RecoveryAction recovery={lead.recovery} /> : null}
-        {lead.action ? <UndoButton label={lead.action.label} done={lead.action.done} /> : null}
+        {lead.action ? (
+          <UndoButton
+            label={lead.action.label}
+            done={lead.action.done}
+            recommendationId={lead.action.recommendationId}
+          />
+        ) : null}
         <Link
           href="/chat"
           className="press inline-flex min-h-9 items-center rounded-full px-2 text-subhead font-semibold text-tint-text"

@@ -65,10 +65,15 @@ export async function scoreFor(query: { date?: string; now?: string }): Promise<
   for (let start = range.from; start < range.to; start += WEEK_MS) {
     chunks.push(readAllEvents(list, start, Math.min(start + WEEK_MS, range.to), TYPES));
   }
-  const [goals, ...pages] = await Promise.all([store.listGoals(), ...chunks]);
+  const [goals, instructions, ...pages] = await Promise.all([
+    store.listGoals(),
+    // The flags on the blocks are an extra: a failed read here must never take the score down.
+    store.listInstructions().catch(() => []),
+    ...chunks,
+  ]);
   const events = new Map<string, Event>();
   for (const page of pages) for (const e of page) events.set(e.id, e);
-  return buildScore([...events.values()], goals, { date, now });
+  return buildScore([...events.values()], goals, { date, now, instructions });
 }
 
 export const score = new Hono()

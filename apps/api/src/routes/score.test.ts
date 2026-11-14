@@ -38,10 +38,21 @@ test("GET /v1/score scores the mock day: the gym hour is a block, the call with 
   assert.equal(body.day.unverified_minutes, 60);
   assert.equal(body.day.score_pct, 100);
   assert.equal(body.day.time_won_back.reason?.startsWith("not enough history"), true);
-  // Sleep is listed with its budget, outside the score.
-  const sleep = body.goals.find((g) => g.category === "rest");
-  assert.equal(sleep?.scored, false);
+  // Sleep is a health goal of kind `target`: listed with its budget, outside the score.
+  const sleep = body.goals.find((g) => g.title.startsWith("Sleep"));
+  assert.deepEqual([sleep?.area, sleep?.kind, sleep?.scored], ["health", "target", false]);
   assert.equal(sleep?.budget_minutes, 3150);
+  // The three categories, in order, and they add up to the day: the gym hour is health.
+  assert.deepEqual(
+    body.day.areas.map((a) => [a.area, a.planned_minutes, a.score_pct]),
+    [
+      ["business", 0, null],
+      ["health", 60, 100],
+      ["personal", 0, null],
+    ],
+  );
+  // Saturday breaks no standing instruction (the mock one keeps Sundays clear).
+  assert.deepEqual(body.day.blocks[0]?.instructions_broken, []);
 
   // The same day at 09:00: nothing has elapsed, so there is no score yet.
   const early = Score.parse(
