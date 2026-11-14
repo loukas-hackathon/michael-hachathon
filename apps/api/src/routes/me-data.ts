@@ -5,6 +5,7 @@ import { currentAuthMethod, currentUserId } from "../context";
 import { env } from "../env";
 import { HttpError, parse } from "../http";
 import { revokeToken } from "../integrations/google";
+import { deleteAllSetupTokens } from "../setup-tokens";
 import { store } from "../store";
 import { deleteAllPersonalTokens } from "../tokens";
 
@@ -42,7 +43,10 @@ export const meData = new Hono().delete("/me/data", async (c) => {
   }
 
   const deleted = await store.deleteMyData({ everything, ...q });
-  if (everything) deleted.personal_tokens = await deleteAllPersonalTokens();
+  if (everything) {
+    deleted.personal_tokens = await deleteAllPersonalTokens();
+    await deleteAllSetupTokens();
+  }
   const accountDeleted = everything ? await deleteAuthUser(userId) : false;
 
   const body: DataDeleteResult = {

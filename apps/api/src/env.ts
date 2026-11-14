@@ -15,6 +15,16 @@ const Env = z.object({
   // Public URL of the web app, where MCP OAuth sends the user to allow a connection.
   // Optional: defaults to the first non local entry of WEB_ORIGIN.
   PUBLIC_WEB_URL: z.string().optional(),
+  // Where the Mac installer (GET /v1/setup/mac.sh) downloads the collector from: a public GitHub
+  // repository (owner/name) and a branch or tag.
+  COLLECTOR_REPO: z
+    .string()
+    .regex(/^[\w.-]+\/[\w.-]+$/)
+    .default("loukas-hackathon/michael-hachathon"),
+  COLLECTOR_REF: z
+    .string()
+    .regex(/^[\w./-]+$/)
+    .default("main"),
   SUPABASE_URL: z.string().optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
   GEMINI_API_KEY: z.string().optional(),

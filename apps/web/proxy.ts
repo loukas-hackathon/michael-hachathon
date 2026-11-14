@@ -3,7 +3,8 @@ import { type NextRequest, NextResponse } from "next/server";
 
 const URL_ = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
-const PUBLIC_PATHS = ["/login", "/auth"];
+// /setup: the page a QR code opens on the iPhone. The setup token in its fragment is the credential.
+const PUBLIC_PATHS = ["/login", "/auth", "/setup"];
 
 // Refreshes the Supabase session cookie on every navigation and sends signed out visitors to
 // /login. An optimistic check only: the API verifies the token on every call.

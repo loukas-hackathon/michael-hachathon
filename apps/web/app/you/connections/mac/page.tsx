@@ -1,5 +1,5 @@
+import { MacSetup } from "@/components/setup/mac-setup";
 import { ConnectionPage, SetupSection } from "@/components/you/connection-page";
-import { KeySetup } from "@/components/you/key-setup";
 import { SourcePrivacy } from "@/components/you/source-privacy";
 import { connection } from "@/lib/connections";
 import { getConnection } from "@/lib/connections-status";
@@ -13,17 +13,9 @@ export default async function MacPage() {
     <ConnectionPage row={row}>
       <SetupSection
         title="Set up"
-        note="It only reads. It never changes your files, and sends only to Michael. Our menu bar app replaces these steps soon."
+        note="It only reads. It never changes your files, and sends only to Michael."
       >
-        <KeySetup
-          keyName="Mac collector"
-          copyAs={{ kind: "collector" }}
-          steps={[
-            "On your Mac, open Terminal in the Michael folder, paste and press Return.",
-            "If macOS asks, allow Full Disk Access for Terminal in System Settings, Privacy and Security.",
-            "Leave it running. Last data shows above within a minute.",
-          ]}
-        />
+        <MacSetup />
       </SetupSection>
       <SourcePrivacy sources={c.sources} />
     </ConnectionPage>
