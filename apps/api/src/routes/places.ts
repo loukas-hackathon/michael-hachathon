@@ -1,13 +1,23 @@
-import { type Place, type PlacesResponse, PlacesUpdate, TravelPlanInput } from "@michael/shared";
+import {
+  type Place,
+  type PlaceSuggestionsResponse,
+  type PlacesResponse,
+  PlacesUpdate,
+  TravelPlanInput,
+} from "@michael/shared";
 import { Hono } from "hono";
 import { jsonBody, parse } from "../http";
 import { geocode, mapsAvailable } from "../integrations/maps";
+import { suggestPlaces } from "../integrations/place-suggestions";
 import { planTravel } from "../integrations/travel";
 import { DEFAULT_TIMEZONE } from "../patterns/context";
 import { Zone } from "../patterns/time";
 import { store } from "../store";
 
 // Saved places and travel times (docs/api.md, Places and travel).
+
+// How far back Maps searches count towards a suggestion.
+const SUGGESTION_DAYS = 30;
 
 const DEFAULT_LABEL: Record<string, string> = {
   home: "Home",
@@ -27,6 +37,29 @@ async function placesResponse(places?: Place[]): Promise<PlacesResponse> {
 
 export const places = new Hono()
   .get("/places", async (c) => c.json(await placesResponse()))
+  // Places the user often looks up in Google Maps, offered for saving. Only with source maps on;
+  // never saved here.
+  .get("/places/suggestions", async (c) => {
+    const rules = await store.privacyRules();
+    if (rules.sources.maps?.enabled !== true) {
+      return c.json({ enabled: false, suggestions: [] } satisfies PlaceSuggestionsResponse);
+    }
+    const to = new Date();
+    const from = new Date(to.getTime() - SUGGESTION_DAYS * 86_400_000);
+    const [events, saved] = await Promise.all([
+      store.listEvents({
+        from: from.toISOString(),
+        to: to.toISOString(),
+        source: ["chrome"],
+        type: ["search"],
+      }),
+      store.listPlaces(),
+    ]);
+    return c.json({
+      enabled: true,
+      suggestions: suggestPlaces(events, saved),
+    } satisfies PlaceSuggestionsResponse);
+  })
   .put("/places", async (c) => {
     const body = parse(PlacesUpdate, await jsonBody(c));
     const existing = new Map((await store.listPlaces()).map((p) => [p.key, p]));
