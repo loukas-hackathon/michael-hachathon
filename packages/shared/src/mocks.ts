@@ -257,11 +257,19 @@ export const mockIntegrations: Integration[] = [
   {
     provider: "google_calendar",
     status: "disconnected",
+    account: null,
     connected_at: null,
     last_sync_at: null,
     error: null,
   },
-  { provider: "whoop", status: "disconnected", connected_at: null, last_sync_at: null, error: null },
+  {
+    provider: "whoop",
+    status: "disconnected",
+    account: null,
+    connected_at: null,
+    last_sync_at: null,
+    error: null,
+  },
 ];
 
 // ---------- score (GET /v1/score) ----------

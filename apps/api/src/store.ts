@@ -8,6 +8,8 @@ import {
   type Goal,
   type GoalCreate,
   type GoalUpdate,
+  type Integration,
+  type IntegrationProvider,
   mockAnalysisRun,
   mockEvents,
   mockGoals,
@@ -37,6 +39,49 @@ export interface InsertResult {
   ignored: number;
 }
 
+// An integration row with its secrets. Tokens never leave apps/api: routes answer with
+// `publicIntegration`, which drops them.
+export interface IntegrationRecord extends Integration {
+  access_token: string | null;
+  refresh_token: string | null;
+  expires_at: string | null;
+  scope: string | null;
+}
+export type IntegrationPatch = Partial<Omit<IntegrationRecord, "provider">>;
+
+export const publicIntegration = (r: IntegrationRecord): Integration => ({
+  provider: r.provider,
+  status: r.status,
+  account: r.account,
+  connected_at: r.connected_at,
+  last_sync_at: r.last_sync_at,
+  error: r.error,
+});
+
+export interface UpsertResult {
+  inserted: Event[];
+  updated: Event[];
+  unchanged: number;
+}
+
+export type EventPatch = Partial<Pick<Event, "start_at" | "end_at" | "title" | "data">>;
+
+// JSON with sorted keys, so jsonb's own key order never reads as a change.
+const canonical = (v: unknown): string =>
+  JSON.stringify(v, (_k, x) =>
+    x && typeof x === "object" && !Array.isArray(x)
+      ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : 1)))
+      : x,
+  );
+
+/** True when an upsert would change nothing on the stored event. */
+export const sameEvent = (e: Event, i: z.output<typeof EventInput>) =>
+  e.type === i.type &&
+  e.title === i.title &&
+  Date.parse(e.start_at) === Date.parse(i.start_at) &&
+  (e.end_at ? Date.parse(e.end_at) : null) === (i.end_at ? Date.parse(i.end_at) : null) &&
+  canonical(e.data) === canonical(i.data);
+
 // Storage boundary. Routes and MCP tools depend only on this interface.
 // MemoryStore is used when Supabase env vars are missing; SupabaseStore (supabase-store.ts) otherwise.
 export interface Store extends PrivacyBackend {
@@ -56,7 +101,35 @@ export interface Store extends PrivacyBackend {
   /** The most recent chat messages, oldest first. */
   listChatMessages(limit: number): Promise<ChatMessage[]>;
   addChatMessage(role: ChatRole, content: string): Promise<ChatMessage>;
+
+  // ---- events mirrored from a provider (Google Calendar) ----
+  getEvent(id: string): Promise<Event | null>;
+  /** Insert or update by (source, external_id); every input must carry an external_id. */
+  upsertEvents(events: z.output<typeof EventInput>[]): Promise<UpsertResult>;
+  updateEvent(id: string, patch: EventPatch): Promise<Event | null>;
+  /** Only for provider mirrors and blocks Michael created; never for the user's own records. */
+  deleteEvents(ids: string[]): Promise<number>;
+
+  // ---- integrations (OAuth tokens) ----
+  listIntegrations(): Promise<IntegrationRecord[]>;
+  getIntegration(provider: IntegrationProvider): Promise<IntegrationRecord | null>;
+  saveIntegration(provider: IntegrationProvider, patch: IntegrationPatch): Promise<IntegrationRecord>;
+  /** Not scoped to the current user: only the background sync uses it, then acts as each user. */
+  listConnectedUserIds(provider: IntegrationProvider): Promise<string[]>;
 }
+
+export const emptyIntegration = (provider: IntegrationProvider): IntegrationRecord => ({
+  provider,
+  status: "disconnected",
+  account: null,
+  connected_at: null,
+  last_sync_at: null,
+  error: null,
+  access_token: null,
+  refresh_token: null,
+  expires_at: null,
+  scope: null,
+});
 
 const now = () => new Date().toISOString();
 const overlaps = (e: Event, from: number, to: number) => {
@@ -77,6 +150,7 @@ export class MemoryStore implements Store {
       runs: AnalysisRun[];
       privacy: PrivacyRules;
       chat: ChatMessage[];
+      integrations: IntegrationRecord[];
     }
   >();
   private get d() {
@@ -90,6 +164,7 @@ export class MemoryStore implements Store {
         runs: [structuredClone(mockAnalysisRun)],
         privacy: { offTheRecord: false, since: null, sources: {} },
         chat: [],
+        integrations: [],
       };
       this.data.set(userId, x);
     }
@@ -229,6 +304,70 @@ export class MemoryStore implements Store {
     const message: ChatMessage = { id: crypto.randomUUID(), role, content, created_at: now() };
     this.d.chat.push(message);
     return message;
+  }
+
+  async getEvent(id: string) {
+    return this.events.find((e) => e.id === id) ?? null;
+  }
+
+  async upsertEvents(inputs: z.output<typeof EventInput>[]) {
+    const result: UpsertResult = { inserted: [], updated: [], unchanged: 0 };
+    for (const i of inputs) {
+      const found = this.events.find((e) => e.source === i.source && e.external_id === i.external_id);
+      if (!found) {
+        result.inserted.push(...(await this.insertEvents([i])).inserted);
+      } else if (sameEvent(found, i)) {
+        result.unchanged++;
+      } else {
+        Object.assign(found, {
+          type: i.type,
+          title: i.title,
+          start_at: i.start_at,
+          end_at: i.end_at ?? null,
+        });
+        found.data = i.data;
+        result.updated.push(found);
+      }
+    }
+    return result;
+  }
+
+  async updateEvent(id: string, patch: EventPatch) {
+    const e = this.events.find((x) => x.id === id);
+    if (!e) return null;
+    Object.assign(e, Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)));
+    return e;
+  }
+
+  async deleteEvents(ids: string[]) {
+    const d = this.d;
+    const before = d.events.length;
+    d.events = d.events.filter((e) => !ids.includes(e.id));
+    return before - d.events.length;
+  }
+
+  async listIntegrations() {
+    return this.d.integrations;
+  }
+
+  async getIntegration(provider: IntegrationProvider) {
+    return this.d.integrations.find((i) => i.provider === provider) ?? null;
+  }
+
+  async saveIntegration(provider: IntegrationProvider, patch: IntegrationPatch) {
+    let rec = this.d.integrations.find((i) => i.provider === provider);
+    if (!rec) {
+      rec = emptyIntegration(provider);
+      this.d.integrations.push(rec);
+    }
+    Object.assign(rec, Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)));
+    return rec;
+  }
+
+  async listConnectedUserIds(provider: IntegrationProvider) {
+    return [...this.data.entries()]
+      .filter(([, x]) => x.integrations.some((i) => i.provider === provider && i.status === "connected"))
+      .map(([userId]) => userId);
   }
 }
 

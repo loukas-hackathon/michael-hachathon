@@ -20,10 +20,19 @@ const Env = z.object({
   // Claude for chat. Without a key POST /v1/chat answers 503 unavailable instead of crashing.
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_MODEL: z.string().default("claude-opus-5-5"),
+  // Google Calendar OAuth (web application client). Redirect URI: ${PUBLIC_API_URL}/oauth/google/callback
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  // Where OAuth callbacks send the browser back to. Defaults to the first WEB_ORIGIN.
+  WEB_URL: z.string().optional(),
+  // Minutes between background calendar syncs for every connected user; 0 turns it off.
+  CALENDAR_SYNC_MINUTES: z.coerce.number().int().nonnegative().default(15),
 });
 
 export type Env = z.infer<typeof Env>;
 export const env: Env = Env.parse(process.env);
+
+export const webUrl = () => (env.WEB_URL ?? env.WEB_ORIGIN.split(",")[0] ?? "").trim().replace(/\/$/, "");
 
 if (env.API_KEY === "dev-key" && process.env.NODE_ENV === "production") {
   throw new Error("API_KEY must be set in production");

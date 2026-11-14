@@ -231,11 +231,55 @@ export type AnalysisResult = z.infer<typeof AnalysisResult>;
 export const Integration = z.object({
   provider: IntegrationProvider,
   status: IntegrationStatus,
+  // The connected account as the provider names it (Google: the calendar owner's address).
+  account: z.string().nullable(),
   connected_at: IsoDateTime.nullable(),
   last_sync_at: IsoDateTime.nullable(),
   error: z.string().nullable(),
 });
 export type Integration = z.infer<typeof Integration>;
+
+export const IntegrationsResponse = z.object({ integrations: z.array(Integration) });
+export type IntegrationsResponse = z.infer<typeof IntegrationsResponse>;
+
+// POST /v1/integrations/:provider/connect: the provider's consent screen, opened by the browser.
+export const OAuthConnectResponse = z.object({ url: z.url() });
+export type OAuthConnectResponse = z.infer<typeof OAuthConnectResponse>;
+
+// POST /v1/integrations/google_calendar/sync and the sync that runs after connecting.
+export const CalendarSyncResult = z.object({
+  from: IsoDateTime,
+  to: IsoDateTime,
+  fetched: z.number().int().nonnegative(),
+  inserted: z.number().int().nonnegative(),
+  updated: z.number().int().nonnegative(),
+  unchanged: z.number().int().nonnegative(),
+  // Mirrored events that were cancelled or deleted in the calendar since the last sync.
+  removed: z.number().int().nonnegative(),
+  last_sync_at: IsoDateTime,
+});
+export type CalendarSyncResult = z.infer<typeof CalendarSyncResult>;
+
+// `data` of a google_calendar calendar_event. Michael never touches events where `with_others` is true.
+export const CalendarEventData = z.object({
+  calendar: z.string(),
+  status: z.string(),
+  all_day: z.boolean(),
+  // People on the invite, the user included; meeting rooms are left out.
+  attendees: z.number().int().nonnegative(),
+  // True when anyone else is on the invite or someone else organised it.
+  with_others: z.boolean(),
+  organizer_self: z.boolean(),
+  // True for blocks Michael created himself.
+  michael: z.boolean(),
+  // "transparent" = shows as free.
+  transparency: z.string(),
+  recurring: z.boolean(),
+  location: z.string().nullable(),
+  html_link: z.string().nullable(),
+  updated: z.string().nullable(),
+});
+export type CalendarEventData = z.infer<typeof CalendarEventData>;
 
 // ---------- privacy: sources and off the record ----------
 
