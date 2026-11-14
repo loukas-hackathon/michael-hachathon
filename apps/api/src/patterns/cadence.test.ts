@@ -122,7 +122,7 @@ test("cadence with known gaps: 10 pick ups a day, every gap 19 minutes", () => {
   );
   assert.equal(
     r.phone_cadence.summary,
-    "Phone picked up every 54 minutes between 09:00 and 18:00: 10 pickups a day in that window, median gap 19 minutes. 70% of pickups start with WhatsApp. 0% last under 30 seconds. 40% were opened from a notification, the rest by hand.",
+    "An app opened on the phone every 54 minutes between 09:00 and 18:00: 10 phone sessions a day in that window, median gap 19 minutes. 70% of phone sessions start with WhatsApp. 0% last under 30 seconds. 40% were opened from a notification, the rest by hand.",
   );
   assert.equal(r.phone_cadence.evidence.length, 20);
 });

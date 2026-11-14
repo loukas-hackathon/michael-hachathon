@@ -211,21 +211,25 @@ export function phoneCadence(ctx: Ctx): Detector<PhoneCadence> {
     daily,
   };
 
+  // Wording: these are sessions in which an app was opened, not Apple's "pickups". Checked against
+  // Screen Time on a real iPhone (9 to 12 Nov 2026): we saw about two thirds of the pickups Apple counted, because a
+  // glance at the lock screen with no app opened leaves no record in the data we can read. So the
+  // number here is a floor, and the copy must not call it pickups.
   // Two honest readings of "how often": the average spacing over the window, and the median gap
   // (pick ups come in bursts, so the median is usually much shorter than the average).
   const parts: string[] = [];
   const between = `between ${hourLabel(ctx.workStartHour)} and ${hourLabel(ctx.workEndHour)}`;
   if (windowMedian !== null && data.window.average_interval_minutes !== null) {
     parts.push(
-      `Phone picked up every ${duration(data.window.average_interval_minutes)} ${between}: ${rate(windowPerDay)} pickups a day in that window, median gap ${duration(windowMedian)}.`,
+      `An app opened on the phone every ${duration(data.window.average_interval_minutes)} ${between}: ${rate(windowPerDay)} phone sessions a day in that window, median gap ${duration(windowMedian)}.`,
     );
   } else {
     parts.push(
-      `Phone picked up ${rate(data.sessions_per_day)} times a day, median gap ${duration(data.median_gap_minutes)} while awake.`,
+      `An app opened on the phone ${rate(data.sessions_per_day)} times a day, median gap ${duration(data.median_gap_minutes)} while awake.`,
     );
   }
   const top = firstApps[0];
-  if (top) parts.push(`${pct(top.share)} of pickups start with ${top.app.name}.`);
+  if (top) parts.push(`${pct(top.share)} of phone sessions start with ${top.app.name}.`);
   parts.push(`${pct(data.checks_share)} last under 30 seconds.`);
   // The phone often gives no open reason (an app coming back after unlock). The split is only
   // put in a sentence when the reason is known for at least half of the pick ups.
