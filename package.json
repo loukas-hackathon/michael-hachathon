@@ -14,7 +14,8 @@
     "lint": "biome check .",
     "check": "pnpm typecheck && pnpm lint",
     "format": "biome check --write .",
-    "env:copy": "node scripts/copy-env.mjs"
+    "env:copy": "node scripts/copy-env.mjs",
+    "collect": "pnpm --silent --filter @michael/collector start"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.7"

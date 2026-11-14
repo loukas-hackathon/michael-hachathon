@@ -91,6 +91,46 @@ export const mockEvents: Event[] = [
     title: "Wants to be asleep by 00:30 during the hackathon",
     data: { category: "rest" },
   }),
+  ev(10, {
+    source: "macos_usage",
+    type: "app_usage",
+    start_at: "2026-11-14T11:02:10+02:00",
+    end_at: "2026-11-14T11:13:40+02:00",
+    title: "WhatsApp",
+    data: { bundle_id: "net.whatsapp.WhatsApp", device: "mac", seconds: 690 },
+  }),
+  ev(11, {
+    source: "iphone_usage",
+    type: "app_usage",
+    start_at: "2026-11-14T11:31:05+02:00",
+    end_at: "2026-11-14T11:36:20+02:00",
+    title: "Instagram",
+    data: { bundle_id: "com.burbn.instagram", device: "iphone", seconds: 315, opened_from: "notification" },
+  }),
+  ev(12, {
+    source: "chrome",
+    type: "web_visit",
+    start_at: "2026-11-14T11:40:00+02:00",
+    end_at: "2026-11-14T11:52:00+02:00",
+    title: "Flights from Athens to New York",
+    data: { host: "www.skyscanner.net", category: "travel", seconds: 720 },
+  }),
+  ev(13, {
+    source: "chrome",
+    type: "search",
+    start_at: "2026-11-14T11:39:40+02:00",
+    end_at: null,
+    title: "athens new york flights december",
+    data: { engine: "google", term: "athens new york flights december" },
+  }),
+  ev(14, {
+    source: "claude_code",
+    type: "ai_session",
+    start_at: "2026-11-14T12:20:00+02:00",
+    end_at: "2026-11-14T13:05:00+02:00",
+    title: "Build the timeline view",
+    data: { tool: "claude_code", project: "michael", turns: 14, waiting_seconds: 540, output_tokens: 48200 },
+  }),
 ];
 
 const GOAL_IDS = {
