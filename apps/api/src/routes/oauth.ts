@@ -7,6 +7,7 @@ import {
 } from "@michael/shared";
 import { type Context, Hono } from "hono";
 import { z } from "zod";
+import { agentsStore } from "../agents-store";
 import { currentUserId } from "../context";
 import { HttpError, jsonBody, parse } from "../http";
 import { type OAuthGrant, type OAuthToken, oauthStore } from "../oauth-store";
@@ -182,6 +183,7 @@ export const oauthPublic = new Hono()
       scopes: parseScopes(q.scope),
       resource,
       user_id: null,
+      agent_id: null,
       code_hash: null,
       expires_at: inMs(GRANT_TTL_MS),
       used_at: null,
@@ -224,6 +226,7 @@ export const oauthPublic = new Hono()
         id: randomUUID(),
         client_id: grant.client_id,
         user_id: grant.user_id,
+        agent_id: grant.agent_id,
         scopes: grant.scopes,
         resource: grant.resource,
         access_hash: sha256(access),
@@ -296,12 +299,19 @@ export const connect = new Hono()
     let redirect_to: string;
     if (allow) {
       const code = secret("mcp_code");
-      const approved = await oauthStore.approveGrant(
-        grant.id,
-        currentUserId(),
-        sha256(code),
-        inMs(CODE_TTL_MS),
+      // The consent tap is the one tap approval: the client becomes an approved agent.
+      const client = await oauthStore.getClient(grant.client_id);
+      const agent = await agentsStore.approveAgent(
+        client?.client_name ?? "An AI agent",
+        grant.client_id,
+        grant.scopes as AgentScope[],
       );
+      const approved = await oauthStore.approveGrant(grant.id, {
+        userId: currentUserId(),
+        agentId: agent.id,
+        codeHash: sha256(code),
+        expiresAt: inMs(CODE_TTL_MS),
+      });
       if (!approved) throw new HttpError("conflict", "This connection request was already answered");
       redirect_to = withParams(grant.redirect_uri, { code, state: grant.state, iss });
     } else {
@@ -321,16 +331,20 @@ export const connect = new Hono()
 
 const tokenCache = new Map<string, { token: OAuthToken; until: number }>();
 
+/** Drops cached token checks, so a revoke takes effect on the next request. */
+export const forgetTokens = () => tokenCache.clear();
+
 /** The live token for an access token string, if it was issued for this MCP resource. */
 export async function verifyAccessToken(raw: string, resource: string): Promise<OAuthToken | null> {
   if (!raw.startsWith("mcp_at_")) return null;
   const hash = sha256(raw);
   const hit = tokenCache.get(hash);
-  const token = hit && hit.until > Date.now() ? hit.token : await oauthStore.tokenByAccessHash(hash);
+  const fresh = hit && hit.until > Date.now();
+  const token = fresh ? hit.token : await oauthStore.tokenByAccessHash(hash);
   if (!token) return null;
-  if (!hit) {
-    tokenCache.set(hash, { token, until: Date.now() + 30_000 });
+  if (!fresh) {
     if (tokenCache.size > 1000) tokenCache.clear();
+    tokenCache.set(hash, { token, until: Date.now() + 30_000 });
   }
   if (token.revoked_at || Date.parse(token.access_expires_at) < Date.now()) return null;
   if (!sameResource(token.resource, resource)) return null;

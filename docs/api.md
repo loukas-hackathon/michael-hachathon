@@ -1068,12 +1068,26 @@ type AgentQuery = {
 
 | Method | Path                           | Body                                                    | Response                                                     | Status |
 | ------ | ------------------------------ | ------------------------------------------------------- | ------------------------------------------------------------ | ------ |
-| GET    | `/v1/agents`                   |                                                         | `200 { agents: AgentClient[] }`                              | stub   |
-| PATCH  | `/v1/agents/:id`               | `{ status?, scopes? }` (approve, revoke, change scopes) | `200 AgentClient`                                            | stub   |
-| GET    | `/v1/agents/queries?from=&to=` |                                                         | `200 { queries: AgentQuery[] }` ("who asked about me today") | stub   |
+| GET    | `/v1/agents`                   |                                                         | `200 { agents: AgentClient[] }`, newest first                | live   |
+| PATCH  | `/v1/agents/:id`               | `{ status?, scopes? }` (approve, revoke, change scopes) | `200 AgentClient`, `404`                                     | live   |
+| GET    | `/v1/agents/queries?from=&to=` |                                                         | `200 { queries: AgentQuery[] }` ("who asked about me today") | live   |
 
-A new agent's first MCP request registers it as `pending` and returns `forbidden` until the user
-approves it. Every MCP tool call is logged as an `AgentQuery`.
+- An agent is an MCP client the user connected with OAuth (see "MCP authorization"). Tapping
+  Allow on the consent page is the one tap approval: it creates the agent as `approved` with the
+  scopes it asked for, or updates the user's agent of the same name (reconnecting Claude keeps one
+  record). The API key is our own tooling, not an agent: it is neither checked nor logged.
+- Scopes are read live from the agent on every MCP request, so a `PATCH` applies at once.
+  `status: "revoked"` also revokes the agent's tokens (`401` from then on; reconnect to use it again).
+- Every MCP tool call by an agent is logged as an `AgentQuery`, allowed or not. `summary` is one
+  plain line ("Read your day from Sat 09:00 to Sat 17:00", `Added "Ran 5 km" to your day`), never
+  the payload. A call outside the agent's scopes, or by an agent that is not `approved`, returns a
+  tool result with `isError: true` ("Not allowed. ...") and is logged with `allowed: false`.
+- Scope per tool: `get_timeline`, `get_patterns` = `timeline`; `get_goals` = `goals`;
+  `get_recommendations` = `recommendations`; `get_score` = `score`; `add_event` = `write_events`.
+  A tool not in that list needs `timeline` if it is read only, else `write_events`
+  (`apps/api/src/mcp-guard.ts`).
+- `queries`: `from` defaults to local midnight today (Europe/Athens), `to` to now; newest first,
+  at most 500.
 
 ### Nudges
 

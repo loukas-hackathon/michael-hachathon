@@ -163,6 +163,10 @@ page. claude.ai signs in with MCP OAuth (`apps/api/src/routes/oauth.ts`): you si
 in the web app, and the token Claude gets acts for you only. The Agents screen shows the same URL
 with a copy button. The old `?key=<API_KEY>` form still works and acts as the demo account.
 
+**Any other agent** gets its own token the same way (any MCP client with OAuth support): the
+Allow tap makes it an agent on the Agents screen, where you change its scopes or revoke it, and
+every question it asks is listed there.
+
 Claude Code can use the same OAuth flow: `claude mcp add --transport http michael <url>/mcp`, then
 `/mcp` in Claude Code to sign in.
 
