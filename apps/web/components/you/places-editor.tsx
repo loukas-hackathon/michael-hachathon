@@ -22,6 +22,60 @@ const toInput = (p: Place): PlaceInput => ({
   lng: p.lng,
 });
 
+/** One tap: the phone's own location becomes this place. Safari asks once; nothing else to set up. */
+function HereButton({
+  slot,
+  busy,
+  onSave,
+}: {
+  slot: (typeof SLOTS)[number];
+  busy: boolean;
+  onSave: (p: PlaceInput) => void;
+}) {
+  const [state, setState] = useState<"idle" | "finding" | "denied" | "failed">("idle");
+  if (typeof navigator !== "undefined" && !("geolocation" in navigator)) return null;
+  function locate() {
+    setState("finding");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setState("idle");
+        onSave({
+          key: slot.key,
+          label: slot.label,
+          lat: Math.round(pos.coords.latitude * 1e5) / 1e5,
+          lng: Math.round(pos.coords.longitude * 1e5) / 1e5,
+        });
+      },
+      (err) => setState(err.code === err.PERMISSION_DENIED ? "denied" : "failed"),
+      { enableHighAccuracy: true, timeout: 15_000, maximumAge: 60_000 },
+    );
+  }
+  return (
+    <div className="flex flex-col gap-1">
+      <button
+        type="button"
+        disabled={busy || state === "finding"}
+        onClick={locate}
+        className="press flex min-h-11 items-center gap-2 text-left text-subhead font-semibold text-tint-text disabled:opacity-60"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true" className="size-[18px]" fill="currentColor">
+          <path d="M21 3 3 10.5l7.2 2.3L12.5 20z" />
+        </svg>
+        {state === "finding" ? "Finding you" : `I am at ${slot.label.toLowerCase()} now`}
+      </button>
+      {state === "denied" ? (
+        <p role="alert" className="text-footnote text-label-2">
+          Location is off for Michael. Allow it in Settings, Safari, Location, or type the address.
+        </p>
+      ) : state === "failed" ? (
+        <p role="alert" className="text-footnote text-label-2">
+          I could not find you. Try again outside, or type the address.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 /** One place: tap to search, pick a match and it is saved. Without maps, the typed address is kept. */
 function SlotRow({
   slot,
@@ -121,6 +175,7 @@ function SlotRow({
               Address search starts once maps are on our side. I keep what you type.
             </p>
           )}
+          <HereButton slot={slot} busy={busy} onSave={onSave} />
           <div className="flex flex-wrap items-center gap-2">
             {(!mapsAvailable || state === "error" || state === "none") && q.trim().length >= 3 ? (
               <button
@@ -160,7 +215,7 @@ function SlotRow({
           <span className="text-body">{slot.label}</span>
           <span className="flex min-w-0 flex-col items-end">
             <span className={`max-w-full truncate text-subhead ${place ? "text-label-2" : "text-tint-text"}`}>
-              {place?.address ?? (place ? "Set on the map" : "Add")}
+              {place?.address ?? (place ? "Set from your location" : "Add")}
             </span>
             {place && !located && mapsAvailable ? (
               <span className="text-footnote text-label-2">Not found on the map yet</span>
@@ -227,7 +282,7 @@ export function PlacesEditor({
   }
 
   return (
-    <div className="mt-6 flex flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <section aria-label="Your places">
         <ul className="overflow-hidden rounded-group bg-fill">
           {SLOTS.map((s) => (

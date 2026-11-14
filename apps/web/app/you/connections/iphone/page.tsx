@@ -6,7 +6,7 @@ import { SourcePrivacy } from "@/components/you/source-privacy";
 import { CONNECTION_ROUTES, connection } from "@/lib/connections";
 import { getConnection } from "@/lib/connections-status";
 
-export const metadata = { title: "iPhone screen time · Michael" };
+export const metadata = { title: "iPhone · Michael" };
 
 export default async function IPhonePage() {
   const { row } = await getConnection("iphone");

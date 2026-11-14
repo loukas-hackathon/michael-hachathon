@@ -331,8 +331,9 @@ h3 {
 :root:not([data-counted]) .m-count {
   animation: m-count-up var(--m-dur-count) var(--m-ease-out) both;
 }
+/* Waits for the splash: the splash script clears data-splashing the moment it is gone. */
 :root[data-splashing]:not([data-counted]) .m-count {
-  animation-delay: 1050ms;
+  animation-play-state: paused;
 }
 @keyframes m-count-up {
   from {

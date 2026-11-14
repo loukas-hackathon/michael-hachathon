@@ -52,7 +52,7 @@ export const CONNECTIONS: readonly Connection[] = [
   },
   {
     id: "iphone",
-    name: "iPhone screen time",
+    name: "iPhone",
     what: "Which apps you open, and for how long.",
     href: "/you/connections/iphone",
     sources: ["iphone_usage", "ios_shortcuts"],
@@ -66,7 +66,7 @@ export const CONNECTIONS: readonly Connection[] = [
   },
   {
     id: "nudges",
-    name: "Nudges on this phone",
+    name: "Nudges",
     what: "At most five a day, never in quiet hours. Your watch buzzes too.",
     href: "/you/connections/nudges",
     sources: [],
@@ -80,8 +80,8 @@ export const CONNECTIONS: readonly Connection[] = [
   },
   {
     id: "travel",
-    name: "Travel times",
-    what: "Traffic between your places, so you leave at the right time.",
+    name: "Location",
+    what: "Home, work and gym, so you leave at the right time.",
     href: "/you/connections/travel",
     sources: ["maps"],
   },
@@ -97,9 +97,6 @@ export function connection(id: ConnectionId): Connection {
   return CONNECTIONS.find((c) => c.id === id) as Connection;
 }
 
-/** Sources no connection row owns: they keep a plain switch in the Privacy section. */
-export const OTHER_SOURCES: Source[] = ["whoop", "owntracks", "omi"];
-
 /** What each source is called on the user's side, for the switches on the setup pages. */
 export const SOURCE_LABEL: Partial<Record<Source, [name: string, what: string]>> = {
   google_calendar: ["Google Calendar", "Your plans and meetings"],
@@ -111,7 +108,4 @@ export const SOURCE_LABEL: Partial<Record<Source, [name: string, what: string]>>
   iphone_usage: ["Screen Time", "iPhone apps by the day, synced through your Mac"],
   ios_shortcuts: ["Shortcuts", "Live app opens from your iPhone"],
   maps: ["Travel times", "Traffic between your saved places and plans"],
-  whoop: ["WHOOP", "Sleep, strain and recovery"],
-  owntracks: ["Location", "Where you are, for gym and commute"],
-  omi: ["Meetings", "Only when you start meetings mode"],
 };

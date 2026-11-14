@@ -42,7 +42,7 @@ export function ConnectionsList({
         {view.rows.map((row, i) => (
           <div key={row.id} className="relative">
             {i > 0 ? <span className="absolute inset-x-0 top-0 ml-[52px] h-[0.5px] bg-separator" /> : null}
-            <ConnectionRow row={row} isNext={view.next?.id === row.id} />
+            <ConnectionRow row={row} />
           </div>
         ))}
       </div>
