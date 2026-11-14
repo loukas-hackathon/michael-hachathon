@@ -150,6 +150,9 @@ export function phoneCadence(ctx: Ctx): Detector<PhoneCadence> {
       };
     });
 
+  const windowPerDay = ratio(inCounted.filter((s) => inWindow(s.start)).length, counted.length);
+  const windowLength = (ctx.workEndHour - ctx.workStartHour) * 60;
+
   const data: PhoneCadence = {
     days_with_data: withData.size,
     sessions: sessions.length,
@@ -162,7 +165,8 @@ export function phoneCadence(ctx: Ctx): Detector<PhoneCadence> {
     window: {
       start_hour: ctx.workStartHour,
       end_hour: ctx.workEndHour,
-      sessions_per_day: round1(ratio(inCounted.filter((s) => inWindow(s.start)).length, counted.length)),
+      sessions_per_day: round1(windowPerDay),
+      average_interval_minutes: windowPerDay > 0 ? round1(windowLength / windowPerDay) : null,
       gaps: windowGaps.length,
       median_gap_minutes: windowMedian,
     },
@@ -177,15 +181,17 @@ export function phoneCadence(ctx: Ctx): Detector<PhoneCadence> {
     daily,
   };
 
+  // Two honest readings of "how often": the average spacing over the window, and the median gap
+  // (pick ups come in bursts, so the median is usually much shorter than the average).
   const parts: string[] = [];
-  const perDay = `${rate(data.sessions_per_day)} pickups a day`;
-  if (windowMedian !== null) {
+  const between = `between ${hourLabel(ctx.workStartHour)} and ${hourLabel(ctx.workEndHour)}`;
+  if (windowMedian !== null && data.window.average_interval_minutes !== null) {
     parts.push(
-      `Phone picked up every ${duration(windowMedian)} between ${hourLabel(ctx.workStartHour)} and ${hourLabel(ctx.workEndHour)} (median gap, ${perDay}).`,
+      `Phone picked up every ${duration(data.window.average_interval_minutes)} ${between}: ${rate(windowPerDay)} pickups a day in that window, median gap ${duration(windowMedian)}.`,
     );
   } else {
     parts.push(
-      `Phone picked up every ${duration(data.median_gap_minutes)} while awake (median gap, ${perDay}).`,
+      `Phone picked up ${rate(data.sessions_per_day)} times a day, median gap ${duration(data.median_gap_minutes)} while awake.`,
     );
   }
   const top = firstApps[0];
@@ -287,7 +293,11 @@ export function macAppCadence(ctx: Ctx): Detector<MacAppCadence> {
     if (list) list.push(v);
     else byApp.set(v.appKey, [v]);
   }
-  const hasNotifications = tl.notifications.size > 0;
+  const macMsByDay = new Map<string, number>();
+  for (const seg of tl.mac) {
+    for (const p of zone.splitByDay(seg.start, seg.end)) add(macMsByDay, p.day, p.end - p.start);
+  }
+  const countedMacMinutes = counted.reduce((t, d) => t + (macMsByDay.get(d) ?? 0), 0) / MINUTE;
 
   const rows = [...byApp.values()]
     .map((visits) => {
@@ -312,13 +322,17 @@ export function macAppCadence(ctx: Ctx): Detector<MacAppCadence> {
           activations: visits.length,
           days: days.size,
           activations_per_day: round1(ratio(inCounted, countedSet.size)),
+          minutes_of_mac_use_per_activation: inCounted > 0 ? round1(countedMacMinutes / inCounted) : null,
           median_gap_active_minutes: gaps.length >= RULES.minAppGaps ? round1(median(gaps)) : null,
           checks_share: round2(
             ratio(visits.filter((v) => v.end - v.start < RULES.checkMs).length, visits.length),
           ),
           median_visit_seconds: Math.round(median(visits.map((v) => (v.end - v.start) / 1000))),
+          // Unknown (null) unless the Mac logged at least one notification from this app.
           after_notification_share:
-            hasNotifications && first?.bundle ? round2(ratio(notified, visits.length)) : null,
+            first?.bundle && tl.notifications.has(first.bundle)
+              ? round2(ratio(notified, visits.length))
+              : null,
         },
       };
     })
@@ -343,11 +357,14 @@ export function macAppCadence(ctx: Ctx): Detector<MacAppCadence> {
   if (lead) {
     const r = lead.row;
     const parts = [
-      r.median_gap_active_minutes !== null
-        ? `On the Mac, ${r.app.name} comes to the front ${rate(r.activations_per_day)} times a day, every ${duration(r.median_gap_active_minutes)} of Mac use (median).`
-        : `On the Mac, ${r.app.name} comes to the front ${rate(r.activations_per_day)} times a day.`,
-      `${pct(r.checks_share)} of those visits last under 30 seconds.`,
+      `On the Mac, ${r.app.name} comes to the front ${rate(r.activations_per_day)} times a day.`,
     ];
+    if (r.minutes_of_mac_use_per_activation !== null && r.median_gap_active_minutes !== null) {
+      parts.push(
+        `That is once every ${duration(r.minutes_of_mac_use_per_activation)} of Mac use, with a median gap of ${duration(r.median_gap_active_minutes)}.`,
+      );
+    }
+    parts.push(`${pct(r.checks_share)} of those visits last under 30 seconds.`);
     if (r.after_notification_share !== null) {
       parts.push(`${pct(r.after_notification_share)} follow a notification within 60 seconds.`);
     }

@@ -399,6 +399,8 @@ export const PhoneCadence = z.object({
     start_hour: z.number().int().min(0).max(23),
     end_hour: z.number().int().min(1).max(24),
     sessions_per_day: z.number().nonnegative(),
+    // Window length divided by sessions per day: "once every N minutes" on average.
+    average_interval_minutes: z.number().nonnegative().nullable(),
     gaps: z.number().int().nonnegative(),
     median_gap_minutes: z.number().nonnegative().nullable(),
   }),
@@ -446,11 +448,14 @@ export const MacAppCadence = z.object({
       activations: z.number().int().nonnegative(),
       days: z.number().int().nonnegative(),
       activations_per_day: z.number().nonnegative(),
+      // Mac time in use divided by activations: "once every N minutes of Mac use" on average.
+      minutes_of_mac_use_per_activation: z.number().nonnegative().nullable(),
       // Minutes of Mac use between leaving the app and bringing it back. Null under 5 gaps.
       median_gap_active_minutes: z.number().nonnegative().nullable(),
       checks_share: z.number().min(0).max(1),
       median_visit_seconds: z.number().nonnegative(),
-      // Share of activations within 60 seconds after a Mac notification from the same app.
+      // Share of activations within 60 seconds after a Mac notification from the same app. Null
+      // when the Mac logged no notification from this app at all.
       after_notification_share: z.number().min(0).max(1).nullable(),
     }),
   ),

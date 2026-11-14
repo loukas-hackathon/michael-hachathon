@@ -404,7 +404,8 @@ export function analyseFocus(ctx: Ctx): FocusAnalysis {
 function openedByNotification(ctx: Ctx, trigger: Segment): boolean | null {
   if (trigger.device === "iphone")
     return trigger.openedFrom === null ? null : trigger.openedFrom === "notification";
-  if (trigger.kind !== "app" || ctx.tl.notifications.size === 0) return null;
+  // Unknown unless the Mac logged at least one notification from this app in the data.
+  if (trigger.kind !== "app" || !ctx.tl.notifications.has(trigger.key)) return null;
   return notifiedBefore(ctx.tl, trigger.key, trigger.start, RULES.notificationWindowMs);
 }
 
