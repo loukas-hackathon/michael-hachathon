@@ -1,4 +1,5 @@
 import {
+  countsTowardsCap,
   type Event,
   type Goal,
   type GoalCategory,
@@ -417,7 +418,9 @@ export function quietNow(input: EngineInput): "night" | "dinner" | "deep_work" |
  */
 export function decide(input: EngineInput): Decision {
   if (input.offTheRecord) return { action: "skip", skipped: "off_the_record" };
-  const seen = new Set(input.today.map((n) => n.key));
+  // Test nudges (the stage moment) never block, delay or count against a real one.
+  const real = input.today.filter((n) => n.status !== "test");
+  const seen = new Set(real.map((n) => n.key));
   let fresh = candidates(input).filter((c) => !seen.has(c.key));
   if (fresh.length === 0) return { action: "skip", skipped: "nothing_to_say" };
 
@@ -428,7 +431,7 @@ export function decide(input: EngineInput): Decision {
   const best = fresh[0];
   if (!best) return { action: "skip", skipped: "quiet_hours" };
 
-  const counted = input.today.filter((n) => n.status !== "suppressed");
+  const counted = real.filter((n) => countsTowardsCap(n.status));
   if (counted.length >= LIMITS.perDay) return { action: "suppress", candidate: best, skipped: "daily_cap" };
 
   const now = Date.parse(input.now);

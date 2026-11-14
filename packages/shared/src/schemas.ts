@@ -544,8 +544,13 @@ export type ConnectDecisionResponse = z.infer<typeof ConnectDecisionResponse>;
 export const NudgeChannel = z.enum(["watch", "push", "telegram"]);
 export type NudgeChannel = z.infer<typeof NudgeChannel>;
 
-export const NudgeStatus = z.enum(["queued", "sent", "failed", "suppressed"]);
+// `test`: sent by POST /v1/nudges/test (the stage moment). Stored so screens can show it, but it
+// never counts towards the cap, the gap between nudges or the daily dedupe.
+export const NudgeStatus = z.enum(["queued", "sent", "failed", "suppressed", "test"]);
 export type NudgeStatus = z.infer<typeof NudgeStatus>;
+
+/** Whether a nudge counts towards the 5 a day (and the 20 minute gap). */
+export const countsTowardsCap = (status: NudgeStatus) => status !== "suppressed" && status !== "test";
 
 // What a nudge is about. Each kind is one rule of the engine (apps/api/src/nudges).
 // morning and evening carry the Morning and Evening moments (GET /v1/moments/:kind), once each a day.
@@ -596,18 +601,21 @@ export const NudgeCheckResult = z.object({
   nudge: Nudge.nullable(),
   // Set when no nudge went out.
   skipped: NudgeSkip.nullable(),
-  // Nudges today that count towards the cap of 5 (everything but suppressed).
+  // Nudges today that count towards the cap of 5 (everything but suppressed and test).
   sent_today: z.number().int().nonnegative(),
 });
 export type NudgeCheckResult = z.infer<typeof NudgeCheckResult>;
 
-// POST /v1/nudges/test: one nudge now, for the stage moment. Not stored, ignores the cap.
+// POST /v1/nudges/test: one nudge now, for the stage moment. Stored with status `test` (so
+// GET /v1/nudges shows it), ignores the cap and never counts towards it.
 export const NudgeTestResult = z.object({
   text: z.string().min(1),
   reason: z.string(),
   // Devices that accepted it. 0 when push is not configured or no device has turned nudges on.
   delivered: z.number().int().nonnegative(),
   devices: z.number().int().nonnegative(),
+  // The stored nudge (status `test`).
+  nudge: Nudge,
 });
 export type NudgeTestResult = z.infer<typeof NudgeTestResult>;
 

@@ -1,0 +1,378 @@
+/*
+ * The stage view (/stage): a 16:9 frame for the projector, dark by default (?theme=light for paper).
+ * Every size is in --u, one pixel of a 1920 by 1080 frame, so it scales to any projector and
+ * letterboxes on other shapes. Tokens are the design guide's; only their dark values are set here.
+ */
+.stage {
+  --m-bg: #000000;
+  --m-fill: #1c1c1e;
+  --m-separator: #38383a;
+  --m-label: #ffffff;
+  --m-label-2: #98989f;
+  --m-context: #3a3a3c;
+  --m-tint-text: #ff4fa3;
+  --m-danger: #ff453a;
+  --u: min(calc(100vw / 1920), calc(100vh / 1080));
+  color-scheme: dark;
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: var(--m-bg);
+  color: var(--m-label);
+  cursor: none;
+}
+.stage[data-theme="light"] {
+  --m-bg: #ffffff;
+  --m-fill: #f2f2f7;
+  --m-separator: #c6c6c8;
+  --m-label: #000000;
+  --m-label-2: #6c6c70;
+  --m-context: #d1d1d6;
+  --m-tint-text: #e6007a;
+  --m-danger: #ff3b30;
+  color-scheme: light;
+}
+
+.stage-frame {
+  position: relative;
+  width: calc(var(--u) * 1920);
+  height: calc(var(--u) * 1080);
+  padding: calc(var(--u) * 80) calc(var(--u) * 112) calc(var(--u) * 72);
+  display: grid;
+  grid-template-rows: calc(var(--u) * 48) minmax(0, 1fr) auto calc(var(--u) * 40);
+  row-gap: calc(var(--u) * 56);
+}
+
+/* ---------- header ---------- */
+.stage-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: calc(var(--u) * 26);
+  line-height: calc(var(--u) * 32);
+  font-weight: 600;
+  color: var(--m-label-2);
+}
+.stage-wordmark {
+  height: calc(var(--u) * 34);
+  width: auto;
+  color: var(--m-label);
+}
+.stage-header b {
+  color: var(--m-label);
+  font-weight: 600;
+}
+
+/* ---------- the score and the nudge ---------- */
+.stage-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) calc(var(--u) * 760);
+  column-gap: calc(var(--u) * 96);
+  align-items: end;
+  min-height: 0;
+}
+.stage-score {
+  display: flex;
+  flex-direction: column;
+}
+.stage-score-number {
+  font-family: var(--font-num);
+  font-weight: 800;
+  font-size: calc(var(--u) * 280);
+  line-height: calc(var(--u) * 250);
+  letter-spacing: -0.03em;
+  margin-left: calc(var(--u) * -10);
+}
+.stage-score-line {
+  margin-top: calc(var(--u) * 16);
+  font-size: calc(var(--u) * 52);
+  line-height: calc(var(--u) * 62);
+  font-weight: 700;
+}
+.stage-score-first {
+  font-size: calc(var(--u) * 96);
+  line-height: calc(var(--u) * 104);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.stage-won {
+  margin-top: calc(var(--u) * 28);
+  font-size: calc(var(--u) * 38);
+  line-height: calc(var(--u) * 46);
+  color: var(--m-label-2);
+}
+.stage-won b {
+  font-family: var(--font-num);
+  font-weight: 700;
+  color: var(--m-tint-text);
+}
+.stage-won-plain b {
+  color: var(--m-label);
+}
+
+/* The nudge card keeps one fixed size whatever it holds, so nothing moves when a nudge lands. */
+.stage-nudge {
+  height: calc(var(--u) * 500);
+  border-radius: calc(var(--u) * 32);
+  background: var(--m-fill);
+  padding: calc(var(--u) * 44) calc(var(--u) * 48);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.stage-nudge-head {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 16);
+  font-size: calc(var(--u) * 26);
+  line-height: calc(var(--u) * 32);
+  font-weight: 600;
+  color: var(--m-label-2);
+}
+.stage-mi {
+  display: grid;
+  place-items: center;
+  width: calc(var(--u) * 48);
+  height: calc(var(--u) * 48);
+  border-radius: 999px;
+  background: var(--m-label);
+  color: var(--m-bg);
+}
+.stage-mi svg {
+  width: calc(var(--u) * 27);
+  height: auto;
+}
+.stage-nudge-head b {
+  color: var(--m-label);
+  font-weight: 600;
+}
+.stage-nudge-text {
+  margin-top: calc(var(--u) * 28);
+  font-size: calc(var(--u) * 52);
+  line-height: calc(var(--u) * 62);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+.stage-nudge-reason {
+  margin-top: auto;
+  padding-top: calc(var(--u) * 20);
+  font-size: calc(var(--u) * 26);
+  line-height: calc(var(--u) * 34);
+  color: var(--m-label-2);
+}
+.stage-nudge-empty .stage-nudge-text {
+  color: var(--m-label-2);
+  font-weight: 600;
+}
+
+/* A new nudge arrives: it rises into place. Content is visible without it. */
+.stage-enter {
+  animation: stage-enter 700ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+.stage-enter .stage-nudge-text {
+  animation: stage-enter 700ms 90ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+@keyframes stage-enter {
+  from {
+    opacity: 0;
+    transform: translateY(calc(var(--u) * 28));
+  }
+}
+
+/* ---------- the tape ---------- */
+.stage-tape {
+  display: flex;
+  width: 100%;
+  gap: calc(var(--u) * 14);
+  padding-top: calc(var(--u) * 60);
+}
+.stage-tape-block {
+  min-width: 0;
+}
+.stage-tape-ticks {
+  display: flex;
+  gap: calc(var(--u) * 3);
+  height: calc(var(--u) * 84);
+}
+.stage-tick {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  border-radius: calc(var(--u) * 3);
+}
+.stage-tick[data-kind="spent"] {
+  background: var(--m-spark);
+}
+.stage-tick[data-kind="unverified"] {
+  background: color-mix(in srgb, var(--m-spark) 38%, var(--m-bg));
+}
+.stage-tick[data-kind="lost"] {
+  align-self: flex-end;
+  height: 45%;
+  background: var(--m-label-2);
+  opacity: 0.75;
+}
+.stage-tick[data-kind="ahead"] {
+  box-shadow: inset 0 0 0 calc(var(--u) * 1.5) var(--m-label-2);
+}
+.stage-now {
+  position: absolute;
+  left: calc(var(--u) * -3);
+  top: calc(var(--u) * -40);
+  bottom: 0;
+  width: calc(var(--u) * 3);
+  background: var(--m-label);
+  border-radius: 999px;
+}
+.stage-now-pill {
+  position: absolute;
+  top: calc(var(--u) * -8);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: calc(var(--u) * 2) calc(var(--u) * 12);
+  border-radius: 999px;
+  background: var(--m-label);
+  color: var(--m-bg);
+  font-size: calc(var(--u) * 22);
+  line-height: calc(var(--u) * 28);
+  font-weight: 700;
+  white-space: nowrap;
+}
+.stage-tape-label {
+  margin-top: calc(var(--u) * 14);
+  font-size: calc(var(--u) * 22);
+  line-height: calc(var(--u) * 28);
+  font-weight: 500;
+  color: var(--m-label-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.stage-tape-label .tnum {
+  color: var(--m-label);
+  font-weight: 600;
+}
+.stage-key {
+  display: flex;
+  gap: calc(var(--u) * 36);
+  margin-top: calc(var(--u) * 18);
+  font-size: calc(var(--u) * 24);
+  line-height: calc(var(--u) * 30);
+  color: var(--m-label-2);
+}
+.stage-key li {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--u) * 10);
+}
+.stage-key i {
+  display: inline-block;
+  width: calc(var(--u) * 9);
+  height: calc(var(--u) * 22);
+  border-radius: calc(var(--u) * 2);
+}
+.stage-key i[data-kind="spent"] {
+  background: var(--m-spark);
+}
+.stage-key i[data-kind="unverified"] {
+  background: color-mix(in srgb, var(--m-spark) 38%, var(--m-bg));
+}
+.stage-key i[data-kind="lost"] {
+  height: calc(var(--u) * 10);
+  align-self: flex-end;
+  margin-bottom: calc(var(--u) * 6);
+  background: var(--m-label-2);
+  opacity: 0.75;
+}
+.stage-key i[data-kind="ahead"] {
+  box-shadow: inset 0 0 0 calc(var(--u) * 1.5) var(--m-label-2);
+}
+.stage-empty {
+  font-size: calc(var(--u) * 34);
+  line-height: calc(var(--u) * 42);
+  color: var(--m-label-2);
+}
+
+/* ---------- agents asking about me ---------- */
+.stage-ticker {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 40);
+  min-width: 0;
+  border-top: calc(var(--u) * 1) solid var(--m-separator);
+  padding-top: calc(var(--u) * 14);
+  font-size: calc(var(--u) * 24);
+  line-height: calc(var(--u) * 30);
+  color: var(--m-label-2);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.stage-ticker:empty {
+  border-top-color: transparent;
+}
+.stage-ticker > b {
+  color: var(--m-label);
+  font-weight: 600;
+}
+.stage-ticker ul {
+  display: flex;
+  gap: calc(var(--u) * 40);
+  min-width: 0;
+}
+.stage-ticker li {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.stage-ticker li b {
+  color: var(--m-label);
+  font-weight: 600;
+}
+.stage-ticker-new {
+  animation: stage-fade 600ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+@keyframes stage-fade {
+  from {
+    opacity: 0;
+    transform: translateX(calc(var(--u) * -16));
+  }
+}
+
+/* ---------- presenter ---------- */
+.stage-trigger {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 64px;
+  height: 64px;
+  opacity: 0;
+  cursor: default;
+}
+.stage-trigger:focus-visible {
+  opacity: 1;
+}
+.stage-status {
+  position: absolute;
+  right: calc(var(--u) * 112);
+  bottom: calc(var(--u) * 24);
+  font-size: calc(var(--u) * 18);
+  line-height: calc(var(--u) * 24);
+  color: var(--m-label-2);
+  transition: opacity 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage-enter,
+  .stage-enter .stage-nudge-text,
+  .stage-ticker-new {
+    animation: stage-fade-only 200ms linear both;
+  }
+  @keyframes stage-fade-only {
+    from {
+      opacity: 0;
+    }
+  }
+}

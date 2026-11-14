@@ -126,6 +126,14 @@ test("at most 5 a day: the sixth is stored as suppressed", () => {
   assert.equal(decide(input("12:00", [], [GYM], withSuppressed)).action, "send");
 });
 
+test("test nudges (the stage moment) never count, block or delay a real one", () => {
+  const tests = ["08:00", "09:00", "10:00", "11:00", "11:55"].map((t) => ({
+    ...sent(t, "goal_behind"),
+    status: "test" as const,
+  }));
+  assert.equal(decide(input("12:00", [], [GYM], tests)).action, "send");
+});
+
 test("no repeats, and at least 20 minutes apart", () => {
   assert.deepEqual(decide(input("12:00", [], [GYM], [sent("09:00", "goal_behind")])), {
     action: "skip",

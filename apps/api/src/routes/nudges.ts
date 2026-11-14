@@ -1,4 +1,5 @@
 import {
+  countsTowardsCap,
   type NudgeCheckResult,
   NudgesQuery,
   type NudgesResponse,
@@ -64,7 +65,7 @@ export async function checkNudges(): Promise<NudgeCheckResult> {
     input.moment = { kind: due, ...momentNudge(await momentCoreFor(due, now)) };
   }
   const decision = decide(input);
-  const counted = today.filter((n) => n.status !== "suppressed").length;
+  const counted = today.filter((n) => countsTowardsCap(n.status)).length;
   if (decision.action === "skip") {
     return { checked_at: now, nudge: null, skipped: decision.skipped, sent_today: counted };
   }
@@ -110,7 +111,8 @@ export const SAMPLE_NUDGE = {
 /**
  * The stage moment: push one nudge to the caller's devices now. Uses the engine's best current
  * candidate (real maths) when there is one, otherwise the sample. Ignores the cap, quiet hours
- * and dedupe, and stores nothing, so it never eats into the 5 a day.
+ * and dedupe. Stored with status `test` so GET /v1/nudges (the stage screen) shows the same line
+ * at the same moment; `test` never counts towards the 5 a day or blocks a real nudge.
  */
 export async function testNudge(): Promise<NudgeTestResult> {
   const now = new Date().toISOString();
@@ -120,9 +122,23 @@ export async function testNudge(): Promise<NudgeTestResult> {
     store.listGoals(),
   ]);
   const pick = candidates({ now, goals, events, today: [] })[0] ?? SAMPLE_NUDGE;
+  // Stored first, so the screen can show it as the watch buzzes. A unique key per press keeps
+  // the daily dedupe out of the way.
+  const nudge = await store.createNudge({
+    recommendation_id: null,
+    goal_id: "goal_id" in pick ? pick.goal_id : null,
+    kind: pick.kind,
+    key: `test:${pick.kind}:${now}:${crypto.randomUUID().slice(0, 8)}`,
+    day: win.day,
+    channel: primaryChannel().name,
+    text: pick.text,
+    reason: pick.reason,
+    status: "test",
+  });
+  if (!nudge) throw new HttpError("internal", "Could not store the test nudge");
   const { devices, delivered } = await pushToCurrentUser(nudgePayload(pick));
   console.log(`[nudge] test "${pick.text}" pushed to ${delivered} of ${devices} devices`);
-  return { text: pick.text, reason: pick.reason, delivered, devices };
+  return { text: pick.text, reason: pick.reason, delivered, devices, nudge };
 }
 
 export const nudges = new Hono()
