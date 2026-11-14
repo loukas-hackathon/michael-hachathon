@@ -81,26 +81,26 @@ curl -H "Authorization: Bearer dev-key" "localhost:8787/v1/timeline?from=2026-11
 
 `apps/api` (`apps/api/.env.example`):
 
-| Var                                                 | Purpose                                                                                  |
-| --------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `PORT`                                              | default 8787 (Railway sets it)                                                           |
-| `API_KEY`                                           | shared bearer secret; acts as the demo account (required in production)                  |
-| `DEMO_WEEK`                                         | `on` (default): the demo account carries a generated week up to now; `off` turns it off  |
-| `DEMO_USER_ID`                                      | the demo account's user id (has a default)                                               |
-| `WEB_ORIGIN`                                        | CORS origins, comma-separated                                                            |
-| `PUBLIC_API_URL`                                    | public URL of the API, used for OAuth redirect URIs                                      |
-| `PUBLIC_WEB_URL`                                    | public URL of the web app (MCP OAuth consent page); empty = first non local `WEB_ORIGIN` |
-| `WEB_URL`                                           | web app URL the OAuth callbacks return to (defaults to the first `WEB_ORIGIN`)           |
-| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`         | database; empty = in-memory store                                                        |
-| `GEMINI_API_KEY`, `GEMINI_MODEL`                    | analysis                                                                                 |
-| `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`              | chat with Michael (`POST /v1/chat`, chat actions); without a key chat answers 503        |
-| `GOOGLE_CLIENT_ID/SECRET`, `WHOOP_CLIENT_ID/SECRET` | OAuth integrations                                                                       |
-| `CALENDAR_SYNC_MINUTES`                             | minutes between background Google Calendar syncs for every connected user (0 = off)      |
-| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`             | Web Push for nudges (iPhone, Apple Watch mirror); `npx web-push generate-vapid-keys`     |
-| `VAPID_SUBJECT`                                     | contact for push services, e.g. `mailto:team@michael.app`                                |
-| `SCHEDULER_ENABLED`, `SCHEDULER_INTERVAL_MINUTES`   | nudge check for every active user (default on in production, every 5 minutes)            |
-| `GOOGLE_MAPS_API_KEY`                               | travel times (Routes and Geocoding APIs); empty = places kept, travel skipped            |
-| `ELEVENLABS_API_KEY`                                | Michael's spoken voice for push to talk; arrives with PR #146 (browser voice without it) |
+| Var                                                             | Purpose                                                                                            |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `PORT`                                                          | default 8787 (Railway sets it)                                                                     |
+| `API_KEY`                                                       | shared bearer secret; acts as the demo account (required in production)                            |
+| `DEMO_WEEK`                                                     | `on` (default): the demo account carries a generated week up to now; `off` turns it off            |
+| `DEMO_USER_ID`                                                  | the demo account's user id (has a default)                                                         |
+| `WEB_ORIGIN`                                                    | CORS origins, comma-separated                                                                      |
+| `PUBLIC_API_URL`                                                | public URL of the API, used for OAuth redirect URIs                                                |
+| `PUBLIC_WEB_URL`                                                | public URL of the web app (MCP OAuth consent page); empty = first non local `WEB_ORIGIN`           |
+| `WEB_URL`                                                       | web app URL the OAuth callbacks return to (defaults to the first `WEB_ORIGIN`)                     |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`                     | database; empty = in-memory store                                                                  |
+| `GEMINI_API_KEY`, `GEMINI_MODEL`                                | analysis                                                                                           |
+| `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`                          | chat with Michael (`POST /v1/chat`, chat actions); without a key chat answers 503                  |
+| `GOOGLE_CLIENT_ID/SECRET`, `WHOOP_CLIENT_ID/SECRET`             | OAuth integrations                                                                                 |
+| `CALENDAR_SYNC_MINUTES`                                         | minutes between background Google Calendar syncs for every connected user (0 = off)                |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`                         | Web Push for nudges (iPhone, Apple Watch mirror); `npx web-push generate-vapid-keys`               |
+| `VAPID_SUBJECT`                                                 | contact for push services, e.g. `mailto:team@michael.app`                                          |
+| `SCHEDULER_ENABLED`, `SCHEDULER_INTERVAL_MINUTES`               | nudge check for every active user (default on in production, every 5 minutes)                      |
+| `GOOGLE_MAPS_API_KEY`                                           | travel times (Routes and Geocoding APIs); empty = places kept, travel skipped                      |
+| `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL` | Michael's spoken voice (`POST /v1/voice/speak`, free tier); without a key the browser voice speaks |
 
 `apps/web` (`apps/web/.env.example`). Only `NEXT_PUBLIC_` vars reach the browser:
 

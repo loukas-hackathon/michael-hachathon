@@ -29,6 +29,7 @@ import { recommendations } from "./routes/recommendations";
 import { score } from "./routes/score";
 import { telegram, telegramWebhook } from "./routes/telegram";
 import { tokens } from "./routes/tokens";
+import { voice } from "./routes/voice";
 import { webhooks } from "./routes/webhooks";
 import { store } from "./store";
 
@@ -49,6 +50,7 @@ const v1 = new Hono()
   .route("/", score)
   .route("/", chat)
   .route("/", moments)
+  .route("/", voice)
   .route("/", integrations)
   .route("/", privacy)
   .route("/", nudges)

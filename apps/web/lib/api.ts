@@ -119,6 +119,33 @@ export async function sendChat(message: string): Promise<ChatResult> {
     : { ok: false, code: "internal", message: `POST /v1/chat failed: ${res.status}` };
 }
 
+/** Whether the API can speak with ElevenLabs. False when it cannot say: the browser voice is fine. */
+export async function getVoiceEnabled(): Promise<boolean> {
+  try {
+    return (await get<{ elevenlabs: boolean }>("/v1/voice")).elevenlabs;
+  } catch {
+    return false;
+  }
+}
+
+/** Michael's reply as audio/mpeg from POST /v1/voice/speak, or null so the browser speaks instead. */
+export async function speak(text: string): Promise<Response | null> {
+  try {
+    const res = await fetch(`${API_URL}/v1/voice/speak`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
+      body: JSON.stringify({ text }),
+      cache: "no-store",
+    });
+    if (res.ok && res.body) return res;
+    console.error(`voice: POST /v1/voice/speak failed: ${res.status}`);
+    return null;
+  } catch (err) {
+    console.error("voice:", err);
+    return null;
+  }
+}
+
 export async function getTimeline(from: string, to: string): Promise<TimelineResponse> {
   if (USE_MOCKS) return { from, to, events: mockEvents };
   const qs = new URLSearchParams({ from, to });
