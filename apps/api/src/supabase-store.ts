@@ -7,11 +7,14 @@ import type {
   GoalUpdate,
   Recommendation,
   RecommendationStatus,
+  Source,
+  SourceSetting,
 } from "@michael/shared";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { z } from "zod";
 import { currentUserId } from "./context";
 import { HttpError } from "./http";
+import { type PrivacyRules, screenEvents } from "./privacy";
 import type { InsertResult, Store, TimelineFilter } from "./store";
 
 type EventRow = z.output<typeof EventInput>;
@@ -102,8 +105,60 @@ export class SupabaseStore implements Store {
     return (check(await q) ?? []).map(toEvent);
   }
 
-  async insertEvents(inputs: EventRow[]): Promise<InsertResult> {
-    if (!inputs.length) return { inserted: [], duplicates: 0, ignored: 0 };
+  async privacyRules(): Promise<PrivacyRules> {
+    const userId = currentUserId();
+    const [state, settings] = await Promise.all([
+      this.db.from("privacy_state").select("off_the_record, since").eq("user_id", userId).maybeSingle(),
+      this.db.from("source_settings").select("source, enabled, updated_at").eq("user_id", userId),
+    ]);
+    const s = check(state);
+    const rules: PrivacyRules = {
+      offTheRecord: s?.off_the_record ?? false,
+      since: iso(s?.since ?? null),
+      sources: {},
+    };
+    for (const r of check(settings) ?? []) {
+      rules.sources[r.source as Source] = {
+        enabled: r.enabled as boolean,
+        updated_at: iso(r.updated_at as string) as string,
+      };
+    }
+    return rules;
+  }
+
+  async setOffTheRecord(on: boolean) {
+    const current = await this.privacyRules();
+    // Keep `since` when the switch is pressed twice, so it still says when collection stopped.
+    if (current.offTheRecord !== on) {
+      const since = on ? new Date().toISOString() : null;
+      check(
+        await this.db
+          .from("privacy_state")
+          .upsert({ user_id: currentUserId(), off_the_record: on, since }, { onConflict: "user_id" }),
+      );
+      current.offTheRecord = on;
+      current.since = since;
+    }
+    return current;
+  }
+
+  async setSourceEnabled(source: Source, enabled: boolean): Promise<SourceSetting> {
+    const row = check(
+      await this.db
+        .from("source_settings")
+        .upsert(
+          { user_id: currentUserId(), source, enabled, updated_at: new Date().toISOString() },
+          { onConflict: "user_id,source" },
+        )
+        .select("source, enabled, updated_at")
+        .single(),
+    ) as { source: Source; enabled: boolean; updated_at: string };
+    return { source: row.source, enabled: row.enabled, updated_at: iso(row.updated_at) as string };
+  }
+
+  async insertEvents(all: EventRow[]): Promise<InsertResult> {
+    const { allowed: inputs, ignored } = await screenEvents(this, all);
+    if (!inputs.length) return { inserted: [], duplicates: 0, ignored };
     const userId = currentUserId();
     const rows = inputs.map((i) => ({
       user_id: userId,
@@ -142,10 +197,10 @@ export class SupabaseStore implements Store {
       return true;
     });
     let duplicates = rows.length - fresh.length;
-    if (!fresh.length) return { inserted: [], duplicates, ignored: 0 };
+    if (!fresh.length) return { inserted: [], duplicates, ignored };
 
     const res = await this.db.from("events").insert(fresh).select("*");
-    if (!res.error) return { inserted: (res.data ?? []).map(toEvent), duplicates, ignored: 0 };
+    if (!res.error) return { inserted: (res.data ?? []).map(toEvent), duplicates, ignored };
     if (res.error.code !== "23505") check(res);
 
     // A concurrent insert won a race on some external_id: fall back to row by row.
@@ -155,7 +210,7 @@ export class SupabaseStore implements Store {
       if (one.error?.code === "23505") duplicates++;
       else inserted.push(toEvent(check(one)));
     }
-    return { inserted, duplicates, ignored: 0 };
+    return { inserted, duplicates, ignored };
   }
 
   async listGoals() {

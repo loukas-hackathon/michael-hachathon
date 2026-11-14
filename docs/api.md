@@ -679,12 +679,16 @@ type PrivacyState = { off_the_record: boolean; since: string | null; sources: So
 
 | Method | Path                          | Body                          | Response            | Status |
 | ------ | ----------------------------- | ----------------------------- | ------------------- | ------ |
-| GET    | `/v1/privacy`                 |                               | `200 PrivacyState`  | stub   |
-| PUT    | `/v1/privacy/off-the-record`  | `{ off_the_record: boolean }` | `200 PrivacyState`  | stub   |
-| PATCH  | `/v1/privacy/sources/:source` | `{ enabled: boolean }`        | `200 SourceSetting` | stub   |
+| GET    | `/v1/privacy`                 |                               | `200 PrivacyState`  | live   |
+| PUT    | `/v1/privacy/off-the-record`  | `{ off_the_record: boolean }` | `200 PrivacyState`  | live   |
+| PATCH  | `/v1/privacy/sources/:source` | `{ enabled: boolean }`        | `200 SourceSetting` | live   |
 
-Sources are opt-in (disabled by default). While off the record, or for a disabled source, ingest
-drops events and counts them in `ignored`.
+Sources are opt-in (disabled by default). Connecting a source is the opt-in: its first event
+received records it as enabled. While off the record, or for a source the user switched off, ingest
+drops events and counts them in `ignored` (every path: `/v1/events`, `/v1/events/batch`, webhooks,
+MCP). `manual` events, typed by the user, are always kept. `since` is when collection stopped, or
+`null`. Never set sources show `updated_at` as `1970-01-01T00:00:00.000Z`. The check lives in
+`apps/api/src/privacy.ts` and runs inside `Store.insertEvents`.
 
 ### Michael for agents
 
