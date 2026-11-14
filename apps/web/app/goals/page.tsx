@@ -6,6 +6,7 @@ import { TargetCard } from "@/components/gamification/target-card";
 import { CalendarGoals } from "@/components/goals/calendar-goals";
 import { DayColumns, NotchTrack, SleepBars, SplitBar } from "@/components/goals/goal-charts";
 import { AddGoal, EditGoal, type GoalDraft } from "@/components/goals/goal-sheets";
+import { Tween } from "@/components/motion-ui";
 import { ScreenHeader } from "@/components/screen";
 import { getGoals, getGoalsWeek } from "@/lib/api";
 import { CATEGORIES, CATEGORY_TITLE, categoryOf } from "@/lib/categories";
@@ -82,7 +83,7 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
                   <h2 className="text-title3 font-bold">{CATEGORY_TITLE[c]}</h2>
                   {budget > 0 ? (
                     <p className="text-footnote text-label-2 tnum">
-                      {hm(spent)} of {hm(budget)}
+                      <Tween value={spent} format="hm" /> of <Tween value={budget} format="hm" />
                     </p>
                   ) : null}
                 </div>
@@ -204,7 +205,10 @@ function GoalRow({
             <b className="font-semibold text-tint-text">Closed</b>
           ) : (
             <>
-              <b className="font-semibold text-label">{hm(leftMinutes)}</b> left
+              <b className="font-semibold text-label">
+                <Tween value={leftMinutes} format="hm" />
+              </b>{" "}
+              left
             </>
           )}
         </p>

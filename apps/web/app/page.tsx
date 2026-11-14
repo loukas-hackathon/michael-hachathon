@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { CountUp } from "@/components/count-up";
 import { LiveRefresh } from "@/components/live-refresh";
+import { Tween } from "@/components/motion-ui";
 import { ScreenHeader } from "@/components/screen";
 import { Tape, TapeKey } from "@/components/tape";
 import { BriefCard } from "@/components/today/brief-card";
@@ -18,7 +19,7 @@ import { WatchLine } from "@/components/today/watch-line";
 import { getChecklist, getGoals, getToday, needsOnboarding } from "@/lib/api";
 import type { ChecklistDay } from "@/lib/checklist";
 import { type DayView, nowIndex, tape, totals } from "@/lib/day";
-import { formatDay, formatTime, hm, minutesPhrase } from "@/lib/format";
+import { formatDay, formatTime, hm } from "@/lib/format";
 import { verdict } from "@/lib/gamification";
 import { momentKindFor } from "@/lib/moments";
 
@@ -80,8 +81,11 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
         <>
           {day.week.scorePct != null ? (
             <p className="mt-1.5 text-subhead text-label-2">
-              We're at <b className="font-semibold text-label tnum">{day.week.scorePct}%</b> of goal time this
-              week.{day.week.line ? ` ${day.week.line}` : ""}
+              We're at{" "}
+              <b className="font-semibold text-label tnum">
+                <Tween value={day.week.scorePct} format="pct" />
+              </b>{" "}
+              of goal time this week.{day.week.line ? ` ${day.week.line}` : ""}
             </p>
           ) : null}
           {day.balance && verdict(day.balance).line ? (
@@ -89,7 +93,7 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
           ) : null}
 
           {day.blocks.length > 0 ? (
-            <section aria-label="Goal time today" className="mt-5">
+            <section aria-label="Goal time today" className="mt-5" data-live-key="score" data-live-pop="">
               {t.scorePct === null && firstBlock ? (
                 <p className="text-title3 font-semibold">
                   Your first block starts at <span className="tnum">{formatTime(firstBlock.start)}</span>.
@@ -116,16 +120,16 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
               <TapeKey
                 items={
                   t.scorePct === null
-                    ? [{ kind: "ahead" as const, text: `${hm(t.planned)} planned` }]
+                    ? [{ kind: "ahead" as const, minutes: t.planned, text: "planned" }]
                     : [
                         ...(t.spent - t.unverified > 0 || t.unverified === 0
-                          ? [{ kind: "spent" as const, text: `${hm(t.spent - t.unverified)} spent` }]
+                          ? [{ kind: "spent" as const, minutes: t.spent - t.unverified, text: "spent" }]
                           : []),
                         ...(t.unverified > 0
-                          ? [{ kind: "unverified" as const, text: `${hm(t.unverified)} unconfirmed` }]
+                          ? [{ kind: "unverified" as const, minutes: t.unverified, text: "unconfirmed" }]
                           : []),
-                        ...(t.lost > 0 ? [{ kind: "lost" as const, text: `${hm(t.lost)} lost` }] : []),
-                        ...(t.ahead > 0 ? [{ kind: "ahead" as const, text: `${hm(t.ahead)} ahead` }] : []),
+                        ...(t.lost > 0 ? [{ kind: "lost" as const, minutes: t.lost, text: "lost" }] : []),
+                        ...(t.ahead > 0 ? [{ kind: "ahead" as const, minutes: t.ahead, text: "ahead" }] : []),
                       ]
                 }
               />
@@ -139,9 +143,11 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
           ) : null}
 
           {day.wonBackMinutes > 0 ? (
-            <p className="mt-4 text-body">
-              <b className="font-num font-bold text-tint-text">{minutesPhrase(day.wonBackMinutes)}</b> won
-              back today.
+            <p className="mt-4 text-body" data-live-key="won" data-live-pop="">
+              <b className="font-num font-bold text-tint-text">
+                <Tween value={day.wonBackMinutes} format="minutes" />
+              </b>{" "}
+              won back today.
             </p>
           ) : null}
 
@@ -152,10 +158,13 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
           <RecommendationsPanel slot="primary" />
 
           {day.lead || day.nudge ? (
-            <section aria-label="What I did" className="mt-6">
+            <section aria-label="What I did" className="mt-6" data-live-key="did" data-live-pop="">
               {day.lead ? <MichaelCard lead={day.lead} primary={!primary} /> : null}
               {day.nudge ? (
-                <div className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 rounded-group bg-fill px-4 py-3">
+                <div
+                  className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 rounded-group bg-fill px-4 py-3"
+                  data-live-key={`nudge${day.nudge.at}`}
+                >
                   <p className="col-span-2 mb-0.5 text-footnote font-semibold">Latest nudge</p>
                   <time
                     className="text-footnote leading-5 font-semibold text-label-2 tnum"
