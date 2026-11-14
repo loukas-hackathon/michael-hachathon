@@ -84,6 +84,7 @@ function Card({
   local,
   act,
   swapped,
+  arrived,
   onGone,
   primary,
 }: {
@@ -93,6 +94,8 @@ function Card({
   primary: boolean;
   /** True right after the status changed here, so the new line eases in. */
   swapped: (status: string) => boolean;
+  /** Came in after mount (the next suggestion, a live refresh): it pops in. */
+  arrived: boolean;
   onGone: () => void;
 }) {
   const status = local.status ?? card.status;
@@ -106,7 +109,7 @@ function Card({
         primary
           ? "rounded-card bg-fill px-4 pt-3.5 pb-4"
           : "relative py-3 not-first:before:absolute not-first:before:inset-x-0 not-first:before:top-0 not-first:before:h-[0.5px] not-first:before:bg-separator not-first:before:content-['']"
-      } ${local.hidden ? "m-leave" : ""}`}
+      } ${local.hidden ? "m-leave" : arrived ? "m-pop-in" : ""}`}
       aria-busy={busy}
       aria-hidden={local.hidden || undefined}
       onAnimationEnd={(e) => {
@@ -261,7 +264,11 @@ export function RecommendationList({ cards, variant }: { cards: RecCard[]; varia
     (c) => c.id,
     (id) => Boolean(local[id]?.hidden && !local[id]?.removed),
   );
-  const visible = kept.filter((c) => !local[c.id]?.removed);
+  const remaining = kept.filter((c) => !local[c.id]?.removed);
+  // "Your next move" is one card: the next suggestion waits for the dismissed one to finish leaving,
+  // then pops in where it was, instead of sliding under it.
+  const leaving = remaining.filter((c) => local[c.id]?.hidden);
+  const visible = variant === "primary" && leaving.length > 0 ? leaving : remaining;
   // The cards below slide up into the gap a dismissed card leaves.
   const flipKey = visible.map((c) => c.id).join();
   if (visible.length === 0) return null;
@@ -272,6 +279,7 @@ export function RecommendationList({ cards, variant }: { cards: RecCard[]; varia
       local={local[c.id] ?? {}}
       act={(op) => act(c, op)}
       swapped={(status) => arriving(`${c.id}:${status}`)}
+      arrived={arriving(c.id)}
       onGone={() => setLocal((s) => ({ ...s, [c.id]: { ...s[c.id], removed: true } }))}
       primary={variant === "primary"}
     />
