@@ -965,3 +965,83 @@ export const Health = z.object({
   commit: z.string().nullable(),
 });
 export type Health = z.infer<typeof Health>;
+
+// ---------- moments (GET /v1/moments/:kind) ----------
+// Morning: what today holds against each goal's weekly budget, the stretch most likely to be
+// lost and one or two moves. Evening: what happened against the plan, time won back and lost,
+// one lesson and tomorrow's first move. Every number is computed from the timeline; only
+// `headline` may be phrased by a model, and it falls back to a template.
+
+export const MomentKind = z.enum(["morning", "evening"]);
+export type MomentKind = z.infer<typeof MomentKind>;
+
+export const MomentGoal = z.object({
+  goal_id: z.uuid(),
+  title: z.string(),
+  category: GoalCategory,
+  budget_minutes: z.number().int().nonnegative().nullable(),
+  // This week (Monday 00:00 local) until now.
+  spent_week_minutes: z.number().int().nonnegative(),
+  // Today: planned blocks (rest: a seventh of the weekly budget), time held, time lost in them.
+  planned_today_minutes: z.number().int().nonnegative(),
+  spent_today_minutes: z.number().int().nonnegative(),
+  lost_today_minutes: z.number().int().nonnegative(),
+  // Planned from now to the end of the week.
+  planned_ahead_minutes: z.number().int().nonnegative(),
+  // Budget left after what is spent and what is planned; null without a budget.
+  unplanned_minutes: z.number().int().nonnegative().nullable(),
+});
+export type MomentGoal = z.infer<typeof MomentGoal>;
+
+export const MomentStretch = z.object({
+  start_at: IsoDateTime,
+  end_at: IsoDateTime,
+  title: z.string(),
+  goal_id: z.uuid().nullable(),
+  block_event_id: z.string().nullable(),
+  // Average minutes lost in these hours on the history days, scaled to this stretch.
+  expected_lost_minutes: z.number().int().nonnegative(),
+  history_days: z.number().int().nonnegative(),
+  // What usually takes the time in these hours (an app name or a site label).
+  usual_trigger: z.string().nullable(),
+});
+export type MomentStretch = z.infer<typeof MomentStretch>;
+
+export const MomentMove = z.object({
+  title: z.string(),
+  // The maths behind it, one or two sentences.
+  rationale: z.string(),
+  action_kind: ActionKind.nullable(),
+  start_at: IsoDateTime.nullable(),
+  end_at: IsoDateTime.nullable(),
+  goal_id: z.uuid().nullable(),
+});
+export type MomentMove = z.infer<typeof MomentMove>;
+
+export const Moment = z.object({
+  kind: MomentKind,
+  day: LocalDay,
+  timezone: z.string(),
+  generated_at: IsoDateTime,
+  headline: z.string(),
+  phrased_by: z.enum(["template", "model"]),
+  goals: z.array(MomentGoal),
+  totals: z.object({
+    // Goal blocks today (rest excluded: sleep is not booked).
+    planned_minutes: z.number().int().nonnegative(),
+    spent_minutes: z.number().int().nonnegative(),
+    // Lost today to interruptions in focus time (morning: so far).
+    lost_minutes: z.number().int().nonnegative(),
+    // Daily average lost on the history days: the line "won back" is measured against.
+    baseline_lost_minutes: z.number().int().nonnegative().nullable(),
+    won_back_minutes: z.number().int().nonnegative(),
+  }),
+  // Morning only (null in the evening).
+  at_risk: MomentStretch.nullable(),
+  // Morning: one or two moves. Evening: empty.
+  suggestions: z.array(MomentMove).max(2),
+  // Evening only.
+  lesson: z.string().nullable(),
+  first_move: MomentMove.nullable(),
+});
+export type Moment = z.infer<typeof Moment>;
