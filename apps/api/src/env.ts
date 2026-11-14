@@ -19,7 +19,8 @@ const Env = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().default("gemini-2.5-flash"),
-  // Claude for chat. Without a key POST /v1/chat answers 503 unavailable instead of crashing.
+  // Claude for chat and for the analysis. Without a key POST /v1/chat and POST /v1/analysis/run
+  // answer 503 unavailable; nothing crashes at start-up.
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_MODEL: z.string().default("claude-opus-5-5"),
   // Google Calendar OAuth (web application client). Redirect URI: ${PUBLIC_API_URL}/oauth/google/callback

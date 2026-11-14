@@ -24,10 +24,12 @@ import { HttpError } from "./http";
 import type { GeocodeHit } from "./integrations/maps";
 import { type PrivacyRules, screenEvents } from "./privacy";
 import {
+  type AskedQuestion,
   type EventPatch,
   type InsertResult,
   type IntegrationPatch,
   type IntegrationRecord,
+  type NewAnalysis,
   type NewRecommendation,
   type NudgeCreate,
   type PushDevice,
@@ -79,6 +81,7 @@ const toRecommendation = (r: Record<string, unknown>): Recommendation => ({
   title: r.title as string,
   rationale: (r.rationale as string) ?? "",
   action: (r.action as Recommendation["action"]) ?? null,
+  evidence: (r.evidence as string[] | null) ?? [],
   status: r.status as RecommendationStatus,
   executed_at: iso(r.executed_at as string | null),
   undone_at: iso(r.undone_at as string | null),
@@ -104,6 +107,7 @@ const toRun = (r: Record<string, unknown>): AnalysisRun => ({
   range_end: iso(r.range_end as string) as string,
   model: r.model as string,
   summary: (r.summary as string | null) ?? null,
+  question: (r.question as string | null) ?? null,
   error: (r.error as string | null) ?? null,
   started_at: iso(r.started_at as string) as string,
   finished_at: iso(r.finished_at as string | null),
@@ -594,6 +598,60 @@ export class SupabaseStore implements Store {
         .maybeSingle(),
     );
     return row ? toRun(row) : null;
+  }
+
+  async listAnalysisQuestions(limit: number): Promise<AskedQuestion[]> {
+    const res = await this.db
+      .from("analysis_runs")
+      .select("question, started_at")
+      .eq("user_id", currentUserId())
+      .not("question", "is", null)
+      .order("started_at", { ascending: false })
+      .limit(limit);
+    // `question` is a newer column. Until its migration has run there is nothing to list, and a
+    // missing column must not stop an analysis.
+    if (res.error) return [];
+    return (res.data ?? []).flatMap((r) =>
+      typeof r.question === "string" && r.question
+        ? [{ question: r.question, asked_at: iso(r.started_at as string) as string }]
+        : [],
+    );
+  }
+
+  async saveAnalysis(input: NewAnalysis) {
+    const userId = currentUserId();
+    const { question, ...run } = input.run;
+    const runRow = check(
+      await this.db
+        .from("analysis_runs")
+        // `question` and `evidence` are newer columns: they are only named when they hold
+        // something, so a run can still be stored while their migration is on its way.
+        .insert({ user_id: userId, ...run, ...(question ? { question } : {}) })
+        .select("*")
+        .single(),
+    );
+    const saved = toRun(runRow);
+    if (input.recommendations.length === 0) return { run: saved, recommendations: [] };
+    // Every row of one insert must name the same columns.
+    const withEvidence = input.recommendations.some((r) => r.evidence?.length);
+    const rows = check(
+      await this.db
+        .from("recommendations")
+        .insert(
+          input.recommendations.map((r) => ({
+            user_id: userId,
+            analysis_run_id: saved.id,
+            goal_id: r.goal_id,
+            title: r.title,
+            rationale: r.rationale,
+            action: r.action,
+            ...(withEvidence ? { evidence: r.evidence ?? [] } : {}),
+            status: "proposed",
+          })),
+        )
+        .select("*"),
+    );
+    return { run: saved, recommendations: (rows ?? []).map(toRecommendation) };
   }
 
   async listChatMessages(limit: number) {

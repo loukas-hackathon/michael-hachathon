@@ -44,7 +44,7 @@ Every non-2xx response:
 | `conflict`        | 409                                                     |
 | `not_implemented` | 501                                                     |
 | `unavailable`     | 503 (a dependency is not configured, e.g. no model key) |
-| `upstream_error`  | 502 (WHOOP, Google, Gemini, Omi failed)                 |
+| `upstream_error`  | 502 (WHOOP, Google, Claude, Omi failed)                 |
 | `internal`        | 500                                                     |
 
 ## Types
@@ -125,6 +125,7 @@ type Recommendation = {
   title: string;
   rationale: string;
   action: RecommendationAction | null;
+  evidence?: string[]; // what supports it: pattern names ("phone_cadence"), "plan" or "score"; absent on older rows
   status: RecommendationStatus;
   executed_at: string | null;
   undone_at: string | null;
@@ -139,8 +140,9 @@ type AnalysisRun = {
   trigger: AnalysisTrigger;
   range_start: string;
   range_end: string;
-  model: string;
-  summary: string | null;
+  model: string; // the model that answered (a fallback model when the first one declined)
+  summary: string | null; // Michael's brief for the moment, at most four lines
+  question?: string | null; // one short question about a missing fact, usually null
   error: string | null;
   started_at: string;
   finished_at: string | null;
@@ -398,10 +400,63 @@ above 0 makes the event a meeting, whatever its title or `goal_id` says. Each bl
 
 ### Analysis
 
-| Method | Path                  | Body                                               | Response                                                                                            | Status |
-| ------ | --------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ------ |
-| POST   | `/v1/analysis/run`    | `{ from?, to? }` (default: today in Europe/Athens) | `201 { run: AnalysisRun, recommendations: Recommendation[] }`; `502 upstream_error` if Gemini fails | stub   |
-| GET    | `/v1/analysis/latest` |                                                    | `200 { run, recommendations }`, `404` if none                                                       | live   |
+| Method | Path                  | Body                                               | Response                                                                                                                                                                                 | Status |
+| ------ | --------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| POST   | `/v1/analysis/run`    | `{ from?, to?, trigger? }`, or no body (see below) | `201 { run: AnalysisRun, recommendations: Recommendation[] }`; `400` bad range; `502 upstream_error` if the model fails or its answer is unusable; `503 unavailable` without a model key | live   |
+| GET    | `/v1/analysis/latest` |                                                    | `200 { run, recommendations }`, `404` if none                                                                                                                                            | live   |
+
+`POST /v1/analysis/run` is how Michael speaks. One run reads the caller's data, writes an
+**analysis brief**, asks Claude once, checks the answer and stores an `AnalysisRun` (`summary` is
+Michael's short brief for the moment, `question` his one question when a fact is missing) with up
+to 3 `Recommendation`s, all `proposed`. The first recommendation is the lead: the one the Today
+card shows. `evidence` names what proves it: patterns (`PatternReport` keys), `"plan"` (the goals
+and their blocks) or `"score"`.
+
+- **Body.** `from`, `to`: ISO with offset; default is today so far in `Europe/Athens`. A range that
+  ended in the past is read as it stood at its end, so a day can be run again later. At most 31
+  days. `trigger`: `manual` (default) `| scheduled | mcp | morning | evening`; it decides what the
+  summary talks about (morning: the plan; evening: the day against the plan).
+- **Failure.** If the model declines, times out or answers something that is not the agreed JSON,
+  the run is stored with `status: "failed"` and `error`, and the response is `502 upstream_error`
+  with `details.run_id`. Without `ANTHROPIC_API_KEY` the route answers `503 unavailable` before
+  reading any data, and nothing else in the API is affected.
+- **The model.** `claude-opus-5-5` (`ANTHROPIC_MODEL`), adaptive thinking, effort `medium`,
+  structured output (a JSON schema, checked again with zod), server side fallbacks if the request
+  is declined, and the coach instructions as a cached system prompt
+  (`apps/api/src/analysis/coach.ts`: one stable string, nothing per user in it).
+- **What never depends on the model** (`analysis/output.ts`): `goal_id` is one of the user's goals
+  or null; at most 3 recommendations; `evidence` only names patterns that had data; an `action` is
+  kept only when it is in the future, inside the user's own time and clear of every event with
+  other people, otherwise the action is dropped and the advice stays. A `move_calendar_block` can
+  only name one of the user's own goal blocks that has not started. Stored payloads are the ones
+  `POST /v1/recommendations/:id/execute` takes. Actions are stored, not carried out: executing
+  stays a separate call.
+- **Copy.** The hard copy rules are checked in code (no dashes as punctuation, no emoji, no
+  exclamation marks, none of the banned words). Actions are offers until the person taps, so a
+  summary or rationale that says something was already done ("I've set", "I moved", "already
+  moved") is a violation too. On a violation, or a dropped action, the model is asked once more and
+  told exactly what was wrong; if the second answer is no better the run is stored anyway and the
+  violations are logged.
+
+**Privacy: what is sent to the model.** Only the brief, built by one pure function
+(`analysis/brief.ts`, held in place by `brief.test.ts`). It holds summaries, never raw events:
+
+| In the brief                                                                                                                              | Never in the brief                                                            |
+| ----------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Now, timezone, trigger, the local range                                                                                                   | Event ids, external ids, raw events                                           |
+| Goals: id, title, category (as data), weekly budget, description, this week's planned, spent, lost and unverified minutes (the score)     | Search terms, page titles, full addresses                                     |
+| Standing instructions, in the user's own words (`instructions`; empty until the profile stores them)                                      | A site's host, unless it is on the shared public list                         |
+| The plan for today and tomorrow (and yesterday in the morning): the user's own goal blocks with title, start, end and the score's numbers | The title of any calendar entry that is not the user's own goal block         |
+| Events with other people: "busy from A to B" only. The user's own entries with no goal: time only                                         | Names, attendees, locations or anything else about an event with other people |
+| Patterns for the last 7 days and for the range: each detector's sentence and a trimmed set of numbers, or the reason it has too little    | Conversations, memories, notes, meals, message text, AI prompts (never read)  |
+| Data notes: how old the phone and Mac data is, the share of browser time not measured, sources with no data                               | Anything from another user: every read is scoped to the caller                |
+| The last 5 recommendations: day, title, status, and whether an analysis made it                                                           |                                                                               |
+| `actions_are`: `offers` (nothing is carried out until the person taps) or `applied`. Runs pass `offers`                                   |                                                                               |
+| `already_asked`: the last 5 questions Michael asked, with their day, so he never asks one twice                                           |                                                                               |
+
+`pnpm --filter @michael/api analysis:brief --from <iso> --to <iso> --trigger evening --api http://localhost:8787`
+prints the system prompt and the user message exactly as a run would send them, from a local API,
+without calling any model.
 
 ### Patterns
 
@@ -414,8 +469,8 @@ or a range over 92 days. Computed on request by pure functions in `apps/api/src/
 rules, no model): the same events always give the same report. Days and hours are local
 (`Europe/Athens`), correct across the daylight saving change.
 
-This is what the analysis prompt (#17) should read instead of raw events: `headlines` holds the
-one line summary of every detector that had enough data, most important first.
+This is what the analysis (`POST /v1/analysis/run`) reads instead of raw events: `headlines` holds
+the one line summary of every detector that had enough data, most important first.
 
 ```ts
 type PatternReport = {
