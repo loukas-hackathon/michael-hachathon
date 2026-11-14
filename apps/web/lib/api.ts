@@ -27,6 +27,7 @@ import { cookies } from "next/headers";
 import { categoryOf } from "./categories";
 import type { DayView } from "./day";
 import type { GoalsView } from "./goals-view";
+import type { Instruction, InstructionInput } from "./instructions";
 import { sampleDay, sampleEarly, sampleEmpty, sampleEvening, sampleMorning } from "./sample/day";
 import { sampleGoals, sampleGoalsEmpty } from "./sample/goals";
 import { dayFromScore, goalsFromScore, leadFromPatterns } from "./score-map";
@@ -356,4 +357,61 @@ export async function needsOnboarding(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+// ---------- standing instructions (/v1/instructions, landing with #131) ----------
+
+const mockInstructions: Instruction[] = [
+  {
+    id: "50000000-0000-4000-8000-000000000001",
+    text: "Keep Sundays clear",
+    kind: "clear_day",
+    days: [0],
+    active: true,
+    created_at: now0,
+    updated_at: now0,
+  },
+];
+
+export type InstructionsResult = { available: true; items: Instruction[] } | { available: false };
+
+/** Not live yet answers `available: false`, so the screen can say so instead of failing. */
+export async function getInstructions(): Promise<InstructionsResult> {
+  if (USE_MOCKS) return { available: true, items: structuredClone(mockInstructions) };
+  const res = await fetch(`${API_URL}/v1/instructions`, {
+    headers: { authorization: `Bearer ${await bearer()}` },
+    cache: "no-store",
+  }).catch(() => null);
+  if (!res || res.status === 404 || res.status === 501) return { available: false };
+  if (!res.ok) throw new Error(`GET /v1/instructions failed: ${res.status}`);
+  const body = (await res.json()) as { instructions: Instruction[] };
+  return { available: true, items: body.instructions };
+}
+
+export async function postInstruction(input: InstructionInput): Promise<WriteResult> {
+  if (USE_MOCKS) {
+    const t = new Date().toISOString();
+    mockInstructions.push({ ...input, id: crypto.randomUUID(), created_at: t, updated_at: t });
+    return { ok: true };
+  }
+  return write("POST", "/v1/instructions", input);
+}
+
+export async function patchInstruction(id: string, patch: Partial<InstructionInput>): Promise<WriteResult> {
+  if (USE_MOCKS) {
+    const i = mockInstructions.find((x) => x.id === id);
+    if (!i) return { ok: false, message: "That instruction no longer exists." };
+    Object.assign(i, patch, { updated_at: new Date().toISOString() });
+    return { ok: true };
+  }
+  return write("PATCH", `/v1/instructions/${id}`, patch);
+}
+
+export async function deleteInstruction(id: string): Promise<WriteResult> {
+  if (USE_MOCKS) {
+    const at = mockInstructions.findIndex((x) => x.id === id);
+    if (at >= 0) mockInstructions.splice(at, 1);
+    return { ok: true };
+  }
+  return write("DELETE", `/v1/instructions/${id}`);
 }
