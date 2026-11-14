@@ -3,6 +3,7 @@ import { CheckInValue, type Event, IsoDateTime, type Recommendation } from "@mic
 import { z } from "zod";
 import { answerCheckIn } from "../checkin/service";
 import { HttpError } from "../http";
+import { forget, remember } from "../memory";
 import { DEFAULT_TIMEZONE } from "../patterns";
 import { Zone } from "../patterns/time";
 import { store } from "../store";
@@ -104,8 +105,48 @@ export const CHAT_TOOLS: Anthropic.Tool[] = [
       required: ["check_in_id", "value"],
     },
   },
+  {
+    name: "remember",
+    description:
+      "Keep one lasting fact or preference the user told you about themselves, their routine or their goals, so you know it in every later conversation. One short line in the user's words, e.g. 'Trains best before 08:00'. Not one off plans and nothing about other people.",
+    input_schema: {
+      type: "object",
+      properties: { fact: { type: "string", description: "One short line, at most 280 characters" } },
+      required: ["fact"],
+    },
+  },
+  {
+    name: "forget_memory",
+    description:
+      "Forget one thing you remembered, when the user asks you to, by its memory_id from the context.",
+    input_schema: {
+      type: "object",
+      properties: { memory_id: { type: "string" } },
+      required: ["memory_id"],
+    },
+  },
   ...PROPOSAL_TOOLS,
 ];
+
+const RememberInput = z.object({ fact: z.string().min(1).max(1000) });
+const ForgetInput = z.object({ memory_id: z.uuid() });
+
+async function keep(input: unknown): Promise<ToolOutcome> {
+  const p = RememberInput.safeParse(input);
+  if (!p.success) return invalid(p.error);
+  const m = await remember(p.data.fact, "chat");
+  return m
+    ? { content: `Remembered: ${m.text} (memory_id ${m.id}).`, isError: false }
+    : { content: "Not kept: the user is off the record.", isError: true };
+}
+
+async function drop(input: unknown): Promise<ToolOutcome> {
+  const p = ForgetInput.safeParse(input);
+  if (!p.success) return invalid(p.error);
+  return (await forget(p.data.memory_id))
+    ? { content: "Forgotten.", isError: false }
+    : { content: "No such memory.", isError: true };
+}
 
 /** What one answer has done so far, shared by its tool calls. */
 export interface ChatTurnState {
@@ -317,6 +358,10 @@ export async function runChatTool(
         return await guardApps(input);
       case "undo_action":
         return await undo(input);
+      case "remember":
+        return await keep(input);
+      case "forget_memory":
+        return await drop(input);
       default:
         return { content: `Unknown tool ${name}`, isError: true };
     }

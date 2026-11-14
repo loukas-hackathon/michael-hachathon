@@ -34,6 +34,8 @@ export const TOOL_SCOPE: Record<string, AgentScope> = {
   suggest_app_mute: "recommendations",
   plan_travel: "write_events",
   get_check_in: "timeline",
+  get_memories: "timeline",
+  remember: "write_events",
   answer_check_in: "timeline",
 };
 
@@ -120,6 +122,10 @@ export function summarise(name: string, title: string | undefined, input: unknow
       return typeof a.date === "string" ? `Read your score for ${a.date}` : "Read your score";
     case "get_records":
       return "Read your personal records";
+    case "get_memories":
+      return "Read what you asked me to remember";
+    case "remember":
+      return typeof a.fact === "string" ? `Remembered "${a.fact.slice(0, 80)}"` : "Remembered something";
     case "add_event":
       return typeof a.title === "string"
         ? `Added "${a.title.slice(0, 80)}" to your day`
