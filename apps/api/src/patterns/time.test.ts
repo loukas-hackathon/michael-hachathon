@@ -53,7 +53,10 @@ test("a wall time resolves to the right instant on both sides of a change", () =
 });
 
 test("splitByDay cuts at local midnight", () => {
-  const pieces = athens.splitByDay(Date.parse("2026-11-10T23:30:00+02:00"), Date.parse("2026-11-11T00:30:00+02:00"));
+  const pieces = athens.splitByDay(
+    Date.parse("2026-11-10T23:30:00+02:00"),
+    Date.parse("2026-11-11T00:30:00+02:00"),
+  );
   assert.deepEqual(
     pieces.map((p) => [p.day, (p.end - p.start) / 60000]),
     [

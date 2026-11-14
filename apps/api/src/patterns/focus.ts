@@ -456,10 +456,18 @@ export function focusDisruptions(ctx: Ctx, focus: FocusAnalysis): Detector<Focus
   const stretchesByDay = new Map<string, number>();
   for (const s of focus.stretches) add(stretchesByDay, zone.dayOf(s.start), 1);
 
+  const disruptionsByDay = new Map<string, RawDisruption[]>();
+  for (const x of focus.disruptions) {
+    const day = zone.dayOf(x.start);
+    const list = disruptionsByDay.get(day);
+    if (list) list.push(x);
+    else disruptionsByDay.set(day, [x]);
+  }
+
   const daily = ctx.days
     .filter((d) => withData.has(d.day))
     .map((d) => {
-      const ds = focus.disruptions.filter((x) => zone.dayOf(x.start) === d.day);
+      const ds = disruptionsByDay.get(d.day) ?? [];
       return {
         day: d.day,
         complete: d.complete,

@@ -61,30 +61,39 @@ export class Zone {
     return offset;
   }
 
-  /** The instant shifted so that the UTC getters of a Date read local wall time. */
-  private wall(ms: number): Date {
-    return new Date(ms + this.offsetAt(ms));
+  // Local wall time as a number: ms since the epoch as if the wall clock were UTC. Plain integer
+  // maths on it gives the day and the hour without building a Date for every event.
+  private wall(ms: number): number {
+    return ms + this.offsetAt(ms);
   }
+
+  private readonly dayNames = new Map<number, string>();
 
   /** "YYYY-MM-DD" of the local day this instant falls on. */
   dayOf(ms: number): string {
-    return this.wall(ms).toISOString().slice(0, 10);
+    const index = Math.floor(this.wall(ms) / DAY);
+    let name = this.dayNames.get(index);
+    if (name === undefined) {
+      name = new Date(index * DAY).toISOString().slice(0, 10);
+      this.dayNames.set(index, name);
+    }
+    return name;
   }
 
   /** Local hour of day, 0 to 23. */
   hourOf(ms: number): number {
-    return this.wall(ms).getUTCHours();
+    return Math.floor(this.minuteOfDay(ms) / 60);
   }
 
   /** Local minutes since midnight by the wall clock, 0 to 1439. */
   minuteOfDay(ms: number): number {
-    const w = this.wall(ms);
-    return w.getUTCHours() * 60 + w.getUTCMinutes();
+    const wall = this.wall(ms);
+    return Math.floor((wall - Math.floor(wall / DAY) * DAY) / MINUTE);
   }
 
   /** "HH:MM" local wall time. */
   clock(ms: number): string {
-    return this.wall(ms).toISOString().slice(11, 16);
+    return new Date(this.wall(ms)).toISOString().slice(11, 16);
   }
 
   /**
@@ -108,8 +117,15 @@ export class Zone {
     return candidates[1] ?? target;
   }
 
+  private readonly dayStarts = new Map<string, number>();
+
   startOfDay(day: string): number {
-    return this.at(day, 0);
+    let start = this.dayStarts.get(day);
+    if (start === undefined) {
+      start = this.at(day, 0);
+      this.dayStarts.set(day, start);
+    }
+    return start;
   }
 
   nextDay(day: string, step = 1): string {
@@ -135,6 +151,10 @@ export class Zone {
 
   /** Cut [start, end) at local midnights. A span inside one day comes back as one piece. */
   splitByDay(start: number, end: number): { day: string; start: number; end: number }[] {
+    if (!(end > start)) return [];
+    // Nearly every span sits inside one day: answer that without looking up any midnight.
+    const day = this.dayOf(start);
+    if (this.dayOf(end - 1) === day) return [{ day, start, end }];
     const out: { day: string; start: number; end: number }[] = [];
     let cursor = start;
     while (cursor < end) {

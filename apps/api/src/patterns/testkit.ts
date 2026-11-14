@@ -80,7 +80,14 @@ export const web = (host: string, start: string, end: string, origin?: "history"
   });
 
 export const search = (term: string, at: string): Event =>
-  event({ source: "chrome", type: "search", start_at: at, end_at: null, title: term, data: { engine: "google", term } });
+  event({
+    source: "chrome",
+    type: "search",
+    start_at: at,
+    end_at: null,
+    title: term,
+    data: { engine: "google", term },
+  });
 
 export const screenOff = (start: string, end: string): Event =>
   event({
@@ -115,7 +122,12 @@ export const recovery = (at: string, pct: number): Event =>
     data: { recovery_pct: pct },
   });
 
-export const calendar = (title: string, start: string, end: string, data: Record<string, unknown> = {}): Event =>
+export const calendar = (
+  title: string,
+  start: string,
+  end: string,
+  data: Record<string, unknown> = {},
+): Event =>
   event({ source: "google_calendar", type: "calendar_event", start_at: start, end_at: end, title, data });
 
 export const aiSession = (start: string, end: string, waitingSeconds?: number, tool = "claude_code"): Event =>
@@ -125,7 +137,12 @@ export const aiSession = (start: string, end: string, waitingSeconds?: number, t
     start_at: start,
     end_at: end,
     title: "Session",
-    data: { tool, project: "demo", turns: 3, ...(waitingSeconds === undefined ? {} : { waiting_seconds: waitingSeconds }) },
+    data: {
+      tool,
+      project: "demo",
+      turns: 3,
+      ...(waitingSeconds === undefined ? {} : { waiting_seconds: waitingSeconds }),
+    },
   });
 
 export const goal = (category: Goal["category"], id: string, title = `${category} goal`): Goal => ({
@@ -148,4 +165,58 @@ export const report = (events: Event[], from: string, to: string, extra: Partial
 export function dataOf<T>(detector: { status: string; reason: string | null; data: T | null }): T {
   if (detector.data === null) throw new Error(`expected data, got: ${detector.reason}`);
   return detector.data;
+}
+
+/**
+ * A busy synthetic month for the speed and consistency tests: about 1,470 events a day. The Mac
+ * runs a fixed 15 minute loop of 36 second intervals from 08:00 to 18:00 (80% work apps), the
+ * phone is picked up every 4 minutes from 07:00 and once late in the evening, the browser logs a
+ * visit every 140 seconds from both origins, and six AI sessions run through the day.
+ */
+export function syntheticMonth(days: number, firstDay = "2026-10-17T00:00:00+03:00"): Event[] {
+  const events: Event[] = [];
+  const start = Date.parse(firstDay);
+  const at = (ms: number) => new Date(ms).toISOString();
+  const loop = [
+    ...Array(6).fill(APPS.editor),
+    ...Array(3).fill(APPS.terminal),
+    APPS.chat,
+    ...Array(5).fill(APPS.editor),
+    APPS.browser,
+    APPS.browser,
+    APPS.unknown,
+    ...Array(4).fill(APPS.editor),
+    APPS.tv,
+    APPS.terminal,
+    APPS.terminal,
+  ] as string[];
+  const phoneApps = [APPS.chat, APPS.social, APPS.home];
+  const hosts = ["github.com", "youtube.com", "skyscanner.net", "private.example"];
+  for (let d = 0; d < days; d++) {
+    const day = start + d * 86_400_000;
+    for (let i = 0; i < 1000; i++) {
+      const t = day + 8 * 3600_000 + i * 36_000;
+      events.push(mac(loop[i % loop.length] ?? APPS.editor, at(t), at(t + 36_000)));
+    }
+    for (let i = 0; i < 200; i++) {
+      const t = day + 7 * 3600_000 + i * 240_000;
+      const opened = i % 3 ? "home_screen" : "notification";
+      events.push(phone(phoneApps[(i + d) % phoneApps.length] ?? APPS.chat, at(t), at(t + 40_000), opened));
+    }
+    events.push(phone(APPS.social, at(day + 23 * 3600_000 + 600_000), at(day + 23 * 3600_000 + 2_400_000)));
+    for (let i = 0; i < 250; i++) {
+      const t = day + 8 * 3600_000 + i * 140_000;
+      events.push(
+        web(hosts[i % hosts.length] ?? "github.com", at(t), at(t + 60_000), i % 2 ? "extension" : "history"),
+      );
+      if (i % 25 === 0) events.push(search("a made up search", at(t - 20_000)));
+    }
+    for (let i = 0; i < 6; i++) {
+      const t = day + (9 + i) * 3600_000;
+      events.push(aiSession(at(t), at(t + 50 * 60_000), 300));
+    }
+    events.push(sleep(at(day - 10 * 60_000), at(day + 6.5 * 3600_000)));
+    events.push(recovery(at(day + 7 * 3600_000), 60 + (d % 20)));
+  }
+  return events;
 }

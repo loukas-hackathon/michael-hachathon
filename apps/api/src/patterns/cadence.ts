@@ -68,16 +68,26 @@ const PHONE_MINIMUM =
 
 export function phoneCadence(ctx: Ctx): Detector<PhoneCadence> {
   const { zone } = ctx;
-  const sessions = phoneSessions(ctx.tl.iphone);
-  const dayOf = (t: number) => zone.dayOf(t);
-  const withData = new Set(sessions.map((s) => dayOf(s.start)));
+  // Day and hour are worked out once per session and once per gap, then only grouped.
+  const sessions = phoneSessions(ctx.tl.iphone).map((s) => ({
+    ...s,
+    day: zone.dayOf(s.start),
+    hour: zone.hourOf(s.start),
+  }));
+  const withData = new Set(sessions.map((s) => s.day));
   if (withData.size < RULES.minPhoneDays) {
     return notEnough(
       PHONE_MINIMUM,
       `needs at least ${RULES.minPhoneDays} days of phone usage, found ${withData.size}`,
     );
   }
-  const waking = sessionGaps(sessions, ctx.sleeps).filter((g) => g.waking);
+  const waking = sessionGaps(sessions, ctx.sleeps)
+    .filter((g) => g.waking)
+    .map((g) => ({
+      minutes: (g.end - g.start) / MINUTE,
+      day: zone.dayOf(g.start),
+      hour: zone.hourOf(g.start),
+    }));
   if (waking.length < RULES.minGaps) {
     return notEnough(
       PHONE_MINIMUM,
@@ -87,15 +97,12 @@ export function phoneCadence(ctx: Ctx): Detector<PhoneCadence> {
 
   const counted = countedDays(ctx, withData);
   const countedSet = new Set(counted);
-  const inCounted = sessions.filter((s) => countedSet.has(dayOf(s.start)));
-  const gapMinutes = waking.map((g) => (g.end - g.start) / MINUTE);
+  const inCounted = sessions.filter((s) => countedSet.has(s.day));
+  const gapMinutes = waking.map((g) => g.minutes);
 
   // The working window, by local hour of the session start (or of the gap start).
-  const inWindow = (t: number) => {
-    const h = zone.hourOf(t);
-    return h >= ctx.workStartHour && h < ctx.workEndHour;
-  };
-  const windowGaps = waking.filter((g) => inWindow(g.start)).map((g) => (g.end - g.start) / MINUTE);
+  const inWindow = (hour: number) => hour >= ctx.workStartHour && hour < ctx.workEndHour;
+  const windowGaps = waking.filter((g) => inWindow(g.hour)).map((g) => g.minutes);
   const windowMedian = windowGaps.length >= RULES.minGaps ? round1(median(windowGaps)) : null;
 
   const checks = sessions.filter((s) => s.end - s.start < RULES.checkMs);
@@ -122,15 +129,27 @@ export function phoneCadence(ctx: Ctx): Detector<PhoneCadence> {
     .slice(0, 5)
     .map((f) => ({ ...f, share: round2(ratio(f.sessions, sessions.length)) }));
 
+  const group = <T, K>(items: T[], key: (item: T) => K) => {
+    const groups = new Map<K, T[]>();
+    for (const item of items) {
+      const list = groups.get(key(item));
+      if (list) list.push(item);
+      else groups.set(key(item), [item]);
+    }
+    return groups;
+  };
+  const sessionsByHour = group(sessions, (s) => s.hour);
+  const countedByHour = group(inCounted, (s) => s.hour);
+  const gapsByHour = group(waking, (g) => g.hour);
+  const sessionsByDay = group(sessions, (s) => s.day);
+  const gapsByDay = group(waking, (g) => g.day);
+
   const byHour = Array.from({ length: 24 }, (_, hour) => {
-    const hourSessions = inCounted.filter((s) => zone.hourOf(s.start) === hour).length;
-    const hourGaps = waking
-      .filter((g) => zone.hourOf(g.start) === hour)
-      .map((g) => (g.end - g.start) / MINUTE);
+    const hourGaps = (gapsByHour.get(hour) ?? []).map((g) => g.minutes);
     return {
       hour,
-      sessions: sessions.filter((s) => zone.hourOf(s.start) === hour).length,
-      sessions_per_day: round1(ratio(hourSessions, counted.length)),
+      sessions: sessionsByHour.get(hour)?.length ?? 0,
+      sessions_per_day: round1(ratio(countedByHour.get(hour)?.length ?? 0, counted.length)),
       median_gap_minutes: hourGaps.length >= RULES.minHourGaps ? round1(median(hourGaps)) : null,
     };
   });
@@ -138,8 +157,8 @@ export function phoneCadence(ctx: Ctx): Detector<PhoneCadence> {
   const daily = ctx.days
     .filter((d) => withData.has(d.day))
     .map((d) => {
-      const daySessions = sessions.filter((s) => dayOf(s.start) === d.day);
-      const dayGaps = waking.filter((g) => dayOf(g.start) === d.day).map((g) => (g.end - g.start) / MINUTE);
+      const daySessions = sessionsByDay.get(d.day) ?? [];
+      const dayGaps = (gapsByDay.get(d.day) ?? []).map((g) => g.minutes);
       return {
         day: d.day,
         complete: d.complete,
@@ -150,7 +169,7 @@ export function phoneCadence(ctx: Ctx): Detector<PhoneCadence> {
       };
     });
 
-  const windowPerDay = ratio(inCounted.filter((s) => inWindow(s.start)).length, counted.length);
+  const windowPerDay = ratio(inCounted.filter((s) => inWindow(s.hour)).length, counted.length);
   const windowLength = (ctx.workEndHour - ctx.workStartHour) * 60;
 
   const data: PhoneCadence = {
