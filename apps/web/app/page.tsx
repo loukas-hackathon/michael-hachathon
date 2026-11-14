@@ -11,13 +11,14 @@ import { BriefCard } from "@/components/today/brief-card";
 import { TodayChecklist } from "@/components/today/checklist";
 import { MoreFromMichael } from "@/components/today/fold";
 import { GetStarted } from "@/components/today/get-started";
+import { KeepWeekStrip, keepLine, streakLine } from "@/components/today/keep-week";
 import { MichaelCard } from "@/components/today/michael-card";
 import { MomentCard } from "@/components/today/moment-card";
 import { RecommendationsPanel, todaySuggestions } from "@/components/today/recommendations";
 import { TodayEmpty } from "@/components/today/today-empty";
 import { TravelCard } from "@/components/today/travel-card";
 import { WatchLine } from "@/components/today/watch-line";
-import { getChecklist, getGoals, getLostWeek, getToday, needsOnboarding } from "@/lib/api";
+import { getChecklist, getGoals, getKeepWeek, getLostWeek, getToday, needsOnboarding } from "@/lib/api";
 import type { ChecklistDay } from "@/lib/checklist";
 import { type DayView, nowIndex, tape, totals } from "@/lib/day";
 import { formatDay, formatTime, hm } from "@/lib/format";
@@ -38,11 +39,12 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
   // The day and the suggestions load side by side; "More from Michael" streams in behind
   // Suspense, so the score never waits on the brief, the moment or the watch.
   const suggestions = todaySuggestions();
-  const [day, checklist, goals, lostWeek] = await Promise.all([
+  const [day, checklist, goals, lostWeek, keepWeek] = await Promise.all([
     getToday(demo),
     getChecklist().catch(() => null),
     getGoals().catch(() => []),
     getLostWeek(undefined, demo),
+    getKeepWeek(demo),
   ]);
   const lists = checklistsFor(checklist, goals);
   const ticks = tape(day);
@@ -82,72 +84,94 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
         </>
       ) : (
         <>
-          {day.week.scorePct != null ? (
-            <p className="mt-1.5 text-subhead text-label-2">
-              <b className="font-semibold text-label tnum">
-                <Tween value={day.week.scorePct} format="pct" />
-              </b>{" "}
-              optimisation score this week.{day.week.line ? ` ${day.week.line}` : ""}
-            </p>
-          ) : null}
-          {lostWeek && lostWeek.total > 0 ? <LostWeekLine week={lostWeek} demo={demo} /> : null}
-          {day.balance && verdict(day.balance).line ? (
-            <p className="mt-1 text-subhead font-semibold">{verdict(day.balance).line}</p>
-          ) : null}
+          <section aria-label="Goal time today" className="mt-3" data-live-key="score" data-live-pop="">
+            {day.blocks.length > 0 && t.scorePct === null && firstBlock ? (
+              <p className="text-title3 font-semibold">
+                Your first block starts at <span className="tnum">{formatTime(firstBlock.start)}</span>.
+                {keepWeek && keepLine(keepWeek) ? ` ${keepLine(keepWeek)}` : ""}
+              </p>
+            ) : day.blocks.length > 0 ? (
+              <h2 className="flex flex-col">
+                <span className="text-footnote font-semibold text-label-2">Optimisation score</span>
+                <span className="font-num text-score font-extrabold tracking-[-0.02em] tnum">
+                  <CountUp value={t.scorePct ?? 0} suffix="%" />
+                </span>
+                <span className="text-title3 font-semibold">
+                  of your goal time {day.moment === "evening" ? "today" : "so far"}.
+                  {keepWeek && keepLine(keepWeek) ? ` ${keepLine(keepWeek)}` : ""}
+                </span>
+              </h2>
+            ) : (
+              <p className="text-title3 font-semibold">
+                No goal blocks today. It neither keeps nor breaks the run.
+              </p>
+            )}
 
-          {day.blocks.length > 0 ? (
-            <section aria-label="Goal time today" className="mt-5" data-live-key="score" data-live-pop="">
-              {t.scorePct === null && firstBlock ? (
-                <p className="text-title3 font-semibold">
-                  Your first block starts at <span className="tnum">{formatTime(firstBlock.start)}</span>.
-                </p>
-              ) : (
-                <h2 className="flex flex-col">
-                  <span className="text-footnote font-semibold text-label-2">Optimisation score</span>
-                  <span className="font-num text-score font-extrabold tracking-[-0.02em] tnum">
-                    <CountUp value={t.scorePct ?? 0} suffix="%" />
-                  </span>
-                  <span className="text-title3 font-semibold">
-                    of your goal time {day.moment === "evening" ? "today" : "so far"}.
-                  </span>
-                </h2>
-              )}
-              <div className="mt-3">
-                <Tape
-                  ticks={ticks}
-                  nowAt={day.moment === "evening" || t.scorePct === null ? null : nowIndex(ticks)}
-                  nowLabel={formatTime(day.now)}
-                  recordAt={day.record?.tick ?? null}
-                  label={`${hm(t.spent)} spent (${hm(t.unverified)} unconfirmed), ${hm(t.lost)} lost, ${hm(t.ahead)} still ahead`}
+            {keepWeek ? (
+              <>
+                <KeepWeekStrip week={keepWeek} />
+                <p className="mt-3 text-subhead font-semibold tnum">{streakLine(keepWeek)}</p>
+              </>
+            ) : null}
+            {day.week.scorePct != null ? (
+              <p className="mt-1 text-subhead text-label-2">
+                <b className="font-semibold text-label tnum">
+                  <Tween value={day.week.scorePct} format="pct" />
+                </b>{" "}
+                optimisation score this week.{day.week.line ? ` ${day.week.line}` : ""}
+                {keepWeek ? ` A day is kept at ${keepWeek.line}%.` : ""}
+              </p>
+            ) : null}
+            {day.balance && verdict(day.balance).line ? (
+              <p className="mt-1 text-subhead font-semibold">{verdict(day.balance).line}</p>
+            ) : null}
+
+            {day.blocks.length > 0 ? (
+              <div className="mt-5">
+                <div className="mt-3">
+                  <Tape
+                    ticks={ticks}
+                    nowAt={day.moment === "evening" || t.scorePct === null ? null : nowIndex(ticks)}
+                    nowLabel={formatTime(day.now)}
+                    recordAt={day.record?.tick ?? null}
+                    label={`${hm(t.spent)} spent (${hm(t.unverified)} unconfirmed), ${hm(t.lost)} lost, ${hm(t.ahead)} still ahead`}
+                  />
+                </div>
+                <TapeKey
+                  items={
+                    t.scorePct === null
+                      ? [{ kind: "ahead" as const, minutes: t.planned, text: "planned" }]
+                      : [
+                          ...(t.spent - t.unverified > 0 || t.unverified === 0
+                            ? [{ kind: "spent" as const, minutes: t.spent - t.unverified, text: "spent" }]
+                            : []),
+                          ...(t.unverified > 0
+                            ? [{ kind: "unverified" as const, minutes: t.unverified, text: "unconfirmed" }]
+                            : []),
+                          ...(t.lost > 0 ? [{ kind: "lost" as const, minutes: t.lost, text: "lost" }] : []),
+                          ...(t.ahead > 0
+                            ? [{ kind: "ahead" as const, minutes: t.ahead, text: "ahead" }]
+                            : []),
+                        ]
+                  }
                 />
+                {day.record ? (
+                  <p className="mt-2 flex items-center gap-2 text-subhead">
+                    <span
+                      aria-hidden="true"
+                      className="size-[7px] shrink-0 rotate-45 rounded-[1px] bg-label"
+                    />
+                    {day.record.line}
+                  </p>
+                ) : null}
               </div>
-              <TapeKey
-                items={
-                  t.scorePct === null
-                    ? [{ kind: "ahead" as const, minutes: t.planned, text: "planned" }]
-                    : [
-                        ...(t.spent - t.unverified > 0 || t.unverified === 0
-                          ? [{ kind: "spent" as const, minutes: t.spent - t.unverified, text: "spent" }]
-                          : []),
-                        ...(t.unverified > 0
-                          ? [{ kind: "unverified" as const, minutes: t.unverified, text: "unconfirmed" }]
-                          : []),
-                        ...(t.lost > 0 ? [{ kind: "lost" as const, minutes: t.lost, text: "lost" }] : []),
-                        ...(t.ahead > 0 ? [{ kind: "ahead" as const, minutes: t.ahead, text: "ahead" }] : []),
-                      ]
-                }
-              />
-              {day.record ? (
-                <p className="mt-2 flex items-center gap-2 text-subhead">
-                  <span aria-hidden="true" className="size-[7px] shrink-0 rotate-45 rounded-[1px] bg-label" />
-                  {day.record.line}
-                </p>
-              ) : null}
-            </section>
-          ) : null}
+            ) : null}
+          </section>
+
+          {lostWeek && lostWeek.total > 0 ? <LostWeekLine week={lostWeek} demo={demo} /> : null}
 
           {day.wonBackMinutes > 0 ? (
-            <p className="mt-4 text-body" data-live-key="won" data-live-pop="">
+            <p className="mt-2 text-body" data-live-key="won" data-live-pop="">
               <b className="font-num font-bold text-tint-text">
                 <Tween value={day.wonBackMinutes} format="minutes" />
               </b>{" "}
@@ -155,11 +179,11 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
             </p>
           ) : null}
 
+          <RecommendationsPanel slot="primary" />
+
           {lists.map((l) => (
             <TodayChecklist key={l.goalId} {...l} />
           ))}
-
-          <RecommendationsPanel slot="primary" />
 
           {day.lead || day.nudge ? (
             <section aria-label="What I did" className="mt-6" data-live-key="did" data-live-pop="">
