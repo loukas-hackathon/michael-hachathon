@@ -561,7 +561,7 @@ function trimReport(report: PatternReport, t: Omit<TrimContext, "oneDay">, ok: S
   for (const name of DETECTORS) {
     const d = report[name];
     if (d.status !== "ok" || d.data === null) {
-      notEnough[name] = (d.reason ?? "not enough data").replace(/^not enough data: /, "");
+      notEnough[name] = (d.reason ?? "not enough data").replace(/^not enough data( yet)?: /i, "");
       continue;
     }
     ok.add(name);
