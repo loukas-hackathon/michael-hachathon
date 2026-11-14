@@ -105,8 +105,8 @@ test("every table with user rows is deleted by DELETE /v1/me/data", () => {
     const sql = readFileSync(new URL(f, dir), "utf8");
     for (const m of sql.matchAll(/create table (?:if not exists )?(\w+)/gi)) if (m[1]) tables.add(m[1]);
   }
-  // Shared by every user of a client / deleted by tokens.ts.
-  const elsewhere = new Set(["oauth_clients", "personal_tokens"]);
+  // Shared by every user of a client / deleted by tokens.ts / deleted by setup-tokens.ts.
+  const elsewhere = new Set(["oauth_clients", "personal_tokens", "setup_tokens"]);
   const missing = [...tables].filter(
     (t) => !elsewhere.has(t) && !(USER_TABLES as readonly string[]).includes(t),
   );

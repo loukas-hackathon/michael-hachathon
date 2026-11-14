@@ -1,16 +1,22 @@
+import { goalKind } from "@michael/shared";
 import { redirect } from "next/navigation";
+import { Suspense } from "react";
 import { CountUp } from "@/components/count-up";
-import { EmptyState } from "@/components/empty-state";
 import { LiveRefresh } from "@/components/live-refresh";
 import { ScreenHeader } from "@/components/screen";
 import { Tape, TapeKey } from "@/components/tape";
 import { BriefCard } from "@/components/today/brief-card";
+import { TodayChecklist } from "@/components/today/checklist";
+import { MoreFromMichael } from "@/components/today/fold";
+import { GetStarted } from "@/components/today/get-started";
 import { MichaelCard } from "@/components/today/michael-card";
 import { MomentCard } from "@/components/today/moment-card";
-import { RecommendationsPanel } from "@/components/today/recommendations";
+import { RecommendationsPanel, todaySuggestions } from "@/components/today/recommendations";
+import { TodayEmpty } from "@/components/today/today-empty";
 import { TravelCard } from "@/components/today/travel-card";
 import { WatchLine } from "@/components/today/watch-line";
-import { getToday, needsOnboarding } from "@/lib/api";
+import { getChecklist, getGoals, getToday, needsOnboarding } from "@/lib/api";
+import type { ChecklistDay } from "@/lib/checklist";
 import { type DayView, nowIndex, tape, totals } from "@/lib/day";
 import { formatDay, formatTime, hm, minutesPhrase } from "@/lib/format";
 import { verdict } from "@/lib/gamification";
@@ -18,14 +24,28 @@ import { momentKindFor } from "@/lib/moments";
 
 const TITLE: Record<DayView["moment"], string> = { morning: "Morning", today: "Today", evening: "Evening" };
 
+// Today reads in three steps (#208): how am I doing (score, maths, time won back), the one thing to
+// do now (one suggestion with the screen's only filled button), and what Michael just did (his lead
+// and the latest nudge). Everything else folds into "More from Michael" as quiet rows. A new user
+// with nothing on the tape gets the empty state (Get started, #181) as the hero instead of the score.
+
 export default async function TodayPage({ searchParams }: { searchParams: Promise<{ demo?: string }> }) {
   const { demo } = await searchParams;
   if (await needsOnboarding()) redirect("/onboarding");
-  const day = await getToday(demo);
+  // The day and the suggestions load side by side; "More from Michael" streams in behind
+  // Suspense, so the score never waits on the brief, the moment or the watch.
+  const suggestions = todaySuggestions();
+  const [day, checklist, goals] = await Promise.all([
+    getToday(demo),
+    getChecklist().catch(() => null),
+    getGoals().catch(() => []),
+  ]);
+  const lists = checklistsFor(checklist, goals);
   const ticks = tape(day);
   const t = totals(day);
   const firstBlock = day.blocks[0];
   const momentKind = momentKindFor(day);
+  const { primary } = await suggestions;
 
   return (
     <main className="screen">
@@ -38,15 +58,23 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
         }
         title={TITLE[day.moment]}
       />
-      <WatchLine demo={demo} />
 
       {day.blocks.length === 0 && day.week.scorePct == null ? (
         <>
-          <EmptyState title="Nothing yet.">
-            Wear the watch tonight and your first brief arrives in the morning.
-          </EmptyState>
-          {momentKind && !day.sample ? <MomentCard kind={momentKind} sample={false} /> : null}
-          <RecommendationsPanel />
+          <GetStarted demo={demo} />
+          <TodayEmpty demo={demo} />
+          {lists.map((l) => (
+            <TodayChecklist key={l.goalId} {...l} />
+          ))}
+          <RecommendationsPanel slot="primary" />
+          <Suspense fallback={null}>
+            <MoreFromMichael>
+              {momentKind && !day.sample ? <MomentCard kind={momentKind} sample={false} /> : null}
+              <WatchLine demo={demo} />
+              <BriefCard sample={day.sample} />
+              <RecommendationsPanel slot="rest" />
+            </MoreFromMichael>
+          </Suspense>
         </>
       ) : (
         <>
@@ -117,32 +145,41 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
             </p>
           ) : null}
 
-          {momentKind ? <MomentCard kind={momentKind} sample={day.sample} /> : null}
+          {lists.map((l) => (
+            <TodayChecklist key={l.goalId} {...l} />
+          ))}
 
-          {day.lead ? <MichaelCard lead={day.lead} /> : null}
+          <RecommendationsPanel slot="primary" />
 
-          {day.travelPlan ? <TravelCard plan={day.travelPlan} /> : null}
-
-          <RecommendationsPanel />
-
-          {day.nudge ? (
-            <section className="mt-6">
-              <h2 className="mb-2 text-title3 font-bold">Latest nudge</h2>
-              <div className="grid grid-cols-[auto_1fr] gap-x-3 rounded-group bg-fill px-4 py-3">
-                <time
-                  className="text-footnote leading-5 font-semibold text-label-2 tnum"
-                  dateTime={day.nudge.at}
-                >
-                  {formatTime(day.nudge.at)}
-                </time>
-                <p className="text-subhead">{day.nudge.text}</p>
-              </div>
+          {day.lead || day.nudge ? (
+            <section aria-label="What I did" className="mt-6">
+              {day.lead ? <MichaelCard lead={day.lead} primary={!primary} /> : null}
+              {day.nudge ? (
+                <div className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 rounded-group bg-fill px-4 py-3">
+                  <p className="col-span-2 mb-0.5 text-footnote font-semibold">Latest nudge</p>
+                  <time
+                    className="text-footnote leading-5 font-semibold text-label-2 tnum"
+                    dateTime={day.nudge.at}
+                  >
+                    {formatTime(day.nudge.at)}
+                  </time>
+                  <p className="text-subhead">{day.nudge.text}</p>
+                </div>
+              ) : null}
             </section>
           ) : null}
+
+          <Suspense fallback={null}>
+            <MoreFromMichael>
+              {momentKind ? <MomentCard kind={momentKind} sample={day.sample} /> : null}
+              <WatchLine demo={demo} />
+              {day.sample && day.travelPlan ? <TravelCard plan={day.travelPlan} /> : null}
+              <BriefCard sample={day.sample} />
+              <RecommendationsPanel slot="rest" />
+            </MoreFromMichael>
+          </Suspense>
         </>
       )}
-
-      <BriefCard sample={day.sample} />
 
       {day.sample ? (
         <p className="mt-8 text-footnote text-label-2">
@@ -151,4 +188,21 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
       ) : null}
     </main>
   );
+}
+
+/** One list per active checklist goal, plus any goal the day's items name (#238). */
+function checklistsFor(day: ChecklistDay | null, goals: Awaited<ReturnType<typeof getGoals>>) {
+  if (!day) return [];
+  const titles = new Map(
+    goals.filter((g) => g.active && goalKind(g) === "checklist").map((g) => [g.id, g.title] as const),
+  );
+  for (const i of [...day.items, ...day.suggestions]) {
+    if (!titles.has(i.goal_id)) titles.set(i.goal_id, "Today's list");
+  }
+  return [...titles].map(([goalId, title]) => ({
+    goalId,
+    title,
+    items: day.items.filter((i) => i.goal_id === goalId),
+    suggestions: day.suggestions.filter((i) => i.goal_id === goalId),
+  }));
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { undoRecommendationAction } from "@/lib/recommendation-actions";
 
 /**
@@ -22,8 +22,12 @@ export function UndoButton({
   const router = useRouter();
   const [undone, setUndone] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const inFlight = useRef(false);
 
   async function undo() {
+    // One request per tap burst: the swap hides the button, this catches a tap before it renders.
+    if (inFlight.current) return;
+    inFlight.current = true;
     setUndone(true);
     setError(null);
     if (!recommendationId) return;
@@ -31,6 +35,7 @@ export function UndoButton({
       ok: false as const,
       error: "I could not reach the server. Nothing changed.",
     }));
+    inFlight.current = false;
     if (r.ok) router.refresh();
     else {
       setUndone(false);

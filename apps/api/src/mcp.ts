@@ -1,4 +1,5 @@
 import {
+  CheckInValue,
   type Event,
   EventInput,
   EventType,
@@ -22,6 +23,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { z } from "zod";
 import { bookFocusBlock, executeRecommendation, undoDeadline, undoRecommendation } from "./actions/calendar";
 import { guardMacApps, suggestAppGuard } from "./actions/mac-apps";
+import { answerCheckIn, checkInToday } from "./checkin/service";
 import { currentAgent } from "./context";
 import { currentSuggestions } from "./goals/suggestions";
 import { HttpError, parse } from "./http";
@@ -39,6 +41,7 @@ import {
   zone,
 } from "./mcp-format";
 import { guardTools } from "./mcp-guard";
+import { listMemories, remember } from "./memory";
 import { momentFor } from "./routes/moments";
 import { patternReportFor } from "./routes/patterns";
 import { travelPlanFor } from "./routes/places";
@@ -459,7 +462,43 @@ export function createMcpServer(): McpServer {
     }),
   );
 
+  server.registerTool(
+    "get_memories",
+    {
+      title: "Get memories",
+      description:
+        'What the user told Michael, or an agent, to remember about them across conversations: lasting facts and preferences such as "trains best before 08:00" or "Fridays are for family". Read it at the start of a conversation about the user\'s day or plans, so they never have to repeat themselves. Newest first.',
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+    },
+    safe(async () => {
+      const memories = await listMemories();
+      const text = memories.length
+        ? memories.map((m) => `- ${m.text} (${m.from}, ${dayLabel(Date.parse(m.at))})`).join("\n")
+        : "Nothing remembered yet.";
+      return reply(text, { memories });
+    }),
+  );
+
   // ---------- write ----------
+
+  server.registerTool(
+    "remember",
+    {
+      title: "Remember",
+      description:
+        "Keep one lasting fact or preference the user told you about themselves, their routine or their goals, so Michael and every connected agent know it next time. One short line in the user's words. Not one off plans, not other people's details, nothing already in their goals.",
+      inputSchema: {
+        fact: z.string().min(1).max(280).describe("One short line, e.g. 'Trains best before 08:00'"),
+      },
+    },
+    safe(async ({ fact }) => {
+      const m = await remember(fact, "agent");
+      return m
+        ? reply(`Remembered: ${m.text}`, { memory: m })
+        : reply("Not kept: the user is off the record.", { memory: null });
+    }),
+  );
 
   server.registerTool(
     "add_event",
@@ -551,6 +590,49 @@ export function createMcpServer(): McpServer {
       const saved = await store.updateRecommendationStatus(id, status);
       if (!saved) throw new HttpError("not_found", "Recommendation not found");
       return reply(`Marked "${saved.title}" as ${status}.`, { recommendation: saved });
+    }),
+  );
+
+  server.registerTool(
+    "get_check_in",
+    {
+      title: "Get today's check in",
+      description:
+        "Michael's check in questions about today, drawn from the timeline (a missed training block, an unaccounted stretch on the Mac, a meeting, a short night), with the user's answers so far and each question's id. Use it to ask the user the open questions one at a time, then keep each answer with answer_check_in.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+    },
+    safe(async () => {
+      const today = await checkInToday();
+      const lines = today.questions.map(
+        (q) => `- ${q.question} ${q.answer === null ? "(open)" : `Answer: ${String(q.answer)}`} {id ${q.id}}`,
+      );
+      return reply(
+        lines.length ? `Check in, ${today.day}:\n${lines.join("\n")}` : "No check in questions today.",
+        today,
+      );
+    }),
+  );
+
+  server.registerTool(
+    "answer_check_in",
+    {
+      title: "Answer a check in question",
+      description:
+        "Keep the user's answer to one of today's check in questions (ids from get_check_in), in their own words: 'yes' or 'no', 1 to 5 for a scale question, or a short text. Each question is answered once. When the answer calls for a follow up, the result gives it; ask it next.",
+      inputSchema: {
+        id: Id.describe("Check in question id from get_check_in"),
+        value: z
+          .union([z.number().int().min(1).max(5), z.string().min(1).max(500)])
+          .describe("yes, no, 1 to 5, or words"),
+      },
+    },
+    safe(async ({ id, value }) => {
+      const out = await answerCheckIn(id, parse(CheckInValue, value));
+      return reply(
+        `Kept: ${out.check_in.question} Answer: ${String(out.check_in.answer)}.${out.follow_up ? ` Follow up: ${out.follow_up.question} {id ${out.follow_up.id}}` : ""}`,
+        out,
+      );
     }),
   );
 

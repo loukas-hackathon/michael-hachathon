@@ -113,6 +113,10 @@ export const ActionKind = z.enum([
   "block_mac_app",
   "draft_follow_up",
   "reminder",
+  // Proposed in chat (#188), applied only when the user accepts: goal budgets, and a set of moves
+  // or new blocks on the user's own calendar. Payloads below.
+  "change_goal",
+  "plan_change",
 ]);
 export type ActionKind = z.infer<typeof ActionKind>;
 
@@ -372,6 +376,60 @@ export const CreateFocusBlockPayload = z
   })
   .refine((p) => Date.parse(p.end_at) > Date.parse(p.start_at), { message: "end_at must be after start_at" });
 export type CreateFocusBlockPayload = z.infer<typeof CreateFocusBlockPayload>;
+
+// change_goal (#188): Michael proposes, the user accepts with one tap (execute). Each change patches
+// one goal; undo puts the old values back. `until` marks a temporary change ("8h a week for 3
+// weeks"): undo stays open until then, and the API puts the old values back when it passes.
+export const GoalChange = z
+  .object({
+    goal_id: z.uuid(),
+    weekly_budget_minutes: z
+      .number()
+      .int()
+      .nonnegative()
+      .max(7 * 24 * 60)
+      .nullable()
+      .optional(),
+    target: GoalTarget.nullable().optional(),
+    active: z.boolean().optional(),
+  })
+  .refine((c) => c.weekly_budget_minutes !== undefined || c.target !== undefined || c.active !== undefined, {
+    message: "Change weekly_budget_minutes, target or active",
+  });
+export type GoalChange = z.infer<typeof GoalChange>;
+
+export const ChangeGoalPayload = z.object({
+  changes: z.array(GoalChange).min(1).max(5),
+  until: IsoDateTime.nullish(),
+  // In the user's words or Michael's: "Exams from 1 December."
+  reason: z.string().min(1).max(500),
+});
+export type ChangeGoalPayload = z.infer<typeof ChangeGoalPayload>;
+
+// plan_change (#188): several moves or new blocks on the user's own calendar, accepted together.
+// Every step keeps the guard rails of its own kind; undo reverts them all, until the first starts.
+export const PlanStep = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("move_calendar_block"),
+    event_id: z.uuid(),
+    start_at: IsoDateTime.optional(),
+    end_at: IsoDateTime.optional(),
+    new_title: z.string().min(1).max(200).optional(),
+  }),
+  z.object({
+    kind: z.literal("create_focus_block"),
+    start_at: IsoDateTime,
+    end_at: IsoDateTime,
+    title: z.string().min(1).max(200).optional(),
+  }),
+]);
+export type PlanStep = z.infer<typeof PlanStep>;
+
+export const PlanChangePayload = z.object({
+  steps: z.array(PlanStep).min(1).max(10),
+  reason: z.string().min(1).max(500),
+});
+export type PlanChangePayload = z.infer<typeof PlanChangePayload>;
 
 // block_mac_app: close distracting Mac apps from start_at to end_at (a focus guard). Name the apps
 // with `app` (one) or `apps` (several), by name ("WhatsApp") or bundle id; `bundle_ids` adds more
@@ -937,6 +995,10 @@ export const AgentQuery = z.object({
   summary: z.string(),
   allowed: z.boolean(),
   created_at: IsoDateTime,
+  // A change the agent made (booked a block, muted an app): the recommendation that carries it,
+  // and until when Undo still works (null once it started, was undone, or is not undoable).
+  recommendation_id: z.uuid().nullable().optional(),
+  undo_until: IsoDateTime.nullable().optional(),
 });
 export type AgentQuery = z.infer<typeof AgentQuery>;
 
@@ -1845,6 +1907,8 @@ export const ChatResponse = z.object({
   reply: ChatMessage,
   // What Michael did on the user's own calendar while answering (source "chat"): status "done"
   // with `action.undo_until` as the undo deadline, or "undone" when the user asked to take one back.
+  // Status "proposed" (kinds change_goal and plan_change, #188): a proposal waiting for the user's
+  // tap (POST /v1/recommendations/:id/execute accepts, PATCH status "dismissed" declines).
   actions: z.array(Recommendation).default([]),
 });
 export type ChatResponse = z.infer<typeof ChatResponse>;
@@ -1874,6 +1938,45 @@ export type PersonalTokenCreate = z.infer<typeof PersonalTokenCreate>;
 
 export const PersonalTokenCreated = z.object({ token: PersonalToken, secret: z.string() });
 export type PersonalTokenCreated = z.infer<typeof PersonalTokenCreated>;
+
+// ---------- one tap setup (setup tokens, #120) ----------
+// A setup token ("ms_...") is short lived (30 minutes), single use and can do one thing: be
+// exchanged for a device key for one connection. It is what goes into a QR code, an install
+// command or a downloaded file, so the long lived device key never sits in a URL or a shell history.
+
+export const SetupConnection = z.enum(["mac", "apple-watch", "iphone"]);
+export type SetupConnection = z.infer<typeof SetupConnection>;
+
+/** The device key name each connection gets, as listed on the Connections pages. */
+export const SETUP_KEY_NAMES: Record<SetupConnection, string> = {
+  mac: "Mac collector",
+  "apple-watch": "Health Auto Export",
+  iphone: "iPhone Shortcuts",
+};
+
+export const SetupTokenCreate = z.object({ connection: SetupConnection });
+export type SetupTokenCreate = z.infer<typeof SetupTokenCreate>;
+
+export const SetupTokenCreated = z.object({
+  token: z.string(), // "ms_..."; shown once
+  connection: SetupConnection,
+  expires_at: IsoDateTime,
+  // The web page that finishes setup on another device (the QR code opens it on the iPhone).
+  setup_url: z.string(),
+  // Mac only: the one line for Terminal. Fetches the public installer and passes the token to it.
+  install_command: z.string().nullable(),
+});
+export type SetupTokenCreated = z.infer<typeof SetupTokenCreated>;
+
+export const SetupTokenExchange = z.object({ token: z.string().min(10).max(200) });
+export type SetupTokenExchange = z.infer<typeof SetupTokenExchange>;
+
+export const SetupTokenExchanged = z.object({
+  connection: SetupConnection,
+  secret: z.string(), // the new device key ("mk_..."), ingest only
+  api_url: z.string(), // where the device sends data
+});
+export type SetupTokenExchanged = z.infer<typeof SetupTokenExchanged>;
 // ---------- voice (POST /v1/voice/speak) ----------
 // Michael's reply read aloud by ElevenLabs. Text in, audio/mpeg out; nothing is stored.
 
@@ -2061,3 +2164,85 @@ export const Moment = z.object({
   first_move: MomentMove.nullable(),
 });
 export type Moment = z.infer<typeof Moment>;
+
+// ---------- check in (#187) ----------
+// Michael asks a few questions about the day, drawn from the timeline, and keeps the answers as
+// structured notes that feed the chat, the analysis and later questions. At most two rounds a day:
+// one after a missed goal block, one at the Evening moment.
+
+export const CheckInKind = z.enum([
+  // A goal block that should have had a workout, and none was recorded.
+  "missed_block",
+  // A stretch of the working day with nothing on the timeline and no Mac activity.
+  "unaccounted",
+  // A training block that ended.
+  "training",
+  // A meeting with other people that ended.
+  "meeting",
+  // Last night was short.
+  "short_night",
+  // Asked only because of an earlier answer.
+  "follow_up",
+]);
+export type CheckInKind = z.infer<typeof CheckInKind>;
+
+export const CheckInAnswerType = z.enum(["yes_no", "scale", "text"]);
+export type CheckInAnswerType = z.infer<typeof CheckInAnswerType>;
+
+export const CheckInMoment = z.enum(["missed_block", "evening"]);
+export type CheckInMoment = z.infer<typeof CheckInMoment>;
+
+// "yes" or "no" for yes_no, 1 to 5 for scale, the user's own words for text (any type takes words).
+export const CheckInValue = z.union([
+  z.literal("yes"),
+  z.literal("no"),
+  z.number().int().min(1).max(5),
+  z.string().trim().min(1).max(500),
+]);
+export type CheckInValue = z.infer<typeof CheckInValue>;
+
+export const CheckIn = z.object({
+  id: z.uuid(),
+  // Local day (YYYY-MM-DD) the question is about.
+  day: z.string(),
+  kind: CheckInKind,
+  question: z.string().min(1),
+  answer_type: CheckInAnswerType,
+  moment: CheckInMoment,
+  // The timeline event, goal and time span the question is about, when there is one.
+  event_id: z.uuid().nullable(),
+  goal_id: z.uuid().nullable(),
+  start_at: IsoDateTime.nullable(),
+  end_at: IsoDateTime.nullable(),
+  // The question this one follows up, when kind is follow_up.
+  follow_up_of: z.uuid().nullable(),
+  answer: CheckInValue.nullable(),
+  // What the answer settles, in a word, for later use: an unaccounted stretch that was a
+  // "meeting", a block that was "skipped", a short night that "played_a_part". Null otherwise.
+  label: z.string().nullable(),
+  asked_at: IsoDateTime,
+  answered_at: IsoDateTime.nullable(),
+});
+export type CheckIn = z.infer<typeof CheckIn>;
+
+// GET /v1/check-in: today's questions, answered and open, in the order to ask them.
+export const CheckInToday = z.object({
+  day: z.string(),
+  // True while a question is still open.
+  open: z.boolean(),
+  // The round the open questions belong to, null when none is open.
+  moment: CheckInMoment.nullable(),
+  questions: z.array(CheckIn),
+});
+export type CheckInToday = z.infer<typeof CheckInToday>;
+
+export const CheckInAnswer = z.object({ value: CheckInValue });
+export type CheckInAnswer = z.infer<typeof CheckInAnswer>;
+
+// POST /v1/check-in/:id/answer
+export const CheckInAnswerResponse = z.object({
+  check_in: CheckIn,
+  // Asked only when the answer calls for one ("You slept 5h 10. Did that play a part?").
+  follow_up: CheckIn.nullable(),
+});
+export type CheckInAnswerResponse = z.infer<typeof CheckInAnswerResponse>;

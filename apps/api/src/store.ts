@@ -2,6 +2,8 @@ import {
   type AnalysisRun,
   type ChatMessage,
   type ChatRole,
+  type CheckIn,
+  type CheckInValue,
   demoRecommendations,
   type Event,
   type EventInput,
@@ -33,7 +35,7 @@ import {
   type WeeklyTarget,
 } from "@michael/shared";
 import type { z } from "zod";
-import { currentUserId } from "./context";
+import { currentDemoVisitor, currentUserId } from "./context";
 import { stableUuid } from "./demo/week";
 import { env } from "./env";
 import { guardRecommendation, guardRecommendations } from "./instructions/guard";
@@ -201,10 +203,16 @@ export interface Store extends PrivacyBackend {
   saveGeocode(query: string, hit: GeocodeHit): Promise<void>;
   // Privacy (privacy.ts holds the rules; insertEvents applies them).
   setOffTheRecord(on: boolean): Promise<PrivacyRules>;
-  /** The most recent chat messages, oldest first. */
+  /**
+   * The most recent chat messages, oldest first. Chat is per demo visitor on the demo account
+   * (`currentDemoVisitor()`): a visitor sees only their own lines, everyone else only the
+   * account's own lines (visitor null).
+   */
   listChatMessages(limit: number): Promise<ChatMessage[]>;
   /** `actionIds`: recommendations done or undone while writing an answer (ChatMessage.action_ids). */
   addChatMessage(role: ChatRole, content: string, actionIds?: string[]): Promise<ChatMessage>;
+  /** Deletes the current user's demo visitor chat lines written at or before `before`. */
+  clearVisitorChat(before: string): Promise<number>;
 
   // ---- events mirrored from a provider (Google Calendar) ----
   getEvent(id: string): Promise<Event | null>;
@@ -290,9 +298,35 @@ export interface Store extends PrivacyBackend {
   listEventSummaries(): Promise<EventSummary[]>;
   /** NOT scoped: users with events that started before `before`. Only the retention job calls it. */
   usersWithEventsBefore(before: string): Promise<string[]>;
+
+  // ---- check in (#187) ----
+  /** The current user's check in questions for days in [fromDay, toDay], oldest first. */
+  listCheckIns(filter: { fromDay: string; toDay: string }): Promise<StoredCheckIn[]>;
+  /** Stores new questions; a key the user already has is skipped. Returns the ones stored. */
+  createCheckIns(rows: NewCheckIn[]): Promise<StoredCheckIn[]>;
+  getCheckIn(id: string): Promise<StoredCheckIn | null>;
+  answerCheckIn(
+    id: string,
+    answer: { answer: CheckInValue; label: string | null },
+  ): Promise<StoredCheckIn | null>;
+  /** Really deletes one question and its answer (and its follow ups). */
+  deleteCheckIn(id: string): Promise<boolean>;
 }
 
 export type TargetInput = Omit<WeeklyTarget, "created_at" | "updated_at">;
+
+/** A check in question as stored: the public shape plus its per day key. */
+export type StoredCheckIn = CheckIn & { key: string };
+export type NewCheckIn = Omit<StoredCheckIn, "id" | "asked_at" | "answered_at" | "answer" | "label">;
+
+export const newCheckIn = (row: NewCheckIn): StoredCheckIn => ({
+  ...row,
+  id: crypto.randomUUID(),
+  answer: null,
+  label: null,
+  asked_at: new Date().toISOString(),
+  answered_at: null,
+});
 
 export interface AskedQuestion {
   question: string;
@@ -365,7 +399,7 @@ export class MemoryStore implements Store {
       recommendations: Recommendation[];
       runs: AnalysisRun[];
       privacy: PrivacyRules;
-      chat: ChatMessage[];
+      chat: (ChatMessage & { visitor: string | null })[];
       integrations: IntegrationRecord[];
       nudges: Nudge[];
       push: PushDevice[];
@@ -377,6 +411,7 @@ export class MemoryStore implements Store {
       guards: FocusGuard[];
       targets: WeeklyTarget[];
       records: (PersonalRecord & { key: string })[];
+      checkIns: StoredCheckIn[];
     }
   >();
   private fresh(sample: boolean) {
@@ -387,7 +422,7 @@ export class MemoryStore implements Store {
       recommendations: sample ? [...structuredClone(mockRecommendations), ...demoRecommendations()] : [],
       runs: sample ? [structuredClone(mockAnalysisRun)] : [],
       privacy: { offTheRecord: false, since: null, sources: {} } as PrivacyRules,
-      chat: [] as ChatMessage[],
+      chat: [] as (ChatMessage & { visitor: string | null })[],
       integrations: [] as IntegrationRecord[],
       nudges: [] as Nudge[],
       push: [] as PushDevice[],
@@ -399,6 +434,7 @@ export class MemoryStore implements Store {
       guards: [] as FocusGuard[],
       targets: [] as WeeklyTarget[],
       records: [] as (PersonalRecord & { key: string })[],
+      checkIns: [] as StoredCheckIn[],
     };
   }
   private get d() {
@@ -669,7 +705,11 @@ export class MemoryStore implements Store {
   }
 
   async listChatMessages(limit: number) {
-    return this.d.chat.slice(-limit);
+    const visitor = currentDemoVisitor();
+    return this.d.chat
+      .filter((m) => m.visitor === visitor)
+      .slice(-limit)
+      .map(({ visitor: _v, ...m }): ChatMessage => m);
   }
 
   async addChatMessage(role: ChatRole, content: string, actionIds: string[] = []) {
@@ -680,8 +720,17 @@ export class MemoryStore implements Store {
       created_at: now(),
       action_ids: [...actionIds],
     };
-    this.d.chat.push(message);
+    this.d.chat.push({ ...message, visitor: currentDemoVisitor() });
     return message;
+  }
+
+  async clearVisitorChat(before: string) {
+    const d = this.d;
+    const cut = Date.parse(before);
+    const kept = d.chat.filter((m) => m.visitor === null || Date.parse(m.created_at) > cut);
+    const removed = d.chat.length - kept.length;
+    d.chat = kept;
+    return removed;
   }
 
   async getEvent(id: string) {
@@ -960,6 +1009,7 @@ export class MemoryStore implements Store {
         recommendations: d.recommendations.length,
         analysis_runs: d.runs.length,
         chat_messages: d.chat.length,
+        check_ins: d.checkIns.length,
         instructions: d.instructions.length,
         telegram_chats: d.telegram?.chat_id ? 1 : 0,
         nudges: d.nudges.length,
@@ -1028,6 +1078,42 @@ export class MemoryStore implements Store {
     return [...this.data.entries()]
       .filter(([, x]) => x.events.some((e) => Date.parse(e.start_at) < t))
       .map(([userId]) => userId);
+  }
+
+  async listCheckIns(f: { fromDay: string; toDay: string }) {
+    return structuredClone(
+      this.d.checkIns
+        .filter((c) => c.day >= f.fromDay && c.day <= f.toDay)
+        .sort((a, b) => a.asked_at.localeCompare(b.asked_at)),
+    );
+  }
+
+  async createCheckIns(rows: NewCheckIn[]) {
+    const out: StoredCheckIn[] = [];
+    for (const row of rows) {
+      if (this.d.checkIns.some((c) => c.key === row.key)) continue;
+      const stored = newCheckIn(row);
+      this.d.checkIns.push(stored);
+      out.push(structuredClone(stored));
+    }
+    return out;
+  }
+
+  async getCheckIn(id: string) {
+    return structuredClone(this.d.checkIns.find((c) => c.id === id) ?? null);
+  }
+
+  async answerCheckIn(id: string, a: { answer: CheckInValue; label: string | null }) {
+    const c = this.d.checkIns.find((x) => x.id === id);
+    if (!c) return null;
+    Object.assign(c, { answer: a.answer, label: a.label, answered_at: now() });
+    return structuredClone(c);
+  }
+
+  async deleteCheckIn(id: string) {
+    const before = this.d.checkIns.length;
+    this.d.checkIns = this.d.checkIns.filter((c) => c.id !== id && c.follow_up_of !== id);
+    return this.d.checkIns.length < before;
   }
 
   async seedGoals(goals: Goal[], opts: { overwrite: boolean }) {

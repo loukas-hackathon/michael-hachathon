@@ -1,8 +1,8 @@
 // Launch animation: the Mi settles, its dot lands, then the screen gives way to the app.
 // Server rendered and driven by CSS so it paints with the first byte and needs no JavaScript to
-// finish. The inline script only skips it when it has already played this session, when the
-// visitor prefers reduced motion, or holds it still when an installed app opens from the iOS
-// launch image. Mounted once from the root layout, so in app navigations never replay it.
+// finish. The inline script only skips it when it has already played this visit, or when the
+// visitor prefers reduced motion. The iOS launch images are plain background, so the installed app
+// shows the full animation too. Mounted once from the root layout: in app navigations never replay it.
 import "./splash.css";
 
 const BODY =
@@ -11,7 +11,24 @@ const DOT =
   "M311.67 0.00 L311.67 0.33 L311.00 0.83 L309.67 1.00 L308.00 1.83 L305.83 2.50 L303.00 4.17 L299.83 6.50 L297.17 9.17 L294.33 13.17 L292.17 17.83 L291.17 22.00 L291.00 29.00 L292.17 34.67 L294.33 39.50 L298.17 44.67 L302.67 48.33 L306.67 50.67 L312.00 52.50 L315.67 53.00 L322.83 52.83 L327.17 51.83 L330.33 50.67 L334.33 48.33 L340.00 43.00 L341.83 40.50 L343.67 36.67 L344.83 32.67 L345.33 29.83 L345.83 29.50 L345.83 23.17 L345.33 22.83 L345.00 21.83 L344.67 19.67 L343.50 16.00 L342.17 13.33 L340.50 10.83 L337.67 7.83 L333.00 4.17 L329.00 2.00 L327.00 1.17 L325.33 0.83 L324.50 0.00Z";
 
 // Runs before first paint. Storage can throw in private modes: then the splash simply plays.
-const SCRIPT = `(function(){var e=document.getElementById("m-splash");if(!e)return;function done(){e.setAttribute("data-done","")}try{if(matchMedia("(prefers-reduced-motion: reduce)").matches||sessionStorage.getItem("m-splash")){done();return}sessionStorage.setItem("m-splash","1")}catch(_){}try{if(matchMedia("(display-mode: standalone)").matches||navigator.standalone)e.setAttribute("data-standalone","")}catch(_){}e.addEventListener("animationend",function(v){if(v.target===e)done()})})()`;
+// Plays on every open: a cold start, a new tab, or coming back to the installed app after 15
+// minutes away (iOS resumes it without a reload, so the script replays it). A reload within the
+// same visit skips it. done() also clears data-splashing on <html>, which starts the score count
+// up (count-up.tsx). The splash holds while a skeleton is on screen (splash.css), at most 3.5s.
+// Showing the element again restarts its CSS animations, which is how the replay works.
+const SCRIPT = `(function(){var e=document.getElementById("m-splash");if(!e)return;var d=document.documentElement,t;function done(){clearTimeout(t);e.setAttribute("data-done","");e.style.display="none";d.removeAttribute("data-splashing")}function play(){e.removeAttribute("data-done");e.style.display="flex";clearTimeout(t);t=setTimeout(done,3500)}var still=false;try{still=matchMedia("(prefers-reduced-motion: reduce)").matches}catch(_){}if(still){done();return}try{if(sessionStorage.getItem("m-splash")){done()}else{sessionStorage.setItem("m-splash","1");play()}}catch(_){play()}e.addEventListener("animationend",function(v){if(v.target===e)done()});var away=0;document.addEventListener("visibilitychange",function(){if(document.hidden){away=Date.now();return}if(away&&Date.now()-away>9e5)play()})})()`;
+
+// Layout inline, so the mark is centred on the very first paint even before the stylesheet lands.
+const FRAME = {
+  position: "fixed",
+  inset: 0,
+  zIndex: 100,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  background: "var(--m-bg, #fff)",
+  pointerEvents: "none",
+} as const;
 
 // iOS launch screens for an installed Michael, light and dark, matching the splash pixel for pixel.
 // [css width, css height, pixel ratio]
@@ -40,8 +57,8 @@ export function Splash() {
           />
         )),
       )}
-      <div id="m-splash" aria-hidden="true" suppressHydrationWarning>
-        <svg viewBox="0 0 346 209" className="m-splash-mark" aria-hidden="true">
+      <div id="m-splash" aria-hidden="true" suppressHydrationWarning style={FRAME}>
+        <svg viewBox="0 0 346 209" className="m-splash-mark" aria-hidden="true" width={96} height={58}>
           <path className="m-splash-body" fill="currentColor" fillRule="evenodd" d={BODY} />
           <path className="m-splash-dot" fill="currentColor" d={DOT} />
         </svg>

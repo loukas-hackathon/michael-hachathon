@@ -20,6 +20,17 @@ returns `501 not_implemented`, `planned` = not routed yet. Update the status whe
     server (see "MCP authorization" below), bound to the user who allowed it. Only `/mcp` takes it.
   - Collectors, webhooks and our own tools: the shared secret `API_KEY`, which acts as the demo
     account (`demo@michael.app`). Per-user ingest tokens come later.
+  - Demo visitors (the web app's "See the demo week", server to server only): `API_KEY` plus
+    `X-Michael-Demo-Visitor: <uuid>`, one random id per visitor. Same demo account, but read
+    mostly: chat is stored and read per visitor (a visitor never sees another's, nor the
+    account's own), and only these writes are allowed: `POST /v1/chat`, `/v1/chat/stream`,
+    `/v1/recommendations/:id/execute|undo`, `PATCH /v1/recommendations/:id`, `POST /v1/analysis/run`,
+    `/v1/travel/plan`, `/v1/focus-guards/suggest`, `/v1/voice/speak`, `/v1/records/:id/announced`, `POST|DELETE /v1/push/subscriptions`, `POST /v1/nudges/test` and
+    `POST /v1/connect/requests/:id`. Anything else that writes (privacy, goals, instructions,
+    places, profile, integrations, Telegram, agents, keys, data deletion, ingest, `/mcp`) answers
+    `403 forbidden` with the message "This is the demo week. Sign in with Google to make it yours."
+    and `details: { demo: true }`. A malformed visitor id is `401`. MCP OAuth tokens bound to the
+    demo account and the bare `API_KEY` keep full access.
 - **Shared secret details:**
   Send `Authorization: Bearer <API_KEY>`. Applies to everything under `/v1/*` and `/mcp`, except
   `/health` and the OAuth callback redirect (`/oauth/google/callback`). Only `/v1/webhooks/*` and `/mcp` also accept
@@ -1175,6 +1186,77 @@ deadline in `action.undo_until`) or undone in this answer, and the reply always 
 "Undo until HH:MM." for each thing done. The context gives Claude ids only for the user's own blocks
 that have not started, goal ids, and the things that can still be undone.
 
+**Chat proposes goal and plan changes (#188).** Two more tools turn what the user said ("I have
+exams from 1 December", "my knee hurts") into one proposal: `propose_goal_change { changes:
+[{ goal_id, weekly_budget_minutes?, active? }], until?, title, reason }` and `propose_plan_change
+{ steps: [{ kind: "move_calendar_block", event_id, start_at?, end_at?, new_title? } | { kind:
+"create_focus_block", start_at, end_at, title? }], goal_id?, title, reason }`. Nothing changes: each
+stores a recommendation (`source: "chat"`, `status: "proposed"`, kind `change_goal` or
+`plan_change`, payloads under Recommendations) and returns it in `ChatResponse.actions` (and the
+stream's `action` event). The app shows Accept, which calls `POST /v1/recommendations/:id/execute`,
+and Not now, which sets `status: "dismissed"`; an accepted change is undone with `/undo`. Rules: one
+proposal per answer; a plan step on an event with other people or one that has started is
+refused before anything is stored; a proposal the user dismissed in the last 7 days for the same
+goals or blocks is refused, so Michael does not repeat it that week. The recommendation is the
+record of who changed the goal (chat) and why (`rationale`).
+
+**Check in in chat (#187).** The context lists the user's check in answers from the last 7 days
+("What you told me", quoted, never invented) and today's open questions with their ids, and a tool
+`answer_check_in { check_in_id, value }` keeps an answer the user types in the chat (same rules as
+`POST /v1/check-in/:id/answer`; the result gives the follow up to ask, word for word).
+
+### Check in (#187)
+
+Michael asks a few questions about the day, drawn from the timeline, and keeps the answers as
+structured notes (`check_ins`, one row per question) that feed the chat context, the analysis brief
+(`told_me`) and MCP.
+
+| Method | Path                      | Body                                         | Response                                                                        | Status |
+| ------ | ------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------- | ------ |
+| GET    | `/v1/check-in`            |                                              | `200 CheckInToday` `{ day, open, moment, questions: CheckIn[] }`                | live   |
+| POST   | `/v1/check-in/:id/answer` | `{ value: "yes" \| "no" \| 1..5 \| string }` | `201 CheckInAnswerResponse` `{ check_in, follow_up }`; `409` if answered; `404` | live   |
+| DELETE | `/v1/check-in/:id`        |                                              | `204`; the question, its answer and its follow ups are really deleted; `404`    | live   |
+
+```ts
+type CheckIn = {
+  id: string;
+  day: string; // local YYYY-MM-DD
+  kind: "missed_block" | "unaccounted" | "training" | "meeting" | "short_night" | "follow_up";
+  question: string; // "14:00 to 15:10 is unaccounted for on your Mac. Were you in a meeting?"
+  answer_type: "yes_no" | "scale" | "text";
+  moment: "missed_block" | "evening"; // the round it was asked in
+  event_id: string | null;
+  goal_id: string | null;
+  start_at: string | null;
+  end_at: string | null;
+  follow_up_of: string | null;
+  answer: "yes" | "no" | number | string | null; // the user's own words
+  label: string | null; // what it settles: "meeting", "trained", "skipped", "played_a_part", "low", "high", "other"
+  asked_at: string;
+  answered_at: string | null;
+};
+```
+
+- **Questions come from the day**, most useful first, at most 5: an own calendar block for a
+  health goal (or titled like a sport) that ended with no workout within an hour ("Run, 18:30 to
+  19:30. No workout recorded. Did you train?"); up to two stretches of 45 minutes or more between
+  09:00 and 19:00, inside the Mac day, with no Mac activity and nothing on the timeline ("14:00 to
+  15:10 is unaccounted for on your Mac. Were you in a meeting?"); a training block with a workout
+  ("Gym, 07:30 to 08:30. How did it go? 1 to 5."); up to two meetings with other people that ended
+  ("Investor call, 16:00. Did it go the way you wanted?"); a night under 6 hours ("You slept 5h 10.
+  Energy today? 1 to 5."). Only what has ended. Copy follows the voice sheet.
+- **At most two rounds a day**, opened by `GET /v1/check-in` (the app's Chat tab, MCP): right
+  after a missed training block (that question only), and from 20:00 the Evening round (the rest).
+  Once a round has been asked it is not asked again, and a question's key (`missed:<event id>`)
+  keeps it from being stored twice.
+- **Follow ups only when the answer calls for one**: a "no" on a meeting or a missed block, or 1 or
+  2 for a session, after a short night offers the night as the cause ("You slept 5h 10. Did that play
+  a part?"); an unaccounted stretch that was not a meeting asks "14:00 to 15:10. What was it? A few
+  words." Never a why.
+- Each question is answered once (`409` after). A yes or no may be typed as words too; any
+  question takes the user's own words. Answers about sleep, energy and training are health data:
+  deletable one by one, and in "delete everything".
+
 ### Moments (Morning and Evening)
 
 | Method | Path                           | Response     | Status |
@@ -1291,8 +1373,9 @@ Changing status never executes `action`; use the routes below.
 | POST   | `/v1/recommendations/:id/execute` | `200 Recommendation` (`status: done`, `executed_at` set). `409` see below | live   |
 | POST   | `/v1/recommendations/:id/undo`    | `200 Recommendation` (`status: undone`, `undone_at` set). `409` see below | live   |
 
-Kinds carried out: `move_calendar_block`, `move_calendar_blocks`, `create_focus_block` and
-`block_mac_app`; other kinds answer `501`.
+Kinds carried out: `move_calendar_block`, `move_calendar_blocks`, `create_focus_block`,
+`block_mac_app`, and the two chat proposals `change_goal` and `plan_change` (#188, below); other
+kinds answer `501`.
 
 ```ts
 // move_calendar_block: one of the user's own solo blocks (a timeline event id). A new start keeps
@@ -1316,6 +1399,35 @@ type BlockMacAppPayload = {
 // nothing: when one move is refused, the ones already made go back first. One undo puts every
 // block back. Extra fields (the travel maths, see Places and travel) ride along for the app.
 type MoveCalendarBlocksPayload = { moves: MoveCalendarBlockPayload[] }; // 1 to 10
+// change_goal (#188, proposed in chat only): patch up to 5 goals at once. `until` makes it
+// temporary: the old values come back then (scheduler and GET /v1/goals), and undo stays open
+// until then; without it undo stays open for 7 days.
+type ChangeGoalPayload = {
+  changes: {
+    goal_id: string;
+    weekly_budget_minutes?: number | null;
+    target?: GoalTarget | null;
+    active?: boolean;
+  }[];
+  until?: string | null;
+  reason: string; // "Exams from 1 December."
+};
+// plan_change (#188, proposed in chat only): up to 10 steps on the user's own calendar, carried out
+// together. Each step keeps the guard rails of its kind (and the standing instructions); if one
+// is refused, the steps already done are taken back. Undo reverts every step, until the first starts.
+type PlanChangePayload = {
+  steps: (
+    | {
+        kind: "move_calendar_block";
+        event_id: string;
+        start_at?: string;
+        end_at?: string;
+        new_title?: string;
+      }
+    | { kind: "create_focus_block"; start_at: string; end_at: string; title?: string }
+  )[];
+  reason: string; // "Knee hurts."
+};
 ```
 
 Rules: act only on the user's own calendar blocks and Mac; never touch events with other people;
@@ -1565,6 +1677,48 @@ reads, `/mcp` and every credential route, returns `403`. One key per device
 (Mac collector, Health Auto Export). Only the sha256 is stored. The web app makes them under
 You > Connections (Mac, Apple Watch). Claude connects with MCP OAuth instead (no key).
 
+### One tap setup (setup tokens, #120)
+
+A setup token (`ms_...`) is short lived (30 minutes), single use and can do one thing: be swapped
+for a device key for one connection. It is what a QR code, the Mac install line or a downloaded
+`Michael.command` carries, so a long lived key never sits in a URL, a shell history or a Downloads
+folder. Only the sha256 is stored (`setup_tokens`).
+
+```ts
+type SetupConnection = "mac" | "apple-watch" | "iphone";
+type SetupTokenCreate = { connection: SetupConnection };
+type SetupTokenCreated = {
+  token: string; // "ms_...", shown once
+  connection: SetupConnection;
+  expires_at: string;
+  setup_url: string; // `${web}/setup/${connection}#${token}`: the token rides in the fragment
+  install_command: string | null; // mac only: `curl -fsSL ${api}/v1/setup/mac.sh | bash -s -- ms_...`
+};
+type SetupTokenExchange = { token: string };
+type SetupTokenExchanged = { connection: SetupConnection; secret: string /* "mk_..." */; api_url: string };
+```
+
+| Method | Path                        | Auth           | Body                 | Response                                       | Status |
+| ------ | --------------------------- | -------------- | -------------------- | ---------------------------------------------- | ------ |
+| POST   | `/v1/setup-tokens`          | signed in only | `SetupTokenCreate`   | `201 SetupTokenCreated`; `403` for keys        | live   |
+| POST   | `/v1/setup-tokens/exchange` | none           | `SetupTokenExchange` | `200 SetupTokenExchanged`, `401` used/expired  | live   |
+| GET    | `/v1/setup/mac.sh`          | none           |                      | `200` the Mac installer (`text/x-shellscript`) | live   |
+
+- The exchange marks the token used in the same statement that reads it, so it works once even
+  when two devices race. Unknown, used and expired tokens get the same `401`. The new key is named
+  for the connection (`Mac collector`, `Health Auto Export`, `iPhone Shortcuts`) and is ingest only,
+  like any device key.
+- `GET /v1/setup/mac.sh` holds no secret; the token comes in as its argument. Without admin rights
+  it uses the Mac's Node.js 22.13+ or downloads the official build into `~/.michael/node` (SHA-256
+  checked), downloads `apps/collector` and `packages/shared` from the public repo
+  (`COLLECTOR_REPO`, `COLLECTOR_REF`), swaps the token, writes the key to `~/.michael/michael.env`
+  (mode 600), adds `~/.michael/Michael.command` and a login item, points to Full Disk Access when
+  Terminal lacks it, and starts the collector.
+- The web app uses the same endpoints for every device. On the device itself (iPhone) it mints and
+  swaps at once and opens the app with the key: Health Auto Export's `com.HealthExport://automation`
+  deep link (URL, `Authorization` header, metrics, cadence all filled), or the Michael shortcut via
+  `shortcuts://run-shortcut`. From a computer it shows a QR code of `setup_url`.
+
 ### Profile
 
 The onboarding answers: quiet hours, the usual week and the user's weak spots. Goals themselves go
@@ -1759,6 +1913,8 @@ type AgentQuery = {
   summary: string;
   allowed: boolean;
   created_at: string;
+  recommendation_id?: string | null; // a change the agent made, carried by this recommendation
+  undo_until?: string | null; // until when POST /v1/recommendations/:id/undo still works
 };
 ```
 
@@ -1782,10 +1938,17 @@ type AgentQuery = {
   `update_goal`, `propose_goals` = `goals`; `list_recommendations`, `update_recommendation`, `get_nudges` =
   `recommendations`; `get_score`, `get_records`, `get_moments` = `score`; `add_event`, `execute_recommendation`,
   `undo_recommendation`, `create_focus_block`, `block_mac_app`, `plan_travel` = `write_events`;
-  `suggest_app_mute` = `recommendations`. A tool not in that
+  `suggest_app_mute` = `recommendations`; `get_memories` = `timeline`; `remember` = `write_events`.
+  Memories are events of type `memory` (source `manual` from chat, `agent` from MCP); Michael's
+  chat reads the newest 40 into every answer and keeps new ones with its own `remember` and
+  `forget_memory` tools (`apps/api/src/memory.ts`). A tool not in that
   list needs `timeline` if it is read only, else `write_events` (`apps/api/src/mcp-guard.ts`).
 - `queries`: `from` defaults to local midnight today (Europe/Athens), `to` to now; newest first,
   at most 500.
+- A change an agent made (`execute_recommendation`, `create_focus_block`, `block_mac_app`) carries
+  `recommendation_id`. `undo_until` is set while that change can still be undone (the
+  recommendation is `done` and its block has not started; a mute: has not ended), else `null`. The
+  Agents screen shows Undo next to the line and calls `POST /v1/recommendations/:id/undo`.
 
 ### Nudges
 
@@ -2281,7 +2444,9 @@ starting `demo:`; only those rows are ever added or removed, so nothing else in 
 touched; days that leave the window are removed. The API refreshes the week on demo requests at
 most every 5 minutes (the first refresh after a deploy resets the goals to the Build Hub plan,
 later ones keep edits; `DEMO_WEEK=off` turns it off). `POST /v1/demo/reseed` also resets the goals.
-Any other account gets `403 forbidden`. Off the record, nothing changes. Per source switches are
+Any other account gets `403 forbidden`. The reseed (and the first refresh after a deploy) also
+deletes all demo visitor chat and turns off the record off; every refresh deletes visitor chat
+older than a day. Off the record, nothing changes. Per source switches are
 not applied: on the demo account they keep real collectors out (#114). From a terminal:
 `pnpm --filter @michael/api seed:demo` (or `--dry` to print the week without a database).
 
@@ -2360,9 +2525,13 @@ offset. A refused or failed call returns `isError: true` with one plain sentence
 | `get_score`              | `score`           | `{ date?: LocalDay }` (default today)                                                   | `Score` without `day.blocks[].ticks` (target, verdict, records, free time, sleep included) |
 | `get_records`            | `score`           | `{}`                                                                                    | `{ records: PersonalRecord[] }` (as `GET /v1/records`)                                     |
 | `get_patterns`           | `timeline`        | `{ from?: TimeInput, to?: TimeInput }` (default: the last 7 days)                       | `PatternReport`                                                                            |
+| `get_check_in`           | `timeline`        | `{}`                                                                                    | `CheckInToday` (see Check in)                                                              |
+| `answer_check_in`        | `timeline`        | `{ id: uuid, value: "yes" \| "no" \| 1..5 \| string }`                                  | `CheckInAnswerResponse`                                                                    |
 | `list_recommendations`   | `recommendations` | `{ status?: RecommendationStatus }`                                                     | `{ recommendations: Recommendation[] }`                                                    |
 | `get_nudges`             | `recommendations` | `{ date?: LocalDay }` (default today)                                                   | `{ day, nudges: Nudge[] }`                                                                 |
 | `get_moments`            | `score`           | `{ kind?: MomentKind }` (default morning before 15:00 local, evening after)             | `Moment`                                                                                   |
+| `get_memories`           | `timeline`        | `{}`                                                                                    | `{ memories: { id, text, at, from: "chat" \| "agent" }[] }` (newest first, at most 40)     |
+| `remember`               | `write_events`    | `{ fact: string (1..280) }`                                                             | `{ memory }` (same fact twice is kept once; `null` when off the record)                    |
 | `add_event`              | `write_events`    | `EventInput`                                                                            | `{ inserted, duplicates, ignored, events: Event[] }`                                       |
 | `add_goal`               | `goals`           | `{ category, title, description?, weekly_budget_minutes?, target? }`                    | `{ goal: Goal }`                                                                           |
 | `update_goal`            | `goals`           | `{ id, category?, title?, description?, weekly_budget_minutes?, target?, active? }`     | `{ goal: Goal }`, error when not found                                                     |

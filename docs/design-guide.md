@@ -62,7 +62,7 @@ Locked on the Build Hub ("Colour and type"). Use the CSS variables, never litera
 | `--m-context`   | `#D1D1D6` | `#3A3A3C` | Context bars in charts (days that are not today, other goals) |
 | `--m-spark`     | `#FF2E93` | `#FF2E93` | Goal time as a shape: ticks, fills, bars. Never small text    |
 | `--m-tint`      | `#E6007A` | `#E6007A` | Filled buttons (white text), selected tab                     |
-| `--m-tint-text` | `#E6007A` | `#FF4FA3` | Pink text and links                                           |
+| `--m-tint-text` | `#B80062` | `#FF4FA3` | Pink text and links (AA on `--m-fill` and tinted buttons)     |
 | `--m-danger`    | `#FF3B30` | `#FF453A` | Errors only                                                   |
 
 - Text on a pink fill is black (about 6:1). White on `--m-spark` fails contrast.

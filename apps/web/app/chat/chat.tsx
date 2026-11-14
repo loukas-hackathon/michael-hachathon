@@ -1,19 +1,14 @@
 "use client";
 
 import type { ChatMessage, Recommendation } from "@michael/shared";
-import { type FormEvent, useEffect, useRef, useState, useTransition } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useArrival } from "@/components/motion";
 import { PushToTalk } from "@/components/voice/push-to-talk";
-import { speakReply } from "@/components/voice/speech";
 import { formatTime } from "@/lib/format";
 import { ActionChips } from "./action-chips";
+import { mergeLines, sendLine, setDraft, setError, useChatSession } from "./chat-session";
 import { MessageBubble } from "./message-bubble";
-import { streamChat } from "./stream-chat";
 import { useKeyboardInset, useLatest } from "./use-viewport";
-
-// `key` keeps a bubble's identity when its temporary id is swapped for the stored one, so it does
-// not pop in twice.
-type Line = Pick<ChatMessage, "id" | "role" | "content"> & { created_at: string | null; key?: string };
 
 /** Each stored answer's actions, by reply id, from the history's action_ids. */
 function actedFrom(messages: ChatMessage[], actions: Recommendation[]) {
@@ -39,19 +34,16 @@ export function Chat({
   starters: string[];
   elevenlabs?: boolean;
 }) {
-  const [lines, setLines] = useState<Line[]>(initial);
-  const [draft, setDraft] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
-  const [streamingId, setStreamingId] = useState<string | null>(null);
+  // The conversation lives in a module store, not a transition, so a tab tap is never held back
+  // by a streaming answer and leaving the tab keeps the draft and the reply (chat-session.ts).
+  const session = useChatSession();
+  const { draft, error, pending, streamingId } = session;
+  const lines = mergeLines(initial, session.lines);
   const input = useRef<HTMLTextAreaElement>(null);
   // What Michael did while answering, by reply id: shown as "Done. Undo" chips under that reply.
-  const [acted, setActed] = useState<Record<string, Recommendation[]>>(() =>
-    actedFrom(initial, initialActions),
-  );
+  const stored = useMemo(() => actedFrom(initial, initialActions), [initial, initialActions]);
+  const acted = { ...stored, ...session.acted };
   const [listening, setListening] = useState(false);
-  // Set when the line came from push to talk, so the reply is spoken back.
-  const spoken = useRef(false);
   // New bubbles grow from their own corner, as in Messages; the history already there stays still.
   const arriving = useArrival();
   const { atEnd, atEndRef, toEnd } = useLatest();
@@ -75,50 +67,11 @@ export function Chat({
   }, [keyboard, atEndRef, toEnd]);
 
   function send(text: string, viaVoice = false) {
-    const message = text.trim();
-    if (!message || pending) return;
-    spoken.current = viaVoice;
-    const tempId = `pending-${Date.now()}`;
-    setError(null);
-    setDraft("");
-    setLines((l) => [...l, { id: tempId, role: "user", content: message, created_at: null }]);
+    if (!text.trim() || pending) return;
     // Sending is a choice to read the answer: go to the end even if scrolled up.
     atEndRef.current = true;
     requestAnimationFrame(() => toEnd());
-    const replyId = `${tempId}-reply`;
-    startTransition(async () => {
-      // Michael's answer grows in its own bubble as it is written, then swaps for the stored pair.
-      let streamed = "";
-      const res = await streamChat(message, (text) => {
-        streamed += text;
-        const content = streamed;
-        setStreamingId(replyId);
-        setLines((l) => [
-          ...l.filter((x) => x.id !== replyId),
-          { id: replyId, role: "assistant", content, created_at: null },
-        ]);
-      });
-      setStreamingId(null);
-      const temp = (x: Line) => x.id !== tempId && x.id !== replyId;
-      if (res.ok) {
-        setLines((l) => [
-          ...l.filter(temp),
-          { ...res.data.message, key: tempId },
-          { ...res.data.reply, key: replyId },
-        ]);
-        const done = res.data.actions;
-        if (done.length) setActed((a) => ({ ...a, [res.data.reply.id]: done }));
-        // Spoken once the whole answer is in: a voice reading half sentences sounds broken.
-        if (spoken.current) void speakReply(res.data.reply.content, elevenlabs);
-      } else {
-        // Nothing was stored: take the line back and put it in the box so it can be sent again.
-        setLines((l) => l.filter(temp));
-        setDraft(message);
-        setError(res.error);
-        if (spoken.current) void speakReply(res.error, false);
-        else input.current?.focus();
-      }
-    });
+    void sendLine(text, { viaVoice, elevenlabs, onFailed: () => input.current?.focus() });
   }
 
   function onSubmit(e: FormEvent) {
@@ -135,9 +88,6 @@ export function Chat({
         {lines.length === 0 ? (
           <div className="pt-6">
             <p className="text-insight font-semibold">Ask me about your day.</p>
-            <p className="mt-1 text-subhead text-label-2">
-              I answer from your timeline, your goals and your week. Short answers, real numbers.
-            </p>
             <ul className="mt-5 flex flex-col items-start gap-2">
               {starters.map((s) => (
                 <li key={s}>

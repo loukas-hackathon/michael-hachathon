@@ -1,4 +1,5 @@
 import type { Category } from "./categories";
+import type { ChecklistProgress, CountProgress } from "./checklist";
 import type { Balance, Baseline, WeeklyTarget } from "./gamification";
 
 // The week as the Goals tab sees it. GET /v1/score has per goal totals (GoalScore) but not the
@@ -18,6 +19,10 @@ export type GoalWeek = {
   openBlocks?: number;
   /** From the API when it says so (sleep and other unscored goals: 0). */
   leftMinutes?: number;
+  /** time (default), checklist or count (#131, #238). Only time goals are in the score. */
+  kind?: "time" | "checklist" | "count";
+  checklist?: ChecklistProgress;
+  count?: CountProgress;
   /** Minutes per day, Monday first. Days after today are null. */
   daily: (number | null)[];
 };
@@ -36,6 +41,8 @@ export type GoalsView = {
   /** Free time left this week outside fixed commitments, from the calendar. Null until known. */
   freeMinutesLeft: number | null;
   goals: GoalWeek[];
+  /** Checklist and count goals: shown in their area, outside the time score (#238). */
+  extras?: GoalWeek[];
   sleep: SleepWeek | null;
   target?: WeeklyTarget | null;
   baseline?: Baseline | null;
@@ -68,6 +75,7 @@ export type GoalStatus = {
 export function rank(view: GoalsView): GoalStatus[] {
   const p = pace(view);
   return view.goals
+    .filter((goal) => (goal.kind ?? "time") === "time")
     .map((goal) => {
       const share = goal.budgetMinutes > 0 ? goal.spentMinutes / goal.budgetMinutes : 1;
       return {
@@ -79,4 +87,17 @@ export function rank(view: GoalsView): GoalStatus[] {
       };
     })
     .sort((a, b) => b.behindBy - a.behindBy);
+}
+
+/**
+ * How close a goal is to closing for the week, for the "close it" pull on Goals (Apple's rings,
+ * a streak about to land). near: three quarters done or an hour left. last: one block closes it.
+ */
+export type CloseState = "open" | "near" | "last" | "closed";
+export function closeState(budget: number, spent: number, left: number): CloseState {
+  if (budget <= 0) return "open";
+  if (left <= 0) return "closed";
+  if (left <= 30) return "last";
+  if (left <= 60 || spent / budget >= 0.75) return "near";
+  return "open";
 }

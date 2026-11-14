@@ -4,6 +4,7 @@ import type { Recommendation } from "@michael/shared";
 import { useState, useTransition } from "react";
 import { formatTime } from "@/lib/format";
 import { undoAction } from "./actions";
+import { ProposalCard } from "./proposal-card";
 
 /** What Michael did while answering, each with its undo until the block starts. */
 export function ActionChips({ actions }: { actions: Recommendation[] }) {
@@ -19,6 +20,12 @@ export function ActionChips({ actions }: { actions: Recommendation[] }) {
 }
 
 function ActionChip({ action }: { action: Recommendation }) {
+  // A proposal (#188) waits for the user's tap instead.
+  if (action.status === "proposed") return <ProposalCard action={action} />;
+  return <DoneChip action={action} />;
+}
+
+function DoneChip({ action }: { action: Recommendation }) {
   const [undone, setUndone] = useState(action.status === "undone");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -37,16 +44,21 @@ function ActionChip({ action }: { action: Recommendation }) {
       <button
         type="button"
         disabled={pending}
+        aria-busy={pending}
         onClick={() =>
           startTransition(async () => {
-            const res = await undoAction(action.id);
+            setError(null);
+            const res = await undoAction(action.id).catch(() => ({
+              ok: false as const,
+              error: "I could not reach the server. Nothing changed.",
+            }));
             if (res.ok) setUndone(true);
             else setError(res.error);
           })
         }
         className="press min-h-9 rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-3.5 text-subhead font-semibold text-tint-text disabled:opacity-40"
       >
-        Done. Undo{until ? ` until ${formatTime(until)}` : ""}
+        {pending ? "Undoing" : `Done. Undo${until ? ` until ${formatTime(until)}` : ""}`}
       </button>
       {error ? (
         <span role="alert" className="text-footnote text-danger">

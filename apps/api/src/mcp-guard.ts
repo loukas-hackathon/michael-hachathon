@@ -33,6 +33,10 @@ export const TOOL_SCOPE: Record<string, AgentScope> = {
   block_mac_app: "write_events",
   suggest_app_mute: "recommendations",
   plan_travel: "write_events",
+  get_check_in: "timeline",
+  get_memories: "timeline",
+  remember: "write_events",
+  answer_check_in: "timeline",
 };
 
 type ToolConfig = { title?: string; inputSchema?: unknown; annotations?: { readOnlyHint?: boolean } };
@@ -73,6 +77,10 @@ export function summarise(name: string, title: string | undefined, input: unknow
       return `Read your day${range}`;
     case "get_patterns":
       return `Read your patterns${range}`;
+    case "get_check_in":
+      return "Read your check in";
+    case "answer_check_in":
+      return "Kept an answer to your check in";
     case "get_goals":
       return "Read your goals";
     case "get_instructions":
@@ -114,6 +122,10 @@ export function summarise(name: string, title: string | undefined, input: unknow
       return typeof a.date === "string" ? `Read your score for ${a.date}` : "Read your score";
     case "get_records":
       return "Read your personal records";
+    case "get_memories":
+      return "Read what you asked me to remember";
+    case "remember":
+      return typeof a.fact === "string" ? `Remembered "${a.fact.slice(0, 80)}"` : "Remembered something";
     case "add_event":
       return typeof a.title === "string"
         ? `Added "${a.title.slice(0, 80)}" to your day`
@@ -133,6 +145,18 @@ const SCOPE_WORDS: Record<AgentScope, string> = {
 
 type Callback = (...args: unknown[]) => unknown;
 
+/** Tools whose change the user can undo from the Agents screen. */
+export const UNDOABLE_TOOLS = new Set(["execute_recommendation", "create_focus_block", "block_mac_app"]);
+
+/** The recommendation an undoable tool's successful result carries, if any. */
+export function changedRecommendation(name: string, result: unknown): string | null {
+  if (!UNDOABLE_TOOLS.has(name) || !result || typeof result !== "object") return null;
+  const r = result as { isError?: boolean; structuredContent?: { recommendation?: { id?: unknown } } };
+  if (r.isError) return null;
+  const id = r.structuredContent?.recommendation?.id;
+  return typeof id === "string" ? id : null;
+}
+
 export function guardTools(server: McpServer): void {
   const register = server.registerTool.bind(server) as unknown as (
     n: string,
@@ -146,17 +170,21 @@ export function guardTools(server: McpServer): void {
       const scope = scopeFor(name, config);
       const allowed = agent.status === "approved" && agent.scopes.includes(scope);
       const input = config.inputSchema ? args[0] : undefined;
-      try {
-        await agentsStore.logQuery({
-          agent_id: agent.id,
-          tool: name,
-          summary: summarise(name, config.title, input),
-          allowed,
-        });
-      } catch (err) {
-        console.error("agent query log failed", err);
-      }
+      const log = async (recommendation_id: string | null) => {
+        try {
+          await agentsStore.logQuery({
+            agent_id: agent.id,
+            tool: name,
+            summary: summarise(name, config.title, input),
+            allowed,
+            recommendation_id,
+          });
+        } catch (err) {
+          console.error("agent query log failed", err);
+        }
+      };
       if (!allowed) {
+        await log(null);
         const why =
           agent.status === "approved"
             ? `The user has not shared ${SCOPE_WORDS[scope]} with ${agent.name}.`
@@ -171,7 +199,15 @@ export function guardTools(server: McpServer): void {
           ],
         };
       }
-      return cb(...args);
+      // Allowed calls are logged once they finish, so a change carries the recommendation that
+      // holds it and the Agents screen can offer Undo next to the line.
+      let result: unknown;
+      try {
+        result = await cb(...args);
+        return result;
+      } finally {
+        await log(changedRecommendation(name, result));
+      }
     });
   (server as unknown as { registerTool: typeof guarded }).registerTool = guarded;
 }

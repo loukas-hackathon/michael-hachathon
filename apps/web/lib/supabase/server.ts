@@ -6,8 +6,8 @@ export const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 export const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 export const authEnabled = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 
-// Cookie that marks "Try the demo": requests then act as the demo account via the API key.
-export const DEMO_COOKIE = "michael_demo";
+// "See the demo week" (one anonymous visitor id): lib/auth-mode.ts.
+export { DEMO_COOKIE } from "../auth-mode";
 
 // Supabase client bound to the request cookies (Server Components, Route Handlers, Server Actions).
 export async function supabaseServer() {

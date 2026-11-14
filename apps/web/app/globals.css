@@ -14,7 +14,7 @@
   --m-context: #d1d1d6;
   --m-spark: #ff2e93;
   --m-tint: #e6007a;
-  --m-tint-text: #e6007a;
+  --m-tint-text: #b80062; /* AA (4.5:1) on fill and on the tinted button; #e6007a was 4.05 */
   --m-on-tint: #ffffff;
   --m-danger: #ff3b30;
   --m-glass: rgb(249 249 251 / 0.82);
@@ -211,6 +211,18 @@ h3 {
 }
 
 /* Room for the floating tab bar under every screen. */
+/* Installed app: content scrolls under the clock and battery, so the status bar gets the page
+ * colour behind it, as in a native app. Zero height in a browser tab. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 40;
+  height: env(safe-area-inset-top);
+  background: var(--m-bg);
+  pointer-events: none;
+}
+
 .screen {
   padding-top: env(safe-area-inset-top);
   padding-bottom: calc(var(--m-tabbar-h) + 40px + env(safe-area-inset-bottom));
@@ -328,11 +340,16 @@ h3 {
 .m-count::before {
   content: counter(m-count);
 }
+/* After the one count up, a changed number (a refresh, the user's own Done) tweens briefly. */
+:root[data-counted] .m-count {
+  transition: --m-count var(--m-dur-ui) var(--m-ease-out);
+}
 :root:not([data-counted]) .m-count {
   animation: m-count-up var(--m-dur-count) var(--m-ease-out) both;
 }
+/* Waits for the splash: the splash script clears data-splashing the moment it is gone. */
 :root[data-splashing]:not([data-counted]) .m-count {
-  animation-delay: 1050ms;
+  animation-play-state: paused;
 }
 @keyframes m-count-up {
   from {
@@ -340,6 +357,35 @@ h3 {
   }
   to {
     --m-count: var(--m-count-to);
+  }
+}
+
+/* Goals: closing the week (components/goals/goal-charts.tsx). The next notch breathes pink when a
+ * goal is nearly closed; a closed tape fills from the left once and its check lands. */
+.m-notch-next {
+  animation: m-notch-breathe 1.8s ease-in-out infinite;
+}
+@keyframes m-notch-breathe {
+  50% {
+    background: color-mix(in srgb, var(--m-spark) 45%, transparent);
+  }
+}
+.m-track-closed {
+  transform-origin: left center;
+  animation: m-track-close var(--m-dur-smooth) var(--m-ease-out) both;
+}
+@keyframes m-track-close {
+  from {
+    transform: scaleX(0.85);
+  }
+}
+.m-check-pop {
+  animation: m-check-pop var(--m-dur-spring) var(--m-ease-out) 180ms both;
+}
+@keyframes m-check-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
   }
 }
 
@@ -368,8 +414,14 @@ h3 {
   .m-live-enter,
   .m-live-stamp,
   .m-bone,
+  .m-notch-next,
+  .m-track-closed,
+  .m-check-pop,
   :root:not([data-counted]) .m-count {
     animation: none;
+  }
+  :root[data-counted] .m-count {
+    transition: none;
   }
   .m-skeleton {
     animation-name: m-fade-in;

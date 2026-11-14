@@ -5,9 +5,16 @@ import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { MiMark } from "@/components/brand";
 import { CalendarGoals } from "@/components/goals/calendar-goals";
+import { InstallSteps } from "@/components/nudge-primer";
+import { ConnectionIcon } from "@/components/you/connection-icon";
+import { CONNECTION_BUTTON } from "@/components/you/connection-row";
+import { CONNECTION_ROUTES } from "@/lib/connections";
+import type { FirstInsight } from "@/lib/first-insight";
 import { hm } from "@/lib/format";
 import { type Instruction, instructionText } from "@/lib/instructions";
+import { markAsked, type NudgeState, useNudges } from "@/lib/use-nudges";
 import { finishOnboarding, skipOnboarding } from "./actions";
+import { FirstInsightCard } from "./first-insight";
 
 // ---------- the questions' options ----------
 
@@ -117,17 +124,30 @@ const WEAK_SPOTS: { id: WeakSpot; label: string }[] = [
   { id: "late_caffeine", label: "Coffee after 16:00" },
 ];
 
-// Google Calendar goes straight to Google's consent screen and comes back to the closing screen.
-// The watch and the Mac are set up from the You screen until they have their own one tap connect.
-export const RESUME_PATH = "/onboarding?step=done";
+// Google Calendar goes straight to Google's consent screen and comes back to this same step, which
+// then shows the first number about the week (#205). The watch and the Mac open their own setup
+// pages (lib/connections.ts), whose back link returns here.
+export const RESUME_PATH = "/onboarding?step=connect";
+const CALENDAR_CONNECT = `/integrations/google/connect?return_to=${encodeURIComponent(RESUME_PATH)}`;
 const SOURCES = [
   {
+    id: "google-calendar",
     name: "Google Calendar",
-    what: "Your plans, so I know what the day was meant to be",
-    href: `/integrations/google/connect?return_to=${encodeURIComponent(RESUME_PATH)}`,
+    what: "What the day was meant to be",
+    href: CALENDAR_CONNECT,
   },
-  { name: "Apple Watch", what: "Sleep, workouts and heart rate", href: "/you" },
-  { name: "Mac", what: "Which apps you use, and for how long", href: "/you" },
+  {
+    id: "apple-watch",
+    name: "Apple Watch",
+    what: "Sleep and workouts",
+    href: `${CONNECTION_ROUTES["apple-watch"]}?from=onboarding`,
+  },
+  {
+    id: "mac",
+    name: "Mac",
+    what: "Apps and how long",
+    href: `${CONNECTION_ROUTES.mac}?from=onboarding`,
+  },
 ] as const;
 
 // Every half hour, written the 24 hour way whatever the phone's locale.
@@ -138,6 +158,7 @@ const TIMES = Array.from(
 
 const STEPS = 7;
 const SAVE_STEP = 4; // answers are saved when leaving the house rules, before any link can leave the page
+const CONNECT_STEP = SAVE_STEP + 1;
 
 // ---------- small parts ----------
 
@@ -332,6 +353,46 @@ function Check({ on }: { on: boolean }) {
 
 const Separator = () => <span className="absolute inset-x-0 top-0 ml-4 h-[0.5px] bg-separator" />;
 
+/** The closing screen's nudge primer: why, how often, and on iPhone the Home Screen steps first. */
+function NudgeAsk({ state, error }: { state: NudgeState["kind"]; error: string | null }) {
+  if (state === "on") {
+    return (
+      <p className="flex items-center gap-2 text-body">
+        <Check on />
+        Nudges are on. I buzz when a block starts.
+      </p>
+    );
+  }
+  if (state === "denied") {
+    return (
+      <p className="text-subhead text-label-2">
+        Notifications are off for Michael. Turn them on in Settings, Notifications, Michael.
+      </p>
+    );
+  }
+  if (state !== "off" && state !== "working" && state !== "install") return null;
+  return (
+    <section aria-label="Nudges" className="rounded-group bg-fill px-4 pt-3 pb-4">
+      <p className="text-body font-semibold">Want a buzz when a block starts?</p>
+      <p className="mt-1 text-subhead text-label-2">
+        {state === "install"
+          ? "On iPhone, nudges only work with Michael on your Home Screen. Two taps."
+          : "At most five a day, never in quiet hours. Your Apple Watch buzzes too."}
+      </p>
+      {state === "install" ? (
+        <div className="mt-3">
+          <InstallSteps />
+        </div>
+      ) : null}
+      {error ? (
+        <p role="alert" className="mt-2 text-subhead text-danger">
+          {error}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
 // ---------- the flow ----------
 
 /** What is already saved: the answers start from it, so "Redo setup" shows the user's own week. */
@@ -342,13 +403,24 @@ export type Saved = {
   rules?: string[];
 };
 
-/** Back from Google: open on the closing screen, and say whether the calendar connected. */
-export type Resume = { calendar: "connected" | "failed" | null };
+/** Back from Google: open on the connect step (or the closing screen), and say how it went. */
+export type Resume = { calendar: "connected" | "failed" | null; step?: "connect" | "done" };
 
-export function OnboardingFlow({ saved, resume }: { saved?: Saved; resume?: Resume }) {
+/** The calendar as the server sees it: connected or not, and the week's first number once it is. */
+export type CalendarState = { connected: boolean; insight: FirstInsight | null };
+
+export function OnboardingFlow({
+  saved,
+  resume,
+  calendar,
+}: {
+  saved?: Saved;
+  resume?: Resume;
+  calendar?: CalendarState;
+}) {
   const router = useRouter();
   const p = saved?.profile ?? null;
-  const [step, setStep] = useState(resume ? STEPS - 1 : 0);
+  const [step, setStep] = useState(resume?.step === "connect" ? CONNECT_STEP : resume ? STEPS - 1 : 0);
   const [picked, setPicked] = useState<StarterId[]>(() =>
     GOALS.map((g) => g.id).filter((id) => saved?.goals.some((x) => starterOf(x.category) === id)),
   );
@@ -377,6 +449,8 @@ export function OnboardingFlow({ saved, resume }: { saved?: Saved; resume?: Resu
   const [quietEnd, setQuietEnd] = useState(p?.quiet_hours.end ?? "07:00");
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
+  // Nudges are offered at the end, once the plan exists; reading the state asks for nothing (#207).
+  const nudges = useNudges(step === STEPS - 1);
 
   const panel = useRef<HTMLDivElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -446,12 +520,15 @@ export function OnboardingFlow({ saved, resume }: { saved?: Saved; resume?: Resu
     router.replace("/");
   }
 
+  function finish() {
+    router.replace("/");
+    router.refresh();
+  }
+
   function next() {
     if (step === SAVE_STEP) void save();
-    else if (step === STEPS - 1) {
-      router.replace("/");
-      router.refresh();
-    } else go(step + 1);
+    else if (step === STEPS - 1) finish();
+    else go(step + 1);
   }
 
   // ---------- each screen: the question, the line under it, the controls ----------
@@ -462,7 +539,26 @@ export function OnboardingFlow({ saved, resume }: { saved?: Saved; resume?: Resu
     .replace(/, ([^,]*)$/, " and $1");
   const sleep = picked.includes("sleep") ? hm(minutes.sleep) : null;
 
-  const screens: { q: string; line: ReactNode; body?: ReactNode; cta: string; ready?: boolean }[] = [
+  const calendarOn = calendar?.connected === true || resume?.calendar === "connected";
+  const calendarFailed = !calendarOn && resume?.calendar === "failed";
+  const insight = calendarOn ? (calendar?.insight ?? null) : null;
+  const askNudges = nudges.state.kind === "off" || nudges.state.kind === "working";
+
+  type Screen = {
+    q: string;
+    line: ReactNode;
+    body?: ReactNode;
+    cta: string;
+    ready?: boolean;
+    /** The primary leaves the page (Google's consent screen): a plain link instead of a button. */
+    href?: string;
+    /** The primary does something other than moving on. */
+    onCta?: () => void;
+    /** A quiet text button under the primary, for "not now". */
+    later?: { label: string; onClick: () => void };
+  };
+
+  const screens: Screen[] = [
     {
       // Voice sheet, onboarding 1, as written.
       q: "What are you working towards?",
@@ -615,24 +711,50 @@ export function OnboardingFlow({ saved, resume }: { saved?: Saved; resume?: Resu
     },
     {
       q: "Let me see your day.",
-      line: "One tap each. Every source stays off until you connect it, and you can switch it off any time.",
-      cta: "Next",
+      line: calendarOn
+        ? "Your calendar is in. That's enough for a first number."
+        : calendarFailed
+          ? "Google Calendar did not connect. Try once more, or later from You."
+          : "Start with your calendar. Nothing is read until you connect it.",
+      // The recommended action is the filled button; skipping is a quiet "Later" (#205).
+      cta: calendarOn ? "Next" : "Connect Google Calendar",
+      href: calendarOn ? undefined : CALENDAR_CONNECT,
+      later: calendarOn ? undefined : { label: "Later", onClick: () => go(step + 1) },
       body: (
-        <ul className="overflow-hidden rounded-group bg-fill">
-          {SOURCES.map((s, i) => (
-            <li key={s.name} className="relative">
-              {i > 0 ? <Separator /> : null}
-              {/* Plain <a>: a route handler that redirects must never be prefetched. */}
-              <a href={s.href} className="press flex min-h-14 items-center gap-3 px-4 py-3">
-                <span className="flex flex-1 flex-col">
-                  <span className="text-body font-semibold">{s.name}</span>
-                  <span className="text-footnote text-label-2">{s.what}</span>
-                </span>
-                <span className="text-body font-semibold text-tint-text">Connect</span>
-              </a>
-            </li>
-          ))}
-        </ul>
+        <div className="flex flex-col gap-6">
+          {insight ? <FirstInsightCard insight={insight} /> : null}
+          <ul className="overflow-hidden rounded-group bg-fill">
+            {SOURCES.map((src, i) => {
+              const connected = src.id === "google-calendar" && calendarOn;
+              // The same row as on You (#260): icon, name, one line, one pill.
+              return (
+                <li key={src.id} className="relative">
+                  {i > 0 ? <Separator /> : null}
+                  <div className="flex min-h-16 items-center gap-3 px-4 py-2.5">
+                    <span className={connected ? "text-label" : "text-label-2"}>
+                      <ConnectionIcon id={src.id} />
+                    </span>
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="text-body">{src.name}</span>
+                      <span className="text-footnote text-label-2">{src.what}</span>
+                    </span>
+                    {connected ? (
+                      <span className="flex items-center gap-1.5 text-subhead text-label-2">
+                        <Check on />
+                        Connected
+                      </span>
+                    ) : (
+                      // Plain <a>: a route handler that redirects must never be prefetched.
+                      <a href={src.href} className={CONNECTION_BUTTON} aria-label={`Connect ${src.name}`}>
+                        Connect
+                      </a>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
       ),
     },
     {
@@ -646,12 +768,28 @@ export function OnboardingFlow({ saved, resume }: { saved?: Saved; resume?: Resu
           tomorrow at <span className="tnum">{quietEnd}</span>.
         </>
       ),
-      cta: "Start",
+      // The end of the first talk is when a buzz helps: the plan exists. A primer first, then the
+      // system prompt from the tap; Not now keeps the prompt for later (#207).
+      cta: askNudges ? (nudges.state.kind === "working" ? "Asking your phone" : "Turn on nudges") : "Start",
+      ready: nudges.state.kind !== "working",
+      onCta: askNudges ? () => void nudges.turnOn() : undefined,
+      later: askNudges
+        ? {
+            label: "Not now",
+            onClick: () => {
+              markAsked();
+              finish();
+            },
+          }
+        : undefined,
+      body: <NudgeAsk state={nudges.state.kind} error={nudges.error} />,
     },
   ];
 
-  const s = screens[step] ?? (screens[0] as (typeof screens)[number]);
+  const s = screens[step] ?? (screens[0] as Screen);
   const ready = s.ready ?? true;
+  const primary =
+    "press h-[50px] w-full rounded-full bg-tint text-body font-semibold text-on-tint transition-opacity duration-200 disabled:opacity-40";
 
   return (
     <main className="flex min-h-dvh flex-col pt-[env(safe-area-inset-top)] pr-[max(16px,env(safe-area-inset-right))] pb-[calc(16px+env(safe-area-inset-bottom))] pl-[max(16px,env(safe-area-inset-left))]">
@@ -706,14 +844,25 @@ export function OnboardingFlow({ saved, resume }: { saved?: Saved; resume?: Resu
             I could not save that. Try again.
           </p>
         ) : null}
-        <button
-          type="button"
-          onClick={next}
-          disabled={!ready || busy}
-          className="press h-[50px] w-full rounded-full bg-tint text-body font-semibold text-on-tint transition-opacity duration-200 disabled:opacity-40"
-        >
-          {s.cta}
-        </button>
+        {s.href ? (
+          <a href={s.href} className={`${primary} flex items-center justify-center`}>
+            {s.cta}
+          </a>
+        ) : (
+          <button type="button" onClick={s.onCta ?? next} disabled={!ready || busy} className={primary}>
+            {s.cta}
+          </button>
+        )}
+        {s.later ? (
+          <button
+            type="button"
+            onClick={s.later.onClick}
+            disabled={busy}
+            className="press mx-auto mt-1 flex h-11 items-center px-4 text-body text-label-2"
+          >
+            {s.later.label}
+          </button>
+        ) : null}
       </div>
     </main>
   );

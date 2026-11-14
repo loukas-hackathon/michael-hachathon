@@ -6,9 +6,10 @@ import { formatTime } from "@/lib/format";
 
 /**
  * After a missed block (#167): one tap adds the 25 minute block, and it can be undone until it starts.
+ * Filled only when it is the one thing to do now on Today; tinted when a suggestion holds that place.
  * TODO: POST /v1/recommendations/:id/execute and /undo once the recovery comes as a recommendation.
  */
-export function RecoveryAction({ recovery }: { recovery: Recovery }) {
+export function RecoveryAction({ recovery, primary = true }: { recovery: Recovery; primary?: boolean }) {
   const [taken, setTaken] = useState(false);
   if (taken) {
     return (
@@ -32,7 +33,7 @@ export function RecoveryAction({ recovery }: { recovery: Recovery }) {
       <button
         type="button"
         onClick={() => setTaken(true)}
-        className="press min-h-9 rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint"
+        className={`press min-h-9 rounded-full px-4 text-subhead font-semibold ${primary ? "bg-tint text-on-tint" : "bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] text-tint-text"}`}
       >
         Take it
       </button>

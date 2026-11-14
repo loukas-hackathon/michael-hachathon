@@ -77,7 +77,8 @@ bounce at or under 0.2 for interface; Michael is calm.
   no count up on every refresh.
 - **Live data:** things that arrived since the last look use `.m-live-enter` (#203).
 - **Skeletons:** `components/skeleton.tsx`: blank for 150ms, then a slow opacity breath, final
-  layout, real titles. No shimmer gradients, no spinners.
+  layout, real titles. No shimmer gradients, no spinners. Loading, pending, success and error
+  states follow the `michael-feedback` skill.
 
 ## 4. Durations
 

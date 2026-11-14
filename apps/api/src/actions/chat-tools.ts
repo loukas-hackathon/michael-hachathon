@@ -1,12 +1,15 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import { type Event, IsoDateTime, type Recommendation } from "@michael/shared";
+import { CheckInValue, type Event, IsoDateTime, type Recommendation } from "@michael/shared";
 import { z } from "zod";
+import { answerCheckIn } from "../checkin/service";
 import { HttpError } from "../http";
+import { forget, remember } from "../memory";
 import { DEFAULT_TIMEZONE } from "../patterns";
 import { Zone } from "../patterns/time";
 import { store } from "../store";
 import { executeRecommendation, undoRecommendation } from "./calendar";
 import { guardMacApps } from "./mac-apps";
+import { PROPOSAL_TOOLS, runProposalTool } from "./proposals";
 
 // Tools the chat model can call so Michael acts, not only advises. Each action is a recommendation
 // (source "chat") carried out by the same code as POST /v1/recommendations/:id/execute and undone by
@@ -89,7 +92,82 @@ export const CHAT_TOOLS: Anthropic.Tool[] = [
       required: ["recommendation_id"],
     },
   },
+  {
+    name: "answer_check_in",
+    description:
+      "Keep the user's answer to one of today's open check in questions (listed with a check_in_id in the context), when they answer it in chat. value is 'yes' or 'no' for a yes or no question, a number 1 to 5 for a scale, or the user's own words. Store only what the user actually said.",
+    input_schema: {
+      type: "object",
+      properties: {
+        check_in_id: { type: "string" },
+        value: { description: "'yes', 'no', an integer 1 to 5, or the user's words" },
+      },
+      required: ["check_in_id", "value"],
+    },
+  },
+  {
+    name: "remember",
+    description:
+      "Keep one lasting fact or preference the user told you about themselves, their routine or their goals, so you know it in every later conversation. One short line in the user's words, e.g. 'Trains best before 08:00'. Not one off plans and nothing about other people.",
+    input_schema: {
+      type: "object",
+      properties: { fact: { type: "string", description: "One short line, at most 280 characters" } },
+      required: ["fact"],
+    },
+  },
+  {
+    name: "forget_memory",
+    description:
+      "Forget one thing you remembered, when the user asks you to, by its memory_id from the context.",
+    input_schema: {
+      type: "object",
+      properties: { memory_id: { type: "string" } },
+      required: ["memory_id"],
+    },
+  },
+  ...PROPOSAL_TOOLS,
 ];
+
+const RememberInput = z.object({ fact: z.string().min(1).max(1000) });
+const ForgetInput = z.object({ memory_id: z.uuid() });
+
+async function keep(input: unknown): Promise<ToolOutcome> {
+  const p = RememberInput.safeParse(input);
+  if (!p.success) return invalid(p.error);
+  const m = await remember(p.data.fact, "chat");
+  return m
+    ? { content: `Remembered: ${m.text} (memory_id ${m.id}).`, isError: false }
+    : { content: "Not kept: the user is off the record.", isError: true };
+}
+
+async function drop(input: unknown): Promise<ToolOutcome> {
+  const p = ForgetInput.safeParse(input);
+  if (!p.success) return invalid(p.error);
+  return (await forget(p.data.memory_id))
+    ? { content: "Forgotten.", isError: false }
+    : { content: "No such memory.", isError: true };
+}
+
+/** What one answer has done so far, shared by its tool calls. */
+export interface ChatTurnState {
+  proposals: number;
+}
+
+const AnswerInput = z.object({ check_in_id: z.uuid(), value: CheckInValue });
+
+async function answerQuestion(input: unknown): Promise<ToolOutcome> {
+  const p = AnswerInput.safeParse(input);
+  if (!p.success) return invalid(p.error);
+  const { check_in, follow_up } = await answerCheckIn(p.data.check_in_id, p.data.value);
+  return {
+    content:
+      `Kept: ${check_in.question} Answer: ${String(check_in.answer)}.` +
+      (follow_up
+        ? ` Ask this follow up next, word for word: "${follow_up.question}" {check_in_id ${follow_up.id}}`
+        : ""),
+    isError: false,
+  };
+}
 
 const FindInput = z.object({ from: IsoDateTime, to: IsoDateTime });
 const CreateInput = z.object({
@@ -252,9 +330,24 @@ async function undo(input: unknown): Promise<ToolOutcome> {
  * Runs one tool call. Guard rail refusals (HttpError, e.g. 409 for an event with other people)
  * come back as error results the model explains; anything else is a real failure and throws.
  */
-export async function runChatTool(name: string, input: unknown): Promise<ToolOutcome> {
+export async function runChatTool(
+  name: string,
+  input: unknown,
+  turn: ChatTurnState = { proposals: 0 },
+): Promise<ToolOutcome> {
   try {
+    if (name.startsWith("propose_")) {
+      // One proposal per answer (#188): the user decides one change at a time.
+      if (turn.proposals > 0)
+        return { content: "One proposal per answer. Wait for the user.", isError: true };
+      const outcome = await runProposalTool(name, input);
+      if (!outcome) return { content: `Unknown tool ${name}`, isError: true };
+      if (!outcome.isError) turn.proposals++;
+      return outcome;
+    }
     switch (name) {
+      case "answer_check_in":
+        return await answerQuestion(input);
       case "find_calendar_blocks":
         return await findBlocks(input);
       case "create_focus_block":
@@ -265,6 +358,10 @@ export async function runChatTool(name: string, input: unknown): Promise<ToolOut
         return await guardApps(input);
       case "undo_action":
         return await undo(input);
+      case "remember":
+        return await keep(input);
+      case "forget_memory":
+        return await drop(input);
       default:
         return { content: `Unknown tool ${name}`, isError: true };
     }

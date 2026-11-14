@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ConnectClaude } from "@/components/agents/connect-claude";
+import { ClaudeLink } from "@/components/agents/connect-claude";
 import { ConnectionPage, SetupSection } from "@/components/you/connection-page";
 import { MCP_URL } from "@/lib/connect";
 import { getConnection } from "@/lib/connections-status";
@@ -10,7 +10,7 @@ export default async function ClaudePage() {
   const { row } = await getConnection("claude");
   return (
     <ConnectionPage row={row}>
-      <ConnectClaude url={MCP_URL} />
+      <ClaudeLink url={MCP_URL} />
       <SetupSection title="Who asked about you">
         <Link
           href="/agents"
