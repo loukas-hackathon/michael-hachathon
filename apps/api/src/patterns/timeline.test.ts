@@ -147,7 +147,7 @@ test("events without a bundle id, an end or a positive length are skipped", () =
   assert.equal(tl.mac.length, 0);
 });
 
-test("a history visit that was only open counts only while a browser is in front", () => {
+test("a history visit that was only open is not believed: its browser time stays unknown", () => {
   // Chrome did not measure this page in front: it "stayed open" from 09:00 to 11:00.
   const stale = web("news.example", T("2026-11-10 09:00"), T("2026-11-10 11:00"), "history", {
     foreground: false,
@@ -158,19 +158,13 @@ test("a history visit that was only open counts only while a browser is in front
     mac(APPS.browser, T("2026-11-10 09:00"), T("2026-11-10 09:10")),
     mac(APPS.editor, T("2026-11-10 09:10"), T("2026-11-10 10:00")),
     mac(APPS.browser, T("2026-11-10 10:00"), T("2026-11-10 10:10")),
-    // A page opened later wins over the stale tab while it lasts.
+    // Chrome measured this one: 4 minutes in front.
     web("github.com", T("2026-11-10 10:02"), T("2026-11-10 10:06"), "history", { foreground: true }),
   ]);
-  assert.deepEqual(shape(tl.mac), [
-    "news.example 10",
-    "VS Code 50",
-    "news.example 2",
-    "github.com 4",
-    "news.example 4",
-  ]);
-  assert.equal(minutes(tl.mac), 70); // not 120
-
-  // With no Mac data at all there is no browser in front, so the stale tab counts for nothing.
+  assert.deepEqual(shape(tl.mac), ["Chrome 10", "VS Code 50", "Chrome 2", "github.com 4", "Chrome 4"]);
+  assert.equal(tl.counts.webVisits, 1);
+  assert.equal(tl.counts.webVisitsUnmeasured, 1);
+  // Alone, with no Mac data, it counts for nothing either.
   assert.equal(range([stale]).mac.length, 0);
 });
 

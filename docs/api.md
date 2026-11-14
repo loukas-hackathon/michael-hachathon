@@ -314,6 +314,7 @@ type PatternReport = {
     iphone_app_usage: number;
     web_visits: number;
     web_visits_superseded: number; // history visits ignored because the extension covered them
+    web_visits_unmeasured: number; // history visits ignored because Chrome did not measure them in front
     searches: number;
     goal_blocks: number;
     sleeps: number;
@@ -550,13 +551,17 @@ rules live there and nowhere else:
 - **Origin precedence:** for every clock hour in which the extension reported a visit
   (`data.origin = "extension"`), history visits that start in that hour are ignored; where the two
   still overlap the extension wins. A visit with no `origin` is history.
+- **Unmeasured history visits are not used.** When Chrome did not measure a page in front
+  (`data.foreground = false`), its length only says how long the tab stayed open. An open tab
+  would claim browser time it never had, so these visits are left out (counted in
+  `inputs.web_visits_unmeasured`) and that browser time stays `other`.
 - **The Mac's log decides what was in front.** Wherever it is alive (within 6 hours of any Mac app
   interval), a web visit counts only while a browser is in front: it refines browser time and
   never adds Mac time of its own. Where the Mac log has nothing (before its 4 week horizon), a
-  visit stands by itself, but only if its time in front was measured: an unmeasured history visit
-  (`data.foreground = false`, the length is how long the page stayed open) is dropped there. Among
-  history visits the page opened last wins, so with history alone the split of browser time
-  between sites is an estimate (the total is exact); the extension makes the split exact.
+  visit stands by itself. Among history visits the page opened last wins. History gives a page's
+  total time in front but not when a tab was switched back to, so a visit is placed right after
+  it was opened: with history alone the split of browser time between sites is an estimate (the
+  total is exact). The extension makes the split exact.
 - **A visit's category** comes from the shared host list. If the host is not on it, the label the
   collector sent in `data.category` is used: `messaging` and `mail` read as `communication`, `dev`
   and `docs` as `work`, `finance` and `search` as `other`; the rest keep their name.

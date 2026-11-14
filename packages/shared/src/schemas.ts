@@ -730,6 +730,8 @@ export const PatternReport = z.object({
     web_visits: z.number().int().nonnegative(),
     // History visits left out because the extension covered the same window.
     web_visits_superseded: z.number().int().nonnegative(),
+    // History visits left out because Chrome did not measure their time in front.
+    web_visits_unmeasured: z.number().int().nonnegative(),
     searches: z.number().int().nonnegative(),
     goal_blocks: z.number().int().nonnegative(),
     sleeps: z.number().int().nonnegative(),

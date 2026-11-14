@@ -16,7 +16,8 @@ import { type Span, subtractSpans, sum, union } from "./util";
 //
 //   1. Mac: one thing in front at a time. A non browser app beats a web visit, a web visit beats
 //      the bare browser, an extension visit beats a history visit, and among history visits the
-//      page opened last wins. Screen off time is removed.
+//      page opened last wins. History visits Chrome did not measure in front are not used.
+//      Screen off time is removed.
 //   2. Web visits: where the extension reported, history is ignored (`preferExtension`). Where
 //      the Mac log is alive, a visit only refines browser time and never adds time of its own.
 //   3. Across devices: when the phone and the Mac overlap, the phone has the attention.
@@ -41,8 +42,7 @@ export interface WebVisit extends Segment {
   origin: WebOrigin;
   /**
    * False when the length is how long the page stayed open, not how long it was in front (history
-   * rows Chrome did not measure, `data.foreground = false`). Such a visit never counts without
-   * the Mac log to confirm a browser was in front.
+   * rows Chrome did not measure, `data.foreground = false`). Such a visit is not used.
    */
   measured: boolean;
 }
@@ -66,6 +66,7 @@ export interface Timeline {
     iphoneAppUsage: number;
     webVisits: number;
     webVisitsSuperseded: number;
+    webVisitsUnmeasured: number;
     searches: number;
   };
 }
@@ -270,26 +271,29 @@ export function buildTimeline(events: Event[], from: number, to: number): Timeli
 
   const allVisits = clip(parseWebVisits(events), from, to);
   const { kept, superseded } = preferExtension(allVisits);
+  // A history visit Chrome did not measure in front only says how long the page stayed open. An
+  // open tab would claim every browser minute until the next page is opened, and a site would be
+  // blamed for time it never had. Such visits are left out: that browser time stays "other".
+  const believed = kept.filter((v) => v.measured);
+
   // The Mac's own log is the better witness of what was in front. Wherever it is alive (within
   // 6 hours of any Mac app interval), a web visit only refines time a browser was in front: it
   // never adds Mac time of its own. Where the Mac log has nothing (before its 4 week horizon, or
-  // no Mac collector), a visit stands by itself, but only if its time in front was measured: a
-  // page that was merely "open" may have sat in a background tab for an hour.
+  // no Mac collector), a visit stands by itself.
   const browserInFront = union(macApps.filter((s) => s.appKey === BROWSER_APP_KEY));
   const macAlive = union(macUsage.map((s) => ({ start: s.start - MAC_ALIVE_MS, end: s.end + MAC_ALIVE_MS })));
-  const visits = cut(kept, off).flatMap((v) => {
+  const visits = cut(believed, off).flatMap((v) => {
     const pieces: WebVisit[] = [];
     for (const alive of overlaps(v, macAlive)) {
       for (const p of overlaps(alive, browserInFront)) pieces.push({ ...v, start: p.start, end: p.end });
     }
-    if (v.measured) {
-      for (const p of subtractSpans(v, macAlive)) pieces.push({ ...v, start: p.start, end: p.end });
-    }
+    for (const p of subtractSpans(v, macAlive)) pieces.push({ ...v, start: p.start, end: p.end });
     return pieces;
   });
-  // Among history visits the page opened last wins: at the moment a page is opened it is the one
-  // in front. History does not say when a tab was switched back to, so with history alone the
-  // split of browser time between sites is an estimate; the extension makes it exact.
+  // Among history visits the page opened last wins. History gives a page's total time in front
+  // but not when a tab was switched back to, so the visit is placed right after it was opened:
+  // with history alone the split of browser time between sites is an estimate. The extension
+  // makes it exact.
   const mac = flatten<Segment>([
     ...macApps.map((seg) => ({ seg, prio: seg.appKey === BROWSER_APP_KEY ? 0 : 3 })),
     ...visits.map((seg) => ({ seg: seg as Segment, prio: seg.origin === "extension" ? 2 : 1 })),
@@ -332,8 +336,9 @@ export function buildTimeline(events: Event[], from: number, to: number): Timeli
     counts: {
       macAppUsage: macUsage.length,
       iphoneAppUsage: phoneApps.length,
-      webVisits: kept.length,
+      webVisits: believed.length,
       webVisitsSuperseded: superseded,
+      webVisitsUnmeasured: kept.length - believed.length,
       searches: searches.length,
     },
   };

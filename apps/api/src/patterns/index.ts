@@ -44,6 +44,7 @@ export function buildPatternReport(events: Event[], options: PatternOptions): Pa
       iphone_app_usage: ctx.tl.counts.iphoneAppUsage,
       web_visits: ctx.tl.counts.webVisits,
       web_visits_superseded: ctx.tl.counts.webVisitsSuperseded,
+      web_visits_unmeasured: ctx.tl.counts.webVisitsUnmeasured,
       searches: ctx.tl.counts.searches,
       goal_blocks: focus.blocks.length,
       sleeps: ctx.sleeps.length,
