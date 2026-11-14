@@ -8,6 +8,7 @@ import {
   e2eTestUser,
   localFallbackAllowed,
 } from "./lib/auth-mode";
+import { NEXT_COOKIE, safeNext } from "./lib/next-path";
 
 const URL_ = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
@@ -54,8 +55,28 @@ export async function proxy(request: NextRequest) {
     const login = request.nextUrl.clone();
     login.pathname = "/login";
     // Come back here after signing in (the connect consent page relies on it).
-    login.search = path === "/" ? "" : `?next=${encodeURIComponent(path + request.nextUrl.search)}`;
-    return NextResponse.redirect(login);
+    const next = path === "/" ? null : safeNext(path + request.nextUrl.search);
+    login.search = next ? `?next=${encodeURIComponent(next)}` : "";
+    const redirect = NextResponse.redirect(login);
+    // Supabase only returns to the allow listed /auth/callback, so the way back rides in a cookie.
+    // Only a real page visit sets it: a background prefetch (the tab bar's /chat) must not
+    // overwrite the consent page the person came for.
+    const background =
+      request.headers.has("rsc") ||
+      request.headers.has("next-router-prefetch") ||
+      request.headers.get("sec-fetch-dest") === "empty";
+    if (background) {
+      // Leave the cookie as it is.
+    } else if (next) {
+      redirect.cookies.set(NEXT_COOKIE, next, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: request.nextUrl.protocol === "https:",
+        path: "/",
+        maxAge: 15 * 60,
+      });
+    } else redirect.cookies.delete(NEXT_COOKIE);
+    return redirect;
   }
   return response;
 }
