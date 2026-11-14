@@ -120,7 +120,7 @@ export function AgentRow({
         </p>
 
         {revoked ? (
-          <p role="status" className="mt-5 rounded-group bg-fill px-4 py-3 text-subhead">
+          <p role="status" className="m-swap mt-5 rounded-group bg-fill px-4 py-3 text-subhead">
             Revoked. {name} sees nothing from now on. To use it again, connect it again.
           </p>
         ) : (
@@ -161,7 +161,7 @@ export function AgentRow({
               <div
                 role="alertdialog"
                 aria-label={`Revoke ${name}?`}
-                className="mt-6 rounded-group bg-fill px-4 py-3.5"
+                className="m-swap mt-6 rounded-group bg-fill px-4 py-3.5"
               >
                 <p className="text-body font-semibold">Revoke {name}?</p>
                 <p className="mt-0.5 text-subhead text-label-2">
