@@ -143,7 +143,13 @@ type Integration = {
   error: string | null;
 };
 
-type Health = { status: "ok"; version: string; time: string; storage: "memory" | "supabase" };
+type Health = {
+  status: "ok";
+  version: string;
+  time: string;
+  storage: "memory" | "supabase";
+  commit: string | null;
+};
 ```
 
 ## Endpoints

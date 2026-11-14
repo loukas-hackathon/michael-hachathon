@@ -364,5 +364,7 @@ export const Health = z.object({
   version: z.string(),
   time: IsoDateTime,
   storage: z.enum(["memory", "supabase"]),
+  // Git commit of the running deploy (Railway sets RAILWAY_GIT_COMMIT_SHA); null locally.
+  commit: z.string().nullable(),
 });
 export type Health = z.infer<typeof Health>;
