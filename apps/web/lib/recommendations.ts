@@ -85,7 +85,9 @@ export function undoDeadline(rec: Recommendation): string | null {
   return new Date(Math.min(...until.map((x) => Date.parse(x)))).toISOString();
 }
 
+// draft_follow_up: "Do it" saves the draft under Follow ups; nothing is sent.
 const EXECUTABLE = new Set([
+  "draft_follow_up",
   "create_focus_block",
   "move_calendar_block",
   "move_calendar_blocks",

@@ -1,4 +1,5 @@
 import type { DemoSeedResult, Source } from "@michael/shared";
+import { seedDemoDrafts } from "../actions/drafts";
 import { currentUserId } from "../context";
 import { env } from "../env";
 import { HttpError } from "../http";
@@ -49,6 +50,12 @@ export async function seedDemoWeek(
   const events = await store.syncSeededEvents(DEMO_PREFIX, sources, week.events);
   const goals = await store.seedGoals(demoGoals, { overwrite: opts.overwriteGoals });
   if (!rules.offTheRecord) await seedDemoTravel(store, week, opts.now ?? new Date());
+  // Follow up drafts for the latest conversations (#40). Best effort: never fails the seed.
+  if (!rules.offTheRecord) {
+    await seedDemoDrafts(store, (opts.now ?? new Date()).getTime(), week.days.length).catch((err) =>
+      console.error("Demo drafts failed", err),
+    );
+  }
   return { days: week.days, events, goals_written: goals };
 }
 
