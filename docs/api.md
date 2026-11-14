@@ -1445,6 +1445,29 @@ and category; counts and seconds, no titles, no data) and the raw rows are delet
 500. Seconds are `end_at - start_at`, else `data.seconds`, else 0. Category is `data.category`, else
 the app category of `data.bundle_id`, else the site category of `data.host`, else `""`.
 
+### Sources status
+
+```ts
+type SourceStatus = {
+  source: Source;
+  enabled: boolean; // the privacy switch, as GET /v1/privacy shows it
+  collecting: boolean; // would ingest store its events right now
+  last_event_at: string | null;
+};
+type SourcesStatusResponse = { off_the_record: boolean; sources: SourceStatus[] };
+```
+
+| Method | Path                 | Response                    | Status |
+| ------ | -------------------- | --------------------------- | ------ |
+| GET    | `/v1/sources/status` | `200 SourcesStatusResponse` | live   |
+
+Every source, always. `enabled` is the privacy switch (as in `GET /v1/privacy`). `collecting` is
+what ingest would do now: `false` while off the record or once the user switched the source off,
+`true` for a source never decided on (its first event is the opt in). `last_event_at` is
+when Michael last received a new event from that source (the event's `created_at`), or `null` if it
+never sent one. An event that arrives again unchanged does not move it. The web app's Connections
+rows on You read it to say "Last data 12 min ago". Code: `apps/api/src/routes/sources.ts`.
+
 ### Device keys (personal tokens)
 
 ```ts
@@ -1471,7 +1494,7 @@ API key get `403 forbidden`. A device key acts for its owner and can only send d
 (`Authorization: Bearer mk_...`, or `?key=mk_...` on webhooks). Anything else, including other
 reads, `/mcp` and every credential route, returns `403`. One key per device
 (Mac collector, Health Auto Export). Only the sha256 is stored. The web app makes them under
-You > Devices. Claude connects with MCP OAuth instead (no key).
+You > Connections (Mac, Apple Watch). Claude connects with MCP OAuth instead (no key).
 
 ### Profile
 

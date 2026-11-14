@@ -156,6 +156,8 @@ export interface Store extends PrivacyBackend {
   readonly kind: "memory" | "supabase";
   listEvents(filter: TimelineFilter): Promise<Event[]>;
   insertEvents(events: z.output<typeof EventInput>[]): Promise<InsertResult>;
+  /** When the newest event of each source arrived (created_at); sources never seen are left out. */
+  lastEventAtBySource(): Promise<Partial<Record<Source, string>>>;
   listGoals(): Promise<Goal[]>;
   getGoal(id: string): Promise<Goal | null>;
   createGoal(input: z.output<typeof GoalCreate>): Promise<Goal>;
@@ -406,6 +408,15 @@ export class MemoryStore implements Store {
       .filter((e) => !f.source || f.source.includes(e.source))
       .filter((e) => !f.type || f.type.includes(e.type))
       .sort((a, b) => Date.parse(a.start_at) - Date.parse(b.start_at));
+  }
+
+  async lastEventAtBySource() {
+    const out: Partial<Record<Source, string>> = {};
+    for (const e of this.events) {
+      const was = out[e.source];
+      if (!was || Date.parse(e.created_at) > Date.parse(was)) out[e.source] = e.created_at;
+    }
+    return out;
   }
 
   async privacyRules() {
