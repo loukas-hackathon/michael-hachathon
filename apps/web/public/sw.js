@@ -72,16 +72,17 @@ self.addEventListener("message", (event) => {
 self.addEventListener("fetch", (event) => {
   if (VERSION === "dev") return; // development: push only, every request goes to the dev server
   const request = event.request;
-  if (request.method !== "GET") return; // writes always go straight to the network, never queued
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+  // Signing in, out, starting a demo visit or switching account (any method): drop anything held
+  // for the previous person, and let the request through untouched.
+  if (url.pathname.startsWith("/auth/") || url.pathname === "/login") {
+    event.waitUntil(forgetPersonal());
+    return;
+  }
+  if (request.method !== "GET") return; // writes always go straight to the network, never queued
 
   if (request.mode === "navigate") {
-    // Signing in, out or switching account: drop anything held for the previous person.
-    if (url.pathname.startsWith("/auth/") || url.pathname === "/login") {
-      event.waitUntil(forgetPersonal());
-      return;
-    }
     event.respondWith(navigate(event, url));
     return;
   }
