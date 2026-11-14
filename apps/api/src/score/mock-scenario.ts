@@ -104,5 +104,29 @@ export function mockScoreScenario(): { events: Event[]; goals: Goal[]; date: str
   block("Gym", "12", "18:00", "19:00");
   block("Deep work", "13", "09:00", "11:00");
 
+  // A meeting with other people: never a block, it takes free time (#117).
+  push({
+    source: "google_calendar",
+    type: "calendar_event",
+    start_at: at("12", "14:00"),
+    end_at: at("12", "15:00"),
+    title: "Investor call",
+    data: { attendees: 2 },
+  });
+
+  // Three nights from the watch, counted on the day they end (#117). Sleep stays outside the score.
+  const night = (from: string, fromTime: string, to: string, toTime: string, minutes: number) =>
+    push({
+      source: "health_auto_export",
+      type: "sleep",
+      start_at: at(from, fromTime),
+      end_at: at(to, toTime),
+      title: "Sleep",
+      data: { duration_min: minutes },
+    });
+  night("08", "23:40", "09", "07:05", 431);
+  night("09", "23:55", "10", "06:40", 388);
+  night("10", "23:20", "11", "07:00", 452);
+
   return { events, goals: mockGoals, date: "2026-11-11", now: at("11", "15:20") };
 }

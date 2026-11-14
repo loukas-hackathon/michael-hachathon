@@ -1,41 +1,65 @@
-import type {
-  Event,
-  Goal,
-  Score,
-  ScoreBlock,
-  ScoreDay,
-  ScoreGoal,
-  ScoreLostStretch,
-  ScoreTick,
-  TimeWonBack,
+import {
+  type Event,
+  type Goal,
+  type GoalArea,
+  goalArea,
+  goalKind,
+  type Instruction,
+  isSleepGoal,
+  type Score,
+  type ScoreArea,
+  type ScoreBlock,
+  type ScoreDay,
+  type ScoreGoal,
+  type ScoreLostStretch,
+  type ScoreTick,
+  type TimeWonBack,
 } from "@michael/shared";
+import { forbiddenBy } from "../instructions/protected";
 import { DEFAULT_TIMEZONE } from "../patterns/context";
-import { type GoalBlock, goalBlocks, roleOf } from "../patterns/focus";
+import { type GoalBlock, goalBlocks } from "../patterns/focus";
 import { label } from "../patterns/format";
 import { MINUTE, SECOND, Zone } from "../patterns/time";
 import { buildTimeline, type Segment, subjectOf } from "../patterns/timeline";
 import { iso, overlapWith, round1, type Span, subtractSpans, union } from "../patterns/util";
+import { isTrainingGoal, purposeFor } from "./purpose";
+import type { BlockRun, RecordWeek } from "./records";
+import { type TargetWeek, withTarget } from "./targets";
+import { commitments, committedMinutes, freeMinutesLeft, sleepWeek, wakingDay } from "./week";
+
+export { isSleepGoal };
 
 // The score: the share of planned goal time that was spent on the goals. Pure: events, goals,
 // the day, `now` and the timezone go in, the numbers come out. No I/O and no clock.
 //
 // THE ATTRIBUTION RULE (also in docs/api.md, "Score"; change both together)
 //
+//   Goals       Three categories: business, health, personal (`goalArea`; the older `work` reads
+//               as business, `gym`, `rest` and `food` as health). Only goals of kind `time` take
+//               part: a target (sleep), a count or a checklist has no planned minutes. It is
+//               listed with `scored: false` and has no blocks.
 //   Planned     The user's own calendar blocks that belong to a goal (score/match.ts). An event
 //               with other people in it is never a block. Where two blocks overlap, the earlier
 //               one keeps the time. A block that crosses local midnight is cut there: each day
 //               gets its part.
 //   Ahead       Planned time that has not started yet (after `now`).
 //   Elapsed     Planned time that has passed. A block in progress counts up to `now`.
-//   Lost        Time inside an elapsed block spent in a distracting category (communication,
-//               social, video, news, shopping, travel) on any device. It is read from the single
-//               line of attention (patterns/timeline.ts), where the phone and the Mac are already
-//               one line, so a minute is never lost twice.
+//   Lost        Time inside an elapsed block that was off purpose for the block's goal, on any
+//               device. What is off purpose is decided in one place, score/purpose.ts, which the
+//               patterns' calendar mode reads too:
+//                 - a distracting category (communication, social, video, news, shopping,
+//                   travel), unless the goal lists it in `target.work_categories`: on a sales
+//                   goal with ["communication"], mail and messages are the work;
+//                 - a work category (work, ai) inside a block of a health or personal goal that
+//                   does not list it. A sales call during the gym session is not training.
+//               It is read from the single line of attention (patterns/timeline.ts), where the
+//               phone and the Mac are already one line, so a minute is never lost twice.
 //   Spent       Elapsed minus lost.
 //   Verified    The part of spent for which the data positively shows the goal:
-//                 a work goal:     attention in a work category (work, ai) inside the block;
-//                 a training goal: a `workout` event overlapping the block (minus lost time).
-//               Any other goal has nothing that could prove it.
+//                 any goal:        attention in a category it lists in `target.work_categories`;
+//                 a business goal: attention in a work category (work, ai) inside the block;
+//                 a health goal:   a `workout` event overlapping the block (minus lost time).
+//               Nothing else can prove a goal.
 //   Unverified  Spent minus verified: the block had no device data there, or only neutral apps
 //               (music, the system, anything uncategorised). Reported apart, never shown as proven.
 //
@@ -45,8 +69,16 @@ import { iso, overlapWith, round1, type Span, subtractSpans, union } from "../pa
 //   as spent until a watch or a check in says otherwise; `unverified_minutes` shows how much of
 //   the score rests on that.
 //
-//   Sleep is outside the score: a goal of category `rest` whose target describes sleep is listed
-//   with its budget (`scored: false`) and takes no part in any total.
+//   Sleep is outside the score: it is a goal of kind `target` (an older `rest` goal whose target
+//   describes sleep reads as one), listed with its budget (`scored: false`), in no total.
+//
+//   Areas: the same totals per category, for the week and for the day, so a strong business week
+//   with no personal time does not read as a win. They add up to the week and to the day.
+//
+//   Standing instructions ("keep Sundays clear") never change a minute of the score. Each block
+//   only carries `instructions_broken`: the active instructions its time falls under
+//   (instructions/protected.ts), so the app can flag a block planned on a clear day. A block named
+//   in an instruction's `exceptions` ("Rhefuel" on a clear Sunday) does not break it.
 //
 //   score_pct = spent / elapsed, rounded. Null when nothing has elapsed: not 0 and not 100.
 //
@@ -79,6 +111,8 @@ export interface ScoreOptions {
   now: string;
   /** IANA zone for days and weeks. Default Europe/Athens. */
   timezone?: string;
+  /** The user's standing instructions, for `instructions_broken` on each block. Default none. */
+  instructions?: Instruction[];
 }
 
 export interface ScoreRange {
@@ -90,12 +124,8 @@ export interface ScoreRange {
   to: number;
 }
 
-/** A rest goal whose target (or title) describes sleep. Sleep sits outside the score. */
-export function isSleepGoal(goal: Goal): boolean {
-  if (goal.category !== "rest") return false;
-  const keys = Object.keys(goal.target ?? {});
-  return keys.some((k) => /sleep|bed/i.test(k)) || /\bsleep\b/i.test(goal.title);
-}
+/** Only goals of kind `time` are measured in planned minutes. Sleep, a count or a checklist is not. */
+export const isScoredGoal = (goal: Goal): boolean => goalKind(goal) === "time";
 
 /** True for a real calendar day written "YYYY-MM-DD". */
 export function isLocalDay(day: string): boolean {
@@ -228,19 +258,20 @@ function evaluate(
   let verified: Span[] = [];
 
   if (elapsedEnd > start) {
-    const isWorkGoal = block.goal.category === "work";
+    // On purpose is verified, off purpose is lost, neutral is neither (score/purpose.ts).
+    const purpose = purposeFor(block.goal);
     for (let i = firstEndingAfter(attention, start); i < attention.length; i++) {
       const seg = attention[i];
       if (!seg || seg.start >= elapsedEnd) break;
       const piece = { start: Math.max(seg.start, start), end: Math.min(seg.end, elapsedEnd) };
       if (!(piece.end > piece.start)) continue;
-      const role = roleOf(seg.category);
-      if (role === "distractor") distractors.push({ ...seg, ...piece });
-      else if (role === "work" && isWorkGoal) verified.push(piece);
+      const what = purpose(seg.category);
+      if (what === "off") distractors.push({ ...seg, ...piece });
+      else if (what === "on") verified.push(piece);
     }
   }
   const lost = union(distractors.map((s) => ({ start: s.start, end: s.end })));
-  if (block.goal.category === "gym" && elapsedEnd > start) {
+  if (isTrainingGoal(block.goal) && elapsedEnd > start) {
     // A recorded workout proves training time, except the minutes that went to a distractor.
     for (const w of workouts) {
       const piece = { start: Math.max(w.start, start), end: Math.min(w.end, elapsedEnd) };
@@ -317,7 +348,17 @@ function timeWonBack(day: string, byDay: Map<string, Sum>, zone: Zone): TimeWonB
   };
 }
 
-const toBlock = (p: Piece): ScoreBlock => ({
+const AREAS: GoalArea[] = ["business", "health", "personal"];
+
+/** The totals per category over some pieces. Every active goal is listed, scored or not. */
+const areaRows = (pieces: Piece[], goals: Goal[]): ScoreArea[] =>
+  AREAS.map((area) => ({
+    area,
+    goal_ids: goals.filter((g) => goalArea(g.category) === area).map((g) => g.id),
+    ...totals(pieces.filter((p) => goalArea(p.block.goal.category) === area).reduce(plus, ZERO)),
+  }));
+
+const toBlock = (p: Piece, instructions: Instruction[], zone: Zone): ScoreBlock => ({
   event_id: p.block.eventId,
   goal_id: p.block.goal.id,
   goal_title: p.block.goal.title,
@@ -325,17 +366,92 @@ const toBlock = (p: Piece): ScoreBlock => ({
   matched_by: p.block.rule,
   start_at: iso(p.start),
   end_at: iso(p.end),
+  record_id: null,
   ...totals(p),
   ticks: p.ticks,
   lost: p.stretches,
+  instructions_broken: forbiddenBy(instructions, p.block.title, p.start, p.end, zone).map((i) => i.id),
 });
+
+/** One week as the target and the records read it. */
+export type HistoryWeek = RecordWeek & { committed_minutes: number };
+
+/** The same week in the target rule's shape, with the target stored for it. */
+export const targetWeek = (w: HistoryWeek, target: TargetWeek["target"]): TargetWeek => ({
+  week_start: w.week_start,
+  complete: w.complete,
+  score_pct: w.score_pct,
+  areas: Object.fromEntries(AREAS.map((a) => [a, w.areas[a].score_pct])) as TargetWeek["areas"],
+  committed_minutes: w.committed_minutes,
+  target,
+});
+
+/** The week's history behind the target (#165) and the records (#166). */
+export interface ScoreHistory {
+  /** The four weeks before the score's week and the week itself, oldest first. */
+  weeks: HistoryWeek[];
+  /** The longest run with no lost tick in each ended block part, over the same five weeks. */
+  runs: BlockRun[];
+}
+
+/** Totals per category over some pieces. */
+const areaTotals = (pieces: Piece[]) =>
+  Object.fromEntries(
+    AREAS.map((area) => [
+      area,
+      totals(pieces.filter((p) => goalArea(p.block.goal.category) === area).reduce(plus, ZERO)),
+    ]),
+  ) as Record<GoalArea, ReturnType<typeof totals>>;
+
+/**
+ * The longest stretch of verified ticks (`spent`) in an ended piece. An `unverified` tick breaks
+ * the run like a lost one: a record never rests on time the data cannot prove.
+ */
+function longestRun(p: Piece): BlockRun | null {
+  let best: { first: number; minutes: number[] } | null = null;
+  let run: { first: number; minutes: number[] } | null = null;
+  const sum = (r: { minutes: number[] }) => r.minutes.reduce((t, m) => t + m, 0);
+  p.ticks.forEach((tick, i) => {
+    const a = p.start + i * SCORE_RULES.tickMs;
+    const minutes = (Math.min(a + SCORE_RULES.tickMs, p.end) - a) / MINUTE;
+    if (tick !== "spent") {
+      run = null;
+      return;
+    }
+    if (!run) run = { first: i, minutes: [] };
+    run.minutes.push(minutes);
+    if (!best || sum(run) > sum(best)) best = { first: run.first, minutes: [...run.minutes] };
+  });
+  const found = best as { first: number; minutes: number[] } | null;
+  if (!found) return null;
+  return {
+    event_id: p.block.eventId,
+    goal_id: p.block.goal.id,
+    goal_title: p.block.goal.title,
+    area: goalArea(p.block.goal.category),
+    day: p.day,
+    end: p.end,
+    minutes: Math.round(sum(found)),
+    first_tick: found.first,
+    tick_minutes: found.minutes,
+  };
+}
 
 /**
  * The score for the week that holds `options.date`, and that day in detail. Pass every event
- * that overlaps `scoreRange(date)`: calendar events, workouts and the device events the timeline
- * is built from (app usage, web visits, screen).
+ * that overlaps `scoreRange(date)`: calendar events, workouts, sleep and the device events the
+ * timeline is built from (app usage, web visits, screen).
  */
 export function buildScore(events: Event[], goals: Goal[], options: ScoreOptions): Score {
+  return scoreWithHistory(events, goals, options).score;
+}
+
+/** The score, and the weeks and blocks before it that the target and the records read. */
+export function scoreWithHistory(
+  events: Event[],
+  goals: Goal[],
+  options: ScoreOptions,
+): { score: Score; history: ScoreHistory } {
   const zone = new Zone(options.timezone ?? DEFAULT_TIMEZONE);
   const now = Date.parse(options.now);
   if (!Number.isFinite(now)) throw new RangeError("now must be a valid ISO datetime");
@@ -343,8 +459,9 @@ export function buildScore(events: Event[], goals: Goal[], options: ScoreOptions
   const range = scoreRange(options.date, zone.name);
 
   const active = goals.filter((g) => g.active);
-  const scored = active.filter((g) => !isSleepGoal(g));
-  const blocks = goalBlocks(events, scored, range.from, range.to);
+  // goalBlocks leaves out every goal that is not of kind `time`.
+  const blocks = goalBlocks(events, active, range.from, range.to);
+  const instructions = (options.instructions ?? []).filter((i) => i.active);
   const tl = buildTimeline(events, range.from, range.to);
   const workouts = union(
     events.flatMap((e) =>
@@ -377,47 +494,104 @@ export function buildScore(events: Event[], goals: Goal[], options: ScoreOptions
   const goalRows: ScoreGoal[] = active.map((goal) => {
     const own = weekPieces.filter((p) => p.block.goal.id === goal.id);
     const t = totals(own.reduce(plus, ZERO));
+    const budget = goal.weekly_budget_minutes ?? 0;
+    const scored = isScoredGoal(goal);
     return {
       goal_id: goal.id,
       title: goal.title,
       category: goal.category,
-      scored: !isSleepGoal(goal),
-      budget_minutes: goal.weekly_budget_minutes ?? 0,
+      area: goalArea(goal.category),
+      kind: goalKind(goal),
+      scored,
+      budget_minutes: budget,
       ...t,
       daily: range.days.map((day) => {
         const d = totals(own.filter((p) => p.day === day).reduce(plus, ZERO));
         return { date: day, planned_minutes: d.planned_minutes, spent_minutes: d.spent_minutes };
       }),
+      minutes_left: scored ? Math.max(0, budget - t.spent_minutes) : 0,
+      // A block that crosses midnight is one block.
+      open_blocks: new Set(own.filter((p) => p.end > now).map((p) => p.block.eventId)).size,
     };
   });
 
   const today = days.find((d) => d.date === options.date);
   if (!today) throw new RangeError("date is outside its own week");
+  const dayPieces = pieces.filter((p) => p.day === options.date);
   const lastEnd = (segs: Segment[]) => {
     const last = segs[segs.length - 1];
     return last ? iso(last.end) : null;
   };
 
-  return {
-    week_start: iso(zone.startOfDay(range.days[0] ?? options.date)),
-    ...totals(week),
-    time_won_back_minutes: days.reduce((t, d) => t + d.time_won_back_minutes, 0),
-    goals: goalRows,
-    timezone: zone.name,
-    generated_at: iso(now),
-    date: options.date,
-    days,
-    day: {
-      ...today,
-      now: iso(now),
-      time_won_back: wonBack.get(options.date) ?? {
-        minutes: 0,
-        usual_loss_rate: null,
-        history_days: 0,
-        reason: null,
+  // The waking day, the fixed commitments and the free time left (score/week.ts).
+  const waking = wakingDay(active);
+  const committed = commitments(
+    events.filter((e) => {
+      const start = Date.parse(e.start_at);
+      return start < range.to && (e.end_at ? Date.parse(e.end_at) : start) > range.from;
+    }),
+    new Set(blocks.map((b) => b.eventId)),
+  );
+
+  // The four weeks before and this one, for the target and the records.
+  const monday = range.days[0] ?? options.date;
+  const weeks: ScoreHistory["weeks"] = [-4, -3, -2, -1, 0].map((back) => {
+    const start = zone.nextDay(monday, back * 7);
+    const weekDays = Array.from({ length: 7 }, (_, i) => zone.nextDay(start, i));
+    const own = new Set(weekDays);
+    const ps = pieces.filter((p) => own.has(p.day));
+    const t = totals(ps.reduce(plus, ZERO));
+    const byArea = areaTotals(ps);
+    return {
+      week_start: start,
+      complete: zone.startOfDay(zone.nextDay(start, 7)) <= now,
+      score_pct: t.score_pct,
+      elapsed_minutes: t.elapsed_minutes,
+      areas: Object.fromEntries(
+        AREAS.map((a) => [a, { score_pct: byArea[a].score_pct, elapsed_minutes: byArea[a].elapsed_minutes }]),
+      ) as RecordWeek["areas"],
+      committed_minutes: committedMinutes(zone, weekDays, waking, committed),
+    };
+  });
+  const runs = pieces.flatMap((p) => (p.end <= now ? (longestRun(p) ?? []) : []));
+  const history: ScoreHistory = { weeks, runs };
+
+  const score: Score = withTarget(
+    {
+      week_start: iso(zone.startOfDay(monday)),
+      ...totals(week),
+      time_won_back_minutes: days.reduce((t, d) => t + d.time_won_back_minutes, 0),
+      goals: goalRows,
+      timezone: zone.name,
+      generated_at: iso(now),
+      date: options.date,
+      areas: areaRows(weekPieces, active).map((a) => ({
+        ...a,
+        target_pct: null,
+        floor_pct: 0,
+        meets_floor: null,
+      })),
+      days,
+      day: {
+        ...today,
+        now: iso(now),
+        time_won_back: wonBack.get(options.date) ?? {
+          minutes: 0,
+          usual_loss_rate: null,
+          history_days: 0,
+          reason: null,
+        },
+        blocks: dayPieces.map((p) => toBlock(p, instructions, zone)),
+        areas: areaRows(dayPieces, active),
       },
-      blocks: pieces.filter((p) => p.day === options.date).map(toBlock),
+      data_until: { mac: lastEnd(tl.mac), iphone: lastEnd(tl.iphone) },
+      target: null,
+      on_target: null,
+      records: [],
+      free_minutes_left: freeMinutesLeft(zone, range.days, now, waking, committed),
+      sleep: sleepWeek(events, active, zone, range.days, now),
     },
-    data_until: { mac: lastEnd(tl.mac), iphone: lastEnd(tl.iphone) },
-  };
+    null,
+  );
+  return { score, history };
 }

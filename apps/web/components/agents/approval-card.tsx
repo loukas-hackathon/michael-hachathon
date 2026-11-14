@@ -53,7 +53,7 @@ export function ApprovalCard({
       </ul>
       {failed ? <p className="text-footnote text-danger">I could not save that. Try again.</p> : null}
       {answer ? (
-        <p role="status" className="flex min-h-9 items-center text-subhead text-label-2">
+        <p role="status" className="m-swap flex min-h-9 items-center text-subhead text-label-2">
           {result[answer]}
         </p>
       ) : (

@@ -4,6 +4,7 @@ import { GoalCategory, type Profile, type WeakSpot, type Weekday } from "@michae
 import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { MiMark } from "@/components/brand";
+import { CalendarGoals } from "@/components/goals/calendar-goals";
 import { hm } from "@/lib/format";
 import { type Instruction, instructionText } from "@/lib/instructions";
 import { finishOnboarding, skipOnboarding } from "./actions";
@@ -351,6 +352,8 @@ export function OnboardingFlow({ saved, resume }: { saved?: Saved; resume?: Resu
   const [picked, setPicked] = useState<StarterId[]>(() =>
     GOALS.map((g) => g.id).filter((id) => saved?.goals.some((x) => starterOf(x.category) === id)),
   );
+  // Goals kept from the calendar (#134) count as an answer to the first question.
+  const [keptFromCalendar, setKeptFromCalendar] = useState(0);
   const [minutes, setMinutes] = useState<Record<StarterId, number>>(() => {
     const m = Object.fromEntries(GOALS.map((g) => [g.id, g.initial])) as Record<StarterId, number>;
     for (const g of saved?.goals ?? []) {
@@ -464,8 +467,8 @@ export function OnboardingFlow({ saved, resume }: { saved?: Saved; resume?: Resu
       // Voice sheet, onboarding 1, as written.
       q: "What are you working towards?",
       line: "I'm Michael. I learn how your days really go, then I give you time back for what you want. Your own words.",
-      cta: picked.length === 0 && !ownGoal.trim() ? "Pick at least one" : "Next",
-      ready: picked.length > 0 || ownGoal.trim().length > 0,
+      cta: picked.length === 0 && !ownGoal.trim() && keptFromCalendar === 0 ? "Pick at least one" : "Next",
+      ready: picked.length > 0 || ownGoal.trim().length > 0 || keptFromCalendar > 0,
       body: (
         <div className="flex flex-col gap-2">
           <ul className="overflow-hidden rounded-group bg-fill">
@@ -693,6 +696,7 @@ export function OnboardingFlow({ saved, resume }: { saved?: Saved; resume?: Resu
           </h1>
           <p className="mt-2 text-body text-label-2">{s.line}</p>
         </div>
+        {step === 0 ? <CalendarGoals className="mt-8" onKept={setKeptFromCalendar} /> : null}
         {s.body ? <div className="mt-8">{s.body}</div> : null}
       </div>
 

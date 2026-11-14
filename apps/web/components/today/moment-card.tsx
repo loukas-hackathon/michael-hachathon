@@ -16,7 +16,8 @@ function Move({ move, label }: { move: MomentMove; label?: string }) {
 
 /** The maths: each goal against its weekly budget (morning) or today's plan (evening). */
 function GoalLines({ moment }: { moment: Moment }) {
-  const lines = moment.goals.filter((g) => g.category !== "rest" && g.budget_minutes !== null);
+  // Sleep stays outside the maths: the API marks the sleep goal (isSleepGoal, #201).
+  const lines = moment.goals.filter((g) => !g.sleep && g.category !== "rest" && g.budget_minutes !== null);
   if (lines.length === 0) return null;
   return (
     <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-footnote">
@@ -78,8 +79,8 @@ export function MomentView({ moment }: { moment: Moment }) {
 }
 
 /** Morning plan or Evening review for the Today screen. Renders nothing if the moment cannot load. */
-export async function MomentCard({ kind }: { kind: MomentKind }) {
-  const moment = await getMoment(kind).catch((err) => {
+export async function MomentCard({ kind, sample }: { kind: MomentKind; sample: boolean }) {
+  const moment = await getMoment(kind, sample).catch((err) => {
     console.error("moment card:", err);
     return null;
   });

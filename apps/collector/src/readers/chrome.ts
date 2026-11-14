@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import type { EventInput } from "@michael/shared";
+import { isMapsUrl, parseMapsUrl, titleHasPosition } from "../maps-url";
 import { siteCategory } from "../site-categories";
 import { hostFromUrl, isExcludedHost, parseExcludeList } from "../site-privacy";
 import { openCopy } from "../sqlite";
@@ -15,6 +16,8 @@ import type { Reader } from "../types";
 //   1. A visit to an excluded host (banking, health, adult, password managers, local network, plus
 //      the user's own list) is dropped whole, with its title and its search term.
 //   2. Of the address we keep the host only. The path and query string never leave this function.
+//      Google Maps is the one exception: its address is parsed (maps-url.ts) into a clean search
+//      term plus structured place and directions fields, so a map position never lands in a term.
 
 const CHROME_DIR = join(homedir(), "Library/Application Support/Google/Chrome");
 const USER_EXCLUDE_FILE = join(homedir(), ".michael", "exclude-hosts.txt");
@@ -212,10 +215,17 @@ export function createChromeReader(options: Options = {}): Reader {
           // pages still open whose duration Chrome has not written yet. The API keeps the first
           // copy of an event, so sending a page before it has a duration would freeze it at zero.
           // A search is a moment, not a stretch of time, so it is kept whatever the duration.
+          const maps = isMapsUrl(row.url);
           if (milliseconds >= 1000) {
             const title = clean(row.title);
             // Some pages have no title, or use their own address as one. Never pass that on.
-            const safeTitle = !title || /^[a-z][a-z0-9+.-]*:\/\//i.test(title) ? host : title;
+            // A Maps page titled with a dropped pin's position is just "Google Maps".
+            const safeTitle =
+              !title || /^[a-z][a-z0-9+.-]*:\/\//i.test(title)
+                ? host
+                : maps && titleHasPosition(title)
+                  ? "Google Maps"
+                  : title;
             const category = siteCategory(host);
             events.push({
               source: "chrome",
@@ -236,9 +246,12 @@ export function createChromeReader(options: Options = {}): Reader {
             visits++;
           }
 
-          const term = clean(row.term);
+          // For Maps the address itself says what was looked up; Chrome's own term for it is the
+          // raw path, map position included, so it is never used.
+          const mapsSearch = maps ? parseMapsUrl(row.url) : null;
+          const term = maps ? (mapsSearch?.term ?? "") : clean(row.term);
           if (term) {
-            const engine = searchEngine(host);
+            const engine = mapsSearch ? "google_maps" : searchEngine(host);
             const key = `${engine}\n${term.toLowerCase()}`;
             const repeat =
               lastSearch !== null &&
@@ -256,7 +269,13 @@ export function createChromeReader(options: Options = {}): Reader {
                 start_at: new Date(row.start_ms).toISOString(),
                 end_at: null,
                 title: term.slice(0, MAX_TITLE),
-                data: { engine, term: term.slice(0, MAX_TITLE), origin: "history", profile },
+                data: {
+                  engine,
+                  term: term.slice(0, MAX_TITLE),
+                  origin: "history",
+                  profile,
+                  ...(mapsSearch ? { maps: mapsSearch.maps } : {}),
+                },
               });
               searches++;
             }

@@ -1,8 +1,8 @@
+import Link from "next/link";
 import { AgentRow } from "@/components/agents/agent-row";
 import { ApprovalCard } from "@/components/agents/approval-card";
 import { ConnectClaude } from "@/components/agents/connect-claude";
 import { EmptyState } from "@/components/empty-state";
-import { ScreenHeader } from "@/components/screen";
 import { getAgents, SCOPE_LABEL, whoAsked } from "@/lib/agents";
 import { MCP_URL } from "@/lib/connect";
 import { formatTime } from "@/lib/format";
@@ -17,7 +17,25 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
 
   return (
     <main className="screen">
-      <ScreenHeader context="Who asks about you" title="Agents" />
+      <header className="flex min-h-11 items-center pt-2">
+        <Link
+          href="/you"
+          className="press -ml-2 flex h-11 items-center gap-1 px-2 text-body font-semibold text-tint-text"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true" className="size-5">
+            <path
+              d="m15 5-7 7 7 7"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          You
+        </Link>
+      </header>
+      <h1 className="text-large-title font-bold tracking-[0.01em]">Agents</h1>
 
       {view.agents.length === 0 ? (
         <EmptyState title="No agent has asked about you yet.">

@@ -2,7 +2,7 @@
 
 Michael is a coach for the whole day. He builds ONE timeline of the user's day from many sources
 (Apple Watch, Google Calendar, Mac and iPhone activity, browser, Claude Code, conversations),
-checks it against the user's goals (work, gym, rest, food), and recommends or makes concrete changes
+checks it against the user's goals (business, health, personal), and recommends or makes concrete changes
 tied to a goal. Claude and other AI agents can read and write the user's day through our MCP server.
 
 Tagline: "On your side." Mission: "Michael finds the time you lose every day and gives it back to
@@ -32,7 +32,7 @@ Live URLs, dashboards and where every setting lives: README "Live services". Com
 - **Stay visible.** Claim the issue (assignee + `in-progress`) with an optimistic ETA comment (aim for
   10 to 30 minutes; ship the smallest working version, improve in the next PR). Glance at open PRs
   and in-progress issues before touching shared files; talk through issue and PR comments.
-- **Merging is deploying.** CI runs `pnpm check`; Auto-merge merges green PRs and closes their issues;
+- **Merging is deploying.** CI runs `pnpm check`, `pnpm test`, the web build and a migration timestamp guard; Auto-merge merges green PRs and closes their issues;
   Deploy API ships to Railway; Migrate database applies new migrations; Vercel redeploys the web.
   Use a draft or the `wip` label to hold a PR. After your merge, check production (`/health` reports
   the deployed commit).

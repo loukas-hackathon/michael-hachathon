@@ -77,6 +77,6 @@ export default async function ConnectPage({ searchParams }: { searchParams: Prom
 async function signedInAs(): Promise<string | null> {
   if (!authEnabled) return "the demo account";
   if ((await cookies()).get(DEMO_COOKIE)?.value === "1") return "the demo week";
-  const { data } = await (await supabaseServer()).auth.getUser();
-  return data.user?.email ?? null;
+  const { data } = await (await supabaseServer()).auth.getClaims();
+  return data?.claims?.email ?? null;
 }

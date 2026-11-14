@@ -121,8 +121,12 @@ test("on pace: nothing to say", () => {
 });
 
 test("never in the night or at dinner", () => {
+  // A rest goal that is not sleep: it is measured in time, so it owns the late block. (A sleep goal
+  // is a target and has no blocks.)
+  const evenings = goal("rest", "00000000-0000-4000-8000-0000000000a4", "Evenings off");
   const late = [calendar("Rest: read", at("22:45"), at("23:30"))];
-  assert.deepEqual(decide(input("22:33", late, [REST])), { action: "skip", skipped: "quiet_hours" });
+  assert.deepEqual(decide(input("22:33", late, [evenings])), { action: "skip", skipped: "quiet_hours" });
+  assert.deepEqual(decide(input("22:33", late, [REST])), { action: "skip", skipped: "nothing_to_say" });
   const dinner = [calendar("Gym", at("20:40"), at("21:30"))];
   assert.deepEqual(decide(input("20:30", dinner, [GYM])), { action: "skip", skipped: "quiet_hours" });
 });
@@ -146,6 +150,14 @@ test("at most 5 a day: the sixth is stored as suppressed", () => {
   // Suppressed ones do not count towards the cap.
   const withSuppressed = [...today.slice(0, 4), { ...sent("11:30"), status: "suppressed" as const }];
   assert.equal(decide(input("12:00", [], [GYM], withSuppressed)).action, "send");
+});
+
+test("test nudges (the stage moment) never count, block or delay a real one", () => {
+  const tests = ["08:00", "09:00", "10:00", "11:00", "11:55"].map((t) => ({
+    ...sent(t, "goal_behind"),
+    status: "test" as const,
+  }));
+  assert.equal(decide(input("12:00", [], [GYM], tests)).action, "send");
 });
 
 test("no repeats, and at least 20 minutes apart", () => {

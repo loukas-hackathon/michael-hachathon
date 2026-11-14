@@ -1,17 +1,20 @@
 import {
+  countsTowardsCap,
   type Event,
   type Goal,
   type GoalCategory,
+  isSleepGoal,
   type Nudge,
   type NudgeKind,
   type NudgeSkip,
   voiceShortDuration,
 } from "@michael/shared";
 import { DEFAULT_TIMEZONE } from "../patterns/context";
-import { goalBlocks, roleOf } from "../patterns/focus";
+import { goalBlocks } from "../patterns/focus";
 import { DAY, MINUTE, Zone } from "../patterns/time";
 import { buildTimeline, type Segment } from "../patterns/timeline";
 import { type Span, union, unionLength } from "../patterns/util";
+import { isBusinessGoal, purposeFor } from "../score/purpose";
 
 // The nudge engine. Pure: the clock, the events, the goals and today's nudges are passed in, so
 // the same input always gives the same decision. The route (routes/nudges.ts) does the I/O.
@@ -71,6 +74,17 @@ export const LIMITS = {
   goalBehindLatest: 19 * 60,
   goalBehindMinMinutes: 60,
   goalBehindMinShare: 0.15,
+  /** Morning: after the night's sleep ends (3 hours or more), else at 08:00; not after 12:00. */
+  morningDefault: 8 * 60,
+  morningLatest: 12 * 60,
+  mainSleepMs: 3 * 60 * MINUTE,
+  /** Evening: an hour before the usual bedtime (median of 3+ recent nights), else 21:00... */
+  eveningDefault: 21 * 60,
+  eveningLead: 60,
+  minBedtimeNights: 3,
+  bedtimeNights: 8,
+  /** ...and always this long before the night's quiet hours start. */
+  eveningBeforeNight: 45,
 } as const;
 
 export interface EngineInput {
@@ -79,13 +93,20 @@ export interface EngineInput {
   /** IANA zone. Default Europe/Athens. */
   timezone?: string;
   goals: Goal[];
-  /** Every event from Monday 00:00 of the local week up to the end of today. */
+  /** Every event from `engineWindow(now).from` (Monday 00:00, or 8 days back for the usual bedtime) to the end of today. */
   events: Event[];
   /** Every nudge of the local day so far, suppressed ones included. */
   today: Pick<Nudge, "key" | "status" | "created_at">[];
   offTheRecord?: boolean;
   quiet?: QuietHours;
+  /**
+   * The line for a Morning or Evening moment, when `momentDue` says one is due. The route builds
+   * it from GET /v1/moments/:kind; the engine only decides whether it goes out.
+   */
+  moment?: { kind: MomentKind; text: string; reason: string };
 }
+
+export type MomentKind = "morning" | "evening";
 
 export interface Candidate {
   kind: NudgeKind;
@@ -102,13 +123,33 @@ export type Decision =
 
 // Most urgent first: a drift is happening now, a block is about to start, bedtime is close, and
 // a weekly gap can wait for the next check.
-const PRIORITY: NudgeKind[] = ["focus_drift", "block_soon", "wind_down", "goal_behind"];
+// The Morning and Evening moments come after anything happening right now.
+const PRIORITY: NudgeKind[] = ["focus_drift", "block_soon", "morning", "evening", "wind_down", "goal_behind"];
 
-const LABEL: Record<GoalCategory, string> = { work: "Focus block", gym: "Gym", rest: "Rest", food: "Meal" };
-const SHORT: Record<GoalCategory, string> = { work: "Work", gym: "Gym", rest: "Rest", food: "Food" };
+// The three goal categories, and the four older names goals may still carry.
+const LABEL: Record<GoalCategory, string> = {
+  business: "Focus block",
+  health: "Training",
+  personal: "Your own time",
+  work: "Focus block",
+  gym: "Gym",
+  rest: "Rest",
+  food: "Meal",
+};
+const SHORT: Record<GoalCategory, string> = {
+  business: "Work",
+  health: "Training",
+  personal: "Your own time",
+  work: "Work",
+  gym: "Gym",
+  rest: "Rest",
+  food: "Food",
+};
 
-// Events that are real time spent on a goal, besides its calendar blocks.
-const SPENT_TYPES: Record<GoalCategory, Event["type"]> = {
+// Events that are real time spent on a goal, besides its calendar blocks. A personal goal has none.
+const SPENT_TYPES: Partial<Record<GoalCategory, Event["type"]>> = {
+  business: "focus_session",
+  health: "workout",
   work: "focus_session",
   gym: "workout",
   rest: "sleep",
@@ -137,6 +178,7 @@ interface World {
   goals: Goal[];
   events: Event[];
   quiet: QuietHours;
+  moment: EngineInput["moment"];
 }
 
 function world(input: EngineInput): World {
@@ -157,6 +199,7 @@ function world(input: EngineInput): World {
     goals: input.goals.filter((g) => g.active),
     events: input.events,
     quiet: input.quiet ?? DEFAULT_QUIET,
+    moment: input.moment,
   };
 }
 
@@ -168,8 +211,10 @@ export function spentThisWeek(w: World, goal: Goal): number {
   const spans: Span[] = goalBlocks(w.events, w.goals, w.weekStart, w.now)
     .filter((b) => b.goal.id === goal.id)
     .map((b) => ({ start: b.start, end: b.end }));
+  // Sleep is a health goal measured by nights, not by workouts.
+  const spentType = isSleepGoal(goal) ? "sleep" : SPENT_TYPES[goal.category];
   for (const e of w.events) {
-    if (e.type !== SPENT_TYPES[goal.category] || !e.end_at) continue;
+    if (e.type !== spentType || !e.end_at) continue;
     const start = Math.max(Date.parse(e.start_at), w.weekStart);
     const end = Math.min(Date.parse(e.end_at), w.now);
     if (end > start) spans.push({ start, end });
@@ -185,14 +230,16 @@ function recentAttention(w: World, from: number): Segment[] {
 
 function focusDrift(w: World): Candidate | null {
   const block = goalBlocks(w.events, w.goals, w.dayStart, w.dayEnd).find(
-    (b) => b.goal.category === "work" && b.start <= w.now && w.now < b.end,
+    (b) => isBusinessGoal(b.goal) && b.start <= w.now && w.now < b.end,
   );
   if (!block) return null;
   const from = Math.max(block.start, w.now - LIMITS.driftWindowMs);
   const byApp = new Map<string, number>();
   let total = 0;
+  // Off purpose for this goal (score/purpose.ts): mail inside a sales block is not a drift.
+  const purpose = purposeFor(block.goal);
   for (const s of recentAttention(w, from)) {
-    if (roleOf(s.category) !== "distractor") continue;
+    if (purpose(s.category) !== "off") continue;
     const ms = s.end - s.start;
     total += ms;
     byApp.set(s.name, (byApp.get(s.name) ?? 0) + ms);
@@ -236,7 +283,8 @@ function blockSoon(w: World): Candidate | null {
 }
 
 function windDown(w: World): Candidate | null {
-  const rest = w.goals.find((g) => g.category === "rest");
+  // The sleep goal, or a goal that still carries the older `rest` category.
+  const rest = w.goals.find((g) => g.category === "rest" || isSleepGoal(g));
   if (!rest) return null;
   const nightAt = w.zone.at(w.day, w.quiet.nightStart);
   const lead = nightAt - w.now;
@@ -285,9 +333,98 @@ function goalBehind(w: World): Candidate | null {
   };
 }
 
+// ---------- Morning and Evening moments ----------
+
+const mainSleeps = (w: World): Span[] =>
+  w.events
+    .filter((e) => e.type === "sleep" && e.end_at)
+    .map((e) => ({ start: Date.parse(e.start_at), end: Date.parse(e.end_at as string) }))
+    .filter((s) => s.end - s.start >= LIMITS.mainSleepMs && s.end - s.start <= DAY);
+
+/** When the user woke today: the end of the last main sleep that ended today, or null. */
+function wokeAt(w: World): number | null {
+  const ends = mainSleeps(w)
+    .map((s) => s.end)
+    .filter((end) => end >= w.dayStart && end <= w.now);
+  return ends.length ? Math.max(...ends) : null;
+}
+
+/**
+ * Usual bedtime in minutes after midnight, from the start of the main sleeps of the last 8 nights
+ * (median; times after midnight count as late evening). Null under 3 nights.
+ */
+export function usualBedtime(w: World): number | null {
+  const from = w.dayStart - LIMITS.bedtimeNights * DAY;
+  const starts = mainSleeps(w)
+    .filter((s) => s.start >= from && s.start < w.now)
+    .map((s) => {
+      const m = w.zone.minuteOfDay(s.start);
+      return m < 12 * 60 ? m + 24 * 60 : m;
+    })
+    .sort((a, b) => a - b);
+  if (starts.length < LIMITS.minBedtimeNights) return null;
+  const mid = Math.floor(starts.length / 2);
+  return starts.length % 2
+    ? (starts[mid] as number)
+    : Math.round(((starts[mid - 1] as number) + (starts[mid] as number)) / 2);
+}
+
+export interface MomentTiming {
+  /** Instant the Morning moment may go out from. */
+  morningAt: number;
+  woke: number | null;
+  /** Instant the Evening moment may go out from. */
+  eveningAt: number;
+  bedtime: number | null;
+}
+
+export function momentTiming(w: World): MomentTiming {
+  const woke = wokeAt(w);
+  const bedtime = usualBedtime(w);
+  const night = w.quiet.nightStart < 12 * 60 ? w.quiet.nightStart + 24 * 60 : w.quiet.nightStart;
+  const evening = Math.min(
+    bedtime === null ? LIMITS.eveningDefault : bedtime - LIMITS.eveningLead,
+    night - LIMITS.eveningBeforeNight,
+    24 * 60 - 1,
+  );
+  return {
+    morningAt: woke ?? w.zone.at(w.day, LIMITS.morningDefault),
+    woke,
+    eveningAt: w.zone.at(w.day, evening),
+    bedtime,
+  };
+}
+
+/** Which moment is due now, if any. Each goes out at most once a day (its key is the kind). */
+export function momentDue(input: EngineInput): MomentKind | null {
+  const w = world(input);
+  const t = momentTiming(w);
+  if (w.now >= t.morningAt && w.minute < LIMITS.morningLatest) return "morning";
+  if (w.now >= t.eveningAt && w.minute >= LIMITS.morningLatest) return "evening";
+  return null;
+}
+
+function momentRule(kind: MomentKind) {
+  return (w: World): Candidate | null => {
+    if (!w.moment || w.moment.kind !== kind) return null;
+    const t = momentTiming(w);
+    const when =
+      kind === "morning"
+        ? t.woke !== null
+          ? `Sent after you woke at ${w.zone.clock(t.woke)}.`
+          : `Sent at ${w.zone.clock(t.morningAt)}: no sleep recorded this morning.`
+        : t.bedtime !== null
+          ? `Sent an hour before your usual bedtime of ${w.zone.clock(w.zone.at(w.day, t.bedtime))}.`
+          : `Sent at ${w.zone.clock(t.eveningAt)}: not enough nights yet to learn your bedtime.`;
+    return { kind, key: kind, goal_id: null, text: w.moment.text, reason: `${w.moment.reason} ${when}` };
+  };
+}
+
 const RULES: Record<NudgeKind, (w: World) => Candidate | null> = {
   focus_drift: focusDrift,
   block_soon: blockSoon,
+  morning: momentRule("morning"),
+  evening: momentRule("evening"),
   wind_down: windDown,
   goal_behind: goalBehind,
 };
@@ -309,7 +446,7 @@ export function quietNow(input: EngineInput): "night" | "dinner" | "deep_work" |
   if (
     w.quiet.deepWork &&
     goalBlocks(w.events, w.goals, w.dayStart, w.dayEnd).some(
-      (b) => b.goal.category === "work" && b.start <= w.now && w.now < b.end,
+      (b) => isBusinessGoal(b.goal) && b.start <= w.now && w.now < b.end,
     )
   ) {
     return "deep_work";
@@ -324,7 +461,9 @@ export function quietNow(input: EngineInput): "night" | "dinner" | "deep_work" |
  */
 export function decide(input: EngineInput): Decision {
   if (input.offTheRecord) return { action: "skip", skipped: "off_the_record" };
-  const seen = new Set(input.today.map((n) => n.key));
+  // Test nudges (the stage moment) never block, delay or count against a real one.
+  const real = input.today.filter((n) => n.status !== "test");
+  const seen = new Set(real.map((n) => n.key));
   let fresh = candidates(input).filter((c) => !seen.has(c.key));
   if (fresh.length === 0) return { action: "skip", skipped: "nothing_to_say" };
 
@@ -335,7 +474,7 @@ export function decide(input: EngineInput): Decision {
   const best = fresh[0];
   if (!best) return { action: "skip", skipped: "quiet_hours" };
 
-  const counted = input.today.filter((n) => n.status !== "suppressed");
+  const counted = real.filter((n) => countsTowardsCap(n.status));
   if (counted.length >= LIMITS.perDay) return { action: "suppress", candidate: best, skipped: "daily_cap" };
 
   const now = Date.parse(input.now);
@@ -350,6 +489,8 @@ export function engineWindow(now: string, timezone = DEFAULT_TIMEZONE) {
   const w = world({ now, timezone, goals: [], events: [], today: [] });
   return {
     day: w.day,
+    /** Where the engine's events start: Monday 00:00, or 8 days back for the usual bedtime. */
+    from: new Date(Math.min(w.weekStart, w.dayStart - LIMITS.bedtimeNights * DAY)).toISOString(),
     dayStart: new Date(w.dayStart).toISOString(),
     dayEnd: new Date(w.dayEnd).toISOString(),
     weekStart: new Date(w.weekStart).toISOString(),

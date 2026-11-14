@@ -3,10 +3,12 @@ import { createClient } from "@supabase/supabase-js";
 import type { MiddlewareHandler } from "hono";
 import { agentsStore } from "./agents-store";
 import { type AuthMethod, runAsUser } from "./context";
+import { keepDemoWeekFresh } from "./demo/sync";
 import { env } from "./env";
 import { errorResponse } from "./http";
 import { mcpResource, resourceMetadataUrl } from "./public-url";
 import { verifyAccessToken } from "./routes/oauth";
+import { store } from "./store";
 import { isPersonalToken, userForPersonalToken } from "./tokens";
 
 const digest = (s: string) => createHash("sha256").update(s).digest();
@@ -36,6 +38,18 @@ async function userFromSupabaseToken(token: string): Promise<string | null> {
 }
 
 /**
+ * Deletes the current sign in (Supabase Auth user) for DELETE /v1/me/data. False when Auth is not
+ * configured (in-memory store) or Supabase refused; the data is already gone either way.
+ */
+export async function deleteAuthUser(userId: string): Promise<boolean> {
+  for (const [token, hit] of tokenCache) if (hit.userId === userId) tokenCache.delete(token);
+  if (!supabase) return false;
+  const { error } = await supabase.auth.admin.deleteUser(userId);
+  if (error) console.error(`[auth] could not delete auth user ${userId}: ${error.message}`);
+  return !error;
+}
+
+/**
  * Resolves who the request acts for and runs the rest of the request as that user:
  * - a signed-in user's Supabase access token (`Authorization: Bearer <jwt>`) -> that user
  * - the shared API key -> the demo account (collectors, webhooks, our own tools)
@@ -45,6 +59,13 @@ async function userFromSupabaseToken(token: string): Promise<string | null> {
  * `allowQueryKey` (implied by `mcp`) also accepts `?key=` for callers that cannot set headers
  * (webhook senders, older connector setups). URLs end up in logs, so only enable it where needed.
  */
+// The only routes a device key (mk_...) may call: sending data, and the one read the Mac collector
+// needs to enforce focus guards (#41). A leaked key can neither read the day nor change anything.
+export const deviceKeyMayCall = (method: string, path: string) =>
+  (method === "POST" &&
+    (path === "/v1/events" || path === "/v1/events/batch" || path.startsWith("/v1/webhooks/"))) ||
+  (method === "GET" && path === "/v1/focus-guards/active");
+
 export const requireUser =
   (opts: { allowQueryKey?: boolean; mcp?: boolean } = {}): MiddlewareHandler =>
   async (c, next) => {
@@ -81,6 +102,13 @@ export const requireUser =
       via = "session";
     }
     if (!userId) return deny("Invalid or expired credentials");
+    // Device keys only send data (plus the focus guard read): no MCP, no settings, no credentials.
+    if (via === "personal_token" && !deviceKeyMayCall(c.req.method, c.req.path)) {
+      return errorResponse(c, "forbidden", "Device keys can only send data to Michael");
+    }
+
+    // The demo account's generated week follows the clock (at most one refresh per 5 minutes).
+    if (userId === env.DEMO_USER_ID) await runAsUser(userId, () => keepDemoWeekFresh(store), via);
 
     if (agentId) {
       // The agent behind the token: its current scopes apply and every tool call is logged.

@@ -1,8 +1,20 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { type Event, type Goal, Score } from "@michael/shared";
-import { APPS, calendar, goal, mac, phone, syntheticMonth, T, web, workout } from "../patterns/testkit";
-import { buildScore, isSleepGoal, scoreRange } from "./score";
+import { type Event, type Goal, type Instruction, Score } from "@michael/shared";
+import {
+  APPS,
+  calendar,
+  goal,
+  mac,
+  phone,
+  sleep,
+  syntheticMonth,
+  T,
+  web,
+  workout,
+} from "../patterns/testkit";
+import { detectRecords } from "./records";
+import { buildScore, isSleepGoal, scoreRange, scoreWithHistory } from "./score";
 
 // Small synthetic timelines whose answer can be worked out by hand. Every title, app and time
 // here is made up.
@@ -270,6 +282,233 @@ test("a lost stretch names an app or a site category, never an address or a page
   assert.equal(body.includes("page title"), false);
 });
 
+// ---------- kinds, the three categories and standing instructions ----------
+
+const BUSINESS = withTarget(
+  goal("business", "10000000-0000-4000-8000-000000000011", "The company"),
+  { calendar_titles: ["Cold Outreach"] },
+  480,
+);
+const STUDY = withTarget(
+  goal("work", "10000000-0000-4000-8000-000000000012", "University"), // an older category name
+  { calendar_titles: ["Study"] },
+  360,
+);
+const TRAINING = withTarget(
+  goal("health", "10000000-0000-4000-8000-000000000013", "Triathlon"),
+  { kind: "time", calendar_titles: ["Gym", "Run"] },
+  540,
+);
+const FUN = withTarget(
+  goal("personal", "10000000-0000-4000-8000-000000000014", "Fun"),
+  { kind: "time", label: "fun", calendar_titles: ["Night out"] },
+  120,
+);
+
+test("only goals of kind time are scored: a target, a count and a checklist are listed, with no blocks", () => {
+  const sleep = withTarget(
+    goal("health", "10000000-0000-4000-8000-000000000021", "Sleep"),
+    { kind: "target", sleep_hours: 7.5, screens_off: "23:00" },
+    0,
+  );
+  const yoga = withTarget(
+    goal("health", "10000000-0000-4000-8000-000000000022", "Yoga"),
+    { kind: "count", per_week: 2, calendar_titles: ["Yoga"] },
+    0,
+  );
+  const outcomes = withTarget(
+    goal("business", "10000000-0000-4000-8000-000000000023", "Today's outcomes"),
+    { kind: "checklist" },
+    0,
+  );
+  const s = score(
+    [
+      calendar("Cold Outreach", T("2026-11-10 10:00"), T("2026-11-10 11:00")),
+      // Each of these names a goal that is not measured in minutes: none becomes a block.
+      calendar("Yoga", T("2026-11-10 07:00"), T("2026-11-10 08:00")),
+      calendar("Sleep", T("2026-11-10 23:00"), T("2026-11-11 07:00")),
+      calendar("Today's outcomes", T("2026-11-10 09:00"), T("2026-11-10 09:30")),
+      calendar("Plan the day", T("2026-11-10 08:30"), T("2026-11-10 09:00"), { goal_id: outcomes.id }),
+      phone(APPS.social, T("2026-11-10 07:10"), T("2026-11-10 07:20")),
+    ],
+    "2026-11-10",
+    "2026-11-12 12:00",
+    [BUSINESS, sleep, yoga, outcomes],
+  );
+  assert.deepEqual(
+    s.day.blocks.map((b) => b.title),
+    ["Cold Outreach"],
+  );
+  assert.deepEqual(
+    s.goals.map((g) => [g.title, g.area, g.kind, g.scored, g.planned_minutes, g.lost_minutes, g.score_pct]),
+    [
+      ["The company", "business", "time", true, 60, 0, 100],
+      ["Sleep", "health", "target", false, 0, 0, null],
+      ["Yoga", "health", "count", false, 0, 0, null],
+      ["Today's outcomes", "business", "checklist", false, 0, 0, null],
+    ],
+  );
+  // The phone during yoga is not lost goal time: yoga has no planned minutes in this score.
+  assert.deepEqual(seven(s), [60, 60, 60, 0, 0, 60, 100]);
+  // An older sleep goal (category `rest`, no kind) reads the same way.
+  const old = score([], "2026-11-10", "2026-11-12 12:00", [SLEEP]);
+  assert.deepEqual(
+    old.goals.map((g) => [g.area, g.kind, g.scored]),
+    [["health", "target", false]],
+  );
+});
+
+test("areas: the same totals per category, and they add up to the week and to the day", () => {
+  const events = [
+    // Tuesday, the day asked for.
+    calendar("Cold Outreach", T("2026-11-10 10:00"), T("2026-11-10 11:00")),
+    mac(APPS.editor, T("2026-11-10 10:00"), T("2026-11-10 11:00")),
+    phone(APPS.social, T("2026-11-10 10:20"), T("2026-11-10 10:35")),
+    calendar("Study", T("2026-11-10 14:00"), T("2026-11-10 15:00")),
+    mac(APPS.chat, T("2026-11-10 14:00"), T("2026-11-10 14:10")),
+    calendar("Gym", T("2026-11-10 18:00"), T("2026-11-10 19:00")),
+    phone(APPS.social, T("2026-11-10 18:30"), T("2026-11-10 18:36")),
+    calendar("Night out", T("2026-11-10 21:00"), T("2026-11-10 23:00")),
+    // Wednesday: one block in progress at `now`, one ahead.
+    calendar("Run", T("2026-11-11 08:00"), T("2026-11-11 09:00")),
+    calendar("Cold Outreach", T("2026-11-11 10:00"), T("2026-11-11 12:00")),
+  ];
+  const goals = [BUSINESS, STUDY, TRAINING, FUN, SLEEP];
+  const s = score(events, "2026-11-10", "2026-11-11 08:30", goals);
+
+  const row = (a: (typeof s.day.areas)[number]) => [a.area, ...seven(a)];
+  //                       planned elapsed spent lost ahead unverified score
+  assert.deepEqual(s.day.areas.map(row), [
+    ["business", 120, 120, 95, 25, 0, 50, 79], // 45 of the editor verified; the study hour is not
+    ["health", 60, 60, 54, 6, 0, 54, 90],
+    ["personal", 120, 120, 120, 0, 0, 120, 100],
+  ]);
+  assert.deepEqual(s.areas.map(row), [
+    ["business", 240, 120, 95, 25, 120, 50, 79],
+    ["health", 120, 90, 84, 6, 30, 84, 93],
+    ["personal", 120, 120, 120, 0, 0, 120, 100],
+  ]);
+  // The older `work` goal sits under business, the older sleep goal under health, scored or not.
+  assert.deepEqual(
+    s.areas.map((a) => a.goal_ids),
+    [[BUSINESS.id, STUDY.id], [TRAINING.id, SLEEP.id], [FUN.id]],
+  );
+  assert.deepEqual(
+    s.day.areas.map((a) => a.goal_ids),
+    s.areas.map((a) => a.goal_ids),
+  );
+
+  const fields = [
+    "planned_minutes",
+    "elapsed_minutes",
+    "spent_minutes",
+    "lost_minutes",
+    "ahead_minutes",
+    "unverified_minutes",
+  ] as const;
+  for (const f of fields) {
+    assert.equal(
+      s.areas.reduce((t, a) => t + a[f], 0),
+      s[f],
+      `week ${f}`,
+    );
+    assert.equal(
+      s.day.areas.reduce((t, a) => t + a[f], 0),
+      s.day[f],
+      `day ${f}`,
+    );
+  }
+  assert.deepEqual(seven(s.day), [300, 300, 269, 31, 0, 224, 90]);
+
+  // A category with nothing elapsed has no score: null, not 0 and not 100. No goals: three empty rows.
+  const early = score(events, "2026-11-10", "2026-11-10 09:00", goals);
+  assert.deepEqual(
+    early.areas.map((a) => [a.area, a.planned_minutes, a.score_pct]),
+    [
+      ["business", 240, null],
+      ["health", 120, null],
+      ["personal", 120, null],
+    ],
+  );
+  assert.deepEqual(
+    score(events, "2026-11-10", "2026-11-11 08:30", []).areas.map((a) => [a.area, a.goal_ids, ...seven(a)]),
+    [
+      ["business", [], 0, 0, 0, 0, 0, 0, null],
+      ["health", [], 0, 0, 0, 0, 0, 0, null],
+      ["personal", [], 0, 0, 0, 0, 0, 0, null],
+    ],
+  );
+});
+
+test("instructions_broken: a block says which standing instructions its time falls under", () => {
+  const rule = (n: number, i: Partial<Instruction> & Pick<Instruction, "kind" | "text">): Instruction => ({
+    id: `50000000-0000-4000-8000-00000000000${n}`,
+    active: true,
+    created_at: "2026-11-01T00:00:00.000Z",
+    updated_at: "2026-11-01T00:00:00.000Z",
+    ...i,
+  });
+  const sundays = rule(1, { text: "Keep Sundays clear", kind: "clear_day", days: [0] });
+  const home = rule(2, { text: "Home every day by 21:00", kind: "home_by", time: "21:00" });
+  const paused = rule(3, { text: "No Saturdays", kind: "clear_day", days: [6], active: false });
+  const custom = rule(4, { text: "Never two calls back to back", kind: "custom" });
+  const instructions = [sundays, home, paused, custom];
+
+  const events = [
+    calendar("Cold Outreach", T("2026-11-14 10:00"), T("2026-11-14 11:00")), // Saturday morning
+    calendar("Night out", T("2026-11-14 20:00"), T("2026-11-14 22:00")), // past 21:00
+    calendar("Run", T("2026-11-14 23:30"), T("2026-11-15 00:30")), // into Sunday
+    calendar("Gym", T("2026-11-15 10:00"), T("2026-11-15 11:00")), // a clear Sunday
+    calendar("Study", T("2026-11-15 21:30"), T("2026-11-15 22:30")), // Sunday and past 21:00
+  ];
+  const goals = [BUSINESS, STUDY, TRAINING, FUN];
+  const on = (date: string) =>
+    Score.parse(buildScore(events, goals, { date, now: T("2026-11-16 12:00"), instructions })).day.blocks.map(
+      (b) => [b.title, b.instructions_broken],
+    );
+
+  assert.deepEqual(on("2026-11-14"), [
+    ["Cold Outreach", []],
+    ["Night out", [home.id]],
+    ["Run", [home.id]], // Saturday's half of the run: after 21:00, not yet Sunday
+  ]);
+  assert.deepEqual(on("2026-11-15"), [
+    // Sunday's half: a clear Sunday, and 00:30 is still Saturday night for "home by 21:00".
+    ["Run", [sundays.id, home.id]],
+    ["Gym", [sundays.id]],
+    ["Study", [sundays.id, home.id]],
+  ]);
+
+  // A title named in an instruction's exceptions does not break it ("Gym 45" starts with "Gym");
+  // other instructions still apply to it.
+  const withGym = [{ ...sundays, exceptions: ["gym"] }, home];
+  const exceptionDay = Score.parse(
+    buildScore([...events, calendar("Gym 45", T("2026-11-15 21:00"), T("2026-11-15 21:45"))], goals, {
+      date: "2026-11-15",
+      now: T("2026-11-16 12:00"),
+      instructions: withGym,
+    }),
+  ).day.blocks.map((b) => [b.title, b.instructions_broken]);
+  assert.deepEqual(exceptionDay, [
+    ["Run", [sundays.id, home.id]],
+    ["Gym", []],
+    ["Gym 45", [home.id]],
+    ["Study", [sundays.id, home.id]],
+  ]);
+
+  // The flag never changes a minute: with and without instructions the numbers are the same.
+  const withRules = Score.parse(
+    buildScore(events, goals, { date: "2026-11-15", now: T("2026-11-16 12:00"), instructions }),
+  );
+  const without = score(events, "2026-11-15", "2026-11-16 12:00", goals);
+  assert.deepEqual(seven(withRules), seven(without));
+  assert.deepEqual(seven(withRules.day), seven(without.day));
+  assert.deepEqual(
+    without.day.blocks.map((b) => b.instructions_broken),
+    [[], [], []],
+  );
+});
+
 // ---------- days, weeks and the clock change ----------
 
 test("a block that crosses midnight is cut there: each day gets its part", () => {
@@ -519,8 +758,18 @@ test("every total is the sum of its parts, on a busy synthetic month", () => {
       sum(s.day.blocks, (b) => b[f]),
       `day ${f} = sum of blocks`,
     );
+    assert.equal(
+      s[f],
+      sum(s.areas, (a) => a[f]),
+      `week ${f} = sum of areas`,
+    );
+    assert.equal(
+      s.day[f],
+      sum(s.day.areas, (a) => a[f]),
+      `day ${f} = sum of areas`,
+    );
   }
-  for (const part of [s, s.day, ...s.days, ...s.goals, ...s.day.blocks]) {
+  for (const part of [s, s.day, ...s.days, ...s.goals, ...s.day.blocks, ...s.areas, ...s.day.areas]) {
     assert.equal(part.spent_minutes + part.lost_minutes, part.elapsed_minutes);
     assert.equal(part.elapsed_minutes + part.ahead_minutes, part.planned_minutes);
     assert.ok(part.unverified_minutes <= part.spent_minutes);
@@ -551,4 +800,131 @@ test("every total is the sum of its parts, on a busy synthetic month", () => {
   assert.ok(s.lost_minutes > 0);
   assert.ok(s.score_pct !== null && s.score_pct > 0 && s.score_pct < 100);
   assert.ok(s.data_until.mac !== null && s.data_until.iphone !== null);
+});
+
+// ---------- the week around the score (#117, #165, #166) ----------
+
+test("minutes left and open blocks per goal: budget minus spent, blocks that have not ended", () => {
+  const events = [
+    calendar("Cold Outreach", T("2026-11-09 10:00"), T("2026-11-09 11:00")),
+    // In progress at noon: 60 minutes spent so far, still open.
+    calendar("Cold Outreach", T("2026-11-11 11:00"), T("2026-11-11 13:00")),
+    calendar("Cold Outreach", T("2026-11-12 10:00"), T("2026-11-12 11:00")),
+    calendar("Run", T("2026-11-10 08:00"), T("2026-11-10 09:00")),
+    // Crosses midnight: two parts, one block.
+    calendar("Gym", T("2026-11-12 23:00"), T("2026-11-13 01:00")),
+  ];
+  const s = score(events, "2026-11-11", "2026-11-11 12:00");
+  const row = (id: string) => s.goals.find((g) => g.goal_id === id);
+  assert.deepEqual(
+    [row(COMPANY.id)?.spent_minutes, row(COMPANY.id)?.minutes_left, row(COMPANY.id)?.open_blocks],
+    [120, 360, 2],
+  );
+  assert.deepEqual(
+    [row(TRI.id)?.spent_minutes, row(TRI.id)?.minutes_left, row(TRI.id)?.open_blocks],
+    [60, 480, 1],
+  );
+  // Sleep is outside the score: nothing left to count, no blocks.
+  assert.deepEqual([row(SLEEP.id)?.minutes_left, row(SLEEP.id)?.open_blocks], [0, 0]);
+  // Spent past the budget: never below 0.
+  const small = score(events, "2026-11-11", "2026-11-11 12:00", [{ ...COMPANY, weekly_budget_minutes: 90 }]);
+  assert.equal(small.goals[0]?.minutes_left, 0);
+  // At the end of the week nothing is open.
+  const done = score(events, "2026-11-15", "2026-11-16 00:00");
+  assert.deepEqual(
+    done.goals.map((g) => g.open_blocks),
+    [0, 0, 0],
+  );
+});
+
+test("free minutes left: the waking day from now to Sunday, minus fixed commitments", () => {
+  const events = [
+    // With other people: busy.
+    calendar("Board call", T("2026-11-14 14:00"), T("2026-11-14 15:00"), { attendees: 3 }),
+    // The user's own entry with no goal: also fixed.
+    calendar("Dentist", T("2026-11-15 10:00"), T("2026-11-15 11:00")),
+    // A goal block is where goal time goes: it stays free.
+    calendar("Cold Outreach", T("2026-11-15 16:00"), T("2026-11-15 17:00")),
+    // All day markers and anything while asleep take nothing.
+    calendar("Name day", T("2026-11-15 00:00"), T("2026-11-16 00:00"), { all_day: true }),
+    calendar("Late call", T("2026-11-14 23:15"), T("2026-11-14 23:45"), { attendees: 1 }),
+  ];
+  // The sleep goal is 7.5 hours from 23:00: the waking day is 06:30 to 23:00.
+  // Saturday 12:00 to 23:00 (660) + Sunday 06:30 to 23:00 (990) - 60 - 60.
+  const s = score(events, "2026-11-14", "2026-11-14 12:00");
+  assert.equal(s.free_minutes_left, 660 + 990 - 120);
+  // Screens off at 22:30 and 8 hours: 06:30 to 22:30 on Sunday, 12:00 to 22:30 on Saturday.
+  const early = withTarget(SLEEP, { sleep_hours: 8, screens_off: "22:30" }, 3360);
+  assert.equal(
+    score(events, "2026-11-14", "2026-11-14 12:00", [COMPANY, early]).free_minutes_left,
+    630 + 960 - 120,
+  );
+  // A week that has ended has none left; a week to come has all of it.
+  assert.equal(score(events, "2026-11-02", "2026-11-14 12:00").free_minutes_left, 0);
+  assert.equal(score([], "2026-11-23", "2026-11-14 12:00").free_minutes_left, 7 * 990);
+});
+
+test("sleep: minutes per night against the goal, null until there is data", () => {
+  const nights = [
+    sleep(T("2026-11-08 23:30"), T("2026-11-09 07:00")),
+    sleep(T("2026-11-10 00:00"), T("2026-11-10 06:00")),
+  ];
+  const s = score(nights, "2026-11-11", "2026-11-11 12:00");
+  assert.deepEqual(s.sleep, { goal_minutes: 450, nightly: [450, 360, null, null, null, null, null] });
+  assert.equal(score([], "2026-11-11", "2026-11-11 12:00").sleep, null);
+  assert.equal(score(nights, "2026-11-11", "2026-11-11 12:00", [COMPANY]).sleep, null);
+});
+
+test("history: the weeks before and the longest verified run in each ended block", () => {
+  const events = [
+    // 10:00 to 11:30 with the phone from 10:30 to 10:40: 30 minutes, 2 lost ticks, then 50 minutes.
+    calendar("Cold Outreach", T("2026-11-03 10:00"), T("2026-11-03 11:30")),
+    mac(APPS.editor, T("2026-11-03 10:00"), T("2026-11-03 11:30")),
+    phone(APPS.social, T("2026-11-03 10:30"), T("2026-11-03 10:40")),
+    // Not ended yet: no run.
+    calendar("Cold Outreach", T("2026-11-11 11:00"), T("2026-11-11 13:00")),
+  ];
+  const { history } = scoreWithHistory(events, GOALS, { date: "2026-11-11", now: T("2026-11-11 12:00") });
+  assert.deepEqual(
+    history.weeks.map((w) => [w.week_start, w.complete, w.score_pct]),
+    [
+      ["2026-10-12", true, null],
+      ["2026-10-19", true, null],
+      ["2026-10-26", true, null],
+      ["2026-11-02", true, 89],
+      ["2026-11-09", false, 100],
+    ],
+  );
+  assert.deepEqual(history.weeks[3]?.areas.business, { score_pct: 89, elapsed_minutes: 90 });
+  assert.deepEqual(
+    history.runs.map((r) => [r.day, r.minutes, r.first_tick, r.tick_minutes.length, r.area]),
+    [["2026-11-03", 50, 8, 10, "business"]],
+  );
+});
+
+test("the longest block counts verified ticks only: 120 unseen minutes do not beat 50 proven ones", () => {
+  const events = [
+    // Two hours with no device data at all: spent, but all of it unverified.
+    calendar("Gym", T("2026-11-03 18:00"), T("2026-11-03 20:00")),
+    // 50 minutes in the editor inside a sales block: verified.
+    calendar("Cold Outreach", T("2026-11-04 10:00"), T("2026-11-04 10:50")),
+    mac(APPS.editor, T("2026-11-04 10:00"), T("2026-11-04 10:50")),
+    // Verified, then 20 minutes with no data, then verified again: the gap breaks the run.
+    calendar("Cold Outreach", T("2026-11-05 10:00"), T("2026-11-05 11:00")),
+    mac(APPS.editor, T("2026-11-05 10:00"), T("2026-11-05 10:20")),
+    mac(APPS.editor, T("2026-11-05 10:40"), T("2026-11-05 11:00")),
+  ];
+  const { history } = scoreWithHistory(events, GOALS, { date: "2026-11-11", now: T("2026-11-11 12:00") });
+  assert.deepEqual(
+    history.runs.map((r) => [r.day, r.minutes, r.first_tick]),
+    [
+      ["2026-11-04", 50, 0],
+      ["2026-11-05", 20, 0],
+    ],
+  );
+  const [baseline] = detectRecords({ weeks: [], runs: history.runs, stored: [] });
+  assert.deepEqual(
+    [baseline?.type, baseline?.value, baseline?.achieved_on],
+    ["longest_block", 50, "2026-11-04"],
+  );
 });

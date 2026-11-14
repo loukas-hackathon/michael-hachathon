@@ -4,41 +4,85 @@ import type {
   ChatRole,
   Event,
   EventInput,
+  EventSummary,
+  FocusGuard,
   Goal,
   GoalCreate,
   GoalUpdate,
+  Instruction,
+  InstructionCreate,
+  InstructionUpdate,
   IntegrationProvider,
   Nudge,
   NudgeStatus,
+  PersonalRecord,
   Place,
   Profile,
   Recommendation,
   RecommendationStatus,
   Source,
   SourceSetting,
+  WeeklyTarget,
 } from "@michael/shared";
+import { Source as SourceEnum } from "@michael/shared";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { z } from "zod";
 import { currentUserId } from "./context";
 import { HttpError } from "./http";
+import { type GuardDeps, guardRecommendation, guardRecommendations } from "./instructions/guard";
 import type { GeocodeHit } from "./integrations/maps";
 import { type PrivacyRules, screenEvents } from "./privacy";
+import type { NewRecord } from "./score/records";
 import {
+  type AskedQuestion,
+  type DataDeleteScope,
+  type DeleteCounts,
   type EventPatch,
   type InsertResult,
   type IntegrationPatch,
   type IntegrationRecord,
+  type NewAnalysis,
+  type NewFocusGuard,
   type NewRecommendation,
   type NudgeCreate,
   type PushDevice,
   type RecommendationActionUpdate,
+  type SeedResult,
   type Store,
   sameEvent,
+  summaryDayRange,
+  type TargetInput,
+  type TelegramChat,
   type TimelineFilter,
+  toInstruction,
   type UpsertResult,
 } from "./store";
+import { mergeSummaries } from "./summaries";
 
 type EventRow = z.output<typeof EventInput>;
+
+// PostgREST's max rows per response (Supabase default). A page shorter than this is the last one.
+const EVENT_PAGE = 1000;
+// Every column `toEvent` reads, and nothing else (no user_id): less to send for 10,000 rows.
+const EVENT_COLUMNS = "id, source, type, start_at, end_at, title, data, external_id, created_at";
+
+// A value inside a PostgREST or(...)/and(...) filter, quoted so `+`, `:` and `.` stay literal.
+const q = (v: string) => `"${v.replace(/["\\]/g, "")}"`;
+
+/**
+ * Every row of a query, page by page past PostgREST's row cap. `page(from, to)` must order by a
+ * unique key so pages never skip or repeat. For small tables that may outgrow one page over time.
+ */
+async function readAll<T>(
+  page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+): Promise<T[]> {
+  const rows: T[] = [];
+  for (let offset = 0; ; offset += EVENT_PAGE) {
+    const batch = check(await page(offset, offset + EVENT_PAGE - 1)) ?? [];
+    rows.push(...batch);
+    if (batch.length < EVENT_PAGE) return rows;
+  }
+}
 
 // Postgres returns "2026-11-14 07:40:00+00" style values via PostgREST as ISO strings with offset,
 // which already satisfy the shared IsoDateTime schema; normalise to a canonical ISO string anyway.
@@ -56,6 +100,18 @@ const toEvent = (r: Record<string, unknown>): Event => ({
   created_at: iso(r.created_at as string) as string,
 });
 
+const toFocusGuard = (r: Record<string, unknown>): FocusGuard => ({
+  id: r.id as string,
+  recommendation_id: (r.recommendation_id as string | null) ?? null,
+  apps: (r.apps as string[]) ?? [],
+  bundle_ids: (r.bundle_ids as string[]) ?? [],
+  start_at: iso(r.start_at as string) as string,
+  end_at: iso(r.end_at as string) as string,
+  goal_id: (r.goal_id as string | null) ?? null,
+  back_to: (r.back_to as string | null) ?? null,
+  created_at: iso(r.created_at as string) as string,
+});
+
 const toGoal = (r: Record<string, unknown>): Goal => ({
   id: r.id as string,
   category: r.category as Goal["category"],
@@ -68,6 +124,20 @@ const toGoal = (r: Record<string, unknown>): Goal => ({
   updated_at: iso(r.updated_at as string) as string,
 });
 
+const instructionFromRow = (r: Record<string, unknown>): Instruction =>
+  toInstruction({
+    id: r.id as string,
+    text: r.text as string,
+    kind: r.kind as Instruction["kind"],
+    days: (r.days as number[] | null) ?? null,
+    time: (r.time as string | null) ?? null,
+    end_time: (r.end_time as string | null) ?? null,
+    exceptions: (r.exceptions as string[] | null | undefined) ?? null,
+    active: r.active as boolean,
+    created_at: iso(r.created_at as string) as string,
+    updated_at: iso(r.updated_at as string) as string,
+  });
+
 const toRecommendation = (r: Record<string, unknown>): Recommendation => ({
   id: r.id as string,
   analysis_run_id: (r.analysis_run_id as string | null) ?? null,
@@ -75,9 +145,12 @@ const toRecommendation = (r: Record<string, unknown>): Recommendation => ({
   title: r.title as string,
   rationale: (r.rationale as string) ?? "",
   action: (r.action as Recommendation["action"]) ?? null,
+  evidence: (r.evidence as string[] | null) ?? [],
   status: r.status as RecommendationStatus,
   executed_at: iso(r.executed_at as string | null),
   undone_at: iso(r.undone_at as string | null),
+  source: (r.source as Recommendation["source"]) ?? "analysis",
+  specialist: (r.specialist as Recommendation["specialist"]) ?? null,
   created_at: iso(r.created_at as string) as string,
   updated_at: iso(r.updated_at as string) as string,
 });
@@ -99,6 +172,7 @@ const toRun = (r: Record<string, unknown>): AnalysisRun => ({
   range_end: iso(r.range_end as string) as string,
   model: r.model as string,
   summary: (r.summary as string | null) ?? null,
+  question: (r.question as string | null) ?? null,
   error: (r.error as string | null) ?? null,
   started_at: iso(r.started_at as string) as string,
   finished_at: iso(r.finished_at as string | null),
@@ -109,6 +183,7 @@ const toChatMessage = (r: Record<string, unknown>): ChatMessage => ({
   role: r.role as ChatRole,
   content: r.content as string,
   created_at: iso(r.created_at as string) as string,
+  action_ids: (r.action_ids as string[] | null | undefined) ?? [],
 });
 
 const toIntegration = (r: Record<string, unknown>): IntegrationRecord => ({
@@ -139,10 +214,71 @@ const toNudge = (r: Record<string, unknown>): Nudge => ({
   sent_at: iso(r.sent_at as string | null),
 });
 
+const toTarget = (r: Record<string, unknown>): WeeklyTarget => ({
+  week_start: String(r.week_start).slice(0, 10),
+  overall_pct: Number(r.overall_pct),
+  areas: r.areas as WeeklyTarget["areas"],
+  floors: r.floors as WeeklyTarget["floors"],
+  status: r.status as WeeklyTarget["status"],
+  set_by: r.set_by as WeeklyTarget["set_by"],
+  reason: (r.reason as string | null) ?? "",
+  basis: r.basis as WeeklyTarget["basis"],
+  created_at: iso(r.created_at as string) as string,
+  updated_at: iso(r.updated_at as string) as string,
+});
+
+const toRecord = (r: Record<string, unknown>): PersonalRecord => ({
+  id: r.id as string,
+  type: r.type as PersonalRecord["type"],
+  area: (r.area as PersonalRecord["area"]) ?? null,
+  goal_id: (r.goal_id as string | null) ?? null,
+  value: Number(r.value),
+  unit: r.unit as PersonalRecord["unit"],
+  previous_value: r.previous_value == null ? null : Number(r.previous_value),
+  achieved_on: String(r.achieved_on).slice(0, 10),
+  event_id: (r.event_id as string | null) ?? null,
+  tick_index: r.tick_index == null ? null : Number(r.tick_index),
+  line: (r.line as string | null) ?? null,
+  announced_at: iso((r.announced_at as string | null) ?? null),
+  created_at: iso(r.created_at as string) as string,
+});
+
 function check<T>(res: { data: T; error: { message: string; code?: string } | null }): T {
   if (res.error) throw new HttpError("upstream_error", `Database error: ${res.error.message}`);
   return res.data;
 }
+
+// Every table holding a user's rows (enumerated from supabase/migrations), children before parents
+// so cascades never hide a count. personal_tokens is deleted by tokens.ts (it also drops its cache);
+// oauth_clients are shared by every user of a client, so they stay. Keep this list in sync with new
+// migrations: a test in retention.test.ts checks it against the migration files.
+export const USER_TABLES = [
+  "agent_queries",
+  "oauth_tokens",
+  "oauth_grants",
+  "agent_clients",
+  "focus_guards",
+  "nudges",
+  "recommendations",
+  "analysis_runs",
+  "goals",
+  "events",
+  "event_summaries",
+  "chat_messages",
+  "instructions",
+  "telegram_chats",
+  "integrations",
+  "push_subscriptions",
+  "places",
+  "geocode_cache",
+  "source_settings",
+  "privacy_state",
+  "user_profiles",
+  "weekly_targets",
+  "records",
+] as const;
+
+const SUMMARY_KEYS = "user_id,day,source,type,category";
 
 const withoutUndefined = (o: Record<string, unknown>) =>
   Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
@@ -151,23 +287,153 @@ export class SupabaseStore implements Store {
   readonly kind = "supabase" as const;
   private db: SupabaseClient;
 
-  constructor(url: string, serviceRoleKey: string) {
-    this.db = createClient(url, serviceRoleKey, { auth: { persistSession: false } });
+  // `fetch` is for tests: a fake PostgREST behind the real client.
+  constructor(url: string, serviceRoleKey: string, opts: { fetch?: typeof fetch } = {}) {
+    this.db = createClient(url, serviceRoleKey, {
+      auth: { persistSession: false },
+      ...(opts.fetch ? { global: { fetch: opts.fetch } } : {}),
+    });
+  }
+
+  async lastEventAtBySource() {
+    // One tiny query per source (index on user_id, source, created_at): PostgREST has no group by.
+    const userId = currentUserId();
+    const rows = await Promise.all(
+      SourceEnum.options.map(async (source) => {
+        const r = check(
+          await this.db
+            .from("events")
+            .select("created_at")
+            .eq("user_id", userId)
+            .eq("source", source)
+            .order("created_at", { ascending: false })
+            .limit(1),
+        );
+        const at = (r?.[0] as { created_at?: string } | undefined)?.created_at;
+        return [source, at ? iso(at) : null] as const;
+      }),
+    );
+    const out: Partial<Record<Source, string>> = {};
+    for (const [source, at] of rows) if (at) out[source] = at;
+    return out;
   }
 
   async listEvents(f: TimelineFilter) {
+    // PostgREST caps every response (1000 rows by default) and a busy week holds 7,000+ events, so
+    // read the whole window page by page with no ceiling. Keyset paging on (start_at, id): each page
+    // starts strictly after the last row of the one before, so pages never skip or repeat, the
+    // newest hours are never the ones cut off, and page 10 costs the same as page 1 (no OFFSET).
+    const userId = currentUserId();
+    const events: Event[] = [];
     // Overlap with [from, to]: starts before `to` and ends (or, if instant, starts) after `from`.
-    let q = this.db
-      .from("events")
-      .select("*")
-      .eq("user_id", currentUserId())
-      .lte("start_at", f.to)
-      .or(`end_at.gte.${f.from},and(end_at.is.null,start_at.gte.${f.from})`)
-      .order("start_at", { ascending: true })
-      .limit(5000);
-    if (f.source?.length) q = q.in("source", f.source);
-    if (f.type?.length) q = q.in("type", f.type);
-    return (check(await q) ?? []).map(toEvent);
+    const overlap = `or(end_at.gte.${q(f.from)},and(end_at.is.null,start_at.gte.${q(f.from)}))`;
+    let after: { start_at: string; id: string } | null = null;
+    for (;;) {
+      const cursor: string = after
+        ? `,or(start_at.gt.${q(after.start_at)},and(start_at.eq.${q(after.start_at)},id.gt.${after.id}))`
+        : "";
+      let query = this.db
+        .from("events")
+        .select(EVENT_COLUMNS)
+        .eq("user_id", userId)
+        .lte("start_at", f.to)
+        .or(`and(${overlap}${cursor})`)
+        .order("start_at", { ascending: true })
+        .order("id", { ascending: true })
+        .limit(EVENT_PAGE);
+      if (f.source?.length) query = query.in("source", f.source);
+      if (f.type?.length) query = query.in("type", f.type);
+      const page = (check(await query) ?? []) as unknown as Record<string, unknown>[];
+      for (const row of page) events.push(toEvent(row));
+      if (page.length < EVENT_PAGE) break;
+      const last = page[page.length - 1] as { start_at: string; id: string };
+      // The raw value keeps Postgres' microseconds; a round trip through Date would drop them.
+      after = { start_at: last.start_at, id: last.id };
+    }
+    return events;
+  }
+
+  async syncSeededEvents(prefix: string, sources: Source[], inputs: EventRow[]): Promise<SeedResult> {
+    const userId = currentUserId();
+    if (!sources.length) return { inserted: 0, removed: 0, kept: 0 };
+    const scope = new Set<string>(sources);
+    // What is already there under the prefix, page by page.
+    const existing = new Set<string>();
+    for (let offset = 0; ; offset += EVENT_PAGE) {
+      const page =
+        check(
+          await this.db
+            .from("events")
+            .select("source, external_id")
+            .eq("user_id", userId)
+            .in("source", sources)
+            .like("external_id", `${prefix}%`)
+            .order("id", { ascending: true })
+            .range(offset, offset + EVENT_PAGE - 1),
+        ) ?? [];
+      for (const r of page) existing.add(`${r.source}|${r.external_id}`);
+      if (page.length < EVENT_PAGE) break;
+    }
+
+    const wanted = new Map<string, EventRow>();
+    for (const i of inputs) {
+      if (!i.external_id?.startsWith(prefix)) throw new Error(`Seeded event without the ${prefix} prefix`);
+      if (scope.has(i.source)) wanted.set(`${i.source}|${i.external_id}`, i);
+    }
+
+    // Remove seeded rows that are no longer wanted (days that left the window).
+    const stale = [...existing].filter((k) => !wanted.has(k)).map((k) => k.slice(k.indexOf("|") + 1));
+    for (let i = 0; i < stale.length; i += 200) {
+      check(
+        await this.db
+          .from("events")
+          .delete()
+          .eq("user_id", userId)
+          .in("source", sources)
+          .like("external_id", `${prefix}%`)
+          .in("external_id", stale.slice(i, i + 200)),
+      );
+    }
+
+    const fresh = [...wanted.entries()]
+      .filter(([k]) => !existing.has(k))
+      .map(([, i]) => ({
+        user_id: userId,
+        source: i.source,
+        type: i.type,
+        start_at: i.start_at,
+        end_at: i.end_at ?? null,
+        title: i.title,
+        data: i.data,
+        external_id: i.external_id,
+      }));
+    for (let i = 0; i < fresh.length; i += 500) {
+      const res = await this.db.from("events").insert(fresh.slice(i, i + 500));
+      // A concurrent sync inserted some of these already: harmless, the next sync settles it.
+      if (res.error && res.error.code !== "23505") check(res);
+    }
+    return { inserted: fresh.length, removed: stale.length, kept: existing.size - stale.length };
+  }
+
+  async seedGoals(goals: Goal[], opts: { overwrite: boolean }): Promise<number> {
+    const userId = currentUserId();
+    const rows = goals.map((g) => ({
+      id: g.id,
+      user_id: userId,
+      category: g.category,
+      title: g.title,
+      description: g.description,
+      target: g.target,
+      weekly_budget_minutes: g.weekly_budget_minutes,
+      active: g.active,
+    }));
+    const data = check(
+      await this.db
+        .from("goals")
+        .upsert(rows, { onConflict: "id", ignoreDuplicates: !opts.overwrite })
+        .select("id"),
+    );
+    return (data ?? []).length;
   }
 
   async privacyRules(): Promise<PrivacyRules> {
@@ -352,14 +618,69 @@ export class SupabaseStore implements Store {
     return profile;
   }
 
+  async listInstructions() {
+    return (
+      check(
+        await this.db.from("instructions").select("*").eq("user_id", currentUserId()).order("created_at"),
+      ) ?? []
+    ).map(instructionFromRow);
+  }
+
+  async createInstruction(i: z.output<typeof InstructionCreate>) {
+    const row = check(
+      await this.db
+        .from("instructions")
+        .insert({
+          user_id: currentUserId(),
+          text: i.text,
+          kind: i.kind,
+          days: i.days ?? null,
+          time: i.time ?? null,
+          end_time: i.end_time ?? null,
+          // A newer column: only named when it holds something, so an instruction can still be
+          // stored while its migration is on its way.
+          ...(i.exceptions?.length ? { exceptions: i.exceptions } : {}),
+          active: i.active,
+        })
+        .select("*")
+        .single(),
+    );
+    return instructionFromRow(row);
+  }
+
+  async updateInstruction(id: string, patch: z.output<typeof InstructionUpdate>) {
+    const changes = withoutUndefined(patch as Record<string, unknown>);
+    // An empty update is not a write: answer with the row as it is.
+    const q = this.db.from("instructions");
+    const row = check(
+      Object.keys(changes).length === 0
+        ? await q.select("*").eq("user_id", currentUserId()).eq("id", id).maybeSingle()
+        : await q.update(changes).eq("user_id", currentUserId()).eq("id", id).select("*").maybeSingle(),
+    );
+    return row ? instructionFromRow(row) : null;
+  }
+
+  async deleteInstruction(id: string) {
+    const rows = check(
+      await this.db.from("instructions").delete().eq("user_id", currentUserId()).eq("id", id).select("id"),
+    );
+    return (rows ?? []).length > 0;
+  }
+
   async listRecommendations(filter?: { status?: RecommendationStatus }) {
-    let q = this.db
-      .from("recommendations")
-      .select("*")
-      .eq("user_id", currentUserId())
-      .order("created_at", { ascending: false });
-    if (filter?.status) q = q.eq("status", filter.status);
-    return (check(await q) ?? []).map(toRecommendation);
+    // Every analysis run adds a few, so a long lived account passes one PostgREST page.
+    const userId = currentUserId();
+    const rows = await readAll<Record<string, unknown>>((from, to) => {
+      let query = this.db
+        .from("recommendations")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false });
+      if (filter?.status) query = query.eq("status", filter.status);
+      return query.range(from, to);
+    });
+    return rows.map(toRecommendation);
   }
 
   async getRecommendation(id: string) {
@@ -372,6 +693,32 @@ export class SupabaseStore implements Store {
         .maybeSingle(),
     );
     return row ? toRecommendation(row) : null;
+  }
+
+  /** What instructions/guard.ts needs to check a new recommendation: the rules and the blocks. */
+  private async guardDeps(): Promise<GuardDeps> {
+    return { instructions: await this.listInstructions(), getEvent: (id) => this.getEvent(id) };
+  }
+
+  async createRecommendation(input: NewRecommendation) {
+    // The choke point: nothing is proposed inside time a standing instruction protects.
+    const i = await guardRecommendation(input, await this.guardDeps());
+    const row = check(
+      await this.db
+        .from("recommendations")
+        .insert({
+          user_id: currentUserId(),
+          analysis_run_id: i.analysis_run_id ?? null,
+          goal_id: i.goal_id,
+          title: i.title,
+          rationale: i.rationale,
+          action: i.action,
+          source: i.source ?? "analysis",
+        })
+        .select("*")
+        .single(),
+    );
+    return toRecommendation(row);
   }
 
   async getRecommendationExecution(id: string) {
@@ -412,22 +759,36 @@ export class SupabaseStore implements Store {
     return row ? toRecommendation(row) : null;
   }
 
-  async createRecommendation(i: NewRecommendation) {
+  async createFocusGuard(input: NewFocusGuard) {
     const row = check(
       await this.db
-        .from("recommendations")
-        .insert({
-          user_id: currentUserId(),
-          analysis_run_id: i.analysis_run_id ?? null,
-          goal_id: i.goal_id,
-          title: i.title,
-          rationale: i.rationale,
-          action: i.action,
-        })
+        .from("focus_guards")
+        .insert({ ...input, user_id: currentUserId() })
         .select("*")
         .single(),
     );
-    return toRecommendation(row);
+    return toFocusGuard(row);
+  }
+
+  async deleteFocusGuard(id: string) {
+    const rows = check(
+      await this.db.from("focus_guards").delete().eq("user_id", currentUserId()).eq("id", id).select("id"),
+    );
+    return (rows ?? []).length > 0;
+  }
+
+  async listFocusGuards(f: { endsAfter: string; startsBefore: string }) {
+    const rows = check(
+      await this.db
+        .from("focus_guards")
+        .select("*")
+        .eq("user_id", currentUserId())
+        .gt("end_at", f.endsAfter)
+        .lt("start_at", f.startsBefore)
+        .order("start_at")
+        .limit(50),
+    );
+    return (rows ?? []).map(toFocusGuard);
   }
 
   async listPlaces() {
@@ -497,6 +858,65 @@ export class SupabaseStore implements Store {
     return row ? toRun(row) : null;
   }
 
+  async listAnalysisQuestions(limit: number): Promise<AskedQuestion[]> {
+    const res = await this.db
+      .from("analysis_runs")
+      .select("question, started_at")
+      .eq("user_id", currentUserId())
+      .not("question", "is", null)
+      .order("started_at", { ascending: false })
+      .limit(limit);
+    // `question` is a newer column. Until its migration has run there is nothing to list, and a
+    // missing column must not stop an analysis.
+    if (res.error) return [];
+    return (res.data ?? []).flatMap((r) =>
+      typeof r.question === "string" && r.question
+        ? [{ question: r.question, asked_at: iso(r.started_at as string) as string }]
+        : [],
+    );
+  }
+
+  async saveAnalysis(input: NewAnalysis) {
+    const userId = currentUserId();
+    const { question, ...run } = input.run;
+    const runRow = check(
+      await this.db
+        .from("analysis_runs")
+        // `question` and `evidence` are newer columns: they are only named when they hold
+        // something, so a run can still be stored while their migration is on its way.
+        .insert({ user_id: userId, ...run, ...(question ? { question } : {}) })
+        .select("*")
+        .single(),
+    );
+    const saved = toRun(runRow);
+    if (input.recommendations.length === 0) return { run: saved, recommendations: [] };
+    // The choke point: nothing is proposed inside time a standing instruction protects.
+    const recommendations = await guardRecommendations(input.recommendations, await this.guardDeps());
+    // Every row of one insert must name the same columns.
+    const withEvidence = recommendations.some((r) => r.evidence?.length);
+    // `specialist` is newer still: named only on runs in mode `specialists`.
+    const withSpecialist = recommendations.some((r) => r.specialist);
+    const rows = check(
+      await this.db
+        .from("recommendations")
+        .insert(
+          recommendations.map((r) => ({
+            user_id: userId,
+            analysis_run_id: saved.id,
+            goal_id: r.goal_id,
+            title: r.title,
+            rationale: r.rationale,
+            action: r.action,
+            ...(withEvidence ? { evidence: r.evidence ?? [] } : {}),
+            ...(withSpecialist ? { specialist: r.specialist ?? null } : {}),
+            status: "proposed",
+          })),
+        )
+        .select("*"),
+    );
+    return { run: saved, recommendations: (rows ?? []).map(toRecommendation) };
+  }
+
   async listChatMessages(limit: number) {
     const rows = check(
       await this.db
@@ -509,11 +929,13 @@ export class SupabaseStore implements Store {
     return (rows ?? []).map(toChatMessage).reverse();
   }
 
-  async addChatMessage(role: ChatRole, content: string) {
+  async addChatMessage(role: ChatRole, content: string, actionIds: string[] = []) {
+    // action_ids only when there are some, so plain lines still save if the column is not there yet.
+    const extra = actionIds.length ? { action_ids: actionIds } : {};
     const row = check(
       await this.db
         .from("chat_messages")
-        .insert({ user_id: currentUserId(), role, content })
+        .insert({ user_id: currentUserId(), role, content, ...extra })
         .select("*")
         .single(),
     );
@@ -593,11 +1015,19 @@ export class SupabaseStore implements Store {
   }
 
   async deleteEvents(ids: string[]) {
-    if (!ids.length) return 0;
-    const rows = check(
-      await this.db.from("events").delete().eq("user_id", currentUserId()).in("id", ids).select("id"),
-    );
-    return (rows ?? []).length;
+    // Chunks keep the id list inside PostgREST's URL limit (the retention job deletes hundreds).
+    const userId = currentUserId();
+    let deleted = 0;
+    for (let i = 0; i < ids.length; i += 150) {
+      const res = await this.db
+        .from("events")
+        .delete({ count: "exact" })
+        .eq("user_id", userId)
+        .in("id", ids.slice(i, i + 150));
+      check(res);
+      deleted += res.count ?? 0;
+    }
+    return deleted;
   }
 
   async listIntegrations() {
@@ -633,23 +1063,33 @@ export class SupabaseStore implements Store {
   }
 
   async listConnectedUserIds(provider: IntegrationProvider) {
-    const rows = check(
-      await this.db.from("integrations").select("user_id").eq("provider", provider).eq("status", "connected"),
+    // Across all users, so it outgrows one page with the user base.
+    const rows = await readAll<{ user_id: string | null }>((from, to) =>
+      this.db
+        .from("integrations")
+        .select("user_id")
+        .eq("provider", provider)
+        .eq("status", "connected")
+        .order("user_id", { ascending: true })
+        .range(from, to),
     );
-    return (rows ?? []).map((r) => r.user_id as string).filter(Boolean);
+    return rows.map((r) => r.user_id as string).filter(Boolean);
   }
 
   async listNudges(f: { from: string; to: string }) {
-    const rows = check(
-      await this.db
+    const userId = currentUserId();
+    const rows = await readAll<Record<string, unknown>>((from, to) =>
+      this.db
         .from("nudges")
         .select("*")
-        .eq("user_id", currentUserId())
+        .eq("user_id", userId)
         .gte("created_at", f.from)
         .lt("created_at", f.to)
-        .order("created_at", { ascending: true }),
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to),
     );
-    return (rows ?? []).map(toNudge);
+    return rows.map(toNudge);
   }
 
   async createNudge(i: NudgeCreate) {
@@ -712,10 +1152,231 @@ export class SupabaseStore implements Store {
     );
   }
 
+  async getTelegramChat(): Promise<TelegramChat | null> {
+    const row = check(
+      await this.db
+        .from("telegram_chats")
+        .select("chat_id, username, connected_at")
+        .eq("user_id", currentUserId())
+        .not("chat_id", "is", null)
+        .maybeSingle(),
+    );
+    return row ? { chat_id: row.chat_id, username: row.username, connected_at: row.connected_at } : null;
+  }
+
+  async bindTelegramChat(chat: { chat_id: string; username: string | null }, link: string) {
+    const userId = currentUserId();
+    const prev = check(
+      await this.db.from("telegram_chats").select("last_link").eq("user_id", userId).maybeSingle(),
+    );
+    if (prev?.last_link === link) return "used" as const;
+    const at = new Date().toISOString();
+    // A chat belongs to whoever bound it last (chat_id is unique).
+    check(
+      await this.db
+        .from("telegram_chats")
+        .update({ chat_id: null, username: null, connected_at: null, updated_at: at })
+        .eq("chat_id", chat.chat_id)
+        .neq("user_id", userId),
+    );
+    check(
+      await this.db.from("telegram_chats").upsert(
+        {
+          user_id: userId,
+          chat_id: chat.chat_id,
+          username: chat.username,
+          connected_at: at,
+          last_link: link,
+          updated_at: at,
+        },
+        { onConflict: "user_id" },
+      ),
+    );
+    return "bound" as const;
+  }
+
+  async unbindTelegramChat() {
+    const rows = check(
+      await this.db
+        .from("telegram_chats")
+        .update({ chat_id: null, username: null, connected_at: null, updated_at: new Date().toISOString() })
+        .eq("user_id", currentUserId())
+        .not("chat_id", "is", null)
+        .select("user_id"),
+    );
+    return (rows ?? []).length > 0;
+  }
+
+  async telegramChatOwner(chatId: string) {
+    const row = check(
+      await this.db.from("telegram_chats").select("user_id").eq("chat_id", chatId).maybeSingle(),
+    );
+    return row?.user_id ?? null;
+  }
+
+  async listTargets(from: string, to: string) {
+    const rows = check(
+      await this.db
+        .from("weekly_targets")
+        .select("*")
+        .eq("user_id", currentUserId())
+        .gte("week_start", from)
+        .lte("week_start", to)
+        .order("week_start"),
+    );
+    return (rows ?? []).map(toTarget);
+  }
+
+  async saveTarget(t: TargetInput) {
+    const row = check(
+      await this.db
+        .from("weekly_targets")
+        .upsert(
+          {
+            user_id: currentUserId(),
+            week_start: t.week_start,
+            overall_pct: t.overall_pct,
+            areas: t.areas,
+            floors: t.floors,
+            status: t.status,
+            set_by: t.set_by,
+            reason: t.reason,
+            basis: t.basis,
+          },
+          { onConflict: "user_id,week_start" },
+        )
+        .select("*")
+        .single(),
+    );
+    return toTarget(row);
+  }
+
+  async listRecords() {
+    const rows = check(
+      await this.db.from("records").select("*").eq("user_id", currentUserId()).order("created_at"),
+    );
+    return (rows ?? []).map(toRecord);
+  }
+
+  async insertRecords(records: NewRecord[]) {
+    if (records.length === 0) return [];
+    const userId = currentUserId();
+    const rows = check(
+      await this.db
+        .from("records")
+        .upsert(
+          records.map((r) => ({ ...r, user_id: userId })),
+          { onConflict: "user_id,key", ignoreDuplicates: true },
+        )
+        .select("*"),
+    );
+    return (rows ?? []).map(toRecord);
+  }
+
+  async markRecordAnnounced(id: string) {
+    const q = () => this.db.from("records");
+    check(
+      await q()
+        .update({ announced_at: new Date().toISOString() })
+        .eq("user_id", currentUserId())
+        .eq("id", id)
+        .is("announced_at", null),
+    );
+    const row = check(await q().select("*").eq("user_id", currentUserId()).eq("id", id).maybeSingle());
+    return row ? toRecord(row) : null;
+  }
+
   async activeUserIds(since: string) {
+    // Users active since the last scheduler tick: far below one PostgREST page (1000 rows).
     const rows = check(await this.db.rpc("active_user_ids", { since }));
     return ((rows ?? []) as unknown[]).map((r) =>
       typeof r === "string" ? r : String((r as Record<string, unknown>).active_user_ids),
+    );
+  }
+
+  async deleteMyData(scope: DataDeleteScope): Promise<DeleteCounts> {
+    const userId = currentUserId();
+    const counts: DeleteCounts = {};
+    if (scope.everything) {
+      for (const table of USER_TABLES) {
+        const res = await this.db.from(table).delete({ count: "exact" }).eq("user_id", userId);
+        check(res);
+        counts[table] = res.count ?? 0;
+      }
+      return counts;
+    }
+    let events = this.db.from("events").delete({ count: "exact" }).eq("user_id", userId);
+    if (scope.source) events = events.eq("source", scope.source);
+    if (scope.from) events = events.gte("start_at", scope.from);
+    if (scope.to) events = events.lt("start_at", scope.to);
+    const e = await events;
+    check(e);
+    counts.events = e.count ?? 0;
+
+    const days = summaryDayRange(scope.from, scope.to);
+    let summaries = this.db.from("event_summaries").delete({ count: "exact" }).eq("user_id", userId);
+    if (scope.source) summaries = summaries.eq("source", scope.source);
+    if (days.from) summaries = summaries.gte("day", days.from);
+    if (days.to) summaries = summaries.lte("day", days.to);
+    const s = await summaries;
+    check(s);
+    counts.event_summaries = s.count ?? 0;
+    return counts;
+  }
+
+  async listEventsBefore(before: string, limit: number) {
+    const rows = check(
+      await this.db
+        .from("events")
+        .select("*")
+        .eq("user_id", currentUserId())
+        .lt("start_at", before)
+        .order("start_at")
+        .order("id")
+        .limit(limit),
+    );
+    return (rows ?? []).map(toEvent);
+  }
+
+  async addEventSummaries(rows: EventSummary[]) {
+    if (!rows.length) return;
+    const userId = currentUserId();
+    const days = [...new Set(rows.map((r) => r.day))];
+    const existing = (
+      check(
+        await this.db
+          .from("event_summaries")
+          .select("day, source, type, category, events, seconds")
+          .eq("user_id", userId)
+          .in("day", days),
+      ) ?? []
+    ).map((r) => ({ ...r, events: Number(r.events), seconds: Number(r.seconds) }) as EventSummary);
+    const merged = mergeSummaries(existing, rows).map((r) => ({
+      ...r,
+      user_id: userId,
+      updated_at: new Date().toISOString(),
+    }));
+    check(await this.db.from("event_summaries").upsert(merged, { onConflict: SUMMARY_KEYS }));
+  }
+
+  async listEventSummaries() {
+    const rows = check(
+      await this.db
+        .from("event_summaries")
+        .select("day, source, type, category, events, seconds")
+        .eq("user_id", currentUserId())
+        .order("day")
+        .limit(5000),
+    );
+    return (rows ?? []).map(
+      (r) => ({ ...r, events: Number(r.events), seconds: Number(r.seconds) }) as EventSummary,
+    );
+  }
+
+  async usersWithEventsBefore(before: string) {
+    const rows = check(await this.db.rpc("users_with_events_before", { before }));
+    return ((rows ?? []) as unknown[]).map((r) =>
+      typeof r === "string" ? r : String((r as Record<string, unknown>).users_with_events_before),
     );
   }
 }

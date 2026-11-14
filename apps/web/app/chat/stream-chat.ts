@@ -17,11 +17,12 @@ export async function streamChat(message: string, onText: (text: string) => void
       body: JSON.stringify({ message }),
     });
   } catch {
-    return { ok: false, error: copyFor("network") };
+    return { ok: false, error: copyFor("network"), code: "network" };
   }
   if (!res.ok || !res.body) {
     const err = ApiError.safeParse(await res.json().catch(() => null));
-    return { ok: false, error: copyFor(err.success ? err.data.error.code : "internal") };
+    const code = err.success ? err.data.error.code : "internal";
+    return { ok: false, error: copyFor(code), code };
   }
 
   const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
@@ -49,9 +50,11 @@ export async function streamChat(message: string, onText: (text: string) => void
       }
       if (event === "error") {
         const err = ApiError.safeParse(json);
-        return { ok: false, error: copyFor(err.success ? err.data.error.code : "internal") };
+        const code = err.success ? err.data.error.code : "internal";
+        return { ok: false, error: copyFor(code), code };
       }
     }
   }
-  return { ok: false, error: copyFor("internal") };
+  // The stream ended without a reply (connection dropped mid answer).
+  return { ok: false, error: copyFor("network"), code: "network" };
 }

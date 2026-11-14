@@ -1,0 +1,63 @@
+import Link from "next/link";
+import type { ReactNode } from "react";
+import type { ConnectionStatus } from "@/lib/connections-status";
+import { ConnectionIcon } from "./connection-icon";
+
+// The frame of every connection's setup page: back to You, the name, what it gives Michael, and
+// its real status in one line. The page's own steps and switches go below.
+export function ConnectionPage({ row, children }: { row: ConnectionStatus; children: ReactNode }) {
+  return (
+    <main className="screen">
+      <header className="flex min-h-11 items-center pt-2">
+        <Link
+          href="/you#connections"
+          className="press -ml-2 flex h-11 items-center gap-1 px-2 text-body text-tint-text"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true" className="size-5">
+            <path
+              d="M15 5l-7 7 7 7"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          You
+        </Link>
+      </header>
+      <div className="mt-1 flex items-center gap-3">
+        <ConnectionIcon id={row.id} className="size-8" />
+        <h1 className="text-large-title font-bold tracking-[0.01em]">{row.name}</h1>
+      </div>
+      <p className="mt-1 text-subhead text-label-2">{row.what}</p>
+      <p
+        className={`mt-4 rounded-group bg-fill px-4 py-3 text-subhead tnum ${
+          row.state === "attention" ? "text-danger" : ""
+        }`}
+      >
+        {row.line}
+      </p>
+      <div className="mt-6 flex flex-col gap-6">{children}</div>
+    </main>
+  );
+}
+
+/** A titled block on a setup page. */
+export function SetupSection({
+  title,
+  note,
+  children,
+}: {
+  title: string;
+  note?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section>
+      <h2 className="mb-2 text-title3 font-bold">{title}</h2>
+      {children}
+      {note ? <p className="mt-2 px-4 text-footnote text-label-2">{note}</p> : null}
+    </section>
+  );
+}

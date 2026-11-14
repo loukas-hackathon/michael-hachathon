@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
-import { mockRecommendations, type Recommendation, type RecommendationAction } from "@michael/shared";
+import {
+  DEMO_RECOMMENDATION_IDS,
+  mockRecommendations,
+  type Recommendation,
+  type RecommendationAction,
+} from "@michael/shared";
 
 // env.ts reads process.env on import, so configure Google before loading the app.
 process.env.GOOGLE_CLIENT_ID = "client-123.apps.googleusercontent.com";
@@ -21,7 +26,14 @@ const [MOVE_ID, CREATE_ID, NO_ACTION_ID] = mockRecommendations.map((r) => r.id) 
 const iso = (ms: number) => new Date(ms).toISOString();
 
 // Each test acts as a fresh user with its own copy of the mock recommendations.
-const asNewUser = <T>(fn: () => Promise<T>) => runAsUser(randomUUID(), fn);
+const { withoutInstructions } = await import("../instructions/testkit");
+// Each test is a fresh user without standing instructions: they book relative to now, and on a
+// Saturday "tomorrow" is the mock's clear Sunday (instructions/guard.test.ts covers the guard).
+const asNewUser = <T>(fn: () => Promise<T>) =>
+  runAsUser(randomUUID(), async () => {
+    await withoutInstructions(store);
+    return fn();
+  });
 
 async function connect(events: Parameters<typeof fakeGoogle>[0] = []) {
   const g = fakeGoogle(events);
@@ -154,11 +166,11 @@ test("undo is refused once undo_until has passed, and never deletes a block that
     const g = await connect();
     const start = Date.now() + 2 * HOUR;
     await withAction(CREATE_ID, {
-      undo_until: iso(Date.now() + 30),
+      // Already passed: no sleep, so a slow machine cannot make this race.
+      undo_until: iso(Date.now() - 1000),
       payload: { start_at: iso(start), end_at: iso(start + HOUR) },
     });
     await executeRecommendation(CREATE_ID);
-    await new Promise((r) => setTimeout(r, 50));
     await assert.rejects(undoRecommendation(CREATE_ID), /Too late/);
     assert.equal(g.events.size, 1);
 
@@ -177,8 +189,14 @@ test("past times and other action kinds are refused", () =>
       payload: { start_at: iso(Date.now() - HOUR), end_at: iso(Date.now() + HOUR) },
     });
     await assert.rejects(executeRecommendation(CREATE_ID), /already started/);
-    await withAction(CREATE_ID, { kind: "block_mac_app", payload: { app: "com.apple.Safari" } });
+    await withAction(CREATE_ID, { kind: "draft_follow_up", payload: { text: "Thanks" } });
     await assert.rejects(executeRecommendation(CREATE_ID), /cannot be carried out yet/);
+    // Safari is a browser, not on the list of apps Michael may close.
+    await withAction(CREATE_ID, {
+      kind: "block_mac_app",
+      payload: { app: "com.apple.Safari", start_at: iso(Date.now()), end_at: iso(Date.now() + HOUR) },
+    });
+    await assert.rejects(executeRecommendation(CREATE_ID), /not on my list/);
   }));
 
 test("without Google Calendar: Michael's block lives on the timeline only, and undo removes it", () =>
@@ -232,3 +250,63 @@ test("routes: bad id, unknown id, nothing to do, undo before execute", async () 
   const early = await app.request(`/v1/recommendations/${CREATE_ID}/undo`, { method: "POST", headers: auth });
   assert.equal(early.status, 409);
 });
+
+test("the demo always has blocks ahead to carry out, and advice with other people stays advice", () =>
+  asNewUser(async () => {
+    const [focus, run, sync] = DEMO_RECOMMENDATION_IDS;
+    for (const id of [focus, run]) {
+      assert.equal((await executeRecommendation(id)).status, "done");
+      assert.equal((await undoRecommendation(id)).status, "undone");
+    }
+    await assert.rejects(executeRecommendation(sync), /other people/);
+  }));
+
+test("move_calendar_blocks: every block moves together, one undo puts all back, a refusal moves none", () =>
+  asNewUser(async () => {
+    const start = Date.now() + 3 * HOUR;
+    const block = (title: string, at: number, data: Record<string, unknown> = {}) => ({
+      source: "manual" as const,
+      type: "calendar_event" as const,
+      start_at: iso(at),
+      end_at: iso(at + HOUR),
+      title,
+      data,
+    });
+    const { inserted } = await store.insertEvents([
+      block("Gym", start),
+      block("Errand", start + 2 * HOUR),
+      block("Client meeting", start + 4 * HOUR, { attendees: 2 }),
+    ]);
+    const [gym, errand, meeting] = inserted;
+    assert.ok(gym && errand && meeting);
+    await withAction(MOVE_ID, {
+      kind: "move_calendar_blocks",
+      undo_until: iso(start),
+      payload: {
+        moves: [
+          { event_id: gym.id, start_at: iso(start - HOUR) },
+          { event_id: errand.id, start_at: iso(start + 2.5 * HOUR) },
+        ],
+      },
+    });
+    await executeRecommendation(MOVE_ID);
+    assert.equal((await store.getEvent(gym.id))?.start_at, iso(start - HOUR));
+    assert.equal((await store.getEvent(errand.id))?.end_at, iso(start + 3.5 * HOUR));
+    await undoRecommendation(MOVE_ID);
+    assert.equal((await store.getEvent(gym.id))?.start_at, iso(start));
+    assert.equal((await store.getEvent(errand.id))?.start_at, iso(start + 2 * HOUR));
+
+    // A meeting in the list: refused, and the block moved before it goes back.
+    await withAction(MOVE_ID, {
+      kind: "move_calendar_blocks",
+      payload: {
+        moves: [
+          { event_id: gym.id, start_at: iso(start + HOUR) },
+          { event_id: meeting.id, start_at: iso(start + 6 * HOUR) },
+        ],
+      },
+    });
+    await assert.rejects(executeRecommendation(MOVE_ID), /other people/);
+    assert.equal((await store.getEvent(gym.id))?.start_at, iso(start));
+    assert.equal((await store.getEvent(meeting.id))?.start_at, iso(start + 4 * HOUR));
+  }));

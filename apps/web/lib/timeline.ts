@@ -1,10 +1,13 @@
 import type { Event } from "@michael/shared";
+import { type DayHealth, healthOf } from "./health";
+import { driveFromEvent } from "./travel";
 
 // Builds the Timeline view of one day from raw timeline events.
 // Mac use becomes blocks: pink where work apps held the screen (goal time, inferred while there is no
 // plan), hatched where messages or social apps took a stretch, grey for everything else. Short breaks
 // inside work cut the block instead of splitting it. Phone sessions and Claude Code sessions sit in
-// their own narrow lanes. Long stretches with no screens collapse to one row.
+// their own narrow lanes. Calendar blocks are planned outlines. Long stretches with no screens and
+// nothing planned collapse to one row.
 
 export type Kind = "work" | "lost" | "other";
 
@@ -27,21 +30,41 @@ export type Block = {
 
 export type Mark = { start: number; end: number; title: string };
 
+/**
+ * A calendar block on the day: drawn as a dashed outline under what actually happened. `michael` is
+ * set for blocks Michael booked (from a recommendation, his chat or Claude through the connector).
+ */
+export type Plan = { start: number; end: number; title: string; michael: boolean; withOthers: boolean };
+
 export type Segment =
   | { kind: "hours"; from: number; to: number }
   | { kind: "quiet"; from: number; to: number };
 
+export type TimelineDrive = {
+  start: number;
+  end: number;
+  to: string;
+  minutes: number;
+  trafficMinutes: number;
+};
+
 export type TimelineDay = {
   date: string;
+  /** Planned drives (source maps, type travel): the traffic part reads as lost time. */
+  drives?: TimelineDrive[];
   /** Set when the day is today: draws the now pill and leaves the rest of the plan as outline. */
   now?: number;
   sample?: boolean;
   dayStart: number;
   dayEnd: number;
   blocks: Block[];
+  /** Calendar blocks (live days). The sample day keeps its plan on each block instead. */
+  plans?: Plan[];
   phone: Mark[];
   ai: Mark[];
   segments: Segment[];
+  /** The Apple Watch: last night, tonight, workouts and heart rate per hour. */
+  health?: DayHealth;
   totals: { workMinutes: number; lostMinutes: number; phoneSessions: number; phoneMinutes: number };
 };
 
@@ -138,14 +161,40 @@ function topApps(apps: Map<string, number>, n = 2) {
     .map(([a]) => a);
 }
 
+/** Michael's own block: tagged by the executor (data.michael) or written by him (source agent). */
+export const isMichaelBlock = (e: Event) => e.source === "agent" || e.data.michael === true;
+
+/** Calendar events on the day, all day events left out, as planned outlines. */
+export function plansOf(events: Event[], dayStart: number, dayEnd: number): Plan[] {
+  return events
+    .filter((e) => e.type === "calendar_event" && e.end_at && e.data.all_day !== true)
+    .map((e) => {
+      const attendees = typeof e.data.attendees === "number" ? e.data.attendees : 0;
+      return {
+        start: Math.max(t(e.start_at), dayStart),
+        end: Math.min(t(e.end_at as string), dayEnd),
+        title: e.title,
+        michael: isMichaelBlock(e),
+        withOthers: e.data.with_others === true || attendees >= 2,
+      };
+    })
+    .filter((p) => p.end > p.start)
+    .sort((a, b) => a.start - b.start);
+}
+
+/**
+ * The day from raw events. `dayStartAt`/`dayEndAt` are instants or ISO strings (an Athens day is 23
+ * or 25 hours when the clocks change). `now`, when inside the day, draws the now line.
+ */
 export function buildTimeline(
   date: string,
   events: Event[],
-  dayStartIso: string,
-  dayEndIso: string,
+  dayStartAt: string | number,
+  dayEndAt: string | number,
+  now?: number,
 ): TimelineDay {
-  const dayStart = t(dayStartIso);
-  const dayEnd = t(dayEndIso);
+  const dayStart = typeof dayStartAt === "number" ? dayStartAt : t(dayStartAt);
+  const dayEnd = typeof dayEndAt === "number" ? dayEndAt : t(dayEndAt);
   const clip = (s: number, e: number) => [Math.max(s, dayStart), Math.min(e, dayEnd)] as const;
 
   const visits = events.filter((e) => e.type === "web_visit" && e.data.foreground === true);
@@ -250,11 +299,16 @@ export function buildTimeline(
       .sort((a, b) => a.start - b.start);
   const phone = marks((e) => e.source === "iphone_usage" && e.type === "app_usage");
   const ai = marks((e) => e.type === "ai_session");
+  const plans = plansOf(events, dayStart, dayEnd);
+  const health = healthOf(events, dayStart, dayEnd);
 
-  // 5. Quiet stretches of 90 minutes or more (no Mac block, no phone session) collapse to one row.
+  // 5. Quiet stretches of 90 minutes or more (no Mac block, no phone session, nothing planned, no
+  // workout) collapse to one row.
   const busy = [
     ...blocks.map((b) => [b.start, b.end] as const),
+    ...health.workouts.map((w) => [Math.max(w.start, dayStart), Math.min(w.end, dayEnd)] as const),
     ...phone.map((p) => [p.start, p.end] as const),
+    ...plans.map((p) => [p.start, p.end] as const),
   ].sort((a, b) => a[0] - b[0]);
   const segments: Segment[] = [];
   const floorHour = (x: number) => x - ((((x - dayStart) % (60 * MIN)) + 60 * MIN) % (60 * MIN));
@@ -291,14 +345,35 @@ export function buildTimeline(
     blocks.flatMap((b) => b.lostStretches ?? []).reduce((n, l) => n + (l.end - l.start) / MIN, 0);
   const phoneMinutes = phone.reduce((n, p) => n + (p.end - p.start) / MIN, 0);
 
+  // 6. Planned drives (source maps, type travel; TravelData in docs/api.md).
+  const drives = events
+    .filter((e) => e.type === "travel")
+    .map((e) => driveFromEvent(e))
+    .filter((d): d is NonNullable<typeof d> => d !== null)
+    .map((d) => {
+      const [s, en] = clip(t(d.start), t(d.end));
+      return {
+        start: s,
+        end: en,
+        to: d.to,
+        minutes: d.minutes,
+        trafficMinutes: Math.max(0, d.minutes - d.freeFlowMinutes),
+      };
+    })
+    .filter((d) => d.end > d.start);
+
   return {
     date,
+    drives,
+    now: now != null && now > dayStart && now < dayEnd ? now : undefined,
     dayStart,
     dayEnd,
     blocks,
+    plans,
     phone,
     ai,
     segments,
+    health,
     totals: { workMinutes, lostMinutes, phoneSessions: phone.length, phoneMinutes },
   };
 }

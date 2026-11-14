@@ -104,6 +104,35 @@ export async function geocode(store: Store, text: string, deps: MapsDeps = {}): 
   return hit;
 }
 
+export interface AddressMatch extends LatLng {
+  formatted_address: string;
+  place_id: string | null;
+}
+
+/**
+ * Address search for the Places screen: up to five matches for what the user typed. Not cached
+ * (the user is typing); the chosen one is geocoded again, from the cache, when the place is saved.
+ */
+export async function searchAddress(text: string, deps: MapsDeps = {}): Promise<AddressMatch[]> {
+  const query = text.trim();
+  if (query.length < 3) return [];
+  const url = `${GEOCODE_URL}?${new URLSearchParams({ address: query, key: keyOf(deps) })}`;
+  const res = await (deps.fetch ?? fetch)(url);
+  if (!res.ok) throw new HttpError("upstream_error", `Google Geocoding failed (${res.status})`);
+  const body = GeocodeResponse.safeParse(await res.json());
+  if (!body.success) throw new HttpError("upstream_error", "Google Geocoding sent an unexpected response");
+  if (body.data.status === "ZERO_RESULTS") return [];
+  if (body.data.status !== "OK") {
+    throw new HttpError("upstream_error", `Google Geocoding: ${body.data.status}`);
+  }
+  return body.data.results.slice(0, 5).map((r) => ({
+    formatted_address: r.formatted_address,
+    place_id: r.place_id ?? null,
+    lat: r.geometry.location.lat,
+    lng: r.geometry.location.lng,
+  }));
+}
+
 const RoutesResponse = z.object({
   routes: z
     .array(

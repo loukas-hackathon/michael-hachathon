@@ -67,12 +67,16 @@ export function toTimelineEvent(e: GoogleEvent, zoneName: string): z.output<type
 }
 
 /**
- * Mirrors the current user's primary Google calendar (today +/- 7 days) into the timeline.
+ * Mirrors the current user's primary Google calendar (today +/- 7 days) into the timeline. The first
+ * sync after connecting reads `pastDays` further back (four weeks), so goal suggestions see habits.
  * Idempotent: events are upserted by Google id, and mirrored events that disappeared from Google in
  * the window are removed from the mirror (the calendar itself is never touched here).
  */
-export async function syncGoogleCalendar(now = Date.now()): Promise<CalendarSyncResult> {
-  const from = new Date(now - SYNC_DAYS * DAY_MS).toISOString();
+export async function syncGoogleCalendar(
+  now = Date.now(),
+  pastDays = SYNC_DAYS,
+): Promise<CalendarSyncResult> {
+  const from = new Date(now - pastDays * DAY_MS).toISOString();
   const to = new Date(now + SYNC_DAYS * DAY_MS).toISOString();
   // Off the record, or the user switched the calendar off: do not even read it.
   if (!(await isCollecting(store, "google_calendar"))) {
