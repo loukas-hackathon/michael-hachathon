@@ -16,9 +16,9 @@
   animation: m-splash-out 300ms cubic-bezier(0.23, 1, 0.32, 1) 950ms both;
 }
 
-/* Beats the inline display in splash.tsx (the first paint layout), so done really hides it. */
+/* The script also sets the inline display (splash.tsx), which the first paint layout needs. */
 #m-splash[data-done] {
-  display: none !important;
+  display: none;
 }
 
 /* Same size and place as the iOS launch images in public/splash, so the hand over is seamless. */
