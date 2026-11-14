@@ -10,6 +10,7 @@ import { analysis } from "./routes/analysis";
 import { events } from "./routes/events";
 import { goals } from "./routes/goals";
 import { integrations, oauth } from "./routes/integrations";
+import { connect, oauthPublic } from "./routes/oauth";
 import { patterns } from "./routes/patterns";
 import { privacy } from "./routes/privacy";
 import { product } from "./routes/product";
@@ -34,7 +35,8 @@ const v1 = new Hono()
   .route("/", score)
   .route("/", integrations)
   .route("/", privacy)
-  .route("/", product);
+  .route("/", product)
+  .route("/", connect);
 
 export const app = new Hono()
   .use(logger())
@@ -49,11 +51,13 @@ export const app = new Hono()
     };
     return c.json(body);
   })
+  // MCP OAuth: discovery, client registration, authorise and token (public by design).
+  .route("/", oauthPublic)
   .route("/v1", oauth)
   .route("/v1/webhooks", webhooksApp)
   .route("/v1", v1)
-  // claude.ai custom connectors cannot send headers, so /mcp also accepts ?key=.
-  .all("/mcp", requireUser({ allowQueryKey: true }), (c) => handleMcpRequest(c.req.raw))
+  // claude.ai signs in with OAuth (routes/oauth.ts); the API key and ?key= keep working.
+  .all("/mcp", requireUser({ mcp: true }), (c) => handleMcpRequest(c.req.raw))
   .notFound((c) => errorResponse(c, "not_found", `No route for ${c.req.method} ${c.req.path}`))
   .onError((err, c) => {
     if (err instanceof HttpError) return errorResponse(c, err.code, err.message, err.details);

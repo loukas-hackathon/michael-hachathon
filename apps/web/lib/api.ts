@@ -21,11 +21,11 @@ import { authEnabled, DEMO_COOKIE, supabaseServer } from "./supabase/server";
 // carries the signed-in user's Supabase token, so the API returns only that user's data.
 // USE_MOCKS=true (default) serves fixtures from @michael/shared until the real endpoint exists.
 const USE_MOCKS = process.env.USE_MOCKS !== "false";
-const API_URL = process.env.API_URL ?? "http://localhost:8787";
+export const API_URL = process.env.API_URL ?? "http://localhost:8787";
 const API_KEY = process.env.API_KEY ?? "dev-key";
 
 // Whose data to fetch: the signed-in user's own token, or the API key for the demo week.
-async function bearer(): Promise<string> {
+export async function bearer(): Promise<string> {
   if (!authEnabled) return API_KEY;
   if ((await cookies()).get(DEMO_COOKIE)?.value === "1") return API_KEY;
   const { data } = await (await supabaseServer()).auth.getSession();

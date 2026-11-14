@@ -156,9 +156,14 @@ claude mcp add --transport http michael https://<railway-domain>/mcp \
 # local: claude mcp add --transport http michael http://localhost:8787/mcp --header "Authorization: Bearer dev-key"
 ```
 
-**claude.ai** (Settings > Connectors > Add custom connector): custom connectors cannot send a
-static bearer header, so use the query-string form of the key:
-`https://<railway-domain>/mcp?key=<API_KEY>`. Treat that URL as a secret.
+**claude.ai** (Settings > Connectors > Add custom connector): paste
+`https://api-production-16521a26.up.railway.app/mcp` (no key), then tap Allow on Michael's consent
+page. claude.ai signs in with MCP OAuth (`apps/api/src/routes/oauth.ts`): you sign in with Google
+in the web app, and the token Claude gets acts for you only. The Agents screen shows the same URL
+with a copy button. The old `?key=<API_KEY>` form still works and acts as the demo account.
+
+Claude Code can use the same OAuth flow: `claude mcp add --transport http michael <url>/mcp`, then
+`/mcp` in Claude Code to sign in.
 
 **Any MCP client:** Streamable HTTP, stateless, `POST /mcp`, JSON responses.
 

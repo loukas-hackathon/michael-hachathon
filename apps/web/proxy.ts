@@ -30,7 +30,8 @@ export async function proxy(request: NextRequest) {
   if (!data.user && !isDemo && !isPublic) {
     const login = request.nextUrl.clone();
     login.pathname = "/login";
-    login.search = "";
+    // Come back here after signing in (the connect consent page relies on it).
+    login.search = path === "/" ? "" : `?next=${encodeURIComponent(path + request.nextUrl.search)}`;
     return NextResponse.redirect(login);
   }
   return response;

@@ -4,6 +4,8 @@ import type { MiddlewareHandler } from "hono";
 import { runAsUser } from "./context";
 import { env } from "./env";
 import { errorResponse } from "./http";
+import { mcpResource, resourceMetadataUrl } from "./public-url";
+import { verifyAccessToken } from "./routes/oauth";
 
 const digest = (s: string) => createHash("sha256").update(s).digest();
 const expected = digest(env.API_KEY);
@@ -34,19 +36,34 @@ async function userFromSupabaseToken(token: string): Promise<string | null> {
 /**
  * Resolves who the request acts for and runs the rest of the request as that user:
  * - a signed-in user's Supabase access token (`Authorization: Bearer <jwt>`) -> that user
- * - the shared API key -> the demo account (collectors, webhooks, the claude.ai demo connector)
- * `allowQueryKey` also accepts `?key=` for callers that cannot set headers (webhook senders,
- * claude.ai custom connectors). URLs end up in logs, so only enable it where needed.
+ * - the shared API key -> the demo account (collectors, webhooks, our own tools)
+ * - with `mcp`, an OAuth access token issued by routes/oauth.ts for this MCP resource -> the user
+ *   who allowed it (the claude.ai connector). A 401 then carries the WWW-Authenticate pointer to
+ *   the protected resource metadata, which is how claude.ai starts sign in.
+ * `allowQueryKey` (implied by `mcp`) also accepts `?key=` for callers that cannot set headers
+ * (webhook senders, older connector setups). URLs end up in logs, so only enable it where needed.
  */
 export const requireUser =
-  (opts: { allowQueryKey?: boolean } = {}): MiddlewareHandler =>
+  (opts: { allowQueryKey?: boolean; mcp?: boolean } = {}): MiddlewareHandler =>
   async (c, next) => {
     const header = c.req.header("authorization");
-    const bearer = header?.startsWith("Bearer ") ? header.slice(7) : undefined;
-    const token = bearer ?? (opts.allowQueryKey ? c.req.query("key") : undefined);
-    if (!token) return errorResponse(c, "unauthorized", "Sign in, or send the API key");
+    const bearer = header?.startsWith("Bearer ") ? header.slice(7).trim() : undefined;
+    const token = bearer ?? (opts.allowQueryKey || opts.mcp ? c.req.query("key") : undefined);
+    const deny = (message: string) => {
+      if (opts.mcp) {
+        const params = [`resource_metadata="${resourceMetadataUrl(c)}"`];
+        if (token) params.push('error="invalid_token"');
+        c.header("WWW-Authenticate", `Bearer ${params.join(", ")}`);
+      }
+      return errorResponse(c, "unauthorized", message);
+    };
+    if (!token) return deny("Sign in, or send the API key");
 
-    const userId = isApiKey(token) ? env.DEMO_USER_ID : await userFromSupabaseToken(token);
-    if (!userId) return errorResponse(c, "unauthorized", "Invalid or expired credentials");
+    let userId: string | null;
+    if (isApiKey(token)) userId = env.DEMO_USER_ID;
+    else if (opts.mcp && token.startsWith("mcp_at_")) {
+      userId = (await verifyAccessToken(token, mcpResource(c)))?.user_id ?? null;
+    } else userId = await userFromSupabaseToken(token);
+    if (!userId) return deny("Invalid or expired credentials");
     await runAsUser(userId, () => next());
   };
