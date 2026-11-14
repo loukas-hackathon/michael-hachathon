@@ -20,26 +20,18 @@ test("onboarding completes for a fresh user", async ({ page, context, baseURL })
   await asUser("/v1/me/data", "DELETE");
 
   await page.goto("/");
+  // No Google keys here, so the calendar consent is skipped and the starters lead.
   await expect(page).toHaveURL(/\/onboarding$/);
-  const next = page.getByRole("button", { name: /^(Next|None of these|Start)$/ });
-
   await expect(page.getByRole("heading", { name: "What are we playing for?" })).toBeVisible();
-  const deepWork = page.getByRole("button", { name: /Deep work/ });
-  await tap(deepWork);
-  await expect(deepWork).toHaveAttribute("aria-pressed", "true");
-  await tap(next);
-  await expect(page.getByRole("heading", { name: "What does a usual week look like?" })).toBeVisible();
-  await tap(next);
-  await expect(page.getByRole("heading", { name: "Where does your time leak?" })).toBeVisible();
-  await tap(next);
-  await expect(page.getByRole("heading", { name: "When should I stay quiet?" })).toBeVisible();
-  await tap(next); // saves
-  await expect(page.getByRole("heading", { name: "Let me see your day." })).toBeVisible();
-  // Connecting Google would leave the machine: take the quiet way past it.
-  await tap(page.getByRole("button", { name: "Later" }));
-  await expect(page.getByRole("heading", { name: "Right. Let's get to work." })).toBeVisible();
-  // "Start", or "Not now" when the browser could take nudges.
-  await tap(page.getByRole("button", { name: /^(Start|Not now)$/ }));
+  await expect(page.getByRole("button", { name: /Deep work/ })).toHaveAttribute("aria-pressed", "true");
+  const training = page.getByRole("button", { name: /^Training/ });
+  await tap(training); // untick: one goal is enough for the test
+  await expect(training).toHaveAttribute("aria-pressed", "false");
+  await tap(page.getByRole("button", { name: "Keep this goal" }));
+
+  await expect(page.getByRole("heading", { name: "Now, your days." })).toBeVisible();
+  await expect(page.getByText("Apple Watch")).toBeVisible();
+  await tap(page.getByRole("link", { name: "Go to Today" }));
 
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByRole("heading", { level: 1, name: /^(Morning|Today|Evening)$/ })).toBeVisible();
