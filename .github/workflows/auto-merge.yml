@@ -29,10 +29,13 @@ jobs:
           set -u
           deploy_api=false
           migrate=false
-          prs=$(gh pr list -R "$REPO" --state open --json number,isDraft,labels,mergeable \
-            --jq '.[] | select(.isDraft | not) | select([.labels[].name] | index("wip") | not) | "\(.number) \(.mergeable)"')
-          while read -r n state; do
+          # Only same-repo PRs (no forks: the repo is public) by people with write access.
+          prs=$(gh pr list -R "$REPO" --state open --json number,isDraft,labels,mergeable,isCrossRepository,headRefOid,author \
+            --jq '.[] | select(.isDraft | not) | select(.isCrossRepository | not) | select([.labels[].name] | index("wip") | not) | "\(.number) \(.mergeable) \(.headRefOid) \(.author.login)"')
+          while read -r n state sha author; do
             [ -z "${n:-}" ] && continue
+            perm=$(gh api "repos/$REPO/collaborators/$author/permission" --jq .permission 2>/dev/null || echo none)
+            case "$perm" in admin|maintain|write) ;; *) continue ;; esac
             if [ "$state" = "CONFLICTING" ]; then
               if ! gh pr view "$n" -R "$REPO" --json comments --jq '.comments[].body' | grep -q "auto-merge: conflicts"; then
                 gh pr comment "$n" -R "$REPO" --body "auto-merge: conflicts with main. Author agent: run \`git pull origin main\`, fix, push; I merge once CI is green."
@@ -47,7 +50,8 @@ jobs:
             ci=$(gh pr view "$n" -R "$REPO" --json statusCheckRollup --jq '[.statusCheckRollup[] | select(.name == "check")] | length')
             if [ "$pending" != "0" ] || [ "$failed" != "0" ] || [ "$ci" = "0" ]; then continue; fi
             files=$(gh pr diff "$n" -R "$REPO" --name-only)
-            if gh pr merge "$n" -R "$REPO" --squash --delete-branch; then
+            # --match-head-commit: refuse if new commits arrived after the checks we just read.
+            if gh pr merge "$n" -R "$REPO" --squash --delete-branch --match-head-commit "$sha"; then
               echo "merged #$n"
               echo "$files" | grep -qE '^(apps/api/|packages/shared/|pnpm-lock.yaml$|package.json$|railway.json$)' && deploy_api=true
               echo "$files" | grep -qE '^supabase/migrations/' && migrate=true
