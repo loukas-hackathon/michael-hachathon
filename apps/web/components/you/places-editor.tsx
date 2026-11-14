@@ -385,7 +385,7 @@ export function PlacesEditor({
         </label>
         <p className="mt-2 px-4 text-footnote text-label-2">
           {!mapsAvailable
-            ? "Drive times start once maps are switched on on our side. Your places are saved."
+            ? "Your places are saved. Drive times start once Google Maps is ready on our side."
             : travel
               ? "I plan each day around traffic and only ever move your own blocks."
               : "Off. I do not look at traffic until you switch this on."}
