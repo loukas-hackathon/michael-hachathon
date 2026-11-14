@@ -1,7 +1,7 @@
 "use server";
 
 import { GoalCategory, type GoalCreate, ProfileUpdate } from "@michael/shared";
-import { createGoal, getGoals, getInstructions, patchGoal, postInstruction, putProfile } from "@/lib/api";
+import { API_URL, bearer, createGoal, getGoals, patchGoal, putProfile } from "@/lib/api";
 import type { InstructionKind } from "@/lib/instructions";
 
 // Server functions behind the onboarding talk. Only the server talks to the API, with the signed in
@@ -23,13 +23,20 @@ const NEW_CATEGORIES = (GoalCategory.options as readonly string[]).includes("per
 // What each starter is called, which category it is stored in, and which calendar titles count
 // (docs/api.md, Goals). Training and Sleep keep the old readable values (gym, rest), which map to
 // Health; the company is work (Business) until the contract takes the new names (#131).
-const TEMPLATE: Record<Exclude<Key, "own">, { title: string; category: string; target: Record<string, unknown> }> = {
+const TEMPLATE: Record<
+  Exclude<Key, "own">,
+  { title: string; category: string; target: Record<string, unknown> }
+> = {
   company: {
     title: "The company",
     category: NEW_CATEGORIES ? "business" : "work",
     target: { kind: "time", calendar_titles: ["Deep work", "Focus", "Sales", "Outreach"] },
   },
-  training: { title: "Training", category: "gym", target: { kind: "time", calendar_titles: ["Gym", "Run", "Swim", "Training"] } },
+  training: {
+    title: "Training",
+    category: "gym",
+    target: { kind: "time", calendar_titles: ["Gym", "Run", "Swim", "Training"] },
+  },
   sleep: { title: "Sleep", category: "rest", target: {} },
   personal: { title: "Time for yourself", category: "personal", target: { kind: "time", label: "fun" } },
 };
@@ -56,11 +63,37 @@ function parseRules(input: unknown): RuleAnswer[] {
   return input.map((r: Partial<RuleAnswer> | null) => {
     const kind = r?.kind;
     const text = typeof r?.text === "string" ? r.text.trim().slice(0, 140) : "";
-    if (!text || !(kind === "clear_day" || kind === "home_by" || kind === "custom")) throw new Error("Invalid rule");
-    const days = Array.isArray(r?.days) ? r.days.filter((d) => Number.isInteger(d) && d >= 0 && d <= 6) : undefined;
+    if (!text || !(kind === "clear_day" || kind === "home_by" || kind === "custom"))
+      throw new Error("Invalid rule");
+    const days = Array.isArray(r?.days)
+      ? r.days.filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
+      : undefined;
     const time = typeof r?.time === "string" && HHMM.test(r.time) ? r.time : undefined;
     return { kind, text, days, time };
   });
+}
+
+/**
+ * House rules go to /v1/instructions (#131). Until that endpoint is live this answers false and the
+ * onboarding carries on without them; already set rules (same text) are not added twice.
+ */
+async function saveRules(rules: RuleAnswer[]): Promise<void> {
+  const headers = { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" };
+  const res = await fetch(`${API_URL}/v1/instructions`, { headers, cache: "no-store" }).catch(() => null);
+  if (!res?.ok) return;
+  const body = (await res.json().catch(() => ({ instructions: [] }))) as {
+    instructions?: { text: string }[];
+  };
+  const have = new Set((body.instructions ?? []).map((i) => i.text));
+  for (const r of rules) {
+    if (have.has(r.text)) continue;
+    await fetch(`${API_URL}/v1/instructions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ ...r, active: true }),
+      cache: "no-store",
+    }).catch(() => null);
+  }
 }
 
 function targetFor(g: GoalAnswer, gymDays: number): Record<string, unknown> {
@@ -103,16 +136,7 @@ export async function finishOnboarding(input: Answers): Promise<{ ok: boolean }>
         weekly_budget_minutes: g.weekly_minutes,
       });
     }
-    if (rules.length) {
-      const existing = await getInstructions().catch(() => ({ available: false as const }));
-      if (existing.available) {
-        const have = new Set(existing.items.map((i) => i.text));
-        for (const r of rules) {
-          if (have.has(r.text)) continue;
-          await postInstruction({ ...r, active: true });
-        }
-      }
-    }
+    if (rules.length) await saveRules(rules);
     await putProfile(profile);
     return { ok: true };
   } catch (err) {

@@ -87,12 +87,13 @@ export function starterOf(category: GoalCategory | string): StarterId | null {
 }
 
 // One tap standing instructions (rules Michael plans around), plus the user's own words.
-const RULES: Pick<Instruction, "kind" | "days" | "time" | "text">[] = [
-  { kind: "clear_day", days: [0], text: "" },
-  { kind: "clear_day", days: [6], text: "" },
-  { kind: "home_by", days: [1, 2, 3, 4, 5], time: "19:00", text: "" },
-  { kind: "home_by", days: [1, 2, 3, 4, 5], time: "21:00", text: "" },
-].map((r) => ({ ...r, text: instructionText(r) }));
+const RULE_SEEDS: Pick<Instruction, "kind" | "days" | "time">[] = [
+  { kind: "clear_day", days: [0] },
+  { kind: "clear_day", days: [6] },
+  { kind: "home_by", days: [1, 2, 3, 4, 5], time: "19:00" },
+  { kind: "home_by", days: [1, 2, 3, 4, 5], time: "21:00" },
+];
+const RULES = RULE_SEEDS.map((r) => ({ ...r, text: instructionText({ ...r, text: "" }) }));
 
 const DAYS: { id: Weekday; short: string; name: string }[] = [
   { id: "mon", short: "M", name: "Monday" },
@@ -517,7 +518,9 @@ export function OnboardingFlow({ saved, resume }: { saved?: Saved; resume?: Resu
             </li>
           </ul>
           {ownGoal.trim() ? (
-            <p className="px-4 text-footnote text-label-2">5h a week to start, under Business. Change it on Goals.</p>
+            <p className="px-4 text-footnote text-label-2">
+              5h a week to start, under Business. Change it on Goals.
+            </p>
           ) : null}
         </div>
       ),
@@ -635,7 +638,7 @@ export function OnboardingFlow({ saved, resume }: { saved?: Saved; resume?: Resu
         <>
           {resume?.calendar === "connected" ? <>Google Calendar is connected. </> : null}
           {resume?.calendar === "failed" ? <>Google Calendar did not connect. Try again from You.</> : null}
-          {weekly ? <>{weekly.charAt(0).toUpperCase() + weekly.slice(1)} a week. </> : null}
+          {weekly ? <>Each week, {weekly}. </> : null}
           {sleep ? <>Sleep {sleep} a night. </> : null}I find the time you lose and give it back. First brief
           tomorrow at <span className="tnum">{quietEnd}</span>.
         </>
