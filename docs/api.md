@@ -1017,10 +1017,11 @@ today's screen time totals, 7 day totals per type and the pattern headlines for 
 7 days, plus the last 20 lines of chat. Raw app, web and AI events are never sent, only totals, and
 conversations and memories stay out. Nothing is stored when the call fails.
 
-**Chat acts on the user's own time (#46).** Claude gets four tools, run server side inside the
+**Chat acts on the user's own time (#46).** Claude gets five tools, run server side inside the
 request (no HTTP self calls): `find_calendar_blocks { from, to }` (ids and whether a block may be
 moved), `create_focus_block { title, start_at, end_at, goal_id? }`, `move_calendar_block { event_id,
-start_at, end_at?, new_title? }` and `undo_action { recommendation_id }`. Each action becomes a
+start_at, end_at?, new_title? }`, `block_mac_app { apps: string[], start_at, end_at, goal_id? }`
+(see Focus guards) and `undo_action { recommendation_id }`. Each action becomes a
 recommendation with `source: "chat"` that is carried out at once by the same code as
 `POST /v1/recommendations/:id/execute` (and `/undo`), so every guard rail holds: events with other
 people and anything already started are refused (the model hears the 409 and advises instead;
@@ -1146,7 +1147,8 @@ Changing status never executes `action`; use the routes below.
 | POST   | `/v1/recommendations/:id/execute` | `200 Recommendation` (`status: done`, `executed_at` set). `409` see below | live   |
 | POST   | `/v1/recommendations/:id/undo`    | `200 Recommendation` (`status: undone`, `undone_at` set). `409` see below | live   |
 
-Kinds carried out: `move_calendar_block` and `create_focus_block`; other kinds answer `501`.
+Kinds carried out: `move_calendar_block`, `create_focus_block` and `block_mac_app`; other kinds
+answer `501`.
 
 ```ts
 // move_calendar_block: one of the user's own solo blocks (a timeline event id). A new start keeps
@@ -1154,6 +1156,18 @@ Kinds carried out: `move_calendar_block` and `create_focus_block`; other kinds a
 type MoveCalendarBlockPayload = { event_id: string; start_at?: string; end_at?: string; new_title?: string };
 // create_focus_block: a new block, tagged as Michael's (title defaults to "Focus block").
 type CreateFocusBlockPayload = { start_at: string; end_at: string; title?: string };
+// block_mac_app: close distracting Mac apps from start_at to end_at (a focus guard, see below).
+// At least one of app, apps, bundle_ids; names or bundle ids from the allowlist only.
+type BlockMacAppPayload = {
+  app?: string; // "WhatsApp"
+  apps?: string[]; // up to 10
+  bundle_ids?: string[];
+  start_at: string;
+  end_at: string; // after start_at, at most 12 hours after the guard starts
+  goal_id?: string;
+  block_event_id?: string; // the planned block it sits in (analysis sets it)
+  back_to?: string; // "Back to <this>." in the notification; default the goal or block title
+};
 ```
 
 Rules: act only on the user's own calendar blocks and Mac; never touch events with other people;
@@ -1170,6 +1184,49 @@ never delete the user's events; never send in the user's name.
   only if Google still marks it as Michael's. Allowed until the earliest of `undo_until`, the
   block's original start and its new start; afterwards `409`. Undo of anything not `done` is `409`.
 - What was changed is kept on the recommendation (`execution`, internal, never returned).
+- `block_mac_app` creates a focus guard (below). A window that has begun starts now; `409` when it
+  has already ended or names an app off the allowlist, `400` over 12 hours. Undo deletes the guard
+  at once and is allowed until the window ends (not until it starts).
+
+### Focus guards (block Mac apps, #41)
+
+```ts
+type FocusGuard = {
+  id: string;
+  recommendation_id: string | null;
+  apps: string[]; // allowlisted names, e.g. ["WhatsApp"]
+  bundle_ids: string[]; // every Mac bundle id those names map to
+  start_at: string;
+  end_at: string;
+  goal_id: string | null;
+  back_to: string | null; // "Back to The company."
+  created_at: string;
+};
+type FocusGuardsResponse = { now: string; off_the_record: boolean; guards: FocusGuard[] };
+```
+
+| Method | Path                       | Response                                                         | Status |
+| ------ | -------------------------- | ---------------------------------------------------------------- | ------ |
+| GET    | `/v1/focus-guards/active`  | `200 FocusGuardsResponse`: running now or starting in 10 minutes | live   |
+| POST   | `/v1/focus-guards/suggest` | `201 { recommendation }` or `200 { recommendation: null }`       | live   |
+
+- Executing a `block_mac_app` recommendation creates a guard; undoing it deletes the guard.
+- `/active` is the one read a device key may make (the Mac collector polls it every 30 to 60 s).
+  While the user is off the record it answers `off_the_record: true` and no guards, and the
+  collector does nothing.
+- Only apps in `BLOCKABLE_MAC_APPS` (`packages/shared/src/mac-apps.ts`: chat, social, music, video
+  and games, for example WhatsApp, Telegram, Messages, Slack, Discord, Mail, Instagram, X, Spotify,
+  Music, TV, Netflix, Steam) can be named. System apps, terminals, Claude and Michael can never be
+  closed; the collector checks the list again before it acts.
+- The collector reads the front app with `lsappinfo` (no permission), closes a muted app with
+  AppleScript `quit` by bundle id (like Cmd+Q; macOS asks once per app for Automation), hides it if
+  quitting is not allowed, and shows "Instagram is off until 12:00. Back to The company." at most
+  once a minute per app.
+- `/suggest` proposes muting the week's worst Mac offender (`repeat_offenders`, allowlisted apps
+  only) during today's next work block, or the next two hours between 08:00 and 18:00 when there is
+  no block: "Mute WhatsApp 14:00 to 16:00", rationale "... took 47 min.". It is a `proposed`
+  recommendation (`source: "analysis"`); nothing happens until Do it. Not repeated while an open one
+  for the same app has not ended.
 
 ### Integrations (OAuth)
 
@@ -1320,8 +1377,11 @@ type PersonalTokenCreated = { token: PersonalToken; secret: string /* "mk_...", 
 | DELETE | `/v1/tokens/:id` |            | `204` (stops working within 30 s), `404`             | live   |
 
 Only a signed-in session (Supabase token) may call these: device keys, OAuth tokens and the demo
-API key get `403 forbidden`. A device key acts for its owner on ingest, webhooks and `/mcp`
-(`Authorization: Bearer mk_...` or `?key=mk_...` where query keys are allowed). One key per device
+API key get `403 forbidden`. A device key acts for its owner and can only send data:
+`POST /v1/events`, `POST /v1/events/batch` and `POST /v1/webhooks/*`, plus one read,
+`GET /v1/focus-guards/active`, so the Mac collector can enforce focus guards
+(`Authorization: Bearer mk_...`, or `?key=mk_...` on webhooks). Anything else, including other
+reads, `/mcp` and every credential route, returns `403`. One key per device
 (Mac collector, Health Auto Export). Only the sha256 is stored. The web app makes them under
 You > Devices. Claude connects with MCP OAuth instead (no key).
 
@@ -1481,7 +1541,8 @@ type AgentQuery = {
 - Scope per tool: `get_timeline`, `get_patterns` = `timeline`; `get_goals`, `add_goal`,
   `update_goal` = `goals`; `list_recommendations`, `update_recommendation`, `get_nudges` =
   `recommendations`; `get_score`, `get_moments` = `score`; `add_event`, `execute_recommendation`,
-  `undo_recommendation`, `create_focus_block`, `plan_travel` = `write_events`. A tool not in that
+  `undo_recommendation`, `create_focus_block`, `block_mac_app`, `plan_travel` = `write_events`;
+  `suggest_app_mute` = `recommendations`. A tool not in that
   list needs `timeline` if it is read only, else `write_events` (`apps/api/src/mcp-guard.ts`).
 - `queries`: `from` defaults to local midnight today (Europe/Athens), `to` to now; newest first,
   at most 500.
@@ -1890,6 +1951,8 @@ offset. A refused or failed call returns `isError: true` with one plain sentence
 | `execute_recommendation` | `write_events`    | `{ id }`                                                                                | `{ recommendation, undo_until }`                          |
 | `undo_recommendation`    | `write_events`    | `{ id }`                                                                                | `{ recommendation }`                                      |
 | `create_focus_block`     | `write_events`    | `{ start: TimeInput, end: TimeInput, title?, goal_id? }`                                | `{ recommendation, undo_until }`                          |
+| `block_mac_app`          | `write_events`    | `{ apps: string[], start?: TimeInput, end: TimeInput, goal_id? }` (start default now)   | `{ recommendation, undo_until }`                          |
+| `suggest_app_mute`       | `recommendations` | `{}`                                                                                    | `{ recommendation }` or `{}` when nothing stands out      |
 | `plan_travel`            | `write_events`    | `{ from?, to? }` (default today)                                                        | `TravelPlanResult` (see Places and travel)                |
 
 - `execute_recommendation` / `undo_recommendation` call the same functions as
@@ -1900,6 +1963,9 @@ offset. A refused or failed call returns `isError: true` with one plain sentence
   "Booked at your request through <agent name>") and carries it out like any other, so the block
   shows in Michael and `undo_recommendation` takes it back. Refused in the past, under 5 minutes,
   over 6 hours, or when it overlaps an event with other people.
+- `block_mac_app` mutes straight away the same way (`source: "chat"`, `status: "done"`, see Focus
+  guards); `undo_recommendation` lets the apps open again until the window ends. Apps off the
+  allowlist are refused. `suggest_app_mute` only proposes.
 - No tool deletes anything, sends anything in the user's name, or touches an event with other
   people. Goals are paused with `update_goal { active: false }`, never deleted.
 - `get_recommendations` was renamed `list_recommendations`.

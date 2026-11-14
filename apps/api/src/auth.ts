@@ -59,6 +59,13 @@ export async function deleteAuthUser(userId: string): Promise<boolean> {
  * `allowQueryKey` (implied by `mcp`) also accepts `?key=` for callers that cannot set headers
  * (webhook senders, older connector setups). URLs end up in logs, so only enable it where needed.
  */
+// The only routes a device key (mk_...) may call: sending data, and the one read the Mac collector
+// needs to enforce focus guards (#41). A leaked key can neither read the day nor change anything.
+export const deviceKeyMayCall = (method: string, path: string) =>
+  (method === "POST" &&
+    (path === "/v1/events" || path === "/v1/events/batch" || path.startsWith("/v1/webhooks/"))) ||
+  (method === "GET" && path === "/v1/focus-guards/active");
+
 export const requireUser =
   (opts: { allowQueryKey?: boolean; mcp?: boolean } = {}): MiddlewareHandler =>
   async (c, next) => {
@@ -95,6 +102,10 @@ export const requireUser =
       via = "session";
     }
     if (!userId) return deny("Invalid or expired credentials");
+    // Device keys only send data (plus the focus guard read): no MCP, no settings, no credentials.
+    if (via === "personal_token" && !deviceKeyMayCall(c.req.method, c.req.path)) {
+      return errorResponse(c, "forbidden", "Device keys can only send data to Michael");
+    }
 
     // The demo account's generated week follows the clock (at most one refresh per 5 minutes).
     if (userId === env.DEMO_USER_ID) await runAsUser(userId, () => keepDemoWeekFresh(store), via);

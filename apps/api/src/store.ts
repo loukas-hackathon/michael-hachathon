@@ -7,6 +7,7 @@ import {
   type EventInput,
   type EventSummary,
   type EventType,
+  type FocusGuard,
   type Goal,
   type GoalCreate,
   type GoalUpdate,
@@ -113,6 +114,8 @@ export const summaryDayRange = (from?: string, to?: string) => ({
   to: to ? new Date(Date.parse(to) - 1).toISOString().slice(0, 10) : undefined,
 });
 
+export type NewFocusGuard = Omit<FocusGuard, "id" | "created_at">;
+
 export type EventPatch = Partial<Pick<Event, "start_at" | "end_at" | "title" | "data">>;
 
 // JSON with sorted keys, so jsonb's own key order never reads as a change.
@@ -179,6 +182,11 @@ export interface Store extends PrivacyBackend {
   saveAnalysis(input: NewAnalysis): Promise<{ run: AnalysisRun; recommendations: Recommendation[] }>;
   // Proposed by Michael's own rules (e.g. travel) or asked for in chat; status starts at proposed.
   createRecommendation(input: NewRecommendation): Promise<Recommendation>;
+  // Focus guards (block_mac_app): created by executing, deleted by undo (actions/mac-apps.ts).
+  createFocusGuard(input: NewFocusGuard): Promise<FocusGuard>;
+  deleteFocusGuard(id: string): Promise<boolean>;
+  /** Guards that end after `endsAfter` and start before `startsBefore`, soonest first. */
+  listFocusGuards(filter: { endsAfter: string; startsBefore: string }): Promise<FocusGuard[]>;
   // Saved places (home, work, gym). replacePlaces swaps the whole list.
   listPlaces(): Promise<Place[]>;
   replacePlaces(places: Omit<Place, "updated_at">[]): Promise<Place[]>;
@@ -338,6 +346,7 @@ export class MemoryStore implements Store {
       places: Place[];
       geocodes: Map<string, GeocodeHit>;
       summaries: EventSummary[];
+      guards: FocusGuard[];
     }
   >();
   private fresh(sample: boolean) {
@@ -357,6 +366,7 @@ export class MemoryStore implements Store {
       places: [] as Place[],
       geocodes: new Map<string, GeocodeHit>(),
       summaries: [] as EventSummary[],
+      guards: [] as FocusGuard[],
     };
   }
   private get d() {
@@ -756,6 +766,28 @@ export class MemoryStore implements Store {
       .map(([userId]) => userId);
   }
 
+  async createFocusGuard(input: NewFocusGuard) {
+    const guard: FocusGuard = { ...structuredClone(input), id: crypto.randomUUID(), created_at: now() };
+    this.d.guards.push(guard);
+    return structuredClone(guard);
+  }
+
+  async deleteFocusGuard(id: string) {
+    const before = this.d.guards.length;
+    this.d.guards = this.d.guards.filter((g) => g.id !== id);
+    return this.d.guards.length < before;
+  }
+
+  async listFocusGuards(f: { endsAfter: string; startsBefore: string }) {
+    const after = Date.parse(f.endsAfter);
+    const before = Date.parse(f.startsBefore);
+    return structuredClone(
+      this.d.guards
+        .filter((g) => Date.parse(g.end_at) > after && Date.parse(g.start_at) < before)
+        .sort((a, b) => Date.parse(a.start_at) - Date.parse(b.start_at)),
+    );
+  }
+
   async listPlaces() {
     return structuredClone(this.d.places);
   }
@@ -823,6 +855,7 @@ export class MemoryStore implements Store {
         events: d.events.length,
         event_summaries: d.summaries.length,
         goals: d.goals.length,
+        focus_guards: d.guards.length,
         recommendations: d.recommendations.length,
         analysis_runs: d.runs.length,
         chat_messages: d.chat.length,

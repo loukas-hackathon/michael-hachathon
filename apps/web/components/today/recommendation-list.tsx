@@ -22,7 +22,7 @@ const ACTIONS: Record<Op, (id: string) => Promise<RecActionResult>> = {
 // What the card shows while the server works (optimistic), rolled back if it fails.
 const OPTIMISTIC: Record<Op, Partial<Local>> = {
   do: { status: "done" },
-  undo: { status: "undone", note: "Undone. Your calendar is back as it was." },
+  undo: { status: "undone" },
   dismiss: { hidden: true },
 };
 
@@ -99,7 +99,8 @@ export function RecommendationList({ cards }: { cards: RecCard[] }) {
 
   async function act(card: RecCard, op: Op) {
     const before = local[card.id] ?? {};
-    patch(card.id, { ...before, ...OPTIMISTIC[op], error: undefined, busy: op });
+    const note = op === "undo" ? { note: card.undoneNote } : {};
+    patch(card.id, { ...before, ...OPTIMISTIC[op], ...note, error: undefined, busy: op });
     const r = await ACTIONS[op](card.id).catch(
       (): RecActionResult => ({
         ok: false,
@@ -108,7 +109,7 @@ export function RecommendationList({ cards }: { cards: RecCard[] }) {
       }),
     );
     if (r.ok) {
-      patch(card.id, { ...OPTIMISTIC[op], status: r.rec.status, hidden: op === "dismiss" });
+      patch(card.id, { ...OPTIMISTIC[op], ...note, status: r.rec.status, hidden: op === "dismiss" });
       router.refresh();
     } else {
       // Roll back to what the card showed before, with the reason in Michael's words, and read the

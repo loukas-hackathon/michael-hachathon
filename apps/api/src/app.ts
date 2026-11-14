@@ -12,6 +12,7 @@ import { analysis } from "./routes/analysis";
 import { chat } from "./routes/chat";
 import { demo } from "./routes/demo";
 import { events } from "./routes/events";
+import { focusGuards } from "./routes/focus-guards";
 import { goals } from "./routes/goals";
 import { instructions } from "./routes/instructions";
 import { integrations, oauth } from "./routes/integrations";
@@ -56,6 +57,7 @@ const v1 = new Hono()
   .route("/", nudges)
   .route("/", push)
   .route("/", actions)
+  .route("/", focusGuards)
   .route("/", profile)
   .route("/", product)
   .route("/", tokens)

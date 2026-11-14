@@ -354,6 +354,56 @@ export const CreateFocusBlockPayload = z
   .refine((p) => Date.parse(p.end_at) > Date.parse(p.start_at), { message: "end_at must be after start_at" });
 export type CreateFocusBlockPayload = z.infer<typeof CreateFocusBlockPayload>;
 
+// block_mac_app: close distracting Mac apps from start_at to end_at (a focus guard). Name the apps
+// with `app` (one) or `apps` (several), by name ("WhatsApp") or bundle id; `bundle_ids` adds more
+// by id. Only apps on the allowlist (BLOCKABLE_MAC_APPS in mac-apps.ts) can be named. `back_to` is
+// what the notification sends the person back to ("Back to Deep work."); it defaults to the goal
+// or the block's title.
+export const BlockMacAppPayload = z
+  .object({
+    app: z.string().trim().min(1).max(80).optional(),
+    apps: z.array(z.string().trim().min(1).max(80)).max(10).optional(),
+    bundle_ids: z.array(z.string().trim().min(1).max(200)).max(10).optional(),
+    start_at: IsoDateTime,
+    end_at: IsoDateTime,
+    goal_id: z.uuid().optional(),
+    block_event_id: z.uuid().optional(),
+    back_to: z.string().trim().min(1).max(80).optional(),
+  })
+  .refine((p) => p.app || p.apps?.length || p.bundle_ids?.length, {
+    message: "Name at least one app",
+  })
+  .refine((p) => Date.parse(p.end_at) > Date.parse(p.start_at), { message: "end_at must be after start_at" });
+export type BlockMacAppPayload = z.infer<typeof BlockMacAppPayload>;
+
+// ---------- focus guards (GET /v1/focus-guards/active) ----------
+
+// What executing block_mac_app creates: while it runs, the Mac collector closes these apps when
+// they come to the front. Undoing the recommendation removes it at once.
+export const FocusGuard = z.object({
+  id: z.uuid(),
+  recommendation_id: z.uuid().nullable(),
+  // Allowlisted names ("WhatsApp") and every bundle id they map to.
+  apps: z.array(z.string()),
+  bundle_ids: z.array(z.string()),
+  start_at: IsoDateTime,
+  end_at: IsoDateTime,
+  goal_id: z.uuid().nullable(),
+  // "Back to Deep work." in the notification; null when there is nothing to name.
+  back_to: z.string().nullable(),
+  created_at: IsoDateTime,
+});
+export type FocusGuard = z.infer<typeof FocusGuard>;
+
+export const FocusGuardsResponse = z.object({
+  now: IsoDateTime,
+  // While off the record the collector does nothing, and `guards` is empty.
+  off_the_record: z.boolean(),
+  // Running now, or starting within the next 10 minutes (the collector checks the times itself).
+  guards: z.array(FocusGuard),
+});
+export type FocusGuardsResponse = z.infer<typeof FocusGuardsResponse>;
+
 export const RecommendationAction = z.object({
   kind: ActionKind,
   payload: z.record(z.string(), z.unknown()),
