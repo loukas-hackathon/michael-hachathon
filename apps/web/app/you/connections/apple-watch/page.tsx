@@ -6,11 +6,11 @@ import { getConnection } from "@/lib/connections-status";
 
 export const metadata = { title: "Apple Watch · Michael" };
 
-export default async function AppleWatchPage() {
-  const { row } = await getConnection("apple-watch");
+export default async function AppleWatchPage({ searchParams }: { searchParams: Promise<{ from?: string }> }) {
+  const [{ row }, { from }] = await Promise.all([getConnection("apple-watch"), searchParams]);
   const c = connection("apple-watch");
   return (
-    <ConnectionPage row={row}>
+    <ConnectionPage row={row} from={from}>
       <SetupSection
         title="Set up"
         note="Health Auto Export is a paid app on the App Store. It reads Apple Health on your iPhone, where your watch saves everything."

@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useArrival } from "@/components/motion";
+import { NudgePrimer } from "@/components/nudge-primer";
 import { formatTime } from "@/lib/format";
 import {
   dismissRecommendationAction,
@@ -158,6 +159,8 @@ function Card({
 export function RecommendationList({ cards }: { cards: RecCard[] }) {
   const router = useRouter();
   const [local, setLocal] = useState<Record<string, Local>>({});
+  // The first Do it is when a buzz helps: ask for nudges then, never on load (#207).
+  const [primed, setPrimed] = useState(false);
   // A card that already finished leaving stays gone while it is still hidden.
   const patch = (id: string, next: Local) =>
     setLocal((s) => ({ ...s, [id]: { ...next, removed: next.hidden ? s[id]?.removed : undefined } }));
@@ -174,6 +177,7 @@ export function RecommendationList({ cards }: { cards: RecCard[] }) {
       }),
     );
     if (r.ok) {
+      if (op === "do") setPrimed(true);
       patch(card.id, { ...OPTIMISTIC[op], ...note, status: r.rec.status, hidden: op === "dismiss" });
       router.refresh();
     } else {
@@ -202,6 +206,7 @@ export function RecommendationList({ cards }: { cards: RecCard[] }) {
           />
         ))}
       </ul>
+      {primed ? <NudgePrimer /> : null}
     </section>
   );
 }
