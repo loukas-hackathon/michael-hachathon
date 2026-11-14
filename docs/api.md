@@ -1526,9 +1526,9 @@ never delete the user's events; never send in the user's name.
 
 Two rules of Michael's own (`apps/api/src/checklist/offers.ts`) store recommendations with a
 `create_focus_block` action, `source: "analysis"`, no analysis run. They are offers: never carried
-out until the user taps execute. Each goes through the store's `createRecommendation`, so the
-instruction guard applies: one that lands on a clear Sunday keeps its title and rationale and
-loses its action.
+out until the user taps execute. A slot is only offered outside the time a standing instruction
+protects (exceptions by title apply), so on a clear Sunday there is no offer at all. Each still goes
+through the store's `createRecommendation`, so the instruction guard has the last word.
 
 - **First outcome:** the first open checklist item of today gets one hour, the first free one from
   now inside the waking day, titled with the item's text. Title

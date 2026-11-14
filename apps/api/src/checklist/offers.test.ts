@@ -136,24 +136,53 @@ test("a count goal behind pace gets one offered slot, once a day", () =>
     assert.deepEqual(await offerGoalActions({ now: FRIDAY }), []);
   }));
 
-test("a clear Sunday drops the action: the guard keeps the advice and removes the booking", () =>
+test("a clear Sunday gets no offer: nothing to book, so nothing is said", () =>
   asNewUser(async () => {
     // The memory store starts every user with the mock "Keep Sundays clear".
     const rules = await store.listInstructions();
     assert.ok(rules.some((i) => i.kind === "clear_day" && i.days?.includes(0)));
     const { outcomes, gym } = await goals();
     await addItem({ goal_id: outcomes.id, date: "2026-11-15", text: "Plan the week" }, SUNDAY);
-    const made = await offerGoalActions({ now: SUNDAY, rows: await rows(SUNDAY) });
-    assert.deepEqual(
-      made.map((r) => r.title).sort(),
-      [outcomeTitle("2026-11-15"), sessionTitle(gym as Goal, "2026-11-15")].sort(),
-    );
-    for (const r of made) {
-      assert.equal(r.action, null, `${r.title} keeps no booking on a clear Sunday`);
-      assert.equal(r.status, "proposed");
-    }
-    // Still once a day.
     assert.deepEqual(await offerGoalActions({ now: SUNDAY, rows: await rows(SUNDAY) }), []);
+    assert.deepEqual(await ours([outcomeTitle("2026-11-15"), sessionTitle(gym as Goal, "2026-11-15")]), []);
+  }));
+
+test("a count goal's slot skips a protected day and an exception by title is allowed in", () =>
+  asNewUser(async () => {
+    // Saturday morning with the mock "Keep Sundays clear": 4 left, 2 days left, Saturday already
+    // has a Gym block, Sunday is protected, so there is no offer.
+    const { gym } = await goals();
+    await store.insertEvents([
+      {
+        source: "google_calendar",
+        type: "calendar_event",
+        start_at: "2026-11-14T18:00:00+02:00",
+        end_at: "2026-11-14T19:00:00+02:00",
+        title: "Gym",
+        data: { attendees: 0 },
+      },
+    ]);
+    const saturday = at("14", "09:00");
+    assert.deepEqual(await offerGoalActions({ now: saturday, rows: await rows(saturday) }), []);
+    // With Gym named as an exception, Sunday is open to it.
+    const sundays = (await store.listInstructions()).find((i) => i.kind === "clear_day");
+    assert.ok(sundays);
+    await store.updateInstruction(sundays.id, { exceptions: ["Gym"] });
+    const made = await offerGoalActions({ now: saturday, rows: await rows(saturday) });
+    assert.equal(made.length, 1);
+    assert.equal(made[0]?.title, sessionTitle(gym, "2026-11-14"));
+    assert.ok(made[0]?.action);
+    assert.equal(String(made[0]?.action?.payload.start_at).slice(0, 10), "2026-11-15");
+  }));
+
+test("two reads at once store one offer", () =>
+  asNewUser(async () => {
+    await empty();
+    const { outcomes } = await goals();
+    await addItem({ goal_id: outcomes.id, date: "2026-11-13", text: "Send the term sheet" }, FRIDAY);
+    const [a, b] = await Promise.all([offerGoalActions({ now: FRIDAY }), offerGoalActions({ now: FRIDAY })]);
+    assert.equal(a.length + b.length, 1);
+    assert.equal((await ours([outcomeTitle("2026-11-13")])).length, 1);
   }));
 
 test("no checklist or count goal: nothing is read or offered", () =>

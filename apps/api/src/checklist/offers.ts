@@ -3,10 +3,13 @@ import {
   type Event,
   type Goal,
   goalKind,
+  type Instruction,
   type Recommendation,
   type ScoreGoal,
   voiceDuration,
 } from "@michael/shared";
+import { currentUserId } from "../context";
+import { forbiddenBy } from "../instructions/protected";
 import { MINUTE, type Zone } from "../patterns/time";
 import { type Span, union } from "../patterns/util";
 import { behindPace, calendarTitles, goalForEvent, scoreRange } from "../score";
@@ -15,9 +18,11 @@ import { checklistOrder, type NewRecommendation, store } from "../store";
 import { zone as athens, todayOf } from "./items";
 
 // Michael's two actions for checklist and count goals (#238). Both are OFFERS: stored
-// recommendations with a `create_focus_block` action, never carried out here. Every one goes
-// through the store's createRecommendation, so the instruction guard (instructions/guard.ts)
-// applies: one that lands in protected time (a clear Sunday) keeps its advice and loses its action.
+// recommendations with a `create_focus_block` action, never carried out here. A slot is only
+// offered outside the time a standing instruction protects (the guard's own check, forbiddenBy):
+// on a clear Sunday there is no offer at all, because an offer that says "one tap books it" with
+// nothing to tap would be a lie. Every offer still goes through the store's createRecommendation,
+// so the instruction guard (instructions/guard.ts) has the last word.
 //
 //   First outcome   The first open checklist item of today gets one offered hour, the first free
 //                   one from now inside the waking day. At most once a day.
@@ -68,7 +73,10 @@ function busySpans(events: Event[]): Span[] {
   return union(spans);
 }
 
-/** The first free span of `minutes` on `day`, from `from` on, inside the waking day. */
+/**
+ * The first free span of `minutes` on `day`, from `from` on, inside the waking day, on the quarter
+ * hour grid. `allowed` rules slots out (protected time).
+ */
 export function freeSlot(
   busy: Span[],
   day: string,
@@ -76,17 +84,17 @@ export function freeSlot(
   minutes: number,
   waking: WakingDay,
   zone: Zone,
+  allowed: (slot: Span) => boolean = () => true,
 ): Span | null {
   const w = wakingSpan(zone, day, waking);
   const length = minutes * MINUTE;
-  let cursor = Math.max(w.start, Math.ceil(from / OFFER_RULES.stepMs) * OFFER_RULES.stepMs);
-  for (const b of busy) {
-    if (b.end <= cursor) continue;
-    if (b.start >= w.end) break;
-    if (b.start - cursor >= length) break;
-    cursor = Math.max(cursor, Math.ceil(b.end / OFFER_RULES.stepMs) * OFFER_RULES.stepMs);
+  const first = Math.max(w.start, Math.ceil(from / OFFER_RULES.stepMs) * OFFER_RULES.stepMs);
+  for (let start = first; start + length <= w.end; start += OFFER_RULES.stepMs) {
+    const slot = { start, end: start + length };
+    if (busy.some((b) => b.start < slot.end && slot.start < b.end)) continue;
+    if (allowed(slot)) return slot;
   }
-  return w.end - cursor >= length ? { start: cursor, end: cursor + length } : null;
+  return null;
 }
 
 const focusBlock = (slot: Span, title: string): NonNullable<Recommendation["action"]> => ({
@@ -113,6 +121,8 @@ export interface OfferInput {
   events: Event[];
   /** Recommendations already stored, any status. */
   existing: Recommendation[];
+  /** The user's standing instructions; only active ones are read. */
+  instructions?: Instruction[];
 }
 
 export function planOffers(input: OfferInput): NewRecommendation[] {
@@ -123,6 +133,10 @@ export function planOffers(input: OfferInput): NewRecommendation[] {
   const busy = busySpans(input.events);
   const waking = wakingDay(goals);
   const out: NewRecommendation[] = [];
+  const rules = (input.instructions ?? []).filter((i) => i.active);
+  /** True when a block called `title` over the slot breaks no standing instruction. */
+  const free = (title: string) => (slot: Span) =>
+    forbiddenBy(rules, title, slot.start, slot.end, zone).length === 0;
 
   // The first open outcome of today.
   const checklistGoals = new Set(goals.filter((g) => goalKind(g) === "checklist").map((g) => g.id));
@@ -130,7 +144,7 @@ export function planOffers(input: OfferInput): NewRecommendation[] {
     .filter((i) => i.date === today && i.status === "open" && checklistGoals.has(i.goal_id))
     .sort(checklistOrder)[0];
   if (first && !titles.has(outcomeTitle(today))) {
-    const slot = freeSlot(busy, today, now, OFFER_RULES.outcomeMinutes, waking, zone);
+    const slot = freeSlot(busy, today, now, OFFER_RULES.outcomeMinutes, waking, zone, free(first.text));
     if (slot) {
       out.push({
         goal_id: first.goal_id,
@@ -157,10 +171,11 @@ export function planOffers(input: OfferInput): NewRecommendation[] {
       .sort((a, b) => a - b);
     const minutes = lengths[Math.floor(lengths.length / 2)] ?? OFFER_RULES.sessionMinutes;
     const booked = new Set(own.map((e) => zone.dayOf(Date.parse(e.start_at))));
+    const blockTitle = calendarTitles(goal)[0] ?? goal.title;
     let slot: Span | null = null;
     for (const day of days) {
       if (booked.has(day)) continue;
-      slot = freeSlot(busy, day, now, minutes, waking, zone);
+      slot = freeSlot(busy, day, now, minutes, waking, zone, free(blockTitle));
       if (slot) break;
     }
     if (!slot) continue;
@@ -170,7 +185,7 @@ export function planOffers(input: OfferInput): NewRecommendation[] {
       goal_id: goal.id,
       title,
       rationale: `${done} of ${target} done, ${left} left and ${days_left} ${days_left === 1 ? "day" : "days"} to go. I found ${voiceDuration(minutes)} free ${when}. One tap books it, and you can undo it until it starts.`,
-      action: focusBlock(slot, calendarTitles(goal)[0] ?? goal.title),
+      action: focusBlock(slot, blockTitle),
       source: "analysis",
     });
   }
@@ -182,16 +197,30 @@ export function planOffers(input: OfferInput): NewRecommendation[] {
  * `rows`: the score's goal rows for this week, when the caller has them; without them only the
  * checklist offer is considered.
  */
-export async function offerGoalActions(
-  opts: { now?: number; rows?: ScoreGoal[] } = {},
-): Promise<Recommendation[]> {
+export function offerGoalActions(opts: { now?: number; rows?: ScoreGoal[] } = {}): Promise<Recommendation[]> {
+  // Two reads of Today at once must not store the same offer twice: the second call for a user
+  // waits for the first, then finds the title already there.
+  const user = currentUserId();
+  const run = (inFlight.get(user) ?? Promise.resolve()).catch(() => undefined).then(() => makeOffers(opts));
+  const tail = run.finally(() => {
+    if (inFlight.get(user) === tail) inFlight.delete(user);
+  });
+  // The tail only orders the calls; the caller gets `run` and its error.
+  tail.catch(() => undefined);
+  inFlight.set(user, tail);
+  return run;
+}
+
+const inFlight = new Map<string, Promise<unknown>>();
+
+async function makeOffers(opts: { now?: number; rows?: ScoreGoal[] }): Promise<Recommendation[]> {
   const now = opts.now ?? Date.now();
   const goals = (await store.listGoals()).filter((g) => g.active);
   const kinds = new Set(goals.map((g) => goalKind(g)));
   if (!kinds.has("checklist") && !kinds.has("count")) return [];
   const today = todayOf(now);
   const week = scoreRange(today, athens.name);
-  const [items, events, existing] = await Promise.all([
+  const [items, events, existing, instructions] = await Promise.all([
     store.listChecklist({ from: today, to: today }),
     store.listEvents({
       from: new Date(athens.startOfDay(week.days[0] ?? today)).toISOString(),
@@ -199,8 +228,18 @@ export async function offerGoalActions(
       type: ["calendar_event"],
     }),
     store.listRecommendations(),
+    store.listInstructions(),
   ]);
-  const offers = planOffers({ now, zone: athens, goals, items, rows: opts.rows, events, existing });
+  const offers = planOffers({
+    now,
+    zone: athens,
+    goals,
+    items,
+    rows: opts.rows,
+    events,
+    existing,
+    instructions,
+  });
   const made: Recommendation[] = [];
   for (const offer of offers) made.push(await store.createRecommendation(offer));
   return made;
