@@ -133,6 +133,9 @@ export const recovery = (at: string, pct: number): Event =>
     data: { recovery_pct: pct },
   });
 
+export const workout = (start: string, end: string, title = "Workout"): Event =>
+  event({ source: "health_auto_export", type: "workout", start_at: start, end_at: end, title, data: {} });
+
 export const calendar = (
   title: string,
   start: string,

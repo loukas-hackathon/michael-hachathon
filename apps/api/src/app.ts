@@ -14,6 +14,7 @@ import { patterns } from "./routes/patterns";
 import { privacy } from "./routes/privacy";
 import { product } from "./routes/product";
 import { recommendations } from "./routes/recommendations";
+import { score } from "./routes/score";
 import { webhooks } from "./routes/webhooks";
 import { store } from "./store";
 
@@ -30,6 +31,7 @@ const v1 = new Hono()
   .route("/", recommendations)
   .route("/", analysis)
   .route("/", patterns)
+  .route("/", score)
   .route("/", integrations)
   .route("/", privacy)
   .route("/", product);

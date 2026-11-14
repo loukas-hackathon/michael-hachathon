@@ -3,6 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 import { patternReportFor } from "./routes/patterns";
+import { scoreFor } from "./routes/score";
 import { store } from "./store";
 
 const json = (value: unknown) => ({
@@ -75,6 +76,24 @@ export function createMcpServer(): McpServer {
       annotations: { readOnlyHint: true },
     },
     async ({ from, to }) => json(await patternReportFor({ from, to })),
+  );
+
+  server.registerTool(
+    "get_score",
+    {
+      title: "Get score",
+      description:
+        "Return the user's score: the share of planned goal time actually spent on the goals, for the week and for one day, with time won back, each goal's budget, and the day's blocks with what took the lost time. `unverified_minutes` is spent time the data cannot prove. Defaults to today (Europe/Athens).",
+      inputSchema: {
+        date: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional()
+          .describe("Local day, YYYY-MM-DD. Default today"),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ date }) => json(await scoreFor({ date })),
   );
 
   server.registerTool(
