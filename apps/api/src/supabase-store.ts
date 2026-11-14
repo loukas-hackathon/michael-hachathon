@@ -55,8 +55,28 @@ import { mergeSummaries } from "./summaries";
 
 type EventRow = z.output<typeof EventInput>;
 
+// PostgREST's max rows per response (Supabase default). A page shorter than this is the last one.
 const EVENT_PAGE = 1000;
-const MAX_EVENTS = 20_000;
+// Every column `toEvent` reads, and nothing else (no user_id): less to send for 10,000 rows.
+const EVENT_COLUMNS = "id, source, type, start_at, end_at, title, data, external_id, created_at";
+
+// A value inside a PostgREST or(...)/and(...) filter, quoted so `+`, `:` and `.` stay literal.
+const q = (v: string) => `"${v.replace(/["\\]/g, "")}"`;
+
+/**
+ * Every row of a query, page by page past PostgREST's row cap. `page(from, to)` must order by a
+ * unique key so pages never skip or repeat. For small tables that may outgrow one page over time.
+ */
+async function readAll<T>(
+  page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+): Promise<T[]> {
+  const rows: T[] = [];
+  for (let offset = 0; ; offset += EVENT_PAGE) {
+    const batch = check(await page(offset, offset + EVENT_PAGE - 1)) ?? [];
+    rows.push(...batch);
+    if (batch.length < EVENT_PAGE) return rows;
+  }
+}
 
 // Postgres returns "2026-11-14 07:40:00+00" style values via PostgREST as ISO strings with offset,
 // which already satisfy the shared IsoDateTime schema; normalise to a canonical ISO string anyway.
@@ -227,31 +247,45 @@ export class SupabaseStore implements Store {
   readonly kind = "supabase" as const;
   private db: SupabaseClient;
 
-  constructor(url: string, serviceRoleKey: string) {
-    this.db = createClient(url, serviceRoleKey, { auth: { persistSession: false } });
+  // `fetch` is for tests: a fake PostgREST behind the real client.
+  constructor(url: string, serviceRoleKey: string, opts: { fetch?: typeof fetch } = {}) {
+    this.db = createClient(url, serviceRoleKey, {
+      auth: { persistSession: false },
+      ...(opts.fetch ? { global: { fetch: opts.fetch } } : {}),
+    });
   }
 
   async listEvents(f: TimelineFilter) {
-    // PostgREST caps every response (1000 rows by default) and a real workday is 1,200 to 1,500
-    // events, so read page by page. Ordered by start_at then id, so pages never skip or repeat.
+    // PostgREST caps every response (1000 rows by default) and a busy week holds 7,000+ events, so
+    // read the whole window page by page with no ceiling. Keyset paging on (start_at, id): each page
+    // starts strictly after the last row of the one before, so pages never skip or repeat, the
+    // newest hours are never the ones cut off, and page 10 costs the same as page 1 (no OFFSET).
     const userId = currentUserId();
     const events: Event[] = [];
-    for (let offset = 0; offset < MAX_EVENTS; offset += EVENT_PAGE) {
-      // Overlap with [from, to]: starts before `to` and ends (or, if instant, starts) after `from`.
-      let q = this.db
+    // Overlap with [from, to]: starts before `to` and ends (or, if instant, starts) after `from`.
+    const overlap = `or(end_at.gte.${q(f.from)},and(end_at.is.null,start_at.gte.${q(f.from)}))`;
+    let after: { start_at: string; id: string } | null = null;
+    for (;;) {
+      const cursor: string = after
+        ? `,or(start_at.gt.${q(after.start_at)},and(start_at.eq.${q(after.start_at)},id.gt.${after.id}))`
+        : "";
+      let query = this.db
         .from("events")
-        .select("*")
+        .select(EVENT_COLUMNS)
         .eq("user_id", userId)
         .lte("start_at", f.to)
-        .or(`end_at.gte.${f.from},and(end_at.is.null,start_at.gte.${f.from})`)
+        .or(`and(${overlap}${cursor})`)
         .order("start_at", { ascending: true })
         .order("id", { ascending: true })
-        .range(offset, offset + EVENT_PAGE - 1);
-      if (f.source?.length) q = q.in("source", f.source);
-      if (f.type?.length) q = q.in("type", f.type);
-      const page = check(await q) ?? [];
-      events.push(...page.map(toEvent));
+        .limit(EVENT_PAGE);
+      if (f.source?.length) query = query.in("source", f.source);
+      if (f.type?.length) query = query.in("type", f.type);
+      const page = (check(await query) ?? []) as unknown as Record<string, unknown>[];
+      for (const row of page) events.push(toEvent(row));
       if (page.length < EVENT_PAGE) break;
+      const last = page[page.length - 1] as { start_at: string; id: string };
+      // The raw value keeps Postgres' microseconds; a round trip through Date would drop them.
+      after = { start_at: last.start_at, id: last.id };
     }
     return events;
   }
@@ -568,13 +602,19 @@ export class SupabaseStore implements Store {
   }
 
   async listRecommendations(filter?: { status?: RecommendationStatus }) {
-    let q = this.db
-      .from("recommendations")
-      .select("*")
-      .eq("user_id", currentUserId())
-      .order("created_at", { ascending: false });
-    if (filter?.status) q = q.eq("status", filter.status);
-    return (check(await q) ?? []).map(toRecommendation);
+    // Every analysis run adds a few, so a long lived account passes one PostgREST page.
+    const userId = currentUserId();
+    const rows = await readAll<Record<string, unknown>>((from, to) => {
+      let query = this.db
+        .from("recommendations")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false });
+      if (filter?.status) query = query.eq("status", filter.status);
+      return query.range(from, to);
+    });
+    return rows.map(toRecommendation);
   }
 
   async getRecommendation(id: string) {
@@ -943,23 +983,33 @@ export class SupabaseStore implements Store {
   }
 
   async listConnectedUserIds(provider: IntegrationProvider) {
-    const rows = check(
-      await this.db.from("integrations").select("user_id").eq("provider", provider).eq("status", "connected"),
+    // Across all users, so it outgrows one page with the user base.
+    const rows = await readAll<{ user_id: string | null }>((from, to) =>
+      this.db
+        .from("integrations")
+        .select("user_id")
+        .eq("provider", provider)
+        .eq("status", "connected")
+        .order("user_id", { ascending: true })
+        .range(from, to),
     );
-    return (rows ?? []).map((r) => r.user_id as string).filter(Boolean);
+    return rows.map((r) => r.user_id as string).filter(Boolean);
   }
 
   async listNudges(f: { from: string; to: string }) {
-    const rows = check(
-      await this.db
+    const userId = currentUserId();
+    const rows = await readAll<Record<string, unknown>>((from, to) =>
+      this.db
         .from("nudges")
         .select("*")
-        .eq("user_id", currentUserId())
+        .eq("user_id", userId)
         .gte("created_at", f.from)
         .lt("created_at", f.to)
-        .order("created_at", { ascending: true }),
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to),
     );
-    return (rows ?? []).map(toNudge);
+    return rows.map(toNudge);
   }
 
   async createNudge(i: NudgeCreate) {
@@ -1085,6 +1135,7 @@ export class SupabaseStore implements Store {
   }
 
   async activeUserIds(since: string) {
+    // Users active since the last scheduler tick: far below one PostgREST page (1000 rows).
     const rows = check(await this.db.rpc("active_user_ids", { since }));
     return ((rows ?? []) as unknown[]).map((r) =>
       typeof r === "string" ? r : String((r as Record<string, unknown>).active_user_ids),

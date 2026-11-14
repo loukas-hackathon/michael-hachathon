@@ -2,7 +2,6 @@ import type { AnalysisResult, AnalysisRun, AnalysisTrigger, Event, EventType } f
 import { HttpError } from "../http";
 import { DEFAULT_TIMEZONE } from "../patterns";
 import { DAY, Zone } from "../patterns/time";
-import { readAllEvents } from "../routes/score";
 import type { Store } from "../store";
 import { type BriefContext, briefWindow, buildBrief, renderUserMessage } from "./brief";
 import { COACH_INSTRUCTIONS } from "./coach";
@@ -53,8 +52,8 @@ const TYPES: EventType[] = [
 const WEEK_MS = 7 * DAY;
 
 /**
- * Every event the brief needs in the window, a week at a time side by side. `readAllEvents` pages
- * past the store's row cap, so a busy week never silently loses its most recent days.
+ * Every event the brief needs in the window, a week at a time side by side. The store returns
+ * every row of a window past PostgREST's row cap (#127), so a busy week keeps its latest days.
  */
 export async function loadEvents(
   store: Pick<Store, "listEvents">,
@@ -65,7 +64,11 @@ export async function loadEvents(
   const end = Date.parse(to);
   const chunks: Promise<Event[]>[] = [];
   for (let t = start; t < end; t += WEEK_MS) {
-    chunks.push(readAllEvents((filter) => store.listEvents(filter), t, Math.min(end, t + WEEK_MS), TYPES));
+    const window = {
+      from: new Date(t).toISOString(),
+      to: new Date(Math.min(end, t + WEEK_MS)).toISOString(),
+    };
+    chunks.push(store.listEvents({ ...window, type: TYPES }));
   }
   const byId = new Map<string, Event>();
   for (const chunk of await Promise.all(chunks)) for (const e of chunk) byId.set(e.id, e);
