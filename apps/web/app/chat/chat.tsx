@@ -82,7 +82,7 @@ export function Chat({ initial }: { initial: ChatMessage[] }) {
                     type="button"
                     onClick={() => send(s)}
                     disabled={pending}
-                    className="press min-h-11 rounded-full bg-fill px-4 text-subhead font-semibold text-tint-text"
+                    className="press min-h-11 rounded-full bg-fill px-4 text-subhead font-semibold text-label"
                   >
                     {s}
                   </button>

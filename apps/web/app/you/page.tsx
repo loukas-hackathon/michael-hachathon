@@ -29,6 +29,14 @@ export default async function YouPage() {
       </header>
       <h1 className="text-large-title font-bold tracking-[0.01em]">You</h1>
 
+      <Link
+        href="/chat"
+        className="press mt-6 flex h-12 items-center justify-between rounded-group bg-fill px-4 text-body font-semibold"
+      >
+        Chat with Michael
+        <span className="text-label-2">›</span>
+      </Link>
+
       <section className="mt-6 overflow-hidden rounded-group bg-fill">
         <OffTheRecordSwitch />
       </section>
