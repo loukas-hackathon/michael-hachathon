@@ -143,7 +143,7 @@ What happens on merge, with no human involved:
 | PR opened, CI green, no conflicts             | `Auto-merge` action squash-merges it                          |
 | API, `packages/shared` or root config changed | `Deploy API` action deploys to Railway, then checks `/health` |
 | new file in `supabase/migrations/`            | `Migrate database` action applies it to production            |
-| anything                                      | Vercel rebuilds the web app (PRs get preview URLs)            |
+| anything on `main`                            | Vercel rebuilds the web app (no PR previews, `vercel.json`)   |
 
 Where configuration lives (values are never committed):
 
