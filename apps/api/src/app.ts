@@ -13,6 +13,7 @@ import { goals } from "./routes/goals";
 import { integrations, oauth } from "./routes/integrations";
 import { moments } from "./routes/moments";
 import { connect, oauthPublic } from "./routes/oauth";
+import { nudges } from "./routes/nudges";
 import { patterns } from "./routes/patterns";
 import { privacy } from "./routes/privacy";
 import { product } from "./routes/product";
@@ -39,6 +40,7 @@ const v1 = new Hono()
   .route("/", moments)
   .route("/", integrations)
   .route("/", privacy)
+  .route("/", nudges)
   .route("/", product)
   .route("/", connect);
 
