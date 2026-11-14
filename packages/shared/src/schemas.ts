@@ -435,6 +435,7 @@ export const PhoneCadence = z.object({
       complete: z.boolean(),
       sessions: z.number().int().nonnegative(),
       checks: z.number().int().nonnegative(),
+      // Session time: first app to last app, pauses under 30 seconds inside a session included.
       minutes: z.number().nonnegative(),
       median_gap_minutes: z.number().nonnegative().nullable(),
     }),

@@ -158,7 +158,7 @@ test("a history visit that was only open counts only while a browser is in front
     mac(APPS.browser, T("2026-11-10 09:00"), T("2026-11-10 09:10")),
     mac(APPS.editor, T("2026-11-10 09:10"), T("2026-11-10 10:00")),
     mac(APPS.browser, T("2026-11-10 10:00"), T("2026-11-10 10:10")),
-    // A measured visit in the second browser stay wins over the stale tab.
+    // A page opened later wins over the stale tab while it lasts.
     web("github.com", T("2026-11-10 10:02"), T("2026-11-10 10:06"), "history", { foreground: true }),
   ]);
   assert.deepEqual(shape(tl.mac), [

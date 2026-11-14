@@ -15,8 +15,8 @@ import { type Span, subtractSpans, sum, union } from "./util";
 // two of them describe the same minute, so the detectors never have to think about it:
 //
 //   1. Mac: one thing in front at a time. A non browser app beats a web visit, a web visit beats
-//      the bare browser, an extension visit beats a history visit, and a history visit Chrome
-//      measured in front beats one that was only open. Screen off time is removed.
+//      the bare browser, an extension visit beats a history visit, and among history visits the
+//      page opened last wins. Screen off time is removed.
 //   2. Web visits: where the extension reported, history is ignored (`preferExtension`). Where
 //      the Mac log is alive, a visit only refines browser time and never adds time of its own.
 //   3. Across devices: when the phone and the Mac overlap, the phone has the attention.
@@ -287,11 +287,12 @@ export function buildTimeline(events: Event[], from: number, to: number): Timeli
     }
     return pieces;
   });
-  const visitPrio = (v: WebVisit) => (v.origin === "extension" ? 3 : v.measured ? 2 : 1);
-
+  // Among history visits the page opened last wins: at the moment a page is opened it is the one
+  // in front. History does not say when a tab was switched back to, so with history alone the
+  // split of browser time between sites is an estimate; the extension makes it exact.
   const mac = flatten<Segment>([
-    ...macApps.map((seg) => ({ seg, prio: seg.appKey === BROWSER_APP_KEY ? 0 : 4 })),
-    ...visits.map((seg) => ({ seg: seg as Segment, prio: visitPrio(seg) })),
+    ...macApps.map((seg) => ({ seg, prio: seg.appKey === BROWSER_APP_KEY ? 0 : 3 })),
+    ...visits.map((seg) => ({ seg: seg as Segment, prio: seg.origin === "extension" ? 2 : 1 })),
   ]);
   const iphone = flatten<Segment>(phoneApps.map((seg) => ({ seg, prio: 0 })));
   const attention = flatten<Segment>([

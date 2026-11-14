@@ -374,7 +374,7 @@ type PhoneCadence = {
   opened: { notification: number; own_hand: number; unknown: number; notification_share: number | null };
   first_apps: { app: PatternSubject; sessions: number; share: number }[]; // top 5
   by_hour: { hour: number; sessions: number; sessions_per_day: number; median_gap_minutes: number | null }[]; // 24 rows
-  daily: { day; complete; sessions; checks; minutes; median_gap_minutes: number | null }[];
+  daily: { day; complete; sessions; checks; minutes; median_gap_minutes: number | null }[]; // minutes = session time
 };
 
 type MacAppCadence = {
@@ -554,8 +554,9 @@ rules live there and nowhere else:
   interval), a web visit counts only while a browser is in front: it refines browser time and
   never adds Mac time of its own. Where the Mac log has nothing (before its 4 week horizon), a
   visit stands by itself, but only if its time in front was measured: an unmeasured history visit
-  (`data.foreground = false`, the length is how long the page stayed open) is dropped there, and
-  everywhere loses to a measured visit.
+  (`data.foreground = false`, the length is how long the page stayed open) is dropped there. Among
+  history visits the page opened last wins, so with history alone the split of browser time
+  between sites is an estimate (the total is exact); the extension makes the split exact.
 - **A visit's category** comes from the shared host list. If the host is not on it, the label the
   collector sent in `data.category` is used: `messaging` and `mail` read as `communication`, `dev`
   and `docs` as `work`, `finance` and `search` as `other`; the rest keep their name.
