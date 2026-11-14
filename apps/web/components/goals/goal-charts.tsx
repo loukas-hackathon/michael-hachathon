@@ -94,7 +94,12 @@ export function SplitBar({
   freeMinutes: number;
 }) {
   const total = parts.reduce((n, p) => n + p.minutes, 0);
-  const shades = ["bg-label", "bg-label-2", "bg-context"];
+  const shades = [
+    "bg-label",
+    "bg-label-2",
+    "bg-[color-mix(in_srgb,var(--m-label-2)_55%,var(--m-bg))]",
+    "bg-context",
+  ];
   const freeAt = Math.min(1, freeMinutes / total);
   return (
     <div>

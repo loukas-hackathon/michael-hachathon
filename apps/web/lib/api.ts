@@ -7,6 +7,7 @@ import {
   DEFAULT_PROFILE,
   type Goal,
   type GoalCreate,
+  type GoalUpdate,
   mockEvents,
   mockGoals,
   mockRecommendations,
@@ -23,6 +24,7 @@ import {
   type TimelineResponse,
 } from "@michael/shared";
 import { cookies } from "next/headers";
+import { categoryOf } from "./categories";
 import type { DayView } from "./day";
 import type { GoalsView } from "./goals-view";
 import { sampleDay, sampleEarly, sampleEmpty, sampleEvening, sampleMorning } from "./sample/day";
@@ -112,9 +114,87 @@ export async function getTimeline(from: string, to: string): Promise<TimelineRes
   return get<TimelineResponse>(`/v1/timeline?${qs}`);
 }
 
+// Goals. With mocks, one in-process list (the sample week's goals) so the sheets work locally.
+const now0 = new Date(0).toISOString();
+const mockGoalStore: Goal[] = sampleGoals.goals.map((g) => ({
+  id: g.id,
+  category: g.category === "business" ? "work" : "gym",
+  title: g.title,
+  description: null,
+  target: { kind: "time" },
+  weekly_budget_minutes: g.budgetMinutes,
+  active: true,
+  created_at: now0,
+  updated_at: now0,
+}));
+void mockGoals;
+
 export async function getGoals(): Promise<Goal[]> {
-  if (USE_MOCKS) return mockGoals;
+  if (USE_MOCKS) return structuredClone(mockGoalStore);
   return (await get<{ goals: Goal[] }>("/v1/goals")).goals;
+}
+
+export type WriteResult = { ok: true } | { ok: false; message: string };
+
+async function write(
+  method: "POST" | "PATCH" | "DELETE",
+  path: string,
+  body?: unknown,
+): Promise<WriteResult> {
+  try {
+    const res = await fetch(`${API_URL}${path}`, {
+      method,
+      headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      cache: "no-store",
+    });
+    if (res.ok) return { ok: true };
+    const err = ApiError.safeParse(await res.json().catch(() => null));
+    return {
+      ok: false,
+      message: err.success ? err.data.error.message : `${method} ${path} failed: ${res.status}`,
+    };
+  } catch {
+    return { ok: false, message: "Michael's server can't be reached." };
+  }
+}
+
+export async function postGoal(goal: GoalCreate): Promise<WriteResult> {
+  if (USE_MOCKS) {
+    const t = new Date().toISOString();
+    mockGoalStore.push({
+      id: crypto.randomUUID(),
+      category: goal.category,
+      title: goal.title,
+      description: goal.description ?? null,
+      target: goal.target ?? null,
+      weekly_budget_minutes: goal.weekly_budget_minutes ?? null,
+      active: goal.active ?? true,
+      created_at: t,
+      updated_at: t,
+    });
+    return { ok: true };
+  }
+  return write("POST", "/v1/goals", goal);
+}
+
+export async function patchGoal(id: string, patch: GoalUpdate): Promise<WriteResult> {
+  if (USE_MOCKS) {
+    const g = mockGoalStore.find((x) => x.id === id);
+    if (!g) return { ok: false, message: "That goal no longer exists." };
+    Object.assign(g, patch, { updated_at: new Date().toISOString() });
+    return { ok: true };
+  }
+  return write("PATCH", `/v1/goals/${id}`, patch);
+}
+
+export async function removeGoalById(id: string): Promise<WriteResult> {
+  if (USE_MOCKS) {
+    const i = mockGoalStore.findIndex((x) => x.id === id);
+    if (i >= 0) mockGoalStore.splice(i, 1);
+    return { ok: true };
+  }
+  return write("DELETE", `/v1/goals/${id}`);
 }
 
 export async function getRecommendations(): Promise<Recommendation[]> {
@@ -208,8 +288,28 @@ export async function getToday(variant?: string): Promise<DayView> {
 export async function getGoalsWeek(variant?: string): Promise<GoalsView> {
   if (variant === "error") throw new Error("Preview of the error state");
   if (variant === "empty") return sampleGoalsEmpty;
-  if (USE_MOCKS || variant === "sample") return sampleGoals;
+  if (variant === "sample") return sampleGoals;
+  if (USE_MOCKS) return sampleWeekFromStore();
   return goalsFromScore(await getScore());
+}
+
+/** The sample week, following the in-process goal list: edits, new goals and pauses show. */
+function sampleWeekFromStore(): GoalsView {
+  const goals = mockGoalStore
+    .filter((g) => g.active && (g.weekly_budget_minutes ?? 0) > 0)
+    .map((g) => {
+      const known = sampleGoals.goals.find((x) => x.id === g.id);
+      return {
+        id: g.id,
+        title: g.title,
+        category: categoryOf(g.category),
+        budgetMinutes: g.weekly_budget_minutes ?? 0,
+        spentMinutes: known?.spentMinutes ?? 0,
+        unverifiedMinutes: known?.unverifiedMinutes ?? 0,
+        daily: known?.daily ?? [0, 0, 0, null, null, null, null],
+      };
+    });
+  return { ...sampleGoals, goals };
 }
 
 // ---------- profile and onboarding (docs/api.md, Profile) ----------

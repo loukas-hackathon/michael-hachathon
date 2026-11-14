@@ -228,3 +228,66 @@ h3 {
 .m-switch:checked::after {
   transform: translateX(20px);
 }
+
+/* Bottom sheet (components/sheet.tsx): slides up on the iOS curve, the page dims behind it. */
+.m-sheet {
+  position: fixed;
+  inset: auto 0 0 0;
+  margin: 0 auto;
+  width: 100%;
+  max-width: 560px;
+  max-height: 92dvh;
+  padding: 0;
+  border: 0;
+  border-radius: 20px 20px 0 0;
+  background: var(--m-bg);
+  color: var(--m-label);
+  box-shadow: 0 -8px 30px -12px rgb(0 0 0 / 0.3);
+  transform: translateY(0);
+  transition:
+    transform 500ms cubic-bezier(0.32, 0.72, 0, 1),
+    overlay 500ms allow-discrete,
+    display 500ms allow-discrete;
+}
+.m-sheet:not([open]) {
+  transform: translateY(100%);
+}
+@starting-style {
+  .m-sheet[open] {
+    transform: translateY(100%);
+  }
+}
+.m-sheet::backdrop {
+  background: rgb(0 0 0 / 0.35);
+  transition:
+    opacity 300ms ease-out,
+    overlay 300ms allow-discrete,
+    display 300ms allow-discrete;
+  opacity: 1;
+}
+.m-sheet:not([open])::backdrop {
+  opacity: 0;
+}
+@starting-style {
+  .m-sheet[open]::backdrop {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .m-sheet,
+  .m-sheet::backdrop {
+    transition: none;
+  }
+}
+@media (min-width: 1024px) {
+  .m-sheet {
+    inset: auto 0 auto 0;
+    top: 50%;
+    border-radius: 16px;
+    transform: translateY(-50%);
+  }
+  .m-sheet:not([open]),
+  .m-sheet[open] {
+    transform: translateY(-50%);
+  }
+}

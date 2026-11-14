@@ -46,12 +46,24 @@ export function OffTheRecordLine() {
 }
 
 /** Context line + Mi button, then the large title, as in Apple's own apps. */
-export function ScreenHeader({ context, title }: { context: ReactNode; title: string }) {
+export function ScreenHeader({
+  context,
+  title,
+  actions,
+}: {
+  context: ReactNode;
+  title: string;
+  /** Extra buttons left of the Mi button, as in Apple's navigation bars. */
+  actions?: ReactNode;
+}) {
   return (
     <header className="pt-2">
       <div className="flex min-h-11 items-center justify-between gap-3">
         <p className="text-footnote font-semibold text-label-2 tnum">{context}</p>
-        <MiButton />
+        <div className="flex items-center gap-3.5">
+          {actions}
+          <MiButton />
+        </div>
       </div>
       <h1 className="text-large-title font-bold tracking-[0.01em]">{title}</h1>
       <OffTheRecordLine />
