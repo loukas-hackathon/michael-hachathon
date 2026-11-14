@@ -1,0 +1,61 @@
+{
+  "window": [
+    {
+      "id": 101,
+      "timestamp": "2026-11-14T08:00:00+00:00",
+      "duration": 900,
+      "data": { "app": "Code", "title": "store.ts - michael" }
+    },
+    {
+      "id": 102,
+      "timestamp": "2026-11-14T08:15:00+00:00",
+      "duration": 300,
+      "data": { "app": "Terminal", "title": "pnpm test" }
+    },
+    {
+      "id": 103,
+      "timestamp": "2026-11-14T08:20:00+00:00",
+      "duration": 60,
+      "data": { "app": "Google Chrome", "title": "Hono docs" }
+    },
+    {
+      "id": 104,
+      "timestamp": "2026-11-14T08:21:00+00:00",
+      "duration": 600,
+      "data": { "app": "Code", "title": "webhooks.ts - michael" }
+    },
+    {
+      "id": 105,
+      "timestamp": "2026-11-14T08:31:05+00:00",
+      "duration": 300,
+      "data": { "app": "Code", "title": "webhooks.ts - michael" }
+    },
+    {
+      "id": 106,
+      "timestamp": "2026-11-14T08:36:05+00:00",
+      "duration": 480,
+      "data": { "app": "WhatsApp", "title": "Chat with a friend" }
+    },
+    {
+      "id": 107,
+      "timestamp": "2026-11-14T08:44:05+00:00",
+      "duration": 600,
+      "data": { "app": "Code", "title": "omi.ts - michael" }
+    },
+    {
+      "id": 108,
+      "timestamp": "2026-11-14T08:54:05+00:00",
+      "duration": 1200,
+      "data": { "app": "Slack", "title": "general" }
+    }
+  ],
+  "afk": [
+    {
+      "id": 201,
+      "timestamp": "2026-11-14T08:00:00+00:00",
+      "duration": 3000,
+      "data": { "status": "not-afk" }
+    },
+    { "id": 202, "timestamp": "2026-11-14T09:00:00+00:00", "duration": 900, "data": { "status": "afk" } }
+  ]
+}
