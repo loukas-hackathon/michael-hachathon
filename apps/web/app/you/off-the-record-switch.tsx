@@ -19,7 +19,7 @@ export function OffTheRecordSwitch() {
             ? "I could not save that. Try again."
             : on
               ? `Nothing is being collected${since ? ` since ${formatTime(since)}` : ""}.`
-              : "Collecting from your sources."}
+              : "Collecting from your connections."}
         </span>
       </span>
       <input

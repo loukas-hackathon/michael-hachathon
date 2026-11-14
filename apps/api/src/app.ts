@@ -28,6 +28,7 @@ import { profile } from "./routes/profile";
 import { push } from "./routes/push";
 import { recommendations } from "./routes/recommendations";
 import { score } from "./routes/score";
+import { sources } from "./routes/sources";
 import { telegram, telegramWebhook } from "./routes/telegram";
 import { tokens } from "./routes/tokens";
 import { voice } from "./routes/voice";
@@ -54,6 +55,7 @@ const v1 = new Hono()
   .route("/", voice)
   .route("/", integrations)
   .route("/", privacy)
+  .route("/", sources)
   .route("/", nudges)
   .route("/", push)
   .route("/", actions)

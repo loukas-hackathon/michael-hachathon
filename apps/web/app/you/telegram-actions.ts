@@ -6,7 +6,7 @@ import { disconnectTelegram } from "@/lib/integrations";
 
 export async function disconnectTelegramChat() {
   await disconnectTelegram();
-  revalidatePath("/you");
+  revalidatePath("/you", "layout");
 }
 
 /** The test nudge goes to every device and the chat; the message arriving is the feedback. */

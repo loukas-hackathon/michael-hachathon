@@ -557,6 +557,26 @@ export type PrivacyState = z.infer<typeof PrivacyState>;
 export const OffTheRecordUpdate = z.object({ off_the_record: z.boolean() });
 export type OffTheRecordUpdate = z.infer<typeof OffTheRecordUpdate>;
 
+// GET /v1/sources/status: per source, is it switched on and when did its last event arrive.
+// Powers the Connections rows on You ("Last data 12 min ago").
+export const SourceStatus = z.object({
+  source: Source,
+  // The privacy switch as GET /v1/privacy shows it (off until opted in).
+  enabled: z.boolean(),
+  // Would an event from this source be stored right now: false while off the record or once the
+  // user switched it off. A source never decided on still collects (its first event opts it in).
+  collecting: z.boolean(),
+  // When Michael last received an event from this source (created_at), or null if never.
+  last_event_at: IsoDateTime.nullable(),
+});
+export type SourceStatus = z.infer<typeof SourceStatus>;
+
+export const SourcesStatusResponse = z.object({
+  off_the_record: z.boolean(),
+  sources: z.array(SourceStatus),
+});
+export type SourcesStatusResponse = z.infer<typeof SourcesStatusResponse>;
+
 // ---------- profile: the onboarding answers (GET/PUT /v1/profile) ----------
 
 // `ClockTime` ("HH:MM", 24 hour, Europe/Athens wall clock) is defined with the goals above.

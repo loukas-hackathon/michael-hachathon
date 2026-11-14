@@ -2,27 +2,12 @@
 
 import type { Source, SourceSetting } from "@michael/shared";
 import { useEffect, useState } from "react";
+import { SOURCE_LABEL } from "@/lib/connections";
 import { saveSource } from "@/lib/privacy-actions";
 
-// What each source is called on the user's side. Sources the user does not collect from
-// (manual entries, AI agents) are left out: agents have their own screen.
-const LABEL: Partial<Record<Source, [name: string, what: string]>> = {
-  health_auto_export: ["Apple Watch", "Sleep, workouts and heart rate"],
-  whoop: ["WHOOP", "Sleep, strain and recovery"],
-  google_calendar: ["Google Calendar", "Your plans and meetings"],
-  macos_usage: ["Mac", "Which apps you use, and for how long"],
-  iphone_usage: ["iPhone", "Screen Time by app"],
-  chrome: ["Browser", "Sites you spend time on, never what you type"],
-  claude_code: ["Claude Code", "Work sessions and prompt titles"],
-  activitywatch: ["ActivityWatch", "Computer activity"],
-  ios_shortcuts: ["Shortcuts", "Moments you log from your iPhone"],
-  owntracks: ["Location", "Where you are, for gym and commute"],
-  omi: ["Meetings", "Only when you start meetings mode"],
-  maps: ["Travel times", "Traffic between your saved places and plans"],
-};
-const ORDER = Object.keys(LABEL) as Source[];
-
-export function SourceSwitches({ initial }: { initial: SourceSetting[] }) {
+// Privacy switches for the given sources. Each connection's page shows its own, so there is one
+// place per source; You keeps the few no connection owns. Switch one off and I stop reading it.
+export function SourceSwitches({ initial, sources }: { initial: SourceSetting[]; sources: Source[] }) {
   const [enabled, setEnabled] = useState(() => new Map(initial.map((s) => [s.source, s.enabled])));
   const [failed, setFailed] = useState<Source | null>(null);
   const [native, setNative] = useState(true);
@@ -42,8 +27,8 @@ export function SourceSwitches({ initial }: { initial: SourceSetting[] }) {
 
   return (
     <ul className="overflow-hidden rounded-group bg-fill">
-      {ORDER.map((source, i) => {
-        const [name, what] = LABEL[source] as [string, string];
+      {sources.map((source, i) => {
+        const [name, what] = SOURCE_LABEL[source] ?? [source, ""];
         const on = enabled.get(source) ?? false;
         const id = `source-${source}`;
         return (

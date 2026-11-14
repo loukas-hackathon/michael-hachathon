@@ -9,10 +9,10 @@ export async function syncCalendar() {
   } catch {
     // The row shows the integration's own error after the refresh.
   }
-  revalidatePath("/you");
+  revalidatePath("/you", "layout");
 }
 
 export async function disconnectCalendar() {
   await disconnectGoogleCalendar();
-  revalidatePath("/you");
+  revalidatePath("/you", "layout");
 }

@@ -22,6 +22,6 @@ export async function savePlaces(keep: PlaceInput[], _prev: FormState, form: For
   const others = keep.filter((p) => !SLOTS.some((s) => s.key === p.key));
   const res = await putPlaces({ places: [...mine, ...others] });
   if (!res.ok) return { ok: false, message: res.message };
-  revalidatePath("/you");
+  revalidatePath("/you", "layout");
   return { ok: true, message: null };
 }

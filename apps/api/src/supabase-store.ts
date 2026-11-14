@@ -22,6 +22,7 @@ import type {
   Source,
   SourceSetting,
 } from "@michael/shared";
+import { Source as SourceEnum } from "@michael/shared";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { z } from "zod";
 import { currentUserId } from "./context";
@@ -253,6 +254,29 @@ export class SupabaseStore implements Store {
       auth: { persistSession: false },
       ...(opts.fetch ? { global: { fetch: opts.fetch } } : {}),
     });
+  }
+
+  async lastEventAtBySource() {
+    // One tiny query per source (index on user_id, source, created_at): PostgREST has no group by.
+    const userId = currentUserId();
+    const rows = await Promise.all(
+      SourceEnum.options.map(async (source) => {
+        const r = check(
+          await this.db
+            .from("events")
+            .select("created_at")
+            .eq("user_id", userId)
+            .eq("source", source)
+            .order("created_at", { ascending: false })
+            .limit(1),
+        );
+        const at = (r?.[0] as { created_at?: string } | undefined)?.created_at;
+        return [source, at ? iso(at) : null] as const;
+      }),
+    );
+    const out: Partial<Record<Source, string>> = {};
+    for (const [source, at] of rows) if (at) out[source] = at;
+    return out;
   }
 
   async listEvents(f: TimelineFilter) {
