@@ -74,6 +74,14 @@ const v1 = new Hono()
 
 export const app = new Hono()
   .use(logger())
+  // Server time and region on every response, so latency can be measured from anywhere (#229).
+  .use(async (c, next) => {
+    const start = performance.now();
+    await next();
+    const region = process.env.RAILWAY_REPLICA_REGION ?? "local";
+    c.res.headers.append("Server-Timing", `app;dur=${(performance.now() - start).toFixed(1)}`);
+    c.res.headers.append("Server-Timing", `region;desc="${region}"`);
+  })
   .use(cors({ origin: env.WEB_ORIGIN.split(",").map((s) => s.trim()) }))
   .get("/health", (c) => {
     const body: Health = {
