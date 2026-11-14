@@ -221,7 +221,12 @@ function anonymise(e) {
         title: CATEGORY_TITLE[d.category] ?? "Website",
         // The host stays only for well known public sites (those the collector's built in list
         // categorises, such as instagram.com or mail.google.com), so focus findings stay right.
-        data: pick(d, d.category ? ["host", "category", "seconds", "foreground", "origin"] : ["category", "seconds", "foreground", "origin"]),
+        data: pick(
+          d,
+          d.category
+            ? ["host", "category", "seconds", "foreground", "origin"]
+            : ["category", "seconds", "foreground", "origin"],
+        ),
       };
     case "search":
       return { ...e, title: "Search", data: pick(d, ["engine", "origin"]) };
@@ -229,7 +234,16 @@ function anonymise(e) {
       return {
         ...e,
         title: "Claude Code session",
-        data: pick(d, ["tool", "session_id", "model", "turns", "waiting_seconds", "input_tokens", "cached_input_tokens", "output_tokens"]),
+        data: pick(d, [
+          "tool",
+          "session_id",
+          "model",
+          "turns",
+          "waiting_seconds",
+          "input_tokens",
+          "cached_input_tokens",
+          "output_tokens",
+        ]),
       };
     case "ai_prompt":
       return { ...e, title: "Prompt", data: pick(d, ["tool", "session_id"]) };
