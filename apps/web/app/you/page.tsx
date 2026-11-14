@@ -38,6 +38,13 @@ export default function YouPage() {
           </li>
         ))}
       </ul>
+
+      <a
+        href="/auth/signout"
+        className="press mt-8 flex h-11 items-center justify-center rounded-group bg-fill text-body font-semibold text-danger"
+      >
+        Sign out
+      </a>
     </main>
   );
 }
