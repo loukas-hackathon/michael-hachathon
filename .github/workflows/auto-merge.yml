@@ -13,6 +13,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  issues: write
   actions: write
 concurrency:
   group: auto-merge
@@ -53,6 +54,11 @@ jobs:
             # --match-head-commit: refuse if new commits arrived after the checks we just read.
             if gh pr merge "$n" -R "$REPO" --squash --delete-branch --match-head-commit "$sha"; then
               echo "merged #$n"
+              # Bot merges do not trigger GitHub's "Closes #n" auto-close, so close linked issues here.
+              for i in $(gh pr view "$n" -R "$REPO" --json closingIssuesReferences --jq '.closingIssuesReferences[].number'); do
+                gh issue close "$i" -R "$REPO" --comment "Closed by #$n (auto-merged)." || true
+                gh issue edit "$i" -R "$REPO" --remove-label in-progress || true
+              done
               echo "$files" | grep -qE '^(apps/api/|packages/shared/|pnpm-lock.yaml$|package.json$|railway.json$)' && deploy_api=true
               echo "$files" | grep -qE '^supabase/migrations/' && migrate=true
             fi

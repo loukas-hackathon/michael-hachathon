@@ -65,5 +65,18 @@
       "PowerShell(vercel:*)",
       "PowerShell(supabase:*)"
     ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node scripts/agent-catchup.mjs",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
   }
 }

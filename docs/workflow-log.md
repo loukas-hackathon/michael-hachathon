@@ -2,6 +2,7 @@
 
 One line per change to how we work (newest first): date, what changed, why.
 
+- Sat 14 Nov 18:20: SessionStart catch-up hook; failed deploys/migrations open `incident` issues; Auto-merge closes linked issues. Why: Railway crashed on Node 20 unnoticed until a human looked, and bot merges left issues open.
 - Sat 14 Nov 17:50: Auto-merge merges green PRs and dispatches deploys; Deploy API ships to Railway with a project token; ETAs default to now + 20 min. Why: zero manual merging, verification or approvals; speed first.
 - Sat 14 Nov 18:00: `pnpm test` runs unit tests with Node's own runner through tsx (no new dependency); tests sit next to the code as `*.test.ts`. Why: the pattern detectors need answers checked by hand.
 - Sat 14 Nov 17:30: agents read open PRs and remote branches during catch-up and build on in-flight work. Why: avoid duplicate work between parallel agents.

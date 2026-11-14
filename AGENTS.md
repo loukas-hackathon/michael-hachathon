@@ -143,6 +143,18 @@ and improve in the next PR rather than polishing one big one.
   it asks its human.
 - Never paste secret values into issues or comments; say where they are set instead.
 
+### Broken things: fix, then prevent
+
+- Every session starts with a catch-up brief (SessionStart hook, `scripts/agent-catchup.mjs`):
+  incidents, agent requests, in-progress work, open PRs, recent merges, and the Build Hub sync
+  checklist. Nobody has to ask for it.
+- A failed deploy or migration opens an `incident` issue automatically. Incidents beat everything:
+  the first agent that sees one fixes it forward, verifies production, then adds the prevention (a
+  test, a check, a pinned version, a rule) and closes it with the one line cause.
+- Anything else broken that you notice (a red check, a stale issue, a wrong doc, a flaky script)
+  you fix in passing or open an issue for. Don't route around it.
+- Tracking lives in issues + labels and the Build Hub board. No GitHub Project: one less board to sync.
+
 ### Improve the workflow yourself
 
 When you hit friction, a repeated mistake, or a rule that slows us down, fix it on the spot: edit
