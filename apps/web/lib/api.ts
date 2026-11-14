@@ -36,10 +36,12 @@ import {
 } from "@michael/shared";
 import { authHeaders } from "./caller";
 import { categoryOf } from "./categories";
+import type { ChecklistDay, ChecklistItem } from "./checklist";
 import type { DayView } from "./day";
 import type { GoalsView } from "./goals-view";
 import type { Instruction, InstructionInput } from "./instructions";
 import { API_URL, USE_MOCKS } from "./mode";
+import { sampleChecklist } from "./sample/checklist";
 import {
   sampleDay,
   sampleEarly,
@@ -179,6 +181,21 @@ const mockGoalStore: Goal[] = sampleGoals.goals.map((g) => ({
   created_at: now0,
   updated_at: now0,
 }));
+// The sample checklist and count goals (#238), so the edit sheet and Today's list find them.
+for (const g of sampleGoals.extras ?? []) {
+  mockGoalStore.push({
+    id: g.id,
+    category: g.category === "business" ? "work" : "gym",
+    title: g.title,
+    description: null,
+    target:
+      g.kind === "count" ? { kind: "count", per_week: g.count?.target ?? 1 } : { kind: g.kind ?? "time" },
+    weekly_budget_minutes: 0,
+    active: true,
+    created_at: now0,
+    updated_at: now0,
+  });
+}
 void mockGoals;
 
 export async function getGoals(): Promise<Goal[]> {
@@ -642,4 +659,81 @@ export async function putTarget(weekStart: string, update: TargetUpdate): Promis
   } catch {
     return { ok: false, message: "Michael's server can't be reached." };
   }
+}
+
+// ---------- the day's checklist (/v1/checklist, #238) ----------
+
+const mockChecklist: ChecklistDay = structuredClone(sampleChecklist);
+
+/** Null while the endpoint is not live (404), so Today simply leaves the list out. */
+export async function getChecklist(date?: string): Promise<ChecklistDay | null> {
+  if (USE_MOCKS) return structuredClone(mockChecklist);
+  const qs = date ? `?date=${date}` : "";
+  const res = await fetch(`${API_URL}/v1/checklist${qs}`, {
+    headers: await authHeaders(),
+    cache: "no-store",
+  }).catch(() => null);
+  if (!res || res.status === 404 || res.status === 501) return null;
+  if (!res.ok) throw new Error(`GET /v1/checklist failed: ${res.status}`);
+  return (await res.json()) as ChecklistDay;
+}
+
+export async function addChecklistItem(goalId: string, text: string): Promise<WriteResult> {
+  if (USE_MOCKS) {
+    const open = mockChecklist.items.filter((i) => i.goal_id === goalId && i.status === "open").length;
+    if (open >= 3) return { ok: false, message: "Three is the most for one day." };
+    const t = new Date().toISOString();
+    mockChecklist.items.push({
+      id: crypto.randomUUID(),
+      goal_id: goalId,
+      date: mockChecklist.date,
+      text,
+      position: mockChecklist.items.length,
+      status: "open",
+      settled_at: null,
+      settled_by: null,
+      carried_from: null,
+      created_at: t,
+      updated_at: t,
+    });
+    return { ok: true };
+  }
+  return write("POST", "/v1/checklist", { goal_id: goalId, text });
+}
+
+export async function setChecklistStatus(id: string, status: ChecklistItem["status"]): Promise<WriteResult> {
+  if (USE_MOCKS) {
+    const i = mockChecklist.items.find((x) => x.id === id);
+    if (!i) return { ok: false, message: "That item no longer exists." };
+    const t = new Date().toISOString();
+    Object.assign(i, {
+      status,
+      settled_at: status === "open" ? null : t,
+      settled_by: status === "open" ? null : "user",
+      updated_at: t,
+    });
+    return { ok: true };
+  }
+  return write("PATCH", `/v1/checklist/${id}`, { status });
+}
+
+/** Yesterday's open item continues today (POST /v1/checklist/:id/carry). */
+export async function carryChecklistItem(id: string): Promise<WriteResult> {
+  if (USE_MOCKS) {
+    const at = mockChecklist.suggestions.findIndex((x) => x.id === id);
+    const s = mockChecklist.suggestions[at];
+    if (!s) return { ok: false, message: "That item no longer exists." };
+    mockChecklist.suggestions.splice(at, 1);
+    const t = new Date().toISOString();
+    mockChecklist.items.push({
+      ...s,
+      id: crypto.randomUUID(),
+      date: mockChecklist.date,
+      carried_from: s.id,
+      created_at: t,
+      updated_at: t,
+    });
+    return { ok: true };
+  }
+  return write("POST", `/v1/checklist/${id}/carry`);
 }
