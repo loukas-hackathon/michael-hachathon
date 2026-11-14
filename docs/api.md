@@ -35,16 +35,17 @@ Every non-2xx response:
 { "error": { "code": "bad_request", "message": "Validation failed", "details": [] } }
 ```
 
-| code              | HTTP                                                |
-| ----------------- | --------------------------------------------------- |
-| `bad_request`     | 400 (validation errors put zod issues in `details`) |
-| `unauthorized`    | 401                                                 |
-| `forbidden`       | 403 (agent lacks scope or is not approved)          |
-| `not_found`       | 404                                                 |
-| `conflict`        | 409                                                 |
-| `not_implemented` | 501                                                 |
-| `upstream_error`  | 502 (WHOOP, Google, Gemini, Omi failed)             |
-| `internal`        | 500                                                 |
+| code              | HTTP                                                    |
+| ----------------- | ------------------------------------------------------- |
+| `bad_request`     | 400 (validation errors put zod issues in `details`)     |
+| `unauthorized`    | 401                                                     |
+| `forbidden`       | 403 (agent lacks scope or is not approved)              |
+| `not_found`       | 404                                                     |
+| `conflict`        | 409                                                     |
+| `not_implemented` | 501                                                     |
+| `unavailable`     | 503 (a dependency is not configured, e.g. no model key) |
+| `upstream_error`  | 502 (WHOOP, Google, Gemini, Omi failed)                 |
+| `internal`        | 500                                                     |
 
 ## Types
 
@@ -149,6 +150,13 @@ type Integration = {
   connected_at: string | null;
   last_sync_at: string | null;
   error: string | null;
+};
+
+type ChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  created_at: string;
 };
 
 type Health = {
@@ -694,6 +702,21 @@ Which goal a calendar block belongs to is decided by the one matcher described u
 Summaries follow the voice basics (numbers first, British spelling, 24 hour time, no dashes). They
 name apps; a site is named only if its host is on the shared public list, otherwise it is "a
 travel site" or "an uncategorised site". Structured `data` carries the host for the user's own view.
+
+### Chat
+
+| Method | Path                | Body                                  | Response                                                                                                                                | Status |
+| ------ | ------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| GET    | `/v1/chat?limit=50` |                                       | `200 { messages: ChatMessage[] }` (oldest first, limit 1..100)                                                                          | live   |
+| POST   | `/v1/chat`          | `{ message: string }` (1..2000 chars) | `201 { message: ChatMessage, reply: ChatMessage }`; `503 unavailable` without `ANTHROPIC_API_KEY`; `502 upstream_error` if Claude fails | live   |
+
+The API keeps the history per user (`chat_messages`); the client sends only the new line. Michael
+answers with Claude (`ANTHROPIC_MODEL`, default `claude-opus-5-5`) from a summary built in the API:
+the active goals with weekly budgets, today's calendar, workout, sleep, meal and focus entries,
+today's screen time totals, 7 day totals per type and the pattern headlines for today and the last
+7 days, plus the last 20 lines of chat. Raw app, web and AI events are never sent, only totals, and
+conversations and memories stay out. Nothing is stored when the call fails. The chat only advises;
+it never changes the calendar.
 
 ### Recommendations
 
