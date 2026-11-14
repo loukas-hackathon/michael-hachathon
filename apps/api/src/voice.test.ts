@@ -34,6 +34,7 @@ test("the rules in the prompt follow the rules they set", () => {
   assert.doesNotMatch(MICHAEL_VOICE, /[–—]/);
   assert.match(MICHAEL_VOICE, /tough sports coach/);
   assert.match(MICHAEL_VOICE, /founders and executives/);
+  assert.match(MICHAEL_VOICE, /evening check in, ask at most five/);
 });
 
 test("durations follow the voice sheet", () => {
