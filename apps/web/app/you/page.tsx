@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getPrivacy } from "@/lib/api";
 import { GoogleCalendarRow } from "./google-calendar";
+import { NudgesButton } from "./nudges-button";
 import { OffTheRecordSwitch } from "./off-the-record-switch";
 import { SourceSwitches } from "./source-switches";
 
@@ -32,6 +33,9 @@ export default async function YouPage() {
         <OffTheRecordSwitch />
       </section>
       <p className="mt-2 px-4 text-footnote text-label-2">One tap stops all collection, on every source.</p>
+
+      <h2 className="mt-8 mb-2 text-title3 font-bold">Nudges</h2>
+      <NudgesButton />
 
       <h2 className="mt-8 mb-2 text-title3 font-bold">Sources</h2>
       <section className="mb-4 overflow-hidden rounded-group bg-fill">

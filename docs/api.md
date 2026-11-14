@@ -1009,6 +1009,7 @@ type NudgeCheckResult = {
 | ------ | ---------------------- | ----------------------------------------------------------------------- | ------ |
 | GET    | `/v1/nudges?from=&to=` | `200 { nudges: Nudge[] }` (default: today, Europe/Athens, oldest first) | live   |
 | POST   | `/v1/nudges/check`     | `200 NudgeCheckResult` (runs the engine once, no body)                  | live   |
+| POST   | `/v1/nudges/test`      | `200 NudgeTestResult` (push one nudge to the caller's devices now)      | live   |
 
 Nudge engine (`apps/api/src/nudges/engine.ts`, pure, thresholds in `LIMITS`). Each check picks the
 most urgent candidate of four rules, each tied to a goal:
@@ -1025,9 +1026,38 @@ Goal time spent this week = the goal's calendar blocks so far plus its own event
 per day; none in quiet hours (22:00 to 07:00, dinner 20:00 to 21:00, work goal blocks except
 `focus_drift`); one key once per local day (`goal_behind` once per day in all); at least 20 min
 between nudges. Once 5 went out, the best candidate is stored as `suppressed` (once per key). Off
-the record stops all nudges. Delivery is pluggable (`apps/api/src/nudges/channels.ts`); until a
-real channel is plugged in, nudges are logged and stay `queued`. Nothing calls the check on a
-schedule yet: call it from a cron, the collector or the app.
+the record stops all nudges. Delivery is pluggable (`apps/api/src/nudges/channels.ts`): with VAPID
+keys set, nudges go out as Web Push to every device the user turned nudges on for (`sent` when one
+accepted, `failed` when all refused, `queued` when there is no device); without keys they are only
+logged and stay `queued`.
+
+Scheduler (`apps/api/src/scheduler.ts`): inside the API process, every `SCHEDULER_INTERVAL_MINUTES`
+(default 5) the check runs once for each user with events received in the last 24 hours, each run
+scoped as that user. On by default when `NODE_ENV=production`, `SCHEDULER_ENABLED` overrides.
+
+`POST /v1/nudges/test` sends the best current candidate (or a sample line) to the caller's devices
+at once, ignoring the cap, quiet hours and dedupe, and stores nothing. It is for the stage moment.
+
+```ts
+type NudgeTestResult = { text: string; reason: string; delivered: number; devices: number };
+type PushSubscriptionInput = {
+  endpoint: string;
+  expirationTime?: number | null;
+  keys: { p256dh: string; auth: string };
+};
+type PushConfig = { enabled: boolean; public_key: string | null; devices: number };
+```
+
+### Web push
+
+iOS 16.4+ delivers Web Push to Michael installed on the Home Screen, and mirrors it to the Apple
+Watch. The app's service worker is `apps/web/public/sw.js`.
+
+| Method | Path                     | Body                                 | Response                                | Status |
+| ------ | ------------------------ | ------------------------------------ | --------------------------------------- | ------ |
+| GET    | `/v1/push`               |                                      | `200 PushConfig`                        | live   |
+| POST   | `/v1/push/subscriptions` | `PushSubscriptionInput` (`toJSON()`) | `201 PushConfig` (saved for the caller) | live   |
+| DELETE | `/v1/push/subscriptions` | `{ endpoint }`                       | `200 PushConfig`                        | live   |
 
 ### Score
 

@@ -26,6 +26,7 @@ import {
   type IntegrationPatch,
   type IntegrationRecord,
   type NudgeCreate,
+  type PushDevice,
   type Store,
   sameEvent,
   type TimelineFilter,
@@ -528,5 +529,48 @@ export class SupabaseStore implements Store {
         .maybeSingle(),
     );
     return row ? toNudge(row) : null;
+  }
+
+  async listPushDevices(): Promise<PushDevice[]> {
+    const rows = check(
+      await this.db
+        .from("push_subscriptions")
+        .select("endpoint, p256dh, auth")
+        .eq("user_id", currentUserId()),
+    );
+    return (rows ?? []).map((r) => ({ endpoint: r.endpoint, keys: { p256dh: r.p256dh, auth: r.auth } }));
+  }
+
+  async savePushDevice(device: PushDevice, userAgent: string | null) {
+    check(
+      await this.db.from("push_subscriptions").upsert(
+        {
+          user_id: currentUserId(),
+          endpoint: device.endpoint,
+          p256dh: device.keys.p256dh,
+          auth: device.keys.auth,
+          user_agent: userAgent,
+          last_used_at: new Date().toISOString(),
+        },
+        { onConflict: "endpoint" },
+      ),
+    );
+  }
+
+  async removePushDevice(endpoint: string) {
+    check(
+      await this.db
+        .from("push_subscriptions")
+        .delete()
+        .eq("user_id", currentUserId())
+        .eq("endpoint", endpoint),
+    );
+  }
+
+  async activeUserIds(since: string) {
+    const rows = check(await this.db.rpc("active_user_ids", { since }));
+    return ((rows ?? []) as unknown[]).map((r) =>
+      typeof r === "string" ? r : String((r as Record<string, unknown>).active_user_ids),
+    );
   }
 }

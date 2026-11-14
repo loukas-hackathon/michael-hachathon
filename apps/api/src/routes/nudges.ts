@@ -1,8 +1,14 @@
-import { type NudgeCheckResult, NudgesQuery, type NudgesResponse } from "@michael/shared";
+import {
+  type NudgeCheckResult,
+  NudgesQuery,
+  type NudgesResponse,
+  type NudgeTestResult,
+} from "@michael/shared";
 import { Hono } from "hono";
 import { HttpError, parse } from "../http";
-import { primaryChannel } from "../nudges/channels";
-import { decide, engineWindow } from "../nudges/engine";
+import { nudgePayload, primaryChannel } from "../nudges/channels";
+import { candidates, decide, engineWindow } from "../nudges/engine";
+import { pushToCurrentUser } from "../nudges/push";
 import { store } from "../store";
 
 /**
@@ -12,13 +18,13 @@ import { store } from "../store";
 export async function checkNudges(): Promise<NudgeCheckResult> {
   const now = new Date().toISOString();
   const win = engineWindow(now);
-  const [events, goals, today] = await Promise.all([
+  const [events, goals, today, privacy] = await Promise.all([
     store.listEvents({ from: win.weekStart, to: win.dayEnd }),
     store.listGoals(),
     store.listNudges({ from: win.dayStart, to: win.dayEnd }),
+    store.privacyRules(),
   ]);
-  // TODO: pass off the record once privacy (GET /v1/privacy) is live.
-  const decision = decide({ now, goals, events, today });
+  const decision = decide({ now, goals, events, today, offTheRecord: privacy.offTheRecord });
   const counted = today.filter((n) => n.status !== "suppressed").length;
   if (decision.action === "skip") {
     return { checked_at: now, nudge: null, skipped: decision.skipped, sent_today: counted };
@@ -55,6 +61,31 @@ export async function checkNudges(): Promise<NudgeCheckResult> {
   return { checked_at: now, nudge, skipped: null, sent_today: counted + 1 };
 }
 
+// Said when the engine has nothing real to say right now. Under 15 words, no dashes.
+export const SAMPLE_NUDGE = {
+  kind: "goal_behind" as const,
+  text: "Nudges are on. At most five a day, only when it matters.",
+  reason: "A test nudge: nothing on your day needs a nudge right now.",
+};
+
+/**
+ * The stage moment: push one nudge to the caller's devices now. Uses the engine's best current
+ * candidate (real maths) when there is one, otherwise the sample. Ignores the cap, quiet hours
+ * and dedupe, and stores nothing, so it never eats into the 5 a day.
+ */
+export async function testNudge(): Promise<NudgeTestResult> {
+  const now = new Date().toISOString();
+  const win = engineWindow(now);
+  const [events, goals] = await Promise.all([
+    store.listEvents({ from: win.weekStart, to: win.dayEnd }),
+    store.listGoals(),
+  ]);
+  const pick = candidates({ now, goals, events, today: [] })[0] ?? SAMPLE_NUDGE;
+  const { devices, delivered } = await pushToCurrentUser(nudgePayload(pick));
+  console.log(`[nudge] test "${pick.text}" pushed to ${delivered} of ${devices} devices`);
+  return { text: pick.text, reason: pick.reason, delivered, devices };
+}
+
 export const nudges = new Hono()
   // GET /v1/nudges?from=&to=  (default: today, local time)
   .get("/nudges", async (c) => {
@@ -67,4 +98,6 @@ export const nudges = new Hono()
     return c.json(body);
   })
   // POST /v1/nudges/check: decide now, store and deliver at most one nudge.
-  .post("/nudges/check", async (c) => c.json(await checkNudges()));
+  .post("/nudges/check", async (c) => c.json(await checkNudges()))
+  // POST /v1/nudges/test: push one nudge to the caller's own devices now (stage demo).
+  .post("/nudges/test", async (c) => c.json(await testNudge()));

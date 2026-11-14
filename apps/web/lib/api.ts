@@ -8,7 +8,10 @@ import {
   mockEvents,
   mockGoals,
   mockRecommendations,
+  type NudgeTestResult,
   type PrivacyState,
+  type PushConfig,
+  type PushSubscriptionInput,
   type Recommendation,
   Source,
   type SourceSetting,
@@ -46,11 +49,11 @@ export async function get<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-async function send<T>(method: "PUT" | "PATCH", path: string, body: unknown): Promise<T> {
+async function send<T>(method: "PUT" | "PATCH" | "POST", path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     method,
     headers: { authorization: `Bearer ${await bearer()}`, "content-type": "application/json" },
-    body: JSON.stringify(body),
+    body: body === undefined ? undefined : JSON.stringify(body),
     cache: "no-store",
   });
   if (!res.ok) throw new Error(`${method} ${path} failed: ${res.status}`);
@@ -130,6 +133,20 @@ export async function patchSource(source: Source, enabled: boolean): Promise<Sou
     return { ...s };
   }
   return send<SourceSetting>("PATCH", `/v1/privacy/sources/${encodeURIComponent(source)}`, { enabled });
+}
+
+// Nudges on this device (Web Push). Mocks have no push service, so the button explains that.
+export async function getPushConfig(): Promise<PushConfig> {
+  if (USE_MOCKS) return { enabled: false, public_key: null, devices: 0 };
+  return get<PushConfig>("/v1/push");
+}
+
+export async function postPushSubscription(sub: PushSubscriptionInput): Promise<PushConfig> {
+  return send<PushConfig>("POST", "/v1/push/subscriptions", sub);
+}
+
+export async function postTestNudge(): Promise<NudgeTestResult> {
+  return send<NudgeTestResult>("POST", "/v1/nudges/test");
 }
 
 const SAMPLE_DAYS: Record<string, DayView> = {

@@ -412,6 +412,39 @@ export const NudgeCheckResult = z.object({
 });
 export type NudgeCheckResult = z.infer<typeof NudgeCheckResult>;
 
+// POST /v1/nudges/test: one nudge now, for the stage moment. Not stored, ignores the cap.
+export const NudgeTestResult = z.object({
+  text: z.string().min(1),
+  reason: z.string(),
+  // Devices that accepted it. 0 when push is not configured or no device has turned nudges on.
+  delivered: z.number().int().nonnegative(),
+  devices: z.number().int().nonnegative(),
+});
+export type NudgeTestResult = z.infer<typeof NudgeTestResult>;
+
+// ---------- web push (iPhone, Apple Watch mirror, desktop browsers) ----------
+
+// What the browser's PushSubscription.toJSON() gives. Only https push services are accepted.
+export const PushSubscriptionInput = z.object({
+  endpoint: z.url({ protocol: /^https$/ }).max(2048),
+  expirationTime: z.number().nullable().optional(),
+  keys: z.object({ p256dh: z.string().min(1).max(256), auth: z.string().min(1).max(128) }),
+});
+export type PushSubscriptionInput = z.infer<typeof PushSubscriptionInput>;
+
+export const PushUnsubscribe = z.object({ endpoint: z.url().max(2048) });
+export type PushUnsubscribe = z.infer<typeof PushUnsubscribe>;
+
+// GET /v1/push: what the app needs to subscribe, and whether this user has a device on.
+export const PushConfig = z.object({
+  // False until the API has VAPID keys.
+  enabled: z.boolean(),
+  // VAPID public key (base64url) for pushManager.subscribe, null when not enabled.
+  public_key: z.string().nullable(),
+  devices: z.number().int().nonnegative(),
+});
+export type PushConfig = z.infer<typeof PushConfig>;
+
 // ---------- score ----------
 
 export const GoalScore = z.object({

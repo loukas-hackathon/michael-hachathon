@@ -12,11 +12,12 @@ import { events } from "./routes/events";
 import { goals } from "./routes/goals";
 import { integrations, oauth } from "./routes/integrations";
 import { moments } from "./routes/moments";
-import { connect, oauthPublic } from "./routes/oauth";
 import { nudges } from "./routes/nudges";
+import { connect, oauthPublic } from "./routes/oauth";
 import { patterns } from "./routes/patterns";
 import { privacy } from "./routes/privacy";
 import { product } from "./routes/product";
+import { push } from "./routes/push";
 import { recommendations } from "./routes/recommendations";
 import { score } from "./routes/score";
 import { webhooks } from "./routes/webhooks";
@@ -41,6 +42,7 @@ const v1 = new Hono()
   .route("/", integrations)
   .route("/", privacy)
   .route("/", nudges)
+  .route("/", push)
   .route("/", product)
   .route("/", connect);
 
