@@ -1,9 +1,10 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { PersonalToken } from "@michael/shared";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { currentUserId } from "./context";
 import { env } from "./env";
 import { HttpError } from "./http";
+import { dbClient } from "./timing";
 
 // Personal tokens act for one user: collectors, webhooks and the Claude connector use them.
 // Format "mk_<43 url-safe chars>"; only the sha256 is stored.
@@ -128,9 +129,7 @@ class SupabaseTokens implements TokenBackend {
 
 const backend: TokenBackend =
   env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY
-    ? new SupabaseTokens(
-        createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } }),
-      )
+    ? new SupabaseTokens(dbClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY))
     : new MemoryTokens();
 
 // Resolved tokens are cached briefly; revocation takes effect within the TTL.

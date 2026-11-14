@@ -26,7 +26,7 @@ import type {
   WeeklyTarget,
 } from "@michael/shared";
 import { Source as SourceEnum } from "@michael/shared";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { z } from "zod";
 import { currentDemoVisitor, currentUserId } from "./context";
 import { HttpError } from "./http";
@@ -61,6 +61,7 @@ import {
   type UpsertResult,
 } from "./store";
 import { mergeSummaries } from "./summaries";
+import { dbClient } from "./timing";
 
 type EventRow = z.output<typeof EventInput>;
 
@@ -312,10 +313,7 @@ export class SupabaseStore implements Store {
 
   // `fetch` is for tests: a fake PostgREST behind the real client.
   constructor(url: string, serviceRoleKey: string, opts: { fetch?: typeof fetch } = {}) {
-    this.db = createClient(url, serviceRoleKey, {
-      auth: { persistSession: false },
-      ...(opts.fetch ? { global: { fetch: opts.fetch } } : {}),
-    });
+    this.db = dbClient(url, serviceRoleKey, opts);
   }
 
   async lastEventAtBySource() {

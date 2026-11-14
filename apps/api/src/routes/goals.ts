@@ -8,8 +8,15 @@ import { store } from "../store";
 export const goals = new Hono()
   .get("/goals", async (c) => {
     // A temporary change from chat (#188) whose end has passed goes back first. Best effort.
-    await revertExpiredGoalChanges().catch((err) => console.error("goal change revert failed", err));
-    return c.json({ goals: await store.listGoals() });
+    // Read the goals at the same time; read again only in the rare case something went back.
+    const [reverted, goals] = await Promise.all([
+      revertExpiredGoalChanges().catch((err) => {
+        console.error("goal change revert failed", err);
+        return 0;
+      }),
+      store.listGoals(),
+    ]);
+    return c.json({ goals: reverted > 0 ? await store.listGoals() : goals });
   })
   // Goals Michael reads off the user's own calendar (#134). Before /goals/:id on purpose.
   .get("/goals/suggestions", async (c) => c.json(await currentSuggestions()))
