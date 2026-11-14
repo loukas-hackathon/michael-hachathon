@@ -2,8 +2,9 @@ import type { Event, Goal } from "@michael/shared";
 import { get } from "@/lib/api";
 import { athensDay, dayBounds } from "@/lib/athens";
 import { formatTime, hm } from "@/lib/format";
-import { healthOf, sleepAgainstGoal, sleepGoalMinutes, workoutParts } from "@/lib/health";
+import { healthOf, sleepAgainstGoal, workoutParts } from "@/lib/health";
 import { USE_MOCKS } from "@/lib/mode";
+import { sleepGoalMinutes } from "@/lib/sleep-goal";
 import { Fold } from "./fold";
 
 const iso = (ms: number) => new Date(ms).toISOString();

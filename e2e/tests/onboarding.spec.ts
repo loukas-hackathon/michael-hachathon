@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { API_URL, expect, tap, test } from "./fixtures";
+import { API_URL, enterDemo, expect, tap, test } from "./fixtures";
 
 // A fresh, non demo user: Today sends them to onboarding, they answer, and Today takes them in.
 // The test sign in (cookie michael_e2e_user) only works with E2E_TEST_AUTH=on on the in-memory API.
@@ -49,4 +49,21 @@ test("onboarding completes for a fresh user", async ({ page, context, baseURL })
   expect(goals.map((g) => g.title)).toEqual(["Deep work"]);
   const profile = await asUser<{ onboarded_at: string | null }>("/v1/profile");
   expect(profile.onboarded_at).not.toBeNull();
+});
+
+// Redo setup on the demo week: the visitor walks the whole talk; nothing is written (#239).
+test("a demo visitor can walk onboarding to the end", async ({ page }) => {
+  await enterDemo(page);
+  await page.goto("/onboarding");
+  const next = page.getByRole("button", { name: /^(Next|None of these)$/ });
+  await expect(page.getByRole("heading", { name: "What are we playing for?" })).toBeVisible();
+  await tap(next);
+  await expect(page.getByRole("heading", { name: "What does a usual week look like?" })).toBeVisible();
+  await tap(next);
+  await expect(page.getByRole("heading", { name: "Where does your time leak?" })).toBeVisible();
+  await tap(next);
+  await expect(page.getByRole("heading", { name: "When should I stay quiet?" })).toBeVisible();
+  await tap(next);
+  await expect(page.getByRole("heading", { name: "Let me see your day." })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Connect Apple Watch" })).toBeVisible();
 });
