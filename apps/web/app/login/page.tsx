@@ -1,10 +1,12 @@
 import { Wordmark } from "@/components/brand";
 import { InstallApp } from "@/components/install-app";
+import { safeNext } from "@/lib/next-path";
 import { GoogleButton } from "./google-button";
 
 export const metadata = { title: "Sign in · Michael" };
 
-export default function LoginPage() {
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
+  const next = safeNext((await searchParams).next);
   return (
     <main className="screen flex min-h-dvh flex-col justify-center pb-24">
       <Wordmark className="h-10 w-auto text-label" />
@@ -14,9 +16,9 @@ export default function LoginPage() {
       </p>
 
       <div className="mt-10 flex flex-col gap-3">
-        <GoogleButton />
+        <GoogleButton next={next} />
         <a
-          href="/auth/demo"
+          href={next ? `/auth/demo?next=${encodeURIComponent(next)}` : "/auth/demo"}
           className="press flex h-12 items-center justify-center rounded-group bg-fill text-body font-semibold text-tint-text"
         >
           Try the demo week

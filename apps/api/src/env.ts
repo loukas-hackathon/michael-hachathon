@@ -10,6 +10,9 @@ const Env = z.object({
   WEB_ORIGIN: z.string().default("http://localhost:3000"),
   // Public base URL of this API, used for OAuth redirect URIs.
   PUBLIC_API_URL: z.string().default("http://localhost:8787"),
+  // Public URL of the web app, where MCP OAuth sends the user to allow a connection.
+  // Optional: defaults to the first non local entry of WEB_ORIGIN.
+  PUBLIC_WEB_URL: z.string().optional(),
   SUPABASE_URL: z.string().optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
   GEMINI_API_KEY: z.string().optional(),

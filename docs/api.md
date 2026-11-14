@@ -16,8 +16,10 @@ returns `501 not_implemented`, `planned` = not routed yet. Update the status whe
 - List endpoints wrap results: `{ "goals": [...] }`, `{ "recommendations": [...] }`.
 - **Auth:** every request acts for one user, and all data is scoped to that user.
   - Signed-in users (web app): `Authorization: Bearer <Supabase access token>`.
-  - Collectors, webhooks and the demo Claude connector: the shared secret `API_KEY`, which acts as
-    the demo account (`demo@michael.app`). Per-user ingest tokens come later.
+  - MCP clients (the claude.ai connector): an OAuth access token from Michael's own authorisation
+    server (see "MCP authorization" below), bound to the user who allowed it. Only `/mcp` takes it.
+  - Collectors, webhooks and our own tools: the shared secret `API_KEY`, which acts as the demo
+    account (`demo@michael.app`). Per-user ingest tokens come later.
 - **Shared secret details:**
   Send `Authorization: Bearer <API_KEY>`. Applies to everything under `/v1/*` and `/mcp`, except
   `/health` and the OAuth connect/callback redirects. Only `/v1/webhooks/*` and `/mcp` also accept
@@ -934,7 +936,49 @@ Stated here and at the top of `apps/api/src/score/score.ts`; the two change toge
 
 ## MCP server
 
-Streamable HTTP at `POST /mcp` (stateless, JSON responses). Auth: `Authorization: Bearer <API_KEY>`.
+Streamable HTTP at `POST /mcp` (stateless, JSON responses). Auth: `Authorization: Bearer <token>`,
+where the token is an OAuth access token (below) or `API_KEY` (`?key=<API_KEY>` also works).
+A request without valid credentials gets `401` with
+`WWW-Authenticate: Bearer resource_metadata="<base>/.well-known/oauth-protected-resource/mcp"`.
+
+### MCP authorization (claude.ai connector)
+
+Follows the MCP authorization spec (2025-11-25). The user pastes `<base>/mcp` into claude.ai and
+taps Allow; no keys. `<base>` is the API's public URL as the client reached it.
+
+| Method | Path                                        | What                                                                                         |
+| ------ | ------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| GET    | `/.well-known/oauth-protected-resource/mcp` | RFC 9728: `resource` = `<base>/mcp`, `authorization_servers` = `[<base>]` (also at the root) |
+| GET    | `/.well-known/oauth-authorization-server`   | RFC 8414 metadata: S256 PKCE, public clients (`none`), code and refresh grants               |
+| POST   | `/oauth/register`                           | RFC 7591 dynamic client registration. Redirect URIs must be https or loopback                |
+| GET    | `/oauth/authorize`                          | Checks the request, then redirects to the web consent page `<web>/connect?request=<id>`      |
+| POST   | `/oauth/token`                              | Form encoded. `authorization_code` (PKCE) or `refresh_token` (rotated on every use)          |
+
+Scopes are the `AgentScope` values; no `scope` asked means all of them. Access tokens last 24
+hours, refresh tokens 90 days; both are stored hashed. Loopback redirects match on any port
+(Claude Code). OAuth errors use the OAuth shape `{ error, error_description }`, not ours.
+
+The consent page (signed in user, normal auth) uses:
+
+| Method | Path                       | Body                 | Response                                                 |
+| ------ | -------------------------- | -------------------- | -------------------------------------------------------- |
+| GET    | `/v1/connect/requests/:id` |                      | `200 ConnectRequest`, `404` when expired or answered     |
+| POST   | `/v1/connect/requests/:id` | `{ allow: boolean }` | `200 { redirect_to }` (back to the client), `404`, `409` |
+
+```ts
+type ConnectRequest = {
+  id: string;
+  client_name: string; // from registration, e.g. "Claude"
+  redirect_host: string; // shown to the user, e.g. "claude.ai"
+  scopes: AgentScope[];
+  expires_at: string;
+};
+```
+
+On allow, `redirect_to` carries a one time `code` (5 minutes), `state` and `iss`; on refusal,
+`error=access_denied`. The token then acts for the user who allowed it.
+
+### Tools
 
 | Tool                  | Input                                                   | Output (JSON text content)                                                   |
 | --------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------- |

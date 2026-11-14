@@ -295,6 +295,23 @@ export const AgentQuery = z.object({
 });
 export type AgentQuery = z.infer<typeof AgentQuery>;
 
+// Connecting an MCP client (claude.ai connector) with OAuth: the consent page reads the pending
+// request, then the user allows or refuses with one tap.
+export const ConnectRequest = z.object({
+  id: z.uuid(),
+  client_name: z.string(),
+  redirect_host: z.string(), // shown on the consent page, e.g. "claude.ai"
+  scopes: z.array(AgentScope),
+  expires_at: IsoDateTime,
+});
+export type ConnectRequest = z.infer<typeof ConnectRequest>;
+
+export const ConnectDecision = z.object({ allow: z.boolean() });
+export type ConnectDecision = z.infer<typeof ConnectDecision>;
+
+export const ConnectDecisionResponse = z.object({ redirect_to: z.url() });
+export type ConnectDecisionResponse = z.infer<typeof ConnectDecisionResponse>;
+
 // ---------- nudges ----------
 
 export const NudgeChannel = z.enum(["watch", "push", "telegram"]);

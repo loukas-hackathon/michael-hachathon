@@ -1,8 +1,10 @@
 import { AgentRow } from "@/components/agents/agent-row";
 import { ApprovalCard } from "@/components/agents/approval-card";
+import { ConnectClaude } from "@/components/agents/connect-claude";
 import { EmptyState } from "@/components/empty-state";
 import { ScreenHeader } from "@/components/screen";
 import { getAgents, SCOPE_LABEL, whoAsked } from "@/lib/agents";
+import { MCP_URL } from "@/lib/connect";
 import { formatTime } from "@/lib/format";
 
 export default async function AgentsPage({ searchParams }: { searchParams: Promise<{ demo?: string }> }) {
@@ -93,6 +95,8 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
           ) : null}
         </>
       )}
+
+      <ConnectClaude url={MCP_URL} />
 
       {view.sample ? (
         <p className="mt-8 text-footnote text-label-2">
