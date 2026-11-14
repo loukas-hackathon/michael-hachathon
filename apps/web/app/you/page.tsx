@@ -7,15 +7,6 @@ import { getConnections } from "@/lib/connections-status";
 import { DeleteDataRow } from "./delete-data-row";
 import { OffTheRecordSwitch } from "./off-the-record-switch";
 
-const PROMISES = [
-  [
-    "One client.",
-    "I work for you only. Not for an employer, an insurer, an advertiser, or the agent asking about you.",
-  ],
-  ["Open book.", "Everything I know about you is on your timeline. You can see it and delete it."],
-  ["Coaches you, forgets them.", "I keep the lesson and your own commitments, never other people's words."],
-] as const;
-
 const separator = "absolute inset-x-0 top-0 ml-4 h-[0.5px] bg-separator";
 
 // You: one hub, in four parts. Connections (what is plugged in and sending), Privacy, Michael
@@ -66,9 +57,6 @@ export default async function YouPage({
         <div className="overflow-hidden rounded-group bg-fill">
           <OffTheRecordSwitch />
         </div>
-        <p className="mt-2 px-4 text-footnote text-label-2">
-          One tap stops all collection, on every connection. Each connection has its own switch on its page.
-        </p>
         <Link
           href="/agents"
           className="press mt-5 flex min-h-14 items-center justify-between gap-3 rounded-group bg-fill px-4 py-2"
@@ -80,15 +68,6 @@ export default async function YouPage({
           <span className="text-label-2">›</span>
         </Link>
         <DeleteDataRow />
-        <ul className="mt-5 overflow-hidden rounded-group bg-fill">
-          {PROMISES.map(([title, body], i) => (
-            <li key={title} className="relative px-4 py-3">
-              {i > 0 ? <span className={separator} /> : null}
-              <p className="text-body font-semibold">{title}</p>
-              <p className="text-subhead text-label-2">{body}</p>
-            </li>
-          ))}
-        </ul>
       </section>
 
       <section className="mt-8">

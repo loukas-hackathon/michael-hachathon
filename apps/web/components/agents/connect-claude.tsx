@@ -179,3 +179,19 @@ export function ConnectLink({ url }: { url: string }) {
     </section>
   );
 }
+
+/** You > Claude: one link to copy and one line on where it goes. */
+export function ClaudeLink({ url }: { url: string }) {
+  return (
+    <section aria-label="Your Claude link">
+      <LinkField url={url} primary surface="bg-fill" />
+      <p className="mt-2 px-4 text-footnote text-label-2">
+        In Claude, open{" "}
+        <a href={CLAUDE_CONNECTORS} target="_blank" rel="noreferrer" className="font-semibold text-tint-text">
+          Connectors
+        </a>
+        , add a custom connector, paste it and tap Allow.
+      </p>
+    </section>
+  );
+}

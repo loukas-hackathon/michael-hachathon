@@ -1,3 +1,4 @@
+import { goalKind } from "@michael/shared";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { CountUp } from "@/components/count-up";
@@ -5,6 +6,7 @@ import { LiveRefresh } from "@/components/live-refresh";
 import { ScreenHeader } from "@/components/screen";
 import { Tape, TapeKey } from "@/components/tape";
 import { BriefCard } from "@/components/today/brief-card";
+import { TodayChecklist } from "@/components/today/checklist";
 import { MoreFromMichael } from "@/components/today/fold";
 import { GetStarted } from "@/components/today/get-started";
 import { MichaelCard } from "@/components/today/michael-card";
@@ -13,7 +15,8 @@ import { RecommendationsPanel, todaySuggestions } from "@/components/today/recom
 import { TodayEmpty } from "@/components/today/today-empty";
 import { TravelCard } from "@/components/today/travel-card";
 import { WatchLine } from "@/components/today/watch-line";
-import { getToday, needsOnboarding } from "@/lib/api";
+import { getChecklist, getGoals, getToday, needsOnboarding } from "@/lib/api";
+import type { ChecklistDay } from "@/lib/checklist";
 import { type DayView, nowIndex, tape, totals } from "@/lib/day";
 import { formatDay, formatTime, hm, minutesPhrase } from "@/lib/format";
 import { verdict } from "@/lib/gamification";
@@ -32,7 +35,12 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
   // The day and the suggestions load side by side; "More from Michael" streams in behind
   // Suspense, so the score never waits on the brief, the moment or the watch.
   const suggestions = todaySuggestions();
-  const day = await getToday(demo);
+  const [day, checklist, goals] = await Promise.all([
+    getToday(demo),
+    getChecklist().catch(() => null),
+    getGoals().catch(() => []),
+  ]);
+  const lists = checklistsFor(checklist, goals);
   const ticks = tape(day);
   const t = totals(day);
   const firstBlock = day.blocks[0];
@@ -55,6 +63,9 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
         <>
           <GetStarted demo={demo} />
           <TodayEmpty demo={demo} />
+          {lists.map((l) => (
+            <TodayChecklist key={l.goalId} {...l} />
+          ))}
           <RecommendationsPanel slot="primary" />
           <Suspense fallback={null}>
             <MoreFromMichael>
@@ -134,6 +145,10 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
             </p>
           ) : null}
 
+          {lists.map((l) => (
+            <TodayChecklist key={l.goalId} {...l} />
+          ))}
+
           <RecommendationsPanel slot="primary" />
 
           {day.lead || day.nudge ? (
@@ -173,4 +188,21 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
       ) : null}
     </main>
   );
+}
+
+/** One list per active checklist goal, plus any goal the day's items name (#238). */
+function checklistsFor(day: ChecklistDay | null, goals: Awaited<ReturnType<typeof getGoals>>) {
+  if (!day) return [];
+  const titles = new Map(
+    goals.filter((g) => g.active && goalKind(g) === "checklist").map((g) => [g.id, g.title] as const),
+  );
+  for (const i of [...day.items, ...day.suggestions]) {
+    if (!titles.has(i.goal_id)) titles.set(i.goal_id, "Today's list");
+  }
+  return [...titles].map(([goalId, title]) => ({
+    goalId,
+    title,
+    items: day.items.filter((i) => i.goal_id === goalId),
+    suggestions: day.suggestions.filter((i) => i.goal_id === goalId),
+  }));
 }

@@ -486,7 +486,8 @@ type GoalSuggestionAccept = { title?: string; weekly_budget_minutes?: number; ca
   given, or `POST /v1/goals/suggestions/:id/accept` with optional edits. The goal's description says
   where it came from. `404` when the calendar no longer suggests that id.
 - **Where it shows:** the Google Calendar callback syncs four weeks back on first connect and adds
-  `goal_suggestions=<n>` to the redirect when there are any; onboarding's first step, the Goals tab
+  `goal_suggestions=<n>` to the redirect when there are any (from onboarding, the page runs that
+  sync itself with `?past_days=28`); onboarding's first step, the Goals tab
   and the calendar row on You list them with one tap to keep. MCP: `propose_goals` (scope `goals`).
 
 #### Three categories, four kinds
@@ -1430,6 +1431,24 @@ type PlanChangePayload = {
 };
 ```
 
+Recovery offers (#167, `apps/api/src/recovery`, a rule, not the model). When a goal block of
+today's score ends (within the last 2 hours) with `spent_minutes` under half of `planned_minutes`,
+Michael stores one `create_focus_block` recommendation through `createRecommendation` (so the guard
+applies): 25 minutes in the first free slot today that starts 15+ minutes from now on a 5 minute
+grid, ends by 22:00, overlaps no calendar event and lies outside the profile's quiet hours and any
+time a standing instruction protects. The title is the line, an offer: the cause, then
+"Take 25 minutes at 16:00. Still counts." Causes, first hit wins: an event with other people
+overlaps the block ("Meetings ate the block."); most lost minutes were on the phone ("Instagram
+took it.", or "The phone took it." when no app is named); 15+ minutes on screens with 30+ switches
+per active hour or half the time in stays under 2 minutes ("Too many switches."); under 6 hours of
+sleep in the night that ended that day, when sleep was recorded ("Short night."); else "The block
+slipped." The payload carries `title` (the goal's title first, "70.3: 25 minutes", so the score
+counts the block towards the goal), `goal_id`, `recovery_for` (the block's event id) and
+`recovery_cause`. At most one offer per block and one per goal per day; never for a block with
+other people; no slot today means no offer. It runs inside the nudge check (every 5 minutes per
+active user) and goes out as a `recovery_block` nudge with `recommendation_id` set, under the
+same cap, quiet hours and dedupe as every nudge.
+
 Rules: act only on the user's own calendar blocks and Mac; never touch events with other people;
 never delete the user's events; never send in the user's name.
 
@@ -1520,14 +1539,17 @@ when they have under a minute left; a revoked grant sets `status: "error"`.
 characters, otherwise `400`. It is signed into `state`, and the callback then redirects to
 `${WEB_URL}<return_to>` with the same `connected` or `integration_error` parameters added. Without
 it, or when the state is unreadable, the callback goes to `/you`. The web app passes it as
-`/integrations/google/connect?return_to=...`.
+`/integrations/google/connect?return_to=...`. A `return_to` under `/onboarding` skips the first sync
+and adds `sync=pending`: onboarding then calls `POST .../sync?past_days=28` itself, behind a
+"Reading your calendar" status line, so nobody waits on Google's page.
 
 **Sync.** Pulls the primary calendar, now minus 7 days to now plus 7 days, recurring events expanded,
 into `calendar_event` events with `source: "google_calendar"` and `external_id` = Google's event id.
 Idempotent: unchanged events are left alone, changed ones (title, time) are updated in place, and
 mirrored events that were deleted or cancelled in Google within the window are removed from the
 timeline (the calendar itself is never touched). Cancelled and declined events are skipped. Runs
-after connecting, on `POST .../sync`, and every `CALENDAR_SYNC_MINUTES` (default 15) for every
+after connecting, on `POST .../sync` (optional `?past_days=1..28` reads further back; `400` outside
+that), and every `CALENDAR_SYNC_MINUTES` (default 15) for every
 connected user. Off the record, or with the `google_calendar` source switched off, sync reads nothing
 and answers zero counts.
 
@@ -1984,14 +2006,15 @@ type NudgeCheckResult = {
 Nudge engine (`apps/api/src/nudges/engine.ts`, pure, thresholds in `LIMITS`). Each check picks the
 most urgent candidate of these rules (in this order):
 
-| Kind          | When                                                                                                                         | Example                                                               |
-| ------------- | ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| `focus_drift` | inside a work goal block, 3+ of the last 10 min on distractor apps or sites                                                  | "6 min on Instagram in your focus block. Back to it until 12:00."     |
-| `block_soon`  | a goal block starts in 2 to 15 min                                                                                           | "Gym at 18:00. Wrap up in 12 min."                                    |
-| `morning`     | after the night's sleep (3h+) ends today, else from 08:00; until 12:00                                                       | the Morning moment's headline, e.g. "Today holds 2h 00 of goal time." |
-| `evening`     | an hour before the usual bedtime (median of 3+ of the last 8 nights), else 21:00; never later than 45 min before quiet hours | the Evening moment's headline                                         |
-| `wind_down`   | 30 min before the night, 3+ of the last 10 min on screens, a rest goal exists                                                | "Screens off by 22:00. Sleep is on the plan."                         |
-| `goal_behind` | before 19:00, a weekly budget behind its linear pace by 60+ min and 15%+                                                     | "Gym 2h 34m behind this week. Book 90 min today."                     |
+| Kind             | When                                                                                                                         | Example                                                               |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `focus_drift`    | inside a work goal block, 3+ of the last 10 min on distractor apps or sites                                                  | "6 min on Instagram in your focus block. Back to it until 12:00."     |
+| `block_soon`     | a goal block starts in 2 to 15 min                                                                                           | "Gym at 18:00. Wrap up in 12 min."                                    |
+| `morning`        | after the night's sleep (3h+) ends today, else from 08:00; until 12:00                                                       | the Morning moment's headline, e.g. "Today holds 2h 00 of goal time." |
+| `evening`        | an hour before the usual bedtime (median of 3+ of the last 8 nights), else 21:00; never later than 45 min before quiet hours | the Evening moment's headline                                         |
+| `wind_down`      | 30 min before the night, 3+ of the last 10 min on screens, a rest goal exists                                                | "Screens off by 22:00. Sleep is on the plan."                         |
+| `goal_behind`    | before 19:00, a weekly budget behind its linear pace by 60+ min and 15%+                                                     | "Gym 2h 34m behind this week. Book 90 min today."                     |
+| `recovery_block` | a recovery offer (see Recommendations, Recovery offers) not yet nudged, while its slot is ahead; ranked after `block_soon`   | "Meetings ate the block. Take 25 minutes at 16:00. Still counts."     |
 
 `morning` and `evening` carry the Morning and Evening moments (`GET /v1/moments/:kind`, template
 headline, no model): the headline when it is under 15 words, else its first sentence, else a shorter

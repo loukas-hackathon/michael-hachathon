@@ -33,7 +33,7 @@ export default async function ChatPage() {
 
   return (
     <main className="screen flex min-h-dvh flex-col">
-      <ScreenHeader context="Ask about your day and your goals" title="Chat" />
+      <ScreenHeader context={null} title="Chat" />
       {today ? <LiveCheckIn initial={today.questions} /> : <CheckIn questions={SAMPLE_QUESTIONS} sample />}
       <Chat
         initial={history.messages}

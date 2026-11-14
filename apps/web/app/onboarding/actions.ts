@@ -3,6 +3,7 @@
 import { GoalCategory, ProfileUpdate } from "@michael/shared";
 import { revalidatePath } from "next/cache";
 import { acceptGoalSuggestion, createGoal, getGoals, patchGoal, putProfile } from "@/lib/api";
+import { isDemoVisitor } from "@/lib/caller";
 
 // Server functions behind the onboarding talk. Only the server talks to the API, with the signed in
 // user's token. Everything here comes from the browser, so it is parsed first.
@@ -72,6 +73,8 @@ export async function finishOnboarding(input: Answers): Promise<{ ok: boolean }>
   const goals = parseGoals(input?.goals);
   const kept = parseKept(input?.kept);
   const profile = ProfileUpdate.parse({ ...input?.profile, onboarded_at: new Date().toISOString() });
+  // The demo week is read mostly: a visitor walks the whole talk, nothing is written (#239).
+  if (await isDemoVisitor()) return { ok: true };
   try {
     for (const k of kept) {
       const res = await acceptGoalSuggestion(k.id, { weekly_budget_minutes: k.weekly_minutes });
@@ -106,6 +109,7 @@ export async function finishOnboarding(input: Answers): Promise<{ ok: boolean }>
 
 /** Skip: keep the defaults and never ask again from Today. */
 export async function skipOnboarding(): Promise<{ ok: boolean }> {
+  if (await isDemoVisitor()) return { ok: true };
   try {
     await putProfile({ onboarded_at: new Date().toISOString() });
     return { ok: true };

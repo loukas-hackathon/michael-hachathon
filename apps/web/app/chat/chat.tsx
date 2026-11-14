@@ -88,9 +88,6 @@ export function Chat({
         {lines.length === 0 ? (
           <div className="pt-6">
             <p className="text-insight font-semibold">Ask me about your day.</p>
-            <p className="mt-1 text-subhead text-label-2">
-              I answer from your timeline, your goals and your week. Short answers, real numbers.
-            </p>
             <ul className="mt-5 flex flex-col items-start gap-2">
               {starters.map((s) => (
                 <li key={s}>

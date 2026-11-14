@@ -340,6 +340,10 @@ body::before {
 .m-count::before {
   content: counter(m-count);
 }
+/* After the one count up, a changed number (a refresh, the user's own Done) tweens briefly. */
+:root[data-counted] .m-count {
+  transition: --m-count var(--m-dur-ui) var(--m-ease-out);
+}
 :root:not([data-counted]) .m-count {
   animation: m-count-up var(--m-dur-count) var(--m-ease-out) both;
 }
@@ -415,6 +419,9 @@ body::before {
   .m-check-pop,
   :root:not([data-counted]) .m-count {
     animation: none;
+  }
+  :root[data-counted] .m-count {
+    transition: none;
   }
   .m-skeleton {
     animation-name: m-fade-in;

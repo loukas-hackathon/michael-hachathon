@@ -5,14 +5,20 @@ import { getGoalSuggestions, getGoals, getProfile } from "@/lib/api";
 import type { ConnectionId } from "@/lib/connections";
 import { type ConnectionStatus, getConnections } from "@/lib/connections-status";
 import { getFirstInsight, SAMPLE_INSIGHT } from "@/lib/first-insight";
-import { getGoogleCalendar, googleConnectUrl } from "@/lib/integrations";
+import { getGoogleCalendar, googleConnectUrl, syncGoogleCalendar } from "@/lib/integrations";
 import { FirstInsightCard } from "./first-insight";
 import { OnboardingFrame, primaryButton, Separator } from "./frame";
 import { GoalsStep } from "./goals-step";
 
 export const metadata = { title: "Getting started · Michael" };
 
-type Search = { step?: string; connected?: string; integration_error?: string; demo?: string };
+type Search = {
+  step?: string;
+  connected?: string;
+  integration_error?: string;
+  demo?: string;
+  sync?: string;
+};
 
 // Getting started, in two screens and under a minute (#270):
 //   0. Sign in (/login). A brand new account goes straight on to Google's calendar consent from
@@ -75,6 +81,9 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
   }
 
   if (step === "goals") {
+    // Straight back from Google: read the last four weeks here, behind loading.tsx's "Reading your
+    // calendar", rather than on Google's page. A failed read still shows the starters.
+    if (calendarOn && sp.sync === "pending") await syncGoogleCalendar(28).catch(() => null);
     const suggestions = calendarOn ? await getGoalSuggestions() : [];
     return (
       <GoalsStep

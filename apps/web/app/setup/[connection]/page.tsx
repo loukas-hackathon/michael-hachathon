@@ -28,8 +28,9 @@ export default async function SetupPage({ params }: { params: Promise<{ connecti
   if (!parsed.success) notFound();
   const copy = TITLES[parsed.data];
   return (
-    <main className="screen flex min-h-dvh flex-col pt-10 pb-24">
-      <Wordmark className="h-8 w-auto text-label" />
+    // .screen sets the safe area padding outside Tailwind's layers, so the gap above is a margin.
+    <main className="screen flex min-h-dvh flex-col">
+      <Wordmark className="mt-10 h-8 w-auto shrink-0 text-label" />
       <h1 className="mt-6 text-insight font-bold tracking-[-0.01em]">{copy.title}</h1>
       <p className="mt-2 text-body text-label-2">{copy.body}</p>
       <div className="mt-6">

@@ -72,23 +72,15 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
               </>
             ) : (
               <>
-                <b className="font-semibold text-label">
-                  {day.totals.phoneSessions} phone {day.totals.phoneSessions === 1 ? "session" : "sessions"}
-                </b>
-                , {hm(day.totals.phoneMinutes)} on the phone.
-                {screen.longestUninterrupted != null && screen.longestUninterrupted >= 1 ? (
-                  <>
-                    {" "}
-                    The longest stretch without a break was{" "}
-                    <b className="font-semibold text-label">{minutesPhrase(screen.longestUninterrupted)}</b>.
-                  </>
-                ) : null}
                 {day.totals.workMinutes >= 1 ? (
                   <>
-                    {" "}
-                    {hm(day.totals.workMinutes)} in work apps, {hm(day.totals.lostMinutes)} lost to messages
-                    and social.
+                    <b className="font-semibold text-label">{hm(day.totals.workMinutes)}</b> in work apps,{" "}
+                    {hm(day.totals.lostMinutes)} lost,{" "}
                   </>
+                ) : null}
+                {hm(day.totals.phoneMinutes)} on the phone.
+                {screen.longestUninterrupted != null && screen.longestUninterrupted >= 1 ? (
+                  <> Longest unbroken stretch {minutesPhrase(screen.longestUninterrupted)}.</>
                 ) : null}
               </>
             )}

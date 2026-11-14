@@ -9,9 +9,10 @@ import { AddGoal, EditGoal, type GoalDraft } from "@/components/goals/goal-sheet
 import { ScreenHeader } from "@/components/screen";
 import { getGoals, getGoalsWeek } from "@/lib/api";
 import { CATEGORIES, CATEGORY_TITLE, categoryOf } from "@/lib/categories";
+import { countLine } from "@/lib/checklist";
 import { SETUP_LINKS } from "@/lib/first-run";
 import { formatWeekday, hm } from "@/lib/format";
-import { closeState, type GoalStatus, pace, rank, todayIndex } from "@/lib/goals-view";
+import { closeState, type GoalStatus, type GoalWeek, pace, rank, todayIndex } from "@/lib/goals-view";
 
 export default async function GoalsPage({ searchParams }: { searchParams: Promise<{ demo?: string }> }) {
   const { demo } = await searchParams;
@@ -26,16 +27,19 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
   const need = ranked.reduce((n, r) => n + r.leftMinutes, 0);
   const cap = Math.max(60, ...week.goals.flatMap((g) => g.daily.map((m) => m ?? 0)));
   const context = `${formatWeekday(week.now)}. ${daysLeft === 0 ? "Last day" : `${daysLeft} ${daysLeft === 1 ? "day" : "days"} to go`}.`;
-  const groups = CATEGORIES.map((c) => ({ c, items: ranked.filter((r) => r.goal.category === c) })).filter(
-    (g) => g.items.length > 0,
-  );
+  const extras = week.extras ?? [];
+  const groups = CATEGORIES.map((c) => ({
+    c,
+    items: ranked.filter((r) => r.goal.category === c),
+    more: extras.filter((x) => x.category === c),
+  })).filter((g) => g.items.length > 0 || g.more.length > 0);
 
   return (
     <main className="screen">
       <ScreenHeader context={context} title="Goals" actions={<AddGoal personalReady={personalReady} />} />
       <CalendarGoals className="mt-4" />
 
-      {week.goals.length === 0 ? (
+      {week.goals.length === 0 && extras.length === 0 ? (
         <EmptyState
           title="No goals yet."
           action={
@@ -69,16 +73,18 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
             </section>
           ) : null}
 
-          {groups.map(({ c, items }) => {
+          {groups.map(({ c, items, more }) => {
             const spent = items.reduce((n, r) => n + r.goal.spentMinutes, 0);
             const budget = items.reduce((n, r) => n + r.goal.budgetMinutes, 0);
             return (
               <section key={c} className="mt-6">
                 <div className="mb-2 flex items-baseline justify-between gap-3">
                   <h2 className="text-title3 font-bold">{CATEGORY_TITLE[c]}</h2>
-                  <p className="text-footnote text-label-2 tnum">
-                    {hm(spent)} of {hm(budget)}
-                  </p>
+                  {budget > 0 ? (
+                    <p className="text-footnote text-label-2 tnum">
+                      {hm(spent)} of {hm(budget)}
+                    </p>
+                  ) : null}
                 </div>
                 <ul className="overflow-hidden rounded-group bg-fill">
                   {items.map((r, i) => {
@@ -94,6 +100,21 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
                       </li>
                     ) : (
                       <li key={r.goal.id}>{row}</li>
+                    );
+                  })}
+                  {more.map((x, i) => {
+                    const row = <ExtraRow key={x.id} goal={x} first={items.length === 0 && i === 0} />;
+                    const draft = drafts.get(x.id);
+                    return (
+                      <li key={x.id}>
+                        {draft ? (
+                          <EditGoal draft={draft} personalReady={personalReady}>
+                            {row}
+                          </EditGoal>
+                        ) : (
+                          row
+                        )}
+                      </li>
                     );
                   })}
                 </ul>
@@ -230,6 +251,59 @@ function GoalRow({
   );
 }
 
+/** A count or checklist goal (#238): no notch track, it is outside the time score. */
+function ExtraRow({ goal, first }: { goal: GoalWeek; first: boolean }) {
+  const c = goal.count;
+  const l = goal.checklist;
+  return (
+    <div className="relative px-4 pt-3 pb-3.5">
+      {first ? null : <span className="absolute inset-x-0 top-0 ml-4 h-[0.5px] bg-separator" />}
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 className="text-body font-semibold">{goal.title}</h3>
+        {c ? (
+          <p className="shrink-0 text-subhead text-label-2 tnum">
+            <b className="font-semibold text-label">{c.left}</b> to go
+          </p>
+        ) : l ? (
+          <p className="shrink-0 text-subhead text-label-2 tnum">
+            <b className="font-semibold text-label">
+              {l.today.done} of {l.today.set}
+            </b>{" "}
+            today
+          </p>
+        ) : null}
+      </div>
+      {c ? (
+        <>
+          <ol aria-label={countLine(c)} className="mt-2 flex flex-wrap gap-1.5">
+            {Array.from({ length: Math.max(c.target, c.done) }, (_, i) => (
+              <li
+                // biome-ignore lint/suspicious/noArrayIndexKey: fixed slots
+                key={i}
+                className={`size-3.5 rounded-full ${i < c.done ? "bg-label" : "shadow-[inset_0_0_0_1.5px_var(--m-label-2)]"}`}
+              />
+            ))}
+          </ol>
+          <p className="mt-1.5 text-footnote text-label-2 tnum">
+            {c.left === 0 ? (
+              <b className="font-semibold text-label">Done for the week.</b>
+            ) : (
+              `${countLine(c)}.`
+            )}
+          </p>
+        </>
+      ) : l ? (
+        <p className="mt-1.5 text-footnote text-label-2 tnum">
+          {l.week.set === 0
+            ? "Nothing set this week yet."
+            : `${l.week.done} of ${l.week.set} done this week.`}{" "}
+          Outside the score.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function SleepSection({ sleep }: { sleep: { goalMinutes: number; nightly: (number | null)[] } }) {
   const nights = sleep.nightly.filter((n): n is number => n != null);
   const avg = nights.length ? nights.reduce((a, b) => a + b, 0) / nights.length : null;
@@ -243,7 +317,7 @@ function SleepSection({ sleep }: { sleep: { goalMinutes: number; nightly: (numbe
           </p>
           <p className="text-footnote text-label-2 tnum">
             {avg != null
-              ? `Goal ${hm(sleep.goalMinutes)}. Outside the score.`
+              ? `Goal ${hm(sleep.goalMinutes)}.`
               : `Goal ${hm(sleep.goalMinutes)}. Wear the watch tonight.`}
           </p>
         </div>

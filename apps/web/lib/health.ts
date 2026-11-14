@@ -1,4 +1,6 @@
-import { type Event, type Goal, isSleepGoal } from "@michael/shared";
+// Types only from @michael/shared: this file reaches the Timeline's client code, and a value import
+// would ship zod and the whole schema file with it (#255). Goal helpers live in ./sleep-goal.ts.
+import type { Event } from "@michael/shared";
 import { hm } from "./format";
 
 // The Apple Watch on one day, from the events Health Auto Export writes (apps/api/src/ingest/
@@ -119,15 +121,6 @@ export function healthOf(events: Event[], dayStart: number, dayEnd: number): Day
   const heart = [...hours.values()].sort((a, b) => a.at - b.at);
 
   return { lastNight, tonight, workouts, heart };
-}
-
-/** Minutes a night the sleep goal asks for: `sleep_hours`, else its weekly budget over 7. */
-export function sleepGoalMinutes(goals: Goal[]): number | null {
-  const goal = goals.find((g) => g.active && isSleepGoal(g));
-  if (!goal) return null;
-  const hours = num(goal.target?.sleep_hours);
-  if (hours) return Math.round(hours * 60);
-  return goal.weekly_budget_minutes ? Math.round(goal.weekly_budget_minutes / 7) : null;
 }
 
 /** "1h 18 short of your goal", "on your goal", "35 min over your goal"; null without a goal. */

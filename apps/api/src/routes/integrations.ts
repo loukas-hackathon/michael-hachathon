@@ -22,6 +22,8 @@ function onlyGoogle(provider: IntegrationProvider) {
     throw new HttpError("not_implemented", `${provider} is not wired up yet`);
 }
 
+const SyncQuery = z.object({ past_days: z.coerce.number().int().min(1).max(PAST_DAYS).optional() });
+
 // Authed routes, mounted under /v1 behind requireUser.
 export const integrations = new Hono()
   .get("/integrations", async (c) => {
@@ -55,7 +57,9 @@ export const integrations = new Hono()
   .post("/integrations/:provider/sync", async (c) => {
     const provider = parse(IntegrationProvider, c.req.param("provider"));
     onlyGoogle(provider);
-    const body: CalendarSyncResult = await syncGoogleCalendar();
+    // `?past_days=28` reads further back: onboarding asks for four weeks on its first screen.
+    const { past_days } = parse(SyncQuery, c.req.query());
+    const body: CalendarSyncResult = await syncGoogleCalendar(Date.now(), past_days);
     return c.json(body);
   })
   // Disconnect: revoke at Google and forget the tokens. Events already on the timeline stay.
@@ -122,9 +126,15 @@ export const oauth = new Hono().get("/oauth/google/callback", async (c) => {
       console.error("oauth callback", err);
       return c.redirect(backToWeb({ integration_error: provider, reason: "token" }, state.returnTo));
     }
+    const back: Record<string, string> = { connected: provider };
+    // Onboarding reads the four weeks itself, on its own screen with a status line, so the user is
+    // not left waiting on Google's page (#270).
+    if (state.returnTo?.startsWith("/onboarding")) {
+      back.sync = "pending";
+      return c.redirect(backToWeb(back, state.returnTo));
+    }
     // First sync now, so the timeline fills while the user is still looking. Four weeks back, so
     // Michael can read the user's habits and suggest goals straight away (#134).
-    const back: Record<string, string> = { connected: provider };
     try {
       await syncGoogleCalendar(Date.now(), PAST_DAYS);
       const { suggestions } = await currentSuggestions();

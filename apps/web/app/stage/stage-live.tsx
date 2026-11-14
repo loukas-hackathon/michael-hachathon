@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, startTransition, useCallback, useEffect, useRef, useState } from "react";
 import { MiMark } from "@/components/brand";
 import { formatTime } from "@/lib/format";
 import { sendTestNudge } from "@/lib/push-actions";
@@ -55,7 +55,8 @@ export function StageLive({
     const id = setInterval(() => {
       if (!document.hidden) void poll();
     }, POLL_MS);
-    const refresh = setInterval(() => router.refresh(), REFRESH_MS);
+    // In a transition, so the screen keeps what it shows until the fresh one is ready.
+    const refresh = setInterval(() => startTransition(() => router.refresh()), REFRESH_MS);
     return () => {
       clearInterval(id);
       clearInterval(refresh);
