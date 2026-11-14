@@ -245,3 +245,77 @@ export async function undoRecommendation(id: string): Promise<Recommendation> {
   if (!saved) throw new HttpError("not_found", "Recommendation not found");
   return saved;
 }
+
+const MIN_BLOCK_MS = 5 * 60_000;
+const MAX_BLOCK_MS = 6 * 3600_000;
+
+export interface FocusBlockRequest {
+  start_at: string;
+  end_at: string;
+  title?: string;
+  goal_id?: string | null;
+  /** Who asked, for the rationale the user reads ("Claude"). */
+  requested_by: string;
+}
+
+/**
+ * Books a block on the user's own time straight away (an agent asked for it, over MCP). It is saved
+ * as a recommendation and carried out by `executeRecommendation`, so it shows in Michael with the
+ * same undo until it starts. Refuses a time that overlaps an event with other people.
+ */
+export async function bookFocusBlock(req: FocusBlockRequest): Promise<Recommendation> {
+  const payload = parse(CreateFocusBlockPayload, {
+    start_at: req.start_at,
+    end_at: req.end_at,
+    title: req.title,
+  });
+  const start = Date.parse(payload.start_at);
+  const end = Date.parse(payload.end_at);
+  if (start <= Date.now()) throw conflict("That time has already started");
+  if (end - start < MIN_BLOCK_MS) throw new HttpError("bad_request", "A block is at least 5 minutes");
+  if (end - start > MAX_BLOCK_MS) throw new HttpError("bad_request", "A block is at most 6 hours");
+  if (req.goal_id && !(await store.getGoal(req.goal_id))) throw new HttpError("not_found", "Goal not found");
+
+  const overlapping = await store.listEvents({
+    from: payload.start_at,
+    to: payload.end_at,
+    type: ["calendar_event"],
+  });
+  const clash = overlapping.find(
+    (e) =>
+      isOthers(e) &&
+      Date.parse(e.start_at) < end &&
+      (e.end_at ? Date.parse(e.end_at) : Date.parse(e.start_at)) > start,
+  );
+  if (clash) {
+    throw conflict(`That overlaps "${clash.title}", which has other people in it. Pick a free time.`);
+  }
+
+  const title = payload.title ?? "Focus block";
+  const rec = await store.createRecommendation({
+    goal_id: req.goal_id ?? null,
+    title,
+    rationale: `Booked at your request through ${req.requested_by}. Undo in Michael until it starts.`,
+    action: {
+      kind: "create_focus_block",
+      payload: { ...payload, title },
+      involves_others: false,
+      undo_until: payload.start_at,
+    },
+    // Asked for in a conversation (with Claude), carried out straight away: same as Michael's chat.
+    source: "chat",
+  });
+  try {
+    return await executeRecommendation(rec.id);
+  } catch (err) {
+    // Nothing was booked: do not leave a half made suggestion behind.
+    await store.updateRecommendationStatus(rec.id, "dismissed").catch(() => null);
+    throw err;
+  }
+}
+
+/** Until when a done recommendation can still be undone, or null when there is no record. */
+export async function undoDeadline(id: string): Promise<string | null> {
+  const parsed = Execution.safeParse(await store.getRecommendationExecution(id));
+  return parsed.success ? parsed.data.undo_until : null;
+}
