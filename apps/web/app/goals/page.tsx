@@ -71,9 +71,10 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
               <h2 className="mb-2 text-title3 font-bold">The maths</h2>
               <div className="rounded-group bg-fill px-4 pt-3 pb-3.5">
                 <p className="text-subhead">
-                  {["", "This one", "These two", "These three", "These four"][ranked.length] ??
-                    `These ${ranked.length}`}{" "}
-                  need <b className="font-semibold tnum">{hm(need)}</b> more this week. You have{" "}
+                  {ranked.length === 1
+                    ? "This goal needs"
+                    : `${["", "", "These two", "These three", "These four"][ranked.length] ?? `These ${ranked.length}`} need`}{" "}
+                  <b className="font-semibold tnum">{hm(need)}</b> more this week. You have{" "}
                   <b className="font-semibold tnum">{hm(week.freeMinutesLeft)}</b> free. Which one gives?
                 </p>
                 <SplitBar
