@@ -90,7 +90,7 @@ curl -H "Authorization: Bearer dev-key" "localhost:8787/v1/timeline?from=2026-11
    (`supabase link --project-ref <ref> && supabase db push`, or paste into the SQL editor).
    Copy the project URL and the service role key.
 2. **Railway (API):** new service from this GitHub repo. Keep the root directory as the repo root
-   (pnpm workspaces need it) and set the config file path to `/apps/api/railway.json`.
+   (pnpm workspaces need it); Railway picks up `railway.json` at the root automatically.
    Set `NODE_ENV=production`, `API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`,
    `GEMINI_API_KEY`, `WEB_ORIGIN` (the Vercel URL) and `PUBLIC_API_URL` (the Railway URL).
    Generate a domain, then check `https://<railway-domain>/health`.
