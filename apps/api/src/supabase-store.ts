@@ -150,6 +150,7 @@ const toRecommendation = (r: Record<string, unknown>): Recommendation => ({
   executed_at: iso(r.executed_at as string | null),
   undone_at: iso(r.undone_at as string | null),
   source: (r.source as Recommendation["source"]) ?? "analysis",
+  specialist: (r.specialist as Recommendation["specialist"]) ?? null,
   created_at: iso(r.created_at as string) as string,
   updated_at: iso(r.updated_at as string) as string,
 });
@@ -892,6 +893,8 @@ export class SupabaseStore implements Store {
     const recommendations = await guardRecommendations(input.recommendations, await this.guardDeps());
     // Every row of one insert must name the same columns.
     const withEvidence = recommendations.some((r) => r.evidence?.length);
+    // `specialist` is newer still: named only on runs in mode `specialists`.
+    const withSpecialist = recommendations.some((r) => r.specialist);
     const rows = check(
       await this.db
         .from("recommendations")
@@ -904,6 +907,7 @@ export class SupabaseStore implements Store {
             rationale: r.rationale,
             action: r.action,
             ...(withEvidence ? { evidence: r.evidence ?? [] } : {}),
+            ...(withSpecialist ? { specialist: r.specialist ?? null } : {}),
             status: "proposed",
           })),
         )

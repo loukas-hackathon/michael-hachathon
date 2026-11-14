@@ -300,7 +300,10 @@ export interface AskedQuestion {
 
 export interface NewAnalysis {
   run: Omit<AnalysisRun, "id">;
-  recommendations: Pick<Recommendation, "goal_id" | "title" | "rationale" | "action" | "evidence">[];
+  recommendations: Pick<
+    Recommendation,
+    "goal_id" | "title" | "rationale" | "action" | "evidence" | "specialist"
+  >[];
 }
 
 export const emptyIntegration = (provider: IntegrationProvider): IntegrationRecord => ({
@@ -652,6 +655,7 @@ export class MemoryStore implements Store {
         rationale: r.rationale,
         action: r.action,
         evidence: r.evidence ?? [],
+        ...(r.specialist ? { specialist: r.specialist } : {}),
         status: "proposed",
         executed_at: null,
         undone_at: null,

@@ -11,6 +11,8 @@ export interface ModelRequest {
   user: string;
   /** JSON schema the answer must follow. */
   schema: Record<string, unknown>;
+  /** How hard the model thinks. Default `medium`; the specialists ask for `low`. */
+  effort?: "low" | "medium" | "high";
 }
 
 export interface ModelReply {
@@ -81,7 +83,7 @@ export class AnthropicModelClient implements ModelClient {
         // default, written out so a later default change cannot move it.
         thinking: { type: "adaptive" },
         output_config: {
-          effort: "medium",
+          effort: request.effort ?? "medium",
           format: { type: "json_schema", schema: request.schema },
         },
         // If a safety classifier declines the request, the API retries it on the model Anthropic

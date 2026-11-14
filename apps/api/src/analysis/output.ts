@@ -179,7 +179,7 @@ const iso = (ms: number) => new Date(ms).toISOString();
  * The model's action as something we may store, or the reason it is dropped. Michael acts only on
  * the person's own time: a block with a ref, or free time that touches nobody else's.
  */
-function checkAction(
+export function checkAction(
   a: ModelAction,
   ctx: BriefContext,
   goalId: string | null,

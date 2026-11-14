@@ -168,3 +168,29 @@ test("POST /v1/analysis/run rejects a bad body before calling the model", async 
   }
   assert.equal(model.requests.length, 0);
 });
+
+test("POST /v1/analysis/run?mode=specialists runs the specialists, and an unknown mode is a 400", async () => {
+  // Every specialist finds nothing; the coordinator answers as the single pass would.
+  const specialists = new FakeModelClient([JSON.stringify({ findings: [] })]);
+  const coordinator = new FakeModelClient([answer]);
+  useModelClient({
+    model: "fake-model",
+    complete: (request) =>
+      "findings" in ((request.schema.properties ?? {}) as object)
+        ? specialists.complete(request)
+        : coordinator.complete(request),
+  });
+  const run = (mode: string) =>
+    app.request(`/v1/analysis/run?mode=${mode}`, { method: "POST", headers: auth, body: "{}" });
+  const res = await run("specialists");
+  assert.equal(res.status, 201);
+  const body = AnalysisResult.parse(await res.json());
+  assert.equal(body.run.status, "succeeded");
+  assert.ok(specialists.requests.length >= 1, "at least one specialist was asked");
+  assert.ok(specialists.requests.every((r) => r.effort === "low"));
+  assert.match(coordinator.requests[0]?.system ?? "", /Working with specialists/);
+  // Its recommendation named no finding, so it has no specialist.
+  assert.equal(body.recommendations[0]?.specialist ?? null, null);
+
+  assert.equal((await run("committee")).status, 400);
+});
