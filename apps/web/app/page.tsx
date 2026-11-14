@@ -11,6 +11,10 @@ const SOURCE_LABEL: Record<Source, string> = {
   owntracks: "Location",
   manual: "Manual",
   agent: "Agent",
+  macos_usage: "Mac",
+  iphone_usage: "iPhone",
+  chrome: "Chrome",
+  claude_code: "Claude Code",
 };
 
 const time = (iso: string) =>

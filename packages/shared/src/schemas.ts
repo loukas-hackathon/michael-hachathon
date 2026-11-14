@@ -16,6 +16,11 @@ export const Source = z.enum([
   "owntracks",
   "manual",
   "agent",
+  // Local collectors that run on the user's own Mac (apps/collector, apps/extension).
+  "macos_usage",
+  "iphone_usage",
+  "chrome",
+  "claude_code",
 ]);
 export type Source = z.infer<typeof Source>;
 
@@ -32,6 +37,13 @@ export const EventType = z.enum([
   "location",
   "meal",
   "note",
+  // Attention detail from the local collectors. Payloads are documented in docs/api.md.
+  "web_visit",
+  "search",
+  "notification",
+  "screen",
+  "ai_session",
+  "ai_prompt",
 ]);
 export type EventType = z.infer<typeof EventType>;
 

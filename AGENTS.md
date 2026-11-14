@@ -19,6 +19,7 @@ aura. Move fast, keep quality, commit often.
 | `apps/api`              | Hono API: REST under `/v1`, MCP at `/mcp`, webhooks, Gemini. Deploys to Railway. |
 | `apps/api/src/store.ts` | `Store` interface: the only way to read/write data                               |
 | `apps/web`              | Next.js App Router + Tailwind. Deploys to Vercel (root dir `apps/web`).          |
+| `apps/collector`        | Runs on the user's Mac: reads local data (app usage and more), posts to the API  |
 | `packages/shared`       | zod schemas, types, mock data. **Shared contract.**                              |
 | `docs/api.md`           | API + MCP contract in words. **Shared contract.**                                |
 | `supabase/migrations`   | database schema                                                                  |

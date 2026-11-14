@@ -44,8 +44,8 @@ Every non-2xx response:
 
 Enums:
 
-- `Source`: `omi | whoop | health_auto_export | ios_shortcuts | activitywatch | google_calendar | owntracks | manual | agent`
-- `EventType`: `sleep | workout | recovery | biometric | app_usage | focus_session | conversation | memory | calendar_event | location | meal | note`
+- `Source`: `omi | whoop | health_auto_export | ios_shortcuts | activitywatch | google_calendar | owntracks | manual | agent | macos_usage | iphone_usage | chrome | claude_code`
+- `EventType`: `sleep | workout | recovery | biometric | app_usage | focus_session | conversation | memory | calendar_event | location | meal | note | web_visit | search | notification | screen | ai_session | ai_prompt`
 - `GoalCategory`: `work | gym | rest | food`
 - `RecommendationStatus`: `proposed | accepted | dismissed | done | undone` (`done` = action executed)
 - `ActionKind`: `move_calendar_block | create_focus_block | block_mac_app | draft_follow_up | reminder`
@@ -190,6 +190,22 @@ ingests idempotently. Response `200 IngestResponse`. Status: all `stub`.
 | `/v1/webhooks/activitywatch`      | local sync script reading the ActivityWatch API on the Mac | `app_usage`, `focus_session`    |
 
 The exact provider payload for each is documented in the issue that implements it, then copied here.
+
+### Events from the local collectors
+
+`apps/collector` (and later `apps/extension`) run on the user's own Mac and post to
+`POST /v1/events/batch`. Every event carries a stable `external_id`, so a backfill can be re-run.
+The `data` payload per type:
+
+| Source                        | Type           | `title`                            | `data`                                                                                                                        |
+| ----------------------------- | -------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `macos_usage`, `iphone_usage` | `app_usage`    | app name                           | `bundle_id`, `device` (`mac` or `iphone`), `seconds`, `opened_from?` (`home_screen`, `app_switcher`, `notification`, `other`) |
+| `macos_usage`                 | `notification` | app name                           | `bundle_id`, `device`                                                                                                         |
+| `macos_usage`                 | `screen`       | `Screen on` or `Screen off`        | `state` (`on` or `off`), `device`                                                                                             |
+| `chrome`                      | `web_visit`    | page title                         | `host`, `category?`, `seconds` (foreground time). Never the full address                                                      |
+| `chrome`                      | `search`       | the search term                    | `engine`, `term`                                                                                                              |
+| `claude_code`                 | `ai_session`   | session title                      | `tool`, `project`, `model?`, `turns`, `waiting_seconds?`, `input_tokens?`, `output_tokens?`                                   |
+| `claude_code`                 | `ai_prompt`    | first 120 characters of the prompt | `tool`, `session_id`, `project`                                                                                               |
 
 ### Goals
 
