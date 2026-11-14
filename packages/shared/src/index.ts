@@ -2,5 +2,6 @@
 // Any change here must be mirrored in docs/api.md in the same PR.
 
 export * from "./ai-prompts";
+export * from "./categories";
 export * from "./mocks";
 export * from "./schemas";

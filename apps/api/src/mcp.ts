@@ -2,6 +2,7 @@ import { EventInput, EventType, RecommendationStatus, Source } from "@michael/sh
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
+import { patternReportFor } from "./routes/patterns";
 import { store } from "./store";
 
 const json = (value: unknown) => ({
@@ -59,6 +60,21 @@ export function createMcpServer(): McpServer {
       annotations: { readOnlyHint: true },
     },
     async ({ status }) => json({ recommendations: await store.listRecommendations({ status }) }),
+  );
+
+  server.registerTool(
+    "get_patterns",
+    {
+      title: "Get patterns",
+      description:
+        "Return the patterns found in the user's timeline, with numbers: phone check cadence, focus disruptions and what they cost, repeat offenders, late screens, context switching, time by app and AI tool use. Read `headlines` first. Defaults to the last 7 days.",
+      inputSchema: {
+        from: z.iso.datetime({ offset: true }).optional().describe("ISO 8601 start"),
+        to: z.iso.datetime({ offset: true }).optional().describe("ISO 8601 end"),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ from, to }) => json(await patternReportFor({ from, to })),
   );
 
   server.registerTool(

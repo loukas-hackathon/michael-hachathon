@@ -10,6 +10,7 @@ import { analysis } from "./routes/analysis";
 import { events } from "./routes/events";
 import { goals } from "./routes/goals";
 import { integrations, oauth } from "./routes/integrations";
+import { patterns } from "./routes/patterns";
 import { product } from "./routes/product";
 import { recommendations } from "./routes/recommendations";
 import { webhooks } from "./routes/webhooks";
@@ -27,6 +28,7 @@ const v1 = new Hono()
   .route("/", goals)
   .route("/", recommendations)
   .route("/", analysis)
+  .route("/", patterns)
   .route("/", integrations)
   .route("/", product);
 

@@ -13,6 +13,7 @@
     "typecheck": "pnpm -r typecheck",
     "lint": "biome check .",
     "check": "pnpm typecheck && pnpm lint",
+    "test": "pnpm -r --if-present test",
     "format": "biome check --write .",
     "env:copy": "node scripts/copy-env.mjs",
     "collect": "pnpm --silent --filter @michael/collector start",
