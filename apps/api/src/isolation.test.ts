@@ -261,6 +261,7 @@ for (const [name, userId] of [
         ["get_moments", { kind: "evening" }],
         ["propose_goals", {}],
         ["get_records", {}],
+        ["get_check_in", {}],
       ];
       const { tools } = await client.listTools();
       for (const t of tools.filter((x) => x.annotations?.readOnlyHint)) {
