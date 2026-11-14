@@ -24,7 +24,7 @@ import { env } from "../env";
 import { HttpError, jsonBody, parse } from "../http";
 import { instructionLine } from "../instructions/protected";
 import { listMemories, type Memory, memoryContext } from "../memory";
-import { DEFAULT_TIMEZONE } from "../patterns";
+import { DEFAULT_TIMEZONE, NO_HEADLINES } from "../patterns";
 import { Zone } from "../patterns/time";
 import { store } from "../store";
 import { patternReportFor } from "./patterns";
@@ -294,7 +294,11 @@ export function buildChatContext(input: ChatContextInput): string {
   if (remembered) parts.push(remembered);
 
   const headlines = (label: string, r: PatternReport | null) =>
-    r?.headlines.length ? [`${label}:\n${r.headlines.map((h) => `- ${h}`).join("\n")}`] : [];
+    !r
+      ? []
+      : r.headlines.length
+        ? [`${label}:\n${r.headlines.map((h) => `- ${h}`).join("\n")}`]
+        : [`${label}: ${NO_HEADLINES}.`];
   parts.push(
     ...headlines("Patterns today", input.today),
     ...headlines("Patterns over the last 7 days", input.week),

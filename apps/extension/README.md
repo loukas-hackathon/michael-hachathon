@@ -116,7 +116,7 @@ There are no content scripts: the extension never reads or changes a page.
 | `background.js`                      | service worker: listeners, the tick, sending     |
 | `lib/stretch.js`                     | the stretch rules, pure functions                |
 | `lib/hosts.js`                       | host parsing and exclusions                      |
-| `lib/categories.js`                  | host to category map                             |
+| `lib/categories.js`                  | host to category map, generated (see below)      |
 | `lib/api.js`                         | the API call, permissions, error wording         |
 | `lib/store.js`, `lib/format.js`      | storage shapes, tally, copy                      |
 | `popup.*`, `options.*`, `styles.css` | the popup and the settings page                  |
@@ -124,14 +124,17 @@ There are no content scripts: the extension never reads or changes a page.
 | `tools/make-icons.mjs`               | redraws `icons/*.png` after a colour change      |
 
 The folder has no `package.json` on purpose, so pnpm does not treat it as a workspace package.
-`pnpm check` still lints it with Biome.
+`pnpm check` still lints it with Biome, and `pnpm test` runs its tests.
+
+`lib/categories.js` is generated from the one categoriser in `packages/shared/src/categories.ts`
+(`pnpm categories:extension`), so a host gets the same category here, in the collector and in the
+API. A test in `apps/api` fails when the copy falls behind the shared lists.
 
 ## Later
 
-- **One category list and one exclusion list.** `lib/categories.js` and `lib/hosts.js` here do the
-  same job as `apps/collector/src/site-categories.ts` and `site-privacy.ts`, in two languages,
-  because this folder has no build step. The category names and the host rule already match; the
-  lists themselves should become one (generated JavaScript, or a build step for the extension).
+- **One exclusion list.** `lib/hosts.js` here does the same job as
+  `apps/collector/src/site-privacy.ts`, in two languages. It could be generated the way
+  `lib/categories.js` is.
 - **One event per visit.** The history reader and the extension both describe the same visits. The
   timeline should prefer `origin: "extension"` where both exist.
 

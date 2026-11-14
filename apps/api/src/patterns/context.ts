@@ -57,6 +57,18 @@ export const RULES = {
   minActiveMsForRate: 30 * MINUTE,
   minActiveMs: HOUR,
   evidenceCap: 20,
+  // The bar a finding clears before it leads the report (headlines.ts). Below it the detector
+  // still answers, but "0 minutes lost" or a median of six is not something to lead with.
+  headline: {
+    // Minutes: drift, minutes lost, recovery per day, an offender's total, AI tools open.
+    minMinutes: 5,
+    minDisruptions: 5,
+    minFocusMinutes: 60,
+    minRecoverySample: 10,
+    minSessions: 20,
+    minAiSessions: 3,
+    minScreenMinutes: 60,
+  },
 } as const;
 
 export interface PatternOptions {

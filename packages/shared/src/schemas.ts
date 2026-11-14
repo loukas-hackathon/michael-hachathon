@@ -1622,6 +1622,8 @@ export const PatternReport = z.object({
   inputs: z.object({
     mac_app_usage: z.number().int().nonnegative(),
     iphone_app_usage: z.number().int().nonnegative(),
+    // ActivityWatch and Shortcuts intervals left out because Apple's own log covered the same hour.
+    app_usage_superseded: z.number().int().nonnegative(),
     web_visits: z.number().int().nonnegative(),
     // History visits left out because the extension covered the same window.
     web_visits_superseded: z.number().int().nonnegative(),
