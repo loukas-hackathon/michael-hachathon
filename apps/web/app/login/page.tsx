@@ -42,7 +42,7 @@ export default async function LoginPage({
             See the demo week
           </a>
           <p className="mt-6 text-balance text-center text-footnote text-label-2">
-            I work for you only. Your timeline is yours to see and delete.
+            Next, Google asks to share your calendar: that's how I see your week. I work for you only.
           </p>
         </div>
       </div>

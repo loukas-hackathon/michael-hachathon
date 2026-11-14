@@ -1,49 +1,143 @@
-import { getGoals, getProfile } from "@/lib/api";
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { ConnectionRow } from "@/components/you/connection-row";
+import { getGoalSuggestions, getGoals, getProfile } from "@/lib/api";
+import type { ConnectionId } from "@/lib/connections";
+import { type ConnectionStatus, getConnections } from "@/lib/connections-status";
 import { getFirstInsight, SAMPLE_INSIGHT } from "@/lib/first-insight";
-import { getGoogleCalendar } from "@/lib/integrations";
-import { type CalendarState, OnboardingFlow, type Resume, type Saved } from "./flow";
+import { getGoogleCalendar, googleConnectUrl } from "@/lib/integrations";
+import { FirstInsightCard } from "./first-insight";
+import { OnboardingFrame, primaryButton, Separator } from "./frame";
+import { GoalsStep } from "./goals-step";
 
 export const metadata = { title: "Getting started · Michael" };
 
 type Search = { step?: string; connected?: string; integration_error?: string; demo?: string };
 
-// The first talk with Michael, one question per screen. Today sends new users here (no goals yet,
-// never onboarded); it can be skipped, and You has "Redo setup", which starts from the saved
-// answers. Google Calendar's connect comes back to ?step=connect, the connect step, which then shows
-// the first number about the week from the calendar alone (docs/ux-audit.md, first minute).
-// ?demo=connected previews that state with sample numbers, marked as such.
+// Getting started, in two screens and under a minute (#270):
+//   0. Sign in (/login). A brand new account goes straight on to Google's calendar consent from
+//      here, so the calendar is in before the first screen: one tap on "Continue with Google".
+//   1. Goals: found in the calendar, ticked, hours filled in. One tap keeps them.
+//   2. The week in one number, and the other connections, each optional, one tap each.
+// Then Today. Nudges are asked later, when a buzz obviously helps (#207). You has "Redo setup".
+// ?demo=connected previews screen 2 with sample numbers, marked as such.
+
+export const GOALS_PATH = "/onboarding?step=goals";
+const CONNECT_PATH = "/onboarding?step=connect";
+const calendarHref = (back: string) => `/integrations/google/connect?return_to=${encodeURIComponent(back)}`;
+
+/** What screen 2 offers, in order of value. Nudges and Telegram wait for a moment that needs them. */
+const OFFER: ConnectionId[] = ["google-calendar", "apple-watch", "mac", "iphone", "travel", "claude"];
+
+/** Setup pages opened from here come back here (components/you/connection-page.tsx). */
+function fromOnboarding(row: ConnectionStatus): ConnectionStatus {
+  const tag = (href: string) =>
+    href.startsWith("/you/connections/") ? `${href}${href.includes("?") ? "&" : "?"}from=onboarding` : href;
+  const action =
+    row.action.kind === "link"
+      ? {
+          ...row.action,
+          href:
+            row.id === "google-calendar" && row.state === "none"
+              ? calendarHref(CONNECT_PATH)
+              : tag(row.action.href),
+        }
+      : row.action;
+  return { ...row, href: tag(row.href), action };
+}
+
 export default async function OnboardingPage({ searchParams }: { searchParams: Promise<Search> }) {
   const sp = await searchParams;
   const preview = sp.demo === "connected";
-  const [goals, profile, integration] = await Promise.all([
+  const step = preview || sp.step === "connect" || sp.step === "done" ? "connect" : "goals";
+  const failed = sp.integration_error === "google_calendar";
+
+  const [integration, goals, profile] = await Promise.all([
+    preview ? null : getGoogleCalendar(),
     getGoals().catch(() => []),
     getProfile().catch(() => null),
-    preview ? null : getGoogleCalendar(),
   ]);
-  const saved: Saved = {
-    goals: goals
-      .filter((g) => g.active && g.weekly_budget_minutes !== null)
-      .map((g) => ({ category: g.category, weekly_minutes: g.weekly_budget_minutes ?? 0 })),
-    profile,
-  };
+  const calendarOn = preview || integration?.status === "connected" || sp.connected === "google_calendar";
 
-  const connected = preview || integration?.status === "connected" || sp.connected === "google_calendar";
-  const calendar: CalendarState = {
-    connected,
-    insight: preview ? SAMPLE_INSIGHT : connected ? await getFirstInsight() : null,
-  };
+  // A brand new account with no calendar yet: straight to Google's consent, which comes back to the
+  // goals screen with four weeks read. Only when Google is set up here (the URL resolves), never
+  // after a refusal, and never on Redo setup. The login page says the calendar comes next.
+  if (
+    step === "goals" &&
+    !sp.step &&
+    !calendarOn &&
+    !failed &&
+    goals.length === 0 &&
+    !profile?.onboarded_at
+  ) {
+    const url = await googleConnectUrl(GOALS_PATH).catch(() => null);
+    if (url) redirect(url);
+  }
 
-  const back = sp.step === "connect" || sp.step === "done" ? sp.step : undefined;
-  const resume: Resume | undefined = back
-    ? {
-        step: back,
-        calendar:
-          sp.connected === "google_calendar"
-            ? "connected"
-            : sp.integration_error === "google_calendar"
-              ? "failed"
-              : null,
+  if (step === "goals") {
+    const suggestions = calendarOn ? await getGoalSuggestions() : [];
+    return (
+      <GoalsStep
+        suggestions={suggestions}
+        saved={goals
+          .filter((g) => g.active)
+          .map((g) => ({ title: g.title, category: g.category, weekly_minutes: g.weekly_budget_minutes }))}
+        calendar={calendarOn ? "on" : failed ? "failed" : "off"}
+        calendarHref={calendarHref(GOALS_PATH)}
+      />
+    );
+  }
+
+  const [insight, view] = await Promise.all([
+    preview ? SAMPLE_INSIGHT : calendarOn ? getFirstInsight() : null,
+    getConnections().catch(() => null),
+  ]);
+  const rows = OFFER.flatMap((id) => {
+    const row = view?.rows.find((r) => r.id === id);
+    return row ? [fromOnboarding(row)] : [];
+  });
+
+  return (
+    <OnboardingFrame
+      step={1}
+      title={insight ? "Here's your week." : "Now, your days."}
+      line={
+        insight
+          ? undefined
+          : failed
+            ? "Google Calendar did not connect. Try once more below."
+            : "Each one is optional. One tap, then open it on that device."
       }
-    : undefined;
-  return <OnboardingFlow saved={saved} resume={resume} calendar={calendar} />;
+      left={
+        <Link
+          href={GOALS_PATH}
+          className="press -ml-2 flex h-11 items-center px-2 text-body font-semibold text-tint-text"
+        >
+          Goals
+        </Link>
+      }
+      footer={
+        <Link href="/" className={primaryButton}>
+          Go to Today
+        </Link>
+      }
+    >
+      {insight ? <FirstInsightCard insight={insight} /> : null}
+      {rows.length > 0 ? (
+        <section aria-label="Connections" className={insight ? "mt-8" : ""}>
+          {insight ? (
+            <h2 className="mb-2 text-subhead text-label-2">Add what really happened. Each is optional.</h2>
+          ) : null}
+          <div className="overflow-hidden rounded-group bg-fill">
+            {rows.map((row, i) => (
+              <div key={row.id} className="relative">
+                {i > 0 ? <Separator inset={52} /> : null}
+                <ConnectionRow row={row} />
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+    </OnboardingFrame>
+  );
 }

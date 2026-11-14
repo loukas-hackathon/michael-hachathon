@@ -6,10 +6,11 @@ import { getConnection } from "@/lib/connections-status";
 
 export const metadata = { title: "Claude · Michael" };
 
-export default async function ClaudePage() {
+export default async function ClaudePage({ searchParams }: { searchParams: Promise<{ from?: string }> }) {
+  const { from } = await searchParams;
   const { row } = await getConnection("claude");
   return (
-    <ConnectionPage row={row}>
+    <ConnectionPage row={row} from={from}>
       <ConnectClaude url={MCP_URL} />
       <SetupSection title="Who asked about you">
         <Link

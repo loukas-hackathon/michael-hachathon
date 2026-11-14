@@ -6,11 +6,16 @@ import { getConnection } from "@/lib/connections-status";
 
 export const metadata = { title: "Google Calendar · Michael" };
 
-export default async function GoogleCalendarPage() {
+export default async function GoogleCalendarPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ from?: string }>;
+}) {
+  const { from } = await searchParams;
   const { row } = await getConnection("google-calendar");
   const c = connection("google-calendar");
   return (
-    <ConnectionPage row={row}>
+    <ConnectionPage row={row} from={from}>
       <SetupSection
         title="Your calendar"
         note="One tap, then pick your Google account. I read your plans and only ever move blocks you made alone. Never a meeting with other people."
