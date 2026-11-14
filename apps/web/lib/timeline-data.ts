@@ -1,20 +1,24 @@
 import "server-only";
 import { type Event, EventType, type Goal, type TimelineResponse } from "@michael/shared";
 import { get, usingMocks } from "./api";
-import { athensDay, dayBounds, isLocalDay, weekOf } from "./athens";
-import { DATES_WITH_DATA, DEFAULT_DATE, getTimelineDay, longestFrom, type Patterns } from "./days";
+import { addDays, athensDay, dayBounds, isLocalDay, weekOf } from "./athens";
+import { DATES_WITH_DATA, getTimelineDay, longestFrom, type Patterns } from "./days";
 import { sleepGoalMinutes } from "./health";
+import { getGoogleCalendar } from "./integrations";
 import { buildTimeline, type TimelineDay } from "./timeline";
 
 // Loads the Timeline screen for one Athens day: the day itself from GET /v1/timeline, the longest
 // unbroken stretch from GET /v1/patterns, and which days of that week have anything recorded.
 // One function, so a refresh (polling, a pull down) can call it again with the same arguments.
+// Without ?day= it opens on today for every user, the sample week included.
 //
 // The bundled fixtures (lib/sample) only appear with ?demo=sample, or while USE_MOCKS is on.
 // TODO(first-run): when mocks become opt in through one flag module, swap usingMocks() for it.
 
 export type TimelineScreen = {
   date: string;
+  /** Today in Athens: the screen opens on it, and the week strip marks it. */
+  today: string;
   /** "live" is the user's own data; "sample" is the bundled fixtures. */
   source: "live" | "sample";
   /** Null when nothing was recorded on the day. */
@@ -22,8 +26,13 @@ export type TimelineScreen = {
   longestUninterrupted: number | null;
   /** Days of the shown week that have anything recorded (planned blocks included). */
   available: string[];
-  /** The most recent day with data up to today, for the empty state's way out. */
+  /** The most recent day with data before the shown day (up to today), for the empty state. */
   latest: string | null;
+  /**
+   * Whether Google Calendar is connected. Read only when the day is empty, where it picks the one
+   * action. Null when unknown.
+   */
+  calendarConnected: boolean | null;
   /** Minutes a night the Sleep goal asks for, to set the watch's nights against; null without one. */
   sleepGoal: number | null;
 };
@@ -40,6 +49,11 @@ export function daysWithEvents(events: Pick<Event, "start_at">[]): Set<string> {
   return new Set(events.map((e) => athensDay(new Date(e.start_at))));
 }
 
+const lightScan = (from: number, to: number) =>
+  get<TimelineResponse>(
+    `/v1/timeline?${new URLSearchParams({ from: iso(from), to: iso(to), type: LIGHT_TYPES.join(",") })}`,
+  ).catch(() => ({ events: [] as Event[] }));
+
 export async function loadTimeline(asked?: string, demo?: string): Promise<TimelineScreen> {
   if (demo === "sample" || usingMocks()) return loadSample(asked);
 
@@ -55,9 +69,7 @@ export async function loadTimeline(asked?: string, demo?: string): Promise<Timel
     get<Patterns>(`/v1/patterns?${new URLSearchParams({ from: iso(start), to: iso(end) })}`).catch(
       () => ({}) as Patterns,
     ),
-    get<TimelineResponse>(
-      `/v1/timeline?${new URLSearchParams({ from: iso(weekStart), to: iso(weekEnd), type: LIGHT_TYPES.join(",") })}`,
-    ).catch(() => ({ events: [] as Event[] })),
+    lightScan(weekStart, weekEnd),
     get<{ goals: Goal[] }>("/v1/goals").catch(() => ({ goals: [] as Goal[] })),
   ]);
 
@@ -65,29 +77,46 @@ export async function loadTimeline(asked?: string, demo?: string): Promise<Timel
   const seen = daysWithEvents(light.events);
   if (events.length > 0) seen.add(date);
   const available = week.filter((d) => seen.has(d));
-  const latest = [...available].reverse().find((d) => d <= today && d !== date) ?? null;
+  let latest = [...available].reverse().find((d) => d < date && d <= today) ?? null;
+
+  let calendarConnected: boolean | null = null;
+  if (events.length === 0) {
+    // An empty day needs a way out: the latest day before it (last week too, for a Monday) and
+    // whether connecting the calendar is the one thing to do.
+    const [prior, calendar] = await Promise.all([
+      latest ? null : lightScan(dayBounds(addDays(week[0] as string, -7)).start, weekStart),
+      getGoogleCalendar(),
+    ]);
+    if (prior) latest = [...daysWithEvents(prior.events)].sort().at(-1) ?? null;
+    calendarConnected = calendar ? calendar.status === "connected" : null;
+  }
 
   return {
     date,
+    today,
     source: "live",
     day: events.length > 0 ? buildTimeline(date, events, start, end, Date.now()) : null,
     longestUninterrupted: longestFrom(patterns),
     available,
     latest,
+    calendarConnected,
     sleepGoal: sleepGoalMinutes(goals.goals),
   };
 }
 
 function loadSample(asked?: string): TimelineScreen {
-  const date = isLocalDay(asked) ? asked : DEFAULT_DATE;
-  const result = getTimelineDay(date);
+  const today = athensDay();
+  const date = isLocalDay(asked) ? asked : today;
+  const result = getTimelineDay(date, date === today ? Date.now() : undefined);
   return {
     date,
+    today,
     source: "sample",
     day: result?.day ?? null,
     longestUninterrupted: result?.longestUninterrupted ?? null,
     available: DATES_WITH_DATA,
-    latest: DEFAULT_DATE,
+    latest: [...DATES_WITH_DATA].reverse().find((d) => d < date && d <= today) ?? null,
+    calendarConnected: null,
     sleepGoal: null,
   };
 }

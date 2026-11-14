@@ -1565,6 +1565,48 @@ reads, `/mcp` and every credential route, returns `403`. One key per device
 (Mac collector, Health Auto Export). Only the sha256 is stored. The web app makes them under
 You > Connections (Mac, Apple Watch). Claude connects with MCP OAuth instead (no key).
 
+### One tap setup (setup tokens, #120)
+
+A setup token (`ms_...`) is short lived (30 minutes), single use and can do one thing: be swapped
+for a device key for one connection. It is what a QR code, the Mac install line or a downloaded
+`Michael.command` carries, so a long lived key never sits in a URL, a shell history or a Downloads
+folder. Only the sha256 is stored (`setup_tokens`).
+
+```ts
+type SetupConnection = "mac" | "apple-watch" | "iphone";
+type SetupTokenCreate = { connection: SetupConnection };
+type SetupTokenCreated = {
+  token: string; // "ms_...", shown once
+  connection: SetupConnection;
+  expires_at: string;
+  setup_url: string; // `${web}/setup/${connection}#${token}`: the token rides in the fragment
+  install_command: string | null; // mac only: `curl -fsSL ${api}/v1/setup/mac.sh | bash -s -- ms_...`
+};
+type SetupTokenExchange = { token: string };
+type SetupTokenExchanged = { connection: SetupConnection; secret: string /* "mk_..." */; api_url: string };
+```
+
+| Method | Path                        | Auth           | Body                 | Response                                       | Status |
+| ------ | --------------------------- | -------------- | -------------------- | ---------------------------------------------- | ------ |
+| POST   | `/v1/setup-tokens`          | signed in only | `SetupTokenCreate`   | `201 SetupTokenCreated`; `403` for keys        | live   |
+| POST   | `/v1/setup-tokens/exchange` | none           | `SetupTokenExchange` | `200 SetupTokenExchanged`, `401` used/expired  | live   |
+| GET    | `/v1/setup/mac.sh`          | none           |                      | `200` the Mac installer (`text/x-shellscript`) | live   |
+
+- The exchange marks the token used in the same statement that reads it, so it works once even
+  when two devices race. Unknown, used and expired tokens get the same `401`. The new key is named
+  for the connection (`Mac collector`, `Health Auto Export`, `iPhone Shortcuts`) and is ingest only,
+  like any device key.
+- `GET /v1/setup/mac.sh` holds no secret; the token comes in as its argument. Without admin rights
+  it uses the Mac's Node.js 22.13+ or downloads the official build into `~/.michael/node` (SHA-256
+  checked), downloads `apps/collector` and `packages/shared` from the public repo
+  (`COLLECTOR_REPO`, `COLLECTOR_REF`), swaps the token, writes the key to `~/.michael/michael.env`
+  (mode 600), adds `~/.michael/Michael.command` and a login item, points to Full Disk Access when
+  Terminal lacks it, and starts the collector.
+- The web app uses the same endpoints for every device. On the device itself (iPhone) it mints and
+  swaps at once and opens the app with the key: Health Auto Export's `com.HealthExport://automation`
+  deep link (URL, `Authorization` header, metrics, cadence all filled), or the Michael shortcut via
+  `shortcuts://run-shortcut`. From a computer it shows a QR code of `setup_url`.
+
 ### Profile
 
 The onboarding answers: quiet hours, the usual week and the user's weak spots. Goals themselves go
@@ -1759,6 +1801,8 @@ type AgentQuery = {
   summary: string;
   allowed: boolean;
   created_at: string;
+  recommendation_id?: string | null; // a change the agent made, carried by this recommendation
+  undo_until?: string | null; // until when POST /v1/recommendations/:id/undo still works
 };
 ```
 
@@ -1786,6 +1830,10 @@ type AgentQuery = {
   list needs `timeline` if it is read only, else `write_events` (`apps/api/src/mcp-guard.ts`).
 - `queries`: `from` defaults to local midnight today (Europe/Athens), `to` to now; newest first,
   at most 500.
+- A change an agent made (`execute_recommendation`, `create_focus_block`, `block_mac_app`) carries
+  `recommendation_id`. `undo_until` is set while that change can still be undone (the
+  recommendation is `done` and its block has not started; a mute: has not ended), else `null`. The
+  Agents screen shows Undo next to the line and calls `POST /v1/recommendations/:id/undo`.
 
 ### Nudges
 

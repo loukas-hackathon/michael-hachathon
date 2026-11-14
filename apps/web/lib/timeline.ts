@@ -309,7 +309,11 @@ export function buildTimeline(
     ...health.workouts.map((w) => [Math.max(w.start, dayStart), Math.min(w.end, dayEnd)] as const),
     ...phone.map((p) => [p.start, p.end] as const),
     ...plans.map((p) => [p.start, p.end] as const),
-  ].sort((a, b) => a[0] - b[0]);
+  ];
+  // The hour around now always stays open, so the now pill never sits on a collapsed row.
+  const nowIn = now != null && now > dayStart && now < dayEnd ? now : undefined;
+  if (nowIn != null) busy.push([nowIn - 30 * MIN, nowIn + 30 * MIN] as const);
+  busy.sort((a, b) => a[0] - b[0]);
   const segments: Segment[] = [];
   const floorHour = (x: number) => x - ((((x - dayStart) % (60 * MIN)) + 60 * MIN) % (60 * MIN));
   const ceilHour = (x: number) => {
@@ -365,7 +369,7 @@ export function buildTimeline(
   return {
     date,
     drives,
-    now: now != null && now > dayStart && now < dayEnd ? now : undefined,
+    now: nowIn,
     dayStart,
     dayEnd,
     blocks,
@@ -394,4 +398,39 @@ export function makeY(segments: Segment[], perHour: number, quiet: number) {
     }
     return y;
   };
+}
+
+/** The plan a block mostly belongs to: the calendar block covering at least half of it. */
+export function planFor(b: Block, plans: Plan[]): Plan | undefined {
+  let best: Plan | undefined;
+  let bestOverlap = 0;
+  for (const p of plans) {
+    const o = Math.min(p.end, b.end) - Math.max(p.start, b.start);
+    if (o > bestOverlap) {
+      bestOverlap = o;
+      best = p;
+    }
+  }
+  return best && bestOverlap >= (b.end - b.start) / 2 ? best : undefined;
+}
+
+/**
+ * What a block was for, then which apps: the calendar block it sits in names it ("Deep work"), the
+ * apps go in the subline. Lost blocks and blocks outside any plan are named by their apps.
+ */
+export function blockTitle(b: Block, plans: Plan[]): { title: string; apps?: string } {
+  if (b.plan) return { title: b.plan.title };
+  const plan = b.kind === "lost" ? undefined : planFor(b, plans);
+  if (plan) return { title: plan.title, apps: b.label || undefined };
+  if (b.label) return { title: b.label };
+  return { title: b.kind === "work" ? "Work apps" : b.kind === "lost" ? "Lost" : "Other apps" };
+}
+
+/** Minutes a block lost to interruptions: the whole block when it was lost, else its cuts and stretches. */
+export function lostMinutesOf(b: Block): number {
+  if (b.kind === "lost") return b.minutes;
+  return (
+    b.cuts.reduce((n, c) => n + c.minutes, 0) +
+    (b.lostStretches ?? []).reduce((n, l) => n + (l.end - l.start) / MIN, 0)
+  );
 }

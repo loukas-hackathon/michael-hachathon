@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { IPhoneShortcutSetup } from "@/components/setup/iphone-shortcut-setup";
 import { ConnectionPage, SetupSection } from "@/components/you/connection-page";
 import { KeySetup } from "@/components/you/key-setup";
 import { SourcePrivacy } from "@/components/you/source-privacy";
@@ -31,14 +32,19 @@ export default async function IPhonePage() {
         title="Live, with Shortcuts"
         note="Optional. One automation per app you want me to watch, such as Instagram or YouTube."
       >
-        <KeySetup
-          keyName="iPhone Shortcuts"
-          copyAs={{ kind: "webhook", path: "ios-shortcuts" }}
-          steps={[
-            "In Shortcuts, tap Automation, +, App. Choose the apps, tick Is Opened, Run Immediately.",
-            "Add Get Contents of URL, paste it as the URL. Method POST, Request Body JSON.",
-            "Add two fields: app with Shortcut Input, and action with open. Repeat with Is Closed and close.",
-          ]}
+        <IPhoneShortcutSetup
+          shortcutUrl={process.env.MICHAEL_SHORTCUT_URL || null}
+          fallback={
+            <KeySetup
+              keyName="iPhone Shortcuts"
+              copyAs={{ kind: "webhook", path: "ios-shortcuts" }}
+              steps={[
+                "In Shortcuts, tap Automation, +, App. Choose the apps, tick Is Opened, Run Immediately.",
+                "Add Get Contents of URL, paste it as the URL. Method POST, Request Body JSON.",
+                "Add two fields: app with Shortcut Input, and action with open. Repeat with Is Closed and close.",
+              ]}
+            />
+          }
         />
       </SetupSection>
       <SourcePrivacy sources={c.sources} />

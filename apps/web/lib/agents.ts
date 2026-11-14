@@ -13,6 +13,38 @@ export const SCOPE_LABEL: Record<AgentScope, string> = {
   write_events: "Adding to your day",
 };
 
+/** Each scope in plain words, as a switch on the Agents screen: what it lets the agent do. */
+export const SCOPE_COPY: Record<AgentScope, { title: string; detail: string }> = {
+  timeline: { title: "Read your day", detail: "Calendar, watch and screen time as one timeline." },
+  goals: { title: "Read and keep your goals", detail: "Goals, weekly budgets and your house rules." },
+  recommendations: { title: "See my advice", detail: "What I suggest and why. It can accept or dismiss it." },
+  score: { title: "See your score", detail: "Goal time spent so far, and the evening review." },
+  write_events: {
+    title: "Book time for you",
+    detail: "Your own blocks only, never events with others. You can undo.",
+  },
+};
+
+export const SCOPE_ORDER: AgentScope[] = ["timeline", "goals", "score", "recommendations", "write_events"];
+
+// Tools that change something for the user. Everything else only reads.
+const WRITE_TOOLS = new Set([
+  "add_event",
+  "add_goal",
+  "update_goal",
+  "update_recommendation",
+  "execute_recommendation",
+  "undo_recommendation",
+  "create_focus_block",
+  "block_mac_app",
+  "plan_travel",
+]);
+
+export const isWrite = (q: AgentQuery) => WRITE_TOOLS.has(q.tool);
+
+/** Is this the Claude connector? Reconnecting keeps one record named after the client. */
+export const isClaude = (a: AgentClient) => /claude/i.test(a.name);
+
 const at = (hhmm: string) => `2026-11-11T${hhmm}:00+02:00`;
 const CLAUDE = "40000000-0000-4000-8000-000000000001";
 const CURSOR = "40000000-0000-4000-8000-000000000002";
@@ -32,24 +64,42 @@ const sampleAgents: AgentClient[] = [
     status: "approved",
     scopes: ["timeline", "goals", "score"],
     created_at: "2026-11-09T10:12:00+02:00",
-    last_seen_at: at("14:02"),
+    last_seen_at: at("14:12"),
   },
 ];
 
 const sampleQueries: AgentQuery[] = [
   {
+    id: "41000000-0000-4000-8000-000000000005",
+    agent_id: CLAUDE,
+    tool: "get_score",
+    summary: "Read your score",
+    allowed: true,
+    created_at: at("14:12"),
+  },
+  {
+    id: "41000000-0000-4000-8000-000000000004",
+    agent_id: CLAUDE,
+    tool: "create_focus_block",
+    summary: 'Booked "Sales focus" for Wed 15:00',
+    allowed: true,
+    created_at: at("14:04"),
+    recommendation_id: "42000000-0000-4000-8000-000000000001",
+    undo_until: at("15:00"),
+  },
+  {
     id: "41000000-0000-4000-8000-000000000003",
     agent_id: CLAUDE,
     tool: "get_timeline",
-    summary: "Is Manolis free and fit for a hard 07:00 run tomorrow?",
+    summary: "Read your day from Wed 09:00 to Wed 18:00",
     allowed: true,
     created_at: at("14:02"),
   },
   {
     id: "41000000-0000-4000-8000-000000000002",
     agent_id: CLAUDE,
-    tool: "get_timeline",
-    summary: "Free between 15:00 and 17:00?",
+    tool: "get_goals",
+    summary: "Read your goals",
     allowed: true,
     created_at: at("09:15"),
   },
@@ -57,7 +107,7 @@ const sampleQueries: AgentQuery[] = [
     id: "41000000-0000-4000-8000-000000000001",
     agent_id: CURSOR,
     tool: "get_timeline",
-    summary: "When is the next deep work block?",
+    summary: "Read your day",
     allowed: false,
     created_at: at("08:40"),
   },
@@ -79,11 +129,21 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 
 /**
  * The user's agents and today's questions (GET /v1/agents, /v1/agents/queries).
- * Sample data with USE_MOCKS; `variant` previews states (?demo=sample|empty|error).
+ * Sample data with USE_MOCKS; `variant` previews states
+ * (?demo=sample|empty|connected|pending|error).
  */
 export async function getAgents(variant?: string): Promise<AgentsView> {
   if (variant === "error") throw new Error("Preview of the error state");
   if (variant === "empty") return { sample: true, agents: [], queries: [] };
+  if (variant === "connected" || variant === "pending") {
+    // connected: Claude only; pending: Cursor waiting and Claude not connected yet.
+    const keep = variant === "connected" ? CLAUDE : CURSOR;
+    return {
+      sample: true,
+      agents: sampleAgents.filter((a) => a.id === keep),
+      queries: sampleQueries.filter((q) => q.agent_id === keep),
+    };
+  }
   if (USE_MOCKS || variant === "sample")
     return { sample: true, agents: sampleAgents, queries: sampleQueries };
   const [{ agents }, { queries }] = await Promise.all([
@@ -102,14 +162,43 @@ export async function patchAgent(id: string, patch: AgentClientUpdate): Promise<
   });
 }
 
-/** "Claude, twice" / "Claude, twice, and Cursor, once". Counts only questions that were answered. */
-export function whoAsked(view: AgentsView) {
-  const counts = new Map<string, number>();
+/** One agent's day with Michael: its questions, newest first, and how many changed something. */
+export type AgentDay = { agent: AgentClient; queries: AgentQuery[]; changes: number };
+
+/** Today's log grouped by agent, the agent that asked last first. */
+export function groupByAgent(view: AgentsView): AgentDay[] {
+  const days = new Map<string, AgentDay>();
   for (const q of view.queries) {
-    if (!q.allowed) continue;
-    const name = view.agents.find((a) => a.id === q.agent_id)?.name ?? "An agent";
-    counts.set(name, (counts.get(name) ?? 0) + 1);
+    const agent = view.agents.find((a) => a.id === q.agent_id) ?? {
+      id: q.agent_id,
+      name: "An agent",
+      status: "revoked" as const,
+      scopes: [],
+      created_at: q.created_at,
+      last_seen_at: q.created_at,
+    };
+    const day = days.get(agent.id) ?? { agent, queries: [], changes: 0 };
+    day.queries.push(q);
+    if (q.allowed && isWrite(q)) day.changes += 1;
+    days.set(agent.id, day);
   }
-  const word = (n: number) => (n === 1 ? "once" : n === 2 ? "twice" : `${n} times`);
-  return [...counts.entries()].map(([name, n]) => `${name}, ${word(n)}`);
+  return [...days.values()];
+}
+
+const times = (n: number) => (n === 1 ? "once" : n === 2 ? "twice" : `${n} times`);
+
+/** "4 questions, 1 change" for an agent's group header. */
+export function countLine(day: AgentDay) {
+  const asked = day.queries.length;
+  const parts = [`${asked} ${asked === 1 ? "question" : "questions"}`];
+  if (day.changes) parts.push(`${day.changes} ${day.changes === 1 ? "change" : "changes"}`);
+  return parts.join(", ");
+}
+
+/** The headline: who asked, how often, and how many changes, as numbers for the sentence. */
+export function headline(view: AgentsView) {
+  const days = groupByAgent(view);
+  const changes = days.reduce((n, d) => n + d.changes, 0);
+  const asked = days.map((d) => ({ name: d.agent.name, times: times(d.queries.length) }));
+  return { asked, changes };
 }
