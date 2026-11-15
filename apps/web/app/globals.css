@@ -303,8 +303,25 @@ body::before {
   padding-right: max(16px, env(safe-area-inset-right));
 }
 @media (min-width: 1024px) {
+  /* Laptop: a reading column by default; dashboards opt into the wide grid (.screen-wide). */
   .screen {
+    max-width: 760px;
+    margin-inline: auto;
+    padding-top: 8px;
     padding-bottom: 64px;
+    padding-left: 40px;
+    padding-right: 40px;
+  }
+  .screen.screen-mid {
+    max-width: 960px;
+  }
+  .screen.screen-wide {
+    max-width: 1240px;
+  }
+  /* Full screen flows without .screen (onboarding) keep the column they were designed in. */
+  .m-content > main:not(.screen):not(.fixed):not(.stage) {
+    max-width: 720px;
+    margin-inline: auto;
   }
 }
 
@@ -783,16 +800,87 @@ body::before {
     transition: none;
   }
 }
+/*
+ * Laptop: a sheet is a centred dialog that settles in from 0.97 (as macOS sheets and alerts do),
+ * and a panel sheet (the timeline block's detail) slides in from the right edge.
+ */
 @media (min-width: 1024px) {
   .m-sheet {
-    inset: auto 0 auto 0;
-    top: 50%;
+    inset: 0;
+    margin: auto;
+    max-width: 560px;
+    height: fit-content;
+    max-height: min(84dvh, 760px);
     border-radius: var(--radius-sheet);
-    transform: translateY(-50%);
+    box-shadow:
+      0 0 0 0.5px var(--m-separator),
+      0 18px 40px -16px rgb(0 0 0 / 0.35);
+    opacity: 1;
+    transform: none;
+    transition:
+      transform var(--m-dur-spring) var(--m-spring),
+      opacity var(--m-dur-ui) var(--m-ease-out),
+      overlay var(--m-dur-spring) allow-discrete,
+      display var(--m-dur-spring) allow-discrete;
+  }
+  .m-sheet:not([open]) {
+    opacity: 0;
+    transform: scale(0.97);
+    transition-duration: var(--m-dur-exit);
+  }
+  @starting-style {
+    .m-sheet[open] {
+      opacity: 0;
+      transform: scale(0.97);
+    }
+  }
+  .m-sheet > div {
+    max-height: inherit;
+  }
+  .m-sheet.m-sheet-panel {
+    inset: 0 0 0 auto;
+    margin: 0;
+    width: 420px;
+    max-width: calc(100vw - 280px);
+    height: 100dvh;
+    max-height: none;
+    border-radius: 0;
+    box-shadow:
+      -0.5px 0 0 var(--m-separator),
+      -12px 0 30px -18px rgb(0 0 0 / 0.3);
+    transition:
+      transform var(--m-dur-sheet) var(--m-ease-sheet),
+      overlay var(--m-dur-sheet) allow-discrete,
+      display var(--m-dur-sheet) allow-discrete;
+  }
+  .m-sheet.m-sheet-panel:not([open]) {
+    opacity: 1;
+    transform: translateX(100%);
+    transition-duration: var(--m-dur-sheet-out);
+  }
+  @starting-style {
+    .m-sheet.m-sheet-panel[open] {
+      opacity: 1;
+      transform: translateX(100%);
+    }
+  }
+  .m-sheet.m-sheet-panel > div {
+    height: 100%;
+    max-height: none;
+  }
+  .m-sheet.m-sheet-panel::backdrop {
+    background: rgb(0 0 0 / 0.12);
+  }
+}
+@media (min-width: 1024px) and (prefers-reduced-motion: reduce) {
+  .m-sheet,
+  .m-sheet.m-sheet-panel {
+    transition: opacity var(--m-dur-ui) linear;
   }
   .m-sheet:not([open]),
-  .m-sheet[open] {
-    transform: translateY(-50%);
+  .m-sheet.m-sheet-panel:not([open]) {
+    transform: none;
+    opacity: 0;
   }
 }
 
@@ -895,5 +983,118 @@ body::before {
 @keyframes m-leave-fade {
   to {
     opacity: 0;
+  }
+}
+
+/* ---------- laptop and desktop: pointer, hover, focus (docs/design-guide.md, "Desktop") ---------- */
+
+@media (min-width: 1024px) {
+  /* The page never jumps sideways when one tab scrolls and the next does not. */
+  html {
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: var(--m-context) transparent;
+  }
+}
+
+/*
+ * A mouse or trackpad (never a finger): every control says it can be clicked. Hover is a quiet
+ * confirmation, never the only way to find something. Colour and opacity only, 200ms, no movement.
+ */
+@media (hover: hover) and (pointer: fine) {
+  a[href],
+  button:not(:disabled),
+  summary,
+  select,
+  label:has(> input[type="checkbox"]),
+  label:has(> input[type="radio"]),
+  [role="button"] {
+    cursor: pointer;
+  }
+  .press {
+    transition:
+      transform var(--m-dur-spring) var(--m-spring),
+      opacity var(--m-dur-ui) var(--m-ease-out),
+      background-color var(--m-dur-ui) var(--m-ease-out);
+  }
+  .press:hover:not(:disabled):not(:active) {
+    opacity: 0.78;
+  }
+  /* Controls without .press (timeline blocks, plain links, summaries): the same quiet dim. */
+  :is(button, a[href], summary):not(.press):not(.m-tab):not(:disabled) {
+    transition: opacity var(--m-dur-ui) var(--m-ease-out);
+  }
+  :is(button, a[href], summary):not(.press):not(.m-tab):not(:disabled):hover {
+    opacity: 0.85;
+  }
+  /* Rows and folds in an inset group light up instead of fading, as a macOS list does. */
+  .rounded-group > a.press:hover,
+  .rounded-group summary.press:hover,
+  .rounded-group > div > a.press:hover,
+  .rounded-group > li > a.press:hover,
+  .rounded-group > li > button.press:hover,
+  a.press.rounded-group:hover,
+  .m-hover-row:hover {
+    opacity: 1;
+    background-color: color-mix(in srgb, var(--m-label) 4%, transparent);
+  }
+  .m-tab {
+    transition:
+      opacity var(--m-dur-press) var(--m-ease-out),
+      background-color var(--m-dur-ui) var(--m-ease-out);
+  }
+  .m-tab .m-kbd-hint {
+    opacity: 0;
+    transition: opacity var(--m-dur-ui) var(--m-ease-out);
+  }
+  .m-tab:hover .m-kbd-hint,
+  .m-tab:focus-visible .m-kbd-hint {
+    opacity: 1;
+  }
+}
+@media (hover: hover) and (pointer: fine) and (min-width: 1024px) {
+  .m-tab:not([aria-current="page"]):hover {
+    background-color: color-mix(in srgb, var(--m-fill) 70%, transparent);
+  }
+}
+
+/* Keyboard focus: the ring sits outside rounded rows and capsules alike. */
+.m-tab:focus-visible {
+  outline-offset: -2px;
+}
+
+/* In the components layer so utilities (hidden, lg:inline-grid) still win. */
+@layer components {
+  /* The macOS style tooltip for icon only controls (components/desktop.tsx): after a short rest. */
+  .m-tip {
+    position: fixed;
+    z-index: 60;
+    pointer-events: none;
+    padding: 3px 8px;
+    border-radius: 6px;
+    background: var(--m-label);
+    color: var(--m-bg);
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 500;
+    white-space: nowrap;
+    animation: m-fade-in var(--m-dur-ui) var(--m-ease-out) both;
+  }
+
+  /* A keycap in the shortcuts list and the sidebar. */
+  .m-kbd {
+    display: inline-grid;
+    place-items: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 6px;
+    border-radius: 6px;
+    background: var(--m-fill);
+    box-shadow: inset 0 0 0 0.5px var(--m-separator);
+    color: var(--m-label-2);
+    font-size: 12px;
+    line-height: 1;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
   }
 }

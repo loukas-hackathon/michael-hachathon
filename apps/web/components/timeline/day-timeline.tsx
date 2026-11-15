@@ -1031,6 +1031,7 @@ export function DayTimeline({
       ) : null}
 
       <Sheet
+        panel
         open={picked != null}
         onClose={() => setPicked(null)}
         title={picked ? sheetTitle(picked) : ""}

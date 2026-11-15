@@ -62,7 +62,10 @@ export function ScreenHeader({
         <p className="text-footnote font-semibold text-label-2 tnum">{context}</p>
         <div className="flex items-center gap-3.5">
           {actions}
-          <MiButton />
+          {/* Laptop: the Mi sits at the foot of the sidebar instead (components/tab-bar.tsx). */}
+          <div className="contents lg:hidden">
+            <MiButton />
+          </div>
         </div>
       </div>
       <h1 className="text-large-title font-bold tracking-[0.01em]">{title}</h1>

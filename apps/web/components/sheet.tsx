@@ -6,12 +6,14 @@ import { useSmoothHeight } from "./motion";
 /**
  * A bottom sheet with one job (docs/design-guide.md): grabber, swipe down or tap outside to close,
  * the iOS curve on the way in. Built on <dialog> so focus, Escape and the backdrop come for free.
+ * On a laptop (>= 1024px) it is a centred dialog, or with `panel` a side panel on the right.
  */
 export function Sheet({
   open,
   onClose,
   title,
   trailing,
+  panel = false,
   closeLabel = "Cancel",
   children,
 }: {
@@ -19,6 +21,8 @@ export function Sheet({
   onClose: () => void;
   title: string;
   trailing?: ReactNode;
+  /** Laptop only: slide in from the right edge instead of a centred dialog (detail next to a list). */
+  panel?: boolean;
   /** "Done" for a sheet that only shows things (nothing to cancel), as iOS does. */
   closeLabel?: "Cancel" | "Done";
   children: ReactNode;
@@ -63,6 +67,8 @@ export function Sheet({
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.pointerType === "mouse" && e.button !== 0) return;
+    // A laptop dialog has no grabber: it closes with Cancel, Escape or a click outside.
+    if (matchMedia("(min-width: 1024px)").matches) return;
     drag.current = { y: e.clientY, t: performance.now(), dy: 0 };
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
   };
@@ -118,18 +124,18 @@ export function Sheet({
       onClick={(e) => {
         if (e.target === ref.current) onClose();
       }}
-      className="m-sheet"
+      className={panel ? "m-sheet m-sheet-panel" : "m-sheet"}
     >
       <div className="flex max-h-[92dvh] flex-col">
         <div
-          className="flex shrink-0 cursor-grab touch-none flex-col items-center pt-2 pb-1"
+          className="flex shrink-0 cursor-grab touch-none flex-col items-center pt-2 pb-1 lg:cursor-auto lg:pt-3"
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
         >
-          <span aria-hidden="true" className="h-[5px] w-9 rounded-full bg-context" />
-          <div className="mt-2 grid w-full grid-cols-[1fr_auto_1fr] items-center px-4">
+          <span aria-hidden="true" className="h-[5px] w-9 rounded-full bg-context lg:hidden" />
+          <div className="mt-2 grid lg:mt-0 w-full grid-cols-[1fr_auto_1fr] items-center px-4">
             <button
               type="button"
               onClick={onClose}
