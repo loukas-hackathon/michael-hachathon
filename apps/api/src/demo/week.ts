@@ -74,20 +74,23 @@ interface DayPlan {
   /** Share of replayed events left out, so repeated templates differ. */
   thin: number;
   /**
-   * Minutes the events before noon move by, instead of `shift`: the morning starts earlier and
-   * the afternoon stays where it was (the gap before noon is a quiet stretch).
+   * Minutes the morning's events (05:00 to noon) move by, instead of `shift`: the morning starts
+   * earlier and the afternoon stays where it was (the gap before noon is a quiet stretch).
    */
   morningShift?: number;
+  /** Minutes the events after midnight (before 05:00) move by, instead of `shift`: bed is earlier. */
+  nightShift?: number;
 }
 
 // By weekday (0 Sunday). 29 Oct is the heavy phone, broken focus day; 12 Nov the full workday;
 // 14 Nov the hackathon Saturday (no iPhone yet, so it borrows the light Sunday's phone).
 //
 // Monday's morning runs 80 minutes early: he is at the desk by 07:32, inside the 07:30 block
-// (CALENDAR below). A new week starts on Monday, and without a block that has already run the
+// (CALENDAR below), and the screens go dark an hour earlier the night before, so the night is as
+// long as the real one. A new week starts on Monday, and without a block that has already run the
 // score, the lost time and "what took it" are empty until 17:00 (#330, the pitch is on a Monday).
 const PLANS: Record<number, DayPlan> = {
-  1: { base: "2026-10-29", shift: 0, thin: 0, morningShift: -80 },
+  1: { base: "2026-10-29", shift: 0, thin: 0, morningShift: -80, nightShift: -60 },
   2: { base: "2026-11-12", shift: 0, thin: 0 },
   3: { base: "2026-11-12", shift: 35, thin: 0.12 },
   4: { base: "2026-10-29", shift: -25, thin: 0.1 },
@@ -109,7 +112,8 @@ const SESSION_TITLES = [
   "Debug the Railway deploy",
 ] as const;
 
-/** Noon, in seconds of the template day. */
+/** The morning of a template day, in seconds: from 05:00 (the night before it stays put) to noon. */
+const MORNING = 5 * 3600;
 const NOON = 12 * 3600;
 
 /** The replayed device lanes of one date. */
@@ -143,7 +147,8 @@ function replayLanes(date: string): EventRow[] {
     const [offset, duration, source, type, title, data] = row;
     // Thin out everything but Claude Code, whose prompts and sessions must stay consistent.
     if (plan.thin && source !== "claude_code" && rnd.next() < plan.thin) continue;
-    const shift = plan.morningShift !== undefined && offset < NOON ? plan.morningShift : plan.shift;
+    const part = offset < MORNING ? plan.nightShift : offset < NOON ? plan.morningShift : undefined;
+    const shift = part ?? plan.shift;
     const startOffset = offset + shift * 60;
     if (startOffset < 0 || startOffset >= 86_400) continue;
     const start = midnight + startOffset * 1000;
@@ -615,10 +620,22 @@ export function buildDemoWeek(now: Date = new Date()): DemoWeek {
   days.forEach((date, i) => {
     const night = nights[i] as (typeof nights)[number];
     const nextBed = nights[i + 1]?.bed ?? at(date, "24:30");
+    // The days are different real days stitched together, so a Mac "Screen off" replayed from one
+    // can run on into the next day's Mac use (Sunday's lasted to Monday 11:14, over the Monday
+    // morning block, and turned its proven time to unproven). It ends where that use begins.
+    const nextMacUse = Math.min(
+      ...(lanes.get(days[i + 1] ?? "") ?? [])
+        .filter((e) => e.source === "macos_usage" && e.type === "app_usage")
+        .map((e) => Date.parse(e.start_at)),
+    );
     for (const e of lanes.get(date) ?? []) {
       // A "Screen off" spanning the night is consistent with sleep; everything else is dropped.
       const screenOff = e.type === "screen" && e.data?.state === "off";
-      if (screenOff || !overlapsAny(e, quiet)) events.push(e);
+      if (!screenOff && overlapsAny(e, quiet)) continue;
+      const end = e.end_at ? Date.parse(e.end_at) : Number.NaN;
+      const runsOn =
+        screenOff && e.source === "macos_usage" && Date.parse(e.start_at) < nextMacUse && end > nextMacUse;
+      events.push(runsOn ? { ...e, end_at: iso(nextMacUse) } : e);
     }
     const train = trains.get(date) ?? null;
     if (train) events.push(train);

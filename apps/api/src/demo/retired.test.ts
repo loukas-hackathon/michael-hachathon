@@ -36,7 +36,13 @@ const assertClean = (recs: Recommendation[], goals: Goal[]) => {
     assert.notEqual(r.analysis_run_id, mockAnalysisRun.id, `${r.title} hangs off the sample brief`);
     assert.ok(![RUN_ID, SYNC_ID].includes(r.id as typeof RUN_ID), `${r.title} is not true on the demo week`);
   }
-  assert.deepEqual(goals.map((g) => g.title).sort(), demoGoals.map((g) => g.title).sort());
+  // The plan's goals are all there (the daily ritual adds its own outcomes goal beside them).
+  for (const g of demoGoals)
+    assert.ok(
+      goals.some((x) => x.id === g.id && x.title === g.title),
+      g.title,
+    );
+  for (const id of RETIRED_GOAL_IDS) assert.ok(!goals.some((g) => g.id === id), `goal ${id} is retired`);
   assert.ok(!goals.some((g) => /weight/i.test(g.title)));
 };
 

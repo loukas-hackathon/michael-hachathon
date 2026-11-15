@@ -2923,6 +2923,13 @@ A conversation's summary and commitments are part of its `external_id`, so a cha
 replaces the stored row on the next seed, and a waiting template draft whose event is gone is
 deleted and written again (sent, dismissed and model written drafts stay).
 
+Monday opens with an own block, "Meeting Preparation" 07:30 to 08:45 (The company), and Monday's
+morning lanes are replayed 80 minutes early, so he is at the desk inside it. A new week starts on
+Monday: without that block the score, the lost time and "what took it" were empty until 17:00.
+From 08:30 on a Monday `GET /v1/score` has a day and a week to read (about 70%, about 20 minutes
+lost, Instagram first). A Mac "Screen off" replayed from one day ends where the next day's Mac use
+begins.
+
 ## MCP server
 
 Streamable HTTP at `POST /mcp` (stateless, JSON responses). Auth: `Authorization: Bearer <token>`,
