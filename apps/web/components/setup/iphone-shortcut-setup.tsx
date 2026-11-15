@@ -211,10 +211,20 @@ export function IPhoneShortcutSetup({
             </p>
           ) : null}
         </Step>
+        {/* iOS hands an App automation's shortcut no app, so a Text action names it (#530). One
+            automation per app; without the name an open shows as "An app". */}
         <Step n={4}>
-          <p>
-            Then the app opens: in Shortcuts, tap Automation, then +, then App. Pick the apps to watch, tick
-            Is Opened and Run Immediately, then choose {SHORTCUT_NAME}. Apple lets only you add this.
+          <p>Then the app opens. Apple lets only you add this, one automation per app.</p>
+          <ol className="mt-2 flex list-decimal flex-col gap-1 pl-5">
+            <li>
+              In Shortcuts, tap Automation, then +, then App. Choose the app, tick Is Opened and Run
+              Immediately, then tap Next.
+            </li>
+            <li>Add the action Text and type the app&apos;s name, such as Instagram.</li>
+            <li>Add the action Run Shortcut and choose {SHORTCUT_NAME}.</li>
+          </ol>
+          <p className="mt-2 text-subhead text-label-2">
+            Without the Text step I still see each open, as An app.
           </p>
         </Step>
       </ol>

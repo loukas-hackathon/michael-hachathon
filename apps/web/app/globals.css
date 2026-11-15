@@ -454,6 +454,21 @@ body::before {
 .m-think-soft {
   animation: m-think-soft 2.4s ease-in-out infinite;
 }
+/* Focus now (#534): the Mi breathes at resting pace (about 12 breaths a minute) while you focus,
+ * and the ring drains linearly to empty at the session's end (duration set inline). */
+.m-focus-breath {
+  animation: m-think-soft 5s ease-in-out infinite;
+}
+@keyframes m-ring-drain {
+  to {
+    stroke-dashoffset: var(--m-ring-empty);
+  }
+}
+.m-ring-drain {
+  animation-name: m-ring-drain;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
 
 /* Michael's character (components/michael.tsx, #319): only the dot of the i moves. Units are the
  * mark's own (viewBox 346 x 209); the dot sits at about 318, 26 with a radius of 27. States change
@@ -535,6 +550,8 @@ body::before {
   .m-speak-breath,
   .m-think,
   .m-think-soft,
+  .m-focus-breath,
+  .m-ring-drain,
   /* [data-mi] matches the state rules above, or the idle blink outranks this and keeps going. */
   .m-mi[data-mi] .m-mi-dot {
     animation: none;

@@ -210,6 +210,10 @@ export function michaelShortcut({ api = DEFAULT_API, uuid = newUuid } = {}) {
       WFHTTPBodyType: "JSON",
       WFJSONValues: dictionary([
         ["app", text(OBJ, shortcutInput(itsName))],
+        // The input as text as well: a Text action before Run Shortcut in the automation (the app's
+        // name typed in) reads as itself here, whatever its Name says. The API takes `app` first,
+        // then `input` (production, 15 Nov: automations arrived with an empty `app`).
+        ["input", text(OBJ, shortcutInput(asText))],
         ["action", text("open")],
       ]),
       UUID: uuid(),

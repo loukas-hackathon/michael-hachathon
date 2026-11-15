@@ -84,7 +84,23 @@ What the shortcut does (`scripts/shortcut/build.mjs` is the source of truth):
    - **Get Contents of URL**
      `https://api-production-16521a26.up.railway.app/v1/webhooks/ios-shortcuts`, Method **POST**,
      Header `Authorization` = `Bearer ` followed by the file (as Text), Request Body **JSON**: `app` =
-     Shortcut Input (Name), `action` = `open`.
+     Shortcut Input (Name), `input` = Shortcut Input (as Text), `action` = `open`. The API takes
+     `app`, else `input`. `input` is in `build.mjs` since 15 Nov and reaches phones once
+     `pnpm shortcut` has signed it again on a Mac (the signed file in `apps/web/public` still sends
+     `app` only).
+
+**The automation names the app (production, 15 Nov).** On current iOS an App automation hands the
+shortcut no input: Loukas' "Opened Instagram" and "any of 2 apps" automations both arrived with an
+empty `app`. Such opens are stored as **An app**. To name it, one automation per app:
+
+1. Shortcuts, Automation, **+**, **App**: choose the app, tick **Is Opened** and **Run Immediately**,
+   **Next**.
+2. Add the action **Text** and type the app's name (`Instagram`).
+3. Add the action **Run Shortcut** and choose **Michael**. Shortcuts chains actions, so the Text is
+   its input; tap the arrow on Run Shortcut and check Input reads Text.
+
+The shortcut reads the Text as Text (`input`, above); the signed file from before reads its Name
+(`app`), which may come through empty for Text. A multi app automation cannot name the app.
 
 Opens alone are enough: each open is stored at once, opening the next app ends the one before, and
 an open with nothing after it for two hours keeps its provisional minute. A second **Is Closed**
@@ -151,6 +167,15 @@ Date, ISO 8601) is optional too; without it the time of arrival is used.
 ```
 
 `action` is `open` or `close` (`opened`, `closed`, any case also work); missing means `open`. `bundle_id` is optional.
+
+`app` empty or missing (also `Text` or `Shortcut Input`, the names of an empty variable): the first
+such call with a new device key is the hand run test, answered with `test: true` and never stored.
+Every later one is an App automation that passed the shortcut no input, which is what current iOS
+does (production, 15 Nov: "When any of 2 apps are opened, run Michael" sent an empty app every time).
+It is stored as an open titled `An app` with `data.app_unknown: true`, so Timeline shows it and
+Michael says "An app opened at 15:08; name the app in the automation to see which". Two unnamed
+opens less than a minute apart are one. Callers without a device key (the API key, curl) keep the
+old rule: no app is always a test. Any other text in `app` is the app's name as it is.
 An open is stored at once (one minute, `data.open: true`); its close, or opening another app, sets
 the real end on that same event. A close without an open standing in the last two hours is dropped. Full rules: `docs/api.md`, "Source webhooks". Sample sequence:
 `apps/api/src/ingest/fixtures/ios-shortcuts.json`.

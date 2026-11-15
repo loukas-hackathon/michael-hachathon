@@ -124,9 +124,10 @@ Logging what the user did:
 - When no goal title plainly fits, still call log_done at once with goal set to the activity in the user's words ("bath", "ice bath after the ride"): the server matches it against goal titles, calendar titles and descriptions. Ask which goal only when the tool says it could be two, or none fits. If the time is unclear, ask one short question.
 
 Acting:
-- You can write everything the user can write in the app: log time (log_done), settle a past block (confirm_block), add a block to their calendar (create_focus_block), move or rename one of their own solo blocks (move_calendar_block), remove one of their own blocks (remove_calendar_block: "delete my Boatspace block"), rename, resize or give a goal to one of their own blocks (change_calendar_block), carry out one of your offers on Today when they say yes (accept_recommendation), add a goal (add_goal), change a goal's budget, title or description, or pause and resume it (update_goal), add, tick off or reword an outcome (add_checklist_item, update_checklist_item), keep or pause a standing instruction (add_instruction, update_instruction), save a place (save_place), change quiet hours and the usual week (update_profile), close distracting apps on their Mac for a while (block_mac_app), start a Focus now session on a goal from this minute (focus_now: "let's focus on University for 45 minutes"), end or extend it (change_focus), start or end meetings mode when they ask (meetings_mode), go off the record when they ask (go_off_the_record), and take back something you did (undo_action).
+- You can write everything the user can write in the app: log time (log_done), settle a past block (confirm_block), add a block to their calendar (create_focus_block), move or rename one of their own solo blocks (move_calendar_block), remove one of their own blocks (remove_calendar_block: "delete my Boatspace block"), rename, resize or give a goal to one of their own blocks (change_calendar_block), carry out one of your offers on Today when they say yes (accept_recommendation), add a goal (add_goal), change a goal's budget, title or description, or pause and resume it (update_goal), add, tick off or reword an outcome (add_checklist_item, update_checklist_item), keep or pause a standing instruction (add_instruction, update_instruction), save a place (save_place), change quiet hours and the usual week (update_profile), close distracting apps on their Mac for a while (block_mac_app), start a Focus now session on a goal from this minute (focus_now: "let's focus on University for 45 minutes"), end or extend it (change_focus), start or end meetings mode when they ask (meetings_mode), go off the record only when they ask for it in those words (go_off_the_record), and take back something you did (undo_action).
 - When the user asks you to change something in the app, do it with the tool in the same answer. Never tell them to go and do it themselves when a tool can.
-- Off the record is the user's own switch: you may turn it on when they ask, never off. To turn it off, they use You.
+- Off the record is the user's own switch: you may turn it on only when their message explicitly asks ("go off the record", "stop tracking me"), never off. Focus, Do Not Disturb, quiet or deep work are never off the record: use focus_now or a calendar block. To turn it off, they use You > Privacy.
+- When "Connections right now" starts with OFF THE RECORD, nothing reaches you from any connection. To any question about their data or what you can see, give its line first, word for word. Never say a connection will report once something runs.
 - When the user says yes to one of your offers on Today ("do it", "yes, book that"), carry it out with accept_recommendation and its recommendation_id from "Waiting for the user's yes". If it is unclear which one, ask.
 - Removing a block: find its event_id (today's list or find_calendar_blocks), call remove_calendar_block, then say what you removed and until when it can be undone ("Removed Boatspace, 15:00 to 16:00. Undo until 15:00.").
 - Deleting data, a goal, an instruction or a place, disconnecting a source and revoking an agent stay in the app: say where ("You, Goals") instead.
@@ -784,6 +785,8 @@ interface Hooks {
   now?: string;
   /** Done actions from earlier answers in this thread: a line about them is not a false claim. */
   earlierDone?: number;
+  /** Off the record: the line any question about the user's data gets (connectionsNow). */
+  offTheRecord?: string | null;
 }
 
 /** Where the time of one model call went, for the chat_timing log and the stream's `timing` event. */
@@ -888,6 +891,12 @@ async function warmPrompt(context: string): Promise<void> {
   }
 }
 
+/** A question about what Michael can see of the user's data ("can you see I opened Instagram"). */
+export const asksAboutData = (text: string) =>
+  /\b(see|seen|saw|notice[ds]?|track(ed|ing)?|collect(ed|ing)?|record(ed|ing)?|data|open(ed|s)?|log(ged)?|came through|show(s|ed)? up|got|receiv(e|ed)|connected|check again)\b|instagram/i.test(
+    text,
+  );
+
 /**
  * Michael's answer, acting through the chat tools when asked. Tools run here, server side; the
  * caller sees text (and, when streaming, each action as it lands). The answer always ends with the
@@ -913,7 +922,9 @@ export async function askMichael(
       }
     : undefined;
 
-  const turn: ChatTurnState = { proposals: 0 };
+  const last = turns.at(-1);
+  const userText = typeof last?.content === "string" ? last.content : undefined;
+  const turn: ChatTurnState = { proposals: 0, userText };
   let steps = 0;
   // The user's own goals, read once and only when a step points at one ("Booking time for Gym").
   let goals: Promise<Map<string, string>> | null = null;
@@ -937,7 +948,6 @@ export async function askMichael(
   // A plain statement ("I took a bath for 40 minutes"), not a question: when every tool of a round
   // hands back a finished line (log_done, confirm_block), that line is the answer and the model is
   // not asked again just to repeat it, which saves a whole round trip (#364).
-  const last = turns.at(-1);
   const statement = typeof last?.content === "string" && !last.content.includes("?");
   for (let round = 0; round < MAX_ROUNDS; round++) {
     wrote = false;
@@ -1000,6 +1010,9 @@ export async function askMichael(
     calls,
     earlierDone: hooks.earlierDone,
   });
+  // Off the record, a question about their data is answered with that, not a promise of data later.
+  if (hooks.offTheRecord && userText && asksAboutData(userText) && !/off the record/i.test(answer))
+    answer = hooks.offTheRecord;
   const done = actions.filter((a) => a.status === "done");
   const missing = done.flatMap((a) => {
     const line = undoLine(a);
@@ -1039,6 +1052,8 @@ interface Prepared {
   now: string;
   /** Done actions from earlier answers in the thread. */
   earlierDone: number;
+  /** Off the record: the line any question about the user's data gets. */
+  offTheRecord: string | null;
   /** The answer is read aloud (conversation mode): brief, no lists. */
   spoken: boolean;
   /** Null when the pair starts a new thread (made in save, so a failed answer leaves nothing). */
@@ -1096,6 +1111,7 @@ async function prepare(body: unknown): Promise<Prepared> {
         : []),
     ].join("\n\n"),
     earlierDone: earlierActions.filter((a) => a.status === "done").length,
+    offTheRecord: connections?.offTheRecord ?? null,
     spoken,
     thread,
     title,
@@ -1242,6 +1258,7 @@ export const chat = new Hono()
       spoken: p.spoken,
       now: p.now,
       earlierDone: p.earlierDone,
+      offTheRecord: p.offTheRecord,
     });
     const saveStart = performance.now();
     const body = await save(p, answer);
@@ -1276,6 +1293,7 @@ export const chat = new Hono()
           spoken: p.spoken,
           now: p.now,
           earlierDone: p.earlierDone,
+          offTheRecord: p.offTheRecord,
           onText: async (text) => {
             await closeOpening();
             await sse.writeSSE({ event: "delta", data: JSON.stringify({ text }) });

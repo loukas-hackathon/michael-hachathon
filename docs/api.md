@@ -2340,6 +2340,17 @@ type DndStartInput = { nudge_id: string } | { until: string };
   out at once: title "Do Not Disturb until 14:00", done, `undo_until` the time it ends. So it is
   logged like every other action, shows on Today, and its undo ends it. At least a minute, at most
   12 hours. One at a time: a newer one replaces the one before.
+- **The busiest hours, offered ahead** (`apps/api/src/dnd/window.ts`, #432): with the day's other
+  offers (when Today reads the score), Michael looks at the phone cadence's `by_hour` over the last
+  7 days, takes the two hours of the working day with the most opens (at least 3 days of data and 3
+  opens a day in them), and offers Do Not Disturb for them the next time they come round: today
+  while 20 minutes or more of them are left, else tomorrow. A proposed `do_not_disturb`
+  recommendation, `source: "analysis"`, payload `{ start_at, end_at, window: "busiest_hours", day }`,
+  title "Do Not Disturb today, 11:00 to 13:00.", rationale "11:00 to 13:00 is when your phone pulls
+  hardest: 8 opens a day this week, one every 15 minutes. ...". One per day, never twice. Do it
+  sets it ahead: `GET /v1/focus-guards/active` returns it as `dnd` only from `start_at` to
+  `end_at`, so the Mac switches it on when its hour comes; undo ends it, before or during.
+  Never set more than a day ahead. Off the record: no offer.
 - The Mac: Michael for Mac (`apps/collector/src/dnd.ts`) looks at
   `GET /v1/focus-guards/active?dnd=ready|missing` every 15 seconds (`ready`: `shortcuts list`
   names Michael Focus), reads `dnd`, and runs `shortcuts run "Michael Focus"` with the time in the

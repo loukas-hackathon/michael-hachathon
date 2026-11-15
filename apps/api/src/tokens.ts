@@ -133,20 +133,36 @@ const backend: TokenBackend =
     : new MemoryTokens();
 
 // Resolved tokens are cached briefly; revocation takes effect within the TTL.
-const cache = new Map<string, { userId: string; id: string; until: number }>();
+// `usedBefore`: whether the key had been used before the request that resolved it last (read from
+// last_used_at before the touch, or true on a cache hit, since the hit's first request used it).
+const cache = new Map<string, { userId: string; id: string; until: number; usedBefore: boolean }>();
 const TTL_MS = 30_000;
 
 /** Returns the user a personal token acts for, or null if unknown or revoked. */
 export async function userForPersonalToken(secret: string): Promise<string | null> {
   const h = hash(secret);
   const hit = cache.get(h);
-  if (hit && hit.until > Date.now()) return hit.userId;
+  if (hit && hit.until > Date.now()) {
+    hit.usedBefore = true;
+    return hit.userId;
+  }
   const row = await backend.byHash(h);
   if (!row) return null;
-  cache.set(h, { userId: row.user_id, id: row.id, until: Date.now() + TTL_MS });
+  const usedBefore = row.last_used_at !== null || (hit?.usedBefore ?? false);
+  cache.set(h, { userId: row.user_id, id: row.id, until: Date.now() + TTL_MS, usedBefore });
   if (cache.size > 1000) cache.clear();
   void backend.touch(row.id).catch(() => {});
   return row.user_id;
+}
+
+/**
+ * Whether this key was used before the current request (which auth resolved just now). The iPhone
+ * shortcut's first call with a new key is the hand run test; later calls with no app are App
+ * automations that pass no input. Undefined for anything that is not a resolved personal token.
+ */
+export function personalTokenUsedBefore(secret: string | undefined): boolean | undefined {
+  if (!secret || !isPersonalToken(secret)) return undefined;
+  return cache.get(hash(secret))?.usedBefore;
 }
 
 export async function createPersonalToken(name: string) {
