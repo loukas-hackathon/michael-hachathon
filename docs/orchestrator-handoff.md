@@ -6,17 +6,20 @@ permission, keep building with parallel agents, close every issue we can, phone 
 developed), keep colours and branding exactly as they are (pink `#E6007A`, red `#FF3B30`), and pace
 the usage limit by slowing down at about 60% of the window.
 
-## State (updated 09:35 UTC)
-- Production healthy (250cfff). This session (loukas-hackathon) is the lead orchestrator, per Loukas.
-- Since 08:40: #389 events_window (migration ok), #423 warm ping (#421), #426 after-meeting card and
-  Mi sheet meetings toggle (#422), #425/#428/#435 laptop polish (#285 closed), #427 late workout
-  settles the missed block question, #433 watch lines agree, #280 location, #418 character, #419 dry
-  run. Closed: #267, #285, #298, #421, #422.
-- Running here: one agent on QA leftovers (Chat offline error, meetings pill "just started",
-  quiet hours vs booking rule copy, University goal row wrap, #434).
-- Other session (loukas-vetoulis account): #420 chat memories and pinned header (PR #424).
-- Manolis' side owns the new scope #432 "Michael studies you" (#438 real time nudges, #439 /learnt,
-  insights API). Do not double up on it. Words "efficient", "effective", "efficiency" are now allowed.
+## State (updated 10:25 UTC)
+- Production healthy (965172a). This session (loukas-hackathon) is the lead orchestrator.
+- Merged since 09:35: #441 chat offline, #442 QA leftovers (#434), #452 Timeline overlaps on iPhone
+  (#448), #453 quick resume splash and session kept fresh (#449). Manolis' side: #440, #444, #439, #456.
+- Running here (all due 13:30 UTC at the latest):
+  - Michael edits and deletes everything (chat, voice, MCP): `remove_calendar_block` for the user's
+    own events with undo; Loukas changed the "never deletes" rule to "removes only the user's own
+    events, with undo until the event starts". Gap audit of app actions vs chat tools.
+  - Voice mode without a transcript: the Mi mark by state, action chips with Undo, words kept in Chat.
+  - Sign out broken and laggy, Google sign in with a second account fails (#459, PR #461).
+  - Install as app row on /login (iOS steps sheet, Android install prompt).
+- Human steps for Loukas: #450 (Supabase jwt_exp 86400 via the Management API), DEMO_PRESENTER_KEY,
+  Railway app sleeping off, maybe Google OAuth app publish (if the sign in agent finds Testing mode).
+- Manolis' side owns #432 (insights, real time nudges, /learnt, Do Not Disturb #451, discovery #455).
 - Freeze: after 15:00 UTC only copy, CSS, test fixes; after 17:30 UTC no merges unless stage breaking.
 
 ## Rules learned the hard way
