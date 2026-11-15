@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { DemoSeedResult, EventInput, Goal, TimelineResponse } from "@michael/shared";
+import { DemoSeedResult, EventInput, Goal, sleepScore, TimelineResponse } from "@michael/shared";
 import { app } from "../app";
 import { runAsUser } from "../context";
 import { env } from "../env";
@@ -52,6 +52,8 @@ for (const now of NOWS) {
       const has = (source: string, type?: string) =>
         events.some((e) => e.source === source && (!type || e.type === type));
       assert.ok(has("health_auto_export", "sleep"), `${day} sleep`);
+      // The morning's recovery, as the weeks before this one carry it (demo/history.ts).
+      assert.ok(has("health_auto_export", "recovery"), `${day} recovery`);
       assert.ok(has("health_auto_export", "biometric"), `${day} heart rate`);
       assert.ok(has("iphone_usage"), `${day} iPhone`);
       assert.ok(has("macos_usage"), `${day} Mac`);
@@ -100,6 +102,48 @@ test("the demo week is deterministic: later runs keep earlier events", () => {
   assert.ok(later.events.length > first.events.length);
 });
 
+// Keys the stage account writes and the webhook does not. A sleep event may carry `score`
+// (docs/api.md): the watch's webhook sends none, and a reader works the same number out from the
+// stages. The week writes it so its nights read like the weeks before it.
+const DEMO_ONLY_KEYS: Record<string, string[]> = { "health_auto_export sleep ": ["score"] };
+
+test("the week's nights carry a score from their stages and a recovery reading at wake", () => {
+  const week = buildDemoWeek(new Date("2026-11-15T20:00:00+02:00"));
+  const nights = week.events.filter((e) => e.type === "sleep");
+  const recoveries = week.events.filter((e) => e.type === "recovery");
+  assert.equal(nights.length, 7);
+  assert.equal(recoveries.length, 7);
+  for (const n of nights) {
+    const { score, ...stages } = n.data;
+    assert.equal(score, sleepScore(stages));
+    const wake = Date.parse(n.end_at as string);
+    const r = recoveries.find((e) => Date.parse(e.start_at) === wake + 6 * 60_000);
+    assert.ok(r, `no recovery after the night ending ${n.end_at}`);
+    assert.equal(r.source, "health_auto_export");
+    assert.equal(r.end_at, null);
+    const pct = r.data.recovery_pct as number;
+    assert.ok(pct >= 8 && pct <= 97, `${pct}%`);
+    assert.equal(r.title, `Recovery ${pct}%`);
+    // The same readings the watch wrote in the night's last hour.
+    const hourly = (metric: string) =>
+      week.events.find(
+        (e) =>
+          e.type === "biometric" &&
+          e.data.metric === metric &&
+          Date.parse(e.start_at) <= wake &&
+          Date.parse(e.end_at as string) >= wake,
+      )?.data.avg;
+    assert.equal(r.data.hrv_ms, hourly("heart_rate_variability"));
+    assert.equal(r.data.resting_hr, hourly("resting_heart_rate"));
+  }
+  // A day's recovery is the same wherever the week starts.
+  const later = buildDemoWeek(new Date("2026-11-17T20:00:00+02:00"));
+  for (const r of later.events.filter((e) => e.type === "recovery")) {
+    const before = recoveries.find((e) => e.external_id === r.external_id);
+    if (before) assert.deepEqual(r, before);
+  }
+});
+
 test("generated Apple Watch and Omi events have the shapes the ingest webhooks produce", () => {
   const fixture = (name: string) =>
     JSON.parse(readFileSync(new URL(`../ingest/fixtures/${name}.json`, import.meta.url), "utf8"));
@@ -126,7 +170,10 @@ test("generated Apple Watch and Omi events have the shapes the ingest webhooks p
     if (!allowed) continue;
     compared++;
     for (const k of Object.keys(e.data))
-      assert.ok(allowed.has(k), `${kind(e)}: ${k} is not a key the webhook writes`);
+      assert.ok(
+        allowed.has(k) || DEMO_ONLY_KEYS[kind(e)]?.includes(k),
+        `${kind(e)}: ${k} is not a key the webhook writes`,
+      );
   }
   assert.ok(compared > 100);
   for (const k of [
