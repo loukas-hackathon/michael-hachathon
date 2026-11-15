@@ -93,7 +93,7 @@ function DoneChip({ action }: { action: Recommendation }) {
         disabled={undo.pending}
         aria-busy={undo.pending || undefined}
         onClick={() => void undo.run()}
-        className="press min-h-9 rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-3.5 text-subhead font-semibold text-tint-text disabled:opacity-40"
+        className="hit press min-h-9 rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-3.5 text-subhead font-semibold text-tint-text disabled:opacity-40"
       >
         Done. Undo{until ? ` until ${formatUntil(until)}` : ""}
       </button>

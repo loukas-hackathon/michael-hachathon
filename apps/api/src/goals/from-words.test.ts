@@ -28,11 +28,14 @@ test("the word lists read a messy transcript into goals and notes", () => {
     "um so mostly the startup, we launch in December, ten hours of deep work, and I want to get back to the gym three times a week. I lose my evenings on my phone. also sleep, like 7 hours",
   );
   const titles = read.goals.map((g) => g.title);
-  assert.deepEqual(titles, ["Ship the product", "Deep work", "Training", "Sleep"]);
+  // The deep work is the startup's: one goal with the hours said, never counted twice.
+  assert.deepEqual(titles, ["Ship the product", "Training", "Sleep"]);
   const training = read.goals.find((g) => g.title === "Training");
   assert.equal(training?.weekly_budget_minutes, 180);
   assert.equal(training?.estimated, false);
-  assert.equal(read.goals.find((g) => g.title === "Deep work")?.weekly_budget_minutes, 600);
+  const product = read.goals.find((g) => g.title === "Ship the product");
+  assert.equal(product?.weekly_budget_minutes, 600);
+  assert.equal(product?.estimated, false);
   const sleep = read.goals.find((g) => g.title === "Sleep");
   assert.equal(sleep?.target.kind, "target");
   assert.equal(sleep?.target.sleep_hours, 7);
@@ -181,4 +184,21 @@ test("each answer on its own line stays its own clause", () => {
     ["Training", "Sleep"],
   );
   assert.deepEqual(read.notes, ["I lose my evenings on my phone"]);
+});
+
+test("how often, said as people say it", () => {
+  const gym = { session: 60, title: "Training" };
+  assert.equal(minutesIn("gym twice a week", gym), 120);
+  assert.equal(minutesIn("run once a week", gym), 60);
+  assert.equal(minutesIn("a couple of times a week", gym), 120);
+  assert.equal(minutesIn("every weekday morning", { session: 120, title: "Deep work" }), 600);
+  assert.equal(minutesIn("tennis on weekends", gym), 120);
+  assert.equal(minutesIn("an hour and a half, three times a week", gym), 270);
+  assert.equal(minutesIn("half an hour of reading a day", { session: 30, title: "Reading" }), 210);
+  assert.equal(minutesIn("two hours three times a week", gym), 360);
+});
+
+test("a couple of hours is time, not a count", () => {
+  assert.equal(minutesIn("a couple of hours on the thesis", { session: 120, title: "Study" }), 120);
+  assert.equal(minutesIn("a few hours a day", { session: 120, title: "Deep work" }), 3 * 60 * 7);
 });

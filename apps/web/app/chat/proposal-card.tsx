@@ -42,7 +42,7 @@ export function ProposalCard({ action }: { action: Recommendation }) {
     },
   });
 
-  const pill = "press min-h-9 rounded-full px-3.5 text-subhead font-semibold disabled:opacity-40";
+  const pill = "hit press min-h-9 rounded-full px-3.5 text-subhead font-semibold disabled:opacity-40";
   return (
     <div className="flex max-w-[85%] flex-col gap-2 rounded-card bg-fill px-3.5 py-2.5">
       <p className="text-body text-label">{action.title}</p>

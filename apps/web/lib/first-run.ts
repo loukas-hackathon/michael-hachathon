@@ -14,6 +14,7 @@ import { CONNECTION_ROUTES } from "./connections";
 import { getGoogleCalendar, getTelegram } from "./integrations";
 import { USE_MOCKS } from "./mode";
 import { saidNoMac } from "./no-mac";
+import { setupWhy, weekdayIndex } from "./today-lines";
 
 // The first run: what a new person still has to set up, read from their real data. Today shows it
 // as the Get started card and picks the empty state's one action from it.
@@ -41,15 +42,8 @@ const TITLES: Record<SetupKey, string> = {
   claude: "Connect Claude",
 };
 
-const WHY: Record<SetupKey, string> = {
-  goals: "Pick two or three. Under a minute.",
-  calendar: "Your planned blocks are what I measure against.",
-  watch: "Sleep and workouts, so I know when to push and when to rest.",
-  mac: "App time, so I can see where the hours went.",
-  iphone: "Which apps you open, and for how long. Live.",
-  nudges: "Up to five a day, on your phone and watch.",
-  claude: "Ask Claude about your day and let it plan with you.",
-};
+// Each step's "why" is about the person: their goals by name and budget, the days left in their
+// week (setupWhy in lib/today-lines.ts), never a description of the connection.
 
 const CTA: Record<SetupKey, string> = {
   goals: "Set my goals",
@@ -142,10 +136,14 @@ export const getSetup = cache(async (demo?: string): Promise<Setup | null> => {
   // Without a Mac the app time step is the iPhone's: never a Mac shown as missing progress.
   const withoutMac = !done.mac && (noMac || done.iphone);
   const order = withoutMac ? ORDER.map((k) => (k === "mac" ? "iphone" : k)) : ORDER;
+  const active = goals
+    .filter((g) => g.active)
+    .map((g) => ({ title: g.title, budgetMinutes: g.weekly_budget_minutes, category: g.category }));
+  const weekday = weekdayIndex(new Date().toISOString());
   const steps = order.filter(offered).map((key) => ({
     key,
     title: TITLES[key],
-    why: WHY[key],
+    why: setupWhy(key, active, weekday),
     cta: CTA[key],
     href: SETUP_LINKS[key],
     done: done[key],

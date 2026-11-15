@@ -16,7 +16,7 @@ import { loadTimeline } from "@/lib/timeline-data";
 type Search = { day?: string; date?: string; demo?: string };
 
 const tinted =
-  "press inline-flex min-h-9 items-center rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-3.5 text-subhead font-semibold text-tint-text";
+  "hit press inline-flex min-h-9 items-center rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-3.5 text-subhead font-semibold text-tint-text";
 
 export default async function TimelinePage({ searchParams }: { searchParams: Promise<Search> }) {
   const { day: askedDay, date: askedDate, demo } = await searchParams;
@@ -201,7 +201,7 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
                   className={
                     screen.calendarConnected === true
                       ? tinted
-                      : "press inline-flex min-h-9 items-center text-subhead font-semibold text-tint-text"
+                      : "hit press inline-flex min-h-9 items-center text-subhead font-semibold text-tint-text"
                   }
                 >
                   {screen.latest === addDays(today, -1)

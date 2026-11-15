@@ -7,6 +7,7 @@ import { KeySetup } from "@/components/you/key-setup";
 import { SourcePrivacy } from "@/components/you/source-privacy";
 import { CONNECTION_ROUTES, connection } from "@/lib/connections";
 import { getConnection } from "@/lib/connections-status";
+import { focusShortcutUrl } from "@/lib/dnd";
 import { isIPhone, shortcutUrl } from "@/lib/one-tap";
 
 export const metadata = { title: "iPhone · Michael" };
@@ -42,6 +43,7 @@ export default async function IPhonePage({
       ) : null}
       <IPhoneShortcutSetup
         shortcutUrl={shortcutUrl()}
+        live={row.state === "on"}
         fallback={
           <KeySetup
             keyName="iPhone Shortcuts"
@@ -89,7 +91,7 @@ export default async function IPhonePage({
       title="Do Not Disturb, when you say yes"
       note="I ask in a nudge. One tap and it is on until your block ends, or until morning at night."
     >
-      <FocusShortcutSetup />
+      <FocusShortcutSetup url={focusShortcutUrl()} />
     </SetupSection>
   );
 

@@ -12,6 +12,7 @@ import {
   type Nudge,
   type NudgeStatus,
   type Source,
+  voiceShortDuration,
 } from "@michael/shared";
 import {
   executeLiveBlock,
@@ -124,12 +125,13 @@ export function shortGoal(title: string): string {
 }
 
 /** The buzz on the watch: "Done. 45 min for University." */
-export const doneLine = (minutes: number, goal: string) => `Done. ${minutes} min for ${shortGoal(goal)}.`;
+export const doneLine = (minutes: number, goal: string) =>
+  `Done. ${voiceShortDuration(minutes)} for ${shortGoal(goal)}.`;
 
 /** What End early says once the answer is in. */
 export const earlyLine = (minutes: number, goal: string) =>
   minutes > 0
-    ? `Counted ${minutes} min for ${shortGoal(goal)}.`
+    ? `Counted ${voiceShortDuration(minutes)} for ${shortGoal(goal)}.`
     : `Ended. Nothing counted for ${shortGoal(goal)}.`;
 
 /** Inside the night's quiet hours ("22:00" to "07:00", across midnight), in Athens time. */

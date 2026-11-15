@@ -159,16 +159,49 @@ const NUMBER_WORDS: Record<string, number> = {
 const NUM = String.raw`(\d+(?:[.,]\d+)?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|an|a)`;
 const toNumber = (w: string) => NUMBER_WORDS[w.toLowerCase()] ?? Number(w.replace(",", "."));
 
+/** How often, when said as a word: "twice a week", "a couple of times", "every weekday". */
+function sessionsIn(clause: string): number | null {
+  if (/\bonce\b/i.test(clause)) return 1;
+  if (/\btwice\b/i.test(clause)) return 2;
+  if (/\bthrice\b/i.test(clause)) return 3;
+  if (/\b(a )?couple( of)?( times| days| sessions| evenings| mornings)?\b/i.test(clause)) return 2;
+  if (/\b(a )?few (times|days|sessions|evenings|mornings)\b/i.test(clause)) return 3;
+  if (
+    /\b(every|each) ?weekday\b|\bweekdays\b|\bmonday to friday\b|\bmon(day)? ?(to|-) ?fri(day)?\b/i.test(
+      clause,
+    )
+  )
+    return 5;
+  if (/\b(every|each|on)? ?weekends?\b/i.test(clause)) return 2;
+  return null;
+}
+
 /** The time a clause names, in minutes a week, or null when it names none. */
 export function minutesIn(clause: string, theme: Pick<Theme, "session" | "title">): number | null {
-  const daily = /\b(a|per|each|every) ?(day|night|evening|morning)\b|\bdaily\b|\bnightly\b/i.test(clause);
-  const hours = clause.match(new RegExp(`${NUM}\\s*(?:hours?|hrs?|h)\\b`, "i"));
-  const mins = clause.match(new RegExp(`${NUM}\\s*(?:minutes?|mins?)\\b`, "i"));
-  const times = clause.match(new RegExp(`${NUM}\\s*(?:times|x|days|sessions|evenings|mornings)\\b`, "i"));
-  const perDay = (m: number) => (daily || theme.title === "Sleep" ? m * 7 : m);
-  if (hours?.[1]) return Math.round(perDay(toNumber(hours[1]) * 60));
-  if (mins?.[1]) return Math.round(perDay(toNumber(mins[1])));
-  if (times?.[1] && theme.session > 0) return Math.round(toNumber(times[1]) * theme.session);
+  const c = clause
+    // "an hour and a half", "one and a half hours", "half an hour" before the number match.
+    .replace(
+      new RegExp(`${NUM}\\s*(?:hours?|hrs?)\\s+and a half`, "i"),
+      (_m, n: string) => `${toNumber(n) + 0.5} hours`,
+    )
+    .replace(
+      new RegExp(`${NUM}\\s+and a half\\s+(hours?|hrs?)`, "i"),
+      (_m, n: string) => `${toNumber(n) + 0.5} hours`,
+    )
+    .replace(/\bhalf an hour\b/i, "30 minutes")
+    .replace(/\b(?:a )?couple of (hours?|hrs?)\b/i, "2 hours")
+    .replace(/\b(?:a )?few (hours?|hrs?)\b/i, "3 hours");
+  const daily = /\b(a|per|each|every) ?(day|night|evening|morning)\b|\bdaily\b|\bnightly\b/i.test(c);
+  const hours = c.match(new RegExp(`${NUM}\\s*(?:hours?|hrs?|h)\\b`, "i"));
+  const mins = c.match(new RegExp(`${NUM}\\s*(?:minutes?|mins?)\\b`, "i"));
+  const times = c.match(new RegExp(`${NUM}\\s*(?:times|x|days|sessions|evenings|mornings)\\b`, "i"));
+  const count = times?.[1] ? toNumber(times[1]) : sessionsIn(c);
+  // "Two hours, three times a week": the hours are one session, the count makes the week.
+  const session = (m: number) =>
+    count !== null && !daily ? m * count : daily || theme.title === "Sleep" ? m * 7 : m;
+  if (hours?.[1]) return Math.round(session(toNumber(hours[1]) * 60));
+  if (mins?.[1]) return Math.round(session(toNumber(mins[1])));
+  if (count !== null && theme.session > 0) return Math.round(count * theme.session);
   if (daily && theme.session > 0) return theme.session * 7;
   return null;
 }
@@ -237,7 +270,23 @@ export function readByRules(text: string): Omit<GoalWordsResponse, "line" | "sou
       estimated: said === null,
     });
   }
-  return { goals, notes };
+  return { goals: mergeWork(goals), notes };
+}
+
+/**
+ * "The startup, ten hours of deep work": the deep work is the startup's, not a second goal. The
+ * product keeps its name and takes the hours said for deep work, so the week is not counted twice.
+ */
+function mergeWork(goals: HeardGoal[]): HeardGoal[] {
+  const product = goals.find((g) => g.title === "Ship the product");
+  const deep = goals.find((g) => g.title === "Deep work");
+  if (!product || !deep) return goals;
+  if (product.estimated) {
+    product.weekly_budget_minutes = deep.weekly_budget_minutes;
+    product.estimated = deep.estimated;
+  }
+  product.evidence = `${product.evidence}, ${deep.evidence}`.slice(0, 200);
+  return goals.filter((g) => g !== deep);
 }
 
 // ---------- Michael's line ----------

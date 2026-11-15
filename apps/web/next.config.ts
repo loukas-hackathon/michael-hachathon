@@ -10,6 +10,11 @@ const buildId = (
 ).slice(0, 12);
 process.env.NEXT_PUBLIC_BUILD_ID = buildId;
 
+// The shortcut files are served inline as Apple's shortcut type, not as an attachment: iOS then
+// previews them with Open in Shortcuts instead of saving them to Files (Loukas, 15 Nov). The
+// filename stays, since iOS names an imported shortcut after it.
+const SHORTCUT_TYPE = "application/x-apple-shortcut";
+
 const config: NextConfig = {
   env: { NEXT_PUBLIC_BUILD_ID: buildId },
   // packages/shared ships TypeScript source, so Next must transpile it.
@@ -46,8 +51,8 @@ const config: NextConfig = {
         // Never cached for long: a rebuilt shortcut must reach the next phone.
         source: "/Michael.shortcut",
         headers: [
-          { key: "Content-Type", value: "application/octet-stream" },
-          { key: "Content-Disposition", value: 'attachment; filename="Michael.shortcut"' },
+          { key: "Content-Type", value: SHORTCUT_TYPE },
+          { key: "Content-Disposition", value: 'inline; filename="Michael.shortcut"' },
           { key: "Cache-Control", value: "no-cache" },
         ],
       },
@@ -56,8 +61,8 @@ const config: NextConfig = {
         // download is named after the shortcut, which the app and the Mac collector run by name.
         source: "/MichaelFocus.shortcut",
         headers: [
-          { key: "Content-Type", value: "application/octet-stream" },
-          { key: "Content-Disposition", value: 'attachment; filename="Michael Focus.shortcut"' },
+          { key: "Content-Type", value: SHORTCUT_TYPE },
+          { key: "Content-Disposition", value: 'inline; filename="Michael Focus.shortcut"' },
           { key: "Cache-Control", value: "no-cache" },
         ],
       },

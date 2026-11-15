@@ -47,11 +47,15 @@ test("a brand new account is guided on every screen, and a goal is one tap", asy
   await expect(suggested.getByRole("button", { name: /^Add / })).toHaveCount(3);
   await expect(suggested.getByText("10h a week · Business")).toBeVisible();
   await tap(suggested.getByRole("button", { name: "Add Deep work" }));
-  // The first goal reads as a week ahead, never as already behind.
-  await expect(page.getByRole("region", { name: "Needs you most" })).toContainText(
-    "Deep work first: 10h this week, counted from today.",
+  // The first goal reads as a week ahead, never as already behind. On a Sunday the week ends
+  // today, so it counts from Monday and offers to plan next week instead (#513).
+  const hero = page.getByRole("region", { name: "Needs you most" });
+  await expect(hero).toContainText(
+    /Deep work first: 10h (this week, counted from today|a week, counted from Monday)\./,
   );
   await expect(page.getByText("behind pace")).toHaveCount(0);
+  // No pace verdict before a planned block has gone by (#513).
+  await expect(page.getByText(/On pace|Behind pace/)).toHaveCount(0);
   await noZeros();
   const { goals } = await asUser<{ goals: { title: string; weekly_budget_minutes: number | null }[] }>(
     "/v1/goals",

@@ -23,7 +23,8 @@ export function GoalBar({
   unverified?: number;
   /** Minutes planned in blocks this week, counted from the start of the week like `spent`. */
   planned?: number;
-  pace: number;
+  /** The pace tick; null draws none (no block to measure against yet, #513). */
+  pace: number | null;
   close?: CloseState;
   size?: "sm" | "lg";
   label: string;
@@ -71,11 +72,13 @@ export function GoalBar({
           <span className="absolute inset-y-0 left-0 rounded-full bg-spark" style={{ width: share(firm) }} />
         ) : null}
       </div>
-      <span
-        aria-hidden="true"
-        className={`absolute ${tick} w-[2px] -translate-x-1/2 rounded-full bg-label`}
-        style={{ left: `${Math.max(0, Math.min(1, pace)) * 100}%` }}
-      />
+      {pace == null ? null : (
+        <span
+          aria-hidden="true"
+          className={`absolute ${tick} w-[2px] -translate-x-1/2 rounded-full bg-label`}
+          style={{ left: `${Math.max(0, Math.min(1, pace)) * 100}%` }}
+        />
+      )}
     </div>
   );
 }

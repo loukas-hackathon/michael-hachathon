@@ -33,3 +33,14 @@ test("calendar card: not connected shows only when Get started is not already as
     cta: "Connect",
   });
 });
+
+test("calendar card: with goals, not connected names what it costs the person's own goal", () => {
+  const goals = [
+    { title: "Sleep", budgetMinutes: 3360, category: "health" },
+    { title: "Deep work", budgetMinutes: 600, category: "business" },
+  ];
+  assert.equal(
+    calendarCardFor(cal({}), { emptyDay: false, goals })?.line,
+    "10h a week for Deep work is guesswork until I see your calendar.",
+  );
+});

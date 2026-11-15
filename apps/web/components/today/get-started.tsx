@@ -131,7 +131,7 @@ function NextStep({ step }: { step: SetupStep }) {
         <div className="mt-2.5 flex flex-wrap items-center gap-x-4">
           <StepLink
             href={step.href}
-            className="press inline-flex min-h-9 items-center rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint"
+            className="hit press inline-flex min-h-9 items-center rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint"
           >
             {step.cta}
           </StepLink>

@@ -1,13 +1,12 @@
 import Link from "next/link";
-import { type Insight, sortInsights } from "@/lib/insights";
 import { getInsights, isInsightsPreview } from "@/lib/insights-data";
-import { firstSentence, type NumberStat, numberStats, patternsFor, unitOf } from "@/lib/numbers";
-import { Spark } from "./spark";
+import { type NumberStat, numberStats, unitOf } from "@/lib/numbers";
+import { numbersLine } from "@/lib/today-lines";
 
 /**
- * Today, under "Your next move": the figures Michael reads every day, each against the user's own
- * usual, with its last two weeks and one fix. A fix with proof comes from a pattern Michael found;
- * otherwise it is advice and says nothing about proof. Each row opens its detail. Nothing until
+ * Today, under "Your next move": the figures Michael reads every day as plain tiles, each with one
+ * verdict against the user's own usual. Nothing more on Today: the chart, the comparison in
+ * figures, the fix and the patterns behind it are one tap away on /numbers/[key]. Nothing until
  * the API has two readings of something.
  */
 export async function TodayNumbers({ demo, className = "" }: { demo?: string; className?: string }) {
@@ -15,95 +14,54 @@ export async function TodayNumbers({ demo, className = "" }: { demo?: string; cl
   if (!view) return null;
   const stats = numberStats(view.series ?? []);
   if (!stats.length) return null;
-  const { patterns } = sortInsights(view.insights);
   const q = isInsightsPreview(demo) && demo ? `?demo=${demo}` : "";
+  // Which of their figures to look at first, from today's verdicts; nothing when all are usual.
+  const line = numbersLine(stats.map((s) => ({ name: SHORT[s.def.key] ?? s.series.label, tone: s.tone })));
   return (
     <section aria-labelledby="your-numbers" className={`mt-8 ${className}`}>
-      <h2 id="your-numbers" className="text-title3 font-bold">
+      <h2 id="your-numbers" className={`text-title3 font-bold ${line ? "" : "mb-2"}`}>
         Your numbers
       </h2>
-      {/* (Brand) */}
-      <p className="mt-0.5 mb-2 text-footnote text-label-2">
-        Each against your own usual over the last 4 weeks. Tap one for the detail and the fix.
-      </p>
-      {/* A phone: one grouped list. A laptop: a band of tiles across the dashboard. */}
-      <ul className="overflow-hidden rounded-group bg-fill xl:grid xl:grid-cols-3 xl:gap-3 xl:overflow-visible xl:rounded-none xl:bg-transparent">
+      {line ? <p className="mt-0.5 mb-2 text-footnote text-label-2">{line}</p> : null}
+      <ul className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-6 xl:gap-3">
         {stats.map((s) => (
-          <NumberRow key={s.def.key} stat={s} pattern={patternsFor(s.def.key, patterns)[0]} q={q} />
+          <NumberTile key={s.def.key} stat={s} q={q} />
         ))}
       </ul>
     </section>
   );
 }
 
-const LEAD = { worse: "Fix:", usual: "To do better:" } as const;
+/** One word for anyone: is it good or bad for me. The figures behind it are on the detail page. */
+const VERDICT: Record<NumberStat["tone"], string> = {
+  better: "Better than usual",
+  usual: "About usual",
+  worse: "Worse than usual",
+};
 
-/**
- * The line under a figure. Worse or usual: one fix, from the pattern when Michael found one.
- * Better than usual: a pattern's fix is about the bad days ("on mornings like that"), so it would
- * read wrong after "Keep it up"; the pattern shows as the reason to keep it, and advice is left out.
- */
-function FixLine({
-  tone,
-  pattern,
-  fallback,
-}: {
-  tone: NumberStat["tone"];
-  pattern?: Insight;
-  fallback: string;
-}) {
-  if (tone === "better") {
-    return (
-      <>
-        <b className="font-semibold">Keep it up.</b>
-        {pattern ? (
-          <span className="text-label-2">
-            {" "}
-            Found in your data: {pattern.title.charAt(0).toLowerCase()}
-            {pattern.title.slice(1)}.
-          </span>
-        ) : null}
-      </>
-    );
-  }
-  return (
-    <>
-      <b className="font-semibold">{LEAD[tone]}</b> {firstSentence(pattern?.fix.text ?? fallback)}
-      <span className="text-label-2">
-        {pattern ? " Found in your data." : " General advice, not yet seen in your data."}
-      </span>
-    </>
-  );
-}
+/** Names short enough for a tile. */
+const SHORT: Partial<Record<NumberStat["def"]["key"], string>> = {
+  lost_min: "Lost in goal blocks",
+  hrv: "Heart rate variability",
+};
 
-function NumberRow({ stat, pattern, q }: { stat: NumberStat; pattern?: Insight; q: string }) {
-  const { def, series, last, usual, tone, compare, when } = stat;
+function NumberTile({ stat, q }: { stat: NumberStat; q: string }) {
+  const { def, series, last, tone } = stat;
+  const name = SHORT[def.key] ?? series.label;
   return (
-    <li className="border-separator border-b last:border-b-0 xl:rounded-card xl:border-b-0 xl:bg-fill">
+    <li>
       <Link
         href={`/numbers/${def.key}${q}`}
-        className="press grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 px-4 py-2.5 xl:py-3"
+        aria-label={`${name}: ${last.value}${unitOf(series)}, ${VERDICT[tone].toLowerCase()}. Open the detail`}
+        className="press flex h-full flex-col rounded-card bg-fill px-3.5 pt-3 pb-3"
       >
-        <span className="min-w-0">
-          <span className="block truncate text-footnote text-label-2">
-            {series.label} <span aria-hidden="true">·</span> {when}
-          </span>
-          <span className="block tnum">
-            <b className="font-num text-[24px] leading-7 font-bold">{last.value}</b>
-            <span className="text-footnote font-semibold text-label-2">{unitOf(series)}</span>
-          </span>
-          <span
-            className={`block text-footnote tnum ${tone === "worse" ? "font-semibold text-label" : "text-label-2"}`}
-          >
-            {compare.charAt(0).toUpperCase() + compare.slice(1)}.
-          </span>
+        <span className="line-clamp-2 text-footnote text-label-2">{name}</span>
+        <span className="mt-auto pt-1 tnum">
+          <b className="font-num text-[28px] leading-8 font-bold">{last.value}</b>
+          <span className="text-footnote font-semibold text-label-2">{unitOf(series)}</span>
         </span>
-        <Spark series={series} usual={usual} />
-        <span aria-hidden="true" className="text-label-2">
-          ›
-        </span>
-        <span className="col-span-3 mt-1.5 block text-footnote">
-          <FixLine tone={tone} pattern={pattern} fallback={def.fallback} />
+        <span className={`text-footnote ${tone === "worse" ? "font-semibold text-label" : "text-label-2"}`}>
+          {VERDICT[tone]}
         </span>
       </Link>
     </li>

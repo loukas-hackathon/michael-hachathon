@@ -184,7 +184,7 @@ function OpenInSafari() {
         <button
           type="button"
           onClick={copy}
-          className="press min-h-9 shrink-0 rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-4 text-subhead font-semibold text-tint-text"
+          className="hit press min-h-9 shrink-0 rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-4 text-subhead font-semibold text-tint-text"
         >
           {state === "copied" ? "Copied" : "Copy link"}
         </button>

@@ -2,7 +2,28 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { FOCUS_SHORTCUT_DOWNLOAD, FOCUS_SHORTCUT_NAME, focusShortcutInput } from "@michael/shared";
-import { FOCUS_SHORTCUT_FILE, focusShortcutLink, focusShortcutOffLink } from "./dnd";
+import { FOCUS_SHORTCUT_FILE, focusShortcutLink, focusShortcutOffLink, focusShortcutRunLink } from "./dnd";
+
+test("Focus now runs Michael Focus with the end time and comes back to the session", () => {
+  const input = focusShortcutInput("2026-11-15T13:46:00.000Z");
+  assert.equal(input, "2026-11-15 15:46");
+  const link = focusShortcutRunLink(input, "https://michael.app/?focus=1");
+  assert.ok(link.startsWith("shortcuts://x-callback-url/run-shortcut?"));
+  const q = new URL(link.replace("shortcuts://x-callback-url/", "https://x/")).searchParams;
+  assert.equal(q.get("name"), "Michael Focus");
+  assert.equal(q.get("input"), "text");
+  assert.equal(q.get("text"), "2026-11-15 15:46");
+  assert.equal(q.get("x-success"), "https://michael.app/?focus=1");
+  assert.equal(q.get("x-cancel"), "https://michael.app/?focus=1");
+  // Spaces as %20, as Shortcuts reads them; the app address is encoded whole.
+  assert.ok(link.includes("name=Michael%20Focus&input=text&text=2026-11-15%2015%3A46"));
+  assert.ok(link.includes("x-success=https%3A%2F%2Fmichael.app%2F%3Ffocus%3D1"));
+  // Off, and no way back in the installed app.
+  assert.equal(
+    focusShortcutRunLink("off"),
+    "shortcuts://x-callback-url/run-shortcut?name=Michael%20Focus&input=text&text=off",
+  );
+});
 
 test("the hand over runs the Michael Focus shortcut by name, with the time to end as text", () => {
   const input = focusShortcutInput("2026-11-17T12:00:00.000Z");

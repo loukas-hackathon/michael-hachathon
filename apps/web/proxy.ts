@@ -43,7 +43,9 @@ export async function proxy(request: NextRequest) {
   // getClaims refreshes an expired session, then verifies the JWT locally against the project's
   // cached JWKS (ES256): no round trip to Supabase Auth on every navigation, unlike getUser.
   const { data } = await supabase.auth.getClaims();
-  const signedIn = Boolean(data?.claims?.sub) || e2eTestUser(request.cookies.get(E2E_COOKIE)?.value) !== null;
+  const testUser = e2eTestUser(request.cookies.get(E2E_COOKIE)?.value);
+  const sub = typeof data?.claims?.sub === "string" ? data.claims.sub : null;
+  const signedIn = Boolean(sub) || testUser !== null;
 
   const path = request.nextUrl.pathname;
   const isPublic = PUBLIC_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
@@ -83,7 +85,20 @@ export async function proxy(request: NextRequest) {
     } else redirect.cookies.delete(NEXT_COOKIE);
     return redirect;
   }
+  if (!isPublic) {
+    // Whose page this is, for the service worker's last known screen (public/sw.js, #502): a hash,
+    // never the id itself, and the build that drew it.
+    const visitor = demoVisitorId(request.cookies.get(DEMO_COOKIE)?.value);
+    const who = testUser ? `e2e:${testUser}` : sub ? `user:${sub}` : visitor ? `demo:${visitor}` : null;
+    if (who) response.headers.set("x-michael-viewer", await viewerHash(who));
+    response.headers.set("x-michael-build", process.env.NEXT_PUBLIC_BUILD_ID ?? "dev");
+  }
   return response;
+}
+
+async function viewerHash(who: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`michael-viewer:${who}`));
+  return Array.from(new Uint8Array(digest).slice(0, 12), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 export const config = {

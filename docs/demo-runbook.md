@@ -31,7 +31,8 @@ the stage and Claude will each see a different day.
       `curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $MICHAEL_API_KEY" $API/v1/analysis/latest`
       prints `404` (or `200` once someone has asked for a real brief on Today), and
       `curl -s -H "Authorization: Bearer $MICHAEL_API_KEY" $API/v1/recommendations | grep -c -i "protein\|recovery is"`
-      prints `0`. On Today, "Michael's brief" reads "None yet. One tap and I read your day."
+      prints `0`. On Today, "Michael's brief" reads "None yet. I start with the ..." (the week's
+      biggest loss, e.g. "the 2h 32 Instagram took this week")
       and Follow ups shows no line about seeding a demo week.
 - [ ] **Book works on a Sunday.** The plan's only standing instruction is "Never book 23:00 to
       07:00" (it follows the sleep goal). "Keep Sundays clear" made Book and Do it refuse all

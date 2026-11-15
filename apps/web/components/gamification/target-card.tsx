@@ -132,14 +132,14 @@ export function TargetCard({ target, baseline }: { target: WeeklyTarget | null; 
               });
             }
           }}
-          className="press min-h-9 rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint"
+          className="hit press min-h-9 rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint"
         >
           Accept
         </button>
         <button
           type="button"
           onClick={open}
-          className="press min-h-9 rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-4 text-subhead font-semibold text-tint-text"
+          className="hit press min-h-9 rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-4 text-subhead font-semibold text-tint-text"
         >
           Edit
         </button>

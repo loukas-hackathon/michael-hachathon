@@ -3,7 +3,9 @@
 import { FOCUS_SHORTCUT_NAME, focusShortcutInput } from "@michael/shared/focus-shortcut";
 import { useEffect, useState } from "react";
 import { tryDndNudgeAction } from "@/app/dnd/actions";
+import { useStandalone } from "@/components/standalone";
 import { FOCUS_SHORTCUT_FILE, focusShortcutAdded, focusShortcutLink } from "@/lib/dnd";
+import { shortcutAddInNewContext } from "@/lib/one-tap";
 import { Card, ErrorLine, SecondaryButton, Step, useDevice } from "./parts";
 
 // The Michael Focus shortcut (#447): the one thing that may switch on Do Not Disturb, since no app
@@ -13,12 +15,31 @@ import { Card, ErrorLine, SecondaryButton, Step, useDevice } from "./parts";
 
 const TRY_MS = 2 * 60_000;
 
-export function FocusShortcutSetup() {
+export function FocusShortcutSetup({
+  url = FOCUS_SHORTCUT_FILE,
+}: {
+  /** `focusShortcutUrl()` in lib/dnd.ts, read on the server: an iCloud link or our own file. */
+  url?: string;
+}) {
   const device = useDevice();
+  // An iCloud link leaves the installed app for Shortcuts; our own file stays in this window.
+  const newContext = shortcutAddInNewContext(url, useStandalone());
   const [added, setAdded] = useState(false);
   const [sent, setSent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => setAdded(focusShortcutAdded.get()), []);
+  // The file opens in this window, in the installed app too: iOS previews it with Open in
+  // Shortcuts, which a new context did not (as in iphone-shortcut-setup.tsx). Coming back to
+  // Michael, Step 1 reads as done.
+  useEffect(() => {
+    const read = () => setAdded(focusShortcutAdded.get());
+    read();
+    window.addEventListener("pageshow", read);
+    document.addEventListener("visibilitychange", read);
+    return () => {
+      window.removeEventListener("pageshow", read);
+      document.removeEventListener("visibilitychange", read);
+    };
+  }, []);
   if (device === null) return null;
 
   // The whole path once: the nudge arrives, its tap opens the page that asks and hands over.
@@ -31,7 +52,8 @@ export function FocusShortcutSetup() {
 
   const add = (
     <a
-      href={FOCUS_SHORTCUT_FILE}
+      href={url}
+      {...(newContext ? { target: "_blank", rel: "noopener" } : {})}
       onClick={() => {
         focusShortcutAdded.set();
         setAdded(true);
@@ -41,6 +63,20 @@ export function FocusShortcutSetup() {
       Add Michael Focus
     </a>
   );
+  // Behind an iCloud link, our own file in this window: iOS previews it with Open in Shortcuts.
+  const fallbackFile =
+    url === FOCUS_SHORTCUT_FILE ? null : (
+      <a
+        href={FOCUS_SHORTCUT_FILE}
+        onClick={() => {
+          focusShortcutAdded.set();
+          setAdded(true);
+        }}
+        className="press mx-auto mt-1 flex h-11 items-center px-2 text-subhead font-semibold text-tint-text"
+      >
+        Shortcuts did not open? Open the file
+      </a>
+    );
 
   if (device !== "iphone") {
     return (
@@ -50,7 +86,12 @@ export function FocusShortcutSetup() {
             ? `Add the ${FOCUS_SHORTCUT_NAME} shortcut to this Mac. With Michael for Mac running, I switch on Do Not Disturb when you say yes in a nudge, and your iPhone follows.`
             : `Open this page on your iPhone or your Mac to add the ${FOCUS_SHORTCUT_NAME} shortcut.`}
         </p>
-        {device === "mac" ? add : null}
+        {device === "mac" ? (
+          <>
+            {add}
+            {fallbackFile}
+          </>
+        ) : null}
       </Card>
     );
   }
@@ -69,9 +110,14 @@ export function FocusShortcutSetup() {
         <Step n={1} done={added}>
           <p>Add the {FOCUS_SHORTCUT_NAME} shortcut, then come back here.</p>
           {add}
+          {fallbackFile}
         </Step>
         <Step n={2}>
-          <p>Try it. Do Not Disturb comes on for two minutes at most, then ends by itself.</p>
+          <p>
+            {added
+              ? "Try it. Do Not Disturb comes on for two minutes at most, then ends by itself."
+              : `Add ${FOCUS_SHORTCUT_NAME} first, then try it here.`}
+          </p>
           <SecondaryButton onClick={tryIt}>Try it</SecondaryButton>
         </Step>
         <Step n={3}>

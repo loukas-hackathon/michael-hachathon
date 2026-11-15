@@ -30,6 +30,8 @@ const ALLOWED: [string, RegExp][] = [
   ["POST", /^\/v1\/chat(\/stream|\/warm)?$/],
   // The onboarding talk reads words into goals and saves nothing.
   ["POST", /^\/v1\/goals\/from-words$/],
+  // The onboarding talk's next line: read only, nothing saved.
+  ["POST", /^\/v1\/onboarding\/turn$/],
   // Their own threads (stored per visitor, like the lines in them).
   ["POST", /^\/v1\/chat\/threads$/],
   ["PATCH", /^\/v1\/chat\/threads\/[^/]+$/],

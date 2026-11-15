@@ -16,7 +16,7 @@ export default function TodayError({ reset }: { error: Error; reset: () => void 
           <button
             type="button"
             onClick={reset}
-            className="press min-h-9 rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint"
+            className="hit press min-h-9 rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint"
           >
             Try again
           </button>

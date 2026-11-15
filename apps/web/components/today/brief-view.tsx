@@ -18,9 +18,12 @@ const tinted =
 export function BriefView({
   initial,
   initialSuggestions,
+  empty,
 }: {
   initial: AnalysisRun | null;
   initialSuggestions: number;
+  /** The preview before the first brief, from the person's week. */
+  empty?: string;
 }) {
   const router = useRouter();
   const [run, setRun] = useState(initial);
@@ -64,7 +67,7 @@ export function BriefView({
     startTransition(() => router.refresh());
   }
 
-  const row = briefRow(run);
+  const row = briefRow(run, undefined, empty);
   return (
     <Fold
       wideOpen

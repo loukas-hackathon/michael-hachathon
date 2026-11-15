@@ -84,14 +84,7 @@ export function KeepWeekStrip({ week }: { week: KeepWeek }) {
   );
 }
 
-/** "6 days kept in a row. Sunday is your rest day." Numbers first, no guilt when the run is 0. */
-export function streakLine(week: KeepWeek) {
-  const rest = week.restDays.length
-    ? ` ${week.restDays.join(" and ")} ${week.restDays.length === 1 ? "is your rest day" : "are your rest days"}.`
-    : "";
-  if (week.streak === 0) return `Keep today to start a run.${rest}`;
-  return `${week.streak} ${week.streak === 1 ? "day" : "days"} kept in a row.${rest}`;
-}
+// The line under the strip (the run, or the days kept this week) is streakLine in lib/today-lines.ts.
 
 /** Under the score: what keeps today, or that it is kept. Null when today has no goal blocks. */
 export function keepLine(week: KeepWeek) {

@@ -343,7 +343,7 @@ export function GoalsStep({
             {/* Plain <a>: the route redirects to Google and must never be prefetched. */}
             <a
               href={calendarHref}
-              className="press flex h-9 w-[6.5rem] shrink-0 items-center justify-center rounded-full bg-tint/14 text-subhead font-semibold text-tint-text"
+              className="hit press flex h-9 w-[6.5rem] shrink-0 items-center justify-center rounded-full bg-tint/14 text-subhead font-semibold text-tint-text"
             >
               Connect
             </a>

@@ -13,6 +13,7 @@ import { SafeTopScript } from "@/components/safe-top";
 import { ServiceWorker } from "@/components/service-worker";
 import { SessionFresh } from "@/components/session-fresh";
 import { Splash } from "@/components/splash";
+import { StaleScreen } from "@/components/stale-screen";
 import { TabBar } from "@/components/tab-bar";
 import "./globals.css";
 
@@ -56,6 +57,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <FocusHost />
         <ServiceWorker />
         <SessionFresh />
+        <StaleScreen />
         <Desktop />
         <DeepLinkFocus />
       </body>

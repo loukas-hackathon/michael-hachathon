@@ -32,6 +32,8 @@ import {
   mockRecommendations,
   mockScore,
   type NudgeTestResult,
+  type OnboardingTurnRequest,
+  OnboardingTurnResponse,
   type PlaceSuggestionsResponse,
   type PlacesResponse,
   type PlacesUpdate,
@@ -391,6 +393,27 @@ export async function goalsFromWords(text: string): Promise<GoalWordsResponse | 
     return GoalWordsResponse.parse(await send<unknown>("POST", "/v1/goals/from-words", { text }));
   } catch (err) {
     console.error("goals from words:", err instanceof Error ? err.message : "unknown");
+    return null;
+  }
+}
+
+/**
+ * Michael's next line in the onboarding talk (POST /v1/onboarding/turn). Null on any failure, a
+ * slow answer included: the talk then carries on with its own script, so it never waits long.
+ */
+export async function onboardingTurn(req: OnboardingTurnRequest): Promise<OnboardingTurnResponse | null> {
+  if (USE_MOCKS) return null;
+  try {
+    const res = await fetch(`${API_URL}/v1/onboarding/turn`, {
+      method: "POST",
+      headers: { ...(await authHeaders()), "content-type": "application/json" },
+      body: JSON.stringify(req),
+      cache: "no-store",
+      signal: AbortSignal.timeout(9000),
+    });
+    if (!res.ok) return null;
+    return OnboardingTurnResponse.parse(await res.json());
+  } catch {
     return null;
   }
 }

@@ -20,9 +20,9 @@ type State =
   | { at: "undone" };
 
 const filled =
-  "press min-h-9 min-w-[7.5rem] rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint disabled:opacity-60";
+  "hit press min-h-9 min-w-[7.5rem] rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint disabled:opacity-60";
 const tinted =
-  "press min-h-9 min-w-[7.5rem] rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-4 text-subhead font-semibold text-tint-text disabled:opacity-60";
+  "hit press min-h-9 min-w-[7.5rem] rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-4 text-subhead font-semibold text-tint-text disabled:opacity-60";
 
 export function BookTime({
   goalId,

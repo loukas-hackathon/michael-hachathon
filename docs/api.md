@@ -521,11 +521,31 @@ shows what was heard, the user edits it, then creates the goals. 10 calls a minu
 
 `POST /v1/onboarding/turn` (`OnboardingTurnRequest` -> `200 OnboardingTurnResponse`) runs the
 first talk. With no turns it returns Michael's opener: from the user's own calendar when Google
-Calendar is connected (`from_calendar: true`, "Gym three times last week and deep work only on
-Monday. Is that a normal week?"), otherwise a warm open question. Each later call sends every turn
+Calendar shows anything (`from_calendar: true`, "Gym three times last week and deep work only on
+Monday. Is that a normal week?"), otherwise a warm open question. The app has already introduced
+Michael out loud, so the opener never says hello or who he is again. Each later call sends every turn
 so far and gets one short reaction plus one follow up, or `done: true` with the line that hands
 over to the review. The app then reads the user's turns with `POST /v1/goals/from-words`. Nothing
 is saved. `source: "script"` when the fixed questions stand in (no key, model failed or slow).
+Code: `apps/api/src/onboarding/turn.ts`. Demo visitors may call it; 20 calls a minute per caller.
+
+- **Calendar facts.** Computed, never counted by the model: the user's own recurring blocks over
+  the last four weeks (the goal suggestions' clustering), meetings with other people, weekday
+  mornings with nothing before 12:00 and evenings with something after 22:00 in the last 7 days.
+  The model phrases them; a line with a number that is in neither the facts nor the user's words
+  is dropped.
+- **Done** when the user's words already hold goals with a time and something about what gets in
+  the way, after 5 user turns, after two skips in a row, or when the user says so ("that's it").
+  The model may also finish early once there is an answer. A `skipped: true` turn is never asked
+  again.
+- **Checks.** Max 320 characters, ends with a full stop or question mark, `voiceProblems` clean; a
+  turn that is not done must ask a question and a done line must not. Anything else, a model
+  error, or no answer within 6 seconds gives the script.
+- **Script.** The opener (from the calendar when it shows a recurring block), then "What are you
+  working towards right now?", "What would make this a good week? Roughly how much time does each
+  thing need?", "Where does your time go that you wish it didn't?", skipping any already asked or
+  answered, then "That's plenty. Here's what I heard."
+- **Model.** `ANTHROPIC_FAST_MODEL` (default `claude-haiku-5-5`), effort `low`, no retries.
 
 #### Goals from the calendar (#134)
 
