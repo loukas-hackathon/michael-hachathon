@@ -968,9 +968,19 @@ without calling any model.
 
 ### Patterns
 
-| Method | Path                               | Response            | Status |
-| ------ | ---------------------------------- | ------------------- | ------ |
-| GET    | `/v1/patterns?from=<iso>&to=<iso>` | `200 PatternReport` | live   |
+| Method | Path                               | Response                 | Status |
+| ------ | ---------------------------------- | ------------------------ | ------ |
+| GET    | `/v1/patterns?from=<iso>&to=<iso>` | `200 PatternReport`      | live   |
+| GET    | `/v1/patterns/phone-cadence`       | `200 PhoneCadenceReport` | live   |
+
+`/v1/patterns/phone-cadence` is the one detector Today reads (#298): the 7 days ending now, read
+from the iPhone's app usage and the nights only, so it is a fraction of the full report's work.
+`{ from, to, timezone, generated_at, phone_cadence }`, where `phone_cadence` equals the full
+report's for the same window.
+
+The score, a pattern report and a moment are kept for a few seconds per user (20 s, 60 s, 20 s;
+`apps/api/src/memo.ts`) and computed again at once after any write of that user's through the
+store. Replays with `now` or `at` are always computed.
 
 `from`, `to` optional; default is the 7 days ending now. `400` on bad dates, `to` not after `from`,
 or a range over 92 days. Computed on request by pure functions in `apps/api/src/patterns` (plain

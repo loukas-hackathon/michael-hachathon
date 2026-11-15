@@ -673,14 +673,19 @@ export async function getToday(variant?: string): Promise<DayView> {
   if (variant === "error") throw new Error("Preview of the error state");
   if (variant && variant in SAMPLE_DAYS) return SAMPLE_DAYS[variant] as DayView;
   if (USE_MOCKS || variant === "sample") return sampleDay;
-  const to = new Date().toISOString();
-  const from = new Date(Date.now() - 7 * 86_400_000).toISOString();
-  // Side by side: the lead never waits for the score, nor the score for the lead.
+  type Cadence = { phone_cadence?: { status: string; data: unknown } };
+  // Side by side: the lead never waits for the score, nor the score for the lead. The lead needs
+  // only the phone cadence (#298); the full week's report stands in while an older API is live.
+  const fullWeek = () => {
+    const to = new Date().toISOString();
+    const from = new Date(Date.now() - 7 * 86_400_000).toISOString();
+    return get<Cadence>(`/v1/patterns?${new URLSearchParams({ from, to })}`);
+  };
   const [score, patterns] = await Promise.all([
     getScore(),
-    get<{ phone_cadence?: { status: string; data: unknown } }>(
-      `/v1/patterns?${new URLSearchParams({ from, to })}`,
-    ).catch(() => ({})),
+    get<Cadence>("/v1/patterns/phone-cadence")
+      .catch(fullWeek)
+      .catch(() => ({})),
   ]);
   return dayFromScore(score, leadFromPatterns(patterns, score.day.now));
 }

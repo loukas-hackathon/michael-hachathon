@@ -2007,6 +2007,17 @@ export const PatternReport = z.object({
 });
 export type PatternReport = z.infer<typeof PatternReport>;
 
+// GET /v1/patterns/phone-cadence (#298): the one detector Today reads, from only the iPhone's app
+// usage and the nights, over the 7 days ending now. `phone_cadence` equals the full report's.
+export const PhoneCadenceReport = PatternReport.pick({
+  from: true,
+  to: true,
+  timezone: true,
+  generated_at: true,
+  phone_cadence: true,
+});
+export type PhoneCadenceReport = z.infer<typeof PhoneCadenceReport>;
+
 // ---------- score (GET /v1/score) ----------
 
 // The rule lives in apps/api/src/score/score.ts and docs/api.md ("Score"). All minutes are whole
