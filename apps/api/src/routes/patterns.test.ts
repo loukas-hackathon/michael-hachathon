@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
-import { PatternReport } from "@michael/shared";
+import { type EventInput, PatternReport, PhoneCadenceReport } from "@michael/shared";
+import type { z } from "zod";
 import { app } from "../app";
 import { runAsUser } from "../context";
 import { store } from "../store";
-import { eventsByDay } from "./patterns";
+import { eventsByDay, patternReportFor, phoneCadenceFor } from "./patterns";
 
 const auth = { Authorization: "Bearer dev-key" };
 
@@ -68,4 +69,61 @@ test("GET /v1/patterns takes a range and rejects a bad one", async () => {
     const error = (await res.json()) as { error: { code: string } };
     assert.equal(error.error.code, "bad_request", query);
   }
+});
+
+test("GET /v1/patterns/phone-cadence answers exactly the full report's phone cadence (#298)", () =>
+  runAsUser(randomUUID(), async () => {
+    // Six days of the iPhone picked up every 25 minutes from 08:00 to 19:00 UTC, the Mac busy
+    // alongside, and a night each, which is not a waking gap.
+    const now = Date.now();
+    const dayStart = (d: number) => Math.floor(now / 86_400_000) * 86_400_000 - d * 86_400_000;
+    const rows: z.output<typeof EventInput>[] = [];
+    for (let d = 1; d <= 6; d++) {
+      for (let m = 8 * 60; m < 19 * 60; m += 25) {
+        const start = dayStart(d) + m * 60_000;
+        rows.push({
+          source: "iphone_usage",
+          type: "app_usage",
+          start_at: new Date(start).toISOString(),
+          end_at: new Date(start + 90_000).toISOString(),
+          title: m % 50 ? "Instagram" : "Mail",
+          data: {
+            bundle_id: m % 50 ? "com.burbn.instagram" : "com.apple.mobilemail",
+            opened_from: m % 75 ? "notification" : "home_screen",
+          },
+        });
+        rows.push({
+          source: "macos_usage",
+          type: "app_usage",
+          start_at: new Date(start + 120_000).toISOString(),
+          end_at: new Date(start + 20 * 60_000).toISOString(),
+          title: "Code",
+          data: { bundle_id: "com.microsoft.VSCode" },
+        });
+      }
+      rows.push({
+        source: "health_auto_export",
+        type: "sleep",
+        start_at: new Date(dayStart(d) - 2 * 3600_000).toISOString(),
+        end_at: new Date(dayStart(d) + 6 * 3600_000).toISOString(),
+        title: "Sleep",
+        data: {},
+      });
+    }
+    const { inserted } = await store.insertEvents(rows);
+    assert.equal(inserted.length, rows.length);
+
+    const narrow = PhoneCadenceReport.parse(await phoneCadenceFor());
+    const full = await patternReportFor({});
+    assert.equal(narrow.phone_cadence.status, "ok");
+    assert.deepEqual(narrow.phone_cadence, full.phone_cadence);
+    assert.equal(narrow.timezone, "Europe/Athens");
+  }));
+
+test("GET /v1/patterns/phone-cadence answers for the caller, not enough data included", async () => {
+  const res = await app.request("/v1/patterns/phone-cadence", { headers: auth });
+  assert.equal(res.status, 200);
+  const body = PhoneCadenceReport.parse(await res.json());
+  assert.ok(["ok", "not_enough_data"].includes(body.phone_cadence.status));
+  assert.equal(Date.parse(body.to) - Date.parse(body.from), 7 * 86_400_000);
 });

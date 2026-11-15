@@ -1,9 +1,18 @@
-import { type Event, IsoDateTime, type PatternReport, PatternsQuery } from "@michael/shared";
+import {
+  type Event,
+  IsoDateTime,
+  type PatternReport,
+  PatternsQuery,
+  type PhoneCadenceReport,
+  type Source,
+} from "@michael/shared";
 import { Hono } from "hono";
 import { HttpError, parse } from "../http";
 import { memo } from "../memo";
 import { buildPatternReport } from "../patterns";
-import { store } from "../store";
+import { phoneCadence } from "../patterns/cadence";
+import { buildContext } from "../patterns/context";
+import { store, type TimelineFilter } from "../store";
 
 const DAY_MS = 24 * 3600_000;
 const DEFAULT_DAYS = 7;
@@ -50,13 +59,17 @@ async function computePatternReport(range: { from?: string; to?: string }): Prom
  * (about 800 ms for the chat's week); days in parallel take about as long as the busiest day.
  * An event on a border comes back twice and is kept once; the order is the store's (start, id).
  */
-export async function eventsByDay(from: number, to: number): Promise<Event[]> {
+export async function eventsByDay(
+  from: number,
+  to: number,
+  filter: Pick<TimelineFilter, "source" | "type"> = {},
+): Promise<Event[]> {
   const iso = (ms: number) => new Date(ms).toISOString();
   const chunks: Promise<Event[]>[] = [];
   // A week at a time for long ranges, so a 92 day report is 14 reads, not 92.
   const step = to - from > 14 * DAY_MS ? 7 * DAY_MS : DAY_MS;
   for (let start = from; start < to; start += step) {
-    chunks.push(store.listEvents({ from: iso(start), to: iso(Math.min(start + step, to)) }));
+    chunks.push(store.listEvents({ ...filter, from: iso(start), to: iso(Math.min(start + step, to)) }));
   }
   const byId = new Map<string, Event>();
   for (const page of await Promise.all(chunks)) for (const e of page) byId.set(e.id, e);
@@ -65,7 +78,42 @@ export async function eventsByDay(from: number, to: number): Promise<Event[]> {
   );
 }
 
+// What the phone cadence is made of: the iPhone's app intervals (Apple's log and the Shortcuts
+// backup, patterns/timeline.ts) and the nights, which are not waking gaps.
+const IPHONE_SOURCES: Source[] = ["iphone_usage", "ios_shortcuts"];
+const PHONE_CADENCE_MEMO_MS = 60_000;
+
+/**
+ * The phone cadence alone, over the 7 days ending now (#298): the one detector Today reads. It
+ * reads only the iPhone's app usage and the sleeps instead of every event of the week, and runs
+ * only its detector; the result equals the full report's `phone_cadence`.
+ */
+export function phoneCadenceFor(): Promise<PhoneCadenceReport> {
+  return memo("phone-cadence", null, PHONE_CADENCE_MEMO_MS, async () => {
+    const nowMs = Date.now();
+    const now = new Date(nowMs).toISOString();
+    const from = new Date(nowMs - DEFAULT_DAYS * DAY_MS).toISOString();
+    const [apps, sleeps] = await Promise.all([
+      eventsByDay(nowMs - DEFAULT_DAYS * DAY_MS, nowMs + LOOKAHEAD_MS, {
+        source: IPHONE_SOURCES,
+        type: ["app_usage"],
+      }),
+      eventsByDay(nowMs - DEFAULT_DAYS * DAY_MS, nowMs + LOOKAHEAD_MS, { type: ["sleep"] }),
+    ]);
+    const ctx = buildContext([...apps, ...sleeps], { from, to: now, now });
+    return {
+      from: new Date(ctx.from).toISOString(),
+      to: new Date(ctx.to).toISOString(),
+      timezone: ctx.zone.name,
+      generated_at: now,
+      phone_cadence: phoneCadence(ctx),
+    };
+  });
+}
+
 export const patterns = new Hono()
+  // GET /v1/patterns/phone-cadence  (the 7 days ending now; what Today's lead reads)
+  .get("/patterns/phone-cadence", async (c) => c.json(await phoneCadenceFor()))
   // GET /v1/patterns?from=&to=  (default: the 7 days ending now)
   .get("/patterns", async (c) => {
     const body = await patternReportFor({ from: c.req.query("from"), to: c.req.query("to") });
