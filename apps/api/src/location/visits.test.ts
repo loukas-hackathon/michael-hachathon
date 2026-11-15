@@ -78,7 +78,7 @@ test("a silence over 3 hours at the same place starts a new visit", () => {
 test("points away from saved places a kilometre apart are different places", () => {
   const visits = run(null, [
     point("13:00", 37.9, 23.6),
-    point("13:20", 37.9, 23.62),
+    point("13:20", 37.9, 23.61),
     point("14:00", 37.95, 23.6),
   ]);
   assert.deepEqual(
