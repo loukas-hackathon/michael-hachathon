@@ -85,6 +85,28 @@ test("a planted relation is found: late phone, then a lower sleep score the next
   assert.equal(mined.chains.length, 0);
 });
 
+test("one true relation among several hundred pairs of noise is still found", () => {
+  const next = seeded(3);
+  const n = 70;
+  const cols = Object.fromEntries(
+    FEATURES.map((f) => [
+      f.key,
+      Array.from({ length: n }, () =>
+        f.format === "flag" ? (next() < 0.4 ? 1 : 0) : Math.round(next() * 100),
+      ),
+    ]),
+  ) as Record<FeatureKey, (number | null)[]>;
+  // Tie one pair together and leave the other 32 columns as they are.
+  cols.meeting_min = Array.from({ length: n }, () => Math.round(next() * 200));
+  cols.switches_per_hour = cols.meeting_min.map((m) => ((m ?? 0) > 100 ? 42 : 24) + (next() - 0.5) * 10);
+  const mined = mine(table(n, cols));
+  assert.ok(mined.tested > 200, `${mined.tested} pairs tested`);
+  assert.deepEqual(
+    mined.links.map((l) => `${l.x.key}>${l.y}@${l.lag}`),
+    ["meeting_min>switches_per_hour@0"],
+  );
+});
+
 test("noise yields nothing: 34 unrelated columns over 60 days, five times over", () => {
   for (const seed of [1, 2, 3, 4, 5]) {
     const next = seeded(seed);

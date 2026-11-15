@@ -67,13 +67,15 @@ export function spearman(x: number[], y: number[]): number {
   return cov / (rx.length - 1) / (sx * sy);
 }
 
-export const PERMUTATIONS = { first: 200, second: 2000, full: 10_000 } as const;
+export const PERMUTATIONS = { first: 200, second: 2000, third: 10_000, full: 50_000 } as const;
 
 /**
  * How often a shuffle of the days gives a difference in means at least as large as the one seen
- * (two sided). Stops early once the answer is clearly "often": after 200 or 2,000 shuffles with 20
- * or more as large, the value can no longer pass a strict bar, so the remaining shuffles are
- * saved. The smallest value it can return is 1 / 10,001.
+ * (two sided). Stops early once the answer is settled: after 200 or 2,000 shuffles with 20 or
+ * more as large, and after 10,000 with 5 or more, the value is known well enough and the
+ * remaining shuffles are saved. Only the rarest differences run the full 50,000, so the smallest
+ * value it can return is 1 / 50,001: small enough for one true relation to pass the false
+ * discovery bar among several hundred pairs.
  */
 export function permutationP(a: number[], b: number[], seed: number): number {
   if (a.length === 0 || b.length === 0) return 1;
@@ -103,7 +105,8 @@ export function permutationP(a: number[], b: number[], seed: number): number {
   };
   run(PERMUTATIONS.first);
   if (asLarge < 20) run(PERMUTATIONS.second);
-  if (asLarge < 20) run(PERMUTATIONS.full);
+  if (asLarge < 20) run(PERMUTATIONS.third);
+  if (asLarge < 5) run(PERMUTATIONS.full);
   return (asLarge + 1) / (done + 1);
 }
 

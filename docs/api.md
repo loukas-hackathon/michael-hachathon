@@ -1459,7 +1459,7 @@ the evening check in's ratings. Conversations, memories, searches and prompts ar
    the next day. The days are split on the trigger: a fixed threshold where one is usual (30
    minutes of late phone), else the person's own median. The two sides are compared: difference in
    means, the same in standard deviations, a rank correlation, and a permutation test with a fixed
-   seed (up to 10,000 shuffles). "Held" on a trigger day means the outcome was beyond the other
+   seed (up to 50,000 shuffles, stopping early once the answer is settled). "Held" on a trigger day means the outcome was beyond the other
    days' median, on the side the means differ.
 4. **The bar for `pattern`**: the trigger and its absence each seen `evidence.needed` times (4);
    at least `studied.needed_days` (14) days of data; the pair survives a false discovery rate of 2%
