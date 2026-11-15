@@ -185,12 +185,15 @@ export function LogTimeButton({ goal, className }: { goal: LoggableGoal; classNa
   const [open, setOpen] = useState(false);
   // A fresh form each time the sheet opens, so the last result does not linger.
   const [round, setRound] = useState(0);
+  // Once logged there is nothing left to cancel: the sheet closes with Done.
+  const [logged, setLogged] = useState(false);
   return (
     <>
       <button
         type="button"
         onClick={() => {
           setRound((r) => r + 1);
+          setLogged(false);
           setOpen(true);
         }}
         aria-label={`Log time for ${goal.title}`}
@@ -198,9 +201,14 @@ export function LogTimeButton({ goal, className }: { goal: LoggableGoal; classNa
       >
         Log time
       </button>
-      <Sheet open={open} onClose={() => setOpen(false)} title={`Log time: ${goal.title}`}>
+      <Sheet
+        open={open}
+        onClose={() => setOpen(false)}
+        title={`Log time: ${goal.title}`}
+        closeLabel={logged ? "Done" : "Cancel"}
+      >
         <div className="px-1 pb-2">
-          <LogTimeForm key={round} goals={[goal]} goalId={goal.id} />
+          <LogTimeForm key={round} goals={[goal]} goalId={goal.id} onLogged={() => setLogged(true)} />
         </div>
       </Sheet>
     </>

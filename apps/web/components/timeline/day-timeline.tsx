@@ -993,6 +993,7 @@ export function DayTimeline({
         open={picked != null}
         onClose={() => setPicked(null)}
         title={picked ? sheetTitle(picked) : ""}
+        closeLabel={canEditSheet ? "Cancel" : "Done"}
         trailing={
           canEditSheet ? (
             <button

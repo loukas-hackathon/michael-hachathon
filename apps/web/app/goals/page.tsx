@@ -379,8 +379,7 @@ function TheWeek({ week }: { week: Awaited<ReturnType<typeof getGoalsWeek>> }) {
       ) : explain?.scorePct != null ? (
         <HowICount explain={explain}>
           <span className="block text-body">
-            <b className="font-num text-title3 font-bold tnum">{explain.scorePct}%</b> of your goal time this
-            week.
+            <b className="font-num text-title3 font-bold tnum">{explain.scorePct}%</b> optimisation score.
           </span>
         </HowICount>
       ) : null}

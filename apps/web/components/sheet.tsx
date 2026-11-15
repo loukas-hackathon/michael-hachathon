@@ -12,12 +12,15 @@ export function Sheet({
   onClose,
   title,
   trailing,
+  closeLabel = "Cancel",
   children,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   trailing?: ReactNode;
+  /** "Done" for a sheet that only shows things (nothing to cancel), as iOS does. */
+  closeLabel?: "Cancel" | "Done";
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -132,7 +135,7 @@ export function Sheet({
               onClick={onClose}
               className="press -ml-2 h-11 justify-self-start rounded-control px-2 text-body text-tint-text"
             >
-              Cancel
+              {closeLabel}
             </button>
             <h2 id={titleId} className="text-body font-semibold">
               {title}

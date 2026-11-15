@@ -54,7 +54,7 @@ export function HowICount({
           </span>
         ) : null}
       </button>
-      <Sheet open={open} onClose={() => setOpen(false)} title="How I count">
+      <Sheet open={open} onClose={() => setOpen(false)} title="How I count" closeLabel="Done">
         <HowICountBody explain={explain} />
       </Sheet>
     </>
