@@ -110,6 +110,19 @@ test("Goals shows the demo goals", async ({ page }) => {
 test("a recommendation: Do it, then Undo", async ({ page }) => {
   await enterDemo(page);
   const card = focusCard(page);
+  // Today leads with the newest suggestion Michael can carry out. When the demo's travel suggestion
+  // (seeded by the clock) is newer, the focus block folds into "N more suggestions": open it.
+  // A folded row keeps its body in the page at height 0, so "visible" is not enough: ask the fold.
+  await expect(card.getByRole("button", { name: "Do it" })).toBeAttached();
+  const folded = page
+    .getByRole("region", { name: "More from Michael" })
+    .getByRole("listitem")
+    .filter({ hasText: "Block 09:30 to 11:00 for cold outreach." });
+  const more = page.getByRole("button", { name: /more suggestions?$/ }).first();
+  if ((await folded.count()) > 0 && (await more.getAttribute("aria-expanded")) !== "true") {
+    await tap(more);
+    await expect(more).toHaveAttribute("aria-expanded", "true");
+  }
   await tap(card.getByRole("button", { name: "Do it" }));
   await expect(card.getByRole("status")).toHaveText(/^Done\. Undo until 09:30\.$/);
 

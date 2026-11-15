@@ -21,6 +21,7 @@ import { focusGuards } from "./routes/focus-guards";
 import { goals } from "./routes/goals";
 import { instructions } from "./routes/instructions";
 import { integrations, oauth } from "./routes/integrations";
+import { log } from "./routes/log";
 import { meData } from "./routes/me-data";
 import { moments } from "./routes/moments";
 import { nudges } from "./routes/nudges";
@@ -61,6 +62,7 @@ export const v1Routes = new Hono()
   .route("/", analysis)
   .route("/", patterns)
   .route("/", score)
+  .route("/", log)
   .route("/", targets)
   .route("/", chatThreads)
   .route("/", chat)

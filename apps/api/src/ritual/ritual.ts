@@ -388,7 +388,7 @@ export async function logEvening(
       ...(minutes ? { logged_minutes: minutes } : {}),
     });
     if (minutes && item.linked_goal_id && goals.has(item.linked_goal_id)) {
-      await logDoneTime({ goal_id: item.linked_goal_id, minutes, day, note: item.text });
+      await logDoneTime({ goal_id: item.linked_goal_id, minutes, day, note: item.text }, now);
       logged.push({ goal_id: item.linked_goal_id, minutes });
     }
   }

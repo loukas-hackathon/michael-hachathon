@@ -340,6 +340,8 @@ export interface Store extends PrivacyBackend {
   listRituals(filter: { from: string; to: string }): Promise<DayRitual[]>;
   /** Insert or replace the row for that day and half. */
   saveRitual(row: Omit<DayRitual, "updated_at">): Promise<DayRitual>;
+  /** Deletes the rows with `day` in [from, to]. Only the demo reseed uses it (back to the plan). */
+  clearRituals(filter: { from: string; to: string }): Promise<number>;
 
   // ---- weekly targets (#165), one per Monday ----
   /** Stored targets with `week_start` in [from, to] (local days), oldest first. */
@@ -1165,6 +1167,13 @@ export class MemoryStore implements Store {
     const saved: DayRitual = { ...row, updated_at: now() };
     d.rituals = [...d.rituals.filter((r) => !(r.day === row.day && r.kind === row.kind)), saved];
     return structuredClone(saved);
+  }
+
+  async clearRituals(f: { from: string; to: string }) {
+    const d = this.d;
+    const before = d.rituals.length;
+    d.rituals = d.rituals.filter((r) => r.day < f.from || r.day > f.to);
+    return before - d.rituals.length;
   }
 
   async listTargets(from: string, to: string) {

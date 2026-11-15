@@ -4,13 +4,14 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { CountUp } from "@/components/count-up";
 import { LiveRefresh } from "@/components/live-refresh";
+import { LogTimeForm } from "@/components/log-time";
 import { Tween } from "@/components/motion-ui";
 import { ScreenHeader } from "@/components/screen";
 import { Tape, TapeKey } from "@/components/tape";
 import { BriefCard } from "@/components/today/brief-card";
 import { CalendarCard } from "@/components/today/calendar-card";
 import { TodayChecklist } from "@/components/today/checklist";
-import { MoreFromMichael } from "@/components/today/fold";
+import { Fold, MoreFromMichael } from "@/components/today/fold";
 import { GetStarted } from "@/components/today/get-started";
 import { KeepWeekStrip, keepLine, streakLine } from "@/components/today/keep-week";
 import { MichaelCard } from "@/components/today/michael-card";
@@ -81,6 +82,10 @@ export default async function TodayPage({
   // The daily ritual (#318): while its card shows, the outcomes live in it, not in the list.
   const ritualCard = ritualShows(ritual) ? <RitualCard ritual={ritual} /> : null;
   const lists = checklistsFor(checklist, goals).filter((l) => !ritualCard || l.goalId !== ritual?.goal_id);
+  // Goals done time can be logged against (#317): active time and count goals.
+  const loggable = goals
+    .filter((g) => g.active && (goalKind(g) === "time" || goalKind(g) === "count"))
+    .map((g) => ({ id: g.id, title: g.title }));
   const ticks = tape(day);
   const t = totals(day);
   const firstBlock = day.blocks[0];
@@ -117,6 +122,11 @@ export default async function TodayPage({
             <MoreFromMichael>
               <WatchLine demo={demo} />
               <RecommendationsPanel slot="rest" />
+              {loggable.length > 0 && !day.sample ? (
+                <Fold title="Log time" preview="Did something for a goal without a block? Tell me how long.">
+                  <LogTimeForm goals={loggable} />
+                </Fold>
+              ) : null}
             </MoreFromMichael>
           </Suspense>
         </>
@@ -259,6 +269,11 @@ export default async function TodayPage({
               {day.sample && day.travelPlan ? <TravelCard plan={day.travelPlan} /> : null}
               <BriefCard sample={day.sample} />
               <RecommendationsPanel slot="rest" />
+              {loggable.length > 0 && !day.sample ? (
+                <Fold title="Log time" preview="Did something for a goal without a block? Tell me how long.">
+                  <LogTimeForm goals={loggable} />
+                </Fold>
+              ) : null}
             </MoreFromMichael>
           </Suspense>
         </>

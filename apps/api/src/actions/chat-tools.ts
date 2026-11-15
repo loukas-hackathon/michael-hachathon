@@ -16,6 +16,7 @@ import { Zone } from "../patterns/time";
 import { logEvening, planMorning } from "../ritual/ritual";
 import { store } from "../store";
 import { executeRecommendation, undoRecommendation } from "./calendar";
+import { runWriteTool, WRITE_TOOLS } from "./chat-write-tools";
 import { draftText, generateDrafts } from "./drafts";
 import { guardMacApps } from "./mac-apps";
 import { PROPOSAL_TOOLS, runProposalTool } from "./proposals";
@@ -199,6 +200,7 @@ export const CHAT_TOOLS: Anthropic.Tool[] = [
     },
   },
   ...PROPOSAL_TOOLS,
+  ...WRITE_TOOLS,
 ];
 
 const RememberInput = z.object({ fact: z.string().min(1).max(1000) });
@@ -299,6 +301,8 @@ const earliest = (...isos: string[]) => new Date(Math.min(...isos.map((x) => Dat
 
 /** "Undo until 15:00" for a done recommendation, or null without a deadline. */
 export function undoLine(rec: Recommendation): string | null {
+  // Logged time can be taken back for a day: the reply just offers it, the chip holds the button.
+  if (rec.action?.kind === "log_time" || rec.action?.kind === "settle_block") return "Undo";
   const until = rec.action?.undo_until;
   return until ? `Undo until ${clock(until)}` : null;
 }
@@ -480,10 +484,20 @@ export async function runChatTool(
       case "draft_follow_up":
         return await draftFollowUp(input);
       default:
-        return { content: `Unknown tool ${name}`, isError: true };
+        return (await runWriteTool(name, input)) ?? { content: `Unknown tool ${name}`, isError: true };
     }
   } catch (err) {
-    if (err instanceof HttpError) return { content: `Refused (${err.code}): ${err.message}`, isError: true };
+    if (err instanceof HttpError) {
+      const issues = Array.isArray(err.details)
+        ? (err.details as { path?: unknown[]; message?: string }[])
+            .map((i) => `${(i.path ?? []).join(".") || "input"}: ${i.message}`)
+            .join("; ")
+        : "";
+      return {
+        content: `Refused (${err.code}): ${err.message}${issues ? ` (${issues})` : ""}`,
+        isError: true,
+      };
+    }
     throw err;
   }
 }
