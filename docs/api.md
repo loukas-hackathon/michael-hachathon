@@ -26,7 +26,7 @@ returns `501 not_implemented`, `planned` = not routed yet. Update the status whe
     account's own), and only these writes are allowed: `POST /v1/chat`, `/v1/chat/stream`,
     `POST /v1/chat/threads`, `PATCH|DELETE /v1/chat/threads/:id` (their own threads),
     `/v1/recommendations/:id/execute|undo`, `PATCH /v1/recommendations/:id`, `POST /v1/analysis/run`,
-    `/v1/travel/plan`, `/v1/focus-guards/suggest`, `/v1/voice/speak`, `/v1/records/:id/announced`, `POST|DELETE /v1/push/subscriptions`, `POST /v1/nudges/test`, the daily ritual (`POST /v1/ritual/morning|evening`, `/v1/ritual/:kind/skip`) and done time (`POST /v1/log`, `/v1/log/block`, `DELETE /v1/log/:id`), which the reseed puts back to the plan.
+    `/v1/travel/plan`, `/v1/focus-guards/suggest`, `/v1/voice/speak`, `/v1/voice/transcribe`, `/v1/records/:id/announced`, `POST|DELETE /v1/push/subscriptions`, `POST /v1/nudges/test`, the daily ritual (`POST /v1/ritual/morning|evening`, `/v1/ritual/:kind/skip`) and done time (`POST /v1/log`, `/v1/log/block`, `DELETE /v1/log/:id`), which the reseed puts back to the plan.
     Anything else that writes (privacy, goals, instructions, places, profile, integrations,
     Telegram, agents, connecting an agent, keys, data deletion, ingest, `/mcp`) answers
     `403 forbidden` with the message "This is the demo week. Sign in with Google to make it yours."
@@ -56,6 +56,7 @@ Every non-2xx response:
 | `conflict`        | 409                                                     |
 | `not_implemented` | 501                                                     |
 | `unavailable`     | 503 (a dependency is not configured, e.g. no model key) |
+| `rate_limited`    | 429 (too many requests in a short time, voice input)    |
 | `upstream_error`  | 502 (WHOOP, Google, Claude, Omi failed)                 |
 | `internal`        | 500                                                     |
 
@@ -1548,13 +1549,25 @@ the facts; otherwise `phrased_by` is `template`. Lines are cached per user, kind
 
 ### Voice
 
-| Method | Path              | Body                               | Response                                                                                                       | Status |
-| ------ | ----------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------- | ------ |
-| GET    | `/v1/voice`       |                                    | `200 VoiceStatus` `{ elevenlabs: boolean, voice: "chosen" \| "fallback" \| "device", reason: string \| null }` | live   |
-| POST   | `/v1/voice/speak` | `{ text: string }` (1..1000 chars) | `200 audio/mpeg`; `503 unavailable` without `ELEVENLABS_API_KEY`; `502 upstream_error` if ElevenLabs fails     | live   |
+| Method | Path                   | Body                                                                                                                                         | Response                                                                                                                                                                                                                                                                                                 | Status |
+| ------ | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| GET    | `/v1/voice`            |                                                                                                                                              | `200 VoiceStatus` `{ elevenlabs: boolean, voice: "chosen" \| "fallback" \| "device", reason: string \| null, transcribe: boolean }`                                                                                                                                                                      | live   |
+| POST   | `/v1/voice/speak`      | `{ text: string }` (1..1000 chars)                                                                                                           | `200 audio/mpeg`; `503 unavailable` without `ELEVENLABS_API_KEY`; `502 upstream_error` if ElevenLabs fails                                                                                                                                                                                               | live   |
+| POST   | `/v1/voice/transcribe` | the raw recording, `Content-Type: audio/webm \| audio/mp4 \| audio/mpeg \| audio/ogg \| audio/wav \| audio/aac` (1 KB..4 MB, about a minute) | `200 VoiceTranscript` `{ text, language }` (`text` empty when nothing was said); `400` wrong type, too short or too long; `403` device keys and agents; `429 rate_limited` (12 a minute, 300 a day per caller); `503 unavailable` without the key or without Speech to Text access; `502 upstream_error` | live   |
 
 Push to talk in the app: the browser turns speech into text (Web Speech API, en-GB), the text goes
-to `POST /v1/chat`, and the reply is read aloud. `POST /v1/voice/speak` proxies ElevenLabs text to
+to `POST /v1/chat`, and the reply is read aloud. Where the browser cannot (an iPhone home screen
+app refuses, Firefox has no recogniser) or does it badly (iOS cuts off early), the app records the
+sentence with MediaRecorder (webm/opus, or mp4/aac on Safari) and sends it, through the web app's
+`/chat/transcribe` proxy, to `POST /v1/voice/transcribe`. That route passes it to ElevenLabs Speech
+to Text (`ELEVENLABS_STT_MODEL`, default `scribe_v2`, language detected: English and Greek both
+work) and returns the words. The audio is held in memory for that one call and dropped: never
+stored, never logged. Only the app's own callers may send audio (a signed-in session, the demo
+visitor, the API key); device keys and MCP agents get `403`. A key without the Speech to Text
+permission answers `401` upstream: the API then reports `transcribe: false` for ten minutes and the
+app goes back to the browser's recogniser. The conversation on Chat (#299) uses the same path: the
+microphone level ends a turn after 1.2 s of quiet, a tap ends it at once, and the microphone is off
+while Michael thinks and speaks. `POST /v1/voice/speak` proxies ElevenLabs text to
 speech (`ELEVENLABS_VOICE_ID`, default "George", a calm British male; `ELEVENLABS_MODEL`, default
 `eleven_flash_v2_5`) so the key stays on the server. Without a key, or when it fails, the app uses
 the browser's own speech synthesis, preferring a low en-GB male voice. Audio is never stored:

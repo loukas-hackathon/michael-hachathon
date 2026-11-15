@@ -76,6 +76,7 @@ export function Chat({
   const stored = useMemo(() => actedFrom(initial, initialActions), [initial, initialActions]);
   const acted = fromServer ? { ...stored, ...current.acted } : current.acted;
   const [listening, setListening] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
   const [listOpen, setListOpen] = useState(false);
   // New bubbles grow from their own corner, as in Messages; the history already there stays still.
   const arriving = useArrival();
@@ -283,7 +284,9 @@ export function Chat({
               value={draft}
               maxLength={2000}
               enterKeyHint="send"
-              placeholder={listening ? "Listening. Let go to send" : "Ask Michael"}
+              placeholder={
+                transcribing ? "Got it. Writing it down" : listening ? "Listening. Let go to send" : "Ask Michael"
+              }
               onChange={(e) => setDraft(key, e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -299,6 +302,7 @@ export function Chat({
                 setListening(on);
                 if (on) setError(key, null);
               }}
+              onTranscribingChange={setTranscribing}
               onInterim={(text) => setDraft(key, text)}
               onFinal={(text) => send(text, true)}
               onError={(message) => setError(key, message)}

@@ -43,7 +43,12 @@ const status = async () =>
   VoiceStatus.parse(await (await app.request("/v1/voice", { headers: auth })).json());
 
 test("GET /v1/voice says whether ElevenLabs is set up", async () => {
-  assert.deepEqual(await status(), { elevenlabs: false, voice: "device", reason: "no ElevenLabs key" });
+  assert.deepEqual(await status(), {
+    elevenlabs: false,
+    voice: "device",
+    reason: "no ElevenLabs key",
+    transcribe: false,
+  });
 });
 
 test("POST /v1/voice/speak validates the body", async () => {
@@ -74,13 +79,18 @@ test("a library voice refused with 402 falls back to George, and that holds for 
   env.ELEVENLABS_API_KEY = "test-key";
   env.ELEVENLABS_VOICE_ID = LIBRARY_VOICE;
   const asked = mockElevenLabs((id) => (id === LIBRARY_VOICE ? 402 : 200));
-  assert.deepEqual(await status(), { elevenlabs: true, voice: "chosen", reason: null });
+  assert.deepEqual(await status(), { elevenlabs: true, voice: "chosen", reason: null, transcribe: true });
 
   const first = await speak();
   assert.equal(first.status, 200);
   assert.equal(first.headers.get("content-type"), "audio/mpeg");
   assert.deepEqual(asked, [LIBRARY_VOICE, GEORGE]);
-  assert.deepEqual(await status(), { elevenlabs: true, voice: "fallback", reason: "paid plan required" });
+  assert.deepEqual(await status(), {
+    elevenlabs: true,
+    voice: "fallback",
+    reason: "paid plan required",
+    transcribe: true,
+  });
 
   // The decision is cached: the next line goes straight to George.
   assert.equal((await speak()).status, 200);

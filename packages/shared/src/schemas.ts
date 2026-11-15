@@ -2424,8 +2424,36 @@ export const VoiceStatus = z.object({
   elevenlabs: z.boolean(),
   voice: VoiceInUse,
   reason: z.string().nullable(), // why, when it is not the chosen voice
+  // Whether POST /v1/voice/transcribe can turn speech into text (ElevenLabs Speech to Text).
+  transcribe: z.boolean(),
 });
 export type VoiceStatus = z.infer<typeof VoiceStatus>;
+
+// ---------- voice in (POST /v1/voice/transcribe) ----------
+// The raw recording is the request body (Content-Type one of these); text comes back. The audio
+// is held in memory only for the one call to the provider, never stored and never logged.
+export const VOICE_AUDIO_TYPES = [
+  "audio/webm",
+  "audio/mp4",
+  "audio/mpeg",
+  "audio/ogg",
+  "audio/wav",
+  "audio/aac",
+] as const;
+export const VoiceAudioType = z.enum(VOICE_AUDIO_TYPES);
+export type VoiceAudioType = z.infer<typeof VoiceAudioType>;
+// About a minute of speech from any browser (iPhone records AAC at up to 128 kbps); also under
+// Vercel's 4.5 MB request limit, which the web app's proxy sits behind.
+export const VOICE_AUDIO_MAX_BYTES = 4 * 1024 * 1024;
+export const VOICE_AUDIO_MAX_SECONDS = 60;
+// Shorter than this is a tap, not speech.
+export const VOICE_AUDIO_MIN_BYTES = 1000;
+
+export const VoiceTranscript = z.object({
+  text: z.string(), // empty when nothing was said
+  language: z.string().nullable(), // ISO 639 code the provider detected, e.g. "en", "el"
+});
+export type VoiceTranscript = z.infer<typeof VoiceTranscript>;
 
 // ---------- your data: deletion and retention (DELETE /v1/me/data) ----------
 
@@ -2499,6 +2527,8 @@ export const ErrorCode = z.enum([
   "not_implemented",
   // A dependency is not configured (for example no model key): try again once it is set up.
   "unavailable",
+  // Too many requests in a short time (voice transcription): wait and try again.
+  "rate_limited",
   "internal",
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;

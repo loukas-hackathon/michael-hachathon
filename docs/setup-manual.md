@@ -125,3 +125,13 @@ the repo folder (see `apps/collector` README). Real data then goes to your own a
 
 - Supabase: https://supabase.com/dashboard/org/fxrcbmgqabpcwttidoxw/team > **Invite** > Manolis' email.
 - Railway: project `michael` > **Settings > Members** (needs the Pro plan; deploys don't need it).
+
+## 10. Voice input on iPhone (Loukas, 1 min)
+
+The app transcribes speech with ElevenLabs Speech to Text when the browser cannot (the iPhone home
+screen app). Same key as the voice, no new secret.
+
+- https://elevenlabs.io/app/settings/api-keys > key **michael** > **Edit** > Access: turn on
+  **Speech to Text** (keep Text to Speech on) > **Save**.
+- Check: `GET /v1/voice` on the API answers `"transcribe": true`. If it says `false` within ten
+  minutes of a try, the key still lacks the permission.

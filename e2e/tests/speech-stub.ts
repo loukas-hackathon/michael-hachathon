@@ -10,6 +10,8 @@ export type Mode = {
   iphone?: boolean;
   /** Michael's lines are held until the test calls __voice.finish(), or the app cancels them. */
   holdSpeech?: boolean;
+  /** The microphone is refused (getUserMedia rejects), for the recorder path. */
+  micDenied?: boolean;
 };
 
 /** Installs the scripted recogniser and the recording speech synthesiser before any app code runs. */
@@ -76,6 +78,10 @@ export async function stubSpeech(page: Page, mode: Mode = {}) {
     } else {
       w.SpeechRecognition = Fake;
       w.webkitSpeechRecognition = Fake;
+    }
+    if (m.micDenied) {
+      navigator.mediaDevices.getUserMedia = () =>
+        Promise.reject(new DOMException("Permission denied", "NotAllowedError"));
     }
     if (m.iphone) {
       Object.defineProperty(navigator, "userAgent", {
