@@ -28,6 +28,8 @@ export interface DndExecution {
 export interface ActiveDnd {
   id: string;
   until: string;
+  /** When it starts, for one switched on ahead of its hours (the busiest window, dnd/window.ts). */
+  from?: string;
 }
 
 /** Per user: the one on now, null when none is, missing when not read since the process started. */
@@ -35,16 +37,27 @@ const active = new Map<string, ActiveDnd | null>();
 
 const endOf = (action: RecommendationAction): number =>
   typeof action.payload.end_at === "string" ? Date.parse(action.payload.end_at) : Number.NaN;
+/** When it starts: `start_at` for a window ahead (dnd/window.ts), else at the tap. */
+const startOf = (action: RecommendationAction, now: number): number =>
+  typeof action.payload.start_at === "string" ? Math.max(Date.parse(action.payload.start_at), now) : now;
+/** Never set more than a day ahead. */
+const MAX_AHEAD_MS = 24 * 3600_000;
 
 /** Carries out a do_not_disturb action: from now it is on for the user's devices to pick up. */
 export async function switchOnDnd(rec: Recommendation, action: RecommendationAction): Promise<DndExecution> {
   const end = endOf(action);
   const now = Date.now();
-  if (!Number.isFinite(end)) throw new HttpError("bad_request", "Do Not Disturb needs a time to end");
-  if (end - now < MIN_DND_MS) throw new HttpError("conflict", "That time has already passed");
-  if (end - now > MAX_DND_MS) throw new HttpError("bad_request", "Do Not Disturb is at most 12 hours");
+  const start = startOf(action, now);
+  if (!Number.isFinite(end) || !Number.isFinite(start)) {
+    throw new HttpError("bad_request", "Do Not Disturb needs a time to end");
+  }
+  if (end - start < MIN_DND_MS) throw new HttpError("conflict", "That time has already passed");
+  if (end - start > MAX_DND_MS) throw new HttpError("bad_request", "Do Not Disturb is at most 12 hours");
+  if (start - now > MAX_AHEAD_MS)
+    throw new HttpError("bad_request", "Do Not Disturb is set at most a day ahead");
   const until = new Date(end).toISOString();
-  active.set(currentUserId(), { id: rec.id, until });
+  const from = start > now ? new Date(start).toISOString() : undefined;
+  active.set(currentUserId(), { id: rec.id, until, ...(from ? { from } : {}) });
   return { kind: "do_not_disturb", until, undo_until: until };
 }
 
@@ -70,14 +83,22 @@ export async function activeDnd(now = Date.now()): Promise<ActiveDnd | null> {
       .sort(
         (a, b) => Date.parse(b.executed_at ?? b.created_at) - Date.parse(a.executed_at ?? a.created_at),
       )[0];
-    current = last?.action ? { id: last.id, until: new Date(endOf(last.action)).toISOString() } : null;
+    const from =
+      last?.action && typeof last.action.payload.start_at === "string"
+        ? last.action.payload.start_at
+        : undefined;
+    current = last?.action
+      ? { id: last.id, until: new Date(endOf(last.action)).toISOString(), ...(from ? { from } : {}) }
+      : null;
     active.set(userId, current);
   }
   if (current && Date.parse(current.until) <= now) {
     active.set(userId, null);
     return null;
   }
-  return current;
+  // Set ahead (the busiest window): kept, but not on until its hour comes.
+  if (current?.from && Date.parse(current.from) > now) return null;
+  return current ? { id: current.id, until: current.until } : null;
 }
 
 // ---------- the Mac ----------

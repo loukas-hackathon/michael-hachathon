@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { currentUserId } from "../context";
 import { jsonBody, parse } from "../http";
 import { AwPayload, mapActivityWatch } from "../ingest/activitywatch";
@@ -7,9 +7,17 @@ import { HaePayload, mapHealthAutoExport } from "../ingest/health-auto-export";
 import { ShortcutsPairer, ShortcutsPayload } from "../ingest/ios-shortcuts";
 import { mapOmi } from "../ingest/omi";
 import { phoneLive } from "../ingest/phone-live";
+import { personalTokenUsedBefore } from "../tokens";
 import { claudeCodeHook } from "./claude-code";
 
 const shortcuts = new ShortcutsPairer();
+
+/** The key the caller sent, as auth read it (a bearer token, or ?key= on webhooks). */
+const requestKey = (c: Context) =>
+  c.req
+    .header("authorization")
+    ?.match(/^Bearer\s+(.+)$/i)?.[1]
+    ?.trim() ?? c.req.query("key");
 
 // Per-source ingest webhooks. Each maps a provider payload to EventInput[] (apps/api/src/ingest/)
 // and stores it through the Store, scoped to the caller resolved by auth. Payloads: docs/api.md.
@@ -35,9 +43,11 @@ export const webhooks = new Hono()
         message: "Michael is not keeping iPhone app opens: you are off the record or switched it off.",
       });
     }
-    // Run by hand in Shortcuts: the test. The key worked (auth already passed), so the iPhone row
-    // turns Connected; app opens arrive once the App automation runs the shortcut (#466).
-    if (!payload.app) {
+    // No app: the key's first such call is the hand run test (#466). The key worked (auth already
+    // passed), so the iPhone row turns Connected. After that, no app means an App automation, which
+    // on current iOS hands the shortcut no input: stored as an open of an unnamed app. Callers
+    // without a device key (the API key, curl) keep the old rule: no app is a test.
+    if (!payload.app && personalTokenUsedBefore(requestKey(c)) !== true) {
       return c.json({
         ...ignoredResponse(0),
         test: true,

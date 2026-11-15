@@ -9,6 +9,7 @@ import {
   voiceDuration,
 } from "@michael/shared";
 import { currentUserId } from "../context";
+import { offerDndWindow } from "../dnd/offer";
 import { forbiddenBy } from "../instructions/protected";
 import { MINUTE, type Zone } from "../patterns/time";
 import { type Span, union } from "../patterns/util";
@@ -249,7 +250,17 @@ export function offerGoalActions(opts: { now?: number; rows?: ScoreGoal[] } = {}
   // Two reads of Today at once must not store the same offer twice: the second call for a user
   // waits for the first, then finds the offer's key already there.
   const user = currentUserId();
-  const run = (inFlight.get(user) ?? Promise.resolve()).catch(() => undefined).then(() => makeOffers(opts));
+  const run = (inFlight.get(user) ?? Promise.resolve())
+    .catch(() => undefined)
+    .then(() => makeOffers(opts))
+    .then(async (made) => {
+      // Do Not Disturb for the hours the phone pulls hardest (dnd/offer.ts), in the same queue.
+      const dnd = await offerDndWindow(opts.now).catch((err) => {
+        console.error("offers: busiest hours", err);
+        return [] as Recommendation[];
+      });
+      return [...made, ...dnd];
+    });
   const tail = run.finally(() => {
     if (inFlight.get(user) === tail) inFlight.delete(user);
   });
