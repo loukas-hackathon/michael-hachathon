@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { sleepScore } from "@michael/shared";
 import { addDays, athensMidnight, DEMO_TZ, iso, localDate, weekday } from "./time";
 import {
   DEMO_DAYS,
@@ -450,20 +451,6 @@ export interface Night {
   score: number;
 }
 
-/**
- * The night's score, 0 to 100, written on the sleep event as `data.score`. The same sum a reader
- * works out from the stages of a night that carries no score (the week's nights): half is the
- * time asleep against 8 hours, a quarter deep plus REM against 40% of it, a quarter how little
- * of the night was spent awake (15% or more earns nothing). So the 77 days and the 7 read on one
- * scale.
- */
-export function nightScore(n: { asleep: number; deep: number; rem: number; awake: number }): number {
-  const length = Math.min(1, n.asleep / 480);
-  const stages = Math.min(1, (n.deep + n.rem) / (0.4 * n.asleep));
-  const calm = 1 - Math.min(1, n.awake / (0.15 * (n.asleep + n.awake)));
-  return Math.round(100 * (0.5 * length + 0.25 * stages + 0.25 * calm));
-}
-
 const nightCache = new Map<string, Night>();
 /**
  * The night that ends on `date`. Phone minutes after 23:00 push bed back and take deep sleep; a
@@ -518,7 +505,9 @@ export function night(date: string): Night {
     rem,
     awake,
     inBed,
-    score: nightScore({ asleep, deep, rem, awake }),
+    // The one rule every reader uses for a night without a score (sleepScore in @michael/shared),
+    // so the 77 days and the week's own nights read on one scale.
+    score: sleepScore({ duration_min: asleep, deep_min: deep, rem_min: rem, awake_min: awake }) ?? 0,
   };
   nightCache.set(date, out);
   return out;

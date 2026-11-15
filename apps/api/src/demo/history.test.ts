@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { type Event, EventInput } from "@michael/shared";
+import { type Event, EventInput, sleepScore } from "@michael/shared";
 import { app } from "../app";
 import { runAsUser } from "../context";
 import { env } from "../env";
@@ -13,7 +13,6 @@ import {
   historyDay,
   isDemoHistory,
   measuredSources,
-  nightScore,
   SHORT_NIGHT_MINUTES,
 } from "./history";
 import { seedDemoWeek } from "./sync";
@@ -89,15 +88,9 @@ for (const now of NOWS) {
       assert.ok(night.score >= 30 && night.score <= 100, `${day} score ${night.score}`);
       assert.equal(night.deep_min + night.rem_min + night.core_min, night.duration_min);
       assert.equal(night.duration_min + night.awake_min, night.in_bed_min);
-      assert.equal(
-        night.score,
-        nightScore({
-          asleep: night.duration_min,
-          deep: night.deep_min,
-          rem: night.rem_min,
-          awake: night.awake_min,
-        }),
-      );
+      // The score is the one a reader works out from the same stages.
+      const { score, ...stages } = night;
+      assert.equal(score, sleepScore(stages));
       const started = (e: EventRow) => Date.parse(e.start_at) >= from && Date.parse(e.start_at) < to;
       const recovery = history.events.filter((e) => e.type === "recovery" && started(e));
       assert.equal(recovery.length, 1, `${day} recovery`);
