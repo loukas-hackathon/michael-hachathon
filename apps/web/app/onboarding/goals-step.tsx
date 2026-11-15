@@ -7,7 +7,9 @@ import { useEffect, useState } from "react";
 import { ConnectionIcon } from "@/components/you/connection-icon";
 import { hm } from "@/lib/format";
 import { finishOnboarding, skipOnboarding } from "./actions";
-import { OnboardingFrame, primaryButton, Separator } from "./frame";
+import { MichaelWaits, OnboardingFrame, primaryButton, Separator } from "./frame";
+import { ReadingStatus, useShown } from "./reading-status";
+import { WaitScreen } from "./wait";
 
 // Onboarding, screen 1 of 2: the goals, in one screen. With the calendar in, Michael lists what he
 // found in the user's own week (#134), ticked and with the hours filled in; the usual starters sit
@@ -15,6 +17,8 @@ import { OnboardingFrame, primaryButton, Separator } from "./frame";
 // them. One tap keeps the lot; hours change with minus and plus, everything else later on Goals.
 // Each row says its area (Business, Health, Personal), and the last row takes a goal in the user's
 // own words (carried over from Manolis' #190).
+
+const SKIPPING = ["Getting your day ready"];
 
 type Starter = {
   category: GoalCategory;
@@ -233,12 +237,17 @@ export function GoalsStep({
   const [own, setOwn] = useState("");
   const ownTitle = own.trim();
   const [busy, setBusy] = useState<"save" | "skip" | null>(null);
+  // Saved, on the way to the week: "Saving" first, then Michael thinking (wait.tsx).
+  const [going, setGoing] = useState(false);
+  const goingShown = useShown(going);
   const [failed, setFailed] = useState(false);
 
   // Back from the next step with the browser's Back: the page comes from the cache, reset the button.
   useEffect(() => {
     const reset = (e: PageTransitionEvent) => {
-      if (e.persisted) setBusy(null);
+      if (!e.persisted) return;
+      setBusy(null);
+      setGoing(false);
     };
     window.addEventListener("pageshow", reset);
     return () => window.removeEventListener("pageshow", reset);
@@ -265,6 +274,7 @@ export function GoalsStep({
     }).catch(() => ({ ok: false }));
     if (res.ok) {
       // Stays "Saving" until the next screen paints: it reads the week with the new goals.
+      setGoing(true);
       router.push("/onboarding?step=connect");
       return;
     }
@@ -278,6 +288,17 @@ export function GoalsStep({
     router.replace("/");
   }
 
+  if (going && goingShown) return <WaitScreen kind="connect" screen="to-connect" />;
+
+  if (busy === "skip") {
+    // Skip answers at once: Michael on his way out, while the skip is saved and Today loads.
+    return (
+      <OnboardingFrame step={1} title={null} screen="leaving" footer={null}>
+        <MichaelWaits title="Taking you to Today." status={<ReadingStatus steps={SKIPPING} />} />
+      </OnboardingFrame>
+    );
+  }
+
   const found = suggestions.length > 0;
   const n = picked.length + (ownTitle ? 1 : 0);
   // Redo setup with nothing new found: the goals are already in, moving on is enough.
@@ -286,6 +307,7 @@ export function GoalsStep({
   return (
     <OnboardingFrame
       step={1}
+      screen="goals"
       title={found ? "Here's what your week is for." : "What are we playing for?"}
       line={
         found

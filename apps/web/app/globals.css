@@ -21,6 +21,9 @@
   --m-hatch: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='6'%3E%3Cpath d='M-1 7 7 -1M-1 1 1 -1M5 7 7 5' stroke='%236C6C70' stroke-width='1'/%3E%3C/svg%3E");
   --m-dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='6'%3E%3Ccircle cx='3' cy='3' r='0.8' fill='%23AEAEB2'/%3E%3C/svg%3E");
   --m-tabbar-h: 60px;
+  /* Booked but not spent on the one bar (progress-bar.tsx): hollow on light, a lifted grey on dark,
+   * where a hollow of the black page read as a black line. Derived from the tokens above. */
+  --m-bar-ahead: var(--m-bg);
 
   /* Motion tokens (docs/design-guide.md, "Motion"). Animate transform and opacity only. */
   --m-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -68,6 +71,7 @@
     --m-tint-text: #ff4fa3;
     --m-danger: #ff453a;
     --m-glass: rgb(30 30 32 / 0.82);
+    --m-bar-ahead: color-mix(in srgb, var(--m-label) 24%, var(--m-context));
     --m-hatch: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='6'%3E%3Cpath d='M-1 7 7 -1M-1 1 1 -1M5 7 7 5' stroke='%2398989F' stroke-width='1'/%3E%3C/svg%3E");
     --m-dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='6'%3E%3Ccircle cx='3' cy='3' r='0.8' fill='%23545458'/%3E%3C/svg%3E");
   }
@@ -83,6 +87,7 @@
   --m-tint-text: #ff4fa3;
   --m-danger: #ff453a;
   --m-glass: rgb(30 30 32 / 0.82);
+  --m-bar-ahead: color-mix(in srgb, var(--m-label) 24%, var(--m-context));
   --m-hatch: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='6'%3E%3Cpath d='M-1 7 7 -1M-1 1 1 -1M5 7 7 5' stroke='%2398989F' stroke-width='1'/%3E%3C/svg%3E");
   --m-dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='6'%3E%3Ccircle cx='3' cy='3' r='0.8' fill='%23545458'/%3E%3C/svg%3E");
 }
@@ -997,6 +1002,64 @@ body::before {
   to {
     opacity: 0;
     transform: scale(0.97);
+  }
+}
+
+/*
+ * Onboarding, one screen to the next (app/onboarding/frame.tsx): the one orchestrated moment. The
+ * new screen's heading rises 10px and fades in on the spring, its body a beat later, its action
+ * last, so the eye lands on what Michael says, then on what to do. Only on a step change the user
+ * caused; nothing on a cold load.
+ */
+.m-step-in .m-step-part {
+  animation: m-step-rise var(--m-dur-spring) var(--m-spring) both;
+}
+.m-step-in .m-step-part:nth-child(2) {
+  animation-delay: calc(var(--m-stagger) * 2);
+}
+.m-step-in .m-step-part:nth-child(3) {
+  animation-delay: calc(var(--m-stagger) * 4);
+}
+@keyframes m-step-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+/* A thinking screen (onboarding loading, Michael reading): nothing for 200ms, so a fast step never
+ * flashes it, then it fades in. */
+.m-wait-in {
+  animation: m-fade-in var(--m-dur-ui) var(--m-ease-out) 200ms both;
+}
+/* The pinned action's top edge (frame-footer.tsx): a hairline only while content runs under it,
+ * as an iOS toolbar's scroll edge does. Never a band, never a gradient. */
+.m-edge {
+  opacity: 0;
+  transition: opacity var(--m-dur-ui) var(--m-ease-out);
+}
+[data-under] > .m-edge {
+  opacity: 1;
+}
+/* The question Michael is answering dims while he thinks of the next one. */
+.m-dim {
+  transition: opacity var(--m-dur-ui) var(--m-ease-out);
+}
+.m-dim[data-dim] {
+  opacity: 0.4;
+}
+@media (prefers-reduced-motion: reduce) {
+  .m-step-in .m-step-part {
+    animation: m-fade-in var(--m-dur-ui) linear both;
+  }
+  .m-step-in .m-step-part:nth-child(n) {
+    animation-delay: 0ms;
+  }
+  .m-wait-in {
+    animation-timing-function: linear;
+  }
+  .m-edge,
+  .m-dim {
+    transition-timing-function: linear;
   }
 }
 

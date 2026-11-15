@@ -125,6 +125,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
   return (
     <OnboardingFrame
       step={2}
+      screen="connect"
       title={insight ? "Here's your week." : "Now, your days."}
       line={
         insight
