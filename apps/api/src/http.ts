@@ -12,6 +12,7 @@ const STATUS: Record<ErrorCode, ContentfulStatusCode> = {
   upstream_error: 502,
   not_implemented: 501,
   unavailable: 503,
+  rate_limited: 429,
   internal: 500,
 };
 

@@ -65,7 +65,9 @@ export default async function YouPage({
             <span className="text-body">Agents</span>
             <span className="text-footnote text-label-2">Who asks about you, and what they may see</span>
           </span>
-          <span className="text-label-2">›</span>
+          <span aria-hidden="true" className="text-label-2">
+            ›
+          </span>
         </Link>
         <DeleteDataRow />
       </section>
@@ -88,7 +90,9 @@ export default async function YouPage({
               <span className="text-body">Redo setup</span>
               <span className="text-footnote text-label-2">Goals and connections</span>
             </span>
-            <span className="text-label-2">›</span>
+            <span aria-hidden="true" className="text-label-2">
+              ›
+            </span>
           </Link>
           <p className="relative flex min-h-12 items-center justify-between gap-3 px-4 py-2">
             <span className={separator} />

@@ -3,13 +3,23 @@
 import { useSyncExternalStore } from "react";
 import { sendLine } from "@/app/chat/chat-session";
 import {
+  checkRecorderPath,
+  currentInputMode,
+  MicError,
+  primeRecorder,
+  type Recording,
+  releaseMic,
+  startRecording,
+  transcribeErrorCopy,
+  transcribeRecording,
+} from "./recorder";
+import {
   isEcho,
   isIos,
   isIosHomeScreenApp,
   markRefused,
   meansNoVoiceHere,
   type Recognition,
-  readRefused,
   recognitionCtor,
   recognitionErrorCopy,
   speakReply,
@@ -20,7 +30,10 @@ import {
 
 // A hands free conversation with Michael (#299): one tap starts it, he listens, answers briefly
 // by voice, and listens again. Turn taking runs on the browser's own recogniser: a pause after
-// the user's words ends their turn, a longer silence ends the conversation. Tapping, or speaking
+// the user's words ends their turn, a longer silence ends the conversation. Where the browser
+// cannot recognise speech (an iPhone home screen app) or does it badly (iOS), each turn is
+// recorded instead (#313): the microphone level ends the turn after a pause, and the API turns
+// the recording into text and drops the audio. Tapping, or speaking
 // over him where the device allows it, stops his voice. Kept outside React like the chat session,
 // so the lines land in the same chat; the sheet only shows it.
 
@@ -42,6 +55,10 @@ export type Conversation = {
   note: string | null;
   /** Whether speaking over Michael stops him (off on iPhone, where the mic would cut his voice). */
   bargeIn: boolean;
+  /** The turn is recorded and transcribed by the API, not recognised in the browser. */
+  recorded: boolean;
+  /** Microphone level 0..1 while a turn is recorded, for the orb. */
+  level: number;
 };
 
 /** A pause this long after the user's words ends their turn. */
@@ -50,7 +67,7 @@ export const TURN_PAUSE_MS = 1300;
 export const QUIET_MS = 9000;
 export const QUIET_COPY = "I'll be here when you need me.";
 
-const OFF: Conversation = { phase: "off", heard: "", note: null, bargeIn: false };
+const OFF: Conversation = { phase: "off", heard: "", note: null, bargeIn: false, recorded: false, level: 0 };
 let state = OFF;
 const listeners = new Set<() => void>();
 
@@ -71,6 +88,7 @@ export function useConversation(): Conversation {
 }
 
 let rec: Recognition | null = null;
+let recording: Recording | null = null;
 let pauseTimer: ReturnType<typeof setTimeout> | undefined;
 let quietTimer: ReturnType<typeof setTimeout> | undefined;
 // Bumped whenever the conversation ends or a turn moves on, so late callbacks are ignored.
@@ -104,15 +122,27 @@ function dropRecogniser() {
   }
 }
 
+/** Stops a turn's recording and throws it away, and turns the microphone off. */
+function dropRecording() {
+  recording?.cancel();
+  recording = null;
+  releaseMic();
+}
+
 /** One tap starts it. Must run inside the tap: that is when iOS lets Michael's voice play later. */
 export function startConversation(opts: { elevenlabs: boolean }): void {
   elevenlabs = opts.elevenlabs;
   unlockAudio();
-  if (!recognitionCtor() || readRefused()) {
+  // Inside the tap too: the level meter's audio context may only start in a gesture on iOS.
+  primeRecorder();
+  checkRecorderPath();
+  const mode = currentInputMode();
+  if (mode === "none") {
     set({ ...OFF, phase: "unavailable" });
     return;
   }
-  set({ ...OFF, bargeIn: !isIos() });
+  const recorded = mode === "recorder";
+  set({ ...OFF, recorded, bargeIn: !recorded && !isIos() });
   listen();
 }
 
@@ -126,8 +156,9 @@ export function endConversation(note: string | null = null): void {
   gen++;
   clearTimers();
   dropRecogniser();
+  dropRecording();
   stopSpeaking();
-  set({ phase: "off", heard: "", note });
+  set({ phase: "off", heard: "", note, level: 0 });
 }
 
 /** The big button: stops Michael and listens, ends the user's turn early, or starts again. */
@@ -137,6 +168,9 @@ export function tapConversation(): void {
     stopSpeaking();
     dropRecogniser();
     listen();
+  } else if (state.phase === "listening" && state.recorded && recording) {
+    // A recorded turn: a tap says "done" (the only way where the level cannot be read).
+    void finishRecordedTurn();
   } else if (state.phase === "listening" && state.heard.trim()) {
     void finishTurn();
   } else if (state.phase === "off") {
@@ -149,6 +183,10 @@ export function tapConversation(): void {
  * (barge in) counts, and it stops him.
  */
 function listen(overSpeech = false) {
+  if (state.recorded) {
+    if (!overSpeech) listenRecorded();
+    return;
+  }
   const Ctor = recognitionCtor();
   if (!Ctor) return set({ phase: "unavailable" });
   const mine = gen;
@@ -220,6 +258,76 @@ function listen(overSpeech = false) {
   }
 }
 
+/** A recorded turn: listens until the user pauses after speaking, or taps. */
+function listenRecorded() {
+  const mine = gen;
+  dropRecogniser();
+  dropRecording();
+  clearTimers();
+  if (state.phase !== "listening") quietAt = Date.now() + QUIET_MS;
+  set({ phase: "listening", heard: "", level: 0 });
+  let spoke = false;
+  startRecording({
+    onLevel: (level) => {
+      if (mine === gen) set({ level });
+    },
+    onSpeech: () => {
+      spoke = true;
+      clearTimeout(quietTimer);
+    },
+    onPause: () => {
+      if (mine === gen) void finishRecordedTurn();
+    },
+    onLimit: () => {
+      if (mine === gen) void finishRecordedTurn();
+    },
+  })
+    .then((r) => {
+      if (mine !== gen || state.phase !== "listening") return r.cancel();
+      recording = r;
+      // Without a level there is no telling silence from speech: the user taps when done.
+      if (!r.metered) return;
+      quietTimer = setTimeout(
+        () => {
+          if (mine === gen && !spoke) endConversation(QUIET_COPY);
+        },
+        Math.max(0, quietAt - Date.now()),
+      );
+    })
+    .catch((err: unknown) => {
+      if (mine !== gen) return;
+      endConversation(recognitionErrorCopy(err instanceof MicError ? err.code : "unknown"));
+    });
+}
+
+/** The recorded turn is over: the API turns it into text, then it goes like a spoken one. */
+async function finishRecordedTurn() {
+  const r = recording;
+  recording = null;
+  if (!r || state.phase !== "listening") return;
+  const mine = ++gen;
+  clearTimers();
+  set({ phase: "thinking", level: 0 });
+  const blob = await r.stop();
+  // The microphone is off while Michael thinks and speaks: his voice is never recorded.
+  releaseMic();
+  if (mine !== gen) return;
+  if (!blob) {
+    set({ phase: "listening" });
+    return listen();
+  }
+  const res = await transcribeRecording(blob);
+  if (mine !== gen) return;
+  if (!res.ok) return endConversation(transcribeErrorCopy(res.code));
+  if (!res.text) {
+    // Only noise: keep listening, within the same quiet limit.
+    set({ phase: "listening" });
+    return listen();
+  }
+  set({ heard: res.text });
+  await answer(res.text, mine);
+}
+
 /** The user's turn is over: send it, show the answer as it streams, then say it and listen again. */
 async function finishTurn() {
   const text = state.heard.trim();
@@ -228,6 +336,10 @@ async function finishTurn() {
   clearTimers();
   dropRecogniser();
   set({ phase: "thinking" });
+  await answer(text, mine);
+}
+
+async function answer(text: string, mine: number) {
   const res = await sendLine(text, { spoken: true });
   if (mine !== gen) return;
   if (!res) return endConversation();

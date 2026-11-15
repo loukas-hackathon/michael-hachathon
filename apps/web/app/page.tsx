@@ -32,12 +32,22 @@ import {
 } from "@/lib/api";
 import type { ChecklistDay } from "@/lib/checklist";
 import { type DayView, nowIndex, tape, totals } from "@/lib/day";
-import { formatDay, formatTime, hm } from "@/lib/format";
+import { formatDay, formatTime, hm, spokenDuration } from "@/lib/format";
 import { verdict } from "@/lib/gamification";
 import type { LostWeek } from "@/lib/lost-week";
 import { momentKindFor } from "@/lib/moments";
 import { ritualPreview, ritualShows } from "@/lib/ritual";
 import { preloadTodaySections } from "@/lib/today-preload";
+
+/** What VoiceOver reads for the tape: "3 hours 33 minutes spent, 47 minutes lost, 50 minutes still ahead". */
+function tapeLabel(t: ReturnType<typeof totals>) {
+  if (t.scorePct === null) return `${spokenDuration(t.planned)} of goal time planned`;
+  const parts = [`${spokenDuration(t.spent)} spent`];
+  if (t.unverified > 0) parts.push(`${spokenDuration(t.unverified)} of it unconfirmed`);
+  if (t.lost > 0) parts.push(`${spokenDuration(t.lost)} lost`);
+  if (t.ahead > 0) parts.push(`${spokenDuration(t.ahead)} still ahead`);
+  return `Today's tape: ${parts.join(", ")}`;
+}
 
 const TITLE: Record<DayView["moment"], string> = { morning: "Morning", today: "Today", evening: "Evening" };
 
@@ -131,7 +141,7 @@ export default async function TodayPage({
             ) : day.blocks.length > 0 ? (
               <h2 className="flex flex-col">
                 <span className="text-footnote font-semibold text-label-2">Optimisation score</span>
-                <span className="font-num text-score font-extrabold tracking-[-0.02em] tnum">
+                <span className="font-num text-score font-extrabold tracking-[-0.02em] tnum [font-size:min(var(--text-score),24vw)]">
                   <CountUp value={t.scorePct ?? 0} suffix="%" />
                 </span>
                 <span className="text-title3 font-semibold">
@@ -174,10 +184,11 @@ export default async function TodayPage({
                     nowAt={day.moment === "evening" ? null : nowIndex(ticks)}
                     nowLabel={formatTime(day.now)}
                     recordAt={day.record?.tick ?? null}
-                    label={`${hm(t.spent)} spent (${hm(t.unverified)} unconfirmed), ${hm(t.lost)} lost, ${hm(t.ahead)} still ahead`}
+                    label={tapeLabel(t)}
                   />
                 </div>
                 <TapeKey
+                  hidden
                   items={[
                     ...(t.spent - t.unverified > 0 || t.unverified === 0
                       ? [{ kind: "spent" as const, minutes: t.spent - t.unverified, text: "spent" }]
@@ -231,7 +242,10 @@ export default async function TodayPage({
             <section aria-label="What I did" className="mt-6" data-live-key="did" data-live-pop="">
               {day.lead ? <MichaelCard lead={day.lead} primary={!primary} /> : null}
               {day.nudge ? (
+                // Polite: a new nudge arriving with a live refresh is read out once, without interrupting.
                 <div
+                  aria-live="polite"
+                  aria-atomic="true"
                   className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 rounded-group bg-fill px-4 py-3"
                   data-live-key={`nudge${day.nudge.at}`}
                 >

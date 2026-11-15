@@ -44,6 +44,8 @@ const ALLOWED: [string, RegExp][] = [
   ["POST", /^\/v1\/records\/[^/]+\/announced$/],
   // Michael reading his reply aloud (no state).
   ["POST", /^\/v1\/voice\/speak$/],
+  // Speech to text for the visitor's own words (no state, audio never stored).
+  ["POST", /^\/v1\/voice\/transcribe$/],
   ["POST", /^\/v1\/push\/subscriptions$/],
   ["DELETE", /^\/v1\/push\/subscriptions$/],
   ["POST", /^\/v1\/nudges\/test$/],

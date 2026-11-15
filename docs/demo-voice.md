@@ -19,8 +19,10 @@ voice out; recognition needs a connection on most phones).
 - [ ] The demo week is loaded (Today screen shows real blocks) and the score endpoint answers.
 - [ ] In the Michael app, open `/chat`, hold the mic once and say "test" so the browser has asked
       for the microphone already. Never let the permission prompt appear on stage.
-- [ ] Open the app in Safari, not from the home screen icon: iOS home screen apps cannot use
-      in-app speech recognition, and the mic then only points to keyboard dictation.
+- [ ] On iPhone (Safari or the home screen app) the mic records and the API transcribes with
+      ElevenLabs Speech to Text (setup manual step 10). No live words while you speak: the line
+      appears once you let go, about a second later. Without that permission on the key, open the
+      app in Safari (browser recognition) rather than from the home screen icon.
 - [ ] Do Not Disturb on, except the Apple Watch nudge we want to show.
 
 ## Script A: Claude voice mode (90 seconds)
@@ -67,18 +69,19 @@ On iPhone, speaking over him is off (the microphone would cut his voice); a tap 
 
 ## If something goes wrong
 
-| Problem                                | Recovery                                                                                                                                                      |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Claude does not call Michael           | Say "use the Michael connector". Check the connector is switched on in the chat's tools menu.                                                                 |
-| Connector asks to sign in again        | Tap through the consent page; it takes one tap.                                                                                                               |
-| Mic button says voice is not supported | Use Safari on iPhone or Chrome on Android or desktop. Firefox has no speech recognition.                                                                      |
-| "Tap the mic on your keyboard"         | The app is opened from the iPhone home screen, where iOS refuses in-app recognition. Open it in Safari for hold to talk, or tap the keyboard mic and dictate. |
-| Michael speaks only on the second try  | iOS unlocks sound on the release of a tap. Hold and let go once before the pitch.                                                                             |
-| No sound from Michael                  | Silent switch off, volume up. The reply is always on screen, so read it out and carry on.                                                                     |
-| Chat says it cannot talk yet           | `ANTHROPIC_API_KEY` is missing on Railway. Switch to Script A.                                                                                                |
+| Problem                                | Recovery                                                                                                                                                                                  |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude does not call Michael           | Say "use the Michael connector". Check the connector is switched on in the chat's tools menu.                                                                                             |
+| Connector asks to sign in again        | Tap through the consent page; it takes one tap.                                                                                                                                           |
+| Mic button says voice is not supported | Use Safari on iPhone or Chrome on Android or desktop. Firefox has no speech recognition.                                                                                                  |
+| "Tap the mic on your keyboard"         | Neither the browser nor the API can listen here (the ElevenLabs key lacks Speech to Text, setup manual step 10). Open it in Safari for hold to talk, or tap the keyboard mic and dictate. |
+| Michael speaks only on the second try  | iOS unlocks sound on the release of a tap. Hold and let go once before the pitch.                                                                                                         |
+| No sound from Michael                  | Silent switch off, volume up. The reply is always on screen, so read it out and carry on.                                                                                                 |
+| Chat says it cannot talk yet           | `ANTHROPIC_API_KEY` is missing on Railway. Switch to Script A.                                                                                                                            |
 
 ## Privacy line (if asked)
 
-Speech recognition runs in the browser; Michael only ever receives the text. No audio is recorded or
-stored by us: the voice out is generated from Michael's reply text (never the user's voice) and
-played once in the browser.
+Where the browser can, speech recognition runs in the browser and Michael only receives the text.
+On iPhone the sentence is recorded, sent once to be transcribed (ElevenLabs Speech to Text) and
+dropped: the audio is never stored or logged by us, only the words are kept, as in typed chat. The
+voice out is generated from Michael's reply text (never the user's voice) and played once.
