@@ -324,6 +324,10 @@ body::before {
     --m-wide: min(1280px, calc(100vw - 16rem - 48px));
     max-width: none;
   }
+  /* Two panes (You, Chat): the list and a reading column beside it, never stretched wider. */
+  .m-dash.m-panes {
+    --m-wide: min(1040px, calc(100vw - 16rem - 48px));
+  }
   /* "More from Michael" rows start open on a laptop (components/today/fold.tsx), from the first
    * paint, so hydration never moves anything. */
   [data-wide-open] > .m-fold-body {

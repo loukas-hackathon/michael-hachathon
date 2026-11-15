@@ -52,7 +52,7 @@ export default async function YouPage({
 
       <ConnectionsList view={connections} flash={flash} demo={account === "The demo week"} />
 
-      <section className="mt-8">
+      <section id="privacy" className="mt-8 scroll-mt-4">
         <h2 className="mb-2 text-title3 font-bold">Privacy</h2>
         <div className="overflow-hidden rounded-group bg-fill">
           <OffTheRecordSwitch />
@@ -78,7 +78,7 @@ export default async function YouPage({
         quiet={profile?.quiet_hours ?? null}
       />
 
-      <section className="mt-8">
+      <section id="account" className="mt-8 scroll-mt-4">
         <h2 className="mb-2 text-title3 font-bold">Account</h2>
         {/* Redo setup lives here rather than under a heading of its own: one row needs no section. */}
         <div className="overflow-hidden rounded-group bg-fill">

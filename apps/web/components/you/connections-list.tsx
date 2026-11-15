@@ -7,7 +7,7 @@ import { ConnectionRow } from "./connection-row";
 // the one next step. The summary line counts only what is really connected.
 // The demo week replays a recorded week from these four. A demo visitor sees them as what they
 // are, sample data, instead of "Not connected" and "Coming soon" under numbers that quote them.
-const DEMO_SAMPLE: ReadonlySet<string> = new Set(["google-calendar", "apple-watch", "mac", "iphone"]);
+export const DEMO_SAMPLE: ReadonlySet<string> = new Set(["google-calendar", "apple-watch", "mac", "iphone"]);
 
 export function ConnectionsList({
   view,
@@ -65,7 +65,8 @@ export function ConnectionsList({
           {flash.text}
         </p>
       ) : null}
-      <div className="overflow-hidden rounded-group bg-fill">
+      {/* On a laptop the rows live in the list on the left (YouNav, #285): one link per connection. */}
+      <div className="overflow-hidden rounded-group bg-fill xl:hidden">
         {rows.map((row, i) => (
           <div key={row.id} className="relative">
             {i > 0 ? <span className="absolute inset-x-0 top-0 ml-[52px] h-[0.5px] bg-separator" /> : null}
