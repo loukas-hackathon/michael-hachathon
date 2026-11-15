@@ -441,11 +441,15 @@ export function mine(table: FeatureTable): Mined {
       });
     }
   }
-  // One chain per kind of trigger. The strongest; between equals, the one that crosses the most
-  // sources, then the one whose middle step comes soonest after the trigger.
+  // One chain per kind of trigger. A chain that ends in the user's goal time is told before one
+  // that ends elsewhere (the time lost from the goals is what Michael is for); then the strongest;
+  // between equals, the one that crosses the most sources, then the one whose middle step comes
+  // soonest after the trigger.
   const reach = (c: Chain) => new Set([c.x.key, c.y, c.z].flatMap((k) => featureDef(k).sources)).size;
+  const goalTime = (c: Chain) => Number(familyOf(c.z) === "focus");
   const ranked = [...chains].sort(
     (a, b) =>
+      goalTime(b) - goalTime(a) ||
       b.strength - a.strength ||
       reach(b) - reach(a) ||
       featureDef(a.y).phase - featureDef(b.y).phase ||

@@ -186,6 +186,7 @@ test("daily table: evenings on their own day, the night on the morning it ends",
   const monday = t.days.indexOf("2026-10-19");
   assert.equal(t.cols.planned_min[monday], 90);
   assert.equal(t.cols.first_block_start_min[monday], 9 * 60);
+  assert.equal(t.cols.first_block_lost_min[monday], t.cols.lost_min[monday]);
   assert.ok((t.cols.lost_min[monday] ?? -1) >= 4);
   assert.equal((t.cols.spent_min[monday] ?? 0) + (t.cols.lost_min[monday] ?? 0), t.cols.planned_min[monday]);
   // The weekend has no block, so no figure, not a zero.
@@ -203,6 +204,31 @@ const ordered = (list: Insight[]) => {
     if (rank(prev) === rank(insight)) assert.ok(prev.strength >= insight.strength, insight.id);
   });
 };
+
+test("the first block is the first one where focus is the point, never a training block", () => {
+  const day = "2026-10-19";
+  const gym = {
+    ...month.goals[0],
+    id: "00000000-0000-4000-8000-00000000a002",
+    category: "health",
+    title: "Gym",
+  } as (typeof month.goals)[number];
+  const session = asEvents([
+    {
+      source: "google_calendar",
+      type: "calendar_event",
+      start_at: `${day}T04:00:00Z`,
+      end_at: `${day}T05:00:00Z`,
+      title: "Gym",
+      data: { goal_id: gym.id, attendees: 0 },
+    },
+  ]).map((e) => ({ ...e, id: "00000000-0000-4000-9000-999999999999" }));
+  const t = buildFeatures({ ...input, events: [...input.events, ...session], goals: [...month.goals, gym] });
+  const i = t.days.indexOf(day);
+  // The 07:00 gym hour is planned time, and the 09:00 block is still the first block.
+  assert.equal(t.cols.planned_min[i], 150);
+  assert.equal(t.cols.first_block_start_min[i], 9 * 60);
+});
 
 test("the founder's chain comes out of a month shaped that way", () => {
   const body = InsightsResponse.parse(study.response);

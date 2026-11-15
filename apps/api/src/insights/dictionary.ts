@@ -127,7 +127,8 @@ export const FEATURES: FeatureDef[] = [
     label: () => "Bedtime",
     format: "clock",
     phase: 3,
-    family: "late",
+    // The start of the night's own record: never set against that night's length or score.
+    family: "sleep",
     sources: WATCH,
     cause: {
       side: "high",
@@ -148,6 +149,7 @@ export const FEATURES: FeatureDef[] = [
       title: "Two late nights in a row",
       occasion: () => "second late nights in a row",
       avoid: "After one late night, make the next one an early one.",
+      fix: "phone_down",
     },
   },
   // ---------- the night, on the morning it ends ----------
@@ -267,7 +269,7 @@ export const FEATURES: FeatureDef[] = [
       occasion: (a) => `days your phone opened ${a} times`,
       avoid: "Phone in another room for the first block.",
     },
-    outcome: outcome("low", "your phone opened more often", "your phone opened less often"),
+    outcome: outcome("low", "more phone opens", "fewer phone opens"),
   },
   {
     key: "phone_min",

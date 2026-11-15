@@ -285,7 +285,10 @@ export function phraseChain(chain: Chain, ctx: PhraseContext): Phrased {
   const yWords = outcomeWords(y, chain.first.cmp.diff);
   const zWords = outcomeWords(z, chain.direct.cmp.diff);
   const seen = chain.occurrences.length;
-  const line = `${chain.held} of ${seen} ${occasionOf(chain.x, t)} gave ${yWords.phrase}${lineWhen(x, y, chain.lagXY)} and ${zWords.phrase}${lineWhen(x, z, total)}.`;
+  const whenY = lineWhen(x, y, chain.lagXY);
+  const whenZ = lineWhen(x, z, total);
+  // Said once when both follow at the same time.
+  const line = `${chain.held} of ${seen} ${occasionOf(chain.x, t)} gave ${yWords.phrase}${whenY === whenZ ? "" : whenY} and ${zWords.phrase}${whenZ}.`;
   const { fix, plan } = fixFor(chain.x, chain.z, chain.direct.cmp.diff, ctx);
   return {
     insight: {

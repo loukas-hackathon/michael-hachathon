@@ -1445,7 +1445,8 @@ the evening check in's ratings. Conversations, memories, searches and prompts ar
    6 hours". The morning: heart rate variability, resting heart rate, recovery. The day: phone
    opens and minutes, workout minutes, "trained", "trained after 19:00", "day after training",
    meeting minutes and count, "3 or more meetings", first block start, planned, spent and lost
-   minutes in goal blocks, lost minutes in the first block, share of goal time held, app switches
+   minutes in goal blocks, lost minutes in the first block (the first block that is not a
+   training block: there the phone is a timer and a playlist), share of goal time held, app switches
    an hour, AI tool minutes, last meal and last coffee (when `meal` events carry them), the check
    in's training and meeting ratings. The day still running has no figures for the day or the
    evening.
@@ -1469,7 +1470,8 @@ the evening check in's ratings. Conversations, memories, searches and prompts ar
 5. **Chains**: when x then y, and y then z both passed, and x then z holds too (its own
    permutation test, p at most 0.05, same direction), one chain of three steps is given, counted
    on the trigger days where both later readings exist and held when both moved. One chain per kind
-   of trigger; the links it is made of are not listed again, and neither is the same story told
+   of trigger: one that ends in the user's goal time before one that ends elsewhere, then the
+   strongest; the links it is made of are not listed again, and neither is the same story told
    from another column (two triggers on the same days, or the day after, ending in the same kind
    of outcome).
 6. **`watching`**: a short list of named candidates (late phone and the night, a second late night
