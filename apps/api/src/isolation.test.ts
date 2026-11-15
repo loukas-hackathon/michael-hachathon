@@ -713,6 +713,10 @@ test("the visitor rules fail closed for routes nobody listed", () => {
   assert.equal(demoVisitorMay("POST", "/v1/connect/requests/x", true), true);
   assert.equal(demoVisitorMay("POST", "/v1/goals", true), false);
   assert.equal(demoVisitorMay("POST", "/mcp", true), false);
+  // Off the record: the presenter's privacy beat on stage, never a plain visitor.
+  assert.equal(demoVisitorMay("PUT", "/v1/privacy/off-the-record"), false);
+  assert.equal(demoVisitorMay("PUT", "/v1/privacy/off-the-record", true), true);
+  assert.equal(demoVisitorMay("PATCH", "/v1/privacy/sources/apple_health", true), false);
   assert.equal(demoVisitorMay("POST", "/v1/something-new"), false);
   assert.equal(demoVisitorMay("DELETE", "/v1/me/data"), false);
   assert.equal(demoVisitorMay("GET", "/v1/goals"), true);
