@@ -335,14 +335,17 @@ type ShortcutsPayload = {
 };
 ```
 
-- An `open` is held until its `close`; the pair becomes one `app_usage` event (`source:
-  ios_shortcuts`, `title` = app, `data`: `app`, `device: "iphone"`, `seconds`, `bundle_id?`,
-  `external_id` = `sc:<app lowercased>:<start, UTC second>`). The open alone answers `200` with
-  nothing inserted.
-- Opening another app closes the held one at that moment. A close with no open, or a session longer
-  than two hours, is dropped. Held opens live in the API's memory, so a deploy in the middle of a
-  session loses that session.
-- While off the record or with the source off, a call answers `ignored: 1` and an open is not held,
+- An `open` is stored at once as one `app_usage` event (`source: ios_shortcuts`, `title` = app,
+  `data`: `app`, `device: "iphone"`, `seconds`, `bundle_id?`, `open: true`, `external_id` =
+  `sc:<app lowercased>:<start, UTC second>`), with a provisional end one minute after the open
+  (`seconds: 60`). The answer has `inserted: 1` and the event (#488).
+- Its `close`, or the next app's `open`, updates that same event (by `external_id`) to the real end
+  and `seconds` and drops `open`; the answer lists the updated event in `events`. The same app
+  opened again while its open stands is a duplicate and changes nothing. An open with nothing after
+  it keeps its minute; one older than two hours is never extended, and a close with no open
+  standing is dropped. Opens live in the database, so a deploy loses nothing. One "Is Opened"
+  automation per app is enough; adding "Is Closed" makes durations exact.
+- While off the record or with the source off, a call answers `ignored: 1` and nothing is stored,
   with a `message` that says why.
 - No `app` (the shortcut run by hand in Shortcuts, with no automation as its input) is the test run
   (#466): `200` with `test: true`, `inserted: 0` and a `message`; nothing is stored. The device key's

@@ -28,7 +28,7 @@ export const webhooks = new Hono()
   })
   .post("/ios-shortcuts", async (c) => {
     const payload = parse(ShortcutsPayload, await jsonBody(c));
-    // Checked first so an open is not even held while off the record or with the source off.
+    // Checked first so nothing is stored or kept live while off the record or with the source off.
     if (!(await collecting("ios_shortcuts"))) {
       return c.json({
         ...ignoredResponse(1),
@@ -44,9 +44,10 @@ export const webhooks = new Hono()
         message: "Connected to Michael. Now add the App automation so opens arrive.",
       });
     }
-    // Kept live as well: the app in front now is not an event until the next open ends it (#438).
+    // Kept live as well, for the real time nudges (#438), which read every signal in memory.
     phoneLive.record(currentUserId(), payload, Date.now());
-    return c.json(await ingest(shortcuts.handle(currentUserId(), payload, Date.now())));
+    // Stored at once: an open is an event the moment it arrives, ended later by its close (#488).
+    return c.json(await shortcuts.handle(payload, Date.now()));
   })
   .post("/activitywatch", async (c) => {
     const payload = parse(AwPayload, await jsonBody(c));

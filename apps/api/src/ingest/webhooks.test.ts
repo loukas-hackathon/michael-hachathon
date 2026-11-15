@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { EventInput, IngestResponse } from "@michael/shared";
 import { app } from "../app";
-import { runAsUser } from "../context";
+import { currentUserId, runAsUser } from "../context";
 import { env } from "../env";
 import { store } from "../store";
+import { writeVersion } from "../writes";
 import { AwPayload, mapActivityWatch } from "./activitywatch";
 import { ShortcutsPairer, ShortcutsPayload } from "./ios-shortcuts";
 import { mapOmi } from "./omi";
@@ -69,50 +71,108 @@ test("POST /v1/webhooks/omi is idempotent and accepts what it does not keep", as
 
 // ---------- iPhone Shortcuts ----------
 
-test("Shortcuts: opens and closes pair into sessions, a new app closes the held one", () => {
-  const pairer = new ShortcutsPairer();
-  const arrived = Date.parse("2026-11-14T14:00:00+02:00");
-  const events = (fixture("ios-shortcuts") as unknown[]).flatMap((p) =>
-    pairer.handle("user-a", ShortcutsPayload.parse(p), arrived),
-  );
-  for (const e of events) EventInput.parse(e);
-  assert.deepEqual(
-    events.map((e) => [e.title, e.data?.seconds, e.start_at]),
-    [
-      ["Instagram", 1500, "2026-11-14T10:22:00.000Z"],
-      ["WhatsApp", 150, "2026-11-14T11:01:10.000Z"],
-      ["Safari", 80, "2026-11-14T11:03:40.000Z"],
-    ],
-  );
-  assert.equal(events[2]?.data?.bundle_id, "com.apple.mobilesafari");
-  assert.equal(events[0]?.external_id, "sc:instagram:2026-11-14T10:22:00");
-});
+// Each test on its own fresh account in the in-memory store; a new pairer stands for a restart.
+const asNewUser = <T>(fn: () => Promise<T>) => runAsUser(randomUUID(), fn);
+const shortcutEvents = async (from = "2026-11-15T00:00:00Z", to = "2026-11-16T00:00:00Z") =>
+  (await store.listEvents({ from, to, source: ["ios_shortcuts"] }))
+    .filter((e) => e.external_id?.startsWith("sc:"))
+    .map((e) => [e.title, e.data?.seconds, e.start_at, e.data?.open ?? false]);
+const signal = (pairer: ShortcutsPairer, body: unknown, at = Date.parse("2026-11-15T11:00:00Z")) =>
+  pairer.handle(ShortcutsPayload.parse(body), at);
 
-test("Shortcuts: users never share a held app; a close without an open is dropped", () => {
-  const pairer = new ShortcutsPairer();
-  const t = Date.parse("2026-11-14T10:00:00Z");
-  pairer.handle("a", ShortcutsPayload.parse({ app: "Instagram", action: "open" }), t);
-  assert.deepEqual(
-    pairer.handle("b", ShortcutsPayload.parse({ app: "Instagram", action: "close" }), t + 60_000),
-    [],
-  );
-  const [e] = pairer.handle("a", ShortcutsPayload.parse({ app: "instagram", action: "close" }), t + 60_000);
-  assert.equal(e?.data?.seconds, 60);
-  assert.throws(() => ShortcutsPayload.parse({ app: "X", action: "launch" }));
-  assert.equal(ShortcutsPayload.parse({ app: "X" }).action, "open");
-});
+test("Shortcuts: a single open is stored at once, with a provisional minute", () =>
+  asNewUser(async () => {
+    const before = writeVersion(currentUserId());
+    const r = await signal(new ShortcutsPairer(), { app: "Instagram", at: "2026-11-15T11:02:57Z" });
+    assert.equal(r.inserted, 1);
+    const [e] = r.events;
+    assert.equal(e?.start_at, "2026-11-15T11:02:57.000Z");
+    assert.equal(e?.end_at, "2026-11-15T11:03:57.000Z");
+    assert.deepEqual(e?.data, { app: "Instagram", device: "iphone", seconds: 60, open: true });
+    assert.equal(e?.external_id, "sc:instagram:2026-11-15T11:02:57");
+    // Chat context and memos read again (writes.ts).
+    assert.notEqual(writeVersion(currentUserId()), before);
+    // A duplicate automation run of the same app keeps the first open.
+    const again = await signal(new ShortcutsPairer(), { app: "instagram", at: "2026-11-15T11:03:10Z" });
+    assert.equal(again.events.length, 0);
+    assert.equal((await shortcutEvents()).length, 1);
+  }));
 
-test("POST /v1/webhooks/ios-shortcuts stores a session on close", async () => {
+test("Shortcuts: a close extends the open to its real end", () =>
+  asNewUser(async () => {
+    const pairer = new ShortcutsPairer();
+    await signal(pairer, { app: "Instagram", at: "2026-11-15T11:00:00Z" });
+    const r = await signal(pairer, { app: "instagram", action: "close", at: "2026-11-15T11:25:00Z" });
+    assert.equal(r.inserted, 0);
+    assert.equal(r.events[0]?.end_at, "2026-11-15T11:25:00.000Z");
+    assert.deepEqual(await shortcutEvents(), [["Instagram", 1500, "2026-11-15T11:00:00.000Z", false]]);
+    // Another user's close finds nothing open: dropped.
+    await asNewUser(async () => {
+      const other = await signal(pairer, { app: "Instagram", action: "close", at: "2026-11-15T11:30:00Z" });
+      assert.equal(other.events.length, 0);
+      assert.deepEqual(await shortcutEvents(), []);
+    });
+  }));
+
+test("Shortcuts: a restart between open and close still extends the open", () =>
+  asNewUser(async () => {
+    await signal(new ShortcutsPairer(), { app: "WhatsApp", at: "2026-11-15T11:00:00Z" });
+    // A deploy: a new process, a new pairer with nothing in memory.
+    const r = await signal(new ShortcutsPairer(), {
+      app: "WhatsApp",
+      action: "close",
+      at: "2026-11-15T11:02:30Z",
+    });
+    assert.equal(r.events.length, 1);
+    assert.deepEqual(await shortcutEvents(), [["WhatsApp", 150, "2026-11-15T11:00:00.000Z", false]]);
+  }));
+
+test("Shortcuts: the next app's open ends the one before; opens and closes pair as before", () =>
+  asNewUser(async () => {
+    const pairer = new ShortcutsPairer();
+    for (const p of fixture("ios-shortcuts") as unknown[]) await signal(pairer, p);
+    const events = await store.listEvents({
+      from: "2026-11-14T00:00:00Z",
+      to: "2026-11-14T12:00:00Z",
+      source: ["ios_shortcuts"],
+    });
+    const mine = events.filter((e) => e.external_id?.startsWith("sc:"));
+    for (const e of mine) EventInput.parse(e);
+    assert.deepEqual(
+      mine.map((e) => [e.title, e.data?.seconds, e.start_at, e.data?.open ?? false]),
+      [
+        ["Instagram", 1500, "2026-11-14T10:22:00.000Z", false],
+        ["WhatsApp", 150, "2026-11-14T11:01:10.000Z", false],
+        ["Safari", 80, "2026-11-14T11:03:40.000Z", false],
+      ],
+    );
+    assert.equal(mine[2]?.data?.bundle_id, "com.apple.mobilesafari");
+    assert.equal(mine[0]?.external_id, "sc:instagram:2026-11-14T10:22:00");
+    // An open never ended keeps its minute; one over two hours old is left alone by the next open.
+    await signal(pairer, { app: "Threads", at: "2026-11-14T15:00:00Z" });
+    await signal(pairer, { app: "Mail", at: "2026-11-14T17:30:00Z" });
+    assert.deepEqual(await shortcutEvents("2026-11-14T14:00:00Z", "2026-11-15T00:00:00Z"), [
+      ["Threads", 60, "2026-11-14T15:00:00.000Z", true],
+      ["Mail", 60, "2026-11-14T17:30:00.000Z", true],
+    ]);
+    assert.throws(() => ShortcutsPayload.parse({ app: "X", action: "launch" }));
+    assert.equal(ShortcutsPayload.parse({ app: "X" }).action, "open");
+  }));
+
+test("POST /v1/webhooks/ios-shortcuts stores an open at once and extends it on close", async () => {
   const open = IngestResponse.parse(
     await (await post("ios-shortcuts", { app: "Threads", action: "open" })).json(),
   );
-  assert.equal(open.inserted, 0);
+  assert.equal(open.inserted, 1);
+  assert.equal(open.events[0]?.source, "ios_shortcuts");
+  assert.equal(open.events[0]?.data.open, true);
   await new Promise((r) => setTimeout(r, 1100));
   const close = IngestResponse.parse(
     await (await post("ios-shortcuts", { app: "Threads", action: "close" })).json(),
   );
-  assert.equal(close.inserted, 1);
-  assert.equal(close.events[0]?.source, "ios_shortcuts");
+  assert.equal(close.events.length, 1);
+  assert.equal(close.events[0]?.id, open.events[0]?.id);
+  assert.equal(close.events[0]?.data.open, undefined);
   // No action means open (one "Is Opened" automation is enough).
   assert.equal((await post("ios-shortcuts", { app: "Threads" })).status, 200);
   // No app: the shortcut run by hand, the test (#466). Answered, nothing stored, never a 400.
@@ -179,7 +239,7 @@ test("POST /v1/webhooks/activitywatch rejects a body that is not AW events", asy
   assert.equal(res.inserted, 8);
 });
 
-test("off the record: a Shortcuts open is not even held", async () => {
+test("off the record: a Shortcuts open stores nothing", async () => {
   const record = (on: boolean) =>
     app.request("/v1/privacy/off-the-record", {
       method: "PUT",
@@ -191,8 +251,9 @@ test("off the record: a Shortcuts open is not even held", async () => {
     await (await post("ios-shortcuts", { app: "TikTok", action: "open" })).json(),
   );
   assert.equal(open.ignored, 1);
+  assert.equal(open.inserted, 0);
   await record(false);
-  // The open was never held, so the close has nothing to pair with.
+  // The open was never stored, so the close has nothing to extend.
   const close = IngestResponse.parse(
     await (await post("ios-shortcuts", { app: "TikTok", action: "close" })).json(),
   );
