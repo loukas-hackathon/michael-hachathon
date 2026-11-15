@@ -76,7 +76,6 @@ export function BriefView({
             {suggestions === 1 ? "One suggestion" : `${suggestions} suggestions`} on Today.
           </p>
         ) : null}
-        {run ? <p className="text-caption text-label-2">Written by {run.model}.</p> : null}
 
         {error ? (
           <p role="alert" className="text-subhead text-danger">

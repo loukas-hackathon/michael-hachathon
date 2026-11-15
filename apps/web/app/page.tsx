@@ -12,6 +12,7 @@ import { Tape, TapeKey } from "@/components/tape";
 import { BriefCard } from "@/components/today/brief-card";
 import { CalendarCard } from "@/components/today/calendar-card";
 import { TodayChecklist } from "@/components/today/checklist";
+import { DemoWeekLine } from "@/components/today/demo-week-line";
 import { Fold, MoreFromMichael } from "@/components/today/fold";
 import { GetStarted } from "@/components/today/get-started";
 import { KeepWeekStrip, keepLine, streakLine } from "@/components/today/keep-week";
@@ -106,6 +107,8 @@ export default async function TodayPage({
         }
         title={TITLE[day.moment]}
       />
+      <DemoWeekLine />
+      <RecommendationsPanel slot="booked" />
 
       {day.blocks.length === 0 && day.week.scorePct == null ? (
         <>
@@ -191,6 +194,10 @@ export default async function TodayPage({
                 when it starts, so a bar of nothing stays off the screen. */}
             {day.blocks.length > 0 && t.scorePct !== null ? (
               <div className="mt-5">
+                {/* Says what the bar is (#330): a first time viewer reads it before the key. */}
+                <p className="text-footnote text-label-2">
+                  <b className="font-semibold text-label tnum">{hm(t.planned)}</b> of goal time planned today.
+                </p>
                 <div className="mt-3">
                   <Tape
                     ticks={ticks}

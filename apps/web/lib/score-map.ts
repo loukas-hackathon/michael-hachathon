@@ -1,25 +1,11 @@
 import type { Score, ScoreBlock, TargetResponse } from "@michael/shared";
 import { categoryOf } from "./categories";
-import type { DayView, GoalBlock, Lead, Moment, Tick } from "./day";
+import { type DayView, type GoalBlock, type Lead, type Tick, titleMomentAt } from "./day";
 import type { Balance, RecordMark, WeeklyTarget } from "./gamification";
 import type { GoalsView } from "./goals-view";
 import { explainFromScore } from "./score-explain";
 
 // Maps GET /v1/score (and the week's patterns) onto the views Today and Goals draw.
-
-const hourIn = (iso: string, tz: string) =>
-  Number(
-    new Intl.DateTimeFormat("en-GB", { hour: "2-digit", hourCycle: "h23", timeZone: tz }).format(
-      new Date(iso),
-    ),
-  );
-
-function momentAt(iso: string, tz: string): Moment {
-  const h = hourIn(iso, tz);
-  if (h < 11) return "morning";
-  if (h >= 20) return "evening";
-  return "today";
-}
 
 function block(b: ScoreBlock): GoalBlock {
   return {
@@ -38,7 +24,7 @@ export function dayFromScore(score: Score, lead: Lead | null): DayView {
   return {
     date: d.date,
     now: d.now,
-    moment: momentAt(d.now, score.timezone),
+    moment: titleMomentAt(d.now, score.timezone),
     sample: false,
     week: { scorePct: score.score_pct, line: null },
     scored: {

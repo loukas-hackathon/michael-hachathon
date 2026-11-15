@@ -4,20 +4,35 @@ import { get } from "./api";
 import { USE_MOCKS } from "./mode";
 
 /**
- * A short fingerprint of what Today and Timeline are drawn from: the last 24 hours of events and
- * today's nudges. The browser polls it (GET /live) and refreshes the screen only when it changes,
+ * A short fingerprint of what Today and Timeline are drawn from: the last 24 hours of events,
+ * today's nudges and the suggestions (a block Claude books for later today is not in the last 24
+ * hours, #330). The browser polls it (GET /live) and refreshes the screen only when it changes,
  * so a quiet day costs one small request a minute and no re-render.
  */
 export async function getLiveStamp(): Promise<string> {
   if (USE_MOCKS) return "mock";
-  const [timeline, nudges] = await Promise.all([
+  const [timeline, nudges, recs] = await Promise.all([
     get<TimelineResponse>("/v1/timeline"),
     get<{ nudges: { id: string }[] }>("/v1/nudges").catch(() => ({ nudges: [] })),
+    get<{ recommendations: { updated_at: string }[] }>("/v1/recommendations").catch(() => ({
+      recommendations: [],
+    })),
   ]);
   let latest = "";
   for (const e of timeline.events) {
     if (e.created_at > latest) latest = e.created_at;
     if (e.end_at && e.end_at > latest) latest = e.end_at;
   }
-  return [timeline.events.length, latest, nudges.nudges.length, nudges.nudges.at(-1)?.id ?? ""].join("|");
+  let changed = "";
+  for (const r of recs.recommendations) {
+    if (r.updated_at > changed) changed = r.updated_at;
+  }
+  return [
+    timeline.events.length,
+    latest,
+    nudges.nudges.length,
+    nudges.nudges.at(-1)?.id ?? "",
+    recs.recommendations.length,
+    changed,
+  ].join("|");
 }
