@@ -3,12 +3,11 @@ import { type Insights, sortInsights, studyProgress } from "@/lib/insights";
 import { getInsights, isInsightsPreview } from "@/lib/insights-data";
 import { Evidence } from "./evidence";
 import { FixRow } from "./fix-button";
-import { NightsBar } from "./studying";
 
 /**
  * Today: the strongest pattern Michael has learnt, with its proof and the fix (#432). It sits
- * after "Your next move", so the score and the next move keep the first screen. A new account
- * sees how far the study has come instead. Nothing when the API cannot be read.
+ * after "Your next move", so the score and the next move keep the first screen. Until something is
+ * a pattern, one quiet line says how far the study has come. Nothing when the API cannot be read.
  */
 export function LearntCard({
   view,
@@ -25,25 +24,25 @@ export function LearntCard({
   const top = patterns[0];
 
   if (!top) {
+    // Before anything is a pattern: one quiet line, so the study shows from day one (#432).
     const { have, needed, done } = studyProgress(view.studied);
+    const bar = watching[0]?.evidence.needed ?? 4;
+    const rest = done
+      ? watching.length
+        ? `${watching.length} ${watching.length === 1 ? "thing" : "things"} seen, none held ${bar} times yet.`
+        : `Nothing has held ${bar} times yet.`
+      : `${have} of ${needed} nights so far.`;
     return (
-      <Link href={href} className="press mt-6 block rounded-card bg-fill px-4 py-3.5">
-        <span className="flex items-center justify-between gap-3">
-          <span className="text-footnote font-semibold text-label-2">Michael is studying you</span>
-          <span aria-hidden="true" className="text-label-2">
-            ›
-          </span>
+      <Link
+        href={href}
+        className="press mt-6 flex items-start justify-between gap-3 text-subhead text-label-2 tnum"
+      >
+        <span>
+          <b className="font-semibold text-label">Studying you.</b> {rest}
         </span>
-        <span className="mt-1 block text-body font-semibold tnum">
-          {done
-            ? `${watching.length} ${watching.length === 1 ? "thing" : "things"} seen, none held 4 times yet.`
-            : `${have} of ${needed} nights so far.`}
+        <span aria-hidden="true" className="shrink-0">
+          ›
         </span>
-        {done ? null : (
-          <span className="mt-2.5 block">
-            <NightsBar have={have} needed={needed} />
-          </span>
-        )}
       </Link>
     );
   }
