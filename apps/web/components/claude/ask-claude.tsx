@@ -1,4 +1,5 @@
 import { getAgents, isClaude } from "@/lib/agents";
+import { isPresenter } from "@/lib/caller";
 import { AskClaudeLine, AskClaudePopup } from "./ask-claude-popup";
 
 /** True when an approved Claude reads Michael. Null when the agents cannot be read. */
@@ -11,8 +12,22 @@ async function claudeConnected(demo?: string): Promise<boolean | null> {
   }
 }
 
-/** The pop up, connected or not; nothing when the agents cannot be read. */
-export async function AskClaude({ place, prompt, demo }: { place: string; prompt: string; demo?: string }) {
+/**
+ * The pop up, connected or not. Never for the presenter's laptop (it would rise over Today in front
+ * of the judges) nor while a ritual preview is open; nothing when the agents cannot be read.
+ */
+export async function AskClaude({
+  place,
+  prompt,
+  demo,
+  ritual,
+}: {
+  place: string;
+  prompt: string;
+  demo?: string;
+  ritual?: string;
+}) {
+  if (ritual || (await isPresenter().catch(() => false))) return null;
   const connected = await claudeConnected(demo);
   if (connected === null) return null;
   return <AskClaudePopup place={place} connected={connected} prompt={prompt} />;

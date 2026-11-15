@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 // A small card over the screen that invites the person to ask Claude about their data. Claude
-// reads Michael through MCP, so it can explain any number in plain words. It waits a few seconds,
-// shows once a day per place on this device, and goes with one tap until the next day.
+// reads Michael through MCP, so it can explain any number in plain words. It waits until the
+// person has scrolled and 10 seconds have passed, shows once a day per place on this device, and
+// goes with one tap until the next day.
 
 const KEY = "michael.askClaude";
 const today = () => new Date().toISOString().slice(0, 10);
@@ -38,7 +39,7 @@ export function AskClaudePopup({
   place,
   connected,
   prompt,
-  delayMs = 4000,
+  delayMs = 10_000,
 }: {
   /** Where it shows ("today", "number:sleep_score"): each place has its own once a day. */
   place: string;
@@ -49,8 +50,29 @@ export function AskClaudePopup({
   const [open, setOpen] = useState(false);
   useEffect(() => {
     if (seenToday(place)) return;
-    const t = setTimeout(() => setOpen(true), delayMs);
-    return () => clearTimeout(t);
+    // Never on the stage view or inside it.
+    if (window.self !== window.top || window.location.pathname.startsWith("/stage")) return;
+    // It never covers the first look: only once the person has scrolled AND the wait is over.
+    let waited = false;
+    let scrolled = false;
+    const maybe = () => {
+      if (waited && scrolled) setOpen(true);
+    };
+    const t = setTimeout(() => {
+      waited = true;
+      maybe();
+    }, delayMs);
+    const onScroll = () => {
+      if (window.scrollY < 40) return;
+      scrolled = true;
+      window.removeEventListener("scroll", onScroll);
+      maybe();
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener("scroll", onScroll);
+    };
   }, [place, delayMs]);
   if (!open) return null;
   const close = () => {

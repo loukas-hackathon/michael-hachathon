@@ -467,7 +467,7 @@ export default async function TodayPage({
 
       {/* A small card a few seconds in: ask Claude to explain the numbers, or connect it first. */}
       <Suspense fallback={null}>
-        <AskClaude place="today" prompt={TODAY_PROMPT} demo={demo} />
+        <AskClaude place="today" prompt={TODAY_PROMPT} demo={demo} ritual={preview} />
       </Suspense>
 
       {day.sample ? (
