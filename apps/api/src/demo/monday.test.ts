@@ -6,6 +6,7 @@ import { runAsUser } from "../context";
 import { env } from "../env";
 import { store } from "../store";
 import { seedDemoWeek } from "./sync";
+import { buildDemoWeek, DEMO_PREFIX } from "./week";
 
 // A new week starts on Monday, and the pitch is on a Monday (16 November) at an hour nobody knows
 // yet. Monday's first own goal block used to start at 17:00, so until then the stage, Today,
@@ -51,3 +52,25 @@ for (const clock of ["08:30", "09:00", "11:05", "14:00"]) {
     assert.ok(!first.lost.some((l) => l.category === "communication"));
   });
 }
+
+test("a reseed replaces last Monday's stored rows: the moved morning and its night carry new ids", () => {
+  // A reseed adds and removes rows by external_id only, so rows that keep their id keep their old
+  // times in the database. Everything that moved must therefore have an id the old week never had.
+  const week = buildDemoWeek(new Date("2026-11-15T20:00:00+02:00"));
+  const monday = week.events.filter((e) => e.external_id?.startsWith(`${DEMO_PREFIX}2026-11-09:`));
+  const noon = Date.parse("2026-11-09T10:40:00+02:00"); // the moved morning ends 80 minutes before noon
+  const lanes = monday.filter((e) =>
+    ["macos_usage", "iphone_usage", "chrome", "claude_code"].includes(e.source),
+  );
+  const early = lanes.filter((e) => Date.parse(e.start_at) < noon);
+  assert.ok(early.length > 100, `${early.length} morning rows`);
+  for (const e of early)
+    assert.match(e.external_id ?? "", /:-(80|60)(:cut)?$/, `${e.title} at ${e.start_at}`);
+  const sleep = monday.find((e) => e.type === "sleep");
+  assert.equal(sleep?.external_id, `${DEMO_PREFIX}2026-11-09:sleep:early`);
+  assert.ok(monday.some((e) => e.type === "calendar_event" && e.title === "Meeting Preparation"));
+  // The other days keep their ids: nothing else in the stored week is replaced.
+  const tuesday = week.events.filter((e) => e.external_id?.startsWith(`${DEMO_PREFIX}2026-11-10:`));
+  assert.ok(tuesday.some((e) => e.external_id === `${DEMO_PREFIX}2026-11-10:sleep`));
+  for (const e of tuesday) assert.doesNotMatch(e.external_id ?? "", /:-\d+$/);
+});

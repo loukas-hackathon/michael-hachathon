@@ -112,9 +112,14 @@ const SESSION_TITLES = [
   "Debug the Railway deploy",
 ] as const;
 
-/** The morning of a template day, in seconds: from 05:00 (the night before it stays put) to noon. */
+/** The morning of a template day, in seconds: from 05:00 to noon. Before it is the night. */
 const MORNING = 5 * 3600;
 const NOON = 12 * 3600;
+/** True on a weekday whose night or morning is replayed at its own shift. */
+const movedMorning = (date: string) => {
+  const plan = PLANS[weekday(date)];
+  return plan?.morningShift !== undefined || plan?.nightShift !== undefined;
+};
 
 /** The replayed device lanes of one date. */
 function replayLanes(date: string): EventRow[] {
@@ -167,7 +172,9 @@ function replayLanes(date: string): EventRow[] {
       end_at: duration === null ? null : iso(start + duration * 1000),
       title: outTitle,
       data: out_data,
-      external_id: `${DEMO_PREFIX}${date}:${from}:${i}`,
+      // A part of the day that moves by its own shift says so in the id: a reseed only adds and
+      // removes rows by id, so this is what replaces the rows stored at the old times.
+      external_id: `${DEMO_PREFIX}${date}:${from}:${i}${part === undefined ? "" : `:${part}`}`,
     });
   }
   return out;
@@ -400,7 +407,8 @@ function nightEvents(date: string, bed: number, wake: number, rnd: ReturnType<ty
         in_bed_min: inBed,
         device: DEVICE,
       },
-      external_id: `${DEMO_PREFIX}${date}:sleep`,
+      // A night next to a moved morning is a different night (see replayLanes on ids).
+      external_id: `${DEMO_PREFIX}${date}:sleep${movedMorning(date) ? ":early" : ""}`,
     },
     hourly(
       date,
@@ -635,7 +643,7 @@ export function buildDemoWeek(now: Date = new Date()): DemoWeek {
       const end = e.end_at ? Date.parse(e.end_at) : Number.NaN;
       const runsOn =
         screenOff && e.source === "macos_usage" && Date.parse(e.start_at) < nextMacUse && end > nextMacUse;
-      events.push(runsOn ? { ...e, end_at: iso(nextMacUse) } : e);
+      events.push(runsOn ? { ...e, end_at: iso(nextMacUse), external_id: `${e.external_id}:cut` } : e);
     }
     const train = trains.get(date) ?? null;
     if (train) events.push(train);
