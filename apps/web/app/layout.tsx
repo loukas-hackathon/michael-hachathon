@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { MotionScript } from "@/components/count-up";
 import { DeepLinkFocus } from "@/components/deep-link-focus";
 import { Haptics } from "@/components/haptics";
+import { MeetingPill } from "@/components/meetings";
 import { ServiceWorker } from "@/components/service-worker";
 import { Splash } from "@/components/splash";
 import { TabBar } from "@/components/tab-bar";
@@ -41,6 +42,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <div className="min-h-dvh lg:pl-64">
           <div className="mx-auto w-full max-w-[560px] lg:max-w-[720px]">{children}</div>
         </div>
+        <MeetingPill />
         <TabBar />
         <ServiceWorker />
         <DeepLinkFocus />

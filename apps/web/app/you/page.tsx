@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { MeetingsRow } from "@/components/meetings";
 import { ConnectionsList } from "@/components/you/connections-list";
 import { StandingInstructions } from "@/components/you/instructions";
 import { signedInAs } from "@/lib/account";
@@ -88,6 +89,7 @@ export default async function YouPage({
         <h2 className="mb-2 text-title3 font-bold">Privacy</h2>
         <div className="overflow-hidden rounded-group bg-fill">
           <OffTheRecordSwitch />
+          <MeetingsRow />
         </div>
         <Link
           href="/you/knowledge"

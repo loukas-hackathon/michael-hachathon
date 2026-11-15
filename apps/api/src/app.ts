@@ -27,6 +27,7 @@ import { integrations, oauth } from "./routes/integrations";
 import { knowledge } from "./routes/knowledge";
 import { log } from "./routes/log";
 import { meData } from "./routes/me-data";
+import { meetings } from "./routes/meetings";
 import { moments } from "./routes/moments";
 import { nudgeActPublic, nudges } from "./routes/nudges";
 import { connect, oauthPublic } from "./routes/oauth";
@@ -90,6 +91,7 @@ export const v1Routes = new Hono()
   .route("/", voice)
   .route("/", integrations)
   .route("/", privacy)
+  .route("/", meetings)
   .route("/", sources)
   .route("/", nudges)
   .route("/", push)
