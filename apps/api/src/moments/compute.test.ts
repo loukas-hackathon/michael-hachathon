@@ -195,6 +195,14 @@ test("a new user with no data gets budgets and no invented risk", () => {
   assert.equal(templateHeadline(empty), "No goal time today. Put tomorrow's in before bed.");
 });
 
+test("an empty evening names the person's own goal and what is left to book, never a general rule", () => {
+  const m = evening([]);
+  assert.equal(m.lesson, "No goal blocks today. Deep work has 10h unbooked this week.");
+  assert.equal(templateHeadline(m), "No goal time today. Deep work has 10h left to book.");
+  assert.deepEqual(voiceProblems(templateHeadline(m)), []);
+  assert.ok(isValidCopy(momentNudge(m).text), momentNudge(m).text);
+});
+
 // ---------- row 1: the headline is a finished line or the template ----------
 
 test("a model line is used only when it keeps the voice and invents no number", () => {

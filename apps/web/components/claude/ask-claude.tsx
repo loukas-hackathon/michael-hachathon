@@ -21,16 +21,26 @@ export async function AskClaude({
   prompt,
   demo,
   ritual,
+  line,
 }: {
   place: string;
   prompt: string;
   demo?: string;
   ritual?: string;
+  /** The card's first sentence from the person's data (askClaudeLine), or null for the stock one. */
+  line?: (connected: boolean) => string | null;
 }) {
   if (ritual || (await isPresenter().catch(() => false))) return null;
   const connected = await claudeConnected(demo);
   if (connected === null) return null;
-  return <AskClaudePopup place={place} connected={connected} prompt={prompt} />;
+  return (
+    <AskClaudePopup
+      place={place}
+      connected={connected}
+      prompt={prompt}
+      line={line?.(connected) ?? undefined}
+    />
+  );
 }
 
 /** The quiet line inside a detail page. */

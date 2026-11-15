@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getInsights, isInsightsPreview } from "@/lib/insights-data";
 import { type NumberStat, numberStats, unitOf } from "@/lib/numbers";
+import { numbersLine } from "@/lib/today-lines";
 
 /**
  * Today, under "Your next move": the figures Michael reads every day as plain tiles, each with one
@@ -14,13 +15,14 @@ export async function TodayNumbers({ demo, className = "" }: { demo?: string; cl
   const stats = numberStats(view.series ?? []);
   if (!stats.length) return null;
   const q = isInsightsPreview(demo) && demo ? `?demo=${demo}` : "";
+  // Which of their figures to look at first, from today's verdicts; nothing when all are usual.
+  const line = numbersLine(stats.map((s) => ({ name: SHORT[s.def.key] ?? s.series.label, tone: s.tone })));
   return (
     <section aria-labelledby="your-numbers" className={`mt-8 ${className}`}>
-      <h2 id="your-numbers" className="text-title3 font-bold">
+      <h2 id="your-numbers" className={`text-title3 font-bold ${line ? "" : "mb-2"}`}>
         Your numbers
       </h2>
-      {/* (Brand) */}
-      <p className="mt-0.5 mb-2 text-footnote text-label-2">Tap one to see why and what to do.</p>
+      {line ? <p className="mt-0.5 mb-2 text-footnote text-label-2">{line}</p> : null}
       <ul className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-6 xl:gap-3">
         {stats.map((s) => (
           <NumberTile key={s.def.key} stat={s} q={q} />

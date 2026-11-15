@@ -20,7 +20,7 @@ import { TodayChecklist } from "@/components/today/checklist";
 import { DemoWeekLine } from "@/components/today/demo-week-line";
 import { Fold, FoldLink, MoreFromMichael } from "@/components/today/fold";
 import { GetStarted } from "@/components/today/get-started";
-import { KeepWeekStrip, keepLine, streakLine } from "@/components/today/keep-week";
+import { KeepWeekStrip, keepLine } from "@/components/today/keep-week";
 import { LastWeekLine } from "@/components/today/last-week-line";
 import { MeetingRecapCard } from "@/components/today/meeting-recap";
 import { MichaelCard, PhoneFocusLine } from "@/components/today/michael-card";
@@ -36,6 +36,7 @@ import { WeekGlance } from "@/components/today/week-glance";
 import {
   getChecklist,
   getGoals,
+  getGoalsWeek,
   getKeepWeek,
   getLastLostWeek,
   getLostWeek,
@@ -48,9 +49,20 @@ import { aheadOf, type DayView, nowIndex, tape, totals } from "@/lib/day";
 import { getSetup } from "@/lib/first-run";
 import { formatDay, formatTime, hm, spokenDuration } from "@/lib/format";
 import { verdict } from "@/lib/gamification";
+import { rank } from "@/lib/goals-view";
 import type { LostWeek } from "@/lib/lost-week";
 import { momentKindFor } from "@/lib/moments";
 import { ritualPreview, ritualShows } from "@/lib/ritual";
+import {
+  askClaudeLine,
+  furthestBehind,
+  logTimePreview,
+  noBlocksLine,
+  noBriefLine,
+  streakLine,
+  weekdayIndex,
+  weekRowPreview,
+} from "@/lib/today-lines";
 import { preloadTodaySections } from "@/lib/today-preload";
 import { isSundayIn } from "@/lib/week";
 
@@ -98,11 +110,17 @@ export default async function TodayPage({
     getKeepWeek(demo),
     getLastLostWeek(demo),
     demo === "sample" ? null : getRitual(ritualPreview(preview)),
+    // Each goal against its budget, for the lines that name the goal furthest behind.
+    getGoalsWeek(demo).catch(() => null),
   ]);
   loads.catch(() => {});
   preloadTodaySections(demo);
   if (await needsOnboarding()) redirect("/onboarding");
-  const [day, checklist, goals, lostWeek, keepWeek, lastWeek, ritual] = await loads;
+  const [day, checklist, goals, lostWeek, keepWeek, lastWeek, ritual, goalsWeek] = await loads;
+  // The person's own week for the lines below: the goal furthest behind, and the day of the week.
+  const ranked = goalsWeek ? rank(goalsWeek) : [];
+  const behind = furthestBehind(ranked);
+  const weekday = weekdayIndex(day.now);
   // The daily ritual (#318): while its card shows, the outcomes live in it, not in the list.
   const ritualCard = ritualShows(ritual) ? <RitualCard ritual={ritual} /> : null;
   const lists = checklistsFor(checklist, goals).filter((l) => !ritualCard || l.goalId !== ritual?.goal_id);
@@ -180,7 +198,7 @@ export default async function TodayPage({
               <WatchLine demo={demo} />
               <RecommendationsPanel slot="rest" />
               {loggable.length > 0 && !day.sample ? (
-                <Fold title="Log time" preview="Did something for a goal without a block? Tell me how long.">
+                <Fold title="Log time" preview={logTimePreview(loggable, behind, weekday)}>
                   <LogTimeForm goals={loggable} />
                 </Fold>
               ) : null}
@@ -232,9 +250,7 @@ export default async function TodayPage({
                   </h2>
                 </HowICount>
               ) : (
-                <p className="text-title3 font-semibold">
-                  No goal blocks today. It neither keeps nor breaks the run.
-                </p>
+                <p className="text-title3 font-semibold">{noBlocksLine(behind)}</p>
               )}
 
               {keepWeek ? (
@@ -431,18 +447,18 @@ export default async function TodayPage({
                     <FoldLink
                       title="Your week"
                       href="/week"
-                      preview="The week so far with the maths, and next week's first move."
+                      preview={weekRowPreview(ranked, weekday) ?? undefined}
                     />
                   )}
                   <WatchLine demo={demo} />
                   {day.sample && day.travelPlan ? <TravelCard plan={day.travelPlan} /> : null}
-                  <BriefCard sample={day.sample} />
+                  <BriefCard
+                    sample={day.sample}
+                    empty={noBriefLine({ lost: lostWeek, blocksToday: day.blocks.length, top: behind })}
+                  />
                   <RecommendationsPanel slot="rest" />
                   {loggable.length > 0 && !day.sample ? (
-                    <Fold
-                      title="Log time"
-                      preview="Did something for a goal without a block? Tell me how long."
-                    >
+                    <Fold title="Log time" preview={logTimePreview(loggable, behind, weekday)}>
                       <LogTimeForm goals={loggable} />
                     </Fold>
                   ) : null}
@@ -467,7 +483,13 @@ export default async function TodayPage({
 
       {/* A small card a few seconds in: ask Claude to explain the numbers, or connect it first. */}
       <Suspense fallback={null}>
-        <AskClaude place="today" prompt={TODAY_PROMPT} demo={demo} ritual={preview} />
+        <AskClaude
+          place="today"
+          prompt={TODAY_PROMPT}
+          demo={demo}
+          ritual={preview}
+          line={(connected) => askClaudeLine({ connected, lost: lostWeek, weekPct: day.week.scorePct })}
+        />
       </Suspense>
 
       {day.sample ? (
