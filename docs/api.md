@@ -267,7 +267,8 @@ Response `200`: `Health`.
 - `200`: `{ from, to, events: Event[] }`. `400` on bad dates or unknown enum values.
 
 `POST /v1/events` body `EventInput` → `201 { inserted: number, duplicates: number, ignored: number, events: Event[] }`.
-`ignored` counts events dropped because their source is switched off or the user is off the record.
+`ignored` counts events dropped because their source is switched off, the user is off the record,
+or (for a conversation) meetings mode was not on at its start (see Meetings mode).
 A duplicate `(source, external_id)` is skipped and counted in `duplicates` (not an error).
 
 `POST /v1/events/batch` body `{ events: EventInput[] }` (1..1000) → same response as above.
@@ -316,6 +317,8 @@ event, `start_at`/`end_at` = `started_at`/`finished_at`, `title` = `structured.t
 `duration_min`. `external_id` = `omi:<id>`. Only those fields are read: transcript segments, speaker
 names, app results and folders are never stored. A `discarded` conversation, a real time transcript
 batch (a JSON array) or any other Omi payload answers `200` with nothing inserted.
+A conversation is kept only when meetings mode was on at its `started_at` (#400, see Meetings
+mode); otherwise it answers `200` with `ignored: 1` and nothing is stored.
 
 `POST /v1/webhooks/ios-shortcuts` takes our own tiny body, sent by a Shortcuts personal automation
 ("App is opened" / "App is closed", then "Get Contents of URL"). Setup: `docs/sources/ios-shortcuts.md`.
@@ -2091,6 +2094,68 @@ MCP). `manual` events, typed by the user, are always kept. `since` is when colle
 `null`. Never set sources show `updated_at` as `1970-01-01T00:00:00.000Z`. The check lives in
 `apps/api/src/privacy.ts` and runs inside `Store.insertEvents`.
 
+Conversations need one more thing: meetings mode (below). Any `conversation` event, and every event
+from a conversation source (`omi`), is dropped and counted in `ignored` unless a meetings mode
+session covered its `start_at`. Off the record and the source switch are checked first and still
+win. `manual` events are the user's own and never need it. Rule: `decideEvent` in `privacy.ts`.
+
+### Meetings mode
+
+Conversations are kept only while the user has started meetings mode (#400, Build Hub n10). Only
+the user starts it, from You (Privacy) or the Mi sheet, after a one time consent notice: "Only you
+start this. Tell the people in the room you're recording. I keep a short summary and your own
+commitments; the audio and full transcript are never kept." It ends when the user taps End, by
+itself after 2 hours or at the end of the calendar block it began in (a block running at the start
+with 10 minutes or more left, or one starting within 15 minutes; all day events do not count),
+whichever is first, and when the user goes off the record. Michael never stores other speakers'
+words: the Omi mapper keeps only the summary and the user's own action items.
+
+```ts
+const MEETING_MAX_MINUTES = 120;
+const MEETING_RECAP_HOURS = 12;
+type MeetingSession = {
+  id: string;
+  started_at: string;
+  ends_at: string; // when it ends by itself (2 hours, or the calendar block's end)
+  ended_at: string | null; // when the user (or off the record) ended it
+};
+type MeetingStart = { consent?: boolean }; // true the first time
+type MeetingCommitment = { text: string; event_id: string }; // the conversation it came from
+type MeetingRecap = {
+  session_id: string;
+  started_at: string;
+  ended_at: string; // ended_at, or ends_at when it ran out
+  conversation_ids: string[];
+  commitments: MeetingCommitment[]; // the user's own, never other speakers'
+  lesson: string | null; // a conversation's `data.lesson`, when one carried it
+};
+type MeetingsState = {
+  consented: boolean; // a session was started before: the notice was read
+  active: MeetingSession | null;
+  last: MeetingRecap | null; // the latest session that ended in the last 12 hours
+};
+```
+
+| Method | Path                       | Body                 | Response                                                  | Status |
+| ------ | -------------------------- | -------------------- | --------------------------------------------------------- | ------ |
+| GET    | `/v1/meetings/active`      |                      | `200 MeetingsState`                                       | live   |
+| POST   | `/v1/meetings/start`       | `MeetingStart` (opt) | `200 MeetingsState`; `409` without consent the first time | live   |
+| POST   | `/v1/meetings/end`         |                      | `200 MeetingsState` (nothing running: nothing changes)    | live   |
+| POST   | `/v1/meetings/commitments` | `{ text: string }`   | `201 { item: ChecklistItem }`; `409` when today is full   | live   |
+
+- Start is idempotent: while a session runs it answers that session. Off the record answers `409`.
+- The gate: a conversation is kept when its `start_at` lies inside a session, from 2 minutes before
+  `started_at` (the recorder often starts a breath before the tap) to `ended_at`, or `ends_at`
+  when it ran out. Ingest reads the latest 100 sessions.
+- `commitments` puts one commitment on today's outcomes (the checklist goal "Today's outcomes",
+  made when missing; at most three open a day). A follow up for the conversation is
+  `POST /v1/drafts/generate { event_id }` (Follow up drafts).
+- Sessions live in `meeting_sessions` and go with "Delete everything". Demo visitors may start,
+  end and add commitments; the demo reseed clears the sessions, so the notice shows again.
+- Web: a "Meetings mode" row under Privacy on You (the Mi sheet), the consent sheet before the
+  first start, and while on, a pill "Meeting on · 12 min · End" above the tab bar on every screen.
+  The recap card on Today ("Meeting at 14:00: 2 commitments", from `last`) comes next.
+
 ### Your data: deletion and retention
 
 ```ts
@@ -2122,7 +2187,7 @@ Deletion really deletes: rows are removed from the database, not hidden. `DELETE
 no parameters removes every row of the account: events, event summaries, goals, recommendations,
 analysis runs, nudges, chat messages, standing instructions, the Telegram chat, integrations (Google is revoked first), push subscriptions,
 device keys, agents with their query log, OAuth grants and tokens, places, the geocode cache, source
-switches, the off the record state and the profile. Then the Supabase Auth user itself is deleted,
+switches, the off the record state, meetings mode sessions and the profile. Then the Supabase Auth user itself is deleted,
 so the next sign in starts a new, empty account. With any of `source`, `from`, `to` (ISO date times,
 `from` < `to`) only the matching timeline events (`start_at` in `[from, to)`) and the summaries of
 the days they cover are removed (`scope: "timeline"`).
@@ -3225,7 +3290,7 @@ start has finished, a demo request waits for it at most 2 s, since the week from
 the database) (the first refresh after a deploy resets the goals to the Build Hub plan,
 later ones keep edits; `DEMO_WEEK=off` turns it off). `POST /v1/demo/reseed` also resets the goals.
 Any other account gets `403 forbidden`. The reseed (and the first refresh after a deploy) also
-deletes all demo visitor chat, turns off the record off, removes goals that are not in the plan
+deletes all demo visitor chat, turns off the record off, clears meetings mode sessions, removes goals that are not in the plan
 clears the week's ritual and every logged entry that is not the demo week's own (the plan's ritual is written again), and replaces the standing instructions with the plan's (`demoInstructions`: only "Nothing between
 23:00 and 07:00", so a Saturday or Sunday evening stays bookable for the live demo); every refresh deletes visitor chat
 older than a day. Off the record, nothing changes. Per source switches are
