@@ -6,6 +6,7 @@ import { CountUp } from "@/components/count-up";
 import { LiveRefresh } from "@/components/live-refresh";
 import { LogTimeForm } from "@/components/log-time";
 import { Tween } from "@/components/motion-ui";
+import { HowICount, ScoreLearning } from "@/components/score/how-i-count";
 import { ScreenHeader } from "@/components/screen";
 import { Tape, TapeKey } from "@/components/tape";
 import { BriefCard } from "@/components/today/brief-card";
@@ -90,6 +91,8 @@ export default async function TodayPage({
   const t = totals(day);
   const firstBlock = day.blocks[0];
   const momentKind = momentKindFor(day);
+  // Too little to count yet (#206): no week figure, the day's number in grey, what Michael needs.
+  const learning = day.explain?.learning ?? false;
   const { primary } = await suggestions;
 
   return (
@@ -139,16 +142,20 @@ export default async function TodayPage({
                 {keepWeek && keepLine(keepWeek) ? ` ${keepLine(keepWeek)}` : ""}
               </p>
             ) : day.blocks.length > 0 ? (
-              <h2 className="flex flex-col">
-                <span className="text-footnote font-semibold text-label-2">Optimisation score</span>
-                <span className="font-num text-score font-extrabold tracking-[-0.02em] tnum [font-size:min(var(--text-score),24vw)]">
-                  <CountUp value={t.scorePct ?? 0} suffix="%" />
-                </span>
-                <span className="text-title3 font-semibold">
-                  of your goal time {day.moment === "evening" ? "today" : "so far"}.
-                  {keepWeek && keepLine(keepWeek) ? ` ${keepLine(keepWeek)}` : ""}
-                </span>
-              </h2>
+              <HowICount explain={day.explain}>
+                <h2 className="flex flex-col">
+                  <span className="text-footnote font-semibold text-label-2">Optimisation score</span>
+                  <span
+                    className={`font-num text-score font-extrabold tracking-[-0.02em] tnum [font-size:min(var(--text-score),24vw)] ${learning ? "text-label-2" : ""}`}
+                  >
+                    <CountUp value={t.scorePct ?? 0} suffix="%" />
+                  </span>
+                  <span className="text-title3 font-semibold">
+                    of your goal time {day.moment === "evening" ? "today" : "so far"}.
+                    {keepWeek && keepLine(keepWeek) ? ` ${keepLine(keepWeek)}` : ""}
+                  </span>
+                </h2>
+              </HowICount>
             ) : (
               <p className="text-title3 font-semibold">
                 No goal blocks today. It neither keeps nor breaks the run.
@@ -161,14 +168,20 @@ export default async function TodayPage({
                 <p className="mt-3 text-subhead font-semibold tnum">{streakLine(keepWeek)}</p>
               </>
             ) : null}
-            {day.week.scorePct != null ? (
-              <p className="mt-1 text-subhead text-label-2">
-                <b className="font-semibold text-label tnum">
-                  <Tween value={day.week.scorePct} format="pct" />
-                </b>{" "}
-                optimisation score this week.{day.week.line ? ` ${day.week.line}` : ""}
-                {keepWeek ? ` A day is kept at ${keepWeek.line}%.` : ""}
-              </p>
+            {learning && day.explain ? (
+              <HowICount explain={day.explain} hint={false}>
+                <ScoreLearning explain={day.explain} className="mt-3" />
+              </HowICount>
+            ) : day.week.scorePct != null ? (
+              <HowICount explain={day.explain} hint={!(day.blocks.length > 0 && t.scorePct !== null)}>
+                <span className="mt-1 block text-subhead text-label-2">
+                  <b className="font-semibold text-label tnum">
+                    <Tween value={day.week.scorePct} format="pct" />
+                  </b>{" "}
+                  optimisation score this week.{day.week.line ? ` ${day.week.line}` : ""}
+                  {keepWeek ? ` A day is kept at ${keepWeek.line}%.` : ""}
+                </span>
+              </HowICount>
             ) : null}
             {day.balance && verdict(day.balance).line ? (
               <p className="mt-1 text-subhead font-semibold">{verdict(day.balance).line}</p>
@@ -215,7 +228,7 @@ export default async function TodayPage({
 
           {lostWeek && lostWeek.total > 0 ? <LostWeekLine week={lostWeek} demo={demo} /> : null}
 
-          {day.wonBackMinutes > 0 ? (
+          {day.wonBackMinutes > 0 && !learning ? (
             <p className="mt-2 text-body" data-live-key="won" data-live-pop="">
               <b className="font-num font-bold text-tint-text">
                 <Tween value={day.wonBackMinutes} format="minutes" />

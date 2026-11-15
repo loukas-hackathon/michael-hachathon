@@ -8,6 +8,7 @@ import { AddGoal, EditGoal, type GoalDraft, NewGoalButton } from "@/components/g
 import { LogTimeButton } from "@/components/log-time";
 import { Tween } from "@/components/motion-ui";
 import { ProgressBar } from "@/components/progress-bar";
+import { HowICount, ScoreLearning } from "@/components/score/how-i-count";
 import { ScreenHeader } from "@/components/screen";
 import { RecommendationList } from "@/components/today/recommendation-list";
 import { getGoalSuggestions, getGoals, getGoalsWeek, getRecommendations, getScore } from "@/lib/api";
@@ -364,10 +365,25 @@ function Hero({
 
 /** The week's target, balance and records (#165, #166), quietly under the answer. */
 function TheWeek({ week }: { week: Awaited<ReturnType<typeof getGoalsWeek>> }) {
-  if (!week.target && !week.balance && !week.recordLine) return null;
+  const explain = week.explain ?? null;
+  const scoreLine = explain?.learning || explain?.scorePct != null;
+  if (!week.target && !week.balance && !week.recordLine && !scoreLine) return null;
   return (
     <section className="mt-6 flex flex-col gap-4">
       <h2 className="-mb-2 text-title3 font-bold">This week</h2>
+      {/* The week's score with its maths one tap away, or what Michael still needs (#206). */}
+      {explain?.learning ? (
+        <HowICount explain={explain} hint={false}>
+          <ScoreLearning explain={explain} />
+        </HowICount>
+      ) : explain?.scorePct != null ? (
+        <HowICount explain={explain}>
+          <span className="block text-body">
+            <b className="font-num text-title3 font-bold tnum">{explain.scorePct}%</b> of your goal time this
+            week.
+          </span>
+        </HowICount>
+      ) : null}
       {/* No target yet means nothing to say: the learning line is noise on a new account. */}
       {week.target ? <TargetCard target={week.target} baseline={week.baseline ?? null} /> : null}
       {week.recordLine ? (

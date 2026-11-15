@@ -1,4 +1,5 @@
 import type { Balance, RecordMark, Recovery } from "./gamification";
+import type { ScoreExplain } from "./score-explain";
 import type { Drive, TravelPlan } from "./travel";
 
 export type { Recovery };
@@ -67,6 +68,8 @@ export type DayView = {
   /** Today's drives and Michael's plan for them (#157). */
   drives?: Drive[];
   travelPlan?: TravelPlan | null;
+  /** The week's maths for the "How I count" sheet, and whether Michael is still learning (#206). */
+  explain?: ScoreExplain | null;
   lead: Lead | null;
   nudge: Nudge | null;
 };
