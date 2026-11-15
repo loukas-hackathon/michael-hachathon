@@ -132,7 +132,12 @@ export async function connectionsNow(now = Date.now()): Promise<ConnectionsNow> 
   const lastPhone = phone.sort((a, b) => a.start_at.localeCompare(b.start_at)).at(-1);
   const unnamed =
     !otr && lastPhone?.data?.app_unknown === true ? unnamedOpenLine(at(lastPhone.start_at)) : null;
-  if (unnamed) {
+  if (!otr && lastPhone?.data?.app_assumed === true) {
+    // The user said which app the automation is for (profile.default_app): unnamed opens count as it.
+    lines.push(
+      `- iPhone app opens: the automation sends no app name, so opens count as ${lastPhone.title}, the app the user picked on You > Connections > iPhone. Say "${lastPhone.title} opened at ${at(lastPhone.start_at)}."`,
+    );
+  } else if (unnamed) {
     lines.push(
       `- iPhone app opens: the latest open is not named by the automation (shown as "An app"). Asked about an app open, say "${unnamed}"`,
     );

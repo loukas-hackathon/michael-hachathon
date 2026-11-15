@@ -2903,6 +2903,7 @@ type Profile = {
   gym_days: Weekday[]; // default []
   weak_spots: WeakSpot[]; // default []
   fixed_titles: string[]; // calendar titles Michael never moves ("PT session"); default []
+  default_app: string | null; // the app the iPhone App automation is for ("Instagram"); default null
   onboarded_at: string | null; // set when onboarding is finished or skipped
   updated_at: string | null; // null until first saved
 };
@@ -2917,6 +2918,11 @@ type ProfileUpdate = Partial<Omit<Profile, "updated_at">>; // arrays are replace
 The web app sends a new user (no goals and `onboarded_at: null`) from Today to `/onboarding`.
 Stored as one jsonb document per user (`user_profiles`); a missing or invalid field reads as its
 default.
+
+`default_app` (You > Connections > iPhone, "My automation is for"): Apple passes an App automation
+no app name, so an `ios_shortcuts` open with none (after the first test) is stored with this title
+and `data.app_assumed: true` instead of `An app`. Saving a name also renames the user's own
+`data.app_unknown` opens from today (Athens) the same way.
 
 ### Places and travel
 

@@ -1,6 +1,8 @@
 import { type Event, EventInput, type IngestResponse } from "@michael/shared";
 import { z } from "zod";
 import { currentUserId } from "../context";
+import { DEFAULT_TIMEZONE } from "../patterns";
+import { Zone } from "../patterns/time";
 import { type Store, store, type UpsertResult } from "../store";
 
 // iPhone Shortcuts personal automations ("App is opened" / "App is closed") -> `app_usage`.
@@ -79,6 +81,7 @@ function usage(
   end: number,
   open: boolean,
   externalId?: string,
+  assumed = false,
 ): z.output<typeof EventInput> {
   const startAt = new Date(start).toISOString();
   return EventInput.parse({
@@ -92,6 +95,7 @@ function usage(
       device: "iphone",
       seconds: Math.max(1, Math.round((end - start) / 1000)),
       ...(app ? {} : { app_unknown: true }),
+      ...(app && assumed ? { app_assumed: true } : {}),
       ...(bundleId ? { bundle_id: bundleId } : {}),
       ...(open ? { open: true } : {}),
     },
@@ -106,7 +110,39 @@ const appOf = (e: Event) =>
 /** The open that event `e` still stands for, ended at `end` (its real length now). */
 function ended(e: Event, end: number) {
   const bundleId = typeof e.data?.bundle_id === "string" ? e.data.bundle_id : undefined;
-  return usage(appOf(e), bundleId, Date.parse(e.start_at), end, false, e.external_id ?? undefined);
+  const assumed = e.data?.app_assumed === true;
+  return usage(appOf(e), bundleId, Date.parse(e.start_at), end, false, e.external_id ?? undefined, assumed);
+}
+
+/**
+ * The user named the app their automation is for (profile.default_app): their own unnamed opens
+ * from today (Athens) take that name, with data.app_assumed. Same external_id, so each is rewritten
+ * in place. Returns how many were renamed.
+ */
+export async function assumeUnknownApps(app: string, now = Date.now(), s: ShortcutsStore = store) {
+  const zone = new Zone(DEFAULT_TIMEZONE);
+  const events = await s.listEvents({
+    from: new Date(zone.startOfDay(zone.dayOf(now))).toISOString(),
+    to: new Date(now + MAX_SESSION_MS).toISOString(),
+    source: [SOURCE],
+    type: ["app_usage"],
+  });
+  const writes = events
+    .filter((e) => e.data?.app_unknown === true)
+    .map((e) => {
+      const { app_unknown: _unknown, ...data } = e.data ?? {};
+      return EventInput.parse({
+        source: SOURCE,
+        type: "app_usage",
+        start_at: e.start_at,
+        end_at: e.end_at,
+        title: app,
+        data: { ...data, app, app_assumed: true },
+        external_id: e.external_id,
+      });
+    });
+  if (writes.length) await s.upsertEvents(writes);
+  return writes.length;
 }
 
 /**
@@ -119,12 +155,13 @@ export class ShortcutsPairer {
   constructor(private readonly s: ShortcutsStore = store) {}
 
   /** Stores what one signal means, at once. Returns the events inserted and the ones it ended. */
-  handle(p: ShortcutsPayload, arrivedAt: number): Promise<IngestResponse> {
+  /** `assumed`: p.app is the user's default app, standing in for a name the automation did not send. */
+  handle(p: ShortcutsPayload, arrivedAt: number, assumed = false): Promise<IngestResponse> {
     // One signal at a time per user, so two opens a second apart never both start a session.
     const userId = currentUserId();
     const run = (this.chains.get(userId) ?? Promise.resolve())
       .catch(() => {})
-      .then(() => this.apply(p, arrivedAt));
+      .then(() => this.apply(p, arrivedAt, assumed));
     this.chains.set(userId, run);
     void run
       .finally(() => {
@@ -154,7 +191,7 @@ export class ShortcutsPairer {
     return open.sort((a, b) => Date.parse(a.start_at) - Date.parse(b.start_at)).at(-1) ?? null;
   }
 
-  private async apply(p: ShortcutsPayload, arrivedAt: number): Promise<IngestResponse> {
+  private async apply(p: ShortcutsPayload, arrivedAt: number, assumed: boolean): Promise<IngestResponse> {
     const parsed = p.at ? Date.parse(p.at) : Number.NaN;
     const at = Number.isFinite(parsed) ? parsed : arrivedAt;
     const writes: z.output<typeof EventInput>[] = [];
@@ -162,17 +199,17 @@ export class ShortcutsPairer {
     if (p.action === "open") {
       const current = await this.lastOpen(at);
       // The same app opened twice keeps the first open (a duplicate automation run). Two unnamed
-      // opens are one only within a minute: after that, most likely another open.
+      // opens (or two assumed ones, all the default app) are one only within a minute: after that, most likely another open.
       if (
         current &&
         key(appOf(current)) === key(p.app) &&
-        (p.app !== "" || at - Date.parse(current.start_at) < UNKNOWN_DUPLICATE_MS)
+        ((p.app !== "" && !assumed) || at - Date.parse(current.start_at) < UNKNOWN_DUPLICATE_MS)
       ) {
         return written(null);
       }
       // Another app in front means the one before was left, even if its close never came.
       if (current && at > Date.parse(current.start_at)) writes.push(ended(current, at));
-      writes.push(usage(p.app, p.bundle_id, at, at + PROVISIONAL_MS, true));
+      writes.push(usage(p.app, p.bundle_id, at, at + PROVISIONAL_MS, true, undefined, assumed));
     } else {
       // A close with no open standing (an app never opened, or opened over two hours ago) is dropped.
       const current = await this.lastOpen(at, p.app);

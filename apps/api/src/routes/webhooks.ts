@@ -9,6 +9,7 @@ import { mapOmi } from "../ingest/omi";
 import { phoneLive } from "../ingest/phone-live";
 import { personalTokenUsedBefore } from "../tokens";
 import { claudeCodeHook } from "./claude-code";
+import { readProfile } from "./profile";
 
 const shortcuts = new ShortcutsPairer();
 
@@ -54,10 +55,14 @@ export const webhooks = new Hono()
         message: "Connected to Michael. Now add the App automation so opens arrive.",
       });
     }
+    // No app, and the user said which app their automation is for (You > Connections > iPhone):
+    // the open is that app, marked data.app_assumed.
+    const defaultApp = payload.app ? null : (await readProfile()).default_app;
+    const signal = defaultApp ? { ...payload, app: defaultApp } : payload;
     // Kept live as well, for the real time nudges (#438), which read every signal in memory.
-    phoneLive.record(currentUserId(), payload, Date.now());
+    phoneLive.record(currentUserId(), signal, Date.now());
     // Stored at once: an open is an event the moment it arrives, ended later by its close (#488).
-    return c.json(await shortcuts.handle(payload, Date.now()));
+    return c.json(await shortcuts.handle(signal, Date.now(), defaultApp !== null));
   })
   .post("/activitywatch", async (c) => {
     const payload = parse(AwPayload, await jsonBody(c));
