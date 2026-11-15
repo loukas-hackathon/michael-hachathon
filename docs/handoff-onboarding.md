@@ -45,10 +45,15 @@ apps/web/lib/today-lines.ts. Tests: e2e/tests/onboarding.spec.ts, onboarding-iph
 
 ## In flight when this was written (check GitHub for their state)
 
-1. Branch `claude/onboarding-living-voice` (PR labelled `wip`): Siri like, audio reactive voice
-   visual replacing the orb. Michael speaking driven by a Web Audio AnalyserNode on the ElevenLabs
-   audio element (browser voice: word boundary beats), listening by mic level, a distinct thinking
-   swirl, idle breath, muted still. Possibly also in chat's conversation sheet.
+1. PR 537, branch `claude/onboarding-living-voice`: Siri like living voice
+   (apps/web/components/voice/living-voice.tsx, a canvas of translucent pink light around the Mi
+   core), used by onboarding's VoiceOrb and chat's conversation sheet. Speaking follows the real
+   loudness of his voice (a side decode of the ElevenLabs audio, playback untouched so iPhone
+   routing is unchanged; browser voice by word beats), listening follows the mic, thinking is two
+   lights circling the rim, muted is grey and still. Reviewed by screenshots and released (wip
+   removed); auto-merges when CI is green. Only a real iPhone can confirm: Safari decodes the mp3
+   for the loudness curve, Michael stays loud on the speaker after the mic, 60 fps on the stage
+   phone. Unused CSS left for later: .m-speak-breath and .m-think-soft in globals.css.
 2. Branch `claude/onboarding-alive` (PR labelled `wip`): every onboarding tap answers at once with
    a visible thinking state (show delay about 200 ms, minimum about 400 ms), calm screen
    transitions, a Michael thinking loading screen instead of the goals skeleton, the hard black
