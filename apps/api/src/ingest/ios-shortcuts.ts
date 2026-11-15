@@ -1,5 +1,7 @@
+import { type Event, EventInput, type IngestResponse } from "@michael/shared";
 import { z } from "zod";
-import type { MappedEvent } from "./common";
+import { currentUserId } from "../context";
+import { type Store, store, type UpsertResult } from "../store";
 
 // iPhone Shortcuts personal automations ("App is opened" / "App is closed") -> `app_usage`.
 // Each automation runs "Get Contents of URL" with a tiny JSON body (our own format, see
@@ -7,10 +9,11 @@ import type { MappedEvent } from "./common";
 //   { "app": "Instagram", "action": "open" | "close", "at"?: ISO 8601, "bundle_id"?: string }
 // `at` defaults to the arrival time (Shortcuts posts within a second or two).
 //
-// An open is held until its close arrives, then the pair becomes one event with a duration.
-// The iPhone has one app in front, so opening another app also closes the one held.
-// Opens are held in memory: a restart in the middle of a session loses that one session, which
-// is acceptable for a live signal (the Biome backfill in apps/collector covers history).
+// An open is stored at once (#488): an `app_usage` event from the open, one minute long for now,
+// with `data.open: true`. Its close, or the next app's open (the iPhone has one app in front),
+// rewrites that same event (same external_id) with the real end and seconds. An open never ended
+// keeps its minute. Production, 15 Nov: opens were held in memory until the next signal, so one
+// open stored nothing, chat had no data and every deploy dropped the open held at the time.
 
 const SOURCE = "ios_shortcuts" as const;
 // An open with no close after this long is a missed automation, not a session.
@@ -37,62 +40,119 @@ export const ShortcutsPayload = z.object({
 });
 export type ShortcutsPayload = z.infer<typeof ShortcutsPayload>;
 
-interface Held {
-  app: string;
-  bundle_id?: string;
-  at: number;
-}
+/** What the pairer needs from the store (scoped to the current user, like every store call). */
+export type ShortcutsStore = Pick<Store, "listEvents" | "upsertEvents">;
+
+// An open is stored at once with this length, until its close or the next app's open says more.
+export const PROVISIONAL_MS = 60_000;
 
 const key = (app: string) => app.toLowerCase();
 
-function session(open: Held, end: number): MappedEvent | null {
-  const seconds = Math.round((end - open.at) / 1000);
-  if (seconds < 1 || end - open.at > MAX_SESSION_MS) return null;
-  const start = new Date(open.at).toISOString();
-  return {
+function usage(
+  app: string,
+  bundleId: string | undefined,
+  start: number,
+  end: number,
+  open: boolean,
+  externalId?: string,
+): z.output<typeof EventInput> {
+  const startAt = new Date(start).toISOString();
+  return EventInput.parse({
     source: SOURCE,
     type: "app_usage",
-    start_at: start,
+    start_at: startAt,
     end_at: new Date(end).toISOString(),
-    title: open.app,
+    title: app,
     data: {
-      app: open.app,
+      app,
       device: "iphone",
-      seconds,
-      ...(open.bundle_id ? { bundle_id: open.bundle_id } : {}),
+      seconds: Math.max(1, Math.round((end - start) / 1000)),
+      ...(bundleId ? { bundle_id: bundleId } : {}),
+      ...(open ? { open: true } : {}),
     },
-    external_id: `sc:${key(open.app)}:${start.slice(0, 19)}`,
-  };
+    external_id: externalId ?? `sc:${key(app)}:${startAt.slice(0, 19)}`,
+  });
 }
 
-/** Pairs opens and closes per user. One instance lives for the life of the API process. */
-export class ShortcutsPairer {
-  private held = new Map<string, Held>();
+const appOf = (e: Event) => (typeof e.data?.app === "string" ? e.data.app : e.title);
 
-  handle(userId: string, p: ShortcutsPayload, arrivedAt: number): MappedEvent[] {
+/** The open that event `e` still stands for, ended at `end` (its real length now). */
+function ended(e: Event, end: number) {
+  const bundleId = typeof e.data?.bundle_id === "string" ? e.data.bundle_id : undefined;
+  return usage(appOf(e), bundleId, Date.parse(e.start_at), end, false, e.external_id ?? undefined);
+}
+
+/**
+ * Turns Shortcuts signals into stored `app_usage` events, one user at a time. The database holds
+ * every open, so nothing lives only in memory and a restart loses nothing (#488).
+ */
+export class ShortcutsPairer {
+  private chains = new Map<string, Promise<unknown>>();
+
+  constructor(private readonly s: ShortcutsStore = store) {}
+
+  /** Stores what one signal means, at once. Returns the events inserted and the ones it ended. */
+  handle(p: ShortcutsPayload, arrivedAt: number): Promise<IngestResponse> {
+    // One signal at a time per user, so two opens a second apart never both start a session.
+    const userId = currentUserId();
+    const run = (this.chains.get(userId) ?? Promise.resolve())
+      .catch(() => {})
+      .then(() => this.apply(p, arrivedAt));
+    this.chains.set(userId, run);
+    void run
+      .finally(() => {
+        if (this.chains.get(userId) === run) this.chains.delete(userId);
+      })
+      .catch(() => {});
+    return run;
+  }
+
+  /** The newest open still standing (no close, no next app yet), started at most two hours before `at`. */
+  private async lastOpen(at: number, app?: string): Promise<Event | null> {
+    const events = await this.s.listEvents({
+      from: new Date(at - MAX_SESSION_MS).toISOString(),
+      to: new Date(at).toISOString(),
+      source: [SOURCE],
+      type: ["app_usage"],
+    });
+    const open = events.filter((e) => {
+      const start = Date.parse(e.start_at);
+      return (
+        e.data?.open === true &&
+        start <= at &&
+        at - start <= MAX_SESSION_MS &&
+        (app === undefined || key(appOf(e)) === key(app))
+      );
+    });
+    return open.sort((a, b) => Date.parse(a.start_at) - Date.parse(b.start_at)).at(-1) ?? null;
+  }
+
+  private async apply(p: ShortcutsPayload, arrivedAt: number): Promise<IngestResponse> {
     const parsed = p.at ? Date.parse(p.at) : Number.NaN;
     const at = Number.isFinite(parsed) ? parsed : arrivedAt;
-    const current = this.held.get(userId);
-    const out: MappedEvent[] = [];
+    const writes: z.output<typeof EventInput>[] = [];
 
     if (p.action === "open") {
-      // Another app in front means the held one was left, even if its close never came.
-      if (current && key(current.app) !== key(p.app)) {
-        const e = session(current, at);
-        if (e) out.push(e);
-      }
+      const current = await this.lastOpen(at);
       // The same app opened twice keeps the first open (a duplicate automation run).
-      if (!current || key(current.app) !== key(p.app) || at - current.at > MAX_SESSION_MS) {
-        this.held.set(userId, { app: p.app, bundle_id: p.bundle_id, at });
-      }
-      return out;
+      if (current && key(appOf(current)) === key(p.app)) return written(null);
+      // Another app in front means the one before was left, even if its close never came.
+      if (current && at > Date.parse(current.start_at)) writes.push(ended(current, at));
+      writes.push(usage(p.app, p.bundle_id, at, at + PROVISIONAL_MS, true));
+    } else {
+      // A close with no open standing (an app never opened, or opened over two hours ago) is dropped.
+      const current = await this.lastOpen(at, p.app);
+      if (current && at > Date.parse(current.start_at)) writes.push(ended(current, at));
     }
-
-    if (current && key(current.app) === key(p.app)) {
-      this.held.delete(userId);
-      const e = session(current, at);
-      if (e) out.push(e);
-    }
-    return out;
+    return written(writes.length ? await this.s.upsertEvents(writes) : null);
   }
+}
+
+function written(r: UpsertResult | null): IngestResponse {
+  return {
+    inserted: r?.inserted.length ?? 0,
+    duplicates: r?.unchanged ?? 0,
+    ignored: 0,
+    events: [...(r?.updated ?? []), ...(r?.inserted ?? [])],
+  };
 }

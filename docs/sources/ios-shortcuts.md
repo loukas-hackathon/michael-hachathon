@@ -1,15 +1,18 @@
 # iPhone app opens through Shortcuts
 
-The live iPhone signal: a personal automation tells Michael when a chosen app opens. Michael pairs
-each open with the next one (or a close) into one `app_usage` event with its duration.
+The live iPhone signal: a personal automation tells Michael when a chosen app opens. Each open is
+stored the moment it arrives, as an `app_usage` event one minute long for now; the next open (or a
+close) then sets its real end and duration (#488). One "Is Opened" automation is enough; adding an
+"Is Closed" automation makes the durations exact.
 
 ## How fast it arrives, and what the real time nudges read (#438)
 
 One request per app open, a second or two after the app comes to the front; nothing is batched.
-But an open only becomes a stored `app_usage` event when the next open (or a close) ends it, so the
-app in front right now is not in the database, and the same app opened twice in a row is one event.
-The API therefore also keeps every signal in memory for 12 hours (`apps/api/src/ingest/phone-live.ts`)
-and the two real time nudges (`apps/api/src/nudges/realtime.ts`) read both. Two limits follow from
+The open is in the database at once (chat can answer "when did I open Instagram"), but the same app
+opened twice in a row is one event, and the app in front has only a provisional minute until the
+next signal. The API therefore also keeps every signal in memory for 12 hours
+(`apps/api/src/ingest/phone-live.ts`) and the two real time nudges (`apps/api/src/nudges/realtime.ts`)
+read those. Two limits follow from
 the automation reporting opens only, of the chosen apps only: an app that was not chosen is never
 seen, and the minutes of the app in front are counted up to now (at most 45) because nothing says
 when the phone was put down.
@@ -83,8 +86,9 @@ What the shortcut does (`scripts/shortcut/build.mjs` is the source of truth):
      Header `Authorization` = `Bearer ` followed by the file (as Text), Request Body **JSON**: `app` =
      Shortcut Input (Name), `action` = `open`.
 
-Opens alone are enough: opening the next app closes the one before, and a session over two hours is
-dropped. The person's automation: Automation, **+**, **App**, pick the apps, tick **Is Opened** and
+Opens alone are enough: each open is stored at once, opening the next app ends the one before, and
+an open with nothing after it for two hours keeps its provisional minute. A second **Is Closed**
+automation (with `action` = `close`) makes every duration exact. The person's automation: Automation, **+**, **App**, pick the apps, tick **Is Opened** and
 **Run Immediately**, then choose **Michael**.
 
 ### How the file is made, and what was checked
@@ -147,8 +151,8 @@ Date, ISO 8601) is optional too; without it the time of arrival is used.
 ```
 
 `action` is `open` or `close` (`opened`, `closed`, any case also work); missing means `open`. `bundle_id` is optional.
-Opening another app closes the one before it. A close without an open, or a session over two
-hours, is dropped. Full rules: `docs/api.md`, "Source webhooks". Sample sequence:
+An open is stored at once (one minute, `data.open: true`); its close, or opening another app, sets
+the real end on that same event. A close without an open standing in the last two hours is dropped. Full rules: `docs/api.md`, "Source webhooks". Sample sequence:
 `apps/api/src/ingest/fixtures/ios-shortcuts.json`.
 
 ## Try it
