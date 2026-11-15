@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { goalArea } from "./goal-areas";
+import { VOICE_AUDIO_TYPES } from "./voice-limits";
 
 // ---------- primitives ----------
 
@@ -62,18 +64,7 @@ export type GoalCategory = z.infer<typeof GoalCategory>;
 export const GoalArea = z.enum(["business", "health", "personal"]);
 export type GoalArea = z.infer<typeof GoalArea>;
 
-const GOAL_AREA: Record<GoalCategory, GoalArea> = {
-  business: "business",
-  health: "health",
-  personal: "personal",
-  work: "business",
-  gym: "health",
-  rest: "health",
-  food: "health",
-};
-
-/** The one of the three categories a goal category belongs to, for any of the seven values. */
-export const goalArea = (category: GoalCategory): GoalArea => GOAL_AREA[category];
+// goalArea (goal-areas.ts, zod free) maps any of the seven values to one of the three.
 
 // What a goal measures. `time`: weekly minutes in planned blocks (the default). `target`: a value
 // per day (sleep 7.5 hours, screens off at 23:00). `count`: times a week. `checklist`: the day's
@@ -2432,22 +2423,9 @@ export type VoiceStatus = z.infer<typeof VoiceStatus>;
 // ---------- voice in (POST /v1/voice/transcribe) ----------
 // The raw recording is the request body (Content-Type one of these); text comes back. The audio
 // is held in memory only for the one call to the provider, never stored and never logged.
-export const VOICE_AUDIO_TYPES = [
-  "audio/webm",
-  "audio/mp4",
-  "audio/mpeg",
-  "audio/ogg",
-  "audio/wav",
-  "audio/aac",
-] as const;
+// The types and size limits live in voice-limits.ts (zod free).
 export const VoiceAudioType = z.enum(VOICE_AUDIO_TYPES);
 export type VoiceAudioType = z.infer<typeof VoiceAudioType>;
-// About a minute of speech from any browser (iPhone records AAC at up to 128 kbps); also under
-// Vercel's 4.5 MB request limit, which the web app's proxy sits behind.
-export const VOICE_AUDIO_MAX_BYTES = 4 * 1024 * 1024;
-export const VOICE_AUDIO_MAX_SECONDS = 60;
-// Shorter than this is a tap, not speech.
-export const VOICE_AUDIO_MIN_BYTES = 1000;
 
 export const VoiceTranscript = z.object({
   text: z.string(), // empty when nothing was said
