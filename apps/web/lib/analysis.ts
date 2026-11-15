@@ -1,13 +1,11 @@
 import "server-only";
 import { type AnalysisResult, ApiError, mockAnalysisRun, mockRecommendations } from "@michael/shared";
 import { cache } from "react";
-import { API_URL } from "./api";
 import { authHeaders } from "./caller";
+import { API_URL, USE_MOCKS } from "./mode";
 
 // Michael's brief on demand (POST /v1/analysis/run) and the last one he wrote
 // (GET /v1/analysis/latest). Kept out of lib/api.ts so it can change without touching the shared file.
-
-const USE_MOCKS = process.env.USE_MOCKS !== "false";
 
 export type BriefResult =
   | { ok: true; result: AnalysisResult }
@@ -18,10 +16,8 @@ const mockResult = (): AnalysisResult => ({
   recommendations: structuredClone(mockRecommendations),
 });
 
-/**
- * The latest run, or null when none has run yet or it cannot load (the card then offers the button).
- * Once per render (React cache), so Today can start it early and the brief card reuses it.
- */
+/** The latest run, or null when none has run yet or it cannot load (the card then offers the button). */
+// Once per render (React cache), so Today can start it early and the brief card reuses it.
 export const getLatestBrief = cache(async (): Promise<AnalysisResult | null> => {
   if (USE_MOCKS) return null;
   try {

@@ -19,6 +19,7 @@ import {
 } from "../nudges/engine";
 import { pushToCurrentUser } from "../nudges/push";
 import { telegramToCurrentUser } from "../nudges/telegram";
+import { recoveryOffer } from "../recovery/offer";
 import { store } from "../store";
 import { momentCoreFor } from "./moments";
 import { readProfile } from "./profile";
@@ -55,6 +56,14 @@ export async function checkNudges(): Promise<NudgeCheckResult> {
   if (due && !today.some((n) => n.key === due)) {
     input.moment = { kind: due, ...momentNudge(await momentCoreFor(due, now)) };
   }
+  input.recovery = await recoveryOffer({
+    now,
+    events,
+    goals,
+    today,
+    quiet: profile?.quiet_hours ?? { start: "22:00", end: "07:00" },
+    offTheRecord: privacy.offTheRecord,
+  });
   const decision = decide(input);
   const counted = today.filter((n) => countsTowardsCap(n.status)).length;
   if (decision.action === "skip") {
@@ -64,7 +73,7 @@ export async function checkNudges(): Promise<NudgeCheckResult> {
   const channel = primaryChannel();
   const { candidate } = decision;
   const created = await store.createNudge({
-    recommendation_id: null,
+    recommendation_id: candidate.recommendation_id ?? null,
     goal_id: candidate.goal_id,
     kind: candidate.kind,
     key: candidate.key,

@@ -1,8 +1,12 @@
 import {
+  ChangeGoalPayload,
   CreateFocusBlockPayload,
   type Event,
+  type Goal,
+  GoalUpdate,
   MoveCalendarBlockPayload,
   MoveCalendarBlocksPayload,
+  PlanChangePayload,
   type Recommendation,
   type RecommendationAction,
 } from "@michael/shared";
@@ -20,6 +24,7 @@ import {
   withOthers,
 } from "../integrations/google";
 import { store } from "../store";
+import { draftFromRecommendation } from "./drafts";
 import { startFocusGuard, stopFocusGuard } from "./focus-guard";
 
 // Michael acts on the user's own time only. Rules (Build Hub, docs/api.md):
@@ -32,7 +37,12 @@ import { startFocusGuard, stopFocusGuard } from "./focus-guard";
 
 const Times = z.object({ start_at: z.string(), end_at: z.string().nullable(), title: z.string() });
 
-// Saved on the recommendation (jsonb `execution`) so undo knows exactly what to put back.
+const CreateExecution = z.object({
+  kind: z.literal("create_focus_block"),
+  timeline_event_id: z.string().nullable(),
+  google_event_id: z.string().nullable(),
+  undo_until: z.string(),
+});
 const MoveExecution = z.object({
   kind: z.literal("move_calendar_block"),
   timeline_event_id: z.string(),
@@ -41,13 +51,12 @@ const MoveExecution = z.object({
   undo_until: z.string(),
 });
 type MoveExecution = z.infer<typeof MoveExecution>;
+const StepExecution = z.discriminatedUnion("kind", [CreateExecution, MoveExecution]);
+type StepExecution = z.infer<typeof StepExecution>;
+
+// Saved on the recommendation (jsonb `execution`) so undo knows exactly what to put back.
 const Execution = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("create_focus_block"),
-    timeline_event_id: z.string().nullable(),
-    google_event_id: z.string().nullable(),
-    undo_until: z.string(),
-  }),
+  CreateExecution,
   MoveExecution,
   // Several moves carried out together (the whole day around traffic), undone together.
   z.object({
@@ -60,8 +69,20 @@ const Execution = z.discriminatedUnion("kind", [
     focus_guard_id: z.string(),
     undo_until: z.string(),
   }),
+  // #188: every step of an accepted plan, in order.
+  z.object({ kind: z.literal("plan_change"), steps: z.array(StepExecution), undo_until: z.string() }),
+  // #188: the goals' old values, to put back on undo or when `until` passes.
+  z.object({
+    kind: z.literal("change_goal"),
+    before: z.array(z.object({ goal_id: z.string(), patch: z.record(z.string(), z.unknown()) })),
+    until: z.string().nullable(),
+    undo_until: z.string(),
+  }),
 ]);
 type Execution = z.infer<typeof Execution>;
+
+/** Without an end date, a goal change can be undone for a week. */
+const GOAL_UNDO_MS = 7 * 24 * 3600_000;
 
 const conflict = (message: string) => new HttpError("conflict", message);
 const earliest = (...isos: (string | null | undefined)[]) =>
@@ -88,7 +109,12 @@ async function mirror(g: GoogleEvent, fallbackZone = "Europe/Athens"): Promise<E
 
 const isOthers = (e: Event) => e.data.with_others === true || Number(e.data.attendees ?? 0) >= 2;
 
-async function createFocusBlock(rec: Recommendation, action: RecommendationAction): Promise<Execution> {
+// `step` tells apart the blocks of one plan (#188), which share a recommendation.
+async function createFocusBlock(
+  rec: Recommendation,
+  action: RecommendationAction,
+  step?: number,
+): Promise<Execution> {
   const p = parse(CreateFocusBlockPayload, action.payload);
   if (Date.parse(p.start_at) <= Date.now()) throw conflict("That time has already started");
   const title = p.title ?? "Focus block";
@@ -121,7 +147,7 @@ async function createFocusBlock(rec: Recommendation, action: RecommendationActio
       end_at: p.end_at,
       title,
       data: { michael: true, with_others: false, attendees: 0, recommendation_id: rec.id },
-      external_id: `michael:${rec.id}`,
+      external_id: step === undefined ? `michael:${rec.id}` : `michael:${rec.id}:${step}`,
     },
   ]);
   const local = inserted[0];
@@ -246,11 +272,27 @@ export async function executeRecommendation(id: string): Promise<Recommendation>
   });
   if (!verdict.allowed) throw conflict(verdict.reason);
 
+  // A draft is stored for the user to copy and send themselves (#40). Nothing is sent, nothing on
+  // the calendar changes, so there is nothing to undo: the draft is dismissed under Follow ups.
+  if (action.kind === "draft_follow_up") {
+    const draft = await draftFromRecommendation({ id: rec.id, title: rec.title, payload: action.payload });
+    const saved = await store.recordRecommendationAction(id, {
+      status: "done",
+      executed_at: new Date().toISOString(),
+      undone_at: null,
+      execution: { kind: "draft_follow_up", draft_id: draft.id },
+    });
+    if (!saved) throw new HttpError("not_found", "Recommendation not found");
+    return saved;
+  }
+
   let execution: Execution;
   if (action.kind === "create_focus_block") execution = await createFocusBlock(rec, action);
   else if (action.kind === "move_calendar_block") execution = await moveCalendarBlock(action);
   else if (action.kind === "block_mac_app") execution = (await startFocusGuard(rec, action)).execution;
   else if (action.kind === "move_calendar_blocks") execution = await moveCalendarBlocks(action);
+  else if (action.kind === "change_goal") execution = await executeGoalChange(action);
+  else if (action.kind === "plan_change") execution = await executePlanChange(rec, action);
   else throw new HttpError("not_implemented", `${action.kind} cannot be carried out yet`);
 
   const saved = await store.recordRecommendationAction(id, {
@@ -267,6 +309,8 @@ export async function undoRecommendation(id: string): Promise<Recommendation> {
   const rec = await store.getRecommendation(id);
   if (!rec) throw new HttpError("not_found", "Recommendation not found");
   if (rec.status !== "done") throw conflict("Only a done recommendation can be undone");
+  if (rec.action?.kind === "draft_follow_up")
+    throw conflict("A draft changes nothing on your calendar. Dismiss it under Follow ups instead");
   const parsed = Execution.safeParse(await store.getRecommendationExecution(id));
   if (!parsed.success) throw conflict("I have no record of what I changed, so I cannot undo it");
   const ex = parsed.data;
@@ -274,12 +318,31 @@ export async function undoRecommendation(id: string): Promise<Recommendation> {
     throw conflict(
       ex.kind === "block_mac_app"
         ? "Nothing to undo: that guard has already ended"
-        : "Too late to undo: the block has started",
+        : ex.kind === "change_goal"
+          ? "Too late to undo: change the goal on the Goals screen"
+          : "Too late to undo: the block has started",
     );
   }
 
+  await revert(ex);
+
+  const saved = await store.recordRecommendationAction(id, {
+    status: "undone",
+    undone_at: new Date().toISOString(),
+  });
+  if (!saved) throw new HttpError("not_found", "Recommendation not found");
+  return saved;
+}
+
+/** Puts back what one execution changed. */
+async function revert(ex: Execution): Promise<void> {
   if (ex.kind === "block_mac_app") {
     await stopFocusGuard(ex);
+  } else if (ex.kind === "change_goal") {
+    await revertGoalChange(ex);
+  } else if (ex.kind === "plan_change") {
+    // Last step first, so a block moved twice ends where it began.
+    for (const step of [...ex.steps].reverse()) await revert(step);
   } else if (ex.kind === "create_focus_block") {
     if (ex.google_event_id) {
       try {
@@ -304,13 +367,88 @@ export async function undoRecommendation(id: string): Promise<Recommendation> {
   } else {
     await restoreMove(ex);
   }
+}
 
-  const saved = await store.recordRecommendationAction(id, {
-    status: "undone",
-    undone_at: new Date().toISOString(),
-  });
-  if (!saved) throw new HttpError("not_found", "Recommendation not found");
-  return saved;
+/** Every step of a plan, each with its own guard rails; on a failure the steps done are taken back. */
+async function executePlanChange(rec: Recommendation, action: RecommendationAction): Promise<Execution> {
+  const p = parse(PlanChangePayload, action.payload);
+  const instructions = await store.listInstructions();
+  const steps: StepExecution[] = [];
+  try {
+    for (const [i, { kind, ...payload }] of p.steps.entries()) {
+      const sub: RecommendationAction = {
+        kind,
+        payload,
+        involves_others: false,
+        undo_until: action.undo_until,
+      };
+      const verdict = await refusalFor(sub, { instructions, getEvent: (eventId) => store.getEvent(eventId) });
+      if (!verdict.allowed) throw conflict(verdict.reason);
+      const done =
+        kind === "create_focus_block" ? await createFocusBlock(rec, sub, i) : await moveCalendarBlock(sub);
+      steps.push(done as StepExecution);
+    }
+  } catch (err) {
+    for (const done of steps.reverse()) await revert(done).catch(() => null);
+    throw err;
+  }
+  return { kind: "plan_change", steps, undo_until: earliest(...steps.map((s) => s.undo_until)) };
+}
+
+/** Applies each goal change, keeping the old values so undo can put them back. */
+async function executeGoalChange(action: RecommendationAction): Promise<Execution> {
+  const p = parse(ChangeGoalPayload, action.payload);
+  const goals = await Promise.all(p.changes.map((c) => store.getGoal(c.goal_id)));
+  const missing = p.changes.find((_, i) => !goals[i]);
+  if (missing) throw new HttpError("not_found", "One of those goals no longer exists");
+  const before: Execution & { kind: "change_goal" } = {
+    kind: "change_goal",
+    before: [],
+    until: p.until ?? null,
+    // Temporary: undo until it ends. Otherwise a week to change your mind.
+    undo_until: p.until ?? new Date(Date.now() + GOAL_UNDO_MS).toISOString(),
+  };
+  for (const [i, change] of p.changes.entries()) {
+    const goal = goals[i] as Goal;
+    const { goal_id, ...patch } = change;
+    const old: Record<string, unknown> = {};
+    for (const key of Object.keys(patch) as (keyof typeof patch)[]) old[key] = goal[key];
+    await store.updateGoal(goal_id, patch);
+    before.before.push({ goal_id, patch: old });
+  }
+  return before;
+}
+
+async function revertGoalChange(ex: Execution & { kind: "change_goal" }) {
+  for (const b of ex.before) {
+    // A goal deleted since has nothing to put back.
+    await store.updateGoal(b.goal_id, parse(GoalUpdate, b.patch));
+  }
+}
+
+/**
+ * Temporary goal changes whose `until` has passed go back to the old values, recorded as undone.
+ * The scheduler calls it per user; GET /v1/goals calls it too so the screen never shows a stale budget.
+ */
+export async function revertExpiredGoalChanges(now = Date.now()): Promise<number> {
+  const done = (await store.listRecommendations({ status: "done" })).filter(
+    (rec) => rec.action?.kind === "change_goal",
+  );
+  // Every execution in one wave of round trips, not one after another.
+  const executions = await Promise.all(done.map((rec) => store.getRecommendationExecution(rec.id)));
+  let reverted = 0;
+  for (const [i, rec] of done.entries()) {
+    const parsed = Execution.safeParse(executions[i]);
+    if (!parsed.success || parsed.data.kind !== "change_goal" || !parsed.data.until) continue;
+    if (Date.parse(parsed.data.until) > now) continue;
+    await revertGoalChange(parsed.data);
+    await store.recordRecommendationAction(rec.id, {
+      status: "undone",
+      undone_at: new Date(now).toISOString(),
+    });
+    reverted++;
+  }
+  return reverted;
 }
 
 const MIN_BLOCK_MS = 5 * 60_000;

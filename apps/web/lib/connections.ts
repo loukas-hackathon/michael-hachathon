@@ -1,18 +1,11 @@
-import type { Source } from "@michael/shared";
+import { type ConnectorId, isLive, type Source } from "@michael/shared";
 
 // One word for everything the user plugs into Michael: a Connection. Not "sources", "devices" or
 // "integrations" in copy. This file is the single map of connections and their routes, so Today's
 // Get started checklist and the You hub link to the same places. Pure data: safe on server and client.
 
-export type ConnectionId =
-  | "google-calendar"
-  | "apple-watch"
-  | "mac"
-  | "iphone"
-  | "claude"
-  | "nudges"
-  | "telegram"
-  | "travel";
+// The ids and whether each is proven on production live in @michael/shared (CONNECTOR_STATUS, #295).
+export type ConnectionId = ConnectorId;
 
 export type Connection = {
   id: ConnectionId;
@@ -24,11 +17,13 @@ export type Connection = {
   href: string;
   /** The privacy switches this connection owns (one place per source). */
   sources: Source[];
+  /** Proven end to end on production. False: a calm "Coming soon", nothing to tap (#295). */
+  live: boolean;
 };
 
 export const CONNECTIONS_HREF = "/you#connections";
 
-export const CONNECTIONS: readonly Connection[] = [
+const LIST: Omit<Connection, "live">[] = [
   {
     id: "google-calendar",
     name: "Google Calendar",
@@ -52,7 +47,7 @@ export const CONNECTIONS: readonly Connection[] = [
   },
   {
     id: "iphone",
-    name: "iPhone screen time",
+    name: "iPhone",
     what: "Which apps you open, and for how long.",
     href: "/you/connections/iphone",
     sources: ["iphone_usage", "ios_shortcuts"],
@@ -66,7 +61,7 @@ export const CONNECTIONS: readonly Connection[] = [
   },
   {
     id: "nudges",
-    name: "Nudges on this phone",
+    name: "Nudges",
     what: "At most five a day, never in quiet hours. Your watch buzzes too.",
     href: "/you/connections/nudges",
     sources: [],
@@ -80,12 +75,14 @@ export const CONNECTIONS: readonly Connection[] = [
   },
   {
     id: "travel",
-    name: "Travel times",
-    what: "Traffic between your places, so you leave at the right time.",
+    name: "Location",
+    what: "Home, work and gym, so you leave at the right time.",
     href: "/you/connections/travel",
     sources: ["maps"],
   },
 ];
+
+export const CONNECTIONS: readonly Connection[] = LIST.map((c) => ({ ...c, live: isLive(c.id) }));
 
 /** Route per connection, for links from anywhere in the app (Today's checklist imports this). */
 export const CONNECTION_ROUTES = Object.fromEntries(CONNECTIONS.map((c) => [c.id, c.href])) as Record<
@@ -96,9 +93,6 @@ export const CONNECTION_ROUTES = Object.fromEntries(CONNECTIONS.map((c) => [c.id
 export function connection(id: ConnectionId): Connection {
   return CONNECTIONS.find((c) => c.id === id) as Connection;
 }
-
-/** Sources no connection row owns: they keep a plain switch in the Privacy section. */
-export const OTHER_SOURCES: Source[] = ["whoop", "owntracks", "omi"];
 
 /** What each source is called on the user's side, for the switches on the setup pages. */
 export const SOURCE_LABEL: Partial<Record<Source, [name: string, what: string]>> = {
@@ -111,7 +105,4 @@ export const SOURCE_LABEL: Partial<Record<Source, [name: string, what: string]>>
   iphone_usage: ["Screen Time", "iPhone apps by the day, synced through your Mac"],
   ios_shortcuts: ["Shortcuts", "Live app opens from your iPhone"],
   maps: ["Travel times", "Traffic between your saved places and plans"],
-  whoop: ["WHOOP", "Sleep, strain and recovery"],
-  owntracks: ["Location", "Where you are, for gym and commute"],
-  omi: ["Meetings", "Only when you start meetings mode"],
 };

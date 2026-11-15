@@ -6,13 +6,14 @@ import { SourcePrivacy } from "@/components/you/source-privacy";
 import { CONNECTION_ROUTES, connection } from "@/lib/connections";
 import { getConnection } from "@/lib/connections-status";
 
-export const metadata = { title: "iPhone screen time · Michael" };
+export const metadata = { title: "iPhone · Michael" };
 
-export default async function IPhonePage() {
+export default async function IPhonePage({ searchParams }: { searchParams: Promise<{ from?: string }> }) {
+  const { from } = await searchParams;
   const { row } = await getConnection("iphone");
   const c = connection("iphone");
   return (
-    <ConnectionPage row={row}>
+    <ConnectionPage row={row} from={from}>
       <SetupSection title="Screen Time, every day">
         <div className="rounded-group bg-fill px-4 py-4">
           <ol className="list-decimal space-y-2 pl-5 text-subhead">

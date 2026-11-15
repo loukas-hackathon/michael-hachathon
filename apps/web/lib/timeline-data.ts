@@ -1,10 +1,11 @@
 import "server-only";
 import { type Event, EventType, type Goal, type TimelineResponse } from "@michael/shared";
-import { get, usingMocks } from "./api";
+import { get } from "./api";
 import { addDays, athensDay, dayBounds, isLocalDay, weekOf } from "./athens";
 import { DATES_WITH_DATA, getTimelineDay, longestFrom, type Patterns } from "./days";
-import { sleepGoalMinutes } from "./health";
 import { getGoogleCalendar } from "./integrations";
+import { USE_MOCKS } from "./mode";
+import { sleepGoalMinutes } from "./sleep-goal";
 import { buildTimeline, type TimelineDay } from "./timeline";
 
 // Loads the Timeline screen for one Athens day: the day itself from GET /v1/timeline, the longest
@@ -12,8 +13,7 @@ import { buildTimeline, type TimelineDay } from "./timeline";
 // One function, so a refresh (polling, a pull down) can call it again with the same arguments.
 // Without ?day= it opens on today for every user, the sample week included.
 //
-// The bundled fixtures (lib/sample) only appear with ?demo=sample, or while USE_MOCKS is on.
-// TODO(first-run): when mocks become opt in through one flag module, swap usingMocks() for it.
+// The bundled fixtures (lib/sample) only appear with ?demo=sample, or with USE_MOCKS (lib/mode.ts).
 
 export type TimelineScreen = {
   date: string;
@@ -43,6 +43,8 @@ const HEAVY = new Set<string>(["app_usage", "web_visit", "ai_prompt", "biometric
 const LIGHT_TYPES = EventType.options.filter((t) => !HEAVY.has(t));
 
 const iso = (ms: number) => new Date(ms).toISOString();
+// How far into the next day to look for the night that closes this one.
+const NEXT_MORNING = 16 * 3_600_000;
 
 /** Athens days that have at least one event starting in them. */
 export function daysWithEvents(events: Pick<Event, "start_at">[]): Set<string> {
@@ -55,7 +57,7 @@ const lightScan = (from: number, to: number) =>
   ).catch(() => ({ events: [] as Event[] }));
 
 export async function loadTimeline(asked?: string, demo?: string): Promise<TimelineScreen> {
-  if (demo === "sample" || usingMocks()) return loadSample(asked);
+  if (demo === "sample" || USE_MOCKS) return loadSample(asked);
 
   const today = athensDay();
   const date = isLocalDay(asked) ? asked : today;
@@ -64,16 +66,23 @@ export async function loadTimeline(asked?: string, demo?: string): Promise<Timel
   const weekStart = dayBounds(week[0] as string).start;
   const weekEnd = dayBounds(week[6] as string).end;
 
-  const [timeline, patterns, light, goals] = await Promise.all([
+  const [timeline, patterns, light, goals, nextMorning] = await Promise.all([
     get<TimelineResponse>(`/v1/timeline?${new URLSearchParams({ from: iso(start), to: iso(end) })}`),
     get<Patterns>(`/v1/patterns?${new URLSearchParams({ from: iso(start), to: iso(end) })}`).catch(
       () => ({}) as Patterns,
     ),
     lightScan(weekStart, weekEnd),
     get<{ goals: Goal[] }>("/v1/goals").catch(() => ({ goals: [] as Goal[] })),
+    // The night that starts after midnight still closes this day (the night rule, lib/health.ts):
+    // its sleep and the heart readings around it are in the next morning.
+    get<TimelineResponse>(
+      `/v1/timeline?${new URLSearchParams({ from: iso(end), to: iso(end + NEXT_MORNING), type: "sleep,biometric" })}`,
+    ).catch(() => ({ events: [] as Event[] })),
   ]);
 
   const events = timeline.events;
+  const ids = new Set(events.map((e) => e.id));
+  const withNight = [...events, ...nextMorning.events.filter((e) => !ids.has(e.id))];
   const seen = daysWithEvents(light.events);
   if (events.length > 0) seen.add(date);
   const available = week.filter((d) => seen.has(d));
@@ -95,7 +104,7 @@ export async function loadTimeline(asked?: string, demo?: string): Promise<Timel
     date,
     today,
     source: "live",
-    day: events.length > 0 ? buildTimeline(date, events, start, end, Date.now()) : null,
+    day: events.length > 0 ? buildTimeline(date, withNight, start, end, Date.now()) : null,
     longestUninterrupted: longestFrom(patterns),
     available,
     latest,

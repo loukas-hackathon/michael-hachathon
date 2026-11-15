@@ -1,9 +1,10 @@
 import type { AgentClient, AgentClientUpdate, AgentQuery, AgentScope } from "@michael/shared";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { z } from "zod";
 import { currentUserId } from "./context";
 import { env } from "./env";
-import { HttpError } from "./http";
+import { type DbError, dbError } from "./http";
+import { dbClient } from "./timing";
 
 // Michael for agents (#38): the agents a user allowed and every question they asked. Kept apart
 // from store.ts so it can grow without touching the shared Store, but scoped the same way:
@@ -112,15 +113,20 @@ const toQuery = (r: Record<string, unknown>): AgentQuery => ({
 });
 const AGENT_COLUMNS = "id, name, status, scopes, created_at, last_seen_at";
 
-function check<T>(res: { data: T; error: { message: string } | null }): T {
-  if (res.error) throw new HttpError("upstream_error", `Database error: ${res.error.message}`);
+function check<T>(res: { data: T; error: DbError | null }): T {
+  if (res.error) throw dbError(res.error);
   return res.data;
 }
 
+// Agents looked up on every MCP call (auth.ts), cached briefly per user and id. Writes go through
+// this store (one API process), which drops the entry, so a revoke applies at once.
+const AGENT_TTL_MS = 30_000;
+
 export class SupabaseAgentsStore implements AgentsStore {
   private db: SupabaseClient;
+  private agentCache = new Map<string, { agent: AgentClient | null; until: number }>();
   constructor(url: string, serviceRoleKey: string) {
-    this.db = createClient(url, serviceRoleKey, { auth: { persistSession: false } });
+    this.db = dbClient(url, serviceRoleKey);
   }
 
   async listAgents() {
@@ -134,6 +140,9 @@ export class SupabaseAgentsStore implements AgentsStore {
     return (rows ?? []).map(toAgent);
   }
   async getAgent(id: string) {
+    const key = `${currentUserId()}:${id}`;
+    const hit = this.agentCache.get(key);
+    if (hit && hit.until > Date.now()) return hit.agent;
     const row = check(
       await this.db
         .from("agent_clients")
@@ -142,10 +151,14 @@ export class SupabaseAgentsStore implements AgentsStore {
         .eq("id", id)
         .maybeSingle(),
     );
-    return row ? toAgent(row) : null;
+    const agent = row ? toAgent(row) : null;
+    if (this.agentCache.size > 1000) this.agentCache.clear();
+    this.agentCache.set(key, { agent, until: Date.now() + AGENT_TTL_MS });
+    return agent;
   }
   async approveAgent(name: string, oauthClientId: string, scopes: AgentScope[]) {
     const userId = currentUserId();
+    this.agentCache.clear();
     // One row per user and name (unique on lower(name)); PostgREST cannot upsert on an
     // expression index, so look first.
     const existing = check(
@@ -181,6 +194,7 @@ export class SupabaseAgentsStore implements AgentsStore {
     if (patch.status) values.status = patch.status;
     if (patch.scopes) values.scopes = [...new Set(patch.scopes)];
     if (!Object.keys(values).length) return this.getAgent(id);
+    this.agentCache.delete(`${currentUserId()}:${id}`);
     const rows = check(
       await this.db
         .from("agent_clients")

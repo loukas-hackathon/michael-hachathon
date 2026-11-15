@@ -2,7 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { useArrival } from "@/components/motion";
+import { ActionError } from "@/components/action-feedback";
+import { FlipList } from "@/components/flip-list";
+import { haptic } from "@/components/haptics";
+import { useArrival, useDeparting } from "@/components/motion";
+import { NudgePrimer } from "@/components/nudge-primer";
 import { formatTime } from "@/lib/format";
 import {
   dismissRecommendationAction,
@@ -20,6 +24,8 @@ type Local = {
   status?: RecCard["status"];
   busy?: Op;
   error?: string;
+  /** The tap that failed, for Try again. */
+  failed?: Op;
   note?: string;
   hidden?: boolean;
   removed?: boolean;
@@ -117,11 +123,11 @@ function Card({
       {card.maths ? <p className="text-subhead font-semibold text-label tnum">{card.maths}</p> : null}
       {card.drives?.length ? <Drives drives={card.drives} /> : null}
 
-      {local.error ? (
-        <p role="alert" className="text-subhead text-danger">
-          {local.error}
-        </p>
-      ) : null}
+      <ActionError
+        error={local.error ?? null}
+        onRetry={local.failed && !local.hidden ? () => act(local.failed as Op) : undefined}
+        className="text-subhead"
+      />
 
       <div className="mt-1 flex flex-wrap items-center gap-2">
         {done ? (
@@ -199,6 +205,8 @@ export function RecommendationList({ cards, variant }: { cards: RecCard[]; varia
   const router = useRouter();
   const [local, setLocal] = useState<Record<string, Local>>({});
   const [pinned, setPinned] = useState<RecCard | null>(null);
+  // The first Do it is when a buzz helps: ask for nudges then, never on load (#207).
+  const [primed, setPrimed] = useState(false);
   const pinNow = useSyncExternalStore(subscribePin, readPin, readNoPin);
   // A card that already finished leaving stays gone while it is still hidden.
   const patch = (id: string, next: Local) =>
@@ -211,8 +219,10 @@ export function RecommendationList({ cards, variant }: { cards: RecCard[]; varia
       setPin(keep ? { id: keep.id, displaced: null } : NO_PIN);
     }
     const before = local[card.id] ?? {};
+    // A second tap while the first is still with the server does nothing.
+    if (before.busy) return;
     const note = op === "undo" ? { note: card.undoneNote } : {};
-    patch(card.id, { ...before, ...OPTIMISTIC[op], ...note, error: undefined, busy: op });
+    patch(card.id, { ...before, ...OPTIMISTIC[op], ...note, error: undefined, failed: undefined, busy: op });
     const r = await ACTIONS[op](card.id).catch(
       (): RecActionResult => ({
         ok: false,
@@ -221,12 +231,21 @@ export function RecommendationList({ cards, variant }: { cards: RecCard[]; varia
       }),
     );
     if (r.ok) {
+      haptic();
+      if (op === "do") setPrimed(true);
       patch(card.id, { ...OPTIMISTIC[op], ...note, status: r.rec.status, hidden: op === "dismiss" });
       router.refresh();
     } else {
       // Roll back to what the card showed before, with the reason in Michael's words, and read the
       // list again in case it changed elsewhere (another device, Claude).
-      patch(card.id, { ...before, busy: undefined, note: undefined, error: r.error, hidden: r.gone });
+      patch(card.id, {
+        ...before,
+        busy: undefined,
+        note: undefined,
+        error: r.error,
+        failed: op,
+        hidden: r.gone,
+      });
       router.refresh();
     }
   }
@@ -249,7 +268,16 @@ export function RecommendationList({ cards, variant }: { cards: RecCard[]; varia
             : []),
           ...cards.filter((c) => c.id !== pinNow.id),
         ];
-  const visible = shown.filter((c) => !local[c.id]?.removed);
+  // A dismissed card stays in its place while it fades, even once the refresh has dropped it, so
+  // the refresh never cuts the fade short and the gap closes once (FlipList) when it ends.
+  const kept = useDeparting(
+    shown,
+    (c) => c.id,
+    (id) => Boolean(local[id]?.hidden && !local[id]?.removed),
+  );
+  const visible = kept.filter((c) => !local[c.id]?.removed);
+  // The cards below slide up into the gap a dismissed card leaves.
+  const flipKey = visible.map((c) => c.id).join();
   if (visible.length === 0) return null;
   const items = visible.map((c) => (
     <Card
@@ -267,7 +295,8 @@ export function RecommendationList({ cards, variant }: { cards: RecCard[]; varia
     return (
       <section className="mt-6" aria-label="Your next move">
         <h2 className="mb-2 text-title3 font-bold">Your next move</h2>
-        <ul>{items}</ul>
+        <FlipList flipKey={flipKey}>{items}</FlipList>
+        {primed ? <NudgePrimer /> : null}
       </section>
     );
   }
@@ -278,7 +307,10 @@ export function RecommendationList({ cards, variant }: { cards: RecCard[]; varia
       label="More suggestions"
       preview={visible.map((c) => c.title.replace(/[.!?]$/, "")).join(". ")}
     >
-      <ul className="-mt-1 flex flex-col">{items}</ul>
+      <FlipList flipKey={flipKey} className="-mt-1 flex flex-col">
+        {items}
+      </FlipList>
+      {primed ? <NudgePrimer /> : null}
     </Fold>
   );
 }

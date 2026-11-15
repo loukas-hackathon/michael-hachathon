@@ -11,6 +11,7 @@ import {
 } from "@michael/shared";
 import { DEFAULT_TIMEZONE } from "../patterns/context";
 import { goalBlocks } from "../patterns/focus";
+import { napIn } from "../patterns/sleep";
 import { DAY, MINUTE, Zone } from "../patterns/time";
 import { buildTimeline, type Segment } from "../patterns/timeline";
 import { type Span, union, unionLength } from "../patterns/util";
@@ -74,10 +75,9 @@ export const LIMITS = {
   goalBehindLatest: 19 * 60,
   goalBehindMinMinutes: 60,
   goalBehindMinShare: 0.15,
-  /** Morning: after the night's sleep ends (3 hours or more), else at 08:00; not after 12:00. */
+  /** Morning: after the night ends (a nap never counts, patterns/sleep.ts), else at 08:00; not after 12:00. */
   morningDefault: 8 * 60,
   morningLatest: 12 * 60,
-  mainSleepMs: 3 * 60 * MINUTE,
   /** Evening: an hour before the usual bedtime (median of 3+ recent nights), else 21:00... */
   eveningDefault: 21 * 60,
   eveningLead: 60,
@@ -104,6 +104,17 @@ export interface EngineInput {
    * it from GET /v1/moments/:kind; the engine only decides whether it goes out.
    */
   moment?: { kind: MomentKind; text: string; reason: string };
+  /**
+   * A recovery offer not yet nudged (recovery/offer.ts): a goal block slipped and Michael offers
+   * 25 minutes later today. The engine only decides whether it goes out, while its slot is ahead.
+   */
+  recovery?: {
+    recommendation_id: string;
+    goal_id: string | null;
+    text: string;
+    reason: string;
+    start_at: string;
+  };
 }
 
 export type MomentKind = "morning" | "evening";
@@ -114,6 +125,8 @@ export interface Candidate {
   goal_id: string | null;
   text: string;
   reason: string;
+  /** The recommendation the nudge is about (a recovery offer). */
+  recommendation_id?: string;
 }
 
 export type Decision =
@@ -124,7 +137,16 @@ export type Decision =
 // Most urgent first: a drift is happening now, a block is about to start, bedtime is close, and
 // a weekly gap can wait for the next check.
 // The Morning and Evening moments come after anything happening right now.
-const PRIORITY: NudgeKind[] = ["focus_drift", "block_soon", "morning", "evening", "wind_down", "goal_behind"];
+// A recovery offer is for a slot later today, so it goes before the moments.
+const PRIORITY: NudgeKind[] = [
+  "focus_drift",
+  "block_soon",
+  "recovery_block",
+  "morning",
+  "evening",
+  "wind_down",
+  "goal_behind",
+];
 
 // The three goal categories, and the four older names goals may still carry.
 const LABEL: Record<GoalCategory, string> = {
@@ -179,6 +201,7 @@ interface World {
   events: Event[];
   quiet: QuietHours;
   moment: EngineInput["moment"];
+  recovery: EngineInput["recovery"];
 }
 
 function world(input: EngineInput): World {
@@ -200,6 +223,7 @@ function world(input: EngineInput): World {
     events: input.events,
     quiet: input.quiet ?? DEFAULT_QUIET,
     moment: input.moment,
+    recovery: input.recovery,
   };
 }
 
@@ -215,6 +239,7 @@ export function spentThisWeek(w: World, goal: Goal): number {
   const spentType = isSleepGoal(goal) ? "sleep" : SPENT_TYPES[goal.category];
   for (const e of w.events) {
     if (e.type !== spentType || !e.end_at) continue;
+    if (e.type === "sleep" && napIn(w.zone, Date.parse(e.start_at), Date.parse(e.end_at))) continue;
     const start = Math.max(Date.parse(e.start_at), w.weekStart);
     const end = Math.min(Date.parse(e.end_at), w.now);
     if (end > start) spans.push({ start, end });
@@ -339,9 +364,9 @@ const mainSleeps = (w: World): Span[] =>
   w.events
     .filter((e) => e.type === "sleep" && e.end_at)
     .map((e) => ({ start: Date.parse(e.start_at), end: Date.parse(e.end_at as string) }))
-    .filter((s) => s.end - s.start >= LIMITS.mainSleepMs && s.end - s.start <= DAY);
+    .filter((s) => s.end > s.start && s.end - s.start <= DAY && !napIn(w.zone, s.start, s.end));
 
-/** When the user woke today: the end of the last main sleep that ended today, or null. */
+/** When the user woke today: the end of the last night (never a nap) that ended today, or null. */
 function wokeAt(w: World): number | null {
   const ends = mainSleeps(w)
     .map((s) => s.end)
@@ -420,9 +445,26 @@ function momentRule(kind: MomentKind) {
   };
 }
 
+// ---------- recovery block (#167) ----------
+
+/** The recovery offer, while its slot is still ahead. One nudge per offer (the key names it). */
+function recoveryBlock(w: World): Candidate | null {
+  const r = w.recovery;
+  if (!r || !(Date.parse(r.start_at) > w.now)) return null;
+  return {
+    kind: "recovery_block",
+    key: `recovery_block:${r.recommendation_id}`,
+    goal_id: r.goal_id,
+    recommendation_id: r.recommendation_id,
+    text: r.text,
+    reason: r.reason,
+  };
+}
+
 const RULES: Record<NudgeKind, (w: World) => Candidate | null> = {
   focus_drift: focusDrift,
   block_soon: blockSoon,
+  recovery_block: recoveryBlock,
   morning: momentRule("morning"),
   evening: momentRule("evening"),
   wind_down: windDown,

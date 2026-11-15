@@ -1,4 +1,5 @@
 import {
+  type ChecklistItem,
   type Event,
   type Goal,
   type GoalArea,
@@ -11,6 +12,7 @@ import {
   type ScoreBlock,
   type ScoreDay,
   type ScoreGoal,
+  type ScoreLostBy,
   type ScoreLostStretch,
   type ScoreTick,
   type TimeWonBack,
@@ -22,6 +24,9 @@ import { label } from "../patterns/format";
 import { MINUTE, SECOND, Zone } from "../patterns/time";
 import { buildTimeline, type Segment, subjectOf } from "../patterns/timeline";
 import { iso, overlapWith, round1, type Span, subtractSpans, union } from "../patterns/util";
+import type { CountCheckIn } from "./check-in";
+import { COUNT_RULES, checklistRow, countRow, type Occurrence } from "./count";
+import { calendarTitles, goalForEvent, titleMatchesAny } from "./match";
 import { isTrainingGoal, purposeFor } from "./purpose";
 import type { BlockRun, RecordWeek } from "./records";
 import { type TargetWeek, withTarget } from "./targets";
@@ -69,6 +74,9 @@ export { isSleepGoal };
 //   as spent until a watch or a check in says otherwise; `unverified_minutes` shows how much of
 //   the score rests on that.
 //
+//   Count and checklist goals are outside the score too: each gets a row of its own (`count`,
+//   `checklist`) by the rules in score/count.ts, and adds nothing to any total.
+//
 //   Sleep is outside the score: it is a goal of kind `target` (an older `rest` goal whose target
 //   describes sleep reads as one), listed with its budget (`scored: false`), in no total.
 //
@@ -113,6 +121,10 @@ export interface ScoreOptions {
   timezone?: string;
   /** The user's standing instructions, for `instructions_broken` on each block. Default none. */
   instructions?: Instruction[];
+  /** Checklist items of the week (#238), for the `checklist` rows. Default none. */
+  checklist?: ChecklistItem[];
+  /** Check in answers "yes" (score/check-in.ts), for the `count` rows. Default none. */
+  countCheckIns?: CountCheckIn[];
 }
 
 export interface ScoreRange {
@@ -172,6 +184,21 @@ interface Piece extends Span, Sum {
 }
 
 const ZERO: Sum = { planned: 0, elapsed: 0, lost: 0, verified: 0 };
+
+/** The lost stretches of some blocks summed by what took them, most first; under a minute is left out. */
+export function lostBy(stretches: ScoreLostStretch[]): ScoreLostBy[] {
+  const sums = new Map<string, ScoreLostBy>();
+  for (const s of stretches) {
+    const key = `${s.kind}\u0000${s.what}`;
+    const row = sums.get(key);
+    if (row) row.minutes += s.minutes;
+    else sums.set(key, { what: s.what, kind: s.kind, category: s.category, minutes: s.minutes });
+  }
+  return [...sums.values()]
+    .map((r) => ({ ...r, minutes: Math.round(r.minutes) }))
+    .filter((r) => r.minutes >= 1)
+    .sort((a, b) => b.minutes - a.minutes || a.what.localeCompare(b.what));
+}
 
 const plus = (a: Sum, b: Sum): Sum => ({
   planned: a.planned + b.planned,
@@ -315,6 +342,73 @@ function evaluate(
     ticks,
     stretches: lostStretches(distractors),
   };
+}
+
+// ---------- count goals (#238, the rule in score/count.ts) ----------
+
+/** Every count goal's occurrences in [from, to) up to `now`, by goal id. */
+function countOccurrences(
+  events: Event[],
+  goals: Goal[],
+  checkIns: CountCheckIn[],
+  span: Span,
+  attention: Segment[],
+  workouts: Span[],
+  now: number,
+  zone: Zone,
+): Map<string, Occurrence[]> {
+  const out = new Map<string, Occurrence[]>(goals.map((g) => [g.id, []]));
+  if (goals.length === 0) return out;
+  const inWeek = (start: number) => start >= span.start && start < span.end;
+
+  // Own blocks, matched among the count goals only: a block of a time goal is not a session.
+  const blocks = new Map<string, Span[]>(goals.map((g) => [g.id, []]));
+  const blockGoal = new Map<string, string>();
+  for (const e of events) {
+    if (e.type !== "calendar_event" || !e.end_at) continue;
+    const start = Date.parse(e.start_at);
+    const end = Date.parse(e.end_at);
+    if (!(end > start) || !inWeek(start)) continue;
+    const match = goalForEvent(e, goals);
+    if (!match) continue;
+    blocks.get(match.goal.id)?.push({ start, end });
+    blockGoal.set(e.id, match.goal.id);
+    if (end > now) continue;
+    const block: GoalBlock = {
+      start,
+      end,
+      eventId: e.id,
+      goal: match.goal,
+      title: e.title,
+      rule: match.rule,
+    };
+    const p = evaluate(block, { day: zone.dayOf(start), start, end }, attention, workouts, now);
+    if (p.planned > 0 && p.elapsed - p.lost >= p.planned * COUNT_RULES.minSpentShare) {
+      out.get(match.goal.id)?.push({ source: "block", start, end });
+    }
+  }
+
+  for (const e of events) {
+    if (e.type !== "workout" || !e.end_at) continue;
+    const start = Date.parse(e.start_at);
+    const end = Date.parse(e.end_at);
+    if (!(end > start) || end > now || !inWeek(start)) continue;
+    for (const goal of goals) {
+      const linked =
+        e.data?.goal_id === goal.id ||
+        titleMatchesAny(e.title, calendarTitles(goal)) ||
+        (blocks.get(goal.id) ?? []).some((b) => b.start < end && b.end > start);
+      if (linked) out.get(goal.id)?.push({ source: "workout", start, end });
+    }
+  }
+
+  for (const c of checkIns) {
+    if (c.start > now || !inWeek(c.start)) continue;
+    const goalId =
+      (c.goal_id && out.has(c.goal_id) ? c.goal_id : null) ?? (c.event_id ? blockGoal.get(c.event_id) : null);
+    if (goalId) out.get(goalId)?.push({ source: "check_in", start: c.start, end: c.end, untimed: c.untimed });
+  }
+  return out;
 }
 
 // ---------- the week and the day ----------
@@ -491,17 +585,30 @@ export function scoreWithHistory(
   const weekPieces = pieces.filter((p) => inWeek.has(p.day));
   const week = weekPieces.reduce(plus, ZERO);
 
+  const weekSpan = { start: zone.startOfDay(range.days[0] ?? options.date), end: range.to };
+  const occurrences = countOccurrences(
+    events,
+    active.filter((g) => goalKind(g) === "count"),
+    options.countCheckIns ?? [],
+    weekSpan,
+    tl.attention,
+    workouts,
+    now,
+    zone,
+  );
+
   const goalRows: ScoreGoal[] = active.map((goal) => {
     const own = weekPieces.filter((p) => p.block.goal.id === goal.id);
     const t = totals(own.reduce(plus, ZERO));
     const budget = goal.weekly_budget_minutes ?? 0;
     const scored = isScoredGoal(goal);
+    const kind = goalKind(goal);
     return {
       goal_id: goal.id,
       title: goal.title,
       category: goal.category,
       area: goalArea(goal.category),
-      kind: goalKind(goal),
+      kind,
       scored,
       budget_minutes: budget,
       ...t,
@@ -512,6 +619,12 @@ export function scoreWithHistory(
       minutes_left: scored ? Math.max(0, budget - t.spent_minutes) : 0,
       // A block that crosses midnight is one block.
       open_blocks: new Set(own.filter((p) => p.end > now).map((p) => p.block.eventId)).size,
+      ...(kind === "checklist"
+        ? { checklist: checklistRow(goal.id, options.checklist ?? [], options.date, range.days) }
+        : {}),
+      ...(kind === "count"
+        ? { count: countRow(goal, occurrences.get(goal.id) ?? [], range.days, now, zone) }
+        : {}),
     };
   });
 
@@ -589,6 +702,7 @@ export function scoreWithHistory(
       on_target: null,
       records: [],
       free_minutes_left: freeMinutesLeft(zone, range.days, now, waking, committed),
+      lost_by: lostBy(weekPieces.flatMap((piece) => piece.stretches)),
       sleep: sleepWeek(events, active, zone, range.days, now),
     },
     null,

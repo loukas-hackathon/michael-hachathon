@@ -1,7 +1,7 @@
 import "server-only";
 import type { AgentClient, AgentClientUpdate, AgentQuery, AgentScope } from "@michael/shared";
-import { API_URL } from "./api";
 import { authHeaders } from "./caller";
+import { API_URL, USE_MOCKS } from "./mode";
 
 // Michael for agents, from the user's side. Shapes are the contract's (AgentClient, AgentQuery).
 // Real data from the API; the sample below is for USE_MOCKS and ?demo=sample.
@@ -115,8 +115,6 @@ const sampleQueries: AgentQuery[] = [
 ];
 
 export type AgentsView = { sample: boolean; agents: AgentClient[]; queries: AgentQuery[] };
-
-const USE_MOCKS = process.env.USE_MOCKS !== "false";
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {

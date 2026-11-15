@@ -10,11 +10,11 @@ export type SendResult = { ok: true; data: ChatResponse } | { ok: false; error: 
 // Non-streaming send, kept for callers that want the whole answer at once (voice). The typed chat
 // streams through ./stream-chat.ts instead.
 
-export async function sendMessage(message: string): Promise<SendResult> {
+export async function sendMessage(message: string, threadId?: string): Promise<SendResult> {
   const text = message.trim();
   if (!text) return { ok: false, error: "Type a question first." };
   try {
-    const res = await sendChat(text.slice(0, 2000));
+    const res = await sendChat(text.slice(0, 2000), threadId);
     if (res.ok) return res;
     console.error(`chat: ${res.code}: ${res.message}`);
     return { ok: false, error: copyFor(res.code) };

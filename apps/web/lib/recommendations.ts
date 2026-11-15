@@ -85,7 +85,9 @@ export function undoDeadline(rec: Recommendation): string | null {
   return new Date(Math.min(...until.map((x) => Date.parse(x)))).toISOString();
 }
 
+// draft_follow_up: "Do it" saves the draft under Follow ups; nothing is sent.
 const EXECUTABLE = new Set([
+  "draft_follow_up",
   "create_focus_block",
   "move_calendar_block",
   "move_calendar_blocks",
@@ -160,10 +162,13 @@ export function toCard(rec: Recommendation, goals: Goal[], now: Date): RecCard {
     rationale: rec.rationale,
     goal,
     maths,
+    // The title often says the times already ("Block 09:30 to 11:00 for ..."): then only the day.
     when: start
       ? creates || isGuard(rec)
-        ? `${day}, ${span}`
-        : `Moves to ${/^To/.test(day) ? day.toLowerCase() : day}, ${span}`
+        ? rec.title.includes(span)
+          ? day
+          : `${day}, ${span}`
+        : `Moves to ${/^To/.test(day) ? day.toLowerCase() : day}${rec.title.includes(span) ? "" : `, ${span}`}`
       : null,
     executable: Boolean(rec.action && EXECUTABLE.has(rec.action.kind) && !involvesOthers),
     involvesOthers,

@@ -13,6 +13,7 @@ import {
 import { buildContext, DEFAULT_TIMEZONE } from "../patterns/context";
 import { analyseFocus, type GoalBlock, goalBlocks, type RawDisruption } from "../patterns/focus";
 import { duration, label } from "../patterns/format";
+import { napIn } from "../patterns/sleep";
 import { DAY, HOUR, MINUTE, Zone } from "../patterns/time";
 import { subjectOf } from "../patterns/timeline";
 import { iso, type Span, sum, union, unionLength } from "../patterns/util";
@@ -133,7 +134,7 @@ export function computeMoment(input: MomentInput): MomentCore {
   const sleeps: Span[] = events
     .filter((e) => e.type === "sleep" && e.end_at)
     .map((e) => ({ start: Date.parse(e.start_at), end: Date.parse(e.end_at as string) }))
-    .filter((s) => s.end > s.start && s.end - s.start <= DAY);
+    .filter((s) => s.end > s.start && s.end - s.start <= DAY && !napIn(zone, s.start, s.end));
 
   const goalLines: MomentGoal[] = [];
   for (const g of goals) {
@@ -215,8 +216,8 @@ export function computeMoment(input: MomentInput): MomentCore {
         : `Find ${minutes} minutes for ${what}${when}`,
       rationale:
         gap.planned_ahead_minutes > 0
-          ? `${left} of ${gap.budget_minutes} minutes for ${gap.title} left this week and ${gap.planned_ahead_minutes} planned, so ${gap.unplanned_minutes} are not booked.`
-          : `${left} of ${gap.budget_minutes} minutes for ${gap.title} left this week and none of it booked.`,
+          ? `${duration(left)} of ${duration(gap.budget_minutes ?? 0)} for ${gap.title} left this week and ${duration(gap.planned_ahead_minutes)} planned, so ${duration(gap.unplanned_minutes ?? 0)} is not booked.`
+          : `${duration(left)} of ${duration(gap.budget_minutes ?? 0)} for ${gap.title} left this week and none of it booked.`,
       action_kind: slot ? "create_focus_block" : null,
       start_at: slot ? iso(slot.start) : null,
       end_at: slot ? iso(slot.end) : null,

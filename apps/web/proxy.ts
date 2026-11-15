@@ -1,6 +1,14 @@
 import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
-import { AUTH_MISSING_MESSAGE, DEMO_COOKIE, demoVisitorId, localFallbackAllowed } from "./lib/auth-mode";
+import {
+  AUTH_MISSING_MESSAGE,
+  DEMO_COOKIE,
+  demoVisitorId,
+  E2E_COOKIE,
+  e2eTestUser,
+  localFallbackAllowed,
+} from "./lib/auth-mode";
+import { NEXT_COOKIE, safeNext } from "./lib/next-path";
 
 const URL_ = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
@@ -35,7 +43,7 @@ export async function proxy(request: NextRequest) {
   // getClaims refreshes an expired session, then verifies the JWT locally against the project's
   // cached JWKS (ES256): no round trip to Supabase Auth on every navigation, unlike getUser.
   const { data } = await supabase.auth.getClaims();
-  const signedIn = Boolean(data?.claims?.sub);
+  const signedIn = Boolean(data?.claims?.sub) || e2eTestUser(request.cookies.get(E2E_COOKIE)?.value) !== null;
 
   const path = request.nextUrl.pathname;
   const isPublic = PUBLIC_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
@@ -47,16 +55,41 @@ export async function proxy(request: NextRequest) {
     const login = request.nextUrl.clone();
     login.pathname = "/login";
     // Come back here after signing in (the connect consent page relies on it).
-    login.search = path === "/" ? "" : `?next=${encodeURIComponent(path + request.nextUrl.search)}`;
-    return NextResponse.redirect(login);
+    const next = path === "/" ? null : safeNext(path + request.nextUrl.search);
+    login.search = next ? `?next=${encodeURIComponent(next)}` : "";
+    const redirect = NextResponse.redirect(login);
+    // Keep what Supabase just wrote: a session whose refresh failed (an expired token of a deleted
+    // account, or one revoked elsewhere) is cleared here. Dropping it left the dead cookie in place,
+    // so every later navigation retried the same refresh and failed again.
+    for (const cookie of response.cookies.getAll()) redirect.cookies.set(cookie);
+    // Supabase only returns to the allow listed /auth/callback, so the way back rides in a cookie.
+    // Only a real page visit sets it: a background prefetch (the tab bar's /chat) must not
+    // overwrite the consent page the person came for.
+    const background =
+      request.headers.has("rsc") ||
+      request.headers.has("next-router-prefetch") ||
+      request.headers.get("sec-fetch-dest") === "empty";
+    if (background) {
+      // Leave the cookie as it is.
+    } else if (next) {
+      redirect.cookies.set(NEXT_COOKIE, next, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: request.nextUrl.protocol === "https:",
+        path: "/",
+        // As long as an MCP authorisation request lives (apps/api/src/routes/oauth.ts).
+        maxAge: 30 * 60,
+      });
+    } else redirect.cookies.delete(NEXT_COOKIE);
+    return redirect;
   }
   return response;
 }
 
 export const config = {
   // Everything except static files and images.
-  // Static files, images, the PWA manifest and the service worker stay public so the app can be installed signed out.
+  // Static files, images, the PWA manifest, the service worker and its data free shell stay public so the app can be installed signed out.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|shell.html|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };

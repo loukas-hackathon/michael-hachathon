@@ -1,8 +1,10 @@
 import type { AnalysisResult, AnalysisRun, AnalysisTrigger, Event, EventType } from "@michael/shared";
+import { checkInContext, checkInLine } from "../checkin/service";
 import { HttpError } from "../http";
 import { instructionLine } from "../instructions/protected";
 import { DEFAULT_TIMEZONE } from "../patterns";
 import { DAY, Zone } from "../patterns/time";
+import { countCheckInsFrom } from "../score/check-in";
 import type { Store } from "../store";
 import { type BriefContext, briefWindow, buildBrief, renderUserMessage } from "./brief";
 import { COACH_INSTRUCTIONS } from "./coach";
@@ -145,15 +147,23 @@ export async function prepareBrief(
   let brief: ReturnType<typeof buildBrief>;
   try {
     const window = briefWindow({ from, to, now });
-    const [events, goals, recommendations, asked, instructions] = await Promise.all([
-      loadEvents(store, window.from, window.to),
-      store.listGoals(),
-      store.listRecommendations(),
-      store.listAnalysisQuestions(5),
-      // The person's ground rules (/v1/instructions). A failed read must not stop the run: the
-      // brief then carries an empty list, as it did before the table existed.
-      store.listInstructions().catch(() => []),
-    ]);
+    const days = { from: zone.dayOf(Date.parse(window.from)), to: zone.dayOf(Date.parse(window.to)) };
+    const [events, goals, recommendations, asked, instructions, checkIns, checklist, answers] =
+      await Promise.all([
+        loadEvents(store, window.from, window.to),
+        store.listGoals(),
+        store.listRecommendations(),
+        store.listAnalysisQuestions(5),
+        // The person's ground rules (/v1/instructions). A failed read must not stop the run: the
+        // brief then carries an empty list, as it did before the table existed.
+        store.listInstructions().catch(() => []),
+        // What the person told Michael in the check in (#187). Best effort, like the instructions.
+        checkInContext(Date.parse(now)),
+        // Checklist items and the check in's yes answers for the count goals (#238). Extras: a
+        // failed read leaves them out.
+        store.listChecklist(days).catch(() => []),
+        store.listCheckIns({ fromDay: days.from, toDay: days.to }).catch(() => []),
+      ]);
     brief = buildBrief({
       events,
       goals,
@@ -165,10 +175,13 @@ export async function prepareBrief(
       // Active ones only, in the person's own words, with their exceptions in words ("Keep
       // Sundays clear (except: Rhefuel)"). A paused instruction protects nothing.
       instructions: instructions.filter((i) => i.active).map(instructionLine),
+      toldMe: checkIns.answered.map(checkInLine),
       // Nothing is carried out on a run: every action waits for the person's tap (the execute
       // route). When a run starts applying actions itself, this becomes "applied".
       actionsAre: "offers",
       asked,
+      checklist,
+      countCheckIns: countCheckInsFrom(answers),
     });
   } catch (err) {
     if (err instanceof RangeError) throw new HttpError("bad_request", `Bad range: ${err.message}`);

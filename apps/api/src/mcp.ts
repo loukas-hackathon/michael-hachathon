@@ -1,4 +1,8 @@
 import {
+  CheckInValue,
+  type ChecklistItem,
+  ChecklistItemCreate,
+  DraftStatus,
   type Event,
   EventInput,
   EventType,
@@ -21,7 +25,11 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 import { bookFocusBlock, executeRecommendation, undoDeadline, undoRecommendation } from "./actions/calendar";
+import { draftText, generateDrafts } from "./actions/drafts";
 import { guardMacApps, suggestAppGuard } from "./actions/mac-apps";
+import { answerCheckIn, checkInToday } from "./checkin/service";
+import { addItem, checklistFor, todayOf } from "./checklist/items";
+import { offerGoalActions } from "./checklist/offers";
 import { currentAgent } from "./context";
 import { currentSuggestions } from "./goals/suggestions";
 import { HttpError, parse } from "./http";
@@ -39,6 +47,8 @@ import {
   zone,
 } from "./mcp-format";
 import { guardTools } from "./mcp-guard";
+import { listMemories, remember } from "./memory";
+import { NO_HEADLINES } from "./patterns";
 import { momentFor } from "./routes/moments";
 import { patternReportFor } from "./routes/patterns";
 import { travelPlanFor } from "./routes/places";
@@ -127,7 +137,11 @@ function scoreText(s: Score): string {
     ...s.goals.map((g) =>
       g.scored
         ? `- ${g.area} "${g.title}": budget ${dur(g.budget_minutes)}, planned ${dur(g.planned_minutes)}, spent ${dur(g.spent_minutes)}, lost ${dur(g.lost_minutes)}, ${pct(g.score_pct)}; ${dur(g.minutes_left)} left, ${g.open_blocks} ${g.open_blocks === 1 ? "block" : "blocks"} still open`
-        : `- ${g.area} "${g.title}": a ${g.kind} goal, outside the time score`,
+        : g.count
+          ? `- ${g.area} "${g.title}": ${g.count.done} of ${g.count.target} this week, ${g.count.days_left} ${g.count.days_left === 1 ? "day" : "days"} left (outside the time score)`
+          : g.checklist
+            ? `- ${g.area} "${g.title}": ${g.checklist.today.done} of ${g.checklist.today.set} outcomes done today, ${g.checklist.week.done} of ${g.checklist.week.set} this week (outside the time score)`
+            : `- ${g.area} "${g.title}": a ${g.kind} goal, outside the time score`,
     ),
   ];
   if (s.sleep) {
@@ -389,7 +403,7 @@ export function createMcpServer(): McpServer {
       });
       const text = report.headlines.length
         ? ["Headlines:", ...report.headlines.map((h) => `- ${h}`)].join("\n")
-        : "Not enough data for patterns in that range.";
+        : `${NO_HEADLINES} for patterns in that range: no finding is big enough to lead with.`;
       return reply(`${text}\n\nFull report:\n${JSON.stringify(report)}`, report as Record<string, unknown>);
     }),
   );
@@ -412,6 +426,24 @@ export function createMcpServer(): McpServer {
           ].join("\n")
         : `No recommendations${status ? ` with status ${status}` : ""}.`;
       return reply(text, { recommendations });
+    }),
+  );
+
+  server.registerTool(
+    "list_drafts",
+    {
+      title: "List follow up drafts",
+      description:
+        "Follow up messages Michael drafted after the user's conversations and meetings with other people, newest first, for the user to copy and send themselves. Michael never sends them. Status: proposed (waiting), done (the user sent it), dismissed. Default: proposed only.",
+      inputSchema: { status: DraftStatus.optional().describe("Only this status. Default proposed") },
+      annotations: { readOnlyHint: true },
+    },
+    safe(async ({ status }) => {
+      const drafts = await store.listDrafts({ status: status ?? "proposed" });
+      const text = drafts.length
+        ? [`${drafts.length} follow up drafts:`, ...drafts.map(draftText)].join("\n\n")
+        : `No ${status ?? "proposed"} follow up drafts.`;
+      return reply(text, { drafts });
     }),
   );
 
@@ -459,7 +491,43 @@ export function createMcpServer(): McpServer {
     }),
   );
 
+  server.registerTool(
+    "get_memories",
+    {
+      title: "Get memories",
+      description:
+        'What the user told Michael, or an agent, to remember about them across conversations: lasting facts and preferences such as "trains best before 08:00" or "Fridays are for family". Read it at the start of a conversation about the user\'s day or plans, so they never have to repeat themselves. Newest first.',
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+    },
+    safe(async () => {
+      const memories = await listMemories();
+      const text = memories.length
+        ? memories.map((m) => `- ${m.text} (${m.from}, ${dayLabel(Date.parse(m.at))})`).join("\n")
+        : "Nothing remembered yet.";
+      return reply(text, { memories });
+    }),
+  );
+
   // ---------- write ----------
+
+  server.registerTool(
+    "remember",
+    {
+      title: "Remember",
+      description:
+        "Keep one lasting fact or preference the user told you about themselves, their routine or their goals, so Michael and every connected agent know it next time. One short line in the user's words. Not one off plans, not other people's details, nothing already in their goals.",
+      inputSchema: {
+        fact: z.string().min(1).max(280).describe("One short line, e.g. 'Trains best before 08:00'"),
+      },
+    },
+    safe(async ({ fact }) => {
+      const m = await remember(fact, "agent");
+      return m
+        ? reply(`Remembered: ${m.text}`, { memory: m })
+        : reply("Not kept: the user is off the record.", { memory: null });
+    }),
+  );
 
   server.registerTool(
     "add_event",
@@ -497,6 +565,59 @@ export function createMcpServer(): McpServer {
     safe(async (input) => {
       const goal = await store.createGoal(parse(GoalCreate, input));
       return reply(`Goal added.\n${goalLine(goal)}`, { goal });
+    }),
+  );
+
+  server.registerTool(
+    "get_checklist",
+    {
+      title: "Get the day's checklist",
+      description:
+        "The day's outcomes of the user's checklist goals (goals with target.kind checklist): at most three open items per goal and day, in the user's own words, each open, done, dropped or moved (carried to the next day). Also yesterday's items still open, which the user may want to carry. Michael never ticks an item: only the user does. Default day is today in Europe/Athens.",
+      inputSchema: { date: LocalDayInput.optional().describe("Local day, YYYY-MM-DD. Default today") },
+      annotations: { readOnlyHint: true },
+    },
+    safe(async ({ date }) => {
+      const day = date ?? todayOf();
+      const list = await checklistFor(day);
+      const goals = await goalMap();
+      const line = (i: ChecklistItem) =>
+        `- [${i.status}] ${i.text} (${goals.get(i.goal_id)?.title ?? "a goal"}${i.carried_from ? ", carried" : ""}, id ${i.id})`;
+      const lines = [
+        list.items.length
+          ? `${dayLabel(zone.startOfDay(day))}: ${list.items.filter((i) => i.status === "done").length} of ${list.items.filter((i) => i.status !== "moved").length} done.`
+          : `${dayLabel(zone.startOfDay(day))}: no outcomes set.`,
+        ...list.items.map(line),
+      ];
+      if (list.suggestions.length)
+        lines.push("Still open from the day before:", ...list.suggestions.map(line));
+      return reply(lines.join("\n"), list);
+    }),
+  );
+
+  server.registerTool(
+    "add_checklist_item",
+    {
+      title: "Add an outcome to the day",
+      description:
+        "Add one of the day's outcomes to a checklist goal (target.kind checklist; get the id from get_goals), only when the user asked for it. text is the outcome in the user's words, up to 200 characters. At most three open items per goal and day: a fourth is refused. Default day is today in Europe/Athens. Never mark an item done for the user.",
+      inputSchema: {
+        goal_id: Id.describe("A checklist goal's id from get_goals"),
+        text: z
+          .string()
+          .min(1)
+          .max(200)
+          .describe('The outcome in the user\'s words, e.g. "Send the term sheet"'),
+        date: LocalDayInput.optional().describe("Local day, YYYY-MM-DD. Default today"),
+      },
+    },
+    safe(async (input) => {
+      const item = await addItem(parse(ChecklistItemCreate, input));
+      // The first open outcome of today gets an offered hour, as from the app.
+      await offerGoalActions().catch((err) => console.error("mcp: checklist offers", err));
+      return reply(`Added "${item.text}" to ${dayLabel(zone.startOfDay(item.date))} (id ${item.id}).`, {
+        item,
+      });
     }),
   );
 
@@ -551,6 +672,49 @@ export function createMcpServer(): McpServer {
       const saved = await store.updateRecommendationStatus(id, status);
       if (!saved) throw new HttpError("not_found", "Recommendation not found");
       return reply(`Marked "${saved.title}" as ${status}.`, { recommendation: saved });
+    }),
+  );
+
+  server.registerTool(
+    "get_check_in",
+    {
+      title: "Get today's check in",
+      description:
+        "Michael's check in questions about today, drawn from the timeline (a missed training block, an unaccounted stretch on the Mac, a meeting, a short night), with the user's answers so far and each question's id. Use it to ask the user the open questions one at a time, then keep each answer with answer_check_in.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+    },
+    safe(async () => {
+      const today = await checkInToday();
+      const lines = today.questions.map(
+        (q) => `- ${q.question} ${q.answer === null ? "(open)" : `Answer: ${String(q.answer)}`} {id ${q.id}}`,
+      );
+      return reply(
+        lines.length ? `Check in, ${today.day}:\n${lines.join("\n")}` : "No check in questions today.",
+        today,
+      );
+    }),
+  );
+
+  server.registerTool(
+    "answer_check_in",
+    {
+      title: "Answer a check in question",
+      description:
+        "Keep the user's answer to one of today's check in questions (ids from get_check_in), in their own words: 'yes' or 'no', 1 to 5 for a scale question, or a short text. Each question is answered once. When the answer calls for a follow up, the result gives it; ask it next.",
+      inputSchema: {
+        id: Id.describe("Check in question id from get_check_in"),
+        value: z
+          .union([z.number().int().min(1).max(5), z.string().min(1).max(500)])
+          .describe("yes, no, 1 to 5, or words"),
+      },
+    },
+    safe(async ({ id, value }) => {
+      const out = await answerCheckIn(id, parse(CheckInValue, value));
+      return reply(
+        `Kept: ${out.check_in.question} Answer: ${String(out.check_in.answer)}.${out.follow_up ? ` Follow up: ${out.follow_up.question} {id ${out.follow_up.id}}` : ""}`,
+        out,
+      );
     }),
   );
 
@@ -653,6 +817,30 @@ export function createMcpServer(): McpServer {
       const rec = await suggestAppGuard();
       if (!rec) return reply("Nothing to suggest: no Mac app stands out, or it is already muted.", {});
       return reply(`Suggested: "${rec.title}". ${rec.rationale} Id ${rec.id}.`, { recommendation: rec });
+    }),
+  );
+
+  server.registerTool(
+    "draft_follow_up",
+    {
+      title: "Draft a follow up",
+      description:
+        "Draft short follow up messages (email or chat) after the user's conversations and meetings with other people, from the summary and the user's own commitments, and store them in Michael for the user to copy. Nothing is ever sent. With event_id (from get_timeline), that conversation or meeting only; without it, everything that ended in the last 24 hours and has no draft yet (at most 3). Show the user the text so they can send it themselves.",
+      inputSchema: {
+        event_id: Id.optional().describe("A conversation or meeting id from get_timeline"),
+      },
+    },
+    safe(async ({ event_id }) => {
+      const { drafts, skipped } = await generateDrafts({ eventId: event_id });
+      const text = drafts.length
+        ? [
+            `Drafted ${drafts.length}. Nothing was sent: the user copies and sends them.`,
+            ...drafts.map(draftText),
+          ].join("\n\n")
+        : skipped
+          ? "Those already have drafts. Use list_drafts to read them."
+          : "Nothing to follow up: no conversation or meeting with other people ended in the last 24 hours.";
+      return reply(text, { drafts, skipped });
     }),
   );
 

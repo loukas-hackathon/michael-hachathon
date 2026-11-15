@@ -3,8 +3,10 @@ import Link from "next/link";
 import { EmptyState } from "@/components/empty-state";
 import { LiveRefresh } from "@/components/live-refresh";
 import { ScreenHeader } from "@/components/screen";
-import { DayTimeline, SleepBand, TimelineKey } from "@/components/timeline/day-timeline";
+import { DayTimeline, HeartRow } from "@/components/timeline/day-timeline";
+import { LostWeekChart } from "@/components/timeline/lost-week";
 import { WeekStrip } from "@/components/timeline/week-strip";
+import { getLostWeek } from "@/lib/api";
 import { addDays } from "@/lib/athens";
 import { formatDay, formatMonth, formatWeekday, hm, minutesPhrase } from "@/lib/format";
 import { HEART_COOKIE } from "@/lib/health";
@@ -18,7 +20,10 @@ const tinted =
 export default async function TimelinePage({ searchParams }: { searchParams: Promise<Search> }) {
   const { day: askedDay, date: askedDate, demo } = await searchParams;
   // ?day= is the link format; ?date= still works for links made before.
-  const screen = await loadTimeline(askedDay ?? askedDate, demo);
+  const [screen, lostWeek] = await Promise.all([
+    loadTimeline(askedDay ?? askedDate, demo),
+    getLostWeek(askedDay ?? askedDate, demo),
+  ]);
   const { date, day, today } = screen;
   const noon = `${date}T12:00:00+02:00`;
   const sampleParam = demo === "sample" ? "sample" : undefined;
@@ -38,6 +43,10 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
         }
         title="Timeline"
       />
+      {/* Only when something was actually lost: an empty chart of zeros is noise. */}
+      {lostWeek && lostWeek.total > 0 ? (
+        <LostWeekChart week={lostWeek} selected={date} hrefFor={dayHref} />
+      ) : null}
       <WeekStrip date={date} today={today} available={screen.available} demo={sampleParam} />
 
       <div className="mt-4">
@@ -72,48 +81,21 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
               </>
             ) : (
               <>
-                <b className="font-semibold text-label">
-                  {day.totals.phoneSessions} phone {day.totals.phoneSessions === 1 ? "session" : "sessions"}
-                </b>
-                , {hm(day.totals.phoneMinutes)} on the phone.
-                {screen.longestUninterrupted != null && screen.longestUninterrupted >= 1 ? (
-                  <>
-                    {" "}
-                    The longest stretch without a break was{" "}
-                    <b className="font-semibold text-label">{minutesPhrase(screen.longestUninterrupted)}</b>.
-                  </>
-                ) : null}
                 {day.totals.workMinutes >= 1 ? (
                   <>
-                    {" "}
-                    {hm(day.totals.workMinutes)} in work apps, {hm(day.totals.lostMinutes)} lost to messages
-                    and social.
+                    <b className="font-semibold text-label">{hm(day.totals.workMinutes)}</b> in work apps,{" "}
+                    {hm(day.totals.lostMinutes)} lost,{" "}
                   </>
+                ) : null}
+                {hm(day.totals.phoneMinutes)} on the phone.
+                {screen.longestUninterrupted != null && screen.longestUninterrupted >= 1 ? (
+                  <> Longest unbroken stretch {minutesPhrase(screen.longestUninterrupted)}.</>
                 ) : null}
               </>
             )}
           </p>
-          <TimelineKey
-            hasAi={day.ai.length > 0}
-            goalTime={Boolean(day.sample)}
-            hasDrives={(day.drives ?? []).length > 0}
-            day={day}
-            heartHidden={heartHidden}
-          />
-          {day.health?.lastNight ? <SleepBand night={day.health.lastNight} goal={screen.sleepGoal} /> : null}
-          <DayTimeline day={day} heartHidden={heartHidden} />
-          {day.health?.tonight ? (
-            <SleepBand night={day.health.tonight} goal={screen.sleepGoal} tonight />
-          ) : null}
-          <p className="mt-6 text-footnote text-label-2">
-            {screen.source === "sample"
-              ? day.sample
-                ? "Your own days appear here once your sources are connected."
-                : "A real day from the demo account, bundled with the app. Tap any block for the detail."
-              : plans.length > 0
-                ? "Outlines are your calendar. Blocks I booked carry my name, and you can undo them in Today until they start."
-                : "No calendar on this day, so goal time is time in work apps. Connect the calendar and planned blocks appear as outlines."}
-          </p>
+          <HeartRow day={day} heartHidden={heartHidden} />
+          <DayTimeline day={day} heartHidden={heartHidden} sleepGoal={screen.sleepGoal} />
         </>
       ) : (
         <EmptyState

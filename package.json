@@ -13,8 +13,10 @@
     "typecheck": "pnpm -r typecheck",
     "lint": "biome check .",
     "check": "pnpm typecheck && pnpm lint",
-    "test": "pnpm -r --if-present test",
+    "test": "pnpm -r --if-present test && node --test apps/extension/test/*.test.mjs",
     "format": "biome check --write .",
+    "e2e": "NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:9 NEXT_PUBLIC_SUPABASE_ANON_KEY=e2e-anon-key pnpm --filter @michael/web build && pnpm --filter @michael/e2e e2e",
+    "categories:extension": "pnpm --filter @michael/api exec tsx scripts/extension-categories.ts",
     "env:copy": "node scripts/copy-env.mjs",
     "collect": "pnpm --silent --filter @michael/collector start",
     "start": "pnpm --filter @michael/api start"

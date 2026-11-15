@@ -1,7 +1,7 @@
 "use client";
 
 import type { AgentScope } from "@michael/shared";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Sheet } from "@/components/sheet";
 import { saveAgent } from "@/lib/agents-actions";
 
@@ -32,15 +32,28 @@ export function AgentRow({
   const [failed, setFailed] = useState(false);
   const shared = state.filter((s) => s.on).map((s) => s.short);
 
+  // Latest tap wins: each save carries the whole set, and only the newest one may roll back, to
+  // the last set the server confirmed. An older save failing never undoes a newer switch.
+  const saved = useRef(scopes);
+  const seq = useRef(0);
+  const confirmed = useRef(0);
   function toggle(key: AgentScope, on: boolean) {
-    const before = state;
     const next = state.map((x) => (x.key === key ? { ...x, on } : x));
     setState(next);
     setFailed(false);
-    saveAgent(id, { scopes: next.filter((s) => s.on).map((s) => s.key) }).catch(() => {
-      setState(before);
-      setFailed(true);
-    });
+    const mine = ++seq.current;
+    saveAgent(id, { scopes: next.filter((s) => s.on).map((s) => s.key) }).then(
+      () => {
+        if (mine < confirmed.current) return;
+        confirmed.current = mine;
+        saved.current = next;
+      },
+      () => {
+        if (mine !== seq.current) return;
+        setState(saved.current);
+        setFailed(true);
+      },
+    );
   }
 
   function revoke() {

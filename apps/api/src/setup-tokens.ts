@@ -1,9 +1,10 @@
 import { createHash, randomBytes } from "node:crypto";
 import { SETUP_KEY_NAMES, SetupConnection } from "@michael/shared";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { currentUserId, runAsUser } from "./context";
 import { env } from "./env";
 import { HttpError } from "./http";
+import { dbClient } from "./timing";
 import { createPersonalToken } from "./tokens";
 
 // Setup tokens (#120): "ms_<43 url-safe chars>", valid 30 minutes, exchanged once for a device key.
@@ -72,9 +73,7 @@ class SupabaseSetup implements SetupBackend {
 
 const backend: SetupBackend =
   env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY
-    ? new SupabaseSetup(
-        createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } }),
-      )
+    ? new SupabaseSetup(dbClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY))
     : new MemorySetup();
 
 /** Mints a setup token for the current user and one connection. The secret is returned once. */

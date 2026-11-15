@@ -26,18 +26,28 @@ export function BriefView({
   const [suggestions, setSuggestions] = useState(initialSuggestions);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // True once a brief written on this visit lands, so it eases in instead of snapping.
+  const [fresh, setFresh] = useState(false);
   const [, startTransition] = useTransition();
 
   async function ask() {
     setBusy(true);
     setError(null);
-    const r = await askForBrief();
-    setBusy(false);
+    let r: Awaited<ReturnType<typeof askForBrief>>;
+    try {
+      r = await askForBrief();
+    } catch {
+      setError("I could not reach the server. Try again in a minute.");
+      return;
+    } finally {
+      setBusy(false);
+    }
     if (!r.ok) {
       setError(r.error);
       return;
     }
     setRun(r.run);
+    setFresh(true);
     setSuggestions(r.suggestions);
     // Today reads the new suggestions.
     startTransition(() => router.refresh());
@@ -53,7 +63,12 @@ export function BriefView({
     >
       <div aria-busy={busy} className="flex flex-col gap-2.5">
         {run?.summary ? (
-          <p className="whitespace-pre-line text-body">{run.summary}</p>
+          <p
+            key={run.finished_at ?? run.summary}
+            className={`whitespace-pre-line text-body ${fresh ? "m-swap" : ""}`}
+          >
+            {run.summary}
+          </p>
         ) : (
           <p className="text-subhead text-label-2">I read your day and tell you what matters now.</p>
         )}

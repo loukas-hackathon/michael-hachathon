@@ -9,11 +9,10 @@ import {
   TelegramStatus,
 } from "@michael/shared";
 import { authHeaders } from "./caller";
+import { API_URL, USE_MOCKS } from "./mode";
 
 // Server-side calls for connecting sources (Google Calendar). Tokens stay in the API; the browser
 // only ever sees Google's consent screen and the connection status.
-const USE_MOCKS = process.env.USE_MOCKS !== "false";
-const API_URL = process.env.API_URL ?? "http://localhost:8787";
 
 async function call(method: string, path: string): Promise<Response> {
   const res = await fetch(`${API_URL}${path}`, {
@@ -50,8 +49,9 @@ export async function googleConnectUrl(returnTo?: ReturnPath): Promise<string> {
   return OAuthConnectResponse.parse(await res.json()).url;
 }
 
-export async function syncGoogleCalendar(): Promise<void> {
-  await call("POST", "/v1/integrations/google_calendar/sync");
+/** Pull the calendar now; `pastDays` (at most 28) reads further back, as onboarding does. */
+export async function syncGoogleCalendar(pastDays?: number): Promise<void> {
+  await call("POST", `/v1/integrations/google_calendar/sync${pastDays ? `?past_days=${pastDays}` : ""}`);
 }
 
 export async function disconnectGoogleCalendar(): Promise<void> {

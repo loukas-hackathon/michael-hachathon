@@ -4,6 +4,12 @@ import {
   ApiError,
   type ChatHistory,
   type ChatResponse,
+  type ChatThread,
+  type ChatThreadList,
+  type ChatThreadPatch,
+  type CheckInAnswerResponse,
+  type CheckInToday,
+  type CheckInValue,
   DEFAULT_PROFILE,
   demoRecommendations,
   type Goal,
@@ -14,6 +20,7 @@ import {
   mockEvents,
   mockGoals,
   mockRecommendations,
+  mockScore,
   type NudgeTestResult,
   type PlaceSuggestionsResponse,
   type PlacesResponse,
@@ -34,9 +41,14 @@ import {
 import { cache } from "react";
 import { authHeaders } from "./caller";
 import { categoryOf } from "./categories";
+import type { ChecklistDay, ChecklistItem } from "./checklist";
 import type { DayView } from "./day";
 import type { GoalsView } from "./goals-view";
 import type { Instruction, InstructionInput } from "./instructions";
+import { type KeepWeek, keepWeekFrom, restDaysFrom } from "./keep-day";
+import { type LostWeek, lostWeekFrom } from "./lost-week";
+import { API_URL, USE_MOCKS } from "./mode";
+import { sampleChecklist } from "./sample/checklist";
 import {
   sampleDay,
   sampleEarly,
@@ -50,28 +62,18 @@ import { dayFromScore, goalsFromScore, leadFromPatterns } from "./score-map";
 
 // Server-side data access. The browser never sees API_KEY and never talks to the DB. Each request
 // carries the signed-in user's Supabase token, so the API returns only that user's data.
-// USE_MOCKS=true (default) serves fixtures from @michael/shared until the real endpoint exists.
-const USE_MOCKS = process.env.USE_MOCKS !== "false";
-export const API_URL = process.env.API_URL ?? "http://localhost:8787";
-/** For loaders outside this file (lib/timeline-data.ts). */
-export const usingMocks = () => USE_MOCKS;
+// Fixtures only with USE_MOCKS (lib/mode.ts): real data is the default, ?demo=sample previews.
+export { API_URL };
 
 // Whose data to fetch (a session always beats the demo cookie): authHeaders in lib/caller.ts.
 
-// One fetch per path per server render: Today's onboarding check and its suggestions panel both
-// read /v1/goals, for example, and share the one answer. Outside a render (route handlers, server
-// actions) React's cache is a no-op, so every call fetches.
-const getOnce = cache(async (path: string): Promise<unknown> => {
+export async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     headers: await authHeaders(),
     cache: "no-store",
   });
   if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
-  return res.json();
-});
-
-export async function get<T>(path: string): Promise<T> {
-  return (await getOnce(path)) as T;
+  return (await res.json()) as T;
 }
 
 async function send<T>(method: "PUT" | "PATCH" | "POST", path: string, body?: unknown): Promise<T> {
@@ -89,34 +91,76 @@ async function send<T>(method: "PUT" | "PATCH" | "POST", path: string, body?: un
  * The raw server-sent event stream of POST /v1/chat/stream, for the /chat/stream route to pass on.
  * Throws when signed out or the API cannot be reached.
  */
-export async function openChatStream(message: string): Promise<Response> {
+export async function openChatStream(
+  message: string,
+  opts: { spoken?: boolean; threadId?: string } = {},
+): Promise<Response> {
   return fetch(`${API_URL}/v1/chat/stream`, {
     method: "POST",
     headers: { ...(await authHeaders()), "content-type": "application/json" },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({
+      message,
+      ...(opts.spoken ? { spoken: true } : {}),
+      ...(opts.threadId ? { thread_id: opts.threadId } : {}),
+    }),
     cache: "no-store",
   });
 }
 
+/** GET /v1/check-in (#187): today's questions; the API opens a round when one is due. */
+export async function getCheckIn(): Promise<CheckInToday> {
+  return get<CheckInToday>("/v1/check-in");
+}
+
+/** POST /v1/check-in/:id/answer: the answer, and the follow up it calls for. */
+export async function answerCheckIn(id: string, value: CheckInValue): Promise<CheckInAnswerResponse> {
+  return send<CheckInAnswerResponse>("POST", `/v1/check-in/${encodeURIComponent(id)}/answer`, { value });
+}
+
 /** Chat always talks to the API: there is no fixture for a conversation. */
-export async function getChatHistory(): Promise<ChatHistory> {
-  const body = await get<ChatHistory>("/v1/chat?limit=50");
-  // An API from before action_ids still answers: no chips come back, the lines do.
+export async function getChatHistory(threadId?: string): Promise<ChatHistory> {
+  const q = threadId ? `&thread_id=${encodeURIComponent(threadId)}` : "";
+  const body = await get<ChatHistory>(`/v1/chat?limit=50${q}`);
+  // An API from before action_ids (or threads) still answers: no chips come back, the lines do.
   return {
     messages: body.messages.map((m) => ({ ...m, action_ids: m.action_ids ?? [] })),
     actions: body.actions ?? [],
+    thread: body.thread ?? null,
   };
+}
+
+/** GET /v1/chat/threads: the caller's conversations, pinned first. `q` searches titles and lines. */
+export async function getChatThreads(q?: string): Promise<ChatThread[]> {
+  const query = q?.trim() ? `?q=${encodeURIComponent(q.trim().slice(0, 100))}` : "";
+  const body = await get<ChatThreadList>(`/v1/chat/threads${query}`);
+  return body.threads ?? [];
+}
+
+/** PATCH /v1/chat/threads/:id: rename, pin or archive one of the caller's threads. */
+export async function patchChatThread(id: string, patch: ChatThreadPatch): Promise<ChatThread> {
+  return send<ChatThread>("PATCH", `/v1/chat/threads/${encodeURIComponent(id)}`, patch);
+}
+
+/** DELETE /v1/chat/threads/:id: the thread and its lines, for good. */
+export async function deleteChatThread(id: string): Promise<void> {
+  const res = await fetch(`${API_URL}/v1/chat/threads/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: await authHeaders(),
+    cache: "no-store",
+  });
+  // Already gone counts as done.
+  if (!res.ok && res.status !== 404) throw new Error(`DELETE chat thread failed: ${res.status}`);
 }
 
 export type ChatResult = { ok: true; data: ChatResponse } | { ok: false; code: string; message: string };
 
-export async function sendChat(message: string): Promise<ChatResult> {
+export async function sendChat(message: string, threadId?: string): Promise<ChatResult> {
   let res: Response;
   try {
     res = await fetch(`${API_URL}/v1/chat`, {
       method: "POST",
       headers: { ...(await authHeaders()), "content-type": "application/json" },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify(threadId ? { message, thread_id: threadId } : { message }),
       cache: "no-store",
     });
   } catch {
@@ -176,6 +220,21 @@ const mockGoalStore: Goal[] = sampleGoals.goals.map((g) => ({
   created_at: now0,
   updated_at: now0,
 }));
+// The sample checklist and count goals (#238), so the edit sheet and Today's list find them.
+for (const g of sampleGoals.extras ?? []) {
+  mockGoalStore.push({
+    id: g.id,
+    category: g.category === "business" ? "work" : "gym",
+    title: g.title,
+    description: null,
+    target:
+      g.kind === "count" ? { kind: "count", per_week: g.count?.target ?? 1 } : { kind: g.kind ?? "time" },
+    weekly_budget_minutes: 0,
+    active: true,
+    created_at: now0,
+    updated_at: now0,
+  });
+}
 void mockGoals;
 
 export async function getGoals(): Promise<Goal[]> {
@@ -341,6 +400,12 @@ export async function undoRecommendation(id: string): Promise<RecResult> {
   return recCall("POST", `/v1/recommendations/${encodeURIComponent(id)}/undo`);
 }
 
+/** POST /v1/goals/:id/book: the first free slot this week, booked at once, undoable until it starts. */
+export async function bookGoal(goalId: string, minutes: number): Promise<RecResult> {
+  if (USE_MOCKS) return { ok: false, status: 501, message: "Booking needs the live API" };
+  return recCall("POST", `/v1/goals/${encodeURIComponent(goalId)}/book`, { minutes });
+}
+
 /** PATCH /v1/recommendations/:id { status: dismissed }: "Not now". */
 export async function dismissRecommendation(id: string): Promise<RecResult> {
   if (USE_MOCKS && isMockRec(id)) return mockRecAction(id, "dismiss");
@@ -405,8 +470,35 @@ const athensDay = (d = new Date()) =>
   new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Athens" }).format(d);
 
 /** GET /v1/score for a local day (default today). */
+// Deduped per request: Today asks for the score twice (the day and the week's lost time).
+const scoreFor = cache((date: string) => get<Score>(`/v1/score?date=${date}`));
 export async function getScore(date = athensDay()): Promise<Score> {
-  return get<Score>(`/v1/score?date=${date}`);
+  return scoreFor(date);
+}
+
+/** Keep the Day (Today): this week's days against the line, and the run of days kept. */
+export async function getKeepWeek(variant?: string): Promise<KeepWeek | null> {
+  const instructions = await getInstructions().catch(() => ({ available: false }) as const);
+  const rest = restDaysFrom(instructions.available ? instructions.items : []);
+  if (USE_MOCKS || variant === "sample") return keepWeekFrom(mockScore, null, mockScore.date, rest);
+  try {
+    const today = athensDay();
+    const lastWeek = new Date(Date.parse(`${today}T12:00:00Z`) - 7 * 86_400_000).toISOString().slice(0, 10);
+    const [week, before] = await Promise.all([getScore(today), getScore(lastWeek).catch(() => null)]);
+    return keepWeekFrom(week, before, today, rest);
+  } catch {
+    return null;
+  }
+}
+
+/** Goal time lost per day of the week holding `date` (Timeline chart, Today's week line). */
+export async function getLostWeek(date?: string, variant?: string): Promise<LostWeek | null> {
+  if (USE_MOCKS || variant === "sample") return lostWeekFrom(mockScore, mockScore.date);
+  try {
+    return lostWeekFrom(await getScore(date ?? athensDay()), athensDay());
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -642,4 +734,81 @@ export async function putTarget(weekStart: string, update: TargetUpdate): Promis
   } catch {
     return { ok: false, message: "Michael's server can't be reached." };
   }
+}
+
+// ---------- the day's checklist (/v1/checklist, #238) ----------
+
+const mockChecklist: ChecklistDay = structuredClone(sampleChecklist);
+
+/** Null while the endpoint is not live (404), so Today simply leaves the list out. */
+export async function getChecklist(date?: string): Promise<ChecklistDay | null> {
+  if (USE_MOCKS) return structuredClone(mockChecklist);
+  const qs = date ? `?date=${date}` : "";
+  const res = await fetch(`${API_URL}/v1/checklist${qs}`, {
+    headers: await authHeaders(),
+    cache: "no-store",
+  }).catch(() => null);
+  if (!res || res.status === 404 || res.status === 501) return null;
+  if (!res.ok) throw new Error(`GET /v1/checklist failed: ${res.status}`);
+  return (await res.json()) as ChecklistDay;
+}
+
+export async function addChecklistItem(goalId: string, text: string): Promise<WriteResult> {
+  if (USE_MOCKS) {
+    const open = mockChecklist.items.filter((i) => i.goal_id === goalId && i.status === "open").length;
+    if (open >= 3) return { ok: false, message: "Three is the most for one day." };
+    const t = new Date().toISOString();
+    mockChecklist.items.push({
+      id: crypto.randomUUID(),
+      goal_id: goalId,
+      date: mockChecklist.date,
+      text,
+      position: mockChecklist.items.length,
+      status: "open",
+      settled_at: null,
+      settled_by: null,
+      carried_from: null,
+      created_at: t,
+      updated_at: t,
+    });
+    return { ok: true };
+  }
+  return write("POST", "/v1/checklist", { goal_id: goalId, text });
+}
+
+export async function setChecklistStatus(id: string, status: ChecklistItem["status"]): Promise<WriteResult> {
+  if (USE_MOCKS) {
+    const i = mockChecklist.items.find((x) => x.id === id);
+    if (!i) return { ok: false, message: "That item no longer exists." };
+    const t = new Date().toISOString();
+    Object.assign(i, {
+      status,
+      settled_at: status === "open" ? null : t,
+      settled_by: status === "open" ? null : "user",
+      updated_at: t,
+    });
+    return { ok: true };
+  }
+  return write("PATCH", `/v1/checklist/${id}`, { status });
+}
+
+/** Yesterday's open item continues today (POST /v1/checklist/:id/carry). */
+export async function carryChecklistItem(id: string): Promise<WriteResult> {
+  if (USE_MOCKS) {
+    const at = mockChecklist.suggestions.findIndex((x) => x.id === id);
+    const s = mockChecklist.suggestions[at];
+    if (!s) return { ok: false, message: "That item no longer exists." };
+    mockChecklist.suggestions.splice(at, 1);
+    const t = new Date().toISOString();
+    mockChecklist.items.push({
+      ...s,
+      id: crypto.randomUUID(),
+      date: mockChecklist.date,
+      carried_from: s.id,
+      created_at: t,
+      updated_at: t,
+    });
+    return { ok: true };
+  }
+  return write("POST", `/v1/checklist/${id}/carry`);
 }

@@ -10,7 +10,11 @@ import { actions } from "./routes/actions";
 import { agents } from "./routes/agents";
 import { analysis } from "./routes/analysis";
 import { chat } from "./routes/chat";
+import { chatThreads } from "./routes/chat-threads";
+import { checkIn } from "./routes/check-in";
+import { checklist } from "./routes/checklist";
 import { demo } from "./routes/demo";
+import { drafts } from "./routes/drafts";
 import { events } from "./routes/events";
 import { focusGuards } from "./routes/focus-guards";
 import { goals } from "./routes/goals";
@@ -36,6 +40,7 @@ import { tokens } from "./routes/tokens";
 import { voice } from "./routes/voice";
 import { webhooks } from "./routes/webhooks";
 import { store } from "./store";
+import { runTimed, serverTimingEntries } from "./timing";
 
 export const VERSION = "0.1.0";
 
@@ -47,13 +52,16 @@ const webhooksApp = new Hono().use(requireUser({ allowQueryKey: true })).route("
 export const v1Routes = new Hono()
   .route("/", events)
   .route("/", goals)
+  .route("/", checklist)
   .route("/", instructions)
   .route("/", recommendations)
   .route("/", analysis)
   .route("/", patterns)
   .route("/", score)
   .route("/", targets)
+  .route("/", chatThreads)
   .route("/", chat)
+  .route("/", checkIn)
   .route("/", moments)
   .route("/", voice)
   .route("/", integrations)
@@ -63,6 +71,7 @@ export const v1Routes = new Hono()
   .route("/", push)
   .route("/", actions)
   .route("/", focusGuards)
+  .route("/", drafts)
   .route("/", profile)
   .route("/", product)
   .route("/", tokens)
@@ -79,11 +88,14 @@ const v1 = new Hono().use(requireUser()).route("/", v1Routes);
 export const app = new Hono()
   .use(logger())
   // Server time and region on every response, so latency can be measured from anywhere (#229).
+  // Database round trips and auth time too (#234): `db;desc="3 round trips";dur=290`.
   .use(async (c, next) => {
     const start = performance.now();
-    await next();
+    const { t, result } = runTimed(() => next());
+    await result;
     const region = process.env.RAILWAY_REPLICA_REGION ?? "local";
     c.res.headers.append("Server-Timing", `app;dur=${(performance.now() - start).toFixed(1)}`);
+    for (const entry of serverTimingEntries(t)) c.res.headers.append("Server-Timing", entry);
     c.res.headers.append("Server-Timing", `region;desc="${region}"`);
   })
   .use(cors({ origin: env.WEB_ORIGIN.split(",").map((s) => s.trim()) }))

@@ -1,4 +1,12 @@
-import { type Event, type Goal, mockGoals } from "@michael/shared";
+import {
+  type ChecklistItem,
+  type Event,
+  type Goal,
+  mockChecklistGoal,
+  mockChecklistItems,
+  mockCountGoal,
+  mockGoals,
+} from "@michael/shared";
 
 // The made up week behind `mockScore` in packages/shared/src/mocks.ts: the same Wednesday the web
 // app's sample day tells (planned 310 minutes; at 15:20 spent 213, lost 47, 50 ahead, 82% so far,
@@ -21,7 +29,13 @@ const APPS = {
 
 type App = keyof typeof APPS;
 
-export function mockScoreScenario(): { events: Event[]; goals: Goal[]; date: string; now: string } {
+export function mockScoreScenario(): {
+  events: Event[];
+  goals: Goal[];
+  checklist: ChecklistItem[];
+  date: string;
+  now: string;
+} {
   const events: Event[] = [];
   const push = (e: Pick<Event, "source" | "type" | "start_at" | "end_at" | "title" | "data">) =>
     events.push({
@@ -128,5 +142,13 @@ export function mockScoreScenario(): { events: Event[]; goals: Goal[]; date: str
   night("09", "23:55", "10", "06:40", 388);
   night("10", "23:20", "11", "07:00", 452);
 
-  return { events, goals: mockGoals, date: "2026-11-11", now: at("11", "15:20") };
+  // A count goal ("Gym twice a week": Monday's session counts, 1 of 2) and a checklist goal (one
+  // of two outcomes done today) sit outside the time score with rows of their own (#238).
+  return {
+    events,
+    goals: [...mockGoals, mockCountGoal, mockChecklistGoal],
+    checklist: mockChecklistItems,
+    date: "2026-11-11",
+    now: at("11", "15:20"),
+  };
 }
