@@ -1,4 +1,4 @@
-import { IsoDateTime, type PatternReport, PatternsQuery } from "@michael/shared";
+import { type Event, IsoDateTime, type PatternReport, PatternsQuery } from "@michael/shared";
 import { Hono } from "hono";
 import { HttpError, parse } from "../http";
 import { buildPatternReport } from "../patterns";
@@ -27,10 +27,31 @@ export async function patternReportFor(range: { from?: string; to?: string }): P
   if (span > MAX_DAYS * DAY_MS) throw new HttpError("bad_request", `Range is limited to ${MAX_DAYS} days`);
 
   const [events, goals] = await Promise.all([
-    store.listEvents({ from: q.from, to: new Date(Date.parse(q.to) + LOOKAHEAD_MS).toISOString() }),
+    eventsByDay(Date.parse(q.from), Date.parse(q.to) + LOOKAHEAD_MS),
     store.listGoals(),
   ]);
   return buildPatternReport(events, { from: q.from, to: q.to, now, goals });
+}
+
+/**
+ * Every event of the window, read a day at a time side by side (#364). A week of app and web
+ * activity is thousands of rows, and one read pages through them one round trip after another
+ * (about 800 ms for the chat's week); days in parallel take about as long as the busiest day.
+ * An event on a border comes back twice and is kept once; the order is the store's (start, id).
+ */
+export async function eventsByDay(from: number, to: number): Promise<Event[]> {
+  const iso = (ms: number) => new Date(ms).toISOString();
+  const chunks: Promise<Event[]>[] = [];
+  // A week at a time for long ranges, so a 92 day report is 14 reads, not 92.
+  const step = to - from > 14 * DAY_MS ? 7 * DAY_MS : DAY_MS;
+  for (let start = from; start < to; start += step) {
+    chunks.push(store.listEvents({ from: iso(start), to: iso(Math.min(start + step, to)) }));
+  }
+  const byId = new Map<string, Event>();
+  for (const page of await Promise.all(chunks)) for (const e of page) byId.set(e.id, e);
+  return [...byId.values()].sort(
+    (a, b) => Date.parse(a.start_at) - Date.parse(b.start_at) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+  );
 }
 
 export const patterns = new Hono()

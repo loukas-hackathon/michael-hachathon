@@ -485,7 +485,7 @@ async function contextForNow(threadId: string | null, parts: Record<string, numb
     timed("patterns_week", report(new Date(now - WEEK_MS).toISOString())),
     timed(
       "score",
-      scoreFor({ now: nowIso }).catch((err) => {
+      scoreFor({ now: nowIso }, { readOnly: true }).catch((err) => {
         console.error("chat: score failed", err);
         return null;
       }),
