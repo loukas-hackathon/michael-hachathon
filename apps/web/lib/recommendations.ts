@@ -183,7 +183,8 @@ export function toCard(rec: Recommendation, goals: Goal[], now: Date): RecCard {
 
 /**
  * What the panel shows: open suggestions whose time is still ahead, and done ones that can still
- * be undone. Executable first, then newest. At most `limit`.
+ * be undone. Executable first, then newest. At most `limit`. Something the user asked for (in chat
+ * or through Claude) and then undid is gone: offering it back as "Do it" would read as Michael's idea.
  */
 export function openRecommendations(recs: Recommendation[], now: Date, limit = 3): Recommendation[] {
   const ahead = (iso: string | null) => iso === null || Date.parse(iso) > now.getTime();
@@ -191,6 +192,7 @@ export function openRecommendations(recs: Recommendation[], now: Date, limit = 3
     .filter((r) => {
       if (r.status === "done") return ahead(undoDeadline(r));
       if (r.status === "dismissed") return false;
+      if (r.status === "undone" && r.source === "chat") return false;
       const t = actionTimes(r);
       return ahead((isGuard(r) ? t.end : t.start) ?? r.action?.undo_until ?? null);
     })
@@ -199,6 +201,23 @@ export function openRecommendations(recs: Recommendation[], now: Date, limit = 3
       return ex(a) - ex(b) || Date.parse(b.created_at) - Date.parse(a.created_at);
     })
     .slice(0, limit);
+}
+
+/**
+ * The block the user just had booked, in chat or through Claude, that has not started yet (#330):
+ * the newest one. Today shows it at the top with its Undo, so a booking is never hidden in a fold.
+ */
+export function bookedAhead(recs: Recommendation[], now: Date): Recommendation | null {
+  const at = (r: Recommendation) => Date.parse(r.executed_at ?? r.created_at);
+  return (
+    recs
+      .filter((r) => r.status === "done" && r.source === "chat" && r.action?.kind === "create_focus_block")
+      .filter((r) => {
+        const until = undoDeadline(r);
+        return until !== null && Date.parse(until) > now.getTime();
+      })
+      .sort((a, b) => at(b) - at(a))[0] ?? null
+  );
 }
 
 /** Michael's words for a failed Do it, Undo or Not now. One line, owns the problem. */

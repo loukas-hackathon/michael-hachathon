@@ -91,11 +91,14 @@ function Card({
   swapped,
   onGone,
   primary,
+  booked = false,
 }: {
   card: RecCard;
   local: Local;
   act: (op: Op) => void;
   primary: boolean;
+  /** The block just booked for the user (#330): a done card with Undo, never an offer. */
+  booked?: boolean;
   /** True right after the status changed here, so the new line eases in. */
   swapped: (status: string) => boolean;
   onGone: () => void;
@@ -108,7 +111,7 @@ function Card({
   return (
     <li
       className={`flex flex-col gap-1.5 ${
-        primary
+        primary || booked
           ? "rounded-card bg-fill px-4 pt-3.5 pb-4"
           : "relative py-3 not-first:before:absolute not-first:before:inset-x-0 not-first:before:top-0 not-first:before:h-[0.5px] not-first:before:bg-separator not-first:before:content-['']"
       } ${local.hidden ? "m-leave" : ""}`}
@@ -148,11 +151,14 @@ function Card({
         ) : (
           <>
             {local.note ? (
-              <p role="status" className="w-full text-subhead text-label-2">
+              <p
+                role="status"
+                className={`w-full text-subhead text-label-2 ${booked ? "m-swap flex min-h-9 items-center" : ""}`}
+              >
                 {local.note}
               </p>
             ) : null}
-            {card.executable ? (
+            {booked ? null : card.executable ? (
               <button
                 type="button"
                 className={primary ? filled : tinted}
@@ -168,9 +174,11 @@ function Card({
                   : "Advice only. This one is yours to do."}
               </p>
             )}
-            <button type="button" className={plain} disabled={busy} onClick={() => act("dismiss")}>
-              Not now
-            </button>
+            {booked ? null : (
+              <button type="button" className={plain} disabled={busy} onClick={() => act("dismiss")}>
+                Not now
+              </button>
+            )}
           </>
         )}
       </div>
@@ -199,10 +207,18 @@ const readPin = () => pin;
 const readNoPin = () => NO_PIN;
 
 /**
+ * `booked`: the block just booked in chat or through Claude, done, with its Undo, at the top of
+ * Today; once undone here it stays as "Undone" until the next visit, and is never offered back.
  * `primary`: "Your next move", the one thing to do now, under the score. `rest`: the other
  * suggestions folded into one quiet row under "More from Michael".
  */
-export function RecommendationList({ cards, variant }: { cards: RecCard[]; variant: "primary" | "rest" }) {
+export function RecommendationList({
+  cards,
+  variant,
+}: {
+  cards: RecCard[];
+  variant: "booked" | "primary" | "rest";
+}) {
   const router = useRouter();
   const [local, setLocal] = useState<Record<string, Local>>({});
   const [pinned, setPinned] = useState<RecCard | null>(null);
@@ -214,6 +230,7 @@ export function RecommendationList({ cards, variant }: { cards: RecCard[]; varia
     setLocal((s) => ({ ...s, [id]: { ...next, removed: next.hidden ? s[id]?.removed : undefined } }));
 
   async function act(card: RecCard, op: Op) {
+    if (variant === "booked") setPinned(card);
     if (variant === "primary") {
       const keep = op === "dismiss" ? null : card;
       setPinned(keep);
@@ -271,8 +288,10 @@ export function RecommendationList({ cards, variant }: { cards: RecCard[]; varia
         ];
   // A dismissed card stays in its place while it fades, even once the refresh has dropped it, so
   // the refresh never cuts the fade short and the gap closes once (FlipList) when it ends.
+  // The booked card, once undone here, has left the server's list: it stays to say so in place.
+  const stays = cards.length > 0 ? cards : pinned ? [pinned] : [];
   const kept = useDeparting(
-    shown,
+    variant === "booked" ? stays : shown,
     (c) => c.id,
     (id) => Boolean(local[id]?.hidden && !local[id]?.removed),
   );
@@ -289,9 +308,17 @@ export function RecommendationList({ cards, variant }: { cards: RecCard[]; varia
       swapped={(status) => arriving(`${c.id}:${status}`)}
       onGone={() => setLocal((s) => ({ ...s, [c.id]: { ...s[c.id], removed: true } }))}
       primary={variant === "primary"}
+      booked={variant === "booked"}
     />
   ));
 
+  if (variant === "booked") {
+    return (
+      <section className="mt-4" aria-label="Booked for you" data-live-key="booked" data-live-pop="">
+        <FlipList flipKey={flipKey}>{items}</FlipList>
+      </section>
+    );
+  }
   if (variant === "primary") {
     return (
       <section className="mt-6" aria-label="Your next move">

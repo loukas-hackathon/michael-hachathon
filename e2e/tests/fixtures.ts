@@ -2,6 +2,8 @@ import { test as base, expect, type Locator, type Page } from "@playwright/test"
 
 export const API_URL = `http://127.0.0.1:${process.env.E2E_API_PORT ?? 18787}`;
 export const API_KEY = "dev-key";
+/** DEMO_PRESENTER_KEY on both servers (playwright.config.ts): the presenter link's secret. */
+export const PRESENTER_KEY = "e2e-presenter-key";
 
 /** Today's date in Athens as the app writes it ("Saturday 14 November"). */
 export const athensToday = () =>
