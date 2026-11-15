@@ -7,6 +7,15 @@ He builds **one timeline of your day** from your Apple Watch,
 calendar, Mac, iPhone, browser and Claude Code, checks it against your goals (business, health,
 personal), and recommends or makes concrete changes, each tied to a goal.
 
+- **Michael studies you.** He keeps a daily table of 34 figures from every source (sleep score,
+  heart rate variability, recovery, phone after dark, meetings, time lost in goal blocks) and tests
+  every sensible pair, same day and next day. A relation becomes a pattern only once it has held at
+  least 4 times and cleared a strict statistical bar; each comes with one fix and one tap ("What I
+  have learnt"). A discovery pass lets Claude propose less obvious tests (two conditions together,
+  lags, streaks); the server checks each one on the data, and Claude never supplies a number.
+- **The moment it happens.** Checks run every minute: the phone opened 5 times inside a goal
+  block, or 40 minutes of phone after the late cut off, gets one line, and one tap switches on Do
+  Not Disturb until the block ends (a signed Shortcut on the Mac and the iPhone), with undo.
 - **One day, with the maths.** Today shows the share of your planned goal time actually spent, what
   leaked away and to what, and the time won back. Goals have weekly budgets and show the sums.
 - **Claude works with your day.** Paste one link into claude.ai and tap Allow: Claude reads your
@@ -26,8 +35,8 @@ event with other people.
 | Stage view            | https://michael-zeta-sand.vercel.app/stage (press N to buzz the watch)                                                         |
 | **Connect Claude**    | claude.ai, Settings > Connectors > Add custom connector, paste `https://api-production-16521a26.up.railway.app/mcp`, tap Allow |
 
-Pitch script: [`docs/pitch.md`](docs/pitch.md). Pre-stage checklist:
-[`docs/demo-runbook.md`](docs/demo-runbook.md).
+Stage logistics and the pre-stage checklist: [`docs/demo-runbook.md`](docs/demo-runbook.md).
+[`docs/pitch.md`](docs/pitch.md) is an earlier draft of the pitch; the beats changed on Sunday.
 
 Built at the Gen AI Summit Hackathon, Athens, 14 and 15 November 2026.
 
@@ -38,7 +47,7 @@ Built at the Gen AI Summit Hackathon, Athens, 14 and 15 November 2026.
                      | webhooks                                  | sync
                      v                                           v
           +------------------------- apps/api (Hono, Railway) --------------------------+
-          |  /v1 REST    /v1/webhooks/*    /mcp (MCP tools)    Gemini analysis          |
+          |  /v1 REST    /v1/webhooks/*    /mcp (MCP tools)    Claude analysis          |
           +-------------------------------+---------------------------------------------+
                                           | Store (service role)
                                           v
@@ -93,8 +102,8 @@ curl -H "Authorization: Bearer dev-key" "localhost:8787/v1/timeline?from=2026-11
 | `PUBLIC_WEB_URL`                                                | public URL of the web app (MCP OAuth consent page); empty = first non local `WEB_ORIGIN`           |
 | `WEB_URL`                                                       | web app URL the OAuth callbacks return to (defaults to the first `WEB_ORIGIN`)                     |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`                     | database; empty = in-memory store                                                                  |
-| `GEMINI_API_KEY`, `GEMINI_MODEL`                                | analysis                                                                                           |
-| `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`                          | chat with Michael (`POST /v1/chat`, chat actions); without a key chat answers 503                  |
+| `GEMINI_API_KEY`, `GEMINI_MODEL`                                | unused (kept for an older path)                                                                    |
+| `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`                          | the coach, the analysis, chat and the insights' discovery pass; without a key chat answers 503     |
 | `GOOGLE_CLIENT_ID/SECRET`, `WHOOP_CLIENT_ID/SECRET`             | OAuth integrations                                                                                 |
 | `CALENDAR_SYNC_MINUTES`                                         | minutes between background Google Calendar syncs for every connected user (0 = off)                |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`                         | Web Push for nudges (iPhone, Apple Watch mirror); `npx web-push generate-vapid-keys`               |
@@ -173,7 +182,7 @@ Put the demo account's "Do it, then Undo" suggestion back to proposed (idempoten
 2. **Railway (API):** new service from this GitHub repo. Keep the root directory as the repo root
    (pnpm workspaces need it); Railway picks up `railway.json` at the root automatically.
    Set `NODE_ENV=production`, `API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`,
-   `GEMINI_API_KEY`, `WEB_ORIGIN` (the Vercel URL) and `PUBLIC_API_URL` (the Railway URL).
+   `ANTHROPIC_API_KEY`, `WEB_ORIGIN` (the Vercel URL) and `PUBLIC_API_URL` (the Railway URL).
    Generate a domain, then check `https://<railway-domain>/health`.
 3. **Vercel (web):** import the repo, set the root directory to `apps/web` (framework Next.js).
    Set `API_URL` (the Railway URL), `API_KEY`, `NEXT_PUBLIC_SUPABASE_URL` and
