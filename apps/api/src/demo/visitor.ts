@@ -19,6 +19,10 @@ export const DEMO_VISITOR_MESSAGE = "This is the demo week. Sign in with Google 
 // Writes a demo visitor may make: [method, path pattern]. Reads (GET, HEAD) are allowed.
 const ALLOWED: [string, RegExp][] = [
   ["POST", /^\/v1\/chat(\/stream)?$/],
+  // Their own threads (stored per visitor, like the lines in them).
+  ["POST", /^\/v1\/chat\/threads$/],
+  ["PATCH", /^\/v1\/chat\/threads\/[^/]+$/],
+  ["DELETE", /^\/v1\/chat\/threads\/[^/]+$/],
   ["POST", /^\/v1\/recommendations\/[^/]+\/(execute|undo)$/],
   ["PATCH", /^\/v1\/recommendations\/[^/]+$/],
   ["POST", /^\/v1\/analysis\/run$/],

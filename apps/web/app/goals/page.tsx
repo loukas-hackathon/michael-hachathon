@@ -6,6 +6,7 @@ import { ExpandRow } from "@/components/goals/expand-row";
 import { GoalBar, SleepBars, SplitBar, WeekBars } from "@/components/goals/goal-charts";
 import { AddGoal, EditGoal, type GoalDraft, NewGoalButton } from "@/components/goals/goal-sheets";
 import { Tween } from "@/components/motion-ui";
+import { ProgressBar } from "@/components/progress-bar";
 import { ScreenHeader } from "@/components/screen";
 import { RecommendationList } from "@/components/today/recommendation-list";
 import { getGoalSuggestions, getGoals, getGoalsWeek, getRecommendations } from "@/lib/api";
@@ -155,6 +156,10 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
             {groups.map(({ c, items, more }) => {
               const spent = items.reduce((n, r) => n + r.goal.spentMinutes, 0);
               const budget = items.reduce((n, r) => n + r.goal.budgetMinutes, 0);
+              // The lead goal is already answered above: no second row for it. Only when it is the
+              // area's one goal does a quiet line keep the area from looking empty.
+              const rows = items.filter((r) => r.goal.id !== top?.goal.id);
+              const leadOnly = rows.length === 0 && more.length === 0 && top != null;
               return (
                 <section key={c} className="mt-6 xl:mt-0 xl:mb-6">
                   <div className="mb-2 flex items-baseline justify-between gap-3">
@@ -166,7 +171,13 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
                     ) : null}
                   </div>
                   <ul className="overflow-hidden rounded-group bg-fill">
-                    {items.map((r, i) => (
+                    {leadOnly && top ? (
+                      <li className="flex min-h-11 items-center justify-between gap-3 px-4 py-2.5">
+                        <span className="text-body text-label-2">{top.goal.title}</span>
+                        <span className="text-footnote text-label-2">Above</span>
+                      </li>
+                    ) : null}
+                    {rows.map((r, i) => (
                       <li key={r.goal.id}>
                         <GoalRow
                           status={r}
@@ -184,7 +195,7 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
                       <li key={x.id}>
                         <ExtraRow
                           goal={x}
-                          first={items.length === 0 && i === 0}
+                          first={rows.length === 0 && !leadOnly && i === 0}
                           draft={drafts.get(x.id)}
                           personalReady={personalReady}
                         />
@@ -470,15 +481,13 @@ function ExtraRow({
       </div>
       {c ? (
         <>
-          <ol aria-label={countLine(c)} className="mt-2 flex flex-wrap gap-1.5">
-            {Array.from({ length: Math.max(c.target, c.done) }, (_, i) => (
-              <li
-                // biome-ignore lint/suspicious/noArrayIndexKey: fixed slots
-                key={i}
-                className={`size-3.5 rounded-full ${i < c.done ? "bg-label" : "shadow-[inset_0_0_0_1.5px_var(--m-label-2)]"}`}
-              />
-            ))}
-          </ol>
+          <ProgressBar
+            value={c.target > 0 ? c.done / c.target : 0}
+            size="sm"
+            label={countLine(c)}
+            valueText={`${c.done} of ${c.target}`}
+            className="mt-2.5"
+          />
           <p className="mt-1.5 text-footnote text-label-2 tnum">
             {c.left === 0 ? (
               <b className="font-semibold text-label">Done for the week.</b>

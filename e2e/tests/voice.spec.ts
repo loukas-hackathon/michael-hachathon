@@ -2,6 +2,7 @@ import type { Page } from "@playwright/test";
 import { copyFor } from "../../apps/web/app/chat/copy";
 import { DICTATE_COPY } from "../../apps/web/components/voice/speech";
 import { enterDemo, expect, tap, test } from "./fixtures";
+import { live, type Mode, streamReply, stubSpeech, voice } from "./speech-stub";
 
 // Push to talk on /chat, end to end against the production build. Chromium has the Web Speech API
 // but cannot reach a recogniser here, so a scripted one stands in (window.__voice); speech out is
@@ -11,114 +12,6 @@ test.use({
   launchOptions: { args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream"] },
   permissions: ["microphone"],
 });
-
-type Mode = { recognition?: boolean; standalone?: boolean };
-
-/** Installs the scripted recogniser and the recording speech synthesiser before any app code runs. */
-async function stubSpeech(page: Page, mode: Mode = {}) {
-  await page.addInitScript((m: Mode) => {
-    type Handler = ((e: unknown) => void) | null;
-    const w = window as unknown as Record<string, unknown>;
-    const state = { recs: [] as Fake[], spoken: [] as string[], started: 0, primed: 0 };
-    w.__voice = state;
-
-    class Fake {
-      lang = "";
-      continuous = false;
-      interimResults = false;
-      maxAlternatives = 1;
-      onresult: Handler = null;
-      onerror: Handler = null;
-      onend: Handler = null;
-      ended = false;
-      results: { isFinal: boolean; 0: { transcript: string }; length: number }[] = [];
-      start() {
-        state.started++;
-        state.recs.push(this);
-      }
-      stop() {
-        setTimeout(() => this.end(), 30);
-      }
-      abort() {
-        setTimeout(() => {
-          this.onerror?.({ error: "aborted" });
-          this.end();
-        }, 0);
-      }
-      end() {
-        if (this.ended) return;
-        this.ended = true;
-        this.onend?.({});
-      }
-      say(text: string) {
-        this.results.push({ isFinal: false, 0: { transcript: text }, length: 1 });
-        this.onresult?.({ resultIndex: this.results.length - 1, results: this.results });
-      }
-      fail(error: string) {
-        this.onerror?.({ error });
-        this.end();
-      }
-    }
-    if (m.recognition === false) {
-      delete w.SpeechRecognition;
-      delete w.webkitSpeechRecognition;
-    } else {
-      w.SpeechRecognition = Fake;
-      w.webkitSpeechRecognition = Fake;
-    }
-    if (m.standalone) {
-      Object.defineProperty(navigator, "standalone", { value: true });
-      Object.defineProperty(navigator, "userAgent", {
-        value:
-          "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
-      });
-    }
-
-    const synth = {
-      speaking: false,
-      getVoices: () => [],
-      cancel() {},
-      pause() {},
-      resume() {},
-      addEventListener() {},
-      removeEventListener() {},
-      speak(u: SpeechSynthesisUtterance) {
-        if (u.text.trim()) state.spoken.push(u.text);
-        else state.primed++;
-        setTimeout(() => u.onend?.(new Event("end") as SpeechSynthesisEvent), 0);
-      },
-    };
-    Object.defineProperty(window, "speechSynthesis", { value: synth, configurable: true });
-  }, mode);
-}
-
-const live = (page: Page) =>
-  page.evaluate(() => {
-    const v = (window as unknown as { __voice: { recs: { ended: boolean }[] } }).__voice;
-    return v.recs.filter((r) => !r.ended).length;
-  });
-
-const voice = <T>(page: Page, fn: string) =>
-  page.evaluate(
-    `(() => { const v = window.__voice; const r = v.recs.at(-1); return ${fn}; })()`,
-  ) as Promise<T>;
-
-/** A streamed answer in the API's server-sent events, as /chat/stream passes it through. */
-function streamReply(page: Page, text: string) {
-  const now = new Date().toISOString();
-  const pieces = text.match(/.{1,12}/g) ?? [];
-  const body = [
-    ...pieces.map((p) => `event: delta\ndata: ${JSON.stringify({ text: p })}\n\n`),
-    `event: done\ndata: ${JSON.stringify({
-      message: { id: "m-user", role: "user", content: "asked", created_at: now },
-      reply: { id: "m-reply", role: "assistant", content: text, created_at: now },
-      actions: [],
-    })}\n\n`,
-  ].join("");
-  return page.route("**/chat/stream", (route) =>
-    route.fulfill({ status: 200, headers: { "content-type": "text/event-stream" }, body }),
-  );
-}
 
 async function openChat(page: Page, mode?: Mode) {
   await stubSpeech(page, mode);
@@ -155,7 +48,7 @@ test("hold to talk: live words, let go sends, the answer streams and is spoken o
 
   const sent = page.waitForRequest("**/chat/stream");
   await page.mouse.up();
-  expect((await sent).postDataJSON()).toEqual({ message: "How much deep work have I done today" });
+  expect((await sent).postDataJSON()).toMatchObject({ message: "How much deep work have I done today" });
   await expect(mic).toHaveAttribute("aria-pressed", "false");
   await expect(page.getByText("You have done")).toBeVisible();
   await expect(page.locator("#chat-input")).toHaveValue("");
@@ -240,7 +133,7 @@ test("keyboard: hold Space to talk", async ({ page }) => {
   await voice(page, `r.say("When should I train")`);
   const sent = page.waitForRequest("**/chat/stream");
   await page.keyboard.up(" ");
-  expect((await sent).postDataJSON()).toEqual({ message: "When should I train" });
+  expect((await sent).postDataJSON()).toMatchObject({ message: "When should I train" });
   await expect(page.getByText("Train at 18:00.")).toBeVisible();
 });
 

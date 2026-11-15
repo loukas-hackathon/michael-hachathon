@@ -47,12 +47,18 @@ function sync() {
     });
 }
 
-export function setOffTheRecord(on: boolean) {
+/** Flips at once on every tab, then saves. Resolves false (and flips back) if the save failed. */
+export async function setOffTheRecord(on: boolean): Promise<boolean> {
   const before = read();
   set({ on, since: on ? new Date().toISOString() : null, failed: false });
-  saveOffTheRecord(on)
-    .then((p) => set({ on: p.off_the_record, since: p.since, failed: false }))
-    .catch(() => set({ ...before, failed: true }));
+  try {
+    const p = await saveOffTheRecord(on);
+    set({ on: p.off_the_record, since: p.since, failed: false });
+    return true;
+  } catch {
+    set({ ...before, failed: true });
+    return false;
+  }
 }
 
 function subscribe(l: () => void) {

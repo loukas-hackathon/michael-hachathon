@@ -24,6 +24,7 @@ returns `501 not_implemented`, `planned` = not routed yet. Update the status whe
     `X-Michael-Demo-Visitor: <uuid>`, one random id per visitor. Same demo account, but read
     mostly: chat is stored and read per visitor (a visitor never sees another's, nor the
     account's own), and only these writes are allowed: `POST /v1/chat`, `/v1/chat/stream`,
+    `POST /v1/chat/threads`, `PATCH|DELETE /v1/chat/threads/:id` (their own threads),
     `/v1/recommendations/:id/execute|undo`, `PATCH /v1/recommendations/:id`, `POST /v1/analysis/run`,
     `/v1/travel/plan`, `/v1/focus-guards/suggest`, `/v1/voice/speak`, `/v1/records/:id/announced`, `POST|DELETE /v1/push/subscriptions` and `POST /v1/nudges/test`.
     Anything else that writes (privacy, goals, instructions, places, profile, integrations,
@@ -1217,7 +1218,7 @@ goal block the goal has a say: see Goals, "Categories that count as a goal's wor
   search term is never copied into the report. **Speaks from:** Any web visits and one focus stretch
   or work block. Zero minutes is a valid answer.
 - `late_screens`: Device use after the cut off, per night. Cut off: 23:00, or one hour before the
-  usual bedtime (median start of recorded sleeps of 3 hours or more) when sleep data exists. A night
+  usual bedtime (median start of recorded nights, naps left out) when sleep data exists. A night
   runs 6 hours from the cut off and belongs to the day of its evening. A night is late from 5
   minutes of use. `next_recovery_pct` and `next_sleep_minutes` come from the following morning.
   **Speaks from:** 3 nights inside the range on days with device data. Usual bedtime: 3 sleeps.
@@ -1244,17 +1245,36 @@ travel site" or "an uncategorised site". Structured `data` carries the host for 
 
 ### Chat
 
-| Method | Path                | Body                                  | Response                                                                                                                                                                                                                                                                   | Status |
-| ------ | ------------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| GET    | `/v1/chat?limit=50` |                                       | `200 { messages: ChatMessage[], actions: Recommendation[] }` (oldest first, limit 1..100; `actions` are the ones named in `action_ids`, as they stand now)                                                                                                                 | live   |
-| POST   | `/v1/chat`          | `{ message: string }` (1..2000 chars) | `201 ChatResponse` `{ message, reply, actions: Recommendation[] }`; `503 unavailable` without `ANTHROPIC_API_KEY`; `502 upstream_error` if Claude fails                                                                                                                    | live   |
-| POST   | `/v1/chat/stream`   | `{ message: string }` (1..2000 chars) | `200 text/event-stream`: `event: delta` `{ text }` per piece, `event: action` `Recommendation` per thing done or undone, then `event: done` `ChatResponse`, or `event: error` `ApiError`. Validation and `503 unavailable` come back as plain JSON before the stream opens | live   |
+| Method | Path                                           | Body                                                                               | Response                                                                                                                                                                                                                                                                                       | Status |
+| ------ | ---------------------------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| GET    | `/v1/chat?thread_id=&limit=50`                 |                                                                                    | `200 { messages: ChatMessage[], actions: Recommendation[], thread: ChatThread \| null }` (one thread's lines, oldest first, limit 1..100; without `thread_id` the latest thread; `actions` are the ones named in `action_ids`, as they stand now); `404` for a thread that is not the caller's | live   |
+| POST   | `/v1/chat`                                     | `{ message: string, spoken?: boolean, thread_id?: uuid \| "new" }` (1..2000 chars) | `201 ChatResponse` `{ message, reply, actions: Recommendation[], thread: ChatThread }`; `404` unknown thread; `503 unavailable` without `ANTHROPIC_API_KEY`; `502 upstream_error` if Claude fails                                                                                              | live   |
+| POST   | `/v1/chat/stream`                              | same as `POST /v1/chat`                                                            | `200 text/event-stream`: `event: delta` `{ text }` per piece, `event: action` `Recommendation` per thing done or undone, then `event: done` `ChatResponse`, or `event: error` `ApiError`. Validation, `404` and `503 unavailable` come back as plain JSON before the stream opens              | live   |
+| GET    | `/v1/chat/threads?archived=false&q=&limit=100` |                                                                                    | `200 ChatThreadList` `{ threads: ChatThread[] }`, pinned first, then latest line first. `q` (1..100 chars) matches titles and line text                                                                                                                                                        | live   |
+| POST   | `/v1/chat/threads`                             | `{ title? }` (or no body)                                                          | `201 ChatThread`, empty, titled "New chat" unless named                                                                                                                                                                                                                                        | live   |
+| PATCH  | `/v1/chat/threads/:id`                         | `{ title?, pinned?, archived? }` (at least one)                                    | `200 ChatThread`; `404` when not the caller's                                                                                                                                                                                                                                                  | live   |
+| DELETE | `/v1/chat/threads/:id`                         |                                                                                    | `200 { id, messages }`: the thread and every line in it, really deleted; `404` when not the caller's                                                                                                                                                                                           | live   |
+
+`spoken: true` means the answer will be read aloud (the app's conversation mode): Michael keeps it
+to one or two short sentences with no lists or markdown, and says numbers as a person would.
 
 `/v1/chat` stays for callers that want the whole answer (MCP, voice); `/v1/chat/stream` gives the
 first words fast and stores the same pair when it finishes. The stored answer keeps the ids of what
 it did (`action_ids`), so a client can show the same Undo chips under it after a reload.
 
-The API keeps the history per user (`chat_messages`); the client sends only the new line. Michael
+**Threads (#308).** Conversations are separate, as in Messages: `ChatThread { id, title, pinned,
+archived, preview, last_message_at, created_at, updated_at }` (`preview` is the last line, cut to
+140 characters). `thread_id` omitted writes in the latest thread (a new one when there is none);
+`"new"` starts one, made only once the answer is stored, so a failed call leaves no empty thread.
+The first line names a thread: the model writes 2 to 5 words in Michael's voice in parallel with
+the answer (only the user's own line is sent), and the first words of the line are the fallback;
+a name the user gave is never overwritten. Michael sees the lines of the current thread only; he
+knows the others through memories, check ins and the titles of the 5 latest other threads
+("Other conversations (titles only)"), never their lines. Lines from before threads sit in one
+"Earlier" thread per user (and per demo visitor). Demo visitors get threads of their own, like
+their lines. `DELETE /v1/me/data` counts `chat_threads` too.
+
+The API keeps the history per user and thread (`chat_threads`, `chat_messages`); the client sends only the new line. Michael
 answers with Claude (`ANTHROPIC_MODEL`, default `claude-opus-5-5`) from a summary built in the API:
 the week's score with the same figures as `GET /v1/score` (built in process by `scoreFor`, not over
 HTTP: score, spent of elapsed, lost, ahead, time won back, and per goal spent of budget and what is
@@ -2165,7 +2185,7 @@ most urgent candidate of these rules (in this order):
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
 | `focus_drift`    | inside a work goal block, 3+ of the last 10 min on distractor apps or sites                                                  | "6 min on Instagram in your focus block. Back to it until 12:00."     |
 | `block_soon`     | a goal block starts in 2 to 15 min                                                                                           | "Gym at 18:00. Wrap up in 12 min."                                    |
-| `morning`        | after the night's sleep (3h+) ends today, else from 08:00; until 12:00                                                       | the Morning moment's headline, e.g. "Today holds 2h 00 of goal time." |
+| `morning`        | after the night's sleep (never a nap) ends today, else from 08:00; until 12:00                                               | the Morning moment's headline, e.g. "Today holds 2h 00 of goal time." |
 | `evening`        | an hour before the usual bedtime (median of 3+ of the last 8 nights), else 21:00; never later than 45 min before quiet hours | the Evening moment's headline                                         |
 | `wind_down`      | 30 min before the night, 3+ of the last 10 min on screens, a rest goal exists                                                | "Screens off by 22:00. Sleep is on the plan."                         |
 | `goal_behind`    | before 19:00, a weekly budget behind its linear pace by 60+ min and 15%+                                                     | "Gym 2h 34m behind this week. Book 90 min today."                     |
@@ -2704,10 +2724,10 @@ hours, refresh tokens 90 days; both are stored hashed. Loopback redirects match 
 
 The consent page (signed in user, normal auth) uses:
 
-| Method | Path                       | Body                 | Response                                                 |
-| ------ | -------------------------- | -------------------- | -------------------------------------------------------- |
-| GET    | `/v1/connect/requests/:id` |                      | `200 ConnectRequest`, `404` when expired or answered     |
-| POST   | `/v1/connect/requests/:id` | `{ allow: boolean }` | `200 { redirect_to }` (back to the client), `404`, `409` |
+| Method | Path                       | Body                 | Response                                                        |
+| ------ | -------------------------- | -------------------- | --------------------------------------------------------------- |
+| GET    | `/v1/connect/requests/:id` |                      | `200 ConnectRequest`, `404` when expired or answered            |
+| POST   | `/v1/connect/requests/:id` | `{ allow: boolean }` | `200 { redirect_to }` (back to the client), `401`, `404`, `409` |
 
 ```ts
 type ConnectRequest = {
@@ -2721,6 +2741,11 @@ type ConnectRequest = {
 
 On allow, `redirect_to` carries a one time `code` (5 minutes), `state` and `iss`; on refusal,
 `error=access_denied`. The token then acts for the user who allowed it.
+
+A request stays answerable for 30 minutes, long enough for a first Google sign in on the way. A
+`401` on allow means the caller's sign in outlived its account (a deleted account's token still
+verifies locally until it expires): the request stays pending, and the web app signs out and sends
+the person to sign in again, back to the same consent page.
 
 ### Tools
 

@@ -4,6 +4,9 @@ import {
   ApiError,
   type ChatHistory,
   type ChatResponse,
+  type ChatThread,
+  type ChatThreadList,
+  type ChatThreadPatch,
   type CheckInAnswerResponse,
   type CheckInToday,
   type CheckInValue,
@@ -88,11 +91,18 @@ async function send<T>(method: "PUT" | "PATCH" | "POST", path: string, body?: un
  * The raw server-sent event stream of POST /v1/chat/stream, for the /chat/stream route to pass on.
  * Throws when signed out or the API cannot be reached.
  */
-export async function openChatStream(message: string): Promise<Response> {
+export async function openChatStream(
+  message: string,
+  opts: { spoken?: boolean; threadId?: string } = {},
+): Promise<Response> {
   return fetch(`${API_URL}/v1/chat/stream`, {
     method: "POST",
     headers: { ...(await authHeaders()), "content-type": "application/json" },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({
+      message,
+      ...(opts.spoken ? { spoken: true } : {}),
+      ...(opts.threadId ? { thread_id: opts.threadId } : {}),
+    }),
     cache: "no-store",
   });
 }
@@ -108,24 +118,49 @@ export async function answerCheckIn(id: string, value: CheckInValue): Promise<Ch
 }
 
 /** Chat always talks to the API: there is no fixture for a conversation. */
-export async function getChatHistory(): Promise<ChatHistory> {
-  const body = await get<ChatHistory>("/v1/chat?limit=50");
-  // An API from before action_ids still answers: no chips come back, the lines do.
+export async function getChatHistory(threadId?: string): Promise<ChatHistory> {
+  const q = threadId ? `&thread_id=${encodeURIComponent(threadId)}` : "";
+  const body = await get<ChatHistory>(`/v1/chat?limit=50${q}`);
+  // An API from before action_ids (or threads) still answers: no chips come back, the lines do.
   return {
     messages: body.messages.map((m) => ({ ...m, action_ids: m.action_ids ?? [] })),
     actions: body.actions ?? [],
+    thread: body.thread ?? null,
   };
+}
+
+/** GET /v1/chat/threads: the caller's conversations, pinned first. `q` searches titles and lines. */
+export async function getChatThreads(q?: string): Promise<ChatThread[]> {
+  const query = q?.trim() ? `?q=${encodeURIComponent(q.trim().slice(0, 100))}` : "";
+  const body = await get<ChatThreadList>(`/v1/chat/threads${query}`);
+  return body.threads ?? [];
+}
+
+/** PATCH /v1/chat/threads/:id: rename, pin or archive one of the caller's threads. */
+export async function patchChatThread(id: string, patch: ChatThreadPatch): Promise<ChatThread> {
+  return send<ChatThread>("PATCH", `/v1/chat/threads/${encodeURIComponent(id)}`, patch);
+}
+
+/** DELETE /v1/chat/threads/:id: the thread and its lines, for good. */
+export async function deleteChatThread(id: string): Promise<void> {
+  const res = await fetch(`${API_URL}/v1/chat/threads/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: await authHeaders(),
+    cache: "no-store",
+  });
+  // Already gone counts as done.
+  if (!res.ok && res.status !== 404) throw new Error(`DELETE chat thread failed: ${res.status}`);
 }
 
 export type ChatResult = { ok: true; data: ChatResponse } | { ok: false; code: string; message: string };
 
-export async function sendChat(message: string): Promise<ChatResult> {
+export async function sendChat(message: string, threadId?: string): Promise<ChatResult> {
   let res: Response;
   try {
     res = await fetch(`${API_URL}/v1/chat`, {
       method: "POST",
       headers: { ...(await authHeaders()), "content-type": "application/json" },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify(threadId ? { message, thread_id: threadId } : { message }),
       cache: "no-store",
     });
   } catch {

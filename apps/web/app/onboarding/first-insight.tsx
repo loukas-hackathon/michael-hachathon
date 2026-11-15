@@ -1,33 +1,16 @@
 import type { ReactNode } from "react";
+import { ProgressBar } from "@/components/progress-bar";
 import type { FirstInsight } from "@/lib/first-insight";
 import { hm } from "@/lib/format";
 
 // The first number about the user's own week, shown on the connect step as soon as Google Calendar
 // is in (docs/ux-audit.md, "Proposed first minute", step 4). The number leads the sentence; the
-// evidence sits under it: one notch per hour each goal asks for, planned hours as outlines (still
-// ahead, as on the tape), the unbooked rest in the context grey. No pink: nothing is spent yet.
+// evidence sits under it: one bar per goal, the booked hours outlined (still ahead, as on the tape),
+// the unbooked rest in the context grey. No pink: nothing is spent yet.
 
 const N = ({ children }: { children: ReactNode }) => (
   <span className="font-semibold text-label tnum">{children}</span>
 );
-
-function Notches({ planned, budget }: { planned: number; budget: number }) {
-  const total = Math.max(1, Math.round(budget / 60));
-  const booked = Math.min(total, Math.round(planned / 60));
-  return (
-    <div className="mt-1.5 flex h-3 gap-[2px]" aria-hidden="true">
-      {Array.from({ length: total }, (_, i) => (
-        <span
-          // biome-ignore lint/suspicious/noArrayIndexKey: fixed run of notches
-          key={i}
-          className={`min-w-0 flex-1 rounded-tick ${
-            i < booked ? "shadow-[inset_0_0_0_1px_var(--m-label-2)]" : "bg-context"
-          }`}
-        />
-      ))}
-    </div>
-  );
-}
 
 export function FirstInsightCard({ insight }: { insight: FirstInsight }) {
   const { planned, budget } = insight;
@@ -59,19 +42,27 @@ export function FirstInsightCard({ insight }: { insight: FirstInsight }) {
         )}
       </p>
 
-      <ul className="mt-4 flex flex-col gap-3">
-        {insight.goals.map((g) => (
-          <li key={g.title}>
-            <div className="flex items-baseline justify-between gap-3 text-subhead">
-              <span className="min-w-0 truncate font-semibold">{g.title}</span>
-              <span className="shrink-0 text-label-2 tnum">
-                {hm(g.planned)} of {hm(g.budget)}
-              </span>
-            </div>
-            <Notches planned={g.planned} budget={g.budget} />
-          </li>
-        ))}
-      </ul>
+      {/* Nothing booked at all: the sentence says it, a column of empty bars would only repeat it. */}
+      {planned > 0 ? (
+        <ul className="mt-4 flex flex-col gap-3">
+          {insight.goals.map((g) => (
+            <li key={g.title}>
+              <div className="flex items-baseline justify-between gap-3 text-subhead">
+                <span className="min-w-0 truncate font-semibold">{g.title}</span>
+                <span className="shrink-0 text-label-2 tnum">
+                  {hm(g.planned)} of {hm(g.budget)}
+                </span>
+              </div>
+              <ProgressBar
+                value={0}
+                planned={g.budget > 0 ? g.planned / g.budget : 0}
+                label={`${g.title}: ${hm(g.planned)} of ${hm(g.budget)} booked`}
+                className="mt-1.5"
+              />
+            </li>
+          ))}
+        </ul>
+      ) : null}
 
       {insight.sample ? (
         <p className="mt-3 text-footnote text-label-2">Sample numbers, for the preview.</p>

@@ -90,6 +90,66 @@ export function meansNoVoiceHere(code: string, iosHomeScreen: boolean): boolean 
   return iosHomeScreen && code === "not-allowed";
 }
 
+// Set once recognition has refused to run in this browser (an iPhone home screen app, mostly), so
+// the mic stays the dictation hint instead of failing on every press. Remembered per device.
+const REFUSED_KEY = "michael.voice.refused";
+let refused: boolean | null = null;
+const refusedListeners = new Set<() => void>();
+
+export function readRefused(): boolean {
+  if (refused === null) {
+    try {
+      refused = localStorage.getItem(REFUSED_KEY) === "1";
+    } catch {
+      refused = false;
+    }
+  }
+  return refused;
+}
+
+export function markRefused(): void {
+  refused = true;
+  try {
+    localStorage.setItem(REFUSED_KEY, "1");
+  } catch {
+    // Private mode: remembered for this visit only.
+  }
+  for (const l of refusedListeners) l();
+}
+
+export function subscribeRefused(l: () => void): () => void {
+  refusedListeners.add(l);
+  return () => refusedListeners.delete(l);
+}
+
+/** iPhone or iPad (iPadOS reports itself as a Mac with touch). */
+export function isIos(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return (
+    /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+    (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1)
+  );
+}
+
+const words = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/[^a-z0-9' ]+/g, " ")
+    .split(" ")
+    .filter(Boolean);
+
+/**
+ * True when what the microphone heard is Michael's own voice coming back from the speaker: most of
+ * its words are in what he is saying. Used so his voice does not interrupt himself.
+ */
+export function isEcho(heard: string, saying: string): boolean {
+  const said = new Set(words(saying));
+  const h = words(heard);
+  if (!h.length) return true;
+  const inSaid = h.filter((w) => said.has(w)).length;
+  return inSaid / h.length >= 0.75;
+}
+
 // ---------- speech out ----------
 
 /**
@@ -212,13 +272,21 @@ export function unlockAudio(): void {
   }
 }
 
+// Settles the reply being spoken, so whoever waits on speakReply carries on when it is cut short.
+let settle: (() => void) | null = null;
+// Bumped by every stop: a reply still loading when it was stopped is never played.
+let generation = 0;
+
 export function stopSpeaking(): void {
   if (typeof window === "undefined") return;
   if ("speechSynthesis" in window) window.speechSynthesis.cancel();
   if (audio) audio.pause();
+  generation++;
+  settle?.();
+  settle = null;
 }
 
-function speakWithBrowser(text: string): Promise<void> {
+function speakWithBrowser(text: string, gen: number): Promise<void> {
   if (!("speechSynthesis" in window)) return Promise.resolve();
   const synth = window.speechSynthesis;
   const pieces = speechChunks(text);
@@ -226,6 +294,7 @@ function speakWithBrowser(text: string): Promise<void> {
   // Every piece is queued at once; the promise settles when the last one has been said.
   const say = () =>
     new Promise<void>((resolve) => {
+      if (gen !== generation) return resolve();
       const voice = pickVoice(synth.getVoices());
       pieces.forEach((piece, i) => {
         const u = new SpeechSynthesisUtterance(piece);
@@ -253,7 +322,7 @@ function speakWithBrowser(text: string): Promise<void> {
   });
 }
 
-async function speakWithElevenLabs(text: string): Promise<boolean> {
+async function speakWithElevenLabs(text: string, gen: number): Promise<boolean> {
   try {
     const res = await fetch("/chat/speak", {
       method: "POST",
@@ -262,12 +331,26 @@ async function speakWithElevenLabs(text: string): Promise<boolean> {
     });
     if (!res.ok) return false;
     const blob = await res.blob();
+    if (gen !== generation) return true;
     if (audioUrl) URL.revokeObjectURL(audioUrl);
     // Held in memory only for this one playback; never saved.
     audioUrl = URL.createObjectURL(blob);
     audio ??= new Audio();
-    audio.src = audioUrl;
-    await audio.play();
+    const player = audio;
+    player.src = audioUrl;
+    await player.play();
+    // Resolves when the reply has been said, or was cut short.
+    await new Promise<void>((resolve) => {
+      const done = () => {
+        player.removeEventListener("ended", done);
+        player.removeEventListener("pause", done);
+        player.removeEventListener("error", done);
+        resolve();
+      };
+      player.addEventListener("ended", done);
+      player.addEventListener("pause", done);
+      player.addEventListener("error", done);
+    });
     return true;
   } catch {
     return false;
@@ -277,8 +360,17 @@ async function speakWithElevenLabs(text: string): Promise<boolean> {
 /** Reads Michael's reply aloud: ElevenLabs when the API has it, else (or on any failure) the browser. */
 export async function speakReply(text: string, elevenlabs: boolean): Promise<void> {
   if (typeof window === "undefined") return;
-  const words = speakable(text);
-  if (!words) return;
-  if (elevenlabs && (await speakWithElevenLabs(words))) return;
-  await speakWithBrowser(words);
+  const line = speakable(text);
+  if (!line) return;
+  // Settles when the reply has been said, or as soon as stopSpeaking cuts it short.
+  const stopped = new Promise<"stopped">((resolve) => {
+    settle = () => resolve("stopped");
+  });
+  const gen = generation;
+  const said = (async () => {
+    if (elevenlabs && (await speakWithElevenLabs(line, gen))) return;
+    await speakWithBrowser(line, gen);
+  })();
+  if ((await Promise.race([said, stopped])) === "stopped") return;
+  settle = null;
 }

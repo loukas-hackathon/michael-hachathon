@@ -1,6 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { env } from "./env";
-import { HttpError } from "./http";
+import { type DbError, dbError } from "./http";
 
 // Storage for the MCP OAuth server (routes/oauth.ts). Not scoped by currentUserId(): it runs
 // before the caller is known (a token lookup is how we learn who the caller is), so every
@@ -158,8 +158,8 @@ const toToken = (r: Record<string, unknown>): OAuthToken => ({
   revoked_at: isoOrNull(r.revoked_at),
 });
 
-function check<T>(res: { data: T; error: { message: string } | null }): T {
-  if (res.error) throw new HttpError("upstream_error", `Database error: ${res.error.message}`);
+function check<T>(res: { data: T; error: DbError | null }): T {
+  if (res.error) throw dbError(res.error);
   return res.data;
 }
 

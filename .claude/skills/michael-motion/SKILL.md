@@ -11,6 +11,8 @@ always explains what changed. These rules sit under `docs/design-guide.md` ("Mot
 two disagree, the design guide wins. Brand is locked: motion never adds colour, glow, gradients
 or new brand elements, and **tab switches have no motion at all**.
 
+What sits still (no noise, the one bar, radius and focus rings) is in `.claude/skills/michael-ui/SKILL.md`.
+
 ## 1. When to animate
 
 Animate only when it answers "what just happened?" or "where did it go?":
@@ -27,7 +29,8 @@ Do not animate:
 - Tab switches, the tab bar, headers, or anything the user does many times a minute.
 - Keyboard-driven actions, focus moves, typing.
 - Decoration: no loops, pulses or attention-seeking motion. The only loops allowed are the
-  skeleton breath and the push-to-talk listening ring, both stopped by reduced motion.
+  skeleton breath, the push-to-talk listening ring and the conversation's speaking breath
+  (`.m-speak-breath`), all stopped by reduced motion.
 
 ## 2. Tokens (apps/web/app/globals.css)
 
