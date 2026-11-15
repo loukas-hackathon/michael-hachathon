@@ -2594,7 +2594,7 @@ type MeetingsState = {
 Body `AccountCreate`: `{ email, password }`, password 8 to 200 characters. Creates a Supabase Auth
 user already confirmed, so the person is signed in at once with no email to click; the web app then
 signs in with the password itself. Any other caller (a session, a demo visitor, a device key, MCP)
-gets `403`. `429 rate_limited` past 30 new accounts an hour (admin.createUser skips Supabase's own sign up limits). `503 unavailable` when Auth is not configured (in-memory store).
+gets `403`. `429 rate_limited` past 5 new accounts an hour from one address (`X-Michael-Client-IP`, set by the web server) or 60 in all (admin.createUser skips Supabase's own sign up limits). `503 unavailable` when Auth is not configured (in-memory store).
 
 ### Your data: deletion and retention
 
