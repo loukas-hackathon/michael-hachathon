@@ -32,6 +32,13 @@ function SourceSwitch({
     onSuccess: (s) => setOn(s.enabled),
     errorMessage: SAVE_ERROR,
   });
+  // A refresh brings the server's state (the first event saves the rule): follow it unless a save
+  // of the user's own is on its way.
+  const [seen, setSeen] = useState(initial);
+  if (initial !== seen && !save.pending) {
+    setSeen(initial);
+    setOn(initial);
+  }
 
   return (
     <>
