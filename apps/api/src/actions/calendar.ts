@@ -663,7 +663,7 @@ export async function bookFocusBlock(req: FocusBlockRequest): Promise<Recommenda
     throw conflict(`That overlaps "${clash.title}", which has other people in it. Pick a free time.`);
   }
 
-  // Named after the goal it serves ("University study"), and carrying its id so the score counts it.
+  // Named after the goal it serves ("University"), and carrying its id so the score counts it.
   const title = goal ? goalBlockTitle(goal, payload.title) : (payload.title ?? "Focus block");
   const rec = await store.createRecommendation({
     goal_id: goal?.id ?? null,

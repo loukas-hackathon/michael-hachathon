@@ -114,18 +114,16 @@ test("the patterns' calendar mode reads the same matcher", () => {
   assert.equal(d.items[0]?.minutes_lost, 5);
 });
 
-test("a block booked for a goal names the goal, and still counts towards it", () => {
-  assert.equal(goalBlockTitle(UNI), "University study");
-  assert.equal(goalBlockTitle(TRI), "Triathlon gym");
-  assert.equal(goalBlockTitle(COMPANY), "The company cold outreach / sales");
-  for (const g of GOALS) assert.equal(goalForEvent(event(goalBlockTitle(g)), GOALS)?.goal.id, g.id);
-  // A calendar title that already says the goal, or a goal title that holds it, is used as it is.
-  assert.equal(goalBlockTitle(withTitles(UNI, ["University revision"])), "University revision");
-  assert.equal(goalBlockTitle({ ...TRI, title: "Gym and swim" }), "Gym and swim");
-  // No calendar titles: the goal's own title. An acronym keeps its capitals.
-  assert.equal(goalBlockTitle(withTitles(UNI, [])), "University");
-  assert.equal(goalBlockTitle(withTitles(UNI, ["MBA prep"])), "University MBA prep");
+test("a block booked for a goal is named after the goal, and counts towards it", () => {
+  assert.equal(goalBlockTitle(UNI), "University");
+  assert.equal(goalBlockTitle(TRI), "Triathlon");
+  assert.equal(goalBlockTitle(COMPANY), "The company");
   // A name someone gave is kept, unless it is one of the goal's bare calendar titles.
   assert.equal(goalBlockTitle(UNI, "Revise chapter 3"), "Revise chapter 3");
-  assert.equal(goalBlockTitle(UNI, "study"), "University study");
+  assert.equal(goalBlockTitle(UNI, "study"), "University");
+  // Booked blocks carry the goal's id: the score attributes them by it, and by title as well.
+  for (const g of GOALS) {
+    assert.equal(goalForEvent(event(goalBlockTitle(g), { goal_id: g.id }), GOALS)?.goal.id, g.id);
+    assert.equal(goalForEvent(event(goalBlockTitle(g)), GOALS)?.goal.id, g.id);
+  }
 });

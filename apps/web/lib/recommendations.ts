@@ -147,7 +147,7 @@ export function travelCard(rec: Recommendation, now: Date): Partial<RecCard> | n
 }
 
 /**
- * The line under a booked block's title. The API says it plainly ("University study, 90 minutes,
+ * The line under a booked block's title. The API says it plainly ("University, 90 minutes,
  * booked by Claude. Undo until 07:00."), but on the card the title, the time line, the maths and
  * "Done. Undo until 07:00." already say all of it but who booked it: only that stays ("Booked by
  * Claude."), or nothing when the user booked it in Michael. Older rows keep their line without the

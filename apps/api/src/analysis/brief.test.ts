@@ -249,8 +249,8 @@ test("the context keeps what the brief hides, for checking the answer", () => {
   assert.deepEqual(
     [...context.blockTitles],
     [
-      [GOALS[0]?.id, "Degree study"],
-      [GOALS[1]?.id, "Race gym"],
+      [GOALS[0]?.id, "Degree"],
+      [GOALS[1]?.id, "Race"],
     ],
   );
   assert.ok(context.patterns.has("phone_cadence"));

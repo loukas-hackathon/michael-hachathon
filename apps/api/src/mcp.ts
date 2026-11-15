@@ -886,7 +886,7 @@ export function createMcpServer(): McpServer {
           .max(200)
           .optional()
           .describe(
-            'Calendar title, e.g. "Focus: pitch deck". Default: named after the goal ("University study"), else "Focus block"',
+            'Calendar title, e.g. "Focus: pitch deck". Default: named after the goal ("University"), else "Focus block"',
           ),
         goal_id: Id.optional().describe("The goal it serves, from get_goals"),
       },

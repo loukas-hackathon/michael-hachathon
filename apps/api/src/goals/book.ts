@@ -12,7 +12,7 @@ import { store } from "../store";
 
 // Book time for a goal (#309), the one action on the Goals tab: the first free slot of `minutes`
 // from now to the end of the week, inside the waking day, clear of the calendar and of time a
-// standing instruction protects. The block is named after the goal ("University study") and carries
+// standing instruction protects. The block is named after the goal ("University") and carries
 // its id, so the user reads what it is for and the score counts it. It is booked at once through bookFocusBlock (the same path as the MCP tool), so
 // it is undoable until it starts with POST /v1/recommendations/:id/undo.
 //

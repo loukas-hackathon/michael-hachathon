@@ -1742,7 +1742,7 @@ through the store's `createRecommendation`, so the instruction guard has the las
   /v1/checklist`, `add_checklist_item`) and on `GET /v1/score` for the current week.
 - **Behind pace:** a count goal with `left > days_left` gets one slot, the first free one from now
   on a day without a block of the goal yet, as long as the goal's usual block this week (60
-  minutes without one), named after the goal (`goalBlockTitle`: "University study") and carrying
+  minutes without one), named after the goal (`goalBlockTitle`: "University") and carrying
   its `goal_id` so it counts. Title `One more session for <goal>`. Checked on `GET /v1/score` for
   the current week.
 - **Once a day:** each offer carries `payload.offer_key` (`first_outcome:<day>`,
@@ -3082,7 +3082,7 @@ offset. A refused or failed call returns `isError: true` with one plain sentence
   same rules: own time only, never an event with other people, never deletes the user's events,
   undo until the block starts.
 - `create_focus_block` books straight away: it saves a recommendation (`source: "chat"`, `status: "done"`, rationale
-  "University study, 90 minutes, booked by <agent name>. Undo until 07:00.") and carries it out like any other, so the block
+  "University, 90 minutes, booked by <agent name>. Undo until 07:00.") and carries it out like any other, so the block
   shows in Michael and `undo_recommendation` takes it back. With a `goal_id` and no title (or one
   of the goal's bare calendar titles) the block is named after the goal. Refused in the past, under 5 minutes,
   over 6 hours, or when it overlaps an event with other people.

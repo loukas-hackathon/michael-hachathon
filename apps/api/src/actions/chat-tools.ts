@@ -364,7 +364,7 @@ async function createBlock(input: unknown): Promise<ToolOutcome> {
   if (Date.parse(end_at) <= Date.parse(start_at))
     return { content: "end_at must be after start_at", isError: true };
   const goal = p.data.goal_id ? await store.getGoal(p.data.goal_id).catch(() => null) : null;
-  // A bare "Study" for the University goal becomes "University study": the block names its goal.
+  // A bare "Study" for the University goal becomes "University": the block names its goal.
   const title = goal ? goalBlockTitle(goal, p.data.title) : p.data.title;
   const rec = await store.createRecommendation({
     goal_id: goal?.id ?? null,

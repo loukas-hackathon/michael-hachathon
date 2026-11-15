@@ -781,7 +781,7 @@ export function buildBrief(input: BriefInput): { brief: Brief; context: BriefCon
       blocks: built.blocks,
       goalBlocks: plan.filter((p) => p.kind === "goal_block"),
       busy,
-      // A goal's new blocks are named after it ("University study"), for goals on the calendar.
+      // A goal's new blocks are named after it ("University"), for goals on the calendar.
       blockTitles: new Map(
         goals.filter((g) => calendarTitles(g).length > 0).map((g) => [g.id, goalBlockTitle(g)]),
       ),
