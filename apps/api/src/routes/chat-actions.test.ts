@@ -1116,3 +1116,59 @@ test("#483 every chat turn tells Michael the connections, read fresh, and never 
       assert.match(system, /otherwise never mention a button below/);
     }),
   ));
+
+test("Focus or Do Not Disturb never turns off the record on, even when the model calls the tool", () =>
+  asNewUser(async () => {
+    for (const ask of ["focus", "turn on do not disturb until 16:00", "I need quiet, leave me alone"]) {
+      await withClaude([{ tool: { name: "go_off_the_record", input: {} } }], async (requests) => {
+        await askMichael(turns(ask), "context");
+        assert.equal((await store.privacyRules()).offTheRecord, false, ask);
+        const result = toolResults(requests[1])[0];
+        assert.equal(result?.is_error, true, ask);
+        assert.match(String(result?.content), /needs the user's own words/);
+      });
+    }
+    const tool = CHAT_TOOLS.find((t) => t.name === "go_off_the_record");
+    assert.match(tool?.description ?? "", /Never for Focus, Do Not Disturb/);
+  }));
+
+test("off the record: the connections say so first, and a question about data gets that line", () =>
+  runAsUser(env.DEMO_USER_ID, async () => {
+    const { connectionsNow } = await import("../connections-state");
+    await store.setOffTheRecord(true);
+    try {
+      const since = clock(Date.parse((await store.privacyRules()).since ?? ""));
+      const line = `You're off the record since ${since}, so I'm not collecting anything. Turn it off on You > Privacy and I'll see your opens.`;
+      const now = await connectionsNow();
+      assert.equal(now.offTheRecord, line);
+      assert.match(now.lines[0] ?? "", /^- OFF THE RECORD since \d\d:\d\d: nothing is collected/);
+      assert.ok(now.lines[0]?.includes(line));
+      assert.ok(!now.lines.some((l) => /once the App automation runs/.test(l)));
+      // The production answer (15 Nov): a promise of opens later, with no word of off the record.
+      await withClaude(
+        [{ text: "Not yet. Your iPhone is connected. I'll see them once the App automation runs." }],
+        async (requests) => {
+          const res = await app.request("/v1/chat", {
+            method: "POST",
+            headers: auth,
+            body: JSON.stringify({ message: "Can you see that I opened Instagram", thread_id: "new" }),
+          });
+          assert.equal(res.status, 201);
+          assert.equal(ChatResponse.parse(await res.json()).reply.content, line);
+          assert.match(JSON.stringify(requests[0]?.system), /Connections right now:\\n- OFF THE RECORD/);
+        },
+      );
+      // An answer that already says so keeps its own words.
+      const own = "You're off the record, so nothing comes in.";
+      await withClaude([{ text: own }], async () => {
+        const res = await app.request("/v1/chat", {
+          method: "POST",
+          headers: auth,
+          body: JSON.stringify({ message: "Can you check again", thread_id: "new" }),
+        });
+        assert.equal(ChatResponse.parse(await res.json()).reply.content, own);
+      });
+    } finally {
+      await store.setOffTheRecord(false);
+    }
+  }));
