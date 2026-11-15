@@ -236,3 +236,55 @@ test("mapping: all day events, declined and cancelled events, rooms and other or
   const untitled = toTimelineEvent(gEvent("u", NOW, 30, { summary: "  " }), "UTC");
   assert.equal(untitled?.title, "Busy");
 });
+
+test("return_to: a path on the web app is signed into state and used by the callback; other sites are refused", async () => {
+  const connect = (body: unknown) =>
+    app.request("/v1/integrations/google_calendar/connect", {
+      method: "POST",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  const res = await connect({ return_to: "/onboarding?step=done" });
+  assert.equal(res.status, 200);
+  const state = new URL(OAuthConnectResponse.parse(await res.json()).url).searchParams.get("state") ?? "";
+  assert.deepEqual(verifyState(state), {
+    userId: DEMO,
+    provider: "google_calendar",
+    returnTo: "/onboarding?step=done",
+  });
+  const cb = await app.request(
+    `/oauth/google/callback?state=${encodeURIComponent(state)}&error=access_denied`,
+  );
+  assert.equal(
+    cb.headers.get("location"),
+    "https://web.example.test/onboarding?step=done&integration_error=google_calendar&reason=declined",
+  );
+
+  for (const bad of ["//evil.example", "/\\evil.example", "https://evil.example/", "onboarding", "/a b"]) {
+    assert.equal((await connect({ return_to: bad })).status, 400, bad);
+  }
+});
+
+test("onboarding: the callback goes straight back and the page reads four weeks with past_days", async () => {
+  const now = Date.now();
+  const g = fakeGoogle([gEvent("old", now - 20 * 24 * HOUR, 60, { summary: "Swim" })]);
+  setGoogleFetch(g.fetch);
+  const res = await app.request("/v1/integrations/google_calendar/connect", {
+    method: "POST",
+    headers: { ...auth, "content-type": "application/json" },
+    body: JSON.stringify({ return_to: "/onboarding?step=goals" }),
+  });
+  const state = new URL(OAuthConnectResponse.parse(await res.json()).url).searchParams.get("state") ?? "";
+  const cb = await app.request(`/oauth/google/callback?state=${encodeURIComponent(state)}&code=auth-code`);
+  assert.equal(
+    cb.headers.get("location"),
+    "https://web.example.test/onboarding?step=goals&connected=google_calendar&sync=pending",
+  );
+  assert.ok(!g.calls.some((c) => c.url.includes("/calendars/")), "no sync before the redirect");
+
+  const sync = (q: string) =>
+    app.request(`/v1/integrations/google_calendar/sync${q}`, { method: "POST", headers: auth });
+  assert.equal((await sync("?past_days=99")).status, 400);
+  const result = CalendarSyncResult.parse(await (await sync("?past_days=28")).json());
+  assert.ok(Date.parse(result.from) <= now - 27 * 24 * HOUR);
+});

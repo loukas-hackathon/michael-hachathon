@@ -1,17 +1,19 @@
 import Link from "next/link";
+import { IPhoneShortcutSetup } from "@/components/setup/iphone-shortcut-setup";
 import { ConnectionPage, SetupSection } from "@/components/you/connection-page";
 import { KeySetup } from "@/components/you/key-setup";
 import { SourcePrivacy } from "@/components/you/source-privacy";
 import { CONNECTION_ROUTES, connection } from "@/lib/connections";
 import { getConnection } from "@/lib/connections-status";
 
-export const metadata = { title: "iPhone screen time · Michael" };
+export const metadata = { title: "iPhone · Michael" };
 
-export default async function IPhonePage() {
+export default async function IPhonePage({ searchParams }: { searchParams: Promise<{ from?: string }> }) {
+  const { from } = await searchParams;
   const { row } = await getConnection("iphone");
   const c = connection("iphone");
   return (
-    <ConnectionPage row={row}>
+    <ConnectionPage row={row} from={from}>
       <SetupSection title="Screen Time, every day">
         <div className="rounded-group bg-fill px-4 py-4">
           <ol className="list-decimal space-y-2 pl-5 text-subhead">
@@ -31,14 +33,19 @@ export default async function IPhonePage() {
         title="Live, with Shortcuts"
         note="Optional. One automation per app you want me to watch, such as Instagram or YouTube."
       >
-        <KeySetup
-          keyName="iPhone Shortcuts"
-          copyAs={{ kind: "webhook", path: "ios-shortcuts" }}
-          steps={[
-            "In Shortcuts, tap Automation, +, App. Choose the apps, tick Is Opened, Run Immediately.",
-            "Add Get Contents of URL, paste it as the URL. Method POST, Request Body JSON.",
-            "Add two fields: app with Shortcut Input, and action with open. Repeat with Is Closed and close.",
-          ]}
+        <IPhoneShortcutSetup
+          shortcutUrl={process.env.MICHAEL_SHORTCUT_URL || null}
+          fallback={
+            <KeySetup
+              keyName="iPhone Shortcuts"
+              copyAs={{ kind: "webhook", path: "ios-shortcuts" }}
+              steps={[
+                "In Shortcuts, tap Automation, +, App. Choose the apps, tick Is Opened, Run Immediately.",
+                "Add Get Contents of URL, paste it as the URL. Method POST, Request Body JSON.",
+                "Add two fields: app with Shortcut Input, and action with open. Repeat with Is Closed and close.",
+              ]}
+            />
+          }
         />
       </SetupSection>
       <SourcePrivacy sources={c.sources} />

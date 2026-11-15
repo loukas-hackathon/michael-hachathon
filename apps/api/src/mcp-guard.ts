@@ -20,9 +20,17 @@ export const TOOL_SCOPE: Record<string, AgentScope> = {
   propose_goals: "goals",
   add_goal: "goals",
   update_goal: "goals",
+  get_checklist: "goals",
+  add_checklist_item: "goals",
+  // The daily ritual (#318): the day's outcomes are kept with the goals.
+  set_day_outcomes: "goals",
+  log_day: "goals",
   list_recommendations: "recommendations",
   update_recommendation: "recommendations",
   get_nudges: "recommendations",
+  // Drafts are Michael's advice for the user to send themselves; nothing is sent or booked.
+  list_drafts: "recommendations",
+  draft_follow_up: "recommendations",
   get_score: "score",
   get_records: "score",
   get_moments: "score",
@@ -33,6 +41,10 @@ export const TOOL_SCOPE: Record<string, AgentScope> = {
   block_mac_app: "write_events",
   suggest_app_mute: "recommendations",
   plan_travel: "write_events",
+  get_check_in: "timeline",
+  get_memories: "timeline",
+  remember: "write_events",
+  answer_check_in: "timeline",
 };
 
 type ToolConfig = { title?: string; inputSchema?: unknown; annotations?: { readOnlyHint?: boolean } };
@@ -73,6 +85,10 @@ export function summarise(name: string, title: string | undefined, input: unknow
       return `Read your day${range}`;
     case "get_patterns":
       return `Read your patterns${range}`;
+    case "get_check_in":
+      return "Read your check in";
+    case "answer_check_in":
+      return "Kept an answer to your check in";
     case "get_goals":
       return "Read your goals";
     case "get_instructions":
@@ -83,10 +99,26 @@ export function summarise(name: string, title: string | undefined, input: unknow
       return "Read my advice";
     case "get_nudges":
       return "Read your nudges";
+    case "list_drafts":
+      return "Read your follow up drafts";
+    case "draft_follow_up":
+      return "Drafted a follow up for you to send";
     case "get_moments":
       return a.kind === "evening" ? "Read your evening moment" : "Read your morning moment";
     case "add_goal":
       return typeof a.title === "string" ? `Added the goal "${a.title.slice(0, 80)}"` : "Added a goal";
+    case "get_checklist":
+      return typeof a.date === "string" ? `Read your outcomes for ${a.date}` : "Read today's outcomes";
+    case "add_checklist_item":
+      return typeof a.text === "string"
+        ? `Added "${a.text.slice(0, 80)}" to your outcomes`
+        : "Added an outcome";
+    case "set_day_outcomes": {
+      const n = Array.isArray(a.outcomes) ? a.outcomes.length : 0;
+      return n === 1 ? "Set one outcome for today" : `Set ${n} outcomes for today`;
+    }
+    case "log_day":
+      return "Logged what you got done today";
     case "update_goal":
       return a.active === false ? "Paused one of your goals" : "Changed one of your goals";
     case "update_recommendation":
@@ -114,6 +146,10 @@ export function summarise(name: string, title: string | undefined, input: unknow
       return typeof a.date === "string" ? `Read your score for ${a.date}` : "Read your score";
     case "get_records":
       return "Read your personal records";
+    case "get_memories":
+      return "Read what you asked me to remember";
+    case "remember":
+      return typeof a.fact === "string" ? `Remembered "${a.fact.slice(0, 80)}"` : "Remembered something";
     case "add_event":
       return typeof a.title === "string"
         ? `Added "${a.title.slice(0, 80)}" to your day`
@@ -133,6 +169,18 @@ const SCOPE_WORDS: Record<AgentScope, string> = {
 
 type Callback = (...args: unknown[]) => unknown;
 
+/** Tools whose change the user can undo from the Agents screen. */
+export const UNDOABLE_TOOLS = new Set(["execute_recommendation", "create_focus_block", "block_mac_app"]);
+
+/** The recommendation an undoable tool's successful result carries, if any. */
+export function changedRecommendation(name: string, result: unknown): string | null {
+  if (!UNDOABLE_TOOLS.has(name) || !result || typeof result !== "object") return null;
+  const r = result as { isError?: boolean; structuredContent?: { recommendation?: { id?: unknown } } };
+  if (r.isError) return null;
+  const id = r.structuredContent?.recommendation?.id;
+  return typeof id === "string" ? id : null;
+}
+
 export function guardTools(server: McpServer): void {
   const register = server.registerTool.bind(server) as unknown as (
     n: string,
@@ -146,17 +194,21 @@ export function guardTools(server: McpServer): void {
       const scope = scopeFor(name, config);
       const allowed = agent.status === "approved" && agent.scopes.includes(scope);
       const input = config.inputSchema ? args[0] : undefined;
-      try {
-        await agentsStore.logQuery({
-          agent_id: agent.id,
-          tool: name,
-          summary: summarise(name, config.title, input),
-          allowed,
-        });
-      } catch (err) {
-        console.error("agent query log failed", err);
-      }
+      const log = async (recommendation_id: string | null) => {
+        try {
+          await agentsStore.logQuery({
+            agent_id: agent.id,
+            tool: name,
+            summary: summarise(name, config.title, input),
+            allowed,
+            recommendation_id,
+          });
+        } catch (err) {
+          console.error("agent query log failed", err);
+        }
+      };
       if (!allowed) {
+        await log(null);
         const why =
           agent.status === "approved"
             ? `The user has not shared ${SCOPE_WORDS[scope]} with ${agent.name}.`
@@ -171,7 +223,15 @@ export function guardTools(server: McpServer): void {
           ],
         };
       }
-      return cb(...args);
+      // Allowed calls are logged once they finish, so a change carries the recommendation that
+      // holds it and the Agents screen can offer Undo next to the line.
+      let result: unknown;
+      try {
+        result = await cb(...args);
+        return result;
+      } finally {
+        await log(changedRecommendation(name, result));
+      }
     });
   (server as unknown as { registerTool: typeof guarded }).registerTool = guarded;
 }

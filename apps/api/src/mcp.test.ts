@@ -49,22 +49,32 @@ const text = (r: Result) => r.content.map((c) => c.text).join("\n");
 const tomorrow = (hhmm: string) => `${zone.nextDay(zone.dayOf(Date.now()))}T${hhmm}`;
 
 const TOOLS = [
+  "add_checklist_item",
   "add_event",
   "add_goal",
+  "answer_check_in",
   "block_mac_app",
   "create_focus_block",
+  "draft_follow_up",
   "execute_recommendation",
+  "get_check_in",
+  "get_checklist",
   "get_goals",
   "get_instructions",
+  "get_memories",
   "get_moments",
   "get_nudges",
   "get_patterns",
   "get_records",
   "get_score",
   "get_timeline",
+  "list_drafts",
   "list_recommendations",
+  "log_day",
   "plan_travel",
   "propose_goals",
+  "remember",
+  "set_day_outcomes",
   "suggest_app_mute",
   "undo_recommendation",
   "update_goal",
@@ -309,4 +319,60 @@ test("block_mac_app mutes an allowlisted app now, shows in Michael and can be un
     });
     assert.equal(refused.isError, true);
     assert.match(text(refused), /not on my list/);
+  }));
+
+test("add_checklist_item and get_checklist keep the day's outcomes (#238)", () =>
+  asNewUserWithoutRules(async () => {
+    const { call } = await connect();
+    const goal = await store.createGoal({
+      category: "business",
+      title: "Today's outcomes",
+      target: { kind: "checklist" },
+      active: true,
+    });
+    const date = "2027-03-02";
+    const added = await call("add_checklist_item", { goal_id: goal.id, text: "Send the deck", date });
+    assert.ok(!added.isError, text(added));
+    assert.match(text(added), /Added "Send the deck" to Tue 2 Mar/);
+    for (const t of ["Two", "Three"]) await call("add_checklist_item", { goal_id: goal.id, text: t, date });
+    const fourth = await call("add_checklist_item", { goal_id: goal.id, text: "Four", date });
+    assert.equal(fourth.isError, true);
+    assert.match(text(fourth), /Three open items is the most/);
+    // A goal that is not a checklist is refused with the reason.
+    const timeGoal = await store.createGoal({ category: "business", title: "Deep work", active: true });
+    const wrong = await call("add_checklist_item", { goal_id: timeGoal.id, text: "x", date });
+    assert.equal(wrong.isError, true);
+
+    const got = await call("get_checklist", { date });
+    assert.ok(!got.isError);
+    assert.match(text(got), /Tue 2 Mar: 0 of 3 done\./);
+    assert.match(text(got), /\[open\] Send the deck \(Today's outcomes, id /);
+    assert.equal((got.structuredContent?.items as unknown[] | undefined)?.length, 3);
+    assert.equal(
+      summarise("add_checklist_item", undefined, { text: "Send the deck" }),
+      'Added "Send the deck" to your outcomes',
+    );
+  }));
+
+test("set_day_outcomes and log_day run the daily ritual without a checklist goal (#318)", () =>
+  asNewUserWithoutRules(async () => {
+    await store.deleteMyData({ everything: true });
+    const { call } = await connect();
+    const set = await call("set_day_outcomes", { outcomes: [{ text: "Send the deck" }, { text: "Gym" }] });
+    assert.ok(!set.isError, text(set));
+    assert.match(text(set), /^Today's outcomes, 2 of 3:\n- Send the deck \(id /);
+    const items = (set.structuredContent?.items ?? []) as { id: string }[];
+    const logged = await call("log_day", {
+      results: [
+        { item_id: items[0]?.id, result: "done" },
+        { item_id: items[1]?.id, result: "not", carry: true },
+      ],
+    });
+    assert.ok(!logged.isError, text(logged));
+    assert.equal(text(logged), "1 of 2 done. One carried to tomorrow.");
+    assert.equal(
+      summarise("set_day_outcomes", undefined, { outcomes: [{}, {}] }),
+      "Set 2 outcomes for today",
+    );
+    assert.equal(summarise("log_day", undefined, {}), "Logged what you got done today");
   }));

@@ -3,23 +3,34 @@ import Link from "next/link";
 import { EmptyState } from "@/components/empty-state";
 import { LiveRefresh } from "@/components/live-refresh";
 import { ScreenHeader } from "@/components/screen";
-import { DayTimeline, SleepBand, TimelineKey } from "@/components/timeline/day-timeline";
+import { DayTimeline, HeartRow } from "@/components/timeline/day-timeline";
+import { LostWeekChart } from "@/components/timeline/lost-week";
 import { WeekStrip } from "@/components/timeline/week-strip";
-import { formatDay, formatMonth, hm, minutesPhrase } from "@/lib/format";
+import { getLostWeek } from "@/lib/api";
+import { addDays } from "@/lib/athens";
+import { formatDay, formatMonth, formatWeekday, hm, minutesPhrase } from "@/lib/format";
 import { HEART_COOKIE } from "@/lib/health";
 import { loadTimeline } from "@/lib/timeline-data";
 
 type Search = { day?: string; date?: string; demo?: string };
 
+const tinted =
+  "press inline-flex min-h-9 items-center rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-3.5 text-subhead font-semibold text-tint-text";
+
 export default async function TimelinePage({ searchParams }: { searchParams: Promise<Search> }) {
   const { day: askedDay, date: askedDate, demo } = await searchParams;
   // ?day= is the link format; ?date= still works for links made before.
-  const screen = await loadTimeline(askedDay ?? askedDate, demo);
-  const { date, day } = screen;
+  const [screen, lostWeek] = await Promise.all([
+    loadTimeline(askedDay ?? askedDate, demo),
+    getLostWeek(askedDay ?? askedDate, demo),
+  ]);
+  const { date, day, today } = screen;
   const noon = `${date}T12:00:00+02:00`;
   const sampleParam = demo === "sample" ? "sample" : undefined;
   const plans = day?.plans ?? [];
   const heartHidden = (await cookies()).get(HEART_COOKIE)?.value === "off";
+  const isToday = date === today;
+  const dayHref = (d: string) => `/timeline?day=${d}${sampleParam ? "&demo=sample" : ""}`;
 
   return (
     <main className="screen">
@@ -32,11 +43,24 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
         }
         title="Timeline"
       />
-      <WeekStrip date={date} available={screen.available} demo={sampleParam} />
+      {/* Only when something was actually lost: an empty chart of zeros is noise. */}
+      {lostWeek && lostWeek.total > 0 ? (
+        <LostWeekChart week={lostWeek} selected={date} hrefFor={dayHref} />
+      ) : null}
+      <WeekStrip date={date} today={today} available={screen.available} demo={sampleParam} />
+
+      <div className="mt-4">
+        {isToday ? <p className="text-footnote font-semibold text-tint-text">Today</p> : null}
+        <h2 className="text-title3 font-bold">{formatDay(noon)}</h2>
+        {screen.source === "sample" && day ? (
+          <p className="mt-0.5 text-footnote font-semibold text-label-2">
+            {day.sample ? "Sample day, not yours." : "Demo account, anonymised. Not your data."}
+          </p>
+        ) : null}
+      </div>
 
       {day ? (
         <>
-          <h2 className="mt-4 text-title3 font-bold">{formatDay(noon)}</h2>
           <p className="mt-1 text-subhead text-label-2">
             {day.sample ? (
               <>
@@ -57,71 +81,58 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
               </>
             ) : (
               <>
-                <b className="font-semibold text-label">{day.totals.phoneSessions} phone sessions</b>,{" "}
-                {hm(day.totals.phoneMinutes)} on the phone.
-                {screen.longestUninterrupted != null ? (
-                  <>
-                    {" "}
-                    The longest stretch without a break was{" "}
-                    <b className="font-semibold text-label">{minutesPhrase(screen.longestUninterrupted)}</b>.
-                  </>
-                ) : null}
                 {day.totals.workMinutes >= 1 ? (
                   <>
-                    {" "}
-                    {hm(day.totals.workMinutes)} in work apps, {hm(day.totals.lostMinutes)} lost to messages
-                    and social.
+                    <b className="font-semibold text-label">{hm(day.totals.workMinutes)}</b> in work apps,{" "}
+                    {hm(day.totals.lostMinutes)} lost,{" "}
                   </>
+                ) : null}
+                {hm(day.totals.phoneMinutes)} on the phone.
+                {screen.longestUninterrupted != null && screen.longestUninterrupted >= 1 ? (
+                  <> Longest unbroken stretch {minutesPhrase(screen.longestUninterrupted)}.</>
                 ) : null}
               </>
             )}
           </p>
-          <TimelineKey
-            hasAi={day.ai.length > 0}
-            hasPlan={Boolean(day.sample) || plans.length > 0}
-            goalTime={Boolean(day.sample)}
-            hasMichael={plans.some((p) => p.michael)}
-            hasDrives={(day.drives ?? []).length > 0}
-            day={day}
-            heartHidden={heartHidden}
-          />
-          {day.health?.lastNight ? <SleepBand night={day.health.lastNight} goal={screen.sleepGoal} /> : null}
-          <DayTimeline day={day} heartHidden={heartHidden} />
-          {day.health?.tonight ? (
-            <SleepBand night={day.health.tonight} goal={screen.sleepGoal} tonight />
-          ) : null}
-          <p className="mt-6 text-footnote text-label-2">
-            {screen.source === "sample"
-              ? day.sample
-                ? "Sample day. Your own days appear here once your sources are connected."
-                : "A real day from the demo account, anonymised, bundled with the app."
-              : plans.length > 0
-                ? "Outlines are your calendar. Blocks I booked carry my name, and you can undo them in Today until they start."
-                : "No calendar on this day, so goal time is time in work apps. Connect the calendar and planned blocks appear as outlines."}
-          </p>
+          <HeartRow day={day} heartHidden={heartHidden} />
+          <DayTimeline day={day} heartHidden={heartHidden} sleepGoal={screen.sleepGoal} />
         </>
       ) : (
         <EmptyState
-          title="Nothing recorded on this day."
+          title={
+            isToday
+              ? "Nothing recorded today yet."
+              : date > today
+                ? "Nothing planned on this day yet."
+                : "Nothing recorded on this day."
+          }
           action={
-            screen.latest ? (
-              <Link
-                href={`/timeline?day=${screen.latest}${sampleParam ? "&demo=sample" : ""}`}
-                className="press inline-flex min-h-9 items-center rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-3.5 text-subhead font-semibold text-tint-text"
-              >
-                Show the latest day
-              </Link>
-            ) : (
-              <Link
-                href="/you"
-                className="press inline-flex min-h-9 items-center rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-3.5 text-subhead font-semibold text-tint-text"
-              >
-                Connect a source
-              </Link>
-            )
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              {screen.calendarConnected !== true ? (
+                <Link href="/integrations/google/connect" className={tinted}>
+                  Connect your calendar
+                </Link>
+              ) : null}
+              {screen.latest ? (
+                <Link
+                  href={dayHref(screen.latest)}
+                  className={
+                    screen.calendarConnected === true
+                      ? tinted
+                      : "press inline-flex min-h-9 items-center text-subhead font-semibold text-tint-text"
+                  }
+                >
+                  {screen.latest === addDays(today, -1)
+                    ? "Show yesterday"
+                    : `Show ${formatWeekday(`${screen.latest}T12:00:00+02:00`)}`}
+                </Link>
+              ) : null}
+            </div>
           }
         >
-          I only show days your sources were connected. Pick a day in bold above.
+          {screen.calendarConnected === true
+            ? "Your calendar is clear and no screens have reported in."
+            : "Connect your calendar to see your day."}
         </EmptyState>
       )}
     </main>

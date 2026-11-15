@@ -3,10 +3,10 @@
 import { useState } from "react";
 import { formatTime, minutesPhrase } from "@/lib/format";
 import type { TravelPlan } from "@/lib/travel";
-import { MiMark } from "../brand";
+import { Fold } from "./fold";
 
-/** One departure as a bar: the empty road solid, the traffic on top hatched (time lost). */
-function DriveBar({
+/** One departure as a bar: the empty road solid, the traffic on top hatched (time lost). Shared with the suggestions list. */
+export function DriveBar({
   at,
   minutes,
   traffic,
@@ -42,26 +42,19 @@ function DriveBar({
 /**
  * Michael's traffic plan for the day (#157): the maths before and after, one tap to move the block,
  * undo until the old departure. Local state until the plan comes as a recommendation (#155).
+ * A quiet row under "More from Michael" (#208), so its button is tinted, not the screen's filled one.
  */
 export function TravelCard({ plan }: { plan: TravelPlan }) {
   const [moved, setMoved] = useState(false);
   const scale = Math.max(plan.before.minutes, plan.after.minutes);
 
   return (
-    <article
-      aria-label="Traffic plan"
-      className="mt-5 flex flex-col gap-3 rounded-card bg-fill px-4 pt-3.5 pb-4"
+    <Fold
+      title="Traffic plan"
+      label="Traffic plan"
+      preview={`Traffic adds ${minutesPhrase(plan.before.trafficMinutes)} to the drive to your ${plan.block}. Leave at ${formatTime(plan.after.departAt)}.`}
     >
-      <header className="flex items-center gap-2 text-footnote font-semibold">
-        <span className="grid size-[22px] place-items-center rounded-full bg-label text-bg">
-          <span className="block w-[13px]">
-            <MiMark className="block h-auto w-full" />
-          </span>
-        </span>
-        <span>Michael</span>
-        <span className="ml-auto font-medium text-label-2">On the road</span>
-      </header>
-      <p className="text-insight tracking-[-0.01em] text-label-2">
+      <p className="text-body text-label-2">
         Traffic adds <b className="font-semibold text-label">{minutesPhrase(plan.before.trafficMinutes)}</b>{" "}
         to the drive to your {plan.block}.
       </p>
@@ -115,12 +108,12 @@ export function TravelCard({ plan }: { plan: TravelPlan }) {
           <button
             type="button"
             onClick={() => setMoved(true)}
-            className="press min-h-9 rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint tnum"
+            className="press min-h-9 rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-4 text-subhead font-semibold text-tint-text tnum"
           >
             Move the {plan.block} to {formatTime(plan.after.blockStart)}
           </button>
         </div>
       )}
-    </article>
+    </Fold>
   );
 }

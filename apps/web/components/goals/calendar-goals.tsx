@@ -3,6 +3,7 @@
 import type { GoalSuggestion } from "@michael/shared";
 import { useEffect, useState, useTransition } from "react";
 import { keepGoalSuggestion, loadGoalSuggestions } from "@/app/goals/suggestion-actions";
+import { FlipList } from "@/components/flip-list";
 import { hm } from "@/lib/format";
 
 // Goals from the calendar (#134): the recurring own blocks Michael found, one tap to keep each,
@@ -20,10 +21,13 @@ export function CalendarGoals({
   initial,
   onKept,
   className = "",
+  tone = "filled",
 }: {
   initial?: GoalSuggestion[];
   onKept?: (kept: number) => void;
   className?: string;
+  /** Filled Keep buttons where keeping is the step (onboarding); tinted beside a form (New goal). */
+  tone?: "filled" | "tinted";
 }) {
   const [list, setList] = useState<GoalSuggestion[] | null>(initial ?? null);
   const [minutes, setMinutes] = useState<Record<string, number>>({});
@@ -46,23 +50,30 @@ export function CalendarGoals({
   const open = list.filter((s) => !kept.includes(s.id));
   const budget = (s: GoalSuggestion) => minutes[s.id] ?? s.weekly_budget_minutes;
 
+  // Optimistic (michael-feedback R2): rows read Kept at once, all saves go together, and any that
+  // fail go back to Keep with one line saying so.
   function keep(ids: string[]) {
     setNote(null);
+    const before = kept;
+    const optimistic = [...before, ...ids.filter((id) => !before.includes(id))];
+    setKept(optimistic);
     start(async () => {
-      const done: string[] = [];
-      for (const id of ids) {
-        const s = list?.find((x) => x.id === id);
-        if (!s) continue;
-        const edited = budget(s) !== s.weekly_budget_minutes ? { weekly_budget_minutes: budget(s) } : {};
-        const res = await keepGoalSuggestion(id, edited).catch(() => ({ ok: false, message: null }));
-        if (res.ok) done.push(id);
-        else setNote(res.message ?? "That did not save. Try again.");
-      }
-      if (done.length > 0) {
-        const next = [...kept, ...done];
+      const results = await Promise.all(
+        ids.map(async (id) => {
+          const s = list?.find((x) => x.id === id);
+          if (!s) return { id, ok: false, message: null };
+          const edited = budget(s) !== s.weekly_budget_minutes ? { weekly_budget_minutes: budget(s) } : {};
+          const res = await keepGoalSuggestion(id, edited).catch(() => ({ ok: false, message: null }));
+          return { id, ...res };
+        }),
+      );
+      const failed = results.filter((r) => !r.ok);
+      const next = optimistic.filter((id) => !failed.some((f) => f.id === id));
+      if (failed.length > 0) {
         setKept(next);
-        onKept?.(next.length);
+        setNote(failed[0]?.message ?? "That did not save. Try again.");
       }
+      if (next.length > before.length) onKept?.(next.length);
     });
   }
 
@@ -88,7 +99,8 @@ export function CalendarGoals({
           </button>
         ) : null}
       </div>
-      <ul className="overflow-hidden rounded-group bg-fill">
+      {/* Rows below a kept one slide up as its hours line folds away. */}
+      <FlipList flipKey={kept.join()} className="overflow-hidden rounded-group bg-fill">
         {list.map((s, i) => {
           const on = kept.includes(s.id);
           const m = budget(s);
@@ -106,10 +118,14 @@ export function CalendarGoals({
                   disabled={on || pending}
                   onClick={() => keep([s.id])}
                   className={`press h-9 shrink-0 rounded-full px-4 text-subhead font-semibold ${
-                    on ? "text-label-2" : "bg-tint text-on-tint disabled:opacity-40"
+                    on
+                      ? "text-label-2"
+                      : tone === "filled"
+                        ? "bg-tint text-on-tint disabled:opacity-40"
+                        : "bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] text-tint-text disabled:opacity-40"
                   }`}
                 >
-                  {on ? "Kept" : "Keep"}
+                  {on ? <span className="m-swap">Kept</span> : "Keep"}
                 </button>
               </div>
               {on ? null : (
@@ -140,7 +156,7 @@ export function CalendarGoals({
             </li>
           );
         })}
-      </ul>
+      </FlipList>
       {note ? (
         <p role="alert" className="mt-2 text-footnote text-danger">
           {note}

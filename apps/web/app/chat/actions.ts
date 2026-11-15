@@ -5,21 +5,21 @@ import { sendChat, undoRecommendation } from "@/lib/api";
 import { recError } from "@/lib/recommendations";
 import { copyFor } from "./copy";
 
-export type SendResult = { ok: true; data: ChatResponse } | { ok: false; error: string };
+export type SendResult = { ok: true; data: ChatResponse } | { ok: false; error: string; code?: string };
 
 // Non-streaming send, kept for callers that want the whole answer at once (voice). The typed chat
 // streams through ./stream-chat.ts instead.
 
-export async function sendMessage(message: string): Promise<SendResult> {
+export async function sendMessage(message: string, threadId?: string): Promise<SendResult> {
   const text = message.trim();
   if (!text) return { ok: false, error: "Type a question first." };
   try {
-    const res = await sendChat(text.slice(0, 2000));
+    const res = await sendChat(text.slice(0, 2000), threadId);
     if (res.ok) return res;
     console.error(`chat: ${res.code}: ${res.message}`);
     return { ok: false, error: copyFor(res.code) };
   } catch (err) {
-    // bearer() throws when signed out.
+    // authHeaders() throws when signed out.
     console.error("chat:", err);
     return { ok: false, error: copyFor("unauthorized") };
   }

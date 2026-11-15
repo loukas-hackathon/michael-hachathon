@@ -4,6 +4,14 @@ Runs on your own Mac. It reads what the Mac already knows about your day and pos
 timeline. It only reads: it never changes the files it looks at, and it sends nothing anywhere
 except the API address you give it.
 
+**On your own Mac, the easy way:** Michael, You, Mac, **Connect this Mac**. Paste the one
+line it shows into Terminal (or download and double-click `Michael.command`). It installs this
+collector into `~/.michael` without admin rights, connects it to your account with a setup token that
+works once, and starts it; `~/.michael/Michael.command` starts it again, and it opens at login.
+The installer is `GET /v1/setup/mac.sh` (`apps/api/src/setup/mac-script.ts`).
+
+From this repository:
+
 ```bash
 pnpm collect --list                # sources this Mac can read
 pnpm collect --dry-run             # read and count, send nothing

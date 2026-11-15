@@ -259,6 +259,13 @@ export function checkAction(
       if (start <= ctx.now) return "its time is in the past";
       return done({ at: iso(start), text: a.text.trim() }, start);
     }
+    case "change_goal":
+    case "plan_change":
+      // Proposed in chat only (#188), from what the user said; an analysis run does not make them.
+      return `"${a.kind}" is proposed in chat, not by the analysis`;
+    case "remove_calendar_block":
+      // Only the user removes a block, on the Timeline (#271). Michael never deletes.
+      return "Michael does not remove blocks";
   }
 }
 
@@ -314,7 +321,6 @@ export interface CopyViolation {
 
 const BANNED: [RegExp, string][] = [
   [/\bproductivity\b/i, "productivity"],
-  [/\boptimi[sz](e[ds]?|ing|ation)\b/i, "optimise"],
   [/\bhustl(e[ds]?|ing)\b/i, "hustle"],
   [/\bcrush(e[ds]|ing)?\b/i, "crush"],
   [/\bjourneys?\b/i, "journey"],

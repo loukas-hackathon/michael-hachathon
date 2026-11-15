@@ -16,11 +16,13 @@ import { formatTime } from "./format";
 // cannot read says so, it is never made up. Each call fails on its own, so one outage costs one row.
 
 // on: connected and sending. paused: connected, but its privacy switch is off. none: not set up yet.
-export type ConnectionState = "on" | "paused" | "none" | "attention" | "unavailable" | "unknown";
+// soon: not proven on production yet (#295), shown as Coming soon with nothing to tap.
+export type ConnectionState = "on" | "paused" | "none" | "attention" | "unavailable" | "unknown" | "soon";
 
 export type ConnectionAction =
   | { kind: "link"; label: string; href: string; external?: boolean }
-  | { kind: "sync-calendar"; label: string };
+  | { kind: "sync-calendar"; label: string }
+  | { kind: "none" };
 
 export type ConnectionStatus = Connection & {
   state: ConnectionState;
@@ -30,6 +32,8 @@ export type ConnectionStatus = Connection & {
 
 export type ConnectionsView = {
   rows: ConnectionStatus[];
+  /** How many are live (proven on production): the summary counts out of these, not the soon ones. */
+  live: number;
   connected: number;
   /** The first connection still to set up, in the order of the list. */
   next: ConnectionStatus | null;
@@ -77,11 +81,14 @@ const unknown = (c: Connection): ConnectionStatus => ({
   ...c,
   state: "unknown",
   line: "I could not check this right now.",
-  action: { kind: "link", label: "Open", href: c.href },
+  action: { kind: "link", label: "Manage", href: c.href },
 });
+
+export const SOON_LINE = "Coming soon. I will tell you when it is ready.";
 
 /** Pure: the row for one connection from what the API said. Exported for tests. */
 export function statusFor(c: Connection, x: Inputs, now = Date.now()): ConnectionStatus {
+  if (!c.live) return { ...c, state: "soon", line: SOON_LINE, action: { kind: "none" } };
   const manage = { kind: "link" as const, label: "Manage", href: c.href };
   const setUp = (label = "Connect") => ({ kind: "link" as const, label, href: c.href });
   const src = x.sources;
@@ -109,14 +116,9 @@ export function statusFor(c: Connection, x: Inputs, now = Date.now()): Connectio
               ...c,
               state: "attention",
               line: `${who}. Last sync failed.`,
-              action: { kind: "sync-calendar", label: "Sync now" },
+              action: manage,
             }
-          : {
-              ...c,
-              state: "on",
-              line: `${otr}${who}${sync}.`,
-              action: { kind: "sync-calendar", label: "Sync now" },
-            };
+          : { ...c, state: "on", line: `${otr}${who}${sync}.`, action: manage };
       }
       const connect = { kind: "link" as const, label: "Connect", href: GOOGLE_CONNECT, external: true };
       if (cal?.status === "error")
@@ -139,7 +141,7 @@ export function statusFor(c: Connection, x: Inputs, now = Date.now()): Connectio
         ...c,
         state: "none",
         line: "Not connected",
-        action: setUp(c.id === "iphone" ? "Set up" : "Connect"),
+        action: setUp(),
       };
     }
     case "claude": {
@@ -157,7 +159,7 @@ export function statusFor(c: Connection, x: Inputs, now = Date.now()): Connectio
           ...c,
           state: "attention",
           line: "Waiting for your approval.",
-          action: { kind: "link", label: "Review", href: "/agents" },
+          action: { kind: "link", label: "Manage", href: "/agents" },
         };
       return { ...c, state: "none", line: "Not connected", action: setUp() };
     }
@@ -169,11 +171,11 @@ export function statusFor(c: Connection, x: Inputs, now = Date.now()): Connectio
           ...c,
           state: "unavailable",
           line: "Not ready on our side yet.",
-          action: { ...manage, label: "Open" },
+          action: manage,
         };
       if (p.devices > 0)
         return { ...c, state: "on", line: `On for ${plural(p.devices, "device")}.`, action: manage };
-      return { ...c, state: "none", line: "Not turned on", action: setUp("Turn on") };
+      return { ...c, state: "none", line: "Not connected", action: setUp() };
     }
     case "telegram": {
       const t = x.telegram;
@@ -183,7 +185,7 @@ export function statusFor(c: Connection, x: Inputs, now = Date.now()): Connectio
           ...c,
           state: "unavailable",
           line: "Not ready on our side yet. Push still works.",
-          action: { ...manage, label: "Open" },
+          action: manage,
         };
       if (t.connected)
         return {
@@ -214,7 +216,7 @@ export function statusFor(c: Connection, x: Inputs, now = Date.now()): Connectio
             : `${names} saved. Traffic is not ready on our side yet.`,
           action: manage,
         };
-      return { ...c, state: "none", line: "Not set up", action: setUp("Set up") };
+      return { ...c, state: "none", line: "Not connected", action: setUp() };
     }
   }
 }
@@ -243,6 +245,7 @@ export async function getConnections(): Promise<ConnectionsView> {
   const rows = CONNECTIONS.map((c) => statusFor(c, inputs));
   return {
     rows,
+    live: rows.filter((r) => r.live).length,
     connected: rows.filter((r) => r.state === "on").length,
     next: rows.find((r) => r.state === "none") ?? null,
     sources,

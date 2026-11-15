@@ -22,7 +22,7 @@ Code agents in parallel. You are trusted: use your judgement; these notes are co
 | `supabase/migrations`              | Schema. New file per change; applied automatically on merge                                        |
 
 Live URLs, dashboards and where every setting lives: README "Live services". Commands: `pnpm dev`,
-`pnpm check` (typecheck + lint), `pnpm test`, `pnpm format`.
+`pnpm check` (typecheck + lint), `pnpm test`, `pnpm e2e` (demo path in a browser), `pnpm format`.
 
 ## How we work
 
@@ -32,7 +32,7 @@ Live URLs, dashboards and where every setting lives: README "Live services". Com
 - **Stay visible.** Claim the issue (assignee + `in-progress`) with an optimistic ETA comment (aim for
   10 to 30 minutes; ship the smallest working version, improve in the next PR). Glance at open PRs
   and in-progress issues before touching shared files; talk through issue and PR comments.
-- **Merging is deploying.** CI runs `pnpm check`, `pnpm test`, the web build and a migration timestamp guard; Auto-merge merges green PRs and closes their issues;
+- **Merging is deploying.** CI runs `pnpm check`, `pnpm test`, the web build, the end-to-end demo path (`e2e/`) and a migration timestamp guard; Auto-merge merges green PRs and closes their issues;
   Deploy API ships to Railway; Migrate database applies new migrations; Vercel redeploys the web.
   Use a draft or the `wip` label to hold a PR. After your merge, check production (`/health` reports
   the deployed commit).
@@ -90,7 +90,7 @@ Everything Michael says, from a model or a template, uses `packages/shared/src/v
 sports coach (4 of 5) for founders and executives, number first, one fix, says what he moved and until
 when it can be undone, "I" for Michael, "we" for the shared effort, asks only when data is missing.
 British spelling, 24 hour time, nudges under 15 words, no emoji, no dashes, no exclamation marks.
-Never: productivity, optimise, hustle, crush it, journey, wellness, unlock, potential, amazing, great
+Never: productivity, hustle, crush it, journey, wellness, unlock, potential, amazing, great
 job, pickups, or the name of the Marvel assistant that inspired the idea. Copy lines: Build Hub voice
 sheet. Look: white background, black text, one hot pink for goal time, Apple style, system font in
 the app and Mulish outside it; tokens and rules in `docs/design-guide.md`.

@@ -1,10 +1,15 @@
 import {
+  ChangeGoalPayload,
   CreateFocusBlockPayload,
   type Event,
+  type Goal,
+  GoalUpdate,
   MoveCalendarBlockPayload,
   MoveCalendarBlocksPayload,
+  PlanChangePayload,
   type Recommendation,
   type RecommendationAction,
+  RemoveCalendarBlockPayload,
 } from "@michael/shared";
 import { z } from "zod";
 import { HttpError, parse } from "../http";
@@ -20,6 +25,7 @@ import {
   withOthers,
 } from "../integrations/google";
 import { store } from "../store";
+import { draftFromRecommendation } from "./drafts";
 import { startFocusGuard, stopFocusGuard } from "./focus-guard";
 
 // Michael acts on the user's own time only. Rules (Build Hub, docs/api.md):
@@ -30,9 +36,20 @@ import { startFocusGuard, stopFocusGuard } from "./focus-guard";
 // With Google Calendar connected the change happens in the calendar and the timeline mirrors it;
 // without it, it happens on the timeline only (Michael's own blocks, source "agent").
 
-const Times = z.object({ start_at: z.string(), end_at: z.string().nullable(), title: z.string() });
+const Times = z.object({
+  start_at: z.string(),
+  end_at: z.string().nullable(),
+  title: z.string(),
+  // Set when the move also changed the goal (#271): undo puts this one back. Absent on older rows.
+  goal_id: z.string().nullable().optional(),
+});
 
-// Saved on the recommendation (jsonb `execution`) so undo knows exactly what to put back.
+const CreateExecution = z.object({
+  kind: z.literal("create_focus_block"),
+  timeline_event_id: z.string().nullable(),
+  google_event_id: z.string().nullable(),
+  undo_until: z.string(),
+});
 const MoveExecution = z.object({
   kind: z.literal("move_calendar_block"),
   timeline_event_id: z.string(),
@@ -41,14 +58,27 @@ const MoveExecution = z.object({
   undo_until: z.string(),
 });
 type MoveExecution = z.infer<typeof MoveExecution>;
-const Execution = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("create_focus_block"),
-    timeline_event_id: z.string().nullable(),
-    google_event_id: z.string().nullable(),
-    undo_until: z.string(),
+// #271: the user removed one of Michael's blocks. What it was, so undo can put it back.
+const RemoveExecution = z.object({
+  kind: z.literal("remove_calendar_block"),
+  google_event_id: z.string().nullable(),
+  block: z.object({
+    title: z.string(),
+    start_at: z.string(),
+    end_at: z.string().nullable(),
+    data: z.record(z.string(), z.unknown()),
   }),
+  undo_until: z.string(),
+});
+type RemoveExecution = z.infer<typeof RemoveExecution>;
+const StepExecution = z.discriminatedUnion("kind", [CreateExecution, MoveExecution]);
+type StepExecution = z.infer<typeof StepExecution>;
+
+// Saved on the recommendation (jsonb `execution`) so undo knows exactly what to put back.
+const Execution = z.discriminatedUnion("kind", [
+  CreateExecution,
   MoveExecution,
+  RemoveExecution,
   // Several moves carried out together (the whole day around traffic), undone together.
   z.object({
     kind: z.literal("move_calendar_blocks"),
@@ -60,8 +90,20 @@ const Execution = z.discriminatedUnion("kind", [
     focus_guard_id: z.string(),
     undo_until: z.string(),
   }),
+  // #188: every step of an accepted plan, in order.
+  z.object({ kind: z.literal("plan_change"), steps: z.array(StepExecution), undo_until: z.string() }),
+  // #188: the goals' old values, to put back on undo or when `until` passes.
+  z.object({
+    kind: z.literal("change_goal"),
+    before: z.array(z.object({ goal_id: z.string(), patch: z.record(z.string(), z.unknown()) })),
+    until: z.string().nullable(),
+    undo_until: z.string(),
+  }),
 ]);
 type Execution = z.infer<typeof Execution>;
+
+/** Without an end date, a goal change can be undone for a week. */
+const GOAL_UNDO_MS = 7 * 24 * 3600_000;
 
 const conflict = (message: string) => new HttpError("conflict", message);
 const earliest = (...isos: (string | null | undefined)[]) =>
@@ -87,12 +129,20 @@ async function mirror(g: GoogleEvent, fallbackZone = "Europe/Athens"): Promise<E
 }
 
 const isOthers = (e: Event) => e.data.with_others === true || Number(e.data.attendees ?? 0) >= 2;
+/** A block Michael created (for Michael, for the user on the Timeline, or for an agent). */
+const isMichaels = (e: Event) => e.source === "agent" || e.data.michael === true;
 
-async function createFocusBlock(rec: Recommendation, action: RecommendationAction): Promise<Execution> {
+// `step` tells apart the blocks of one plan (#188), which share a recommendation.
+async function createFocusBlock(
+  rec: Recommendation,
+  action: RecommendationAction,
+  step?: number,
+): Promise<Execution> {
   const p = parse(CreateFocusBlockPayload, action.payload);
   if (Date.parse(p.start_at) <= Date.now()) throw conflict("That time has already started");
   const title = p.title ?? "Focus block";
   const undoUntil = earliest(action.undo_until, p.start_at);
+  const goalId = p.goal_id ?? null;
 
   if (await googleConnected()) {
     const created = await insertCalendarEvent({
@@ -102,7 +152,9 @@ async function createFocusBlock(rec: Recommendation, action: RecommendationActio
       end: { dateTime: p.end_at },
       transparency: "opaque",
       reminders: { useDefault: true },
-      extendedProperties: { private: { michael: "1", recommendation_id: rec.id } },
+      extendedProperties: {
+        private: { michael: "1", recommendation_id: rec.id, ...(goalId ? { goal_id: goalId } : {}) },
+      },
     });
     const local = await mirror(created);
     return {
@@ -120,8 +172,14 @@ async function createFocusBlock(rec: Recommendation, action: RecommendationActio
       start_at: p.start_at,
       end_at: p.end_at,
       title,
-      data: { michael: true, with_others: false, attendees: 0, recommendation_id: rec.id },
-      external_id: `michael:${rec.id}`,
+      data: {
+        michael: true,
+        with_others: false,
+        attendees: 0,
+        recommendation_id: rec.id,
+        ...(goalId ? { goal_id: goalId } : {}),
+      },
+      external_id: step === undefined ? `michael:${rec.id}` : `michael:${rec.id}:${step}`,
     },
   ]);
   const local = inserted[0];
@@ -172,7 +230,14 @@ async function moveOne(p: MoveCalendarBlockPayload, actionUndoUntil: string | nu
     p.end_at ?? (p.start_at ? new Date(Date.parse(p.start_at) + length).toISOString() : event.end_at);
   if (Date.parse(start) <= Date.now()) throw conflict("The new time has already started");
   if (end && Date.parse(end) <= Date.parse(start)) throw conflict("The block would end before it starts");
-  const original = { start_at: event.start_at, end_at: event.end_at, title: event.title };
+  const goalChange = p.goal_id !== undefined;
+  const oldGoal = typeof event.data.goal_id === "string" ? event.data.goal_id : null;
+  const original = {
+    start_at: event.start_at,
+    end_at: event.end_at,
+    title: event.title,
+    ...(goalChange ? { goal_id: oldGoal } : {}),
+  };
   const undoUntil = earliest(actionUndoUntil, event.start_at, start);
 
   if (event.source === "google_calendar") {
@@ -185,6 +250,9 @@ async function moveOne(p: MoveCalendarBlockPayload, actionUndoUntil: string | nu
       start: { dateTime: start, timeZone: g.start?.timeZone },
       end: { dateTime: end ?? start, timeZone: g.end?.timeZone },
       ...(p.new_title ? { summary: p.new_title } : {}),
+      ...(goalChange
+        ? { extendedProperties: { private: { ...g.extendedProperties?.private, goal_id: p.goal_id ?? "" } } }
+        : {}),
     });
     const local = await mirror(patched);
     return {
@@ -200,6 +268,7 @@ async function moveOne(p: MoveCalendarBlockPayload, actionUndoUntil: string | nu
     start_at: start,
     end_at: end,
     ...(p.new_title ? { title: p.new_title } : {}),
+    ...(goalChange ? { data: withGoal(event.data, p.goal_id ?? null) } : {}),
   });
   return {
     kind: "move_calendar_block",
@@ -220,18 +289,101 @@ async function restoreMove(ex: MoveExecution): Promise<void> {
       start: { dateTime: o.start_at, timeZone: g.start?.timeZone },
       end: { dateTime: o.end_at ?? o.start_at, timeZone: g.end?.timeZone },
       summary: o.title,
+      ...(o.goal_id !== undefined
+        ? { extendedProperties: { private: { ...g.extendedProperties?.private, goal_id: o.goal_id ?? "" } } }
+        : {}),
     });
     await mirror(restored);
   } else {
+    const event = o.goal_id !== undefined ? await store.getEvent(ex.timeline_event_id) : null;
     await store.updateEvent(ex.timeline_event_id, {
       start_at: o.start_at,
       end_at: o.end_at,
       title: o.title,
+      ...(event && o.goal_id !== undefined ? { data: withGoal(event.data, o.goal_id) } : {}),
     });
   }
 }
 
+function withGoal(data: Record<string, unknown>, goalId: string | null): Record<string, unknown> {
+  const { goal_id: _old, ...rest } = data;
+  return goalId ? { ...rest, goal_id: goalId } : rest;
+}
+
+/**
+ * #271: removes one of Michael's own blocks (never the user's events, never one with other people),
+ * keeping what it was so undo can put it back until it starts.
+ */
+async function removeCalendarBlock(action: RecommendationAction): Promise<RemoveExecution> {
+  const p = parse(RemoveCalendarBlockPayload, action.payload);
+  const event = await store.getEvent(p.event_id);
+  if (!event) throw new HttpError("not_found", "That block is no longer on the timeline");
+  if (event.type !== "calendar_event") throw conflict("Only calendar blocks can be removed");
+  if (isOthers(event)) throw conflict("That event has other people in it. I only advise on those.");
+  if (!isMichaels(event)) throw conflict("I only remove blocks made in Michael. Delete it in your calendar.");
+  if (Date.parse(event.start_at) <= Date.now()) throw conflict("That block has already started");
+  const block = { title: event.title, start_at: event.start_at, end_at: event.end_at, data: event.data };
+  const undoUntil = earliest(action.undo_until, event.start_at);
+
+  let googleId: string | null = null;
+  if (event.source === "google_calendar" && event.external_id) {
+    try {
+      const g = await getCalendarEvent(event.external_id);
+      if (!createdByMichael(g))
+        throw conflict("I only remove blocks made in Michael. Delete it in your calendar.");
+      if (withOthers(g)) throw conflict("Someone else is on that block now. Remove it in your calendar.");
+      await deleteCalendarEvent(g.id);
+      googleId = g.id;
+    } catch (err) {
+      // Already gone from the calendar: only the mirror is left to remove.
+      if (!(err instanceof HttpError && err.code === "not_found")) throw err;
+    }
+  }
+  await store.deleteEvents([event.id]);
+  return { kind: "remove_calendar_block", google_event_id: googleId, block, undo_until: undoUntil };
+}
+
+/** Puts a removed block back: in Google Calendar when it came from there, else on the timeline. */
+async function restoreRemoved(ex: RemoveExecution): Promise<void> {
+  const b = ex.block;
+  const goalId = typeof b.data.goal_id === "string" ? b.data.goal_id : null;
+  if (ex.google_event_id) {
+    const created = await insertCalendarEvent({
+      summary: b.title,
+      description: "Planned in Michael. Undo in Michael until it starts.",
+      start: { dateTime: b.start_at },
+      end: { dateTime: b.end_at ?? b.start_at },
+      transparency: "opaque",
+      reminders: { useDefault: true },
+      extendedProperties: { private: { michael: "1", ...(goalId ? { goal_id: goalId } : {}) } },
+    });
+    await mirror(created);
+    return;
+  }
+  await store.insertEvents([
+    {
+      source: "agent",
+      type: "calendar_event",
+      start_at: b.start_at,
+      end_at: b.end_at,
+      title: b.title,
+      data: b.data,
+      external_id: `michael:restored:${crypto.randomUUID()}`,
+    },
+  ]);
+}
+
 export async function executeRecommendation(id: string): Promise<Recommendation> {
+  return execute(id);
+}
+
+/** The user's own change on the Timeline (#271): their standing instructions are for Michael, not them. */
+export async function executeUserChange(id: string): Promise<{ rec: Recommendation; execution: unknown }> {
+  const rec = await execute(id, { byUser: true });
+  return { rec, execution: await store.getRecommendationExecution(id) };
+}
+
+async function execute(id: string, opts: { byUser?: boolean } = {}): Promise<Recommendation> {
   const rec = await store.getRecommendation(id);
   if (!rec) throw new HttpError("not_found", "Recommendation not found");
   const action = rec.action;
@@ -240,17 +392,36 @@ export async function executeRecommendation(id: string): Promise<Recommendation>
   if (rec.status === "dismissed") throw conflict("This recommendation was dismissed");
   if (action.involves_others) throw conflict("This involves other people. I only advise on it.");
   // Checked again now: an instruction added after the recommendation was made still holds.
-  const verdict = await refusalFor(action, {
-    instructions: await store.listInstructions(),
-    getEvent: (eventId) => store.getEvent(eventId),
-  });
-  if (!verdict.allowed) throw conflict(verdict.reason);
+  if (!opts.byUser) {
+    const verdict = await refusalFor(action, {
+      instructions: await store.listInstructions(),
+      getEvent: (eventId) => store.getEvent(eventId),
+    });
+    if (!verdict.allowed) throw conflict(verdict.reason);
+  }
+
+  // A draft is stored for the user to copy and send themselves (#40). Nothing is sent, nothing on
+  // the calendar changes, so there is nothing to undo: the draft is dismissed under Follow ups.
+  if (action.kind === "draft_follow_up") {
+    const draft = await draftFromRecommendation({ id: rec.id, title: rec.title, payload: action.payload });
+    const saved = await store.recordRecommendationAction(id, {
+      status: "done",
+      executed_at: new Date().toISOString(),
+      undone_at: null,
+      execution: { kind: "draft_follow_up", draft_id: draft.id },
+    });
+    if (!saved) throw new HttpError("not_found", "Recommendation not found");
+    return saved;
+  }
 
   let execution: Execution;
   if (action.kind === "create_focus_block") execution = await createFocusBlock(rec, action);
   else if (action.kind === "move_calendar_block") execution = await moveCalendarBlock(action);
   else if (action.kind === "block_mac_app") execution = (await startFocusGuard(rec, action)).execution;
   else if (action.kind === "move_calendar_blocks") execution = await moveCalendarBlocks(action);
+  else if (action.kind === "change_goal") execution = await executeGoalChange(action);
+  else if (action.kind === "plan_change") execution = await executePlanChange(rec, action);
+  else if (action.kind === "remove_calendar_block") execution = await removeCalendarBlock(action);
   else throw new HttpError("not_implemented", `${action.kind} cannot be carried out yet`);
 
   const saved = await store.recordRecommendationAction(id, {
@@ -267,6 +438,8 @@ export async function undoRecommendation(id: string): Promise<Recommendation> {
   const rec = await store.getRecommendation(id);
   if (!rec) throw new HttpError("not_found", "Recommendation not found");
   if (rec.status !== "done") throw conflict("Only a done recommendation can be undone");
+  if (rec.action?.kind === "draft_follow_up")
+    throw conflict("A draft changes nothing on your calendar. Dismiss it under Follow ups instead");
   const parsed = Execution.safeParse(await store.getRecommendationExecution(id));
   if (!parsed.success) throw conflict("I have no record of what I changed, so I cannot undo it");
   const ex = parsed.data;
@@ -274,12 +447,31 @@ export async function undoRecommendation(id: string): Promise<Recommendation> {
     throw conflict(
       ex.kind === "block_mac_app"
         ? "Nothing to undo: that guard has already ended"
-        : "Too late to undo: the block has started",
+        : ex.kind === "change_goal"
+          ? "Too late to undo: change the goal on the Goals screen"
+          : "Too late to undo: the block has started",
     );
   }
 
+  await revert(ex);
+
+  const saved = await store.recordRecommendationAction(id, {
+    status: "undone",
+    undone_at: new Date().toISOString(),
+  });
+  if (!saved) throw new HttpError("not_found", "Recommendation not found");
+  return saved;
+}
+
+/** Puts back what one execution changed. */
+async function revert(ex: Execution): Promise<void> {
   if (ex.kind === "block_mac_app") {
     await stopFocusGuard(ex);
+  } else if (ex.kind === "change_goal") {
+    await revertGoalChange(ex);
+  } else if (ex.kind === "plan_change") {
+    // Last step first, so a block moved twice ends where it began.
+    for (const step of [...ex.steps].reverse()) await revert(step);
   } else if (ex.kind === "create_focus_block") {
     if (ex.google_event_id) {
       try {
@@ -294,6 +486,8 @@ export async function undoRecommendation(id: string): Promise<Recommendation> {
       }
     }
     if (ex.timeline_event_id) await store.deleteEvents([ex.timeline_event_id]);
+  } else if (ex.kind === "remove_calendar_block") {
+    await restoreRemoved(ex);
   } else if (ex.kind === "move_calendar_blocks") {
     // Check every block first, so undo puts all of them back or none.
     for (const m of ex.moves) {
@@ -304,13 +498,88 @@ export async function undoRecommendation(id: string): Promise<Recommendation> {
   } else {
     await restoreMove(ex);
   }
+}
 
-  const saved = await store.recordRecommendationAction(id, {
-    status: "undone",
-    undone_at: new Date().toISOString(),
-  });
-  if (!saved) throw new HttpError("not_found", "Recommendation not found");
-  return saved;
+/** Every step of a plan, each with its own guard rails; on a failure the steps done are taken back. */
+async function executePlanChange(rec: Recommendation, action: RecommendationAction): Promise<Execution> {
+  const p = parse(PlanChangePayload, action.payload);
+  const instructions = await store.listInstructions();
+  const steps: StepExecution[] = [];
+  try {
+    for (const [i, { kind, ...payload }] of p.steps.entries()) {
+      const sub: RecommendationAction = {
+        kind,
+        payload,
+        involves_others: false,
+        undo_until: action.undo_until,
+      };
+      const verdict = await refusalFor(sub, { instructions, getEvent: (eventId) => store.getEvent(eventId) });
+      if (!verdict.allowed) throw conflict(verdict.reason);
+      const done =
+        kind === "create_focus_block" ? await createFocusBlock(rec, sub, i) : await moveCalendarBlock(sub);
+      steps.push(done as StepExecution);
+    }
+  } catch (err) {
+    for (const done of steps.reverse()) await revert(done).catch(() => null);
+    throw err;
+  }
+  return { kind: "plan_change", steps, undo_until: earliest(...steps.map((s) => s.undo_until)) };
+}
+
+/** Applies each goal change, keeping the old values so undo can put them back. */
+async function executeGoalChange(action: RecommendationAction): Promise<Execution> {
+  const p = parse(ChangeGoalPayload, action.payload);
+  const goals = await Promise.all(p.changes.map((c) => store.getGoal(c.goal_id)));
+  const missing = p.changes.find((_, i) => !goals[i]);
+  if (missing) throw new HttpError("not_found", "One of those goals no longer exists");
+  const before: Execution & { kind: "change_goal" } = {
+    kind: "change_goal",
+    before: [],
+    until: p.until ?? null,
+    // Temporary: undo until it ends. Otherwise a week to change your mind.
+    undo_until: p.until ?? new Date(Date.now() + GOAL_UNDO_MS).toISOString(),
+  };
+  for (const [i, change] of p.changes.entries()) {
+    const goal = goals[i] as Goal;
+    const { goal_id, ...patch } = change;
+    const old: Record<string, unknown> = {};
+    for (const key of Object.keys(patch) as (keyof typeof patch)[]) old[key] = goal[key];
+    await store.updateGoal(goal_id, patch);
+    before.before.push({ goal_id, patch: old });
+  }
+  return before;
+}
+
+async function revertGoalChange(ex: Execution & { kind: "change_goal" }) {
+  for (const b of ex.before) {
+    // A goal deleted since has nothing to put back.
+    await store.updateGoal(b.goal_id, parse(GoalUpdate, b.patch));
+  }
+}
+
+/**
+ * Temporary goal changes whose `until` has passed go back to the old values, recorded as undone.
+ * The scheduler calls it per user; GET /v1/goals calls it too so the screen never shows a stale budget.
+ */
+export async function revertExpiredGoalChanges(now = Date.now()): Promise<number> {
+  const done = (await store.listRecommendations({ status: "done" })).filter(
+    (rec) => rec.action?.kind === "change_goal",
+  );
+  // Every execution in one wave of round trips, not one after another.
+  const executions = await Promise.all(done.map((rec) => store.getRecommendationExecution(rec.id)));
+  let reverted = 0;
+  for (const [i, rec] of done.entries()) {
+    const parsed = Execution.safeParse(executions[i]);
+    if (!parsed.success || parsed.data.kind !== "change_goal" || !parsed.data.until) continue;
+    if (Date.parse(parsed.data.until) > now) continue;
+    await revertGoalChange(parsed.data);
+    await store.recordRecommendationAction(rec.id, {
+      status: "undone",
+      undone_at: new Date(now).toISOString(),
+    });
+    reverted++;
+  }
+  return reverted;
 }
 
 const MIN_BLOCK_MS = 5 * 60_000;

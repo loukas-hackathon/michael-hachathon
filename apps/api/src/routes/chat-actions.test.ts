@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 import type Anthropic from "@anthropic-ai/sdk";
-import { ChatResponse, Recommendation } from "@michael/shared";
+import { ChatHistory, ChatResponse, Recommendation } from "@michael/shared";
 import { app } from "../app";
 import { runAsUser } from "../context";
 import { env } from "../env";
@@ -273,6 +273,28 @@ test("POST /v1/chat/stream sends an action event, then the reply with its action
         .map((e) => e.data.text)
         .join("");
       assert.equal(streamed, expected);
+      // The answer remembers what it did, so the Undo chip comes back after a reload.
+      assert.deepEqual(body.reply.action_ids, [action.id]);
+      const history = ChatHistory.parse(await (await app.request("/v1/chat", { headers: auth })).json());
+      const stored = history.messages.find((m) => m.id === body.reply.id);
+      assert.deepEqual(stored?.action_ids, [action.id]);
+      assert.equal(history.messages.find((m) => m.id === body.message.id)?.action_ids.length, 0);
+      assert.equal(history.actions.find((a) => a.id === action.id)?.status, "done");
     },
   );
 });
+
+test("a spoken answer asks Claude to be brief and listless; a typed one does not", () =>
+  withClaude(
+    [{ text: "Forty seven minutes so far." }, { text: "Two hours this week." }],
+    async (requests) => {
+      const system = (r: Anthropic.MessageCreateParams | undefined) =>
+        (Array.isArray(r?.system) ? r.system : []).map((b) => b.text).join("\n");
+      const ask = (body: object) =>
+        app.request("/v1/chat", { method: "POST", headers: auth, body: JSON.stringify(body) });
+      assert.equal((await ask({ message: "How much deep work today?", spoken: true })).status, 201);
+      assert.match(system(requests[0]), /spoken aloud/);
+      assert.equal((await ask({ message: "And this week?" })).status, 201);
+      assert.doesNotMatch(system(requests[1]), /spoken aloud/);
+    },
+  ));

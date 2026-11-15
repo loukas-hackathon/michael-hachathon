@@ -1,6 +1,7 @@
-import type { Score, ScoreBlock } from "@michael/shared";
+import type { Score, ScoreBlock, TargetResponse } from "@michael/shared";
 import { categoryOf } from "./categories";
 import type { DayView, GoalBlock, Lead, Moment, Tick } from "./day";
+import type { Balance, RecordMark, WeeklyTarget } from "./gamification";
 import type { GoalsView } from "./goals-view";
 import { explainFromScore } from "./score-explain";
 
@@ -53,20 +54,77 @@ export function dayFromScore(score: Score, lead: Lead | null): DayView {
     },
     blocks: blocks.map(block),
     wonBackMinutes: d.time_won_back_minutes,
+    record: recordOnTape(score, blocks),
+    balance: balanceFrom(score),
     explain: explainFromScore(score),
     lead,
     nudge: null,
   };
 }
 
-export function goalsFromScore(score: Score): GoalsView {
+/** A new best set today, as a mark on the day's tape (#166). Baselines (no line) never show. */
+function recordOnTape(score: Score, blocks: ScoreBlock[]): RecordMark | null {
+  let offset = 0;
+  for (const b of blocks) {
+    const r = b.record_id ? score.records.find((x) => x.id === b.record_id) : undefined;
+    if (r?.line && r.tick_index != null) return { tick: offset + r.tick_index, line: r.line };
+    offset += b.ticks.length;
+  }
+  return null;
+}
+
+/** The balanced week (#165): each area with time goals against its floor. */
+function balanceFrom(score: Score): Balance | null {
+  const rows = score.areas ?? [];
+  if (!rows.some((a) => a.meets_floor !== null)) return null;
+  const pick = (area: "business" | "health" | "personal") => rows.find((a) => a.area === area);
+  const val = (area: "business" | "health" | "personal") => {
+    const a = pick(area);
+    return a && a.meets_floor !== null ? (a.score_pct ?? 0) : null;
+  };
+  const floor = (area: "business" | "health" | "personal") => pick(area)?.floor_pct ?? 50;
+  return {
+    overall: score.score_pct,
+    target: score.target?.overall_pct ?? null,
+    areas: { business: val("business"), health: val("health"), personal: val("personal") },
+    floors: { business: floor("business"), health: floor("health"), personal: floor("personal") },
+  };
+}
+
+function targetFrom(res: TargetResponse | null): {
+  target: WeeklyTarget | null;
+  baseline: GoalsView["baseline"];
+} {
+  if (!res) return { target: null, baseline: null };
+  const t = res.target;
+  return {
+    target: t
+      ? {
+          status: t.status === "proposed" ? "proposed" : t.set_by === "user" ? "edited" : "accepted",
+          weekStart: t.week_start,
+          median: t.basis.median_pct ?? t.overall_pct,
+          overall: t.overall_pct,
+          areas: t.areas,
+          floors: t.floors,
+          setBy: t.set_by,
+          reason: t.reason,
+        }
+      : null,
+    baseline: res.baseline.ready
+      ? null
+      : { weeksDone: res.baseline.full_weeks, weeksNeeded: res.baseline.needed, reason: res.baseline.reason },
+  };
+}
+
+export function goalsFromScore(score: Score, targets: TargetResponse | null = null): GoalsView {
   const today = score.day.date;
-  const sleep = score.goals.find((g) => !g.scored && /sleep/i.test(g.title));
+  const { target, baseline } = targetFrom(targets);
+  const record = score.records.find((r) => r.line && r.type !== "longest_block");
   return {
     sample: false,
     weekStart: score.week_start,
     now: score.day.now,
-    freeMinutesLeft: null,
+    freeMinutesLeft: score.free_minutes_left ?? null,
     goals: score.goals
       .filter((g) => g.scored && g.budget_minutes > 0)
       .map((g) => ({
@@ -76,9 +134,16 @@ export function goalsFromScore(score: Score): GoalsView {
         budgetMinutes: g.budget_minutes,
         spentMinutes: g.spent_minutes,
         unverifiedMinutes: g.unverified_minutes,
+        plannedMinutes: g.planned_minutes,
+        openBlocks: g.open_blocks,
+        leftMinutes: g.minutes_left,
         daily: g.daily.map((x) => (x.date > today ? null : x.spent_minutes)),
       })),
-    sleep: sleep ? { goalMinutes: Math.round(sleep.budget_minutes / 7), nightly: Array(7).fill(null) } : null,
+    sleep: score.sleep ? { goalMinutes: score.sleep.goal_minutes, nightly: score.sleep.nightly } : null,
+    target,
+    baseline,
+    balance: balanceFrom(score),
+    recordLine: record?.line ?? null,
     explain: explainFromScore(score),
   };
 }

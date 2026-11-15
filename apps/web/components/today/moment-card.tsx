@@ -1,6 +1,7 @@
 import type { Moment, MomentKind, MomentMove } from "@michael/shared";
 import { formatTime, hm } from "@/lib/format";
 import { getMoment } from "@/lib/moments";
+import { Fold } from "./fold";
 
 function Move({ move, label }: { move: MomentMove; label?: string }) {
   return (
@@ -27,7 +28,9 @@ function GoalLines({ moment }: { moment: Moment }) {
           <dd className="text-right tnum">
             {moment.kind === "morning"
               ? `${hm(g.planned_today_minutes)} today, ${hm(g.spent_week_minutes)} of ${hm(g.budget_minutes ?? 0)} this week`
-              : `${hm(g.spent_today_minutes)} of ${hm(g.planned_today_minutes)} held${g.lost_today_minutes > 0 ? `, ${hm(g.lost_today_minutes)} lost` : ""}`}
+              : g.planned_today_minutes === 0 && g.spent_today_minutes === 0
+                ? "Not booked today"
+                : `${hm(g.spent_today_minutes)} of ${hm(g.planned_today_minutes)} held${g.lost_today_minutes > 0 ? `, ${hm(g.lost_today_minutes)} lost` : ""}`}
           </dd>
         </div>
       ))}
@@ -35,20 +38,18 @@ function GoalLines({ moment }: { moment: Moment }) {
   );
 }
 
+/** Morning plan or Evening review as a quiet row on Today: the headline shows, the maths opens. */
 export function MomentView({ moment }: { moment: Moment }) {
   const risk = moment.at_risk;
+  const title = moment.kind === "morning" ? "Morning plan" : "Evening review";
   return (
-    <article
-      aria-label={moment.kind === "morning" ? "Morning plan" : "Evening review"}
-      className="mt-5 flex flex-col gap-3 rounded-card bg-fill px-4 pt-3.5 pb-4"
+    <Fold
+      title={title}
+      label={title}
+      meta={<time dateTime={moment.generated_at}>{formatTime(moment.generated_at)}</time>}
+      preview={moment.headline}
     >
-      <header className="flex items-center text-footnote font-semibold">
-        <span>{moment.kind === "morning" ? "Morning plan" : "Evening review"}</span>
-        <time className="ml-auto font-medium text-label-2 tnum" dateTime={moment.generated_at}>
-          {formatTime(moment.generated_at)}
-        </time>
-      </header>
-      <p className="text-title3 font-semibold">{moment.headline}</p>
+      <p className="text-body font-semibold">{moment.headline}</p>
       <GoalLines moment={moment} />
       {risk ? (
         <p className="text-subhead">
@@ -62,8 +63,8 @@ export function MomentView({ moment }: { moment: Moment }) {
       {moment.lesson ? <p className="text-subhead">{moment.lesson}</p> : null}
       {moment.kind === "evening" && moment.totals.won_back_minutes > 0 ? (
         <p className="text-subhead">
-          <b className="font-semibold text-tint-text tnum">{hm(moment.totals.won_back_minutes)}</b> won back
-          against your usual {hm(moment.totals.baseline_lost_minutes ?? 0)} lost.
+          <b className="font-semibold tnum">{hm(moment.totals.won_back_minutes)}</b> won back against your
+          usual {hm(moment.totals.baseline_lost_minutes ?? 0)} lost.
         </p>
       ) : null}
       {moment.suggestions.length > 0 || moment.first_move ? (
@@ -74,11 +75,11 @@ export function MomentView({ moment }: { moment: Moment }) {
           {moment.first_move ? <Move move={moment.first_move} label="Tomorrow:" /> : null}
         </ul>
       ) : null}
-    </article>
+    </Fold>
   );
 }
 
-/** Morning plan or Evening review for the Today screen. Renders nothing if the moment cannot load. */
+/** Morning plan or Evening review for Today's "More from Michael". Renders nothing if the moment cannot load. */
 export async function MomentCard({ kind, sample }: { kind: MomentKind; sample: boolean }) {
   const moment = await getMoment(kind, sample).catch((err) => {
     console.error("moment card:", err);

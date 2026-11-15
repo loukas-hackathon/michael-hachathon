@@ -122,6 +122,29 @@ test("the consent tap creates an approved agent; scopes gate tools; every call i
   assert.equal((await callTool(token, "get_goals", {})).status, 401);
 });
 
+test("a block an agent books carries its recommendation and can be undone from the log", async () => {
+  const token = await connect("Gemini", "timeline write_events");
+  const start = new Date(Date.now() + 2 * 86_400_000);
+  start.setUTCHours(13, 0, 0, 0);
+  const booked = await callTool(token, "create_focus_block", {
+    start: start.toISOString(),
+    end: new Date(start.getTime() + 3_600_000).toISOString(),
+    title: "Focus: pitch deck",
+  });
+  assert.notEqual(booked.body.result.isError, true, booked.body.result.content?.[0]?.text);
+  const recId = booked.body.result.structuredContent.recommendation.id;
+
+  const agent = (await listAgents()).find((a) => a.name === "Gemini");
+  const line = (await listQueries()).find((q) => q.agent_id === agent?.id && q.tool === "create_focus_block");
+  assert.equal(line?.recommendation_id, recId);
+  assert.ok(line?.undo_until && Date.parse(line.undo_until) > Date.now());
+
+  const undo = await app.request(`/v1/recommendations/${recId}/undo`, { method: "POST", headers: apiKey });
+  assert.equal(undo.status, 200);
+  const after = (await listQueries()).find((q) => q.id === line?.id);
+  assert.equal(after?.undo_until, null);
+});
+
 test("reconnecting the same agent updates one record", async () => {
   await connect("Claude", "timeline");
   await connect("Claude", "timeline goals");

@@ -1,4 +1,12 @@
-import type { Event } from "@michael/shared";
+import {
+  type AppCategory,
+  bundleIdForAppName,
+  type CategoryRole,
+  categoriseEvent,
+  categoryRole,
+  type Event,
+  isBrowser,
+} from "@michael/shared";
 import { type DayHealth, healthOf } from "./health";
 import { driveFromEvent } from "./travel";
 
@@ -63,69 +71,23 @@ export type TimelineDay = {
   phone: Mark[];
   ai: Mark[];
   segments: Segment[];
-  /** The Apple Watch: last night, tonight, workouts and heart rate per hour. */
+  /** The Apple Watch: last night, tonight, naps, workouts and heart rate per hour (lib/health.ts). */
   health?: DayHealth;
   totals: { workMinutes: number; lostMinutes: number; phoneSessions: number; phoneMinutes: number };
 };
 
 const MIN = 60_000;
 
-const WORK_APPS = new Set([
-  "VS Code",
-  "Cursor",
-  "Xcode",
-  "Terminal",
-  "iTerm",
-  "Claude",
-  "Notion",
-  "Word",
-  "Excel",
-  "PowerPoint",
-  "Pages",
-  "Numbers",
-  "Keynote",
-  "Figma",
-  "Linear",
-]);
-const MESSAGE_APPS = new Set([
-  "WhatsApp",
-  "WhatsApp Business",
-  "Telegram",
-  "Viber",
-  "Messages",
-  "Messenger",
-  "Mail",
-  "Outlook",
-  "Gmail",
-  "Slack",
-  "Discord",
-]);
-const SOCIAL_APPS = new Set([
-  "Instagram",
-  "Facebook",
-  "TikTok",
-  "YouTube",
-  "Netflix",
-  "LinkedIn",
-  "X",
-  "Reddit",
-]);
-const BROWSERS = new Set(["Chrome", "Safari", "Arc", "Brave Browser", "Browser", "Firefox"]);
+// Colours come from the one categoriser (packages/shared/src/categories.ts) and the role of each
+// category, the same rule the score and the patterns use: work and AI are work, messages, social,
+// video, news, shopping and travel are lost, music, the system and anything unknown are other.
+const KIND_OF_ROLE: Record<CategoryRole, Kind> = { work: "work", distractor: "lost", neutral: "other" };
+const kindOf = (category: AppCategory): Kind => KIND_OF_ROLE[categoryRole(category)];
 
-const WEB_KIND: Record<string, Kind> = {
-  ai: "work",
-  dev: "work",
-  docs: "work",
-  mail: "lost",
-  messaging: "lost",
-  social: "lost",
-  video: "lost",
-  news: "lost",
-  shopping: "lost",
-  travel: "other",
-  search: "other",
-  finance: "other",
-};
+const str = (v: unknown): string | null => (typeof v === "string" && v.length > 0 ? v : null);
+
+/** The app's bundle id, from the event or, failing that, from a well known name. */
+const bundleOf = (e: Event): string | null => str(e.data.bundle_id) ?? bundleIdForAppName(e.title);
 
 const t = (iso: string) => new Date(iso).getTime();
 
@@ -144,14 +106,12 @@ function browserKind(s: { start: number; end: number }, visits: Event[]): { kind
       best = v;
     }
   }
-  const cat = best ? String(best.data.category ?? "") : "";
-  return { kind: WEB_KIND[cat] ?? "other", what: best?.title ?? "Chrome" };
+  const category = best ? (categoriseEvent(best) ?? "other") : "other";
+  return { kind: kindOf(category), what: best?.title ?? "Chrome" };
 }
 
-function classify(app: string): Kind {
-  if (WORK_APPS.has(app)) return "work";
-  if (MESSAGE_APPS.has(app) || SOCIAL_APPS.has(app)) return "lost";
-  return "other";
+function classify(e: Event): Kind {
+  return kindOf(categoriseEvent(e) ?? "other");
 }
 
 function topApps(apps: Map<string, number>, n = 2) {
@@ -205,7 +165,8 @@ export function buildTimeline(
     if (e.source !== "macos_usage" || e.type !== "app_usage" || !e.end_at) continue;
     const [s, en] = clip(t(e.start_at), t(e.end_at));
     if (en - s < 5_000) continue;
-    if (BROWSERS.has(e.title)) {
+    const bundle = bundleOf(e);
+    if (bundle && isBrowser(bundle)) {
       const k = browserKind({ start: s, end: en }, visits);
       sessions.push({
         start: s,
@@ -215,7 +176,7 @@ export function buildTimeline(
         what: k.kind === "lost" ? k.what : e.title,
       });
     } else {
-      sessions.push({ start: s, end: en, app: e.title, kind: classify(e.title), what: e.title });
+      sessions.push({ start: s, end: en, app: e.title, kind: classify(e), what: e.title });
     }
   }
   sessions.sort((a, b) => a.start - b.start);
@@ -302,14 +263,37 @@ export function buildTimeline(
   const plans = plansOf(events, dayStart, dayEnd);
   const health = healthOf(events, dayStart, dayEnd);
 
-  // 5. Quiet stretches of 90 minutes or more (no Mac block, no phone session, nothing planned, no
-  // workout) collapse to one row.
+  // 5. Planned drives (source maps, type travel; TravelData in docs/api.md).
+  const drives = events
+    .filter((e) => e.type === "travel")
+    .map((e) => driveFromEvent(e))
+    .filter((d): d is NonNullable<typeof d> => d !== null)
+    .map((d) => {
+      const [s, en] = clip(t(d.start), t(d.end));
+      return {
+        start: s,
+        end: en,
+        to: d.to,
+        minutes: d.minutes,
+        trafficMinutes: Math.max(0, d.minutes - d.freeFlowMinutes),
+      };
+    })
+    .filter((d) => d.end > d.start);
+
+  // 6. Quiet stretches of 90 minutes or more (no Mac block, no phone session, nothing planned, no
+  // workout, no nap, no drive) collapse to one row.
   const busy = [
     ...blocks.map((b) => [b.start, b.end] as const),
     ...health.workouts.map((w) => [Math.max(w.start, dayStart), Math.min(w.end, dayEnd)] as const),
+    ...health.naps.map((n) => [n.start, Math.min(n.end, dayEnd)] as const),
     ...phone.map((p) => [p.start, p.end] as const),
     ...plans.map((p) => [p.start, p.end] as const),
-  ].sort((a, b) => a[0] - b[0]);
+    ...drives.map((d) => [d.start, d.end] as const),
+  ];
+  // The hour around now always stays open, so the now pill never sits on a collapsed row.
+  const nowIn = now != null && now > dayStart && now < dayEnd ? now : undefined;
+  if (nowIn != null) busy.push([nowIn - 30 * MIN, nowIn + 30 * MIN] as const);
+  busy.sort((a, b) => a[0] - b[0]);
   const segments: Segment[] = [];
   const floorHour = (x: number) => x - ((((x - dayStart) % (60 * MIN)) + 60 * MIN) % (60 * MIN));
   const ceilHour = (x: number) => {
@@ -345,27 +329,10 @@ export function buildTimeline(
     blocks.flatMap((b) => b.lostStretches ?? []).reduce((n, l) => n + (l.end - l.start) / MIN, 0);
   const phoneMinutes = phone.reduce((n, p) => n + (p.end - p.start) / MIN, 0);
 
-  // 6. Planned drives (source maps, type travel; TravelData in docs/api.md).
-  const drives = events
-    .filter((e) => e.type === "travel")
-    .map((e) => driveFromEvent(e))
-    .filter((d): d is NonNullable<typeof d> => d !== null)
-    .map((d) => {
-      const [s, en] = clip(t(d.start), t(d.end));
-      return {
-        start: s,
-        end: en,
-        to: d.to,
-        minutes: d.minutes,
-        trafficMinutes: Math.max(0, d.minutes - d.freeFlowMinutes),
-      };
-    })
-    .filter((d) => d.end > d.start);
-
   return {
     date,
     drives,
-    now: now != null && now > dayStart && now < dayEnd ? now : undefined,
+    now: nowIn,
     dayStart,
     dayEnd,
     blocks,
@@ -394,4 +361,39 @@ export function makeY(segments: Segment[], perHour: number, quiet: number) {
     }
     return y;
   };
+}
+
+/** The plan a block mostly belongs to: the calendar block covering at least half of it. */
+export function planFor(b: Block, plans: Plan[]): Plan | undefined {
+  let best: Plan | undefined;
+  let bestOverlap = 0;
+  for (const p of plans) {
+    const o = Math.min(p.end, b.end) - Math.max(p.start, b.start);
+    if (o > bestOverlap) {
+      bestOverlap = o;
+      best = p;
+    }
+  }
+  return best && bestOverlap >= (b.end - b.start) / 2 ? best : undefined;
+}
+
+/**
+ * What a block was for, then which apps: the calendar block it sits in names it ("Deep work"), the
+ * apps go in the subline. Lost blocks and blocks outside any plan are named by their apps.
+ */
+export function blockTitle(b: Block, plans: Plan[]): { title: string; apps?: string } {
+  if (b.plan) return { title: b.plan.title };
+  const plan = b.kind === "lost" ? undefined : planFor(b, plans);
+  if (plan) return { title: plan.title, apps: b.label || undefined };
+  if (b.label) return { title: b.label };
+  return { title: b.kind === "work" ? "Work apps" : b.kind === "lost" ? "Lost" : "Other apps" };
+}
+
+/** Minutes a block lost to interruptions: the whole block when it was lost, else its cuts and stretches. */
+export function lostMinutesOf(b: Block): number {
+  if (b.kind === "lost") return b.minutes;
+  return (
+    b.cuts.reduce((n, c) => n + c.minutes, 0) +
+    (b.lostStretches ?? []).reduce((n, l) => n + (l.end - l.start) / MIN, 0)
+  );
 }

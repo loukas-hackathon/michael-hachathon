@@ -1,27 +1,49 @@
 "use client";
 
-import { ApiError, ChatResponse } from "@michael/shared";
+import type { ChatResponse } from "@michael/shared";
 import type { SendResult } from "./actions";
 import { copyFor } from "./copy";
+
+// Plain shape checks instead of the shared zod schemas: importing a schema would ship zod and the
+// whole schema file (about 45 kB gzipped) to the chat screen (#255). The server built both bodies.
+const errorCode = (json: unknown): string => {
+  const code = (json as { error?: { code?: unknown } } | null)?.error?.code;
+  return typeof code === "string" ? code : "internal";
+};
+
+const chatResponse = (json: unknown): ChatResponse | null => {
+  const body = json as Partial<ChatResponse> | null;
+  if (!body || typeof body !== "object" || !body.message || !body.reply) return null;
+  return { ...body, actions: Array.isArray(body.actions) ? body.actions : [] } as ChatResponse;
+};
 
 /**
  * Sends one line and reads Michael's answer as it is written (server-sent events from
  * /chat/stream). `onText` gets each new piece; the result carries the stored pair, as sendMessage's.
  */
-export async function streamChat(message: string, onText: (text: string) => void): Promise<SendResult> {
+export async function streamChat(
+  message: string,
+  threadId: string | null,
+  onText: (text: string) => void,
+  spoken = false,
+): Promise<SendResult> {
   let res: Response;
   try {
     res = await fetch("/chat/stream", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({
+        message,
+        ...(spoken ? { spoken } : {}),
+        ...(threadId ? { thread_id: threadId } : {}),
+      }),
     });
   } catch {
-    return { ok: false, error: copyFor("network") };
+    return { ok: false, error: copyFor("network"), code: "network" };
   }
   if (!res.ok || !res.body) {
-    const err = ApiError.safeParse(await res.json().catch(() => null));
-    return { ok: false, error: copyFor(err.success ? err.data.error.code : "internal") };
+    const code = errorCode(await res.json().catch(() => null));
+    return { ok: false, error: copyFor(code), code };
   }
 
   const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
@@ -44,14 +66,15 @@ export async function streamChat(message: string, onText: (text: string) => void
       const json: unknown = JSON.parse(data);
       if (event === "delta") onText((json as { text: string }).text);
       if (event === "done") {
-        const body = ChatResponse.safeParse(json);
-        if (body.success) return { ok: true, data: body.data };
+        const body = chatResponse(json);
+        if (body) return { ok: true, data: body };
       }
       if (event === "error") {
-        const err = ApiError.safeParse(json);
-        return { ok: false, error: copyFor(err.success ? err.data.error.code : "internal") };
+        const code = errorCode(json);
+        return { ok: false, error: copyFor(code), code };
       }
     }
   }
-  return { ok: false, error: copyFor("internal") };
+  // The stream ended without a reply (connection dropped mid answer).
+  return { ok: false, error: copyFor("network"), code: "network" };
 }

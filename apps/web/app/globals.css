@@ -43,6 +43,10 @@
   --m-dur-sheet: 500ms;
   --m-dur-sheet-out: 360ms;
   --m-dur-count: 700ms;
+  /* A number that changed after mount moves to its new value (components/motion-ui.tsx, Tween). */
+  --m-dur-tween: 450ms;
+  /* Between items that arrive together, in reading order; capped at six items (motion.ts, stagger). */
+  --m-stagger: 30ms;
 }
 @supports (transition-timing-function: linear(0, 1)) {
   :root {
@@ -109,10 +113,15 @@
   --text-tab: 10px;
   --text-tab--line-height: 12px;
 
+  /* Radius scale (.claude/skills/michael-ui): ticks; timeline blocks; controls (text buttons,
+   * fields, chips that are not capsules, rows that press); inset groups; Michael's card; sheets.
+   * Filled buttons, scope chips and bars are capsules (rounded-full). */
   --radius-tick: 2px;
   --radius-block: 7px;
+  --radius-control: 10px;
   --radius-group: 12px;
   --radius-card: 16px;
+  --radius-sheet: 20px;
 }
 
 @theme inline {
@@ -160,6 +169,38 @@ a,
   touch-action: manipulation;
 }
 
+/* No interactive element is a sharp rectangle: its press area and focus ring follow a rounded
+ * shape. In the base layer, so any rounded-* utility still wins. */
+@layer base {
+  button,
+  a,
+  summary,
+  input,
+  select,
+  textarea,
+  [role="button"] {
+    border-radius: var(--radius-control);
+  }
+}
+
+/* Apple's continuous corner where the browser draws it (Chrome 139+). A squircle reads smaller than
+ * a circular arc of the same radius, so the scale grows by about 1.5 there, as iOS corners do. */
+@supports (corner-shape: squircle) {
+  .rounded-control,
+  .rounded-group,
+  .rounded-card,
+  .rounded-sheet,
+  .m-sheet {
+    corner-shape: squircle;
+  }
+  :root {
+    --radius-control: 15px;
+    --radius-group: 18px;
+    --radius-card: 24px;
+    --radius-sheet: 30px;
+  }
+}
+
 input,
 select,
 textarea {
@@ -170,12 +211,17 @@ textarea {
   background: color-mix(in srgb, var(--m-spark) 28%, transparent);
 }
 
+/* Keyboard only: a tap or a click never draws a ring, and an outline follows the element's
+ * border-radius, so the ring is as round as the thing it marks. */
+:focus:not(:focus-visible) {
+  outline: none;
+}
 :focus-visible {
   outline: 2px solid var(--m-tint);
   outline-offset: 2px;
 }
 
-/* Headings focused by script (tabindex -1, for screen readers on a new step) never show a ring. */
+/* Focused by script (tabindex -1: a heading on a new step, a sheet as it opens): never a ring. */
 [tabindex="-1"]:focus-visible {
   outline: none;
 }
@@ -211,6 +257,18 @@ h3 {
 }
 
 /* Room for the floating tab bar under every screen. */
+/* Installed app: content scrolls under the clock and battery, so the status bar gets the page
+ * colour behind it, as in a native app. Zero height in a browser tab. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 40;
+  height: env(safe-area-inset-top);
+  background: var(--m-bg);
+  pointer-events: none;
+}
+
 .screen {
   padding-top: env(safe-area-inset-top);
   padding-bottom: calc(var(--m-tabbar-h) + 40px + env(safe-area-inset-bottom));
@@ -220,6 +278,18 @@ h3 {
 @media (min-width: 1024px) {
   .screen {
     padding-bottom: 64px;
+  }
+}
+
+/* A screen with two columns on a laptop (Goals): wider than the reading column, still centred in
+ * the space beside the sidebar. Phone and narrow laptops keep the one column. */
+@media (min-width: 1280px) {
+  .m-wide {
+    --m-wide: min(1040px, calc(100vw - 16rem - 48px));
+    position: relative;
+    left: 50%;
+    width: var(--m-wide);
+    margin-left: calc(var(--m-wide) / -2);
   }
 }
 
@@ -243,11 +313,28 @@ h3 {
   animation: m-listen 1.8s ease-in-out infinite;
 }
 
+/* Conversation: the Mi symbol breathes slowly while Michael speaks. */
+@keyframes m-speak {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.06);
+  }
+}
+.m-speak-breath {
+  animation: m-speak 2.4s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .m-listen-ring {
     animation: none;
     transform: scale(1.3);
     opacity: 0.25;
+  }
+  .m-speak-breath {
+    animation: none;
   }
   .press,
   .press:active:not(:disabled),
@@ -296,16 +383,6 @@ h3 {
 .m-live-enter {
   animation: m-rise-in var(--m-dur-enter) var(--m-ease-out) both;
 }
-.m-tick.m-live-enter {
-  transform-origin: 50% 100%;
-  animation-name: m-tick-in;
-}
-@keyframes m-tick-in {
-  from {
-    opacity: 0;
-    transform: scaleY(0.2);
-  }
-}
 .m-live-stamp {
   animation: m-fade-in var(--m-dur-enter) var(--m-ease-out) both;
 }
@@ -328,11 +405,16 @@ h3 {
 .m-count::before {
   content: counter(m-count);
 }
+/* After the one count up, a changed number (a refresh, the user's own Done) tweens briefly. */
+:root[data-counted] .m-count {
+  transition: --m-count var(--m-dur-ui) var(--m-ease-out);
+}
 :root:not([data-counted]) .m-count {
   animation: m-count-up var(--m-dur-count) var(--m-ease-out) both;
 }
+/* Waits for the splash: the splash script clears data-splashing the moment it is gone. */
 :root[data-splashing]:not([data-counted]) .m-count {
-  animation-delay: 1050ms;
+  animation-play-state: paused;
 }
 @keyframes m-count-up {
   from {
@@ -340,6 +422,30 @@ h3 {
   }
   to {
     --m-count: var(--m-count-to);
+  }
+}
+
+/* The one bar (components/progress-bar.tsx, the tape): a fill slides on transform when its value
+ * changes. Goals: a closed week fills from the left once and its check lands. */
+.m-bar-fill {
+  transition: transform var(--m-dur-smooth) var(--m-spring-smooth);
+}
+.m-track-closed {
+  transform-origin: left center;
+  animation: m-track-close var(--m-dur-smooth) var(--m-ease-out) both;
+}
+@keyframes m-track-close {
+  from {
+    transform: scaleX(0.85);
+  }
+}
+.m-check-pop {
+  animation: m-check-pop var(--m-dur-spring) var(--m-ease-out) 180ms both;
+}
+@keyframes m-check-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
   }
 }
 
@@ -368,13 +474,38 @@ h3 {
   .m-live-enter,
   .m-live-stamp,
   .m-bone,
+  .m-track-closed,
+  .m-check-pop,
   :root:not([data-counted]) .m-count {
     animation: none;
+  }
+  :root[data-counted] .m-count,
+  .m-bar-fill {
+    transition: none;
   }
   .m-skeleton {
     animation-name: m-fade-in;
     animation-duration: 1ms;
   }
+}
+
+/* Chat: a still caret follows Michael's words while he writes (no blink: loops are not for UI). */
+.m-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  border-radius: 1px;
+  background: currentColor;
+  opacity: 0.45;
+}
+/* The message field: the text caret shows focus, as in Messages; the field gets a hairline. */
+.m-field:focus-within {
+  box-shadow: 0 0 0 1px var(--m-separator);
+}
+.m-field textarea:focus-visible {
+  outline: none;
 }
 
 /* The iOS switch, drawn for browsers without <input switch>. Tinted when on. */
@@ -428,10 +559,12 @@ h3 {
   max-height: 92dvh;
   padding: 0;
   border: 0;
-  border-radius: 20px 20px 0 0;
+  border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
   background: var(--m-bg);
   color: var(--m-label);
   box-shadow: 0 -8px 30px -12px rgb(0 0 0 / 0.3);
+  /* Content never spills while the sheet eases to a new height (motion.ts, useSmoothHeight). */
+  overflow: hidden;
   transform: translateY(0);
   transition:
     transform var(--m-dur-sheet) var(--m-ease-sheet),
@@ -474,7 +607,7 @@ h3 {
   .m-sheet {
     inset: auto 0 auto 0;
     top: 50%;
-    border-radius: 16px;
+    border-radius: var(--radius-sheet);
     transform: translateY(-50%);
   }
   .m-sheet:not([open]),
@@ -518,8 +651,38 @@ h3 {
   animation: m-fade-in var(--m-dur-ui) var(--m-ease-out) both;
 }
 
+/*
+ * Open and close in place (components/motion-ui.tsx, Collapse): the row's height eases on the
+ * smooth spring (no overshoot, so nothing spills), the content fades in just behind it and out
+ * quicker than it came.
+ */
+.m-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows var(--m-dur-smooth) var(--m-spring-smooth),
+    opacity var(--m-dur-exit) var(--m-ease-out);
+}
+.m-collapse[data-open] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition:
+    grid-template-rows var(--m-dur-smooth) var(--m-spring-smooth),
+    opacity var(--m-dur-ui) var(--m-ease-out) 60ms;
+}
+.m-collapse-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
 /* Segmented control: the selected pill slides between segments (components/form-controls.tsx). */
 .m-seg-thumb {
+  transition: transform var(--m-dur-smooth) var(--m-spring-smooth);
+}
+
+/* A conversation row that slides left over its actions (app/chat/thread-sheet.tsx). */
+.m-thread-face {
   transition: transform var(--m-dur-smooth) var(--m-spring-smooth);
 }
 
@@ -532,9 +695,15 @@ h3 {
   .m-leave {
     animation: m-leave-fade var(--m-dur-exit) linear both;
   }
+  .m-thread-face,
   .m-seg-thumb,
   .m-switch::after {
     transition: none;
+  }
+  /* Rows snap open or shut; the content still fades so the change is noticed. */
+  .m-collapse,
+  .m-collapse[data-open] {
+    transition: opacity var(--m-dur-ui) linear;
   }
   .m-switch:active:not(:disabled)::after {
     transform: none;

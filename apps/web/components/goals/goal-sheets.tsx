@@ -1,10 +1,46 @@
 "use client";
 
-import { useActionState, useEffect, useId, useState, useTransition } from "react";
+import type { GoalSuggestion } from "@michael/shared";
+import {
+  type ReactNode,
+  useActionState,
+  useCallback,
+  useEffect,
+  useId,
+  useState,
+  useSyncExternalStore,
+  useTransition,
+} from "react";
 import { addGoal, editGoal, type FormState, pauseGoal, removeGoal } from "@/app/goals/actions";
 import { CATEGORY_TITLE, type Category } from "@/lib/categories";
+import { safeFormAction } from "@/lib/use-action";
 import { input, Row, Segmented } from "../form-controls";
 import { Sheet } from "../sheet";
+import { CalendarGoals } from "./calendar-goals";
+
+// The New goal sheet opens from the header's "+", the calendar hint row and the empty state, so
+// its open state lives here, outside any one component.
+let newGoalOpen = false;
+const listeners = new Set<() => void>();
+function setNewGoalOpen(open: boolean) {
+  newGoalOpen = open;
+  for (const l of listeners) l();
+}
+const subscribe = (l: () => void) => {
+  listeners.add(l);
+  return () => {
+    listeners.delete(l);
+  };
+};
+
+/** Anything that opens the New goal sheet: the hint row, the empty state's button. */
+export function NewGoalButton({ className, children }: { className: string; children: ReactNode }) {
+  return (
+    <button type="button" onClick={() => setNewGoalOpen(true)} className={className}>
+      {children}
+    </button>
+  );
+}
 
 export type GoalDraft = {
   id?: string;
@@ -44,30 +80,61 @@ const KINDS: { value: GoalDraft["kind"]; label: string; business?: boolean }[] =
 
 const initial: FormState = { ok: false, message: null };
 
+// A placeholder that reads as a hint, never as a filled value.
+const field = `${input} placeholder:text-label-2/50`;
+
+/** Whether an existing goal uses anything behind "More options", so its sheet opens with it shown. */
+function usesMore(d: GoalDraft): boolean {
+  const titles = d.calendarTitles.trim();
+  return (
+    d.kind !== "time" ||
+    (titles !== "" && titles.toLowerCase() !== d.title.trim().toLowerCase()) ||
+    d.messagesCount ||
+    (d.category === "personal" && d.label !== "" && d.label !== "fun")
+  );
+}
+
+/**
+ * Area, name and hours a week; everything else waits behind one "More options" row. The fields in
+ * there stay mounted (only hidden) so the form always posts them. A new goal's calendar blocks
+ * follow its name until edited, so a "Gym" goal counts "Gym" blocks without a second thought.
+ */
 function GoalForm({
   draft,
   formId,
   onDone,
+  onPending,
   personalReady,
 }: {
   draft: GoalDraft;
   formId: string;
   onDone: () => void;
+  /** The Save button sits in the sheet header, outside the form, so it hears pending from here. */
+  onPending: (pending: boolean) => void;
   personalReady: boolean;
 }) {
   const action = draft.id ? editGoal.bind(null, draft.id) : addGoal;
-  const [state, formAction, pending] = useActionState(action, initial);
+  const [state, formAction, pending] = useActionState(safeFormAction(action), initial);
   const [category, setCategory] = useState<Category>(draft.category);
   const [kind, setKind] = useState<GoalDraft["kind"]>(draft.kind);
   const [unit, setUnit] = useState(draft.unit);
   const [label, setLabel] = useState<"fun" | "family" | "hobby">(
     (["fun", "family", "hobby"].includes(draft.label) ? draft.label : "fun") as "fun" | "family" | "hobby",
   );
+  const [title, setTitle] = useState(draft.title);
+  const [titles, setTitles] = useState(draft.calendarTitles);
+  // An existing goal keeps its blocks as they are; a new one follows its name until edited.
+  const [titlesEdited, setTitlesEdited] = useState(Boolean(draft.id));
+  const [more, setMore] = useState(() => Boolean(draft.id) && usesMore(draft));
   const uid = useId();
 
   useEffect(() => {
     if (state.ok) onDone();
   }, [state, onDone]);
+
+  useEffect(() => {
+    onPending(pending);
+  }, [pending, onPending]);
 
   useEffect(() => {
     if (kind === "checklist" && category !== "business") setKind("time");
@@ -85,148 +152,147 @@ function GoalForm({
         }))}
         disabled={personalReady ? [] : ["personal"]}
       />
-      {category === "personal" && !personalReady ? (
-        <p className="-mt-4 px-1 text-footnote text-label-2">
-          Personal goals switch on later tonight, with the new categories.
-        </p>
-      ) : null}
 
       <div className="overflow-hidden rounded-group bg-fill">
         <Row label="Name" htmlFor={`${uid}-title`}>
           <input
             id={`${uid}-title`}
             name="title"
-            defaultValue={draft.title}
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
             required
             maxLength={60}
             autoComplete="off"
-            placeholder={
-              category === "business"
-                ? "The company"
-                : category === "health"
-                  ? "70.3 training"
-                  : "Rock N Roll"
-            }
-            className={input}
+            placeholder="What is it?"
+            className={field}
           />
         </Row>
+        {kind === "time" ? (
+          <Row label="Hours a week" htmlFor={`${uid}-hours`}>
+            <input
+              id={`${uid}-hours`}
+              name="hours"
+              inputMode="decimal"
+              defaultValue={draft.hours}
+              placeholder="0"
+              className={`${field} tnum`}
+            />
+          </Row>
+        ) : kind === "target" ? (
+          <Row
+            label={unit === "by_time" ? "By" : unit === "hours_a_day" ? "Hours a day" : "A day"}
+            htmlFor={`${uid}-value`}
+          >
+            <input
+              id={`${uid}-value`}
+              name="value"
+              type={unit === "by_time" ? "time" : "text"}
+              inputMode={unit === "by_time" ? undefined : "decimal"}
+              defaultValue={draft.value}
+              placeholder="0"
+              className={`${field} tnum`}
+            />
+          </Row>
+        ) : kind === "count" ? (
+          <Row label="Times a week" htmlFor={`${uid}-n`}>
+            <input
+              id={`${uid}-n`}
+              name="per_week"
+              inputMode="numeric"
+              defaultValue={draft.perWeek}
+              placeholder="0"
+              className={`${field} tnum`}
+            />
+          </Row>
+        ) : null}
       </div>
 
-      <div className="flex flex-col gap-2">
-        <Segmented<GoalDraft["kind"]>
-          name="kind"
-          value={kind}
-          onChange={setKind}
-          options={KINDS.filter((k) => !k.business || category === "business")}
-        />
-        <div className="overflow-hidden rounded-group bg-fill">
+      <div className="flex flex-col gap-3">
+        <button
+          type="button"
+          onClick={() => setMore((m) => !m)}
+          aria-expanded={more}
+          aria-controls={`${uid}-more`}
+          className="press flex min-h-11 items-center justify-between px-1 text-body text-label-2"
+        >
+          More options
+          <svg
+            viewBox="0 0 12 12"
+            aria-hidden="true"
+            className={`size-3 transition-transform duration-[var(--m-dur-smooth)] ease-[var(--m-spring-smooth)] motion-reduce:transition-none ${more ? "rotate-90" : ""}`}
+          >
+            <path
+              d="M4 2l4 4-4 4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
+
+        <div id={`${uid}-more`} hidden={!more} className="m-live-enter flex flex-col gap-3">
+          <Segmented<GoalDraft["kind"]>
+            name="kind"
+            value={kind}
+            onChange={setKind}
+            options={KINDS.filter((k) => !k.business || category === "business")}
+          />
+          {kind === "target" ? (
+            <Segmented
+              name="unit"
+              value={unit}
+              onChange={setUnit}
+              options={[
+                { value: "hours_a_day", label: "Hours a day" },
+                { value: "by_time", label: "By a time" },
+                { value: "number_a_day", label: "A number" },
+              ]}
+            />
+          ) : null}
           {kind === "time" ? (
-            <>
-              <Row label="Hours a week" htmlFor={`${uid}-hours`}>
-                <input
-                  id={`${uid}-hours`}
-                  name="hours"
-                  inputMode="decimal"
-                  defaultValue={draft.hours}
-                  placeholder="9"
-                  className={`${input} tnum`}
-                />
-              </Row>
+            <div className="overflow-hidden rounded-group bg-fill">
               <Row label="Calendar blocks" htmlFor={`${uid}-cal`}>
                 <input
                   id={`${uid}-cal`}
                   name="calendar_titles"
-                  defaultValue={draft.calendarTitles}
-                  placeholder="Cold Outreach, Call Leads"
+                  value={titlesEdited ? titles : title}
+                  onChange={(e) => {
+                    setTitles(e.target.value);
+                    setTitlesEdited(true);
+                  }}
+                  placeholder="Same as the name"
                   autoComplete="off"
-                  className={input}
+                  className={field}
                 />
               </Row>
-            </>
-          ) : kind === "target" ? (
-            <>
-              <div className="px-4 py-2">
-                <Segmented
-                  name="unit"
-                  value={unit}
-                  onChange={setUnit}
-                  options={[
-                    { value: "hours_a_day", label: "Hours a day" },
-                    { value: "by_time", label: "By a time" },
-                    { value: "number_a_day", label: "A number" },
-                  ]}
-                />
-              </div>
-              <Row label="Target" htmlFor={`${uid}-value`}>
-                <input
-                  id={`${uid}-value`}
-                  name="value"
-                  type={unit === "by_time" ? "time" : "text"}
-                  inputMode={unit === "by_time" ? undefined : "decimal"}
-                  defaultValue={draft.value}
-                  placeholder={unit === "hours_a_day" ? "7.5" : unit === "by_time" ? "23:00" : "2500"}
-                  className={`${input} tnum`}
-                />
-              </Row>
-            </>
-          ) : kind === "count" ? (
-            <Row label="Times a week" htmlFor={`${uid}-n`}>
-              <input
-                id={`${uid}-n`}
-                name="per_week"
-                inputMode="numeric"
-                defaultValue={draft.perWeek}
-                placeholder="1"
-                className={`${input} tnum`}
-              />
-            </Row>
-          ) : (
-            <p className="px-4 py-3 text-subhead text-label-2">
-              You set the day's items each Morning. Michael counts how many get done.
-            </p>
-          )}
+              {category === "business" ? (
+                <Row label="Messages count as work" htmlFor={`${uid}-msg`}>
+                  <input
+                    id={`${uid}-msg`}
+                    name="messages_count"
+                    type="checkbox"
+                    defaultChecked={draft.messagesCount}
+                    className="m-switch"
+                  />
+                </Row>
+              ) : null}
+            </div>
+          ) : null}
+          {category === "personal" && personalReady ? (
+            <Segmented
+              name="label"
+              value={label}
+              onChange={setLabel}
+              options={[
+                { value: "fun", label: "Fun" },
+                { value: "family", label: "Family" },
+                { value: "hobby", label: "Hobby" },
+              ]}
+            />
+          ) : null}
         </div>
-        {kind === "time" ? (
-          <p className="px-4 text-footnote text-label-2">
-            Blocks in your calendar whose title starts with one of these count for this goal.
-          </p>
-        ) : null}
       </div>
-
-      {category === "business" && kind === "time" ? (
-        <div className="flex flex-col gap-2">
-          <div className="overflow-hidden rounded-group bg-fill">
-            <Row label="Messages count as work" htmlFor={`${uid}-msg`}>
-              <input
-                id={`${uid}-msg`}
-                name="messages_count"
-                type="checkbox"
-                defaultChecked={draft.messagesCount}
-                className="m-switch"
-              />
-            </Row>
-          </div>
-          <p className="px-4 text-footnote text-label-2">
-            For sales and outreach, mail and WhatsApp are the work, not a distraction.
-          </p>
-        </div>
-      ) : null}
-
-      {category === "personal" && personalReady ? (
-        <div className="flex flex-col gap-2">
-          <p className="px-4 text-footnote font-semibold text-label-2">Kind of time</p>
-          <Segmented
-            name="label"
-            value={label}
-            onChange={setLabel}
-            options={[
-              { value: "fun", label: "Fun" },
-              { value: "family", label: "Family" },
-              { value: "hobby", label: "Hobby" },
-            ]}
-          />
-        </div>
-      ) : null}
 
       {state.message && !state.ok ? (
         <p role="alert" className="px-1 text-subhead text-danger">
@@ -237,33 +303,49 @@ function GoalForm({
   );
 }
 
-function SaveButton({ formId, label }: { formId: string; label: string }) {
+function SaveButton({ formId, label, pending }: { formId: string; label: string; pending: boolean }) {
   return (
     <button
       type="submit"
       form={formId}
-      className="press -mr-2 h-11 px-2 text-body font-semibold text-tint-text"
+      disabled={pending}
+      aria-busy={pending}
+      className="press -mr-2 h-11 min-w-[4.5rem] px-2 text-right text-body font-semibold text-tint-text disabled:opacity-60"
     >
-      {label}
+      {pending ? (label === "Add" ? "Adding" : "Saving") : label}
     </button>
   );
 }
 
-/** "+" next to the Mi button: a new goal in one sheet. */
-export function AddGoal({ personalReady }: { personalReady: boolean }) {
-  const [open, setOpen] = useState(false);
+/**
+ * "+" next to the Mi button: a new goal in one sheet. Goals Michael found in the calendar come
+ * first, one tap to keep each; the form below sets one of your own.
+ */
+export function AddGoal({
+  personalReady,
+  suggestions = [],
+}: {
+  personalReady: boolean;
+  suggestions?: GoalSuggestion[];
+}) {
+  const open = useSyncExternalStore(
+    subscribe,
+    () => newGoalOpen,
+    () => false,
+  );
   const [key, setKey] = useState(0);
+  const [saving, setSaving] = useState(false);
   const formId = useId();
-  const close = () => {
-    setOpen(false);
+  const close = useCallback(() => {
+    setNewGoalOpen(false);
     setKey((k) => k + 1);
-  };
+  }, []);
   return (
     <>
       <button
         type="button"
         aria-label="New goal"
-        onClick={() => setOpen(true)}
+        onClick={() => setNewGoalOpen(true)}
         className="press -m-[7px] grid size-11 place-items-center rounded-full"
       >
         <span className="grid size-[30px] place-items-center rounded-full bg-fill text-tint-text">
@@ -276,9 +358,22 @@ export function AddGoal({ personalReady }: { personalReady: boolean }) {
         open={open}
         onClose={close}
         title="New goal"
-        trailing={<SaveButton formId={formId} label="Add" />}
+        trailing={<SaveButton formId={formId} label="Add" pending={saving} />}
       >
-        <GoalForm key={key} draft={EMPTY} formId={formId} onDone={close} personalReady={personalReady} />
+        {suggestions.length > 0 ? (
+          <>
+            <CalendarGoals key={`s${key}`} initial={suggestions} tone="tinted" />
+            <h3 className="mt-7 mb-3 px-1 text-subhead font-semibold text-label-2">Or set your own</h3>
+          </>
+        ) : null}
+        <GoalForm
+          key={key}
+          draft={EMPTY}
+          formId={formId}
+          onDone={close}
+          onPending={setSaving}
+          personalReady={personalReady}
+        />
       </Sheet>
     </>
   );
@@ -289,72 +384,110 @@ export function EditGoal({
   draft,
   personalReady,
   children,
+  className = "press block w-full text-left",
 }: {
   draft: GoalDraft;
   personalReady: boolean;
-  children: React.ReactNode;
+  children: ReactNode;
+  /** The trigger's look: a whole row by default, or a small button inside an open row. */
+  className?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const [doing, setDoing] = useState<"pause" | "delete" | null>(null);
+  const [saving, setSaving] = useState(false);
   const formId = useId();
-  const close = () => {
+  const close = useCallback(() => {
     setOpen(false);
     setConfirmDelete(false);
     setNote(null);
-  };
+  }, []);
   const id = draft.id as string;
 
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className="press block w-full text-left">
+      <button type="button" onClick={() => setOpen(true)} className={className}>
         {children}
       </button>
       <Sheet
         open={open}
         onClose={close}
         title={draft.title}
-        trailing={<SaveButton formId={formId} label="Save" />}
+        trailing={<SaveButton formId={formId} label="Save" pending={saving} />}
       >
-        <GoalForm draft={draft} formId={formId} onDone={close} personalReady={personalReady} />
+        <GoalForm
+          draft={draft}
+          formId={formId}
+          onDone={close}
+          onPending={setSaving}
+          personalReady={personalReady}
+        />
         <div className="mt-6 overflow-hidden rounded-group bg-fill">
           <button
             type="button"
             disabled={pending}
-            onClick={() =>
+            aria-busy={pending && doing === "pause"}
+            onClick={() => {
+              setDoing("pause");
               start(async () => {
-                const r = await pauseGoal(id, !draft.active);
-                setNote(r.message);
-                if (r.ok) close();
-              })
-            }
-            className="press flex min-h-11 w-full items-center px-4 text-body text-tint-text"
+                try {
+                  const r = await pauseGoal(id, !draft.active);
+                  setNote(r.message);
+                  if (r.ok) close();
+                } catch {
+                  setNote("I could not reach the server. Nothing changed.");
+                }
+              });
+            }}
+            className="press flex min-h-11 w-full items-center px-4 text-body text-tint-text disabled:opacity-60"
           >
-            {draft.active ? "Pause this goal" : "Resume this goal"}
+            {pending && doing === "pause"
+              ? draft.active
+                ? "Pausing"
+                : "Resuming"
+              : draft.active
+                ? "Pause this goal"
+                : "Resume this goal"}
           </button>
           <button
             type="button"
             disabled={pending}
-            onClick={() =>
-              confirmDelete
-                ? start(async () => {
-                    const r = await removeGoal(id);
-                    setNote(r.message);
-                    if (r.ok) close();
-                  })
-                : setConfirmDelete(true)
-            }
+            aria-busy={pending && doing === "delete"}
+            onClick={() => {
+              if (!confirmDelete) return setConfirmDelete(true);
+              setDoing("delete");
+              start(async () => {
+                try {
+                  const r = await removeGoal(id);
+                  setNote(r.message);
+                  if (r.ok) close();
+                } catch {
+                  setNote("I could not reach the server. Nothing changed.");
+                }
+              });
+            }}
             className="press relative flex min-h-11 w-full items-center px-4 text-body text-danger before:absolute before:inset-x-0 before:top-0 before:ml-4 before:h-[0.5px] before:bg-separator before:content-['']"
           >
-            {confirmDelete ? "Delete for good? Tap again" : "Delete this goal"}
+            {pending && doing === "delete"
+              ? "Deleting"
+              : confirmDelete
+                ? "Delete for good? Tap again"
+                : "Delete this goal"}
           </button>
         </div>
         {note ? (
-          <p role="status" className="mt-2 px-1 text-footnote text-label-2">
+          <p role="status" className="m-swap mt-2 px-1 text-footnote text-label-2">
             {note}
           </p>
-        ) : null}
+        ) : (
+          <p className="mt-2 px-1 text-footnote text-label-2">
+            {draft.active
+              ? "A paused goal stays out of the score until you resume it."
+              : "Resume it and it counts again from today."}
+          </p>
+        )}
       </Sheet>
     </>
   );

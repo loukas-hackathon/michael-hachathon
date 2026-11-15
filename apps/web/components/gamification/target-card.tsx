@@ -1,8 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import { acceptTarget, setTarget } from "@/app/goals/target-actions";
 import { CATEGORY_TITLE } from "@/lib/categories";
-import { AREA_ORDER, type Areas, type Baseline, targetLine, type WeeklyTarget } from "@/lib/gamification";
+import {
+  AREA_ORDER,
+  type Baseline,
+  type MaybeAreas,
+  targetLine,
+  type WeeklyTarget,
+} from "@/lib/gamification";
 import { MiMark } from "../brand";
 import { Sheet } from "../sheet";
 
@@ -55,16 +62,24 @@ function Stepper({
 export function TargetCard({ target, baseline }: { target: WeeklyTarget | null; baseline: Baseline | null }) {
   const [t, setT] = useState(target);
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState<{ overall: number; areas: Areas } | null>(null);
+  const [draft, setDraft] = useState<{ overall: number; areas: MaybeAreas } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [, start] = useTransition();
 
   if (!t) {
     if (!baseline) return null;
     return (
       <section className="flex flex-col gap-1.5 rounded-card bg-fill px-4 pt-3.5 pb-4">
-        <p className="text-body font-semibold">Your target comes after two full weeks.</p>
-        <p className="text-subhead text-label-2 tnum">
-          {baseline.weeksDone} of {baseline.weeksNeeded} done. I'm learning your usual week first.
-        </p>
+        {baseline.reason ? (
+          <p className="text-body">{baseline.reason}</p>
+        ) : (
+          <>
+            <p className="text-body font-semibold">Your target comes after two full weeks.</p>
+            <p className="text-subhead text-label-2 tnum">
+              {baseline.weeksDone} of {baseline.weeksNeeded} done. I'm learning your usual week first.
+            </p>
+          </>
+        )}
       </section>
     );
   }
@@ -100,7 +115,23 @@ export function TargetCard({ target, baseline }: { target: WeeklyTarget | null; 
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
-          onClick={() => setT({ ...t, status: "accepted" })}
+          onClick={() => {
+            const before = t;
+            setT({ ...t, status: "accepted" });
+            if (t.weekStart) {
+              const week = t.weekStart;
+              start(async () => {
+                const r = await acceptTarget(week).catch(() => ({
+                  ok: false as const,
+                  message: "I could not reach the server. Nothing changed.",
+                }));
+                if (!r.ok) {
+                  setT(before);
+                  setError(r.message);
+                }
+              });
+            }
+          }}
           className="press min-h-9 rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint"
         >
           Accept
@@ -114,6 +145,12 @@ export function TargetCard({ target, baseline }: { target: WeeklyTarget | null; 
         </button>
       </div>
 
+      {error ? (
+        <p role="alert" className="text-subhead text-danger">
+          {error}
+        </p>
+      ) : null}
+
       <Sheet
         open={editing}
         onClose={() => setEditing(false)}
@@ -122,7 +159,23 @@ export function TargetCard({ target, baseline }: { target: WeeklyTarget | null; 
           <button
             type="button"
             onClick={() => {
-              if (draft) setT({ ...t, ...draft, status: "edited", setBy: "user" });
+              if (draft) {
+                const before = t;
+                setT({ ...t, ...draft, status: "edited", setBy: "user" });
+                if (t.weekStart) {
+                  const week = t.weekStart;
+                  start(async () => {
+                    const r = await setTarget(week, draft.overall, draft.areas).catch(() => ({
+                      ok: false as const,
+                      message: "I could not reach the server. Nothing changed.",
+                    }));
+                    if (!r.ok) {
+                      setT(before);
+                      setError(r.message);
+                    }
+                  });
+                }
+              }
               setEditing(false);
             }}
             className="press -mr-2 h-11 px-2 text-body font-semibold text-tint-text"
@@ -139,11 +192,11 @@ export function TargetCard({ target, baseline }: { target: WeeklyTarget | null; 
                 value={draft.overall}
                 onChange={(v) => setDraft({ ...draft, overall: v })}
               />
-              {AREA_ORDER.map((a) => (
+              {AREA_ORDER.filter((a) => draft.areas[a] != null).map((a) => (
                 <Stepper
                   key={a}
                   label={CATEGORY_TITLE[a]}
-                  value={draft.areas[a]}
+                  value={draft.areas[a] as number}
                   onChange={(v) => setDraft({ ...draft, areas: { ...draft.areas, [a]: v } })}
                 />
               ))}

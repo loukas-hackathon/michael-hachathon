@@ -1,10 +1,27 @@
 import type { NextConfig } from "next";
 
+// One id per deploy. The service worker is registered as /sw.js?v=<id>, so each deploy installs a
+// fresh worker with fresh cache names (components/service-worker.tsx).
+// Saved back to the environment so build workers that load this file again agree on it.
+const buildId = (
+  process.env.VERCEL_GIT_COMMIT_SHA ??
+  process.env.NEXT_PUBLIC_BUILD_ID ??
+  Date.now().toString(36)
+).slice(0, 12);
+process.env.NEXT_PUBLIC_BUILD_ID = buildId;
+
 const config: NextConfig = {
+  env: { NEXT_PUBLIC_BUILD_ID: buildId },
   // packages/shared ships TypeScript source, so Next must transpile it.
   transpilePackages: ["@michael/shared"],
   // The floating dev badge sits on top of the tab bar; keep screenshots honest.
   devIndicators: false,
+  experimental: {
+    // Instant tabs: visited and prefetched screens stay in the browser's router cache for five
+    // minutes, so switching back paints at once. The tab bar refreshes a stale copy in the
+    // background (components/tab-bar.tsx); server actions that revalidate still clear it.
+    staleTimes: { dynamic: 300, static: 300 },
+  },
   // Old names for Connections: links and docs that say Devices still land on the list.
   async redirects() {
     return [
@@ -22,6 +39,11 @@ const config: NextConfig = {
           { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
           { key: "Content-Security-Policy", value: "default-src 'self'; script-src 'self'" },
         ],
+      },
+      {
+        // The data free app shell the worker paints on a slow network: always revalidated.
+        source: "/shell.html",
+        headers: [{ key: "Cache-Control", value: "no-cache" }],
       },
     ];
   },

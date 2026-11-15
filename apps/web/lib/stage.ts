@@ -1,6 +1,7 @@
 import "server-only";
 import type { AgentClient, AgentQuery, Nudge } from "@michael/shared";
-import { API_URL, bearer } from "./api";
+import { API_URL } from "./api";
+import { authHeaders } from "./caller";
 
 // The live part of the stage view (/stage): today's latest nudge and who asked about the user.
 // Polled by the browser every 3 seconds through /stage/feed, so it never sees a token.
@@ -16,7 +17,7 @@ export type StageFeed = {
 async function call<T>(path: string): Promise<T | null> {
   try {
     const res = await fetch(`${API_URL}${path}`, {
-      headers: { authorization: `Bearer ${await bearer()}` },
+      headers: await authHeaders(),
       cache: "no-store",
       signal: AbortSignal.timeout(2500),
     });

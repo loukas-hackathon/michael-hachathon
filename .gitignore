@@ -29,3 +29,10 @@ supabase/.temp/
 
 # per-person agent context (contains private links)
 CLAUDE.local.md
+
+# end-to-end test output
+e2e/test-results/
+e2e/playwright-report/
+
+# Agents' scratch files (screenshots, logs, one off scripts), never committed.
+.scratch/

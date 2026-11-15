@@ -30,9 +30,10 @@ const DEFAULT_LABEL: Record<string, string> = {
 };
 
 async function placesResponse(places?: Place[]): Promise<PlacesResponse> {
-  const rules = await store.privacyRules();
+  // One wave of round trips, not two.
+  const [rules, list] = await Promise.all([store.privacyRules(), places ?? store.listPlaces()]);
   return {
-    places: places ?? (await store.listPlaces()),
+    places: list,
     maps_available: mapsAvailable(),
     travel_enabled: rules.sources.maps?.enabled === true,
   };

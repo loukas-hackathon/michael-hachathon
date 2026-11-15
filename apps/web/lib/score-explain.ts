@@ -39,7 +39,7 @@ export function explainFromScore(score: Score): ScoreExplain {
     unverified: score.unverified_minutes,
     lost: score.lost_minutes,
     ahead: score.ahead_minutes,
-    causes: (score.lost_causes ?? []).slice(0, 2).map((c) => ({ what: c.what, minutes: c.minutes })),
+    causes: (score.lost_by ?? []).slice(0, 2).map((c) => ({ what: c.what, minutes: c.minutes })),
     wonBack: score.time_won_back_minutes,
     usualLossRate: score.day.time_won_back.usual_loss_rate,
     daysLearnt: Math.min(LEARNING_DAYS, history),

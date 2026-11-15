@@ -1,12 +1,24 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import { type Event, IsoDateTime, type Recommendation } from "@michael/shared";
+import {
+  CheckInValue,
+  type Event,
+  IsoDateTime,
+  type Recommendation,
+  RitualEveningInput,
+  RitualMorningInput,
+} from "@michael/shared";
 import { z } from "zod";
+import { answerCheckIn } from "../checkin/service";
 import { HttpError } from "../http";
+import { forget, remember } from "../memory";
 import { DEFAULT_TIMEZONE } from "../patterns";
 import { Zone } from "../patterns/time";
+import { logEvening, planMorning } from "../ritual/ritual";
 import { store } from "../store";
 import { executeRecommendation, undoRecommendation } from "./calendar";
+import { draftText, generateDrafts } from "./drafts";
 import { guardMacApps } from "./mac-apps";
+import { PROPOSAL_TOOLS, runProposalTool } from "./proposals";
 
 // Tools the chat model can call so Michael acts, not only advises. Each action is a recommendation
 // (source "chat") carried out by the same code as POST /v1/recommendations/:id/execute and undone by
@@ -80,6 +92,17 @@ export const CHAT_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "draft_follow_up",
+    description:
+      "Draft short follow up messages after the user's conversations and meetings with other people, from the summary and their own commitments, and save them under Follow ups for the user to copy. Nothing is ever sent. Without event_id it covers what ended in the last 24 hours. Use it when the user asks for a follow up, then show them the text.",
+    input_schema: {
+      type: "object",
+      properties: {
+        event_id: { type: "string", description: "A conversation or meeting id (optional)" },
+      },
+    },
+  },
+  {
     name: "undo_action",
     description:
       "Take back something Michael did on the calendar or the Mac (a block he created or moved, or apps he muted), by its recommendation id from the list of things that can still be undone or from an earlier tool result.",
@@ -89,7 +112,155 @@ export const CHAT_TOOLS: Anthropic.Tool[] = [
       required: ["recommendation_id"],
     },
   },
+  {
+    name: "answer_check_in",
+    description:
+      "Keep the user's answer to one of today's open check in questions (listed with a check_in_id in the context), when they answer it in chat. value is 'yes' or 'no' for a yes or no question, a number 1 to 5 for a scale, or the user's own words. Store only what the user actually said.",
+    input_schema: {
+      type: "object",
+      properties: {
+        check_in_id: { type: "string" },
+        value: { description: "'yes', 'no', an integer 1 to 5, or the user's words" },
+      },
+      required: ["check_in_id", "value"],
+    },
+  },
+  {
+    name: "set_day_outcomes",
+    description:
+      'The morning plan: keep the one to three outcomes the user wants to get done today, in their own words, when they tell you ("my goals today are X and Y"). goal_id links an outcome to one of their goals when it clearly serves one (ids from the goals list); estimate_minutes only if they said how long. Outcomes already on today stay; three is the most.',
+    input_schema: {
+      type: "object",
+      properties: {
+        outcomes: {
+          type: "array",
+          minItems: 1,
+          maxItems: 3,
+          items: {
+            type: "object",
+            properties: {
+              text: {
+                type: "string",
+                description: "The outcome in the user's words, at most 200 characters",
+              },
+              goal_id: { type: "string" },
+              estimate_minutes: { type: "integer", minimum: 5, maximum: 720 },
+            },
+            required: ["text"],
+          },
+        },
+      },
+      required: ["outcomes"],
+    },
+  },
+  {
+    name: "log_day",
+    description:
+      "The evening log: record what the user says they got done of today's outcomes (listed with an item_id in the context), when they tell you (\"I finished X, did 30 min of Y\"). result is done, partly or not. carry: true continues an unfinished one tomorrow, only if they want that. minutes: time they did on it, which counts toward the outcome's goal. Only outcomes they spoke about; never tick one for them.",
+    input_schema: {
+      type: "object",
+      properties: {
+        results: {
+          type: "array",
+          minItems: 1,
+          items: {
+            type: "object",
+            properties: {
+              item_id: { type: "string" },
+              result: { type: "string", enum: ["done", "partly", "not"] },
+              carry: { type: "boolean" },
+              minutes: { type: "integer", minimum: 5, maximum: 720 },
+            },
+            required: ["item_id", "result"],
+          },
+        },
+      },
+      required: ["results"],
+    },
+  },
+  {
+    name: "remember",
+    description:
+      "Keep one lasting fact or preference the user told you about themselves, their routine or their goals, so you know it in every later conversation. One short line in the user's words, e.g. 'Trains best before 08:00'. Not one off plans and nothing about other people.",
+    input_schema: {
+      type: "object",
+      properties: { fact: { type: "string", description: "One short line, at most 280 characters" } },
+      required: ["fact"],
+    },
+  },
+  {
+    name: "forget_memory",
+    description:
+      "Forget one thing you remembered, when the user asks you to, by its memory_id from the context.",
+    input_schema: {
+      type: "object",
+      properties: { memory_id: { type: "string" } },
+      required: ["memory_id"],
+    },
+  },
+  ...PROPOSAL_TOOLS,
 ];
+
+const RememberInput = z.object({ fact: z.string().min(1).max(1000) });
+const ForgetInput = z.object({ memory_id: z.uuid() });
+
+async function keep(input: unknown): Promise<ToolOutcome> {
+  const p = RememberInput.safeParse(input);
+  if (!p.success) return invalid(p.error);
+  const m = await remember(p.data.fact, "chat");
+  return m
+    ? { content: `Remembered: ${m.text} (memory_id ${m.id}).`, isError: false }
+    : { content: "Not kept: the user is off the record.", isError: true };
+}
+
+async function drop(input: unknown): Promise<ToolOutcome> {
+  const p = ForgetInput.safeParse(input);
+  if (!p.success) return invalid(p.error);
+  return (await forget(p.data.memory_id))
+    ? { content: "Forgotten.", isError: false }
+    : { content: "No such memory.", isError: true };
+}
+
+/** What one answer has done so far, shared by its tool calls. */
+export interface ChatTurnState {
+  proposals: number;
+}
+
+const AnswerInput = z.object({ check_in_id: z.uuid(), value: CheckInValue });
+
+async function answerQuestion(input: unknown): Promise<ToolOutcome> {
+  const p = AnswerInput.safeParse(input);
+  if (!p.success) return invalid(p.error);
+  const { check_in, follow_up } = await answerCheckIn(p.data.check_in_id, p.data.value);
+  return {
+    content:
+      `Kept: ${check_in.question} Answer: ${String(check_in.answer)}.` +
+      (follow_up
+        ? ` Ask this follow up next, word for word: "${follow_up.question}" {check_in_id ${follow_up.id}}`
+        : ""),
+    isError: false,
+  };
+}
+
+/** The morning plan from chat (#318): same rules as POST /v1/ritual/morning. */
+async function setOutcomes(input: unknown): Promise<ToolOutcome> {
+  const p = RitualMorningInput.safeParse(input);
+  if (!p.success) return invalid(p.error);
+  const day = await planMorning(p.data);
+  const lines = day.items.map((i) => `- ${i.text} {item_id ${i.id}}`);
+  return {
+    content: `Kept today's outcomes (${day.items.length} of 3):\n${lines.join("\n")}`,
+    isError: false,
+  };
+}
+
+/** The evening log from chat (#318): same rules as POST /v1/ritual/evening. */
+async function logDay(input: unknown): Promise<ToolOutcome> {
+  const p = RitualEveningInput.safeParse(input);
+  if (!p.success) return invalid(p.error);
+  const { summary } = await logEvening(p.data);
+  return { content: `Logged. Tell the user this line, word for word: "${summary}"`, isError: false };
+}
 
 const FindInput = z.object({ from: IsoDateTime, to: IsoDateTime });
 const CreateInput = z.object({
@@ -105,6 +276,7 @@ const MoveInput = z.object({
   new_title: z.string().trim().min(1).max(200).nullish(),
 });
 const UndoInput = z.object({ recommendation_id: z.uuid() });
+const DraftInput = z.object({ event_id: z.uuid().nullish() });
 const GuardInput = z.object({
   apps: z.array(z.string().trim().min(1).max(80)).min(1).max(10),
   start_at: IsoDateTime,
@@ -248,13 +420,49 @@ async function undo(input: unknown): Promise<ToolOutcome> {
   return { content: `Undone: ${rec.title}.`, isError: false, action: rec };
 }
 
+async function draftFollowUp(input: unknown): Promise<ToolOutcome> {
+  const p = DraftInput.safeParse(input ?? {});
+  if (!p.success) return invalid(p.error);
+  const { drafts, skipped } = await generateDrafts({ eventId: p.data.event_id ?? undefined });
+  if (drafts.length)
+    return {
+      content: `Saved under Follow ups; nothing was sent.\n\n${drafts.map(draftText).join("\n\n")}`,
+      isError: false,
+    };
+  return {
+    content: skipped
+      ? "Those already have drafts under Follow ups."
+      : "No conversation or meeting with other people ended in the last 24 hours.",
+    isError: false,
+  };
+}
+
 /**
  * Runs one tool call. Guard rail refusals (HttpError, e.g. 409 for an event with other people)
  * come back as error results the model explains; anything else is a real failure and throws.
  */
-export async function runChatTool(name: string, input: unknown): Promise<ToolOutcome> {
+export async function runChatTool(
+  name: string,
+  input: unknown,
+  turn: ChatTurnState = { proposals: 0 },
+): Promise<ToolOutcome> {
   try {
+    if (name.startsWith("propose_")) {
+      // One proposal per answer (#188): the user decides one change at a time.
+      if (turn.proposals > 0)
+        return { content: "One proposal per answer. Wait for the user.", isError: true };
+      const outcome = await runProposalTool(name, input);
+      if (!outcome) return { content: `Unknown tool ${name}`, isError: true };
+      if (!outcome.isError) turn.proposals++;
+      return outcome;
+    }
     switch (name) {
+      case "answer_check_in":
+        return await answerQuestion(input);
+      case "set_day_outcomes":
+        return await setOutcomes(input);
+      case "log_day":
+        return await logDay(input);
       case "find_calendar_blocks":
         return await findBlocks(input);
       case "create_focus_block":
@@ -265,6 +473,12 @@ export async function runChatTool(name: string, input: unknown): Promise<ToolOut
         return await guardApps(input);
       case "undo_action":
         return await undo(input);
+      case "remember":
+        return await keep(input);
+      case "forget_memory":
+        return await drop(input);
+      case "draft_follow_up":
+        return await draftFollowUp(input);
       default:
         return { content: `Unknown tool ${name}`, isError: true };
     }

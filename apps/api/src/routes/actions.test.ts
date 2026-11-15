@@ -189,7 +189,7 @@ test("past times and other action kinds are refused", () =>
       payload: { start_at: iso(Date.now() - HOUR), end_at: iso(Date.now() + HOUR) },
     });
     await assert.rejects(executeRecommendation(CREATE_ID), /already started/);
-    await withAction(CREATE_ID, { kind: "draft_follow_up", payload: { text: "Thanks" } });
+    await withAction(CREATE_ID, { kind: "reminder", payload: { at: iso(Date.now() + HOUR), text: "Water" } });
     await assert.rejects(executeRecommendation(CREATE_ID), /cannot be carried out yet/);
     // Safari is a browser, not on the list of apps Michael may close.
     await withAction(CREATE_ID, {

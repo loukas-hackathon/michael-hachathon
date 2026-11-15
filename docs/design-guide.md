@@ -28,21 +28,23 @@ pink that only ever means goal time.
 Michael has watched the tape of your day, so time is drawn as tape. It is the outline and fill idea
 at its smallest scale.
 
-- One tick is 5 minutes of planned goal time.
-- **Spent:** a filled pink tick (`--m-spark`).
-- **Lost:** a grey tick at 45% height, dropped to the baseline (`--m-label-2`, 75% opacity).
-- **Still ahead:** an outline tick, 1px `--m-label-2` stroke, no fill.
-- Ticks are grouped by block with a wider gap between blocks. A `now` marker (1.5px `--m-label`
-  line with a small time label) sits at the boundary between past and ahead.
+- It is ONE continuous capsule bar (the human's call, 14 November: one dynamic bar, never blocks).
+  Each 5 minutes of planned goal time is a slice of it, and slices of one state merge into a run.
+- **Spent:** pink (`--m-spark`); unconfirmed spent is the lighter pink.
+- **Lost:** hatched grey, outlined top and bottom so the bar's edge runs through it.
+- **Still ahead:** the bar's own outline, 1px `--m-label-2`, no fill.
+- A `now` marker (1.5px `--m-label` line with a small time label) sits at the boundary between
+  past and ahead. Before anything is spent the tape is not shown: the sentence says when the first
+  block starts.
 - The score is this strip written as a number: spent divided by planned so far.
 
 Where the tape appears:
 
 | Place        | Form                                                                                                                                           |
 | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| Today        | One horizontal strip under the score, full content width, ticks 30px tall                                                                      |
+| Today        | One horizontal bar under the score, full content width, 12px tall                                                                              |
 | Timeline     | Vertical: planned blocks are dashed outlines, spent time fills them pink, interruptions cut the block's right edge, lost stretches are hatched |
-| Goals        | Coarser: one notch per 30 minutes of the weekly budget, with a black pace tick                                                                 |
+| Goals        | One bar per goal for the weekly budget (`GoalBar`), booked time outlined, with a black pace tick                                               |
 | Watch, stage | The Today strip, small, under the number                                                                                                       |
 
 Never draw goal time as rings, donuts or dials. They read as Apple's Activity rings and hide when the
@@ -94,8 +96,10 @@ Inside the app, the system font. Outside the app (slides, film, website, brand p
 ## Space, radius, elevation
 
 - Spacing scale: 4, 8, 12, 16, 20, 24, 32, 44. Screen margin 16. Between groups 24. Inside a group 12.
-- Radius: 2 for ticks, 7 for timeline blocks and bars, 12 for inset groups, 16 for Michael's card,
-  capsule for buttons, scope chips and the tab bar.
+- Radius: 2 for ticks, 7 for timeline blocks, 10 for controls (text buttons, fields), 12 for inset
+  groups, 16 for Michael's card, 20 for sheets, capsule for buttons, chips, bars and the tab bar.
+  Continuous (squircle) corners where the browser supports them. Details, focus rings and the
+  no noise rules: `.claude/skills/michael-ui/SKILL.md`.
 - Elevation: groups sit on `--m-fill` with no border and no shadow. Only floating things (tab bar,
   sheets) get a shadow, and only with a tight blur. Never a border and a soft wide shadow together.
 - Blur only on the floating tab bar and sheet backdrops, as on iOS.
@@ -157,8 +161,8 @@ Header "November" + Mi, title "Timeline", a week strip (M to S, today in a black
 
 Title "Goals", context "Wednesday. 4 days to go.", sorted furthest behind first.
 
-- One row per goal: name, "1h 20 of 6h", the notched track (one notch per 30 minutes, black pace
-  tick), seven thin day columns (today pink, other days `--m-context`, future days as small outlines),
+- One row per goal: name, "1h 20 of 6h", one continuous bar (black pace tick), seven thin day
+  columns (today pink, other days `--m-context`, future days as small outlines),
   and a meta line: "Behind pace. 4h 40 left."
 - "The maths" group when goals compete: the sentence ("These three need 16h 10 more this week. You
   have 12h free. Which one gives?") and a labelled split bar with a pink free time marker.
@@ -234,6 +238,8 @@ rules, the springs' derivation and a checklist are in the agent skill
 | `--m-dur-smooth`        | 430ms                                        | Always with `--m-spring-smooth`              |
 | `--m-dur-sheet`, `-out` | 500ms in, 360ms out                          | Sheets                                       |
 | `--m-dur-count`         | 700ms                                        | Score count up                               |
+| `--m-dur-tween`         | 450ms                                        | A number that changed after mount            |
+| `--m-stagger`           | 30ms, capped at six items                    | Several things arriving together             |
 
 | What                       | How                                                                                                       |
 | -------------------------- | --------------------------------------------------------------------------------------------------------- |
@@ -242,11 +248,12 @@ rules, the springs' derivation and a checklist are in the agent skill
 | Tab switches               | None. The tab bar never moves                                                                             |
 | Interface changes          | 200ms, `--m-ease-out`; a status line that changes in place fades in (`.m-swap`)                           |
 | Arrivals                   | `.m-pop-in` from 0.96, from where it comes from (`--m-origin`); only items new since mount (`useArrival`) |
-| Departures                 | `.m-leave`, 200ms, then unmount                                                                           |
+| Departures                 | `.m-leave`, 200ms, then unmount; the items below slide into the gap (`FlipList`)                          |
+| Expand and collapse        | `<Collapse>`: height on `--m-spring-smooth`, content fades in behind; sheets ease to a new height         |
 | Switches, segmented        | Knob and pill slide on `--m-spring-smooth`; the knob stretches under the finger                           |
 | Sheets                     | 500ms in on `--m-ease-sheet`, 360ms out; a short drag settles back on `--m-spring`                        |
 | Score count up             | Once per session, 700ms, no bounce, after the splash. The real number is always in the DOM                |
-| Live refresh               | New blocks rise 6px and fade in; a tape tick that just filled grows from the baseline                     |
+| Live refresh               | New blocks rise 6px and fade in, 30ms apart in reading order; a filled tick grows; numbers move, 450ms    |
 | Loading                    | Skeleton in the final layout (`loading.tsx` per route): blank for 150ms, then a slow 1.6s breath          |
 | Reduced motion             | Instant, opacity only: no transforms, no count up, skeletons still                                        |
 
@@ -256,7 +263,7 @@ Animate `transform` and `opacity` only. Content is visible by default; motion ne
 
 The Build Hub voice sheet is the source; paste its lines as written. British spelling, 24 hour time,
 numbers first ("47 minutes", above two hours "2h 15"), no emoji, no exclamation marks, no dashes,
-never "productivity", "optimise" or "wellness". "I" for what Michael did, "we" for shared effort.
+never "productivity" or "wellness". "I" for what Michael did, "we" for shared effort.
 Buttons say the action and keep the word ("Undo until 09:00", then "Undone").
 
 ## Don'ts

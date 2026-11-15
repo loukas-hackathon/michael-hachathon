@@ -1,12 +1,39 @@
-import { formatTime, hm } from "@/lib/format";
-import { type HeartPoint, type Night, sleepAgainstGoal, workoutParts } from "@/lib/health";
-import { type Block, makeY, type TimelineDay } from "@/lib/timeline";
+"use client";
+
+import { type ReactNode, useState } from "react";
+import { Sheet } from "@/components/sheet";
+import { formatTime, hm, minutesPhrase } from "@/lib/format";
+import {
+  type HeartPoint,
+  type Nap,
+  type Night,
+  type SleepStages,
+  sleepAgainstGoal,
+  stageParts,
+  workoutParts,
+} from "@/lib/health";
+import {
+  type Block,
+  blockTitle,
+  lostMinutesOf,
+  makeY,
+  type Plan,
+  planFor,
+  type TimelineDay,
+} from "@/lib/timeline";
 import { HeartToggle } from "./heart-toggle";
 
 const PER_HOUR = 56;
 const QUIET = 32;
 const HOUR = 3_600_000;
 const iso = (ms: number) => new Date(ms).toISOString();
+const span = (from: number, to: number) => `${formatTime(iso(from))} to ${formatTime(iso(to))}`;
+
+type Picked =
+  | { kind: "block"; block: Block }
+  | { kind: "plan"; plan: Plan }
+  | { kind: "night"; night: Night; tonight: boolean }
+  | { kind: "nap"; nap: Nap };
 
 function blockMeta(b: Block) {
   const parts = [hm(b.minutes)];
@@ -25,22 +52,38 @@ function blockMeta(b: Block) {
  * The day, hour by hour (docs/design-guide.md, "Timeline"). Time flows down. Pink is goal time,
  * hatched is time lost, grey is everything else. Interruptions cut a block's right edge.
  * Phone sessions run down the right edge, Claude Code sessions down the left.
+ *
+ * Every label sits on a solid chip of its block's colour, so hatching never runs through text, and
+ * the hour labels step aside for the now pill. Tap a block for its detail sheet.
+ *
+ * The watch's nights frame the day (the night rule, lib/health.ts): the night you woke up from
+ * above it, the night you went to bed from below it, faint. Tap either for the stages.
  */
 export function DayTimeline({
   day,
   heartHidden = false,
+  sleepGoal = null,
 }: {
   day: TimelineDay;
   /** The heart rate lane starts hidden (the viewer turned it off). */
   heartHidden?: boolean;
+  /** Minutes a night the Sleep goal asks for; null without one. */
+  sleepGoal?: number | null;
 }) {
   const y = makeY(day.segments, PER_HOUR, QUIET);
   const health = day.health;
   const nights = [health?.lastNight, health?.tonight].filter((n): n is Night => Boolean(n));
   const workouts = health?.workouts ?? [];
+  const naps = health?.naps ?? [];
+  const lastNight = health?.lastNight ?? null;
+  const tonight = health?.tonight ?? null;
   const heart = health?.heart ?? [];
+  const [picked, setPicked] = useState<Picked | null>(null);
   const height = y(day.dayEnd);
   const plans = day.plans ?? [];
+  const nowY = day.now != null ? y(day.now) : null;
+  // The collapsed rows print their own times, so the hour labels at their edges stay out.
+  const edges = new Set(day.segments.flatMap((s) => (s.kind === "quiet" ? [s.from, s.to] : [])));
   const hours: number[] = [];
   for (const s of day.segments) {
     if (s.kind !== "hours") continue;
@@ -62,264 +105,425 @@ export function DayTimeline({
   }
 
   return (
-    <div
-      id={TIMELINE_ID}
-      data-hr={heart.length > 1 && !heartHidden ? "on" : "off"}
-      className="group/tl relative mt-3 tnum [--lane-r:16px] data-[hr=on]:[--lane-r:44px]"
-      style={{ height }}
-    >
-      {/* Quiet stretches, collapsed. */}
-      {day.segments.map((s) =>
-        s.kind === "quiet" ? (
-          <div
-            key={`q${s.from}`}
-            className="dots absolute inset-x-0 flex items-center justify-between rounded-block bg-fill px-2.5 text-footnote text-label-2"
-            style={{ top: y(s.from) + 3, height: QUIET - 6 }}
-          >
-            <span>
-              {formatTime(iso(s.from))} to{" "}
-              {s.to - s.from >= 24 * HOUR - 60_000 ? "24:00" : formatTime(iso(s.to))}
-            </span>
-            <span>{nights.some((n) => n.start < s.to && n.end > s.from) ? "Asleep" : "No screens"}</span>
-          </div>
-        ) : null,
-      )}
-
-      {/* Hour rules. */}
-      {hours.map((h) => (
-        <div
-          key={`h${h}`}
-          className="absolute inset-x-0 border-t-[0.5px] border-separator"
-          style={{ top: y(h) }}
-        >
-          <span className="absolute -top-[7px] left-0 bg-bg pr-1 text-caption font-medium text-label-2">
-            {formatTime(iso(h))}
-          </span>
-        </div>
-      ))}
-
-      {/* Claude Code lane. */}
-      {day.ai.map((m) => (
-        <span
-          key={`a${m.start}`}
-          className="absolute left-[42px] w-[3px] rounded-full bg-label opacity-40"
-          style={{ top: y(m.start), height: Math.max(3, y(m.end) - y(m.start)) }}
+    <>
+      {lastNight ? (
+        <SleepBand
+          night={lastNight}
+          goal={sleepGoal}
+          onOpen={() => setPicked({ kind: "night", night: lastNight, tonight: false })}
         />
-      ))}
-
-      {/* Planned outlines first, then what happened on top. Michael's own blocks are outlined in tint. */}
-      {plans.map((p) => (
-        <div
-          key={`cal${p.start}${p.title}`}
-          className={`absolute right-(--lane-r) left-[50px] rounded-block border-[1.5px] border-dashed ${
-            p.michael ? "border-tint" : "border-label-2"
-          }`}
-          style={{ top: y(p.start), height: Math.max(4, y(p.end) - y(p.start)) }}
-          title={`${p.title}, ${formatTime(iso(p.start))} to ${formatTime(iso(p.end))}`}
-        />
-      ))}
-      {day.blocks.map((b) =>
-        b.plan ? (
-          <div
-            key={`p${b.plan.start}`}
-            className="absolute right-(--lane-r) left-[50px] rounded-block border-[1.5px] border-dashed border-label-2"
-            style={{ top: y(b.plan.start), height: Math.max(4, y(b.plan.end) - y(b.plan.start)) }}
-          />
-        ) : null,
-      )}
-
-      {day.blocks.map((b) => {
-        if (b.end <= b.start) return null;
-        const top = y(b.start);
-        const h = Math.max(3, y(b.end) - top);
-        const fill =
-          b.kind === "work"
-            ? "bg-spark"
-            : b.kind === "lost"
-              ? "hatch bg-bg shadow-[inset_0_0_0_1px_var(--m-label-2)]"
-              : "bg-fill";
-        const ink = b.kind === "work" ? "text-[#000]" : "text-label";
-        return (
-          <div key={`b${b.start}`}>
+      ) : null}
+      <div
+        id={TIMELINE_ID}
+        data-hr={heart.length > 1 && !heartHidden ? "on" : "off"}
+        className="group/tl relative mt-3 tnum [--lane-r:16px] data-[hr=on]:[--lane-r:44px]"
+        style={{ height }}
+      >
+        {/* Quiet stretches, collapsed. */}
+        {day.segments.map((s) =>
+          s.kind === "quiet" ? (
             <div
-              data-live-key={`b${b.kind}${b.start}-${b.end}`}
-              className={`absolute right-(--lane-r) left-[50px] overflow-hidden rounded-block ${fill}`}
-              style={{ top, height: h }}
-              title={`${b.label}, ${formatTime(iso(b.start))} to ${formatTime(iso(b.end))}`}
+              key={`q${s.from}`}
+              className="dots absolute inset-x-0 flex items-center justify-between rounded-block bg-fill px-2.5 text-footnote text-label-2"
+              style={{ top: y(s.from) + 3, height: QUIET - 6 }}
             >
-              {b.cuts.length > 0 ? (
-                <span className="absolute top-0 right-3 bottom-0 w-[0.5px] bg-[rgb(0_0_0/0.2)]" />
-              ) : null}
-              {b.cuts.map((c) => (
-                <span
-                  key={`c${c.at}`}
-                  className="absolute right-0 w-3 bg-bg"
-                  style={{ top: y(c.at) - top, height: Math.max(2, (c.minutes / 60) * PER_HOUR) }}
-                />
-              ))}
-              {b.lostStretches?.map((l) => (
-                <span
-                  key={`l${l.start}`}
-                  className="hatch absolute inset-x-0 bg-bg"
-                  style={{ top: y(l.start) - top, height: Math.max(3, y(l.end) - y(l.start)) }}
-                />
-              ))}
-              {h >= 17 ? (
-                <p
-                  className={`absolute top-1 right-5 left-2 truncate text-footnote leading-4 font-semibold ${ink}`}
-                >
-                  {b.kind === "lost" ? (
-                    <span className="rounded-[4px] bg-bg px-1">
-                      {b.label} {hm(b.minutes)}
+              <span>
+                {formatTime(iso(s.from))} to{" "}
+                {s.to - s.from >= 24 * HOUR - 60_000 ? "24:00" : formatTime(iso(s.to))}
+              </span>
+              <span>
+                {nights.some((n) => n.start < s.to && n.end > s.from)
+                  ? "Asleep"
+                  : day.now != null && s.from >= day.now
+                    ? "Nothing planned"
+                    : "No screens"}
+              </span>
+            </div>
+          ) : null,
+        )}
+
+        {/* Hour rules. The label steps aside when the now pill would cover it. */}
+        {hours.map((h) => (
+          <div
+            key={`h${h}`}
+            className="absolute inset-x-0 border-t-[0.5px] border-separator"
+            style={{ top: y(h) }}
+          >
+            {(nowY != null && Math.abs(y(h) - nowY) < 16) || edges.has(h) ? null : (
+              <span className="absolute -top-[7px] left-0 bg-bg pr-1 text-caption font-medium text-label-2">
+                {formatTime(iso(h))}
+              </span>
+            )}
+          </div>
+        ))}
+
+        {/* Claude Code lane. */}
+        {day.ai.map((m) => (
+          <span
+            key={`a${m.start}`}
+            className="absolute left-[42px] w-[3px] rounded-full bg-label opacity-40"
+            style={{ top: y(m.start), height: Math.max(3, y(m.end) - y(m.start)) }}
+          />
+        ))}
+
+        {/* Planned outlines first, then what happened on top. Michael's own blocks are outlined in tint. */}
+        {plans.map((p) => (
+          <button
+            type="button"
+            key={`cal${p.start}${p.title}`}
+            onClick={() => setPicked({ kind: "plan", plan: p })}
+            aria-label={`${p.title}, ${span(p.start, p.end)}`}
+            className={`absolute right-(--lane-r) left-[50px] rounded-block border-[1.5px] border-dashed ${
+              p.michael ? "border-tint" : "border-label-2"
+            }`}
+            style={{ top: y(p.start), height: Math.max(4, y(p.end) - y(p.start)) }}
+          />
+        ))}
+        {day.blocks.map((b) =>
+          b.plan ? (
+            <div
+              key={`p${b.plan.start}`}
+              className="absolute right-(--lane-r) left-[50px] rounded-block border-[1.5px] border-dashed border-label-2"
+              style={{ top: y(b.plan.start), height: Math.max(4, y(b.plan.end) - y(b.plan.start)) }}
+            />
+          ) : null,
+        )}
+
+        {day.blocks.map((b) => {
+          if (b.end <= b.start) return null;
+          const top = y(b.start);
+          const h = Math.max(3, y(b.end) - top);
+          const fill =
+            b.kind === "work"
+              ? "bg-spark"
+              : b.kind === "lost"
+                ? "hatch bg-bg shadow-[inset_0_0_0_1px_var(--m-label-2)]"
+                : "bg-fill";
+          // A solid chip in the block's own colour: hatching or a cut never runs through the text.
+          const chip = b.kind === "work" ? "bg-spark" : b.kind === "lost" ? "bg-bg" : "bg-fill";
+          const ink = b.kind === "work" ? "text-[#000]" : "text-label";
+          const { title, apps } = blockTitle(b, plans);
+          const sub = b.kind === "lost" ? null : [apps, blockMeta(b)].filter(Boolean).join(" · ");
+          return (
+            <div key={`b${b.start}`}>
+              <button
+                type="button"
+                onClick={() => setPicked({ kind: "block", block: b })}
+                aria-label={`${title}, ${span(b.start, b.end)}`}
+                data-live-key={`b${b.kind}${b.start}-${b.end}`}
+                className={`absolute right-(--lane-r) left-[50px] overflow-hidden rounded-block text-left ${fill}`}
+                style={{ top, height: h }}
+              >
+                {b.cuts.length > 0 ? (
+                  <span className="absolute top-0 right-3 bottom-0 w-[0.5px] bg-[rgb(0_0_0/0.2)]" />
+                ) : null}
+                {b.cuts.map((c) => (
+                  <span
+                    key={`c${c.at}`}
+                    className="absolute right-0 w-3 bg-bg"
+                    style={{ top: y(c.at) - top, height: Math.max(2, (c.minutes / 60) * PER_HOUR) }}
+                  />
+                ))}
+                {b.lostStretches?.map((l) => (
+                  <span
+                    key={`l${l.start}`}
+                    className="hatch absolute inset-x-0 bg-bg"
+                    style={{ top: y(l.start) - top, height: Math.max(3, y(l.end) - y(l.start)) }}
+                  />
+                ))}
+                {h >= 17 ? (
+                  <span
+                    className={`absolute top-1 right-5 left-1 flex text-footnote leading-4 font-semibold ${ink}`}
+                  >
+                    <span className={`max-w-full truncate rounded-[4px] px-1 ${chip}`}>
+                      {title}
+                      {b.kind === "lost" ? ` ${hm(b.minutes)}` : null}
                     </span>
-                  ) : (
-                    b.label
-                  )}
+                  </span>
+                ) : null}
+                {h >= 36 && sub ? (
+                  <span
+                    className={`absolute top-[21px] right-5 left-1 flex text-[12px] leading-4 font-medium ${ink}`}
+                  >
+                    <span className={`max-w-full truncate rounded-[4px] px-1 opacity-80 ${chip}`}>{sub}</span>
+                  </span>
+                ) : null}
+              </button>
+              {b.plan && b.movedEnd ? (
+                <>
+                  <div
+                    className="absolute right-(--lane-r) left-[50px] rounded-b-block border-[1.5px] border-dashed border-tint"
+                    style={{ top: y(b.plan.end), height: Math.max(6, y(b.movedEnd) - y(b.plan.end)) }}
+                  />
+                  <span
+                    className="absolute left-[50px] rounded-[4px] bg-bg px-1 text-caption font-semibold text-tint-text"
+                    style={{ top: y(b.movedEnd) + 3 }}
+                  >
+                    I moved the end to {formatTime(iso(b.movedEnd))}
+                  </span>
+                </>
+              ) : null}
+            </div>
+          );
+        })}
+
+        {/* Workouts from the watch: goal time, so pink, with what it was and how hard. */}
+        {workouts.map((w) => {
+          const top = y(Math.max(w.start, day.dayStart));
+          const h = Math.max(3, y(Math.min(w.end, day.dayEnd)) - top);
+          return (
+            <div
+              key={`w${w.start}`}
+              data-live-key={`w${w.start}-${w.end}`}
+              className="absolute right-(--lane-r) left-[50px] overflow-hidden rounded-block bg-spark"
+              style={{ top, height: h }}
+              title={`${w.name}, ${formatTime(iso(w.start))} to ${formatTime(iso(w.end))}`}
+            >
+              {h >= 17 ? (
+                <p className="absolute top-1 right-2 left-2 truncate text-footnote leading-4 font-semibold text-[#000]">
+                  {w.name}
                 </p>
               ) : null}
-              {h >= 36 && b.kind !== "lost" ? (
-                <p
-                  className={`absolute top-[21px] right-5 left-2 truncate text-[12px] leading-4 font-medium opacity-80 ${ink}`}
-                >
-                  {blockMeta(b)}
+              {h >= 36 ? (
+                <p className="absolute top-[21px] right-2 left-2 truncate text-[12px] leading-4 font-medium text-[#000] opacity-80">
+                  {workoutParts(w).join(" · ")}
                 </p>
               ) : null}
             </div>
-            {b.plan && b.movedEnd ? (
-              <>
-                <div
-                  className="absolute right-(--lane-r) left-[50px] rounded-b-block border-[1.5px] border-dashed border-tint"
-                  style={{ top: y(b.plan.end), height: Math.max(6, y(b.movedEnd) - y(b.plan.end)) }}
-                />
-                <span
-                  className="absolute left-[50px] text-caption font-semibold text-tint-text"
-                  style={{ top: y(b.movedEnd) + 3 }}
-                >
-                  I moved the end to {formatTime(iso(b.movedEnd))}
-                </span>
-              </>
-            ) : null}
-          </div>
-        );
-      })}
+          );
+        })}
 
-      {/* Workouts from the watch: goal time, so pink, with what it was and how hard. */}
-      {workouts.map((w) => {
-        const top = y(Math.max(w.start, day.dayStart));
-        const h = Math.max(3, y(Math.min(w.end, day.dayEnd)) - top);
-        return (
-          <div
-            key={`w${w.start}`}
-            data-live-key={`w${w.start}-${w.end}`}
-            className="absolute right-(--lane-r) left-[50px] overflow-hidden rounded-block bg-spark"
-            style={{ top, height: h }}
-            title={`${w.name}, ${formatTime(iso(w.start))} to ${formatTime(iso(w.end))}`}
-          >
-            {h >= 17 ? (
-              <p className="absolute top-1 right-2 left-2 truncate text-footnote leading-4 font-semibold text-[#000]">
-                {w.name}
-              </p>
-            ) : null}
-            {h >= 36 ? (
-              <p className="absolute top-[21px] right-2 left-2 truncate text-[12px] leading-4 font-medium text-[#000] opacity-80">
-                {workoutParts(w).join(" · ")}
-              </p>
-            ) : null}
-          </div>
-        );
-      })}
-
-      {/* Plan titles where nothing happened over their first lines, and Michael's marker always. */}
-      {plans.map((p) => {
-        const top = y(p.start);
-        const h = y(p.end) - top;
-        const covered = [...day.blocks, ...workouts].some((b) => y(b.start) < top + 18 && y(b.end) > top + 2);
-        return (
-          <div key={`calt${p.start}${p.title}`}>
-            {!covered && h >= 17 ? (
-              <p
-                className="absolute right-[calc(var(--lane-r)+60px)] left-[58px] truncate text-footnote leading-4 font-semibold text-label-2"
-                style={{ top: top + 4 }}
-              >
-                {p.title}
-              </p>
-            ) : null}
-            {p.michael ? (
-              <span
-                className="absolute right-[calc(var(--lane-r)+6px)] rounded-[4px] bg-bg px-1 text-caption font-semibold text-tint-text"
-                style={{ top: top + (h >= 17 ? 3 : -8) }}
-              >
-                Michael
+        {/* Naps from the watch: small and quiet, with the sleep dots. Never the night. */}
+        {naps.map((n) => {
+          const top = y(n.start);
+          const h = Math.max(18, y(Math.min(n.end, day.dayEnd)) - top);
+          return (
+            <button
+              type="button"
+              key={`n${n.start}`}
+              onClick={() => setPicked({ kind: "nap", nap: n })}
+              aria-label={`Nap, ${minutesPhrase(n.minutes)}, ${span(n.start, n.end)}`}
+              className="dots absolute right-(--lane-r) left-[50px] overflow-hidden rounded-block bg-fill text-left"
+              style={{ top, height: h }}
+            >
+              <span className="absolute top-1/2 right-5 left-1 flex -translate-y-1/2 text-[12px] leading-4 font-medium text-label-2">
+                <span className="max-w-full truncate rounded-[4px] bg-fill px-1">Nap · {hm(n.minutes)}</span>
               </span>
-            ) : null}
-          </div>
-        );
-      })}
+            </button>
+          );
+        })}
 
-      {/* Drives: the empty road in grey, the traffic on top hatched, as time lost. */}
-      {(day.drives ?? []).map((d) => {
-        const top = y(d.start);
-        const h = Math.max(4, y(d.end) - top);
-        const trafficH = (d.trafficMinutes / Math.max(1, d.minutes)) * h;
-        return (
-          <div
-            key={`d${d.start}`}
-            className="absolute right-(--lane-r) left-[50px] overflow-hidden rounded-block bg-fill"
-            style={{ top, height: h }}
-            title={`Drive to ${d.to}, ${d.minutes} minutes, ${d.trafficMinutes} in traffic`}
-          >
-            {trafficH > 0 ? (
-              <span
-                className="hatch absolute inset-x-0 bottom-0 bg-bg shadow-[inset_0_0_0_1px_var(--m-label-2)]"
-                style={{ height: trafficH }}
-              />
-            ) : null}
-            {h >= 17 ? (
-              <p className="absolute top-1 right-2 left-2 flex items-center justify-between gap-2 text-footnote leading-4 font-semibold">
-                <span className="truncate">
-                  Drive to {d.to} · {d.minutes}&nbsp;min
+        {/* Plan titles where nothing happened over their first lines, and Michael's marker always. */}
+        {plans.map((p) => {
+          const top = y(p.start);
+          const h = y(p.end) - top;
+          const covered = [...day.blocks, ...workouts, ...naps].some(
+            (b) => y(b.start) < top + 18 && y(b.end) > top + 2,
+          );
+          return (
+            <div key={`calt${p.start}${p.title}`} className="pointer-events-none">
+              {!covered && h >= 17 ? (
+                <p
+                  className="absolute right-[calc(var(--lane-r)+60px)] left-[58px] truncate text-footnote leading-4 font-semibold text-label-2"
+                  style={{ top: top + 4 }}
+                >
+                  {p.title}
+                </p>
+              ) : null}
+              {p.michael ? (
+                <span
+                  className="absolute right-[calc(var(--lane-r)+6px)] rounded-[4px] bg-bg px-1 text-caption font-semibold text-tint-text"
+                  style={{ top: top + (h >= 17 ? 3 : -8) }}
+                >
+                  Michael
                 </span>
-                {d.trafficMinutes > 0 ? (
-                  <span className="shrink-0 rounded-[4px] bg-bg px-1 text-caption">
-                    Traffic {d.trafficMinutes}&nbsp;min
+              ) : null}
+            </div>
+          );
+        })}
+
+        {/* Drives: the empty road in grey, the traffic on top hatched, as time lost. */}
+        {(day.drives ?? []).map((d) => {
+          const top = y(d.start);
+          const h = Math.max(4, y(d.end) - top);
+          const trafficH = (d.trafficMinutes / Math.max(1, d.minutes)) * h;
+          return (
+            <div
+              key={`d${d.start}`}
+              className="absolute right-(--lane-r) left-[50px] overflow-hidden rounded-block bg-fill"
+              style={{ top, height: h }}
+              title={`Drive to ${d.to}, ${d.minutes} minutes, ${d.trafficMinutes} in traffic`}
+            >
+              {trafficH > 0 ? (
+                <span
+                  className="hatch absolute inset-x-0 bottom-0 bg-bg shadow-[inset_0_0_0_1px_var(--m-label-2)]"
+                  style={{ height: trafficH }}
+                />
+              ) : null}
+              {h >= 17 ? (
+                <p className="absolute top-1 right-2 left-2 flex items-center justify-between gap-2 text-footnote leading-4 font-semibold">
+                  <span className="truncate">
+                    Drive to {d.to} · {d.minutes}&nbsp;min
                   </span>
-                ) : null}
-              </p>
-            ) : null}
-          </div>
-        );
-      })}
+                  {d.trafficMinutes > 0 ? (
+                    <span className="shrink-0 rounded-[4px] bg-bg px-1 text-caption">
+                      Traffic {d.trafficMinutes}&nbsp;min
+                    </span>
+                  ) : null}
+                </p>
+              ) : null}
+            </div>
+          );
+        })}
 
-      {lossLabels.map((l) => (
-        <span
-          key={l.key}
-          className="absolute right-[calc(var(--lane-r)+6px)] rounded-[4px] bg-bg px-1 text-caption font-semibold text-label"
-          style={{ top: l.top }}
-        >
-          {l.text}
-        </span>
-      ))}
-
-      {heart.length > 1 ? <HeartLane points={heart} y={y} height={height} /> : null}
-
-      {/* Phone lane. */}
-      {day.phone.map((m) => (
-        <span
-          key={`m${m.start}`}
-          className="absolute right-0.5 w-2 rounded-[1px] bg-label-2"
-          style={{ top: y(m.start), height: Math.max(2, y(m.end) - y(m.start)) }}
-        />
-      ))}
-
-      {day.now ? (
-        <div
-          className="absolute right-0 left-[34px] border-t-[1.5px] border-label"
-          style={{ top: y(day.now) }}
-        >
-          <span className="absolute -top-[11px] -left-[34px] rounded-full bg-label px-1.5 py-[3px] text-caption font-bold text-bg">
-            {formatTime(iso(day.now))}
+        {lossLabels.map((l) => (
+          <span
+            key={l.key}
+            className="pointer-events-none absolute right-[calc(var(--lane-r)+6px)] rounded-[4px] bg-bg px-1 text-caption font-semibold text-label"
+            style={{ top: l.top }}
+          >
+            {l.text}
           </span>
-        </div>
+        ))}
+
+        {heart.length > 1 ? <HeartLane points={heart} y={y} height={height} /> : null}
+
+        {/* Phone lane. */}
+        {day.phone.map((m) => (
+          <span
+            key={`m${m.start}`}
+            className="absolute right-0.5 w-2 rounded-[1px] bg-label-2"
+            style={{ top: y(m.start), height: Math.max(2, y(m.end) - y(m.start)) }}
+          />
+        ))}
+
+        {day.now != null && nowY != null ? (
+          <div
+            className="pointer-events-none absolute right-0 left-[34px] border-t-[1.5px] border-label"
+            style={{ top: nowY }}
+          >
+            <span className="absolute -top-[11px] -left-[34px] rounded-full bg-label px-1.5 py-[3px] text-caption font-bold text-bg">
+              {formatTime(iso(day.now))}
+            </span>
+          </div>
+        ) : null}
+      </div>
+
+      {tonight ? (
+        <SleepBand
+          night={tonight}
+          goal={sleepGoal}
+          tonight
+          isToday={day.now != null}
+          onOpen={() => setPicked({ kind: "night", night: tonight, tonight: true })}
+        />
+      ) : null}
+
+      <Sheet open={picked != null} onClose={() => setPicked(null)} title={picked ? sheetTitle(picked) : ""}>
+        {picked?.kind === "block" ? (
+          <BlockDetail block={picked.block} plans={plans} sample={day.sample} />
+        ) : null}
+        {picked?.kind === "plan" ? <PlanDetail plan={picked.plan} now={day.now} /> : null}
+        {picked?.kind === "night" ? (
+          <NightDetail night={picked.night} goal={sleepGoal} tonight={picked.tonight} />
+        ) : null}
+        {picked?.kind === "nap" ? <NapDetail nap={picked.nap} /> : null}
+      </Sheet>
+    </>
+  );
+}
+
+function sheetTitle(p: Picked) {
+  const { start, end } =
+    p.kind === "block" ? p.block : p.kind === "plan" ? p.plan : p.kind === "night" ? p.night : p.nap;
+  return span(start, end);
+}
+
+function Row({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 border-b-[0.5px] border-separator py-2.5 last:border-b-0">
+      <dt className="text-subhead text-label-2">{label}</dt>
+      <dd className="text-right text-subhead font-semibold tnum">{children}</dd>
+    </div>
+  );
+}
+
+/** What, when, how long, which goal, what was lost. */
+function BlockDetail({ block: b, plans, sample }: { block: Block; plans: Plan[]; sample?: boolean }) {
+  const { title, apps } = blockTitle(b, plans);
+  const plan = b.plan ?? planFor(b, plans);
+  const lost = lostMinutesOf(b);
+  const goal = plan
+    ? plan.title
+    : b.kind === "work"
+      ? "Work, from time in work apps"
+      : b.kind === "lost"
+        ? "None, time lost"
+        : "None";
+  const interruptions = [
+    ...b.cuts.map((c) => ({ at: c.at, what: c.what, minutes: c.minutes })),
+    ...(b.lostStretches ?? []).map((l) => ({
+      at: l.start,
+      what: l.what,
+      minutes: (l.end - l.start) / 60_000,
+    })),
+  ].sort((a, z) => a.at - z.at);
+  const kind =
+    b.kind === "work"
+      ? sample
+        ? "Goal time"
+        : "Work apps"
+      : b.kind === "lost"
+        ? "Lost to messages and social"
+        : "Other apps";
+
+  return (
+    <div className="tnum">
+      <p className="text-footnote font-semibold text-label-2">{kind}</p>
+      <h3 className="mt-0.5 text-title3 font-bold">{title}</h3>
+      {apps ? <p className="mt-0.5 text-subhead text-label-2">{apps}</p> : null}
+      <dl className="mt-3">
+        <Row label="When">{span(b.start, b.end)}</Row>
+        <Row label="How long">{minutesPhrase((b.end - b.start) / 60_000)}</Row>
+        <Row label="Goal">{goal}</Row>
+        <Row label="Lost">{lost >= 1 ? minutesPhrase(lost) : "Nothing"}</Row>
+      </dl>
+      {interruptions.length > 0 ? (
+        <>
+          <h4 className="mt-4 text-footnote font-semibold text-label-2">Interruptions</h4>
+          <ul className="mt-1">
+            {interruptions.map((i) => (
+              <li
+                key={i.at}
+                className="flex justify-between gap-4 border-b-[0.5px] border-separator py-2 text-subhead last:border-b-0"
+              >
+                <span>
+                  <span className="text-label-2">{formatTime(iso(i.at))}</span> {i.what}
+                </span>
+                <span className="font-semibold">{minutesPhrase(i.minutes)}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function PlanDetail({ plan: p, now }: { plan: Plan; now?: number }) {
+  return (
+    <div className="tnum">
+      <p className={`text-footnote font-semibold ${p.michael ? "text-tint-text" : "text-label-2"}`}>
+        {p.michael ? "Booked by Michael" : "Planned"}
+      </p>
+      <h3 className="mt-0.5 text-title3 font-bold">{p.title}</h3>
+      <dl className="mt-3">
+        <Row label="When">{span(p.start, p.end)}</Row>
+        <Row label="How long">{minutesPhrase((p.end - p.start) / 60_000)}</Row>
+        <Row label="With others">{p.withOthers ? "Yes, I leave it alone" : "No"}</Row>
+      </dl>
+      {p.michael && (now == null || now < p.start) ? (
+        <p className="mt-3 text-footnote text-label-2">I booked this. Undo it in Today until it starts.</p>
       ) : null}
     </div>
   );
@@ -330,33 +534,146 @@ export const TIMELINE_ID = "day-timeline";
 
 /**
  * A night from the watch, collapsed to one calm row with the dot texture: when, how long, and the
- * Sleep goal's verdict. Last night sits above the day, tonight below it.
+ * Sleep goal's verdict. The night you woke up from sits above the day; the night you went to bed
+ * from sits below it, faint, because it belongs to the next day. Tap for the stages.
  */
-export function SleepBand({
+function SleepBand({
   night,
   goal,
   tonight = false,
+  isToday = false,
+  onOpen,
 }: {
   night: Night;
   goal: number | null;
   tonight?: boolean;
+  isToday?: boolean;
+  onOpen: () => void;
 }) {
   const verdict = sleepAgainstGoal(night.minutes, goal);
+  const name = tonight ? (isToday ? "Tonight" : "Then sleep") : "Sleep";
   return (
-    <div
-      className={`dots flex items-center justify-between gap-3 rounded-block bg-fill px-2.5 py-1.5 text-footnote text-label-2 tnum ${
-        tonight ? "mt-2" : "mt-3"
+    <button
+      type="button"
+      onClick={onOpen}
+      data-sleep-band={tonight ? "tonight" : "last-night"}
+      className={`press dots flex min-h-9 w-full items-center justify-between gap-3 rounded-block bg-fill px-2.5 py-1.5 text-left text-footnote text-label-2 tnum ${
+        tonight ? "mt-2 opacity-60" : "mt-3"
       }`}
     >
       <span className="min-w-0">
-        <span className="font-semibold text-label">Sleep</span> {formatTime(iso(night.start))} to{" "}
+        <span className="font-semibold text-label">{name}</span> {formatTime(iso(night.start))} to{" "}
         {formatTime(iso(night.end))}
-        <span className="sr-only">, {tonight ? "tonight" : "last night"}</span>
+        <span className="sr-only">
+          , {tonight ? "the night after this day" : "last night"}. Show the stages
+        </span>
       </span>
       <span className="shrink-0 text-right">
         <b className="font-semibold text-label">{hm(night.minutes)}</b>
         {verdict ? `, ${verdict.replace(/ (of )?your goal$/, "")}` : ""}
       </span>
+    </button>
+  );
+}
+
+// Stage fills, deepest darkest and all grey: pink is goal time only. Awake is the bare sleep dots.
+const STAGE_FILL: Record<keyof SleepStages, string> = {
+  deep: "bg-label",
+  core: "bg-label-2",
+  rem: "bg-context",
+  awake: "dots bg-fill shadow-[inset_0_0_0_1px_var(--m-separator)]",
+};
+
+/**
+ * The night's stages as one continuous bar (awake, REM, core, deep) on the same scale as the Sleep
+ * goal. The dashed line sits at awake time plus the goal, so it measures only the asleep stages:
+ * the gap between the bar's end and the line is exactly the time short of the goal.
+ */
+function StageBar({ stages, goal }: { stages: SleepStages; goal: number | null }) {
+  const parts = stageParts(stages);
+  const awake = parts.find((p) => p.key === "awake")?.minutes ?? 0;
+  const total = parts.reduce((n, p) => n + p.minutes, 0);
+  const asleep = total - awake;
+  const line = goal ? awake + goal : 0;
+  const scale = Math.max(total, line) || 1;
+  const pct = (m: number) => `${(m / scale) * 100}%`;
+  return (
+    <div className="mt-4">
+      <div
+        role="img"
+        aria-label={parts.map((p) => `${p.name} ${minutesPhrase(p.minutes)}`).join(", ")}
+        className="relative h-6"
+      >
+        <div className="absolute inset-y-0 left-0 flex gap-px" style={{ width: pct(total) }}>
+          {parts.map((p) => (
+            <span
+              key={p.key}
+              className={`h-full min-w-[3px] first:rounded-l-block last:rounded-r-block ${STAGE_FILL[p.key]}`}
+              style={{ flexGrow: p.minutes, flexBasis: 0 }}
+            />
+          ))}
+        </div>
+        {goal ? (
+          <span
+            aria-hidden="true"
+            className="absolute -top-1 -bottom-1 border-l-[1.5px] border-dashed border-label"
+            style={{ left: `calc(${pct(line)} - 1.5px)` }}
+          />
+        ) : null}
+      </div>
+      {goal ? (
+        <p className="mt-2 text-caption font-medium text-label-2">
+          {hm(asleep)} asleep against a goal of {hm(goal)}, the dashed line. Awake time stays out.
+        </p>
+      ) : null}
+      <ul className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2">
+        {parts.map((p) => (
+          <li key={p.key} className="flex items-center gap-2 text-subhead">
+            <span
+              aria-hidden="true"
+              className={`inline-block size-3 shrink-0 rounded-[3px] ${STAGE_FILL[p.key]}`}
+            />
+            <span className="text-label-2">{p.name}</span>
+            <span className="ml-auto font-semibold">{hm(p.minutes)}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** One night: the stages, bedtime and wake, the Sleep goal, and the heart around it. */
+function NightDetail({ night: n, goal, tonight }: { night: Night; goal: number | null; tonight: boolean }) {
+  const verdict = sleepAgainstGoal(n.minutes, goal);
+  return (
+    <div className="tnum">
+      <p className="text-footnote font-semibold text-label-2">
+        {tonight ? "The night after this day" : "Last night"}, from the watch
+      </p>
+      <h3 className="mt-0.5 text-title3 font-bold">
+        {hm(n.minutes)} asleep{verdict ? `, ${verdict}` : ""}
+      </h3>
+      {n.stages ? <StageBar stages={n.stages} goal={goal} /> : null}
+      <dl className="mt-3">
+        <Row label="Bedtime">{formatTime(iso(n.start))}</Row>
+        <Row label="Woke">{formatTime(iso(n.end))}</Row>
+        <Row label="Sleep goal">{goal ? hm(goal) : "None set"}</Row>
+        {n.restingHr !== undefined ? <Row label="Resting heart rate">{n.restingHr} bpm</Row> : null}
+        {n.hrv !== undefined ? <Row label="HRV">{n.hrv} ms</Row> : null}
+      </dl>
+    </div>
+  );
+}
+
+function NapDetail({ nap }: { nap: Nap }) {
+  return (
+    <div className="tnum">
+      <p className="text-footnote font-semibold text-label-2">Nap, from the watch</p>
+      <h3 className="mt-0.5 text-title3 font-bold">{minutesPhrase(nap.minutes)}</h3>
+      <dl className="mt-3">
+        <Row label="When">{span(nap.start, nap.end)}</Row>
+        <Row label="Sleep goal">Naps stay out of it</Row>
+      </dl>
     </div>
   );
 }
@@ -415,81 +732,18 @@ function HeartLane({
   );
 }
 
-/** Key for the lanes, shown once above the day. */
-export function TimelineKey({
-  hasAi,
-  hasPlan,
-  goalTime = hasPlan,
-  hasMichael = false,
-  hasDrives = false,
-  day,
-  heartHidden = false,
-}: {
-  /** The day, for the watch's entries (workouts, heart rate). */
-  day?: TimelineDay;
-  heartHidden?: boolean;
-  hasAi: boolean;
-  hasPlan: boolean;
-  /** Planned drives on the day (travel events). */
-  hasDrives?: boolean;
-  /** Pink means goal time against a plan (the sample day); otherwise it is time in work apps. */
-  goalTime?: boolean;
-  hasMichael?: boolean;
-}) {
-  const item = "inline-flex items-center gap-1.5";
-  const hasWorkouts = (day?.health?.workouts.length ?? 0) > 0;
-  const heart = day?.health?.heart ?? [];
-  const lo = heart.length > 1 ? Math.round(Math.min(...heart.map((p) => p.avg))) : 0;
-  const hi = heart.length > 1 ? Math.round(Math.max(...heart.map((p) => p.avg))) : 0;
+/**
+ * The heart rate switch above the day, only on days with watch readings. The lanes need no key:
+ * pink is goal time, hatched is lost, outlines are planned, and a tap on any block says the rest.
+ */
+export function HeartRow({ day, heartHidden = false }: { day: TimelineDay; heartHidden?: boolean }) {
+  const heart = day.health?.heart ?? [];
+  if (heart.length < 2) return null;
+  const lo = Math.round(Math.min(...heart.map((p) => p.avg)));
+  const hi = Math.round(Math.max(...heart.map((p) => p.avg)));
   return (
-    <ul className="mt-3 flex flex-wrap gap-x-3 gap-y-1.5 text-footnote text-label-2">
-      {hasPlan ? (
-        <li className={item}>
-          <span className="h-3 w-4 rounded-[3px] border-[1.5px] border-dashed border-label-2" />
-          Planned
-        </li>
-      ) : null}
-      {hasMichael ? (
-        <li className={item}>
-          <span className="h-3 w-4 rounded-[3px] border-[1.5px] border-dashed border-tint" />
-          Booked by Michael
-        </li>
-      ) : null}
-      <li className={item}>
-        <span className="h-3 w-4 rounded-[3px] bg-spark" />
-        {goalTime ? "Goal time" : hasWorkouts ? "Work apps, workouts" : "Work apps"}
-      </li>
-      <li className={item}>
-        <span className="hatch h-3 w-4 rounded-[3px] shadow-[inset_0_0_0_1px_var(--m-label-2)]" />
-        Lost
-      </li>
-      {goalTime ? null : (
-        <li className={item}>
-          <span className="h-3 w-4 rounded-[3px] bg-fill shadow-[inset_0_0_0_0.5px_var(--m-separator)]" />
-          Other
-        </li>
-      )}
-      {hasDrives ? (
-        <li className={item}>
-          <span className="h-3 w-4 rounded-[3px] bg-fill shadow-[inset_0_0_0_0.5px_var(--m-separator)]" />
-          Drive
-        </li>
-      ) : null}
-      <li className={item}>
-        <span className="h-3 w-1.5 rounded-[1px] bg-label-2" />
-        Phone
-      </li>
-      {hasAi ? (
-        <li className={item}>
-          <span className="h-3 w-[3px] rounded-full bg-label opacity-40" />
-          Claude Code
-        </li>
-      ) : null}
-      {heart.length > 1 ? (
-        <li className={item}>
-          <HeartToggle target={TIMELINE_ID} hidden={heartHidden} range={`${lo} to ${hi}`} />
-        </li>
-      ) : null}
-    </ul>
+    <div className="mt-3 flex min-h-6 items-center justify-end text-caption font-medium text-label-2">
+      <HeartToggle target={TIMELINE_ID} hidden={heartHidden} range={`${lo} to ${hi}`} />
+    </div>
   );
 }

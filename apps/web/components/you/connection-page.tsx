@@ -5,12 +5,25 @@ import { ConnectionIcon } from "./connection-icon";
 
 // The frame of every connection's setup page: back to You, the name, what it gives Michael, and
 // its real status in one line. The page's own steps and switches go below.
-export function ConnectionPage({ row, children }: { row: ConnectionStatus; children: ReactNode }) {
+// Opened from onboarding's connect step (?from=onboarding), back goes to that step instead.
+export function ConnectionPage({
+  row,
+  children,
+  from,
+}: {
+  row: ConnectionStatus;
+  children: ReactNode;
+  from?: string;
+}) {
+  const back =
+    from === "onboarding"
+      ? { href: "/onboarding?step=connect", label: "Setup" }
+      : { href: "/you#connections", label: "You" };
   return (
     <main className="screen">
       <header className="flex min-h-11 items-center pt-2">
         <Link
-          href="/you#connections"
+          href={back.href}
           className="press -ml-2 flex h-11 items-center gap-1 px-2 text-body text-tint-text"
         >
           <svg viewBox="0 0 24 24" aria-hidden="true" className="size-5">
@@ -23,7 +36,7 @@ export function ConnectionPage({ row, children }: { row: ConnectionStatus; child
               strokeLinejoin="round"
             />
           </svg>
-          You
+          {back.label}
         </Link>
       </header>
       <div className="mt-1 flex items-center gap-3">
@@ -38,7 +51,8 @@ export function ConnectionPage({ row, children }: { row: ConnectionStatus; child
       >
         {row.line}
       </p>
-      <div className="mt-6 flex flex-col gap-6">{children}</div>
+      {/* Coming soon (#295): no steps, no keys, nothing that could fail on stage. */}
+      {row.state === "soon" ? null : <div className="mt-6 flex flex-col gap-6">{children}</div>}
     </main>
   );
 }

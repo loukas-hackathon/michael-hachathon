@@ -6,7 +6,24 @@ resting heart rate, HRV and steps. Apple Health has no server API, so this app i
 
 Watch data is health data: the source is opt in (`health_auto_export` in privacy settings).
 
-## Set up (about five minutes, on the iPhone)
+## Set up in two taps (You > Connections, Apple Watch)
+
+Health Auto Export has a deep link that creates a whole REST API automation
+([`com.HealthExport://automation`](https://help.healthyapps.dev/en/health-auto-export/automations/deep-link)).
+Michael builds two of them per user (`apps/web/lib/one-tap.ts`), so on the iPhone it is:
+
+1. Get Health Auto Export (skip if installed; automations need Premium or the trial).
+2. Tap **Add sleep and heart rate**: the app opens with the automation filled in (URL, the device
+   key in the `Authorization` header, the six metrics, JSON, v2, summarised hourly, every 5
+   minutes). Tap Save if it asks, and allow Health access.
+3. Back in Michael, tap **Add workouts** (routes off).
+
+The key is minted on the first tap through a setup token (`POST /v1/setup-tokens`, then the
+exchange) and stays in the page's memory only. On a computer the page shows a QR code instead: the
+iPhone camera opens `/setup/apple-watch#ms_...`, which works once, for 30 minutes, signed in or not.
+The key is in a header, never in the webhook URL, so it stays out of request logs.
+
+## Set up by hand (about five minutes, on the iPhone)
 
 1. Install Health Auto Export and allow it to read Health: at least Sleep, Workouts, Heart Rate,
    Resting Heart Rate, Heart Rate Variability, Steps, Active Energy.

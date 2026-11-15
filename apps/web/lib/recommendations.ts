@@ -22,6 +22,14 @@ export type RecCard = {
   undoUntil: string | null;
   /** What the card says once undone. */
   undoneNote: string;
+  /** Drives this suggestion changes, before and after, for the bars (travel suggestions only). */
+  drives?: TravelDriveRow[];
+};
+
+export type TravelDriveRow = {
+  to: string;
+  before: { at: string; minutes: number };
+  after: { at: string; minutes: number };
 };
 
 const TZ = "Europe/Athens";
@@ -77,7 +85,66 @@ export function undoDeadline(rec: Recommendation): string | null {
   return new Date(Math.min(...until.map((x) => Date.parse(x)))).toISOString();
 }
 
-const EXECUTABLE = new Set(["create_focus_block", "move_calendar_block", "block_mac_app"]);
+// draft_follow_up: "Do it" saves the draft under Follow ups; nothing is sent.
+const EXECUTABLE = new Set([
+  "draft_follow_up",
+  "create_focus_block",
+  "move_calendar_block",
+  "move_calendar_blocks",
+  "block_mac_app",
+]);
+
+const leg = (v: unknown): { at: string; minutes: number } | null => {
+  const l = v as { depart_at?: unknown; minutes?: unknown } | null;
+  const at = str(l?.depart_at);
+  return at && typeof l?.minutes === "number" ? { at, minutes: l.minutes } : null;
+};
+
+/**
+ * The travel side of a suggestion: the whole day plan (move_calendar_blocks, #155) or a leave
+ * later reminder (#115). Null for anything else.
+ */
+export function travelCard(rec: Recommendation, now: Date): Partial<RecCard> | null {
+  const a = rec.action;
+  if (!a) return null;
+  const won = /win (\d+) minutes?/i.exec(rec.title);
+  const wonMinutes =
+    typeof a.payload.won_minutes === "number" ? a.payload.won_minutes : won ? Number(won[1]) : 0;
+  if (a.kind === "move_calendar_blocks") {
+    const moves = Array.isArray(a.payload.moves) ? (a.payload.moves as Record<string, unknown>[]) : [];
+    const first = moves.map((m) => str(m.start_at)).find(Boolean);
+    const drives = (Array.isArray(a.payload.drives) ? (a.payload.drives as Record<string, unknown>[]) : [])
+      .map((d) => ({ to: String(d.to ?? ""), before: leg(d.before), after: leg(d.after) }))
+      .filter(
+        (d): d is TravelDriveRow =>
+          Boolean(d.before && d.after) &&
+          (d.before?.minutes !== d.after?.minutes || d.before?.at !== d.after?.at),
+      );
+    const before = typeof a.payload.before_minutes === "number" ? a.payload.before_minutes : null;
+    const after = typeof a.payload.after_minutes === "number" ? a.payload.after_minutes : null;
+    return {
+      when: first
+        ? `${dayWord(first, now)}, ${moves.length === 1 ? "1 block moves" : `${moves.length} blocks move`}`
+        : null,
+      maths:
+        before !== null && after !== null
+          ? `${before} min on the road becomes ${after}. Wins ${wonMinutes} min.`
+          : wonMinutes > 0
+            ? `Wins ${wonMinutes} min on the road.`
+            : null,
+      drives,
+      undoneNote: "Undone. Every block is back where it was.",
+    };
+  }
+  if (a.kind === "reminder" && /^leave at/i.test(rec.title)) {
+    const at = str(a.payload.at);
+    return {
+      when: at ? `${dayWord(at, now)}, leave at ${formatTime(at)}` : null,
+      maths: wonMinutes > 0 ? `Wins ${wonMinutes} min on the road.` : null,
+    };
+  }
+  return null;
+}
 
 export function toCard(rec: Recommendation, goals: Goal[], now: Date): RecCard {
   const goal = goalName(goals.find((g) => g.id === rec.goal_id));
@@ -95,10 +162,13 @@ export function toCard(rec: Recommendation, goals: Goal[], now: Date): RecCard {
     rationale: rec.rationale,
     goal,
     maths,
+    // The title often says the times already ("Block 09:30 to 11:00 for ..."): then only the day.
     when: start
       ? creates || isGuard(rec)
-        ? `${day}, ${span}`
-        : `Moves to ${/^To/.test(day) ? day.toLowerCase() : day}, ${span}`
+        ? rec.title.includes(span)
+          ? day
+          : `${day}, ${span}`
+        : `Moves to ${/^To/.test(day) ? day.toLowerCase() : day}${rec.title.includes(span) ? "" : `, ${span}`}`
       : null,
     executable: Boolean(rec.action && EXECUTABLE.has(rec.action.kind) && !involvesOthers),
     involvesOthers,
@@ -107,6 +177,7 @@ export function toCard(rec: Recommendation, goals: Goal[], now: Date): RecCard {
     undoneNote: isGuard(rec)
       ? `Undone. ${guardedApps(rec)} can open again.`
       : "Undone. Your calendar is back as it was.",
+    ...travelCard(rec, now),
   };
 }
 
