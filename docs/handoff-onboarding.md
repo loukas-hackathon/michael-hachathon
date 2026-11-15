@@ -55,11 +55,15 @@ apps/web/lib/today-lines.ts. Tests: e2e/tests/onboarding.spec.ts, onboarding-iph
    removed); MERGED (live after deploy). Only a real iPhone can confirm: Safari decodes the mp3
    for the loudness curve, Michael stays loud on the speaker after the mic, 60 fps on the stage
    phone. Unused CSS left for later: .m-speak-breath and .m-think-soft in globals.css.
-2. Branch `claude/onboarding-alive` (PR labelled `wip`): every onboarding tap answers at once with
-   a visible thinking state (show delay about 200 ms, minimum about 400 ms), calm screen
-   transitions, a Michael thinking loading screen instead of the goals skeleton, the hard black
-   band behind the pinned "Go to Today" footer on the connect step fixed (soft fade), the dark mode
-   planned goal bars that read as black lines fixed.
+2. PR 540, branch `claude/onboarding-alive`: every onboarding tap shows Michael responding
+   (thinking lines after 250 ms, at least 400 ms), Michael thinking loading screens, one calm
+   transition per screen change, the footer now an iOS style toolbar with a hairline (no black
+   band), dark mode planned bars as a lighter grey (`--m-bar-ahead`). Reviewed by screenshots and
+   released (wip removed); auto-merges when CI is green. Follow ups: after Add it the review line
+   can say "I heard one goal" when there are two (the line comes from the API); the Goals back link
+   on the connect step has no thinking hand over yet; the unused .m-speak-breath and .m-think-soft
+   CSS can go. Real iPhone checks: footer against the home indicator, footer with the keyboard
+   open, transitions at 120 Hz.
 
 If either branch has no PR yet, finish it on that branch: run the checks below, open the PR with
 `wip`, then review.
