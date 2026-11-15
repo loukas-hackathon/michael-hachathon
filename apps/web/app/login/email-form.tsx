@@ -7,7 +7,7 @@ import { emailAuth } from "./email-actions";
 
 // "Continue with email" (#475): opens in place into email, password and one button. The server
 // action sets the session cookies, then the page moves on with location.replace, so it never leaves
-// the installed app (Google's redirect does, on iPhone).
+// the installed app. The only way in since Google sign in was removed (#475).
 
 const LABEL: Record<EmailMode, { idle: string; busy: string; other: string; switchTo: string }> = {
   signup: {
@@ -80,7 +80,7 @@ export function EmailForm({ next }: { next: string | null }) {
           onClick={expand}
           aria-expanded={open}
           aria-controls={`${id}-form`}
-          className="press flex h-12 w-full items-center justify-center rounded-full bg-fill px-6 text-body font-semibold text-label"
+          className="press flex h-12 w-full items-center justify-center rounded-full bg-label px-6 text-body font-semibold text-bg"
         >
           Continue with email
         </button>

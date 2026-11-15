@@ -14,7 +14,7 @@ export const EMAIL_LINES = {
   wrong: "Wrong email or password. Try again.",
   exists: "You already have an account. Sign in instead.",
   unconfirmed: "Check your inbox to finish, then sign in here.",
-  closed: "Email sign in isn't open yet. Use Google or see the demo week.",
+  closed: "Sign in isn't open yet. See the demo week for now.",
   busy: "Too many tries. Wait a minute, then try again.",
   failed: "I couldn't sign you in. Check your connection and try again.",
 } as const;

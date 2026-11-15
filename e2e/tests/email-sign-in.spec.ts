@@ -11,7 +11,7 @@ test("create an account, sign out, sign in, and a wrong password says so", async
   const password = "lift heavy 0600";
 
   await page.goto("/login");
-  await expect(page.getByRole("button", { name: "Continue with Google" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Continue with Google" })).toHaveCount(0);
   // Closed until asked: the fields are not reachable yet.
   await expect(page.locator("[inert] input[name=email]")).toHaveCount(1);
   await tap(page.getByRole("button", { name: "Continue with email" }));

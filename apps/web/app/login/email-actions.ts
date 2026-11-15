@@ -1,7 +1,7 @@
 "use server";
 
 import { createHash, randomUUID } from "node:crypto";
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
 import { E2E_COOKIE } from "@/lib/auth-mode";
 import {
   checkEmailForm,
@@ -10,6 +10,7 @@ import {
   emailAuthLine,
   failWith,
 } from "@/lib/email-auth";
+import { API_KEY, API_URL } from "@/lib/mode";
 import { NEXT_COOKIE, safeNext } from "@/lib/next-path";
 import { authEnabled, DEMO_COOKIE, supabaseServer } from "@/lib/supabase/server";
 
@@ -17,6 +18,27 @@ import { authEnabled, DEMO_COOKIE, supabaseServer } from "@/lib/supabase/server"
 // session cookies are set on the response, and the form moves on with window.location.replace.
 // Nothing leaves the page, so it works inside the installed iPhone app, where Google's redirect
 // lands the session in Safari instead of the app.
+
+// Server to server with the API key and no visitor header: the only caller POST /v1/accounts accepts.
+async function createAccount(
+  email: string,
+  password: string,
+): Promise<"created" | "exists" | "busy" | "failed"> {
+  const res = await fetch(`${API_URL}/v1/accounts`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${API_KEY}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ email, password }),
+    cache: "no-store",
+  });
+  if (res.status === 201) return "created";
+  if (res.status === 409) return "exists";
+  if (res.status === 429) return "busy";
+  console.error(`[auth] create account failed: ${res.status} ${await res.text().catch(() => "")}`);
+  return "failed";
+}
 
 type Input = { mode: EmailMode; email: string; password: string; next: string | null };
 
@@ -54,18 +76,12 @@ export async function emailAuth(raw: unknown): Promise<EmailAuthResult> {
         const { error } = await auth.signInWithPassword({ email, password });
         if (error) return failWith(emailAuthLine(error, mode));
       } else {
-        const origin = (await headers()).get("origin");
-        const { data, error } = await auth.signUp({
-          email,
-          password,
-          // Only used while Supabase still sends a confirmation email (docs/setup-manual.md).
-          options: origin ? { emailRedirectTo: `${origin}/auth/callback` } : undefined,
-        });
-        if (error) return failWith(emailAuthLine(error, mode));
-        // With confirmations on, an address that already has an account comes back with no
-        // identities (Supabase hides which addresses exist); a new one comes back with no session.
-        if (data.user && data.user.identities?.length === 0) return failWith("exists");
-        if (!data.session) return failWith("unconfirmed");
+        // The API creates the account already confirmed (POST /v1/accounts), so no confirmation
+        // email and no Supabase setting stand in the way; then the normal password sign in.
+        const created = await createAccount(email, password);
+        if (created !== "created") return failWith(created);
+        const { error } = await auth.signInWithPassword({ email, password });
+        if (error) return failWith(emailAuthLine(error, "signin"));
       }
     } catch (err) {
       console.error(`[auth] email ${mode} failed: ${(err as Error).message}`);
