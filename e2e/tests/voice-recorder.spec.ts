@@ -164,7 +164,10 @@ test("Talk to Michael in the home screen app: a recorded turn, answered by voice
   const sent = page.waitForRequest("**/chat/stream");
   // A tap says "done" (the fake microphone never goes quiet).
   await tap(orb);
-  expect((await sent).postDataJSON()).toMatchObject({ message: "When should I train tomorrow?", spoken: true });
+  expect((await sent).postDataJSON()).toMatchObject({
+    message: "When should I train tomorrow?",
+    spoken: true,
+  });
   await expect(page.getByTestId("conversation")).toContainText("Train at 18:00.");
   await expect.poll(() => voice<string[]>(page, "v.spoken")).toEqual(["Train at 18:00."]);
   // Then it listens again, recording the next turn.
