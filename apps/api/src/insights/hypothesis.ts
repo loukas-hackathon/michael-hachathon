@@ -123,7 +123,10 @@ export function readCondition(table: FeatureTable, c: Condition): ReadCondition 
   const values = transformed(table.cols[c.feature], c.transform);
   const known = values.filter(present);
   if (known.length === 0) return null;
-  const threshold = c.threshold ?? median(known);
+  // A time of day is held on the quarter hour, as the late cut off is: the words say "20:45" and
+  // the test counts exactly the days the words describe.
+  const raw = c.threshold ?? median(known);
+  const threshold = featureDef(c.feature).format === "clock" ? Math.round(raw / 15) * 15 : raw;
   const base = values.map((v) => (present(v) ? (c.op === ">=" ? v >= threshold : v <= threshold) : null));
   const run = c.transform === "streak2" ? 2 : c.transform === "streak3" ? 3 : 1;
   if (run === 1) return { on: base, threshold, values };

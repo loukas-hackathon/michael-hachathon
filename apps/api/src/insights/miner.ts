@@ -185,7 +185,9 @@ export function triggerOf(
     const on = t.on.filter((v) => v === true).length;
     return Math.min(on, t.on.filter((v) => v === false).length);
   };
-  const own = split(median(known), false);
+  // A time of day splits on the quarter hour, as the late cut off does ("after 00:45").
+  const mid = median(known);
+  const own = split(def.format === "clock" ? Math.round(mid / 15) * 15 : mid, false);
   if (cause.at === undefined) return own;
   const fixed = split(cause.at, true);
   // The usual threshold, unless this person all but never crosses it (or always does) and their
