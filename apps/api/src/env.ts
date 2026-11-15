@@ -40,6 +40,8 @@ const Env = z.object({
   // answer 503 unavailable; nothing crashes at start-up.
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_MODEL: z.string().default("claude-opus-5-5"),
+  // The quick model for lines the user waits on out loud (the onboarding voice talk).
+  ANTHROPIC_FAST_MODEL: z.string().default("claude-haiku-5-5"),
   // Chat answers in fast mode (same model, faster output, premium price) when the account has it;
   // a refused or rate limited fast request falls back to standard speed (#364). "standard" turns it off.
   CHAT_SPEED: z.enum(["fast", "standard"]).default("fast"),
