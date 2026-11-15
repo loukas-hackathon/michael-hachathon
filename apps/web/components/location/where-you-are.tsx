@@ -71,7 +71,7 @@ function PhoneAsk() {
           <button
             type="button"
             onClick={stop}
-            className="press min-h-9 shrink-0 text-subhead font-semibold text-tint-text"
+            className="hit press min-h-9 shrink-0 text-subhead font-semibold text-tint-text"
           >
             Stop
           </button>

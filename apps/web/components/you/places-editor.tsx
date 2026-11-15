@@ -189,7 +189,7 @@ function SlotRow({
                 pending={pending === "save"}
                 pendingLabel="Saving"
                 onClick={() => onSave({ key: slot.key, label: slot.label, address: q.trim() })}
-                className="press min-h-9 rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint disabled:opacity-60"
+                className="hit press min-h-9 rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint disabled:opacity-60"
               >
                 Save as typed
               </PendingButton>
@@ -200,7 +200,7 @@ function SlotRow({
                 pending={pending === "remove"}
                 pendingLabel="Removing"
                 onClick={() => onSave(null)}
-                className="press min-h-9 rounded-full px-3 text-subhead font-semibold text-tint-text disabled:opacity-60"
+                className="hit press min-h-9 rounded-full px-3 text-subhead font-semibold text-tint-text disabled:opacity-60"
               >
                 Remove
               </PendingButton>
@@ -356,14 +356,14 @@ export function PlacesEditor({
                           ...(x.lat !== null && x.lng !== null ? { lat: x.lat, lng: x.lng } : {}),
                         })
                       }
-                      className="press min-h-9 rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-3.5 text-subhead font-semibold text-tint-text disabled:opacity-60"
+                      className="hit press min-h-9 rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-3.5 text-subhead font-semibold text-tint-text disabled:opacity-60"
                     >
                       Save
                     </PendingButton>
                     <button
                       type="button"
                       onClick={() => setHidden((h) => [...h, x.label])}
-                      className="press min-h-9 px-1 text-subhead font-semibold text-tint-text"
+                      className="hit press min-h-9 px-1 text-subhead font-semibold text-tint-text"
                     >
                       Not now
                     </button>

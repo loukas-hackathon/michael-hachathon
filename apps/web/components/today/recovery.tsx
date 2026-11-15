@@ -21,7 +21,7 @@ export function RecoveryAction({ recovery, primary = true }: { recovery: Recover
         <button
           type="button"
           onClick={() => setTaken(false)}
-          className="press min-h-9 px-1 text-subhead font-semibold text-tint-text"
+          className="hit press min-h-9 px-1 text-subhead font-semibold text-tint-text"
         >
           Undo
         </button>
@@ -33,7 +33,7 @@ export function RecoveryAction({ recovery, primary = true }: { recovery: Recover
       <button
         type="button"
         onClick={() => setTaken(true)}
-        className={`press min-h-9 rounded-full px-4 text-subhead font-semibold ${primary ? "bg-tint text-on-tint" : "bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] text-tint-text"}`}
+        className={`hit press min-h-9 rounded-full px-4 text-subhead font-semibold ${primary ? "bg-tint text-on-tint" : "bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] text-tint-text"}`}
       >
         Take it
       </button>

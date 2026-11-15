@@ -1379,7 +1379,7 @@ function SleepBand({
       type="button"
       onClick={onOpen}
       data-sleep-band={tonight ? "tonight" : "last-night"}
-      className={`press dots flex min-h-9 w-full items-center justify-between gap-3 rounded-block bg-fill px-2.5 py-1.5 text-left text-footnote text-label-2 tnum ${
+      className={`hit press dots flex min-h-9 w-full items-center justify-between gap-3 rounded-block bg-fill px-2.5 py-1.5 text-left text-footnote text-label-2 tnum ${
         tonight ? "mt-2 opacity-60" : "mt-3"
       }`}
     >

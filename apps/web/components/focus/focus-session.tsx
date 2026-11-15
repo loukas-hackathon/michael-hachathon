@@ -162,6 +162,10 @@ export function FocusSessionView({
       role="dialog"
       aria-modal="true"
       aria-labelledby="focus-goal"
+      onKeyDown={(e) => {
+        // Escape hides the full screen focus view, as it closes every sheet on a laptop.
+        if (e.key === "Escape") onHide();
+      }}
       className="fixed inset-0 z-50 flex flex-col bg-bg px-4 pt-[calc(12px+var(--m-safe-top))] pb-[calc(24px+env(safe-area-inset-bottom))]"
     >
       <div className="flex h-11 items-center justify-between">
@@ -269,6 +273,9 @@ export function FocusResult({ session, onClose }: { session: FocusSession; onClo
       role="dialog"
       aria-modal="true"
       aria-labelledby="focus-result"
+      onKeyDown={(e) => {
+        if (e.key === "Escape") onClose();
+      }}
       className="fixed inset-0 z-50 flex flex-col bg-bg px-4 pt-[calc(12px+var(--m-safe-top))] pb-[calc(24px+env(safe-area-inset-bottom))]"
     >
       <div className="flex flex-1 flex-col items-center justify-center text-center">

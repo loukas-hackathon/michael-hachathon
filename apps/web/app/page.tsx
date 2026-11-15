@@ -492,7 +492,7 @@ function LostWeekLine({ week, demo, className = "" }: { week: LostWeek; demo?: s
   return (
     <Link
       href={`/timeline${demo === "sample" ? "?demo=sample" : ""}`}
-      className={`press mt-1 flex items-start justify-between gap-3 text-subhead text-label-2 ${className}`}
+      className={`hit press mt-1 flex items-start justify-between gap-3 text-subhead text-label-2 ${className}`}
     >
       <span>
         <b className="font-semibold text-label tnum">{hm(week.total)}</b> lost from your goal blocks this

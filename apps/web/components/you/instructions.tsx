@@ -322,7 +322,7 @@ export function StandingInstructions({
                   setAdding(null);
                 }
               }}
-              className="press flex h-9 shrink-0 items-center rounded-full bg-tint/14 px-4 text-subhead font-semibold text-tint-text disabled:opacity-60"
+              className="hit press flex h-9 shrink-0 items-center rounded-full bg-tint/14 px-4 text-subhead font-semibold text-tint-text disabled:opacity-60"
             >
               {adding === r.index ? "Adding" : "Add"}
             </button>

@@ -15,7 +15,7 @@ export function LastWeekLine({ week, demo }: { week: LostWeek; demo?: string }) 
   return (
     <Link
       href={`/timeline?${query}`}
-      className="press mt-1 flex items-start justify-between gap-3 text-subhead text-label-2"
+      className="hit press mt-1 flex items-start justify-between gap-3 text-subhead text-label-2"
     >
       <span>
         <b className="font-semibold text-label tnum">{hm(week.total)}</b> lost from your goal blocks last

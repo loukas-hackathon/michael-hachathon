@@ -42,9 +42,9 @@ import { STARTER_GOALS } from "@/lib/starter-goals";
 // Goals found in the calendar live in the New goal sheet, with a quiet hint row here.
 
 const btnFilled =
-  "press inline-flex min-h-9 items-center rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint";
+  "hit press inline-flex min-h-9 items-center rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint";
 const btnPlain =
-  "press inline-flex min-h-9 items-center rounded-full px-1 text-subhead font-semibold text-tint-text";
+  "hit press inline-flex min-h-9 items-center rounded-full px-1 text-subhead font-semibold text-tint-text";
 
 export default async function GoalsPage({ searchParams }: { searchParams: Promise<{ demo?: string }> }) {
   const { demo } = await searchParams;

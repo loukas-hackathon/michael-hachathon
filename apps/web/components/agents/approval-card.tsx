@@ -50,21 +50,21 @@ export function ApprovalCard({ id, name, wants }: { id: string; name: string; wa
           <button
             type="button"
             onClick={() => setAnswer("once")}
-            className="press min-h-9 rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint"
+            className="hit press min-h-9 rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint"
           >
             Allow once
           </button>
           <button
             type="button"
             onClick={() => setAnswer("always")}
-            className="press min-h-9 rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-4 text-subhead font-semibold text-tint-text"
+            className="hit press min-h-9 rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-4 text-subhead font-semibold text-tint-text"
           >
             Always
           </button>
           <button
             type="button"
             onClick={() => setAnswer("no")}
-            className="press min-h-9 rounded-full px-3 text-subhead font-semibold text-tint-text"
+            className="hit press min-h-9 rounded-full px-3 text-subhead font-semibold text-tint-text"
           >
             No
           </button>

@@ -121,7 +121,7 @@ export function BlockEditor({
                   type="button"
                   aria-pressed={on}
                   onClick={() => setGoalId(g.id)}
-                  className={`press min-h-9 rounded-full px-3.5 text-subhead font-semibold transition-[background-color,color] duration-[var(--m-dur-ui)] ease-[var(--m-ease-out)] ${
+                  className={`hit press min-h-9 rounded-full px-3.5 text-subhead font-semibold transition-[background-color,color] duration-[var(--m-dur-ui)] ease-[var(--m-ease-out)] ${
                     on ? "bg-tint text-on-tint" : "bg-fill text-label"
                   }`}
                 >

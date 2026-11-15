@@ -126,7 +126,7 @@ export function CopyRow({ value, label = "Copy" }: { value: string; label?: stri
             // Clipboard blocked: the value is selectable.
           }
         }}
-        className="press min-h-9 shrink-0 rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint"
+        className="hit press min-h-9 shrink-0 rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint"
       >
         {copied ? "Copied" : label}
       </button>
