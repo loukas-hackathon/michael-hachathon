@@ -27,3 +27,20 @@ export function shareLeft(s: Pick<FocusSession, "start_at" | "end_at">, now: num
   if (total <= 0) return 0;
   return Math.min(1, Math.max(0, (Date.parse(s.end_at) - now) / total));
 }
+
+/** The promise's value, or null once `ms` have passed without one (a late answer is dropped). */
+export function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
+  return new Promise<T | null>((resolve, reject) => {
+    const id = setTimeout(() => resolve(null), ms);
+    p.then(
+      (v) => {
+        clearTimeout(id);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(id);
+        reject(e);
+      },
+    );
+  });
+}

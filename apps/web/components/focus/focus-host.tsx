@@ -1,9 +1,8 @@
 "use client";
 
-import type { FocusSession } from "@michael/shared";
+import type { FocusActiveResponse, FocusSession } from "@michael/shared";
 import { usePathname, useRouter } from "next/navigation";
 import { startTransition, useCallback, useEffect, useState } from "react";
-import { focusActiveAction } from "@/app/focus-actions";
 import { TABS_STALE } from "@/components/tab-bar";
 import { FOCUS_EVENT, minutesLeft } from "./focus-events";
 import { FocusResult, FocusSessionView } from "./focus-session";
@@ -41,9 +40,13 @@ export function FocusHost() {
   const [hidden, setHidden] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const outside = OUTSIDE.test(pathname ?? "/");
+  const onChat = /^\/chat(\/|$)/.test(pathname ?? "/");
 
   const load = useCallback(async () => {
-    const r = await focusActiveAction().catch(() => null);
+    // A plain GET, not a server action: actions run one at a time and this must never queue.
+    const r = await fetch("/focus/state", { cache: "no-store", signal: AbortSignal.timeout(6_000) })
+      .then((res) => (res.ok ? (res.json() as Promise<FocusActiveResponse | null>) : null))
+      .catch(() => null);
     if (!r) return;
     setSession((before) => {
       if (r.session && r.session.id !== before?.id) setHidden(false);
@@ -108,11 +111,17 @@ export function FocusHost() {
   if (!session) return null;
   if (hidden) {
     const left = minutesLeft(session.end_at, now);
+    // Chat keeps its composer just above the tab bar, so there the row sits at the top as a
+    // compact chip and never covers "Ask Michael" (Loukas, 15 Nov).
+    const place = onChat
+      ? "inset-x-0 top-[calc(8px+var(--m-safe-top))] mx-auto w-max max-w-[calc(100%-28px)] lg:top-6 lg:right-6 lg:left-auto lg:mx-0"
+      : "inset-x-[14px] bottom-[calc(16px+var(--m-tabbar-h)+8px+env(safe-area-inset-bottom))] lg:right-6 lg:bottom-6 lg:left-auto lg:w-80";
     return (
       <button
         type="button"
         onClick={() => setHidden(false)}
-        className="press fixed inset-x-[14px] bottom-[calc(16px+var(--m-tabbar-h)+8px+env(safe-area-inset-bottom))] z-30 flex min-h-11 items-center gap-3 rounded-full bg-[var(--m-glass)] px-4 text-left shadow-[0_0_0_0.5px_var(--m-separator),0_6px_18px_-8px_rgb(0_0_0/0.25)] backdrop-blur-xl lg:right-6 lg:bottom-6 lg:left-auto lg:w-80"
+        aria-label={`${session.goal_title}, ${left} min left. Open Focus now`}
+        className={`press fixed z-30 flex min-h-11 items-center gap-3 rounded-full bg-[var(--m-glass)] px-4 text-left shadow-[0_0_0_0.5px_var(--m-separator),0_6px_18px_-8px_rgb(0_0_0/0.25)] backdrop-blur-xl ${place}`}
       >
         <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-spark" />
         <span className="min-w-0 flex-1 truncate text-subhead font-semibold">{session.goal_title}</span>

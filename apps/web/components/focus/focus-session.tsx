@@ -3,11 +3,11 @@
 import type { FocusSession } from "@michael/shared";
 import { voiceShortDuration } from "@michael/shared/voice";
 import { type CSSProperties, type RefObject, useEffect, useRef, useState } from "react";
-import { endFocusAction, extendFocusAction, focusActiveAction } from "@/app/focus-actions";
+import { endFocusAction, extendFocusAction } from "@/app/focus-actions";
 import { haptic } from "@/components/haptics";
 import { Michael } from "@/components/michael";
 import { formatTime } from "@/lib/format";
-import { minutesLeft, minutesSoFar, shareLeft } from "./focus-events";
+import { minutesLeft, minutesSoFar, shareLeft, withTimeout } from "./focus-events";
 import { iphoneFocusReady, onIphone, runIphoneFocus } from "./iphone-focus";
 
 // Focus now (#397): the calm full screen session. The goal, one continuous ring counting down,
@@ -152,6 +152,25 @@ function useFocusTrap(ref: RefObject<HTMLElement | null>) {
 
 type Ask = null | "count";
 
+/** How long End early waits for its answer before asking the server what happened. */
+const END_WAIT = 8_000;
+
+/**
+ * The session as it stopped, when the server says it has; null when it is still running or the
+ * server cannot be read. A plain GET (app/focus/state), not a server action: Next runs actions one
+ * at a time, so a check behind a stuck one would be stuck too.
+ */
+async function endedOnServer(id: string): Promise<FocusSession | null> {
+  try {
+    const res = await fetch("/focus/state", { cache: "no-store", signal: AbortSignal.timeout(5_000) });
+    if (!res.ok) return null;
+    const state = (await res.json()) as { session: FocusSession | null; last: FocusSession | null } | null;
+    return state && !state.session && state.last?.id === id ? state.last : null;
+  } catch {
+    return null;
+  }
+}
+
 export function FocusSessionView({
   session,
   onChange,
@@ -194,22 +213,30 @@ export function FocusSessionView({
     ending.current = true;
     setBusy("end");
     setError(null);
+    const early = Date.parse(session.end_at) > Date.now() + 5_000;
+    const finish = (s: FocusSession) => {
+      haptic();
+      onDone(s);
+      // Ended early by a tap: the iPhone's Focus ends with it (on time, its own timer ends it).
+      if (early) runIphoneFocus(null);
+    };
     try {
-      const r = await endFocusAction(session.id, count);
-      if (r.ok) {
-        haptic();
-        onDone(r.session);
-        // Ended early by a tap: the iPhone's Focus ends with it (on time, its own timer ends it).
-        if (Date.parse(session.end_at) > Date.now() + 5_000) runIphoneFocus(null);
-      } else setError(r.error);
+      // Never wait forever (Loukas, 15 Nov: stuck on "Saving"): after END_WAIT the server is asked
+      // what happened instead, and the answer that comes late is ignored.
+      const r = await withTimeout(endFocusAction(session.id, count), END_WAIT);
+      if (r?.ok) {
+        finish(r.session);
+        return;
+      }
+      // No answer, or a refusal (it may have ended already, from a first tap that got through).
+      const ended = await endedOnServer(session.id);
+      if (ended) finish(ended);
+      else setError(r ? r.error : "I could not hear back from the server. Try again.");
     } catch {
       // The answer was lost on the way back, not necessarily the end: ask the server what happened.
-      const state = await focusActiveAction().catch(() => null);
-      const last = state?.last;
-      if (state && !state.session && last?.id === session.id) {
-        haptic();
-        onDone(last);
-      } else setError("I could not reach the server. Nothing changed.");
+      const ended = await endedOnServer(session.id);
+      if (ended) finish(ended);
+      else setError("I could not reach the server. Try again.");
     } finally {
       ending.current = false;
       setBusy(null);
@@ -228,8 +255,9 @@ export function FocusSessionView({
     setBusy("extend");
     setError(null);
     try {
-      const r = await extendFocusAction(session.id);
-      if (r.ok) {
+      const r = await withTimeout(extendFocusAction(session.id), END_WAIT);
+      if (!r) setError("I could not hear back from the server. Try again.");
+      else if (r.ok) {
         onChange(r.session);
         // The iPhone's Focus moves with the new end.
         runIphoneFocus(r.session.end_at);

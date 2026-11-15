@@ -61,3 +61,30 @@ for (const reduced of [false, true]) {
     await expect(screen.getByText("40", { exact: true })).toBeVisible();
   });
 }
+
+test("hidden on Chat, the session row never covers the composer", async ({ page, context, baseURL }) => {
+  const user = randomUUID();
+  await context.addCookies([{ name: "michael_e2e_user", value: user, url: baseURL ?? "" }]);
+  await asUser(user, "/v1/me/data", "DELETE");
+  await asUser(user, "/v1/profile", "PUT", { onboarded_at: new Date().toISOString() });
+  const goal = await asUser<{ id: string }>(user, "/v1/goals", "POST", {
+    category: "health",
+    title: TITLE,
+    weekly_budget_minutes: 180,
+  });
+  await asUser(user, "/v1/focus/start", "POST", { goal_id: goal.id, minutes: 25 });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/chat");
+  await tap(page.getByRole("dialog", { name: TITLE }).getByRole("button", { name: "Hide" }));
+  const pill = page.getByRole("button", { name: /min left\. Open Focus now$/ });
+  await expect(pill).toBeVisible();
+  const composer = page.locator("textarea").last();
+  await expect(composer).toBeVisible();
+  const a = await pill.boundingBox();
+  const b = await composer.boundingBox();
+  expect(a && b).toBeTruthy();
+  if (a && b) expect(a.y + a.height <= b.y || b.y + b.height <= a.y).toBe(true);
+  // And it opens the session again.
+  await tap(pill);
+  await expect(page.getByRole("dialog", { name: TITLE })).toBeVisible();
+});
