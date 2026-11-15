@@ -46,25 +46,20 @@ the stage and Claude will each see a different day.
 - [ ] **claude.ai connector on the demo account.** The consent page refuses demo visitors ("This
       is the demo week. Sign in with Google to make it yours."), because connecting an agent grants
       it full write on the shared account. The presenter answers the consent with the API key, in
-      the laptop browser you present from (the one signed in to claude.ai).
-      1. Open `$WEB/auth/demo` in that browser first. It signs out any Google session there (a
-         session always wins over the demo week, and Claude would connect to that account instead).
-      2. claude.ai > Settings > Connectors. If a `Michael` connector already exists, open it and
-         **Disconnect** or remove it.
-      3. **Add custom connector**: name `Michael`, URL
-         `https://api-production-16521a26.up.railway.app/mcp` (the same as `$API/mcp`; nothing in
-         Advanced settings). Tap **Add**, then **Connect**.
-      4. A Michael tab opens on the consent page, which says "This is the demo week". Do not sign in
-         with Google (that connects your own account). Copy the id after `request=` in its address
-         bar, then in the terminal (the key never leaves it):
-         `REQ=paste-the-id; curl -s -X POST -H "Authorization: Bearer $MICHAEL_API_KEY" -H "content-type: application/json" -d '{"allow":true}' $API/v1/connect/requests/$REQ`
-         It answers `{"redirect_to":"https://claude.ai/..."}`. Open that URL in the same browser
-         tab within 5 minutes; claude.ai finishes connecting. If the request has expired, press
-         Connect on claude.ai again.
-      5. Check it worked: in a throwaway chat, Michael switched on in the tools menu, ask
-         `Use Michael. What are my goals?`; the answer lists the demo goals. Then open
-         `$WEB/agents`: Claude is listed under **What they can do**, and the line at the top says
-         "Claude asked about you 1 today".
+      the laptop browser you present from (the one signed in to claude.ai). 1. Open `$WEB/auth/demo` in that browser first. It signs out any Google session there (a
+      session always wins over the demo week, and Claude would connect to that account instead). 2. claude.ai > Settings > Connectors. If a `Michael` connector already exists, open it and
+      **Disconnect** or remove it. 3. **Add custom connector**: name `Michael`, URL
+      `https://api-production-16521a26.up.railway.app/mcp` (the same as `$API/mcp`; nothing in
+      Advanced settings). Tap **Add**, then **Connect**. 4. A Michael tab opens on the consent page, which says "This is the demo week". Do not sign in
+      with Google (that connects your own account). Copy the id after `request=` in its address
+      bar, then in the terminal (the key never leaves it):
+      `REQ=paste-the-id; curl -s -X POST -H "Authorization: Bearer $MICHAEL_API_KEY" -H "content-type: application/json" -d '{"allow":true}' $API/v1/connect/requests/$REQ`
+      It answers `{"redirect_to":"https://claude.ai/..."}`. Open that URL in the same browser
+      tab within 5 minutes; claude.ai finishes connecting. If the request has expired, press
+      Connect on claude.ai again. 5. Check it worked: in a throwaway chat, Michael switched on in the tools menu, ask
+      `Use Michael. What are my goals?`; the answer lists the demo goals. Then open
+      `$WEB/agents`: Claude is listed under **What they can do**, and the line at the top says
+      "Claude asked about you 1 today".
       Without a browser, the connector's server side can be checked end to end:
       `curl -s -o /dev/null -w '%{http_code}\n' -X POST $API/mcp` prints `401`, and
       `curl -s $API/.well-known/oauth-protected-resource/mcp` names `$API/mcp` as the resource.
