@@ -6,20 +6,19 @@ permission, keep building with parallel agents, close every issue we can, phone 
 developed), keep colours and branding exactly as they are (pink `#E6007A`, red `#FF3B30`), and pace
 the usage limit by slowing down at about 60% of the window.
 
-## State (updated 11:15 UTC)
-- Production healthy (8aee7f0). This session (loukas-hackathon) is the lead orchestrator.
-- Merged since 10:25: #461/#462 sign in/out (service worker double navigation), #464/#467/#473 Michael
-  edits and removes the user's own events with undo (rule changed by Loukas), #465 Get the app on
-  /login, #469 shortcut no longer traps the installed app, #470 status bar one cover, #471 voice mode
-  with no transcript, #472 Timeline columns and no text on text (with a permanent overlap e2e),
-  #476/#477 iPhone hand run test and live connection rows, #482 email sign in, #485 first minute for a
-  new account, #486 Michael never claims an action he did not make, #487 chat timestamps with the day.
-- Open: #484 (email sign up creates confirmed accounts server side, no Supabase setting needed),
-  #489 (iPhone opens stored at once), #481 (Railway never sleeps via railway.json).
-- Scheduled: final stage rehearsal QA at 13:50 UTC (one agent, read only on production, CSS/copy fixes).
-- Human steps for Loukas: Google OAuth test users or publish; DEMO_PRESENTER_KEY on Vercel + Railway;
-  optional #450 jwt_exp 86400; reopen the installed app; reseed at T-60 and T-15.
-- Manolis' side owns #432 (insights, real time nudges, /learnt, Do Not Disturb, discovery).
+## State (updated 12:10 UTC)
+- Production healthy (0a99ecb). This session (loukas-hackathon) is the lead orchestrator.
+- Since 11:15: #484/#496/#500 email only sign in (Loukas decided: no Google sign in; Google only for
+  calendar), create account lands signed in, new /login; #489 iPhone opens stored at once; #490 Michael
+  knows real connection states, no Mac guard without a live Mac; #497 shortcut opens in Safari (not
+  shortcuts://import-shortcut); #481 Railway never sleeps (railway.json).
+- Loukas deleted his four accounts (done via auth.users cascade) to start fresh.
+- Running (all due 13:45 UTC): instant resume after long idle (last known screen from the service
+  worker per user, taps never wait), real account QA walk, copy/voice/numbers audit (#503 open),
+  accessibility pass (invisible fixes only; Loukas: never change branding).
+- Scheduled: final stage rehearsal QA at 13:50 UTC.
+- Human steps for Loukas: create his account, reconnect sources, re-add the iPhone shortcut;
+  DEMO_PRESENTER_KEY on Vercel + Railway; optional #450 jwt_exp 86400; reseed at T-60 and T-15.
 - Freeze: after 15:00 UTC only copy, CSS, test fixes; after 17:30 UTC no merges unless stage breaking.
 
 ## Rules learned the hard way
