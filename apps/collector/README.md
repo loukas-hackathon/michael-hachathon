@@ -70,6 +70,9 @@ anything on by itself.
 - It looks at `GET /v1/focus-guards/active?dnd=ready|missing` every 15 seconds and runs
   `shortcuts run "Michael Focus"` with the time to end, once. It switches off only what it switched
   on, and nothing once the time has passed (macOS ends it by itself).
+- The first run makes Shortcuts ask a Privacy question: allow it for good. Until then the
+  `shortcuts` command does not return, so the collector waits a minute on each run and says so in
+  its log; Do Not Disturb is switched on and off all the same.
 - Focus is shared across your devices by default, so your iPhone follows the Mac.
 - `--no-dnd` turns it off.
 

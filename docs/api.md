@@ -2281,7 +2281,11 @@ type DndStartInput = { nudge_id: string } | { until: string };
   before its time), and does nothing once the time has passed. Focus is shared across the person's
   devices by default, so the iPhone follows. `mac` in the answers: `ready` when a Mac looked in the
   last two minutes with the shortcut, `no_shortcut` without it, `away` otherwise (kept in the API
-  process). `dnd` is answered whatever the privacy switch says: the user asked for it.
+  process). `dnd` is answered whatever the privacy switch says: the user asked for it. Run for real
+  on macOS 26.6 (15 Nov 2026): Do Not Disturb came on with the right end time and went off again,
+  each within two seconds, but `shortcuts run` did not return while Shortcuts had a window titled
+  Privacy open (a first run question nobody was there to answer). The collector therefore gives a
+  run a minute and counts one it had to stop as sent, so it never repeats it on every look.
 - The iPhone: Safari shows no notification buttons, so the tap on either real time line opens
   `/dnd?nudge=<id>` (the push's `url`). The page asks once more, the tap posts `{ nudge_id }` and
   then opens `shortcuts://run-shortcut?name=Michael%20Focus&input=text&text=<shortcut_input>`.

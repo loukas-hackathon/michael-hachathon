@@ -20,23 +20,45 @@ import type { Runner } from "./focus-guard";
 // off only what it switched on (an undo in Michael), and only before that would have ended anyway.
 // Without the shortcut it does nothing and says so to the API, which then offers the install.
 
-/** `shortcuts run` talks to the Shortcuts service: slower than a plain command, so more patience. */
+/**
+ * How long one run may take. Proved on macOS 26.6 (15 Nov 2026): the Set Focus action takes effect
+ * within two seconds, but while macOS has a Privacy question about the shortcut open on screen the
+ * `shortcuts` command does not return, and the question goes away when the command is stopped. So
+ * the command gets a minute, which is also the time the person has to answer the question.
+ */
+export const RUN_TIMEOUT_MS = 60_000;
+
 const runShortcutsCommand: Runner = (file, args) =>
   new Promise((resolve, reject) => {
-    execFile(file, args, { timeout: 30_000 }, (error, stdout) => (error ? reject(error) : resolve(stdout)));
+    execFile(file, args, { timeout: RUN_TIMEOUT_MS }, (error, stdout) =>
+      error ? reject(error) : resolve(stdout),
+    );
   });
 
 /** True when `shortcuts list` names the shortcut on a line of its own. */
 export const listsShortcut = (out: string, name = FOCUS_SHORTCUT_NAME) =>
   out.split("\n").some((line) => line.trim() === name);
 
-/** Runs the shortcut with `text` as its input. The CLI takes input as a file, so one is written. */
-export async function runFocusShortcut(run: Runner, text: string): Promise<void> {
+/** A run that was stopped by the timeout (execFile marks it), not one that failed by itself. */
+const timedOut = (error: unknown) =>
+  typeof error === "object" && error !== null && (error as { killed?: boolean }).killed === true;
+
+/**
+ * Runs the shortcut with `text` as its input. The CLI takes input as a file, so one is written.
+ * `done`: the command returned. `waiting`: it was still waiting on macOS after a minute (a Privacy
+ * question on screen); what it was asked to do has been sent, and by then has taken effect.
+ * Anything else (no such shortcut, a refusal) throws.
+ */
+export async function runFocusShortcut(run: Runner, text: string): Promise<"done" | "waiting"> {
   const dir = mkdtempSync(join(tmpdir(), "michael-focus-"));
   try {
     const file = join(dir, "input.txt");
     writeFileSync(file, text);
     await run("shortcuts", ["run", FOCUS_SHORTCUT_NAME, "--input-path", file]);
+    return "done";
+  } catch (error) {
+    if (timedOut(error)) return "waiting";
+    throw error;
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -111,29 +133,41 @@ export class DndKeeper {
     }
     if (want && this.applied?.id !== want.id) {
       if (!ready) return "missing";
+      const input = focusShortcutInput(want.until, this.timeZone());
       try {
-        await runFocusShortcut(this.run, focusShortcutInput(want.until, this.timeZone()));
+        this.say(await runFocusShortcut(this.run, input), `Do Not Disturb is on until ${input.slice(11)}`);
       } catch (error) {
         this.log(`could not switch it on: ${(error as Error).message}`);
         return "failed";
       }
+      // Once per request, also when macOS was still asking: running it again would only ask again.
       this.applied = { id: want.id, until: want.until };
-      this.log(`Do Not Disturb is on until ${focusShortcutInput(want.until, this.timeZone()).slice(11)}`);
       return "on";
     }
     if (!want && this.applied) {
       // The user ended it in Michael before its time: switch off what this Mac switched on.
       try {
-        await runFocusShortcut(this.run, FOCUS_SHORTCUT_OFF);
+        this.say(
+          await runFocusShortcut(this.run, FOCUS_SHORTCUT_OFF),
+          "Do Not Disturb is off (ended in Michael)",
+        );
       } catch (error) {
         this.log(`could not switch it off: ${(error as Error).message}`);
         return "failed";
       }
       this.applied = null;
-      this.log("Do Not Disturb is off (ended in Michael)");
       return "off";
     }
     return "nothing";
+  }
+
+  /** One line for the log, with what to do when macOS was still asking its question. */
+  private say(outcome: "done" | "waiting", line: string): void {
+    this.log(
+      outcome === "done"
+        ? line
+        : `${line}. macOS is asking a Privacy question about the Michael Focus shortcut: choose Always Allow, once.`,
+    );
   }
 
   private timeZone(): string {

@@ -9,7 +9,7 @@ const UNTIL = "2026-11-17T12:00:00.000Z"; // 14:00 in Athens
 const ID = "6d0f7d8e-5b8a-4a43-9a51-0d8f3c1c0a47";
 
 /** A fake Mac: records every command, and what the input file held when the shortcut ran. */
-function fakeMac(opts: { installed?: boolean; runFails?: boolean } = {}) {
+function fakeMac(opts: { installed?: boolean; runFails?: boolean; runHangs?: boolean } = {}) {
   const calls: string[][] = [];
   const inputs: string[] = [];
   const paths: string[] = [];
@@ -23,6 +23,9 @@ function fakeMac(opts: { installed?: boolean; runFails?: boolean } = {}) {
       paths.push(path);
       inputs.push(readFileSync(path, "utf8"));
       if (opts.runFails) throw new Error("Couldn’t find shortcut");
+      // What execFile reports when its timeout stops a command that never returned.
+      if (opts.runHangs)
+        throw Object.assign(new Error("Command failed"), { killed: true, signal: "SIGTERM" });
     }
     return "";
   };
@@ -118,6 +121,37 @@ test("a run that fails is tried again on the next look", async () => {
   assert.equal(await k.tick(), "failed");
   assert.equal(await k.tick(), "failed");
   assert.equal(mac.inputs.length, 2);
+});
+
+test("macOS still asking its Privacy question: sent once, not again every look, and off is sent once too", async () => {
+  // Seen on macOS 26.6: Set Focus takes effect, the command waits on a Privacy window until stopped.
+  const mac = fakeMac({ runHangs: true });
+  const lines: string[] = [];
+  const fetchFn = (async () =>
+    new Response(JSON.stringify(answers.length > 1 ? answers.shift() : answers[0]), {
+      status: 200,
+    })) as typeof fetch;
+  const answers: unknown[] = [
+    answer({ id: ID, until: UNTIL }),
+    answer({ id: ID, until: UNTIL }),
+    answer(null),
+  ];
+  const k = new DndKeeper({
+    apiUrl: "http://api",
+    apiKey: "mk_test",
+    run: mac.run,
+    fetch: fetchFn,
+    log: (m) => lines.push(m),
+    now: () => NOW,
+    timeZone: "Europe/Athens",
+  });
+  assert.equal(await k.tick(), "on");
+  assert.equal(await k.tick(), "nothing");
+  assert.deepEqual(mac.inputs, ["2026-11-17 14:00"]);
+  assert.match(lines[0] ?? "", /^Do Not Disturb is on until 14:00\. macOS is asking a Privacy question/);
+  assert.equal(await k.tick(), "off");
+  assert.equal(await k.tick(), "nothing");
+  assert.deepEqual(mac.inputs, ["2026-11-17 14:00", "off"]);
 });
 
 test("an API that is away changes nothing", async () => {

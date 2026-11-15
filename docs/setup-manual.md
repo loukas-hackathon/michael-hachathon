@@ -199,7 +199,16 @@ devices by default (Settings, Focus, Share Across Devices), so the Mac alone als
 2. In Terminal: `shortcuts list | grep "Michael Focus"` prints the name. Within 15 seconds Michael
    for Mac tells the API it is there; restart it if it was started before this change
    (`[dnd]` lines appear in its log when it switches something on or off).
-3. The first time it runs, macOS may ask whether Shortcuts may change your Focus: **Allow**.
+3. The first run asks a question. In Terminal:
+   `printf off > /tmp/michael-focus.txt && shortcuts run "Michael Focus" --input-path /tmp/michael-focus.txt`
+   (it switches Do Not Disturb off, so it changes nothing when none is on). Shortcuts shows a
+   window titled **Privacy**: allow it for good (the usual choice is **Always Allow**). Pass: the
+   command returns, and a second run returns at once with no window. Seen on macOS 26.6 on 15 Nov
+   2026 from a session that could not see the screen: Do Not Disturb was switched on and off
+   within two seconds each time, but the command did not return while that window was up, and the
+   window closed when the command was stopped. Until someone answers it, Michael for Mac still
+   switches Do Not Disturb on and off; it only waits a minute on each run and says so in its log.
+   If the window says something else, or the second run still waits, write it on #447.
 
 **The phone test (five steps, on the stage iPhone, signed in to Michael, the home screen app):**
 
