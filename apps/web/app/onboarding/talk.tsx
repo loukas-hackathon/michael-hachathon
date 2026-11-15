@@ -3,8 +3,17 @@
 import type { GoalArea, GoalWordsResponse, HeardGoal, OnboardingTurn } from "@michael/shared";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Fragment, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  type CSSProperties,
+  Fragment,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { Michael, type MichaelState } from "@/components/michael";
+import { useArrival } from "@/components/motion";
 import { listenTurn, type Turn, type TurnError } from "@/components/voice/listen-turn";
 import {
   checkRecorderPath,
@@ -17,9 +26,11 @@ import { primeSpeech, speakReply, stopSpeaking, unlockAudio } from "@/components
 import { hm } from "@/lib/format";
 import { SCRIPT_DONE, scriptTurn, splitLine, userWords, withoutGreeting } from "@/lib/onboarding-script";
 import { finishOnboarding, hearGoals, nextTurn, skipOnboarding } from "./actions";
-import { OnboardingFrame, primaryButton, quietButton, Separator } from "./frame";
+import { MichaelWaits, OnboardingFrame, primaryButton, quietButton, Separator } from "./frame";
 import { Check } from "./goals-step";
+import { ReadingStatus, useShown } from "./reading-status";
 import { MicIcon, type TalkState, VoiceOrb } from "./voice-orb";
+import { type WaitKind, WaitScreen } from "./wait";
 
 // Getting started is a conversation with Michael, hands free (Loukas, Sun 15 Nov). The first tap
 // plays his voice, his intro lighting up as he says it. Then, unless the calendar is already in,
@@ -50,6 +61,15 @@ const ERROR_COPY: Record<TurnError, string> = {
   "no-voice": "I can't listen in this browser. We'll type.",
   failed: "I lost you for a second. Type it, or tap Talk instead.",
 };
+
+// While he thinks of his next line (up to TURN_WAIT_MS): plain words that move on, never a frozen
+// screen. The first line has nothing of the user's to think about yet.
+const FIRST_THOUGHT = ["Thinking where to start", "Nearly ready"];
+const NEXT_THOUGHT = ["Thinking it over", "Still with you", "One more second"];
+// Reading the whole talk into goals.
+const HEARING = ["Reading what you said", "Finding your goals", "Working out the hours"];
+// Skip: on the way to Today.
+const SKIPPING = ["Getting your day ready"];
 
 const AREA_LABEL: Record<GoalArea, string> = { business: "Business", health: "Health", personal: "Personal" };
 
@@ -124,6 +144,28 @@ function IntroLines({ lines, lit }: { lines: string[]; lit: Lit }) {
         );
       })}
     </div>
+  );
+}
+
+// ---------- Michael thinking, in words that move on ----------
+
+/** The shared thinking pattern (components/thinking.tsx), with a line that moves on as it lasts. */
+function ThinkingLine({
+  steps,
+  className = "",
+  live = false,
+}: {
+  steps: string[];
+  className?: string;
+  live?: boolean;
+}) {
+  return (
+    <span className={`inline-flex items-center gap-1.5 ${className}`}>
+      <span aria-hidden="true" className="block w-[15px] shrink-0">
+        <Michael state="thinking" className="block h-auto w-full" />
+      </span>
+      <ReadingStatus steps={steps} every={3000} live={live} />
+    </span>
   );
 }
 
@@ -233,8 +275,9 @@ function HeardRow({ row, onChange }: { row: Row; onChange: (r: Row) => void }) {
 
 // ---------- the talk ----------
 
+// scroll-mb: a focused box scrolls clear of the pinned action, never under it.
 const textBox =
-  "w-full resize-none rounded-group bg-fill px-4 py-3 text-body text-label outline-none placeholder:text-label-2";
+  "w-full scroll-mb-28 resize-none rounded-group bg-fill px-4 py-3 text-body text-label outline-none placeholder:text-label-2";
 const tintedButton =
   "press flex h-11 items-center rounded-full bg-tint/14 px-5 text-subhead font-semibold text-tint-text disabled:opacity-40";
 const controlButton =
@@ -258,6 +301,8 @@ export function Talk({
   const voicePossible = mode !== "none";
 
   const [phase, setPhase] = useState<Phase>(back ? "ready" : "intro");
+  // The screen the talk opened on stays still; every screen a tap brings in arrives (frame.tsx).
+  const [opened] = useState(phase);
   const [sound, setSound] = useState(true);
   const [speaking, setSpeaking] = useState(false);
   const [lit, setLit] = useState<Lit>(null);
@@ -281,9 +326,12 @@ export function Talk({
   // The review.
   const [heard, setHeard] = useState<GoalWordsResponse | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
-  const [notes, setNotes] = useState<{ text: string; on: boolean }[]>([]);
+  const [notes, setNotes] = useState<{ text: string; on: boolean; added?: boolean }[]>([]);
   const [more, setMore] = useState<string | null>(null);
   const [busy, setBusy] = useState<"save" | "skip" | "more" | null>(null);
+  // On the way to another step: the button's pending word first, then Michael thinking (wait.tsx).
+  const [going, setGoing] = useState<WaitKind | null>(null);
+  const goingShown = useShown(going !== null);
   const [failed, setFailed] = useState<string | null>(null);
 
   const heading = useRef<HTMLHeadingElement>(null);
@@ -312,6 +360,30 @@ export function Talk({
       releaseMic();
     };
   }, []);
+
+  // Back from Google (or Today) with the browser's Back: the page comes from the cache, so a
+  // pending "Connecting" or "Saving" would otherwise stay on.
+  useEffect(() => {
+    const reset = (e: PageTransitionEvent) => {
+      if (!e.persisted) return;
+      setConnecting(false);
+      setBusy(null);
+      setGoing(null);
+    };
+    window.addEventListener("pageshow", reset);
+    return () => window.removeEventListener("pageshow", reset);
+  }, []);
+
+  // Where a tap from here can lead, fetched ahead, so the screen after lands at once.
+  useEffect(() => {
+    router.prefetch("/onboarding?step=connect");
+    router.prefetch("/onboarding?step=goals");
+    router.prefetch("/");
+  }, [router]);
+
+  // His thinking line shows once a wait passes a quarter second, and then stays long enough to read.
+  const thinkingShown = useShown(phase === "talk" && talk === "thinking");
+  const arriving = useArrival();
 
   /** Michael says a line when his voice is on; resolves when he has said it or was cut short. */
   const say = useCallback(
@@ -645,7 +717,7 @@ export function Talk({
       .filter((g) => !known.has(g.title.toLowerCase()))
       .map((g, i) => ({ ...g, key: `m${Date.now()}${i}`, on: true }));
     setRows((r) => [...r, ...added].slice(0, 5));
-    setNotes((n) => [...n, ...res.notes.map((text) => ({ text, on: true }))].slice(0, 4));
+    setNotes((n) => [...n, ...res.notes.map((text) => ({ text, on: true, added: true }))].slice(0, 4));
     setHeard(res);
     setMore(added.length === 0 && rows.length === 0 ? "" : null);
   }
@@ -661,6 +733,7 @@ export function Talk({
     }).catch(() => ({ ok: false }));
     if (res.ok) {
       // Stays "Saving" until the next screen paints.
+      setGoing("connect");
       router.push("/onboarding?step=connect");
       return;
     }
@@ -708,6 +781,19 @@ export function Talk({
     </button>
   );
   const face = (state: MichaelState) => <Michael state={state} className="h-auto w-[52px] text-label" />;
+  // A screen a tap brought in arrives in one moment; the one the talk opened on stays still.
+  const screen = phase === opened ? undefined : phase;
+
+  if (going && goingShown) return <WaitScreen kind={going} screen={`to-${going}`} />;
+
+  if (busy === "skip") {
+    // Skip answers at once: Michael on his way out, while the skip is saved and Today loads.
+    return (
+      <OnboardingFrame step={0} progress={0} title={null} left={left} screen="leaving" footer={null}>
+        <MichaelWaits title="Taking you to Today." status={<ReadingStatus steps={SKIPPING} />} />
+      </OnboardingFrame>
+    );
+  }
 
   if (phase === "intro") {
     return (
@@ -717,6 +803,7 @@ export function Talk({
         title={null}
         left={left}
         right={right}
+        screen={screen}
         footer={
           <button type="button" onClick={introTap} className={primaryButton}>
             {introStarted ? "Continue" : "Let's talk"}
@@ -724,7 +811,8 @@ export function Talk({
         }
       >
         <div className="flex flex-col gap-8">
-          {face(speaking ? "speaking" : "idle")}
+          {/* Between the tap and his first word (his voice loading) he is visibly thinking. */}
+          {face(speaking ? (lit?.pace === null ? "thinking" : "speaking") : "idle")}
           <IntroLines lines={INTRO} lit={lit} />
         </div>
       </OnboardingFrame>
@@ -750,6 +838,7 @@ export function Talk({
         title={null}
         left={left}
         right={right}
+        screen={screen}
         footer={
           ready ? (
             <>
@@ -784,15 +873,26 @@ export function Talk({
         }
       >
         <div className="flex flex-col">
-          {face(speaking ? "speaking" : ready && back !== "failed" ? "pleased" : "idle")}
+          {face(
+            connecting ? "thinking" : speaking ? "speaking" : ready && back !== "failed" ? "pleased" : "idle",
+          )}
           <h1
             ref={heading}
             tabIndex={-1}
-            className="m-swap mt-6 text-large-title font-bold tracking-[0.01em] outline-none"
+            className="mt-6 text-large-title font-bold tracking-[0.01em] outline-none"
           >
             {title}
           </h1>
-          <p className="mt-2 text-body text-label-2">{sub}</p>
+          <p className="mt-2 min-h-[1.375em] text-body text-label-2">
+            {/* Google can take a moment to open: say so where the reason was. */}
+            {connecting ? (
+              <span key="opening" role="status" className="m-swap">
+                Opening Google
+              </span>
+            ) : (
+              sub
+            )}
+          </p>
         </div>
       </OnboardingFrame>
     );
@@ -847,6 +947,7 @@ export function Talk({
         title={null}
         left={left}
         right={right}
+        screen={screen}
         footer={
           input === "text" ? (
             <>
@@ -911,19 +1012,34 @@ export function Talk({
             onTap={tapOrb}
             disabled={thinking}
           />
-          {/* His line, read at a glance: the question bold, the reaction and the hint quiet around it. */}
-          <div
-            key={line}
-            aria-live="polite"
-            data-testid="michael-line"
-            className="m-swap mt-6 flex min-h-[5.5rem] max-w-[32ch] flex-col items-center justify-start"
-          >
-            {said.before ? <p className="mb-1 text-body text-label-2">{said.before}</p> : null}
-            <h1 ref={heading} tabIndex={-1} className="text-insight font-bold text-balance outline-none">
-              {said.ask}
-            </h1>
-            {said.after ? <p className="mt-2 text-body text-balance text-label-2">{said.after}</p> : null}
-          </div>
+          {/* His line, read at a glance: the question bold, the reaction and the hint quiet around it.
+              Before his first line, the same room says he is thinking where to start. */}
+          {line ? (
+            <div
+              key={line}
+              aria-live="polite"
+              data-testid="michael-line"
+              className="m-swap mt-6 flex min-h-[5.5rem] max-w-[32ch] flex-col items-center justify-start"
+            >
+              {/* Dims while he thinks of the next one: the answer is in, he has moved on. */}
+              <div
+                data-dim={talk === "thinking" ? "" : undefined}
+                className="m-dim flex flex-col items-center"
+              >
+                {said.before ? <p className="mb-1 text-body text-label-2">{said.before}</p> : null}
+                <h1 ref={heading} tabIndex={-1} className="text-insight font-bold text-balance outline-none">
+                  {said.ask}
+                </h1>
+                {said.after ? <p className="mt-2 text-body text-balance text-label-2">{said.after}</p> : null}
+              </div>
+            </div>
+          ) : (
+            <div className="mt-6 flex min-h-[5.5rem] items-start justify-center">
+              {thinkingShown ? (
+                <ThinkingLine live steps={FIRST_THOUGHT} className="m-swap text-body text-label-2" />
+              ) : null}
+            </div>
+          )}
 
           <div className="mt-6 flex w-full flex-col items-center">
             {editing ? (
@@ -1000,13 +1116,19 @@ export function Talk({
             ) : null}
 
             <p role="status" className="mt-3 min-h-[1.125rem] text-footnote text-label-2">
-              {status ? (
+              {/* Every wait says what he is doing, in words, so it reads under reduced motion too. */}
+              {talk === "transcribing" ? (
+                <ThinkingLine
+                  key="reading"
+                  steps={["Reading what you said", "Nearly there"]}
+                  className="m-swap"
+                />
+              ) : status ? (
                 <span key={status} className="m-swap">
                   {status}
                 </span>
-              ) : thinking ? (
-                // Reduced motion: the mark holds still, so the state is said in words.
-                <span className="hidden motion-reduce:inline">Thinking</span>
+              ) : line && thinkingShown ? (
+                <ThinkingLine key="thinking" steps={NEXT_THOUGHT} className="m-swap" />
               ) : null}
             </p>
           </div>
@@ -1023,25 +1145,15 @@ export function Talk({
         title={null}
         left={left}
         right={right}
-        footer={
-          <button type="button" disabled aria-busy="true" className={primaryButton}>
-            Reading
-          </button>
-        }
+        screen={screen}
+        // Room for the review's action, so nothing jumps when it lands.
+        footer={<div aria-hidden="true" className="h-[50px]" />}
       >
-        <div className="flex flex-col">
-          {face("thinking")}
-          <h1
-            ref={heading}
-            tabIndex={-1}
-            className="mt-6 text-large-title font-bold tracking-[0.01em] outline-none"
-          >
-            Give me a second.
-          </h1>
-          <p role="status" className="mt-2 text-body text-label-2">
-            Reading what you said.
-          </p>
-        </div>
+        <MichaelWaits
+          headingRef={heading}
+          title="Give me a second."
+          status={<ReadingStatus steps={HEARING} every={2500} />}
+        />
       </OnboardingFrame>
     );
   }
@@ -1054,6 +1166,7 @@ export function Talk({
       title={null}
       left={left}
       right={right}
+      screen={screen}
       footer={
         <>
           {failed ? (
@@ -1072,7 +1185,7 @@ export function Talk({
               {busy === "save" ? "Saving" : n === 0 ? "Pick at least one" : `Keep ${count(n)}`}
             </button>
           ) : (
-            <Link href="/onboarding?step=goals" className={primaryButton}>
+            <Link href="/onboarding?step=goals" onClick={() => setGoing("goals")} className={primaryButton}>
               Pick from the usual
             </Link>
           )}
@@ -1080,7 +1193,7 @@ export function Talk({
       }
     >
       <div className="flex flex-col">
-        {face(busy === "more" ? "thinking" : speaking ? "speaking" : rows.length > 0 ? "pleased" : "idle")}
+        {face(busy !== null ? "thinking" : speaking ? "speaking" : rows.length > 0 ? "pleased" : "idle")}
         <h1
           ref={heading}
           tabIndex={-1}
@@ -1088,12 +1201,20 @@ export function Talk({
         >
           {rows.length > 0 ? "Here's what I heard." : "I need a little more."}
         </h1>
-        {heard ? <p className="mt-2 text-body text-label-2">{heard.line}</p> : null}
+        {heard ? (
+          <p key={heard.line} className="m-swap mt-2 text-body text-label-2">
+            {heard.line}
+          </p>
+        ) : null}
 
         {rows.length > 0 ? (
           <ul aria-label="Goals I heard" className="mt-6 overflow-hidden rounded-group bg-fill">
             {rows.map((r, i) => (
-              <li key={r.key} className="relative">
+              // A goal added with "Add it" pops in where it lands; the first ones arrive with the screen.
+              <li
+                key={r.key}
+                className={`relative ${r.key.startsWith("m") && arriving(r.key) ? "m-pop-in" : ""}`}
+              >
                 {i > 0 ? <Separator inset={52} /> : null}
                 <HeardRow
                   row={r}
@@ -1109,7 +1230,10 @@ export function Talk({
             <h2 className="mb-2 text-subhead text-label-2">What I'll remember about how you work</h2>
             <ul className="overflow-hidden rounded-group bg-fill">
               {notes.map((note, i) => (
-                <li key={note.text} className="relative">
+                <li
+                  key={note.text}
+                  className={`relative ${note.added && arriving(note.text) ? "m-pop-in" : ""}`}
+                >
                   {i > 0 ? <Separator inset={52} /> : null}
                   <button
                     type="button"
@@ -1134,12 +1258,14 @@ export function Talk({
               </button>
             ) : null
           ) : (
-            <div className="flex flex-col gap-2">
+            <div className="m-pop-in flex flex-col gap-2" style={{ "--m-origin": "50% 0" } as CSSProperties}>
               <label htmlFor="more" className="sr-only">
                 Anything I missed
               </label>
               <textarea
                 id="more"
+                // biome-ignore lint/a11y/noAutofocus: the user just tapped "I missed something" to type it
+                autoFocus={rows.length > 0}
                 value={more}
                 onChange={(e) => setMore(e.target.value)}
                 rows={3}
