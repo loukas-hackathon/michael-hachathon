@@ -17,6 +17,8 @@ const TABS: { href: string; label: string; Icon: ComponentType<{ className?: str
   { href: "/chat", label: "Chat", Icon: ChatIcon },
 ];
 
+const SIGNED_OUT = /^\/(login|auth)(\/|$)/;
+
 function isActive(pathname: string, href: string) {
   return href === "/" ? pathname === "/" : pathname.startsWith(href);
 }
@@ -80,7 +82,8 @@ export function TabBar() {
   useFreshTabs(pathname);
   useEffect(() => {
     const ask = () => {
-      if (document.visibilityState !== "visible") return;
+      // Signed out there is nothing to ask: the call would only fail (#459).
+      if (document.visibilityState !== "visible" || SIGNED_OUT.test(location.pathname)) return;
       checkInWaitingAction()
         .then(setLiveWaiting)
         .catch(() => {});
@@ -90,6 +93,9 @@ export function TabBar() {
     return () => document.removeEventListener("visibilitychange", ask);
   }, []);
   if (["/onboarding", "/connect", "/stage", "/setup"].some((p) => pathname.startsWith(p))) return null;
+  // /login covers the whole screen, bar included. Not drawing the bar there also stops it
+  // prefetching four signed in tabs that would each bounce back to /login.
+  if (SIGNED_OUT.test(pathname)) return null;
 
   return (
     <nav
@@ -154,17 +160,7 @@ function SidebarFoot({ pathname }: { pathname: string }) {
         <AgentsIcon className="m-tab-icon size-6" />
         <span>Agents</span>
       </Link>
-      {/* Signed out (login) there is no privacy state to read: a plain link. */}
-      {pathname.startsWith("/login") ? (
-        <Link href="/you" className={row(false)}>
-          <span className="m-tab-icon grid size-6 place-items-center rounded-full bg-label text-bg">
-            <MiMark className="block h-auto w-[14px]" />
-          </span>
-          <span>You</span>
-        </Link>
-      ) : (
-        <YouLink active={you} className={row(you)} />
-      )}
+      <YouLink active={you} className={row(you)} />
       <button
         type="button"
         onClick={() => window.dispatchEvent(new Event(SHOW_SHORTCUTS))}

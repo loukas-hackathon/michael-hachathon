@@ -8,6 +8,7 @@ import { isPresenter } from "@/lib/caller";
 import { getConnections } from "@/lib/connections-status";
 import { DeleteDataRow } from "./delete-data-row";
 import { OffTheRecordSwitch } from "./off-the-record-switch";
+import { SignOutRow } from "./sign-out-row";
 
 const separator = "absolute inset-x-0 top-0 ml-4 h-[0.5px] bg-separator";
 
@@ -153,13 +154,9 @@ export default async function YouPage({
             <span className="text-body">Signed in as</span>
             <span className="min-w-0 truncate text-body text-label-2">{account}</span>
           </p>
-          <a
-            href="/auth/signout"
-            className="press relative flex h-12 items-center px-4 text-body font-semibold text-danger"
-          >
+          <SignOutRow className="press relative flex h-12 items-center px-4 text-body font-semibold text-danger">
             <span className={separator} />
-            Sign out
-          </a>
+          </SignOutRow>
         </div>
       </section>
     </main>
