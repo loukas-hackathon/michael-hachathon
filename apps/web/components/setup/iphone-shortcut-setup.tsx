@@ -23,8 +23,9 @@ import {
 // 3. The app automation: Apple lets no app or link create one, so that part stays a few taps.
 // Without a shortcut link it shows `fallback` instead (the pages always pass one since #303).
 // In the installed app (no browser chrome) Add never loads the file in the app's own window, which
-// left Loukas on a page with no way back: it opens the Shortcuts import screen in a new context,
-// with a sheet of steps (and Done) if Shortcuts does not open.
+// left Loukas on a page with no way back: it opens the absolute link in a new context (Safari for
+// our file, Shortcuts for an iCloud link), with a sheet of steps (and Done) if nothing opens.
+// Never shortcuts://import-shortcut: it refuses anything but an iCloud link ("Import Failed").
 
 export function IPhoneShortcutSetup({
   shortcutUrl,
@@ -50,7 +51,9 @@ export function IPhoneShortcutSetup({
   useEffect(() => {
     if (!shortcutUrl) return;
     const origin = window.location.origin;
-    setLinks({ add: shortcutAddLink(shortcutUrl, origin), file: new URL(shortcutUrl, origin).href });
+    // Add and Open in Safari use the same absolute https URL.
+    const add = shortcutAddLink(shortcutUrl, origin);
+    setLinks({ add, file: add });
   }, [shortcutUrl]);
 
   // Back from Shortcuts: after Add, the next step is Connect, so bring it into view; after
@@ -113,8 +116,8 @@ export function IPhoneShortcutSetup({
         <Step n={1} done={added}>
           <p>Add the {SHORTCUT_NAME} shortcut, then come back here.</p>
           <a
-            href={standalone && links ? links.add : shortcutUrl}
-            // Installed app: a new context (Shortcuts or Safari), so this page stays where it is.
+            href={links ? links.add : shortcutUrl}
+            // Installed app: a new context (Safari, or Shortcuts for iCloud), so this page stays put.
             {...(standalone ? { target: "_blank", rel: "noopener" } : {})}
             onClick={() => {
               setAdded(true);
