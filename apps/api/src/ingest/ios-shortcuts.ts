@@ -16,28 +16,52 @@ import { type Store, store, type UpsertResult } from "../store";
 // open stored nothing, chat had no data and every deploy dropped the open held at the time.
 
 const SOURCE = "ios_shortcuts" as const;
+/** The title of an open whose app the automation did not name (data.app_unknown: true). */
+export const UNKNOWN_APP = "An app";
+// What an input with no real name can read as: an empty variable's name, never an app.
+const PLACEHOLDER_NAMES = new Set(["text", "shortcut input", "app", "apps"]);
+// Two unnamed opens closer than this are one automation run twice, not two opens.
+const UNKNOWN_DUPLICATE_MS = 60_000;
 // An open with no close after this long is a missed automation, not a session.
 export const MAX_SESSION_MS = 2 * 3600_000;
 
-export const ShortcutsPayload = z.object({
-  // Empty or missing: the shortcut was run by hand in the Shortcuts app (no automation, so no app
-  // as its input). That is the test run (#466): answered, never stored, never a 400. Production,
-  // 15 Nov: a hand run was refused here, so the row stayed Not connected after a working setup.
-  app: z.string().trim().max(200).default(""),
-  // Missing means open: one "Is Opened" automation with only the app is enough, since opening the
-  // next app closes the one before.
-  action: z
-    .string()
-    .default("open")
-    .transform((a) => {
-      const v = a.trim().toLowerCase();
-      return v === "" || v.startsWith("open") ? "open" : v.startsWith("clos") ? "close" : v;
-    })
-    .pipe(z.enum(["open", "close"])),
-  // Lenient: anything Date.parse cannot read falls back to the arrival time.
-  at: z.string().optional().catch(undefined),
-  bundle_id: z.string().trim().min(1).max(200).optional().catch(undefined),
-});
+// Other fields a hand made or future shortcut may carry the app in; `app` wins when it has a value.
+const APP_FIELDS = ["app", "app_name", "appName", "name", "input", "text"] as const;
+const appFrom = (raw: unknown) => {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
+  const body = raw as Record<string, unknown>;
+  const found = APP_FIELDS.map((f) => body[f]).find((v) => typeof v === "string" && v.trim() !== "");
+  return found === undefined ? body : { ...body, app: found };
+};
+
+export const ShortcutsPayload = z.preprocess(
+  appFrom,
+  z.object({
+    // Empty or missing: no app as the shortcut's input. The key's first such call is the hand run test
+    // (#466): answered, never stored, never a 400. Later ones are App automations, which on current
+    // iOS pass no input (production, 15 Nov): stored as an open of an unnamed app. A Text action
+    // before Run Shortcut in the automation names the app; that text arrives here as it is.
+    app: z
+      .string()
+      .trim()
+      .max(200)
+      .default("")
+      .transform((a) => (PLACEHOLDER_NAMES.has(a.toLowerCase()) ? "" : a)),
+    // Missing means open: one "Is Opened" automation with only the app is enough, since opening the
+    // next app closes the one before.
+    action: z
+      .string()
+      .default("open")
+      .transform((a) => {
+        const v = a.trim().toLowerCase();
+        return v === "" || v.startsWith("open") ? "open" : v.startsWith("clos") ? "close" : v;
+      })
+      .pipe(z.enum(["open", "close"])),
+    // Lenient: anything Date.parse cannot read falls back to the arrival time.
+    at: z.string().optional().catch(undefined),
+    bundle_id: z.string().trim().min(1).max(200).optional().catch(undefined),
+  }),
+);
 export type ShortcutsPayload = z.infer<typeof ShortcutsPayload>;
 
 /** What the pairer needs from the store (scoped to the current user, like every store call). */
@@ -62,19 +86,22 @@ function usage(
     type: "app_usage",
     start_at: startAt,
     end_at: new Date(end).toISOString(),
-    title: app,
+    title: app || UNKNOWN_APP,
     data: {
-      app,
+      app: app || UNKNOWN_APP,
       device: "iphone",
       seconds: Math.max(1, Math.round((end - start) / 1000)),
+      ...(app ? {} : { app_unknown: true }),
       ...(bundleId ? { bundle_id: bundleId } : {}),
       ...(open ? { open: true } : {}),
     },
-    external_id: externalId ?? `sc:${key(app)}:${startAt.slice(0, 19)}`,
+    external_id: externalId ?? `sc:${app ? key(app) : "unknown"}:${startAt.slice(0, 19)}`,
   });
 }
 
-const appOf = (e: Event) => (typeof e.data?.app === "string" ? e.data.app : e.title);
+/** The app's name, or "" for an open whose app the automation did not name. */
+const appOf = (e: Event) =>
+  e.data?.app_unknown === true ? "" : typeof e.data?.app === "string" ? e.data.app : e.title;
 
 /** The open that event `e` still stands for, ended at `end` (its real length now). */
 function ended(e: Event, end: number) {
@@ -134,8 +161,15 @@ export class ShortcutsPairer {
 
     if (p.action === "open") {
       const current = await this.lastOpen(at);
-      // The same app opened twice keeps the first open (a duplicate automation run).
-      if (current && key(appOf(current)) === key(p.app)) return written(null);
+      // The same app opened twice keeps the first open (a duplicate automation run). Two unnamed
+      // opens are one only within a minute: after that, most likely another open.
+      if (
+        current &&
+        key(appOf(current)) === key(p.app) &&
+        (p.app !== "" || at - Date.parse(current.start_at) < UNKNOWN_DUPLICATE_MS)
+      ) {
+        return written(null);
+      }
       // Another app in front means the one before was left, even if its close never came.
       if (current && at > Date.parse(current.start_at)) writes.push(ended(current, at));
       writes.push(usage(p.app, p.bundle_id, at, at + PROVISIONAL_MS, true));

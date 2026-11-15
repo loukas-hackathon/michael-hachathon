@@ -109,5 +109,21 @@ export async function connectionsNow(now = Date.now()): Promise<ConnectionsNow> 
         : undefined,
     ),
   );
+  // Opens the automation did not name (an App automation passes the shortcut no input): Michael
+  // says when, and how to see which app.
+  const phone = await store
+    .listEvents({
+      from: new Date(now - QUIET_MS).toISOString(),
+      to: new Date(now).toISOString(),
+      source: ["ios_shortcuts"],
+      type: ["app_usage"],
+    })
+    .catch(() => []);
+  const lastPhone = phone.sort((a, b) => a.start_at.localeCompare(b.start_at)).at(-1);
+  if (lastPhone?.data?.app_unknown === true) {
+    lines.push(
+      `- iPhone app opens: the automation does not name the app (shown as "An app"). Say "An app opened at ${at(lastPhone.start_at)}; name the app in the automation to see which."`,
+    );
+  }
   return { macLive, offTheRecord: answer, lines };
 }

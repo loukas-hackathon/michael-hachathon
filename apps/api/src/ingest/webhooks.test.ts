@@ -7,9 +7,10 @@ import { app } from "../app";
 import { currentUserId, runAsUser } from "../context";
 import { env } from "../env";
 import { store } from "../store";
+import { createPersonalToken } from "../tokens";
 import { writeVersion } from "../writes";
 import { AwPayload, mapActivityWatch } from "./activitywatch";
-import { ShortcutsPairer, ShortcutsPayload } from "./ios-shortcuts";
+import { ShortcutsPairer, ShortcutsPayload, UNKNOWN_APP } from "./ios-shortcuts";
 import { mapOmi } from "./omi";
 
 const fixture = (name: string) =>
@@ -184,6 +185,64 @@ test("POST /v1/webhooks/ios-shortcuts stores an open at once and extends it on c
     assert.equal(json.inserted, 0);
   }
 });
+
+test("iPhone key: the first call with no app is the test, later ones are opens of an unnamed app", async () => {
+  const owner = randomUUID();
+  const { secret } = await runAsUser(owner, () => createPersonalToken("iPhone Shortcuts"), "session");
+  const send = async (body: unknown) => {
+    const res = await app.request("/v1/webhooks/ios-shortcuts", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${secret}`, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    assert.equal(res.status, 200);
+    return (await res.json()) as {
+      test?: boolean;
+      inserted: number;
+      events: { title: string; data: Record<string, unknown> }[];
+    };
+  };
+  // The hand run from Send a test: answered, nothing stored.
+  const first = await send({ app: "", action: "open" });
+  assert.equal(first.test, true);
+  assert.equal(first.inserted, 0);
+  // The App automation, which on current iOS passes no input: an open of an unnamed app.
+  const auto = await send({ app: "", action: "open" });
+  assert.equal(auto.test, undefined);
+  assert.equal(auto.inserted, 1);
+  assert.equal(auto.events[0]?.title, UNKNOWN_APP);
+  assert.equal(auto.events[0]?.data.app_unknown, true);
+  // The same automation fired twice within a minute is one open.
+  assert.equal((await send({ app: "" })).inserted, 0);
+  // A Text action before Run Shortcut names the app: the text is the app.
+  const named = await send({ app: "Instagram" });
+  assert.equal(named.events.find((e) => e.data.open === true)?.title, "Instagram");
+  assert.equal(named.events.find((e) => e.data.open === true)?.data.app_unknown, undefined);
+  // An empty variable's placeholder name is no app either.
+  assert.equal(ShortcutsPayload.parse({ app: "Text" }).app, "");
+  // The app from any field a shortcut may carry it in.
+  assert.equal(ShortcutsPayload.parse({ app: "", name: "Threads" }).app, "Threads");
+  assert.equal(ShortcutsPayload.parse({ text: "TikTok" }).app, "TikTok");
+});
+
+test("Shortcuts pairer: unnamed opens a minute or more apart are two opens", () =>
+  runAsUser(randomUUID(), async () => {
+    const pairer = new ShortcutsPairer();
+    await signal(pairer, { app: "", at: "2026-11-14T13:08:00Z" });
+    await signal(pairer, { app: "", at: "2026-11-14T13:10:43Z" });
+    const events = await store.listEvents({
+      from: "2026-11-14T13:00:00Z",
+      to: "2026-11-14T14:00:00Z",
+      source: ["ios_shortcuts"],
+    });
+    assert.deepEqual(
+      events.map((e) => [e.title, e.data.app_unknown, e.data.seconds, e.data.open ?? false]),
+      [
+        [UNKNOWN_APP, true, 163, false],
+        [UNKNOWN_APP, true, 60, true],
+      ],
+    );
+  }));
 
 // ---------- ActivityWatch ----------
 
