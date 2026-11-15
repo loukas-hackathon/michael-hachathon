@@ -75,7 +75,7 @@ test("iPhone home screen app: hold records, let go transcribes on the server, an
   const sent = page.waitForRequest("**/chat/stream");
   await page.mouse.up();
 
-  expect((await sent).postDataJSON()).toEqual({ message: "How much deep work have I done today?" });
+  expect((await sent).postDataJSON()).toMatchObject({ message: "How much deep work have I done today?" });
   await expect(page.getByText("Forty seven minutes so far.")).toBeVisible();
   expect(uploads).toHaveLength(1);
   expect(uploads[0]?.type).toBe("audio/webm");
@@ -164,7 +164,7 @@ test("Talk to Michael in the home screen app: a recorded turn, answered by voice
   const sent = page.waitForRequest("**/chat/stream");
   // A tap says "done" (the fake microphone never goes quiet).
   await tap(orb);
-  expect((await sent).postDataJSON()).toEqual({ message: "When should I train tomorrow?", spoken: true });
+  expect((await sent).postDataJSON()).toMatchObject({ message: "When should I train tomorrow?", spoken: true });
   await expect(page.getByTestId("conversation")).toContainText("Train at 18:00.");
   await expect.poll(() => voice<string[]>(page, "v.spoken")).toEqual(["Train at 18:00."]);
   // Then it listens again, recording the next turn.

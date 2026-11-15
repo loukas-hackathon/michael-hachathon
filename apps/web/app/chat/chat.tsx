@@ -285,7 +285,11 @@ export function Chat({
               maxLength={2000}
               enterKeyHint="send"
               placeholder={
-                transcribing ? "Got it. Writing it down" : listening ? "Listening. Let go to send" : "Ask Michael"
+                transcribing
+                  ? "Got it. Writing it down"
+                  : listening
+                    ? "Listening. Let go to send"
+                    : "Ask Michael"
               }
               onChange={(e) => setDraft(key, e.target.value)}
               onKeyDown={(e) => {
