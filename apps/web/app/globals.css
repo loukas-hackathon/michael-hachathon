@@ -1070,6 +1070,11 @@ body::before {
 .m-tab:focus-visible {
   outline-offset: -2px;
 }
+/* Rows nested anywhere in a clipped group (Today's More from Michael, Goals rows) and controls in a
+ * fold draw the ring inside, or the clip cuts three of its edges off. */
+:where(.overflow-hidden.rounded-group, .m-collapse-inner) :focus-visible {
+  outline-offset: -2px;
+}
 
 /* In the components layer so utilities (hidden, lg:inline-grid) still win. */
 @layer components {

@@ -39,7 +39,8 @@ export default async function YouPage({
       <header className="flex min-h-11 items-center justify-end pt-2">
         <Link
           href="/"
-          className="press -mr-2 flex h-11 items-center px-2 text-body font-semibold text-tint-text"
+          // Laptop: the sidebar is the way out, so Done keeps its room but hides.
+          className="press -mr-2 flex h-11 items-center px-2 text-body font-semibold text-tint-text lg:invisible"
         >
           Done
         </Link>
