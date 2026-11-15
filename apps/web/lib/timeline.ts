@@ -298,7 +298,10 @@ export function buildTimeline(
       })
       .filter((m) => m.end > m.start)
       .sort((a, b) => a.start - b.start);
-  const phone = marks((e) => e.source === "iphone_usage" && e.type === "app_usage");
+  // Screen Time (a day behind, through the Mac) and the live opens the Michael shortcut sends.
+  const phone = marks(
+    (e) => (e.source === "iphone_usage" || e.source === "ios_shortcuts") && e.type === "app_usage",
+  );
   const ai = marks((e) => e.type === "ai_session");
   // Done time the user logged (#317): goal time, drawn pink like a workout.
   const logged = marks((e) => e.source === "manual" && e.type === "focus_session" && e.data.log === "done");
