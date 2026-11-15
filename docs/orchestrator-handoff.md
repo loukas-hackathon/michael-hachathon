@@ -6,19 +6,18 @@ permission, keep building with parallel agents, close every issue we can, phone 
 developed), keep colours and branding exactly as they are (pink `#E6007A`, red `#FF3B30`), and pace
 the usage limit by slowing down at about 60% of the window.
 
-## State (updated 12:10 UTC)
-- Production healthy (0a99ecb). This session (loukas-hackathon) is the lead orchestrator.
-- Since 11:15: #484/#496/#500 email only sign in (Loukas decided: no Google sign in; Google only for
-  calendar), create account lands signed in, new /login; #489 iPhone opens stored at once; #490 Michael
-  knows real connection states, no Mac guard without a live Mac; #497 shortcut opens in Safari (not
-  shortcuts://import-shortcut); #481 Railway never sleeps (railway.json).
-- Loukas deleted his four accounts (done via auth.users cascade) to start fresh.
-- Running (all due 13:45 UTC): instant resume after long idle (last known screen from the service
-  worker per user, taps never wait), real account QA walk, copy/voice/numbers audit (#503 open),
-  accessibility pass (invisible fixes only; Loukas: never change branding).
+## State (updated 13:00 UTC)
+- This session (loukas-hackathon) is the lead orchestrator.
+- Since 12:10: #503/#507 copy and durations, #505/#515 accessibility (invisible only; never change
+  branding), #506 Location hydration, #508/#526 shortcuts open in the same window again (the in-app
+  Safari sheet stayed blank), #509 shortcut opens on Timeline, #510/#516/#520/#523 instant resume
+  (last known screen per user from the service worker, Vercel cron warm, quick splash).
+- Open: #528 iCloud shortcut links as defaults (Michael c0c2a08d..., Focus 76e297e8..., public
+  share links from Loukas), #517 What I read switch (#512), #519 Goals first week (#513).
+- Issue #514 (brief/check-ins ignore shortcut opens) left for after the pitch.
 - Scheduled: final stage rehearsal QA at 13:50 UTC.
-- Human steps for Loukas: create his account, reconnect sources, re-add the iPhone shortcut;
-  DEMO_PRESENTER_KEY on Vercel + Railway; optional #450 jwt_exp 86400; reseed at T-60 and T-15.
+- Human steps for Loukas: create account, reconnect, add shortcut via the iCloud link, recreate the
+  Is Opened automation; DEMO_PRESENTER_KEY; reseed at T-60 and T-15; stage devices.
 - Freeze: after 15:00 UTC only copy, CSS, test fixes; after 17:30 UTC no merges unless stage breaking.
 
 ## Rules learned the hard way
