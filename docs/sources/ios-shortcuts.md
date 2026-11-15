@@ -84,7 +84,23 @@ What the shortcut does (`scripts/shortcut/build.mjs` is the source of truth):
    - **Get Contents of URL**
      `https://api-production-16521a26.up.railway.app/v1/webhooks/ios-shortcuts`, Method **POST**,
      Header `Authorization` = `Bearer ` followed by the file (as Text), Request Body **JSON**: `app` =
-     Shortcut Input (Name), `action` = `open`.
+     Shortcut Input (Name), `input` = Shortcut Input (as Text), `action` = `open`. The API takes
+     `app`, else `input`. `input` is in `build.mjs` since 15 Nov and reaches phones once
+     `pnpm shortcut` has signed it again on a Mac (the signed file in `apps/web/public` still sends
+     `app` only).
+
+**The automation names the app (production, 15 Nov).** On current iOS an App automation hands the
+shortcut no input: Loukas' "Opened Instagram" and "any of 2 apps" automations both arrived with an
+empty `app`. Such opens are stored as **An app**. To name it, one automation per app:
+
+1. Shortcuts, Automation, **+**, **App**: choose the app, tick **Is Opened** and **Run Immediately**,
+   **Next**.
+2. Add the action **Text** and type the app's name (`Instagram`).
+3. Add the action **Run Shortcut** and choose **Michael**. Shortcuts chains actions, so the Text is
+   its input; tap the arrow on Run Shortcut and check Input reads Text.
+
+The shortcut reads the Text as Text (`input`, above); the signed file from before reads its Name
+(`app`), which may come through empty for Text. A multi app automation cannot name the app.
 
 Opens alone are enough: each open is stored at once, opening the next app ends the one before, and
 an open with nothing after it for two hours keeps its provisional minute. A second **Is Closed**
