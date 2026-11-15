@@ -41,6 +41,7 @@ function Action({ action, style }: { action: ConnectionAction; style: string }) 
 const STATE_WORDS: Record<ConnectionStatus["state"], string> = {
   on: "Connected",
   none: "Not connected",
+  optional: "Optional",
   paused: "Paused",
   attention: "Needs attention",
   unavailable: "Not available yet",

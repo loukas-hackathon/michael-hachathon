@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { SkipMacButton } from "@/components/setup/skip-mac-button";
 import { getSetup, getStartedDismissed, type SetupStep } from "@/lib/first-run";
 import { dismissGetStarted } from "@/lib/first-run-actions";
 import { HideButton } from "./hide-button";
@@ -103,6 +104,16 @@ function Step({ step }: { step: SetupStep }) {
         <span className="sr-only">, done</span>
       </div>
     );
+  if (step.skippable)
+    return (
+      <div className="flex items-center gap-3">
+        <StepLink href={step.href} className={`press ${row} min-w-0 flex-1`}>
+          <Mark done={false} />
+          <span className="min-w-0 flex-1 text-body">{step.title}</span>
+        </StepLink>
+        <SkipMacButton short />
+      </div>
+    );
   return (
     <StepLink href={step.href} className={`press ${row}`}>
       <Mark done={false} />
@@ -121,12 +132,15 @@ function NextStep({ step }: { step: SetupStep }) {
       <div className="min-w-0 flex-1">
         <p className="text-body font-semibold">{step.title}</p>
         <p className="text-subhead text-label-2">{step.why}</p>
-        <StepLink
-          href={step.href}
-          className="press mt-2.5 inline-flex min-h-9 items-center rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint"
-        >
-          {step.cta}
-        </StepLink>
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-4">
+          <StepLink
+            href={step.href}
+            className="press inline-flex min-h-9 items-center rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint"
+          >
+            {step.cta}
+          </StepLink>
+          {step.skippable ? <SkipMacButton /> : null}
+        </div>
       </div>
     </div>
   );

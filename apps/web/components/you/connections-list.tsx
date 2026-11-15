@@ -1,3 +1,4 @@
+import { SkipMacButton } from "@/components/setup/skip-mac-button";
 import type { ConnectionsView } from "@/lib/connections-status";
 import { ConnectionRow } from "./connection-row";
 
@@ -10,7 +11,10 @@ export function ConnectionsList({
   view: ConnectionsView;
   flash: { ok: boolean; text: string } | null;
 }) {
-  const total = view.rows.length;
+  const total = view.total;
+  const mac = view.rows.find((r) => r.id === "mac");
+  // No Mac yet: say plainly that the rest works without one, and let the person say so once.
+  const noMacYet = mac?.state === "none" || mac?.state === "optional";
   const summary =
     view.connected === 0
       ? "Nothing connected yet."
@@ -46,6 +50,14 @@ export function ConnectionsList({
           </div>
         ))}
       </div>
+      {noMacYet ? (
+        <div className="mt-2 px-4">
+          <p className="text-footnote text-label-2">
+            No Mac? Calendar, Apple Watch, iPhone, Location, Claude and nudges all work without one.
+          </p>
+          {mac?.state === "none" ? <SkipMacButton /> : null}
+        </div>
+      ) : null}
     </section>
   );
 }

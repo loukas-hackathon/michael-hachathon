@@ -1,23 +1,26 @@
 import "server-only";
-import type { AgentClient, PersonalToken } from "@michael/shared";
+import { type AgentClient, type PersonalToken, SETUP_KEY_NAMES } from "@michael/shared";
 import { cookies } from "next/headers";
 import { cache } from "react";
 import { get, getGoals, getPushConfig } from "./api";
 import { isDemoVisitor } from "./caller";
+import { CONNECTION_ROUTES } from "./connections";
 import { getGoogleCalendar, getTelegram } from "./integrations";
 import { USE_MOCKS } from "./mode";
+import { saidNoMac } from "./no-mac";
 
 // The first run: what a new person still has to set up, read from their real data. Today shows it
 // as the Get started card and picks the empty state's one action from it.
 
-export type SetupKey = "goals" | "calendar" | "watch" | "mac" | "nudges" | "claude";
+export type SetupKey = "goals" | "calendar" | "watch" | "mac" | "iphone" | "nudges" | "claude";
 
 /** Where each step is done. One map, so the steps can move to the Connections hub in one edit. */
 export const SETUP_LINKS: Record<SetupKey, string> = {
   goals: "/onboarding",
   calendar: "/integrations/google/connect",
-  watch: "/you/devices",
-  mac: "/you/devices",
+  watch: CONNECTION_ROUTES["apple-watch"],
+  mac: CONNECTION_ROUTES.mac,
+  iphone: CONNECTION_ROUTES.iphone,
   nudges: "/you",
   claude: "/agents",
 };
@@ -27,6 +30,7 @@ const TITLES: Record<SetupKey, string> = {
   calendar: "Connect Google Calendar",
   watch: "Connect Apple Watch",
   mac: "Connect your Mac",
+  iphone: "Connect your iPhone",
   nudges: "Turn on nudges",
   claude: "Connect Claude",
 };
@@ -36,6 +40,7 @@ const WHY: Record<SetupKey, string> = {
   calendar: "Your planned blocks are what I measure against.",
   watch: "Sleep and workouts, so I know when to push and when to rest.",
   mac: "App time, so I can see where the hours went.",
+  iphone: "Which apps you open, and for how long. Live.",
   nudges: "Up to five a day, on your phone and watch.",
   claude: "Ask Claude about your day and let it plan with you.",
 };
@@ -45,14 +50,19 @@ const CTA: Record<SetupKey, string> = {
   calendar: "Connect calendar",
   watch: "Connect watch",
   mac: "Connect Mac",
+  iphone: "Connect iPhone",
   nudges: "Turn on nudges",
   claude: "Connect Claude",
 };
 
 const ORDER: SetupKey[] = ["goals", "calendar", "watch", "mac", "nudges", "claude"];
 
-/** The names You > Devices gives each device key (app/you/devices/page.tsx). */
-const KEY_NAMES = { watch: "Health Auto Export", mac: "Mac collector" } as const;
+/** The device key each connection gets (SETUP_KEY_NAMES in @michael/shared). */
+const KEY_NAMES = {
+  watch: SETUP_KEY_NAMES["apple-watch"],
+  mac: SETUP_KEY_NAMES.mac,
+  iphone: SETUP_KEY_NAMES.iphone,
+} as const;
 
 export type SetupStep = {
   key: SetupKey;
@@ -61,6 +71,8 @@ export type SetupStep = {
   cta: string;
   href: string;
   done: boolean;
+  /** The Mac step offers "Skip, I don't use a Mac". */
+  skippable?: boolean;
 };
 
 export type Setup = { steps: SetupStep[]; done: number; next: SetupStep | null };
@@ -79,7 +91,7 @@ export const getSetup = cache(async (demo?: string): Promise<Setup | null> => {
   if (USE_MOCKS || demo) return null;
   if (await isDemoVisitor()) return null;
 
-  const [goals, calendar, tokens, push, agents, telegram] = await Promise.all([
+  const [goals, calendar, tokens, push, agents, telegram, noMac] = await Promise.all([
     settle(getGoals(), []),
     settle(getGoogleCalendar(), null),
     settle(
@@ -92,6 +104,7 @@ export const getSetup = cache(async (demo?: string): Promise<Setup | null> => {
       [] as AgentClient[],
     ),
     settle(getTelegram(), null),
+    saidNoMac(),
   ]);
 
   const hasKey = (name: string) => tokens.some((t) => t.name === name);
@@ -100,17 +113,22 @@ export const getSetup = cache(async (demo?: string): Promise<Setup | null> => {
     calendar: calendar?.status === "connected",
     watch: hasKey(KEY_NAMES.watch),
     mac: hasKey(KEY_NAMES.mac),
+    iphone: hasKey(KEY_NAMES.iphone),
     nudges: (push?.devices ?? 0) > 0 || telegram?.connected === true,
     claude: agents.some((a) => a.status === "approved"),
   };
 
-  const steps = ORDER.map((key) => ({
+  // Without a Mac the app time step is the iPhone's: never a Mac shown as missing progress.
+  const withoutMac = !done.mac && (noMac || done.iphone);
+  const order = withoutMac ? ORDER.map((k) => (k === "mac" ? "iphone" : k)) : ORDER;
+  const steps = order.map((key) => ({
     key,
     title: TITLES[key],
     why: WHY[key],
     cta: CTA[key],
     href: SETUP_LINKS[key],
     done: done[key],
+    ...(key === "mac" ? { skippable: true } : {}),
   }));
   return {
     steps,
