@@ -28,6 +28,7 @@ import {
   mockInstructions,
   mockRecommendations,
   type Nudge,
+  type NudgeActionId,
   type NudgeStatus,
   type PersonalRecord,
   type Place,
@@ -164,7 +165,12 @@ export const sameEvent = (e: Event, i: z.output<typeof EventInput>) =>
   (e.end_at ? Date.parse(e.end_at) : null) === (i.end_at ? Date.parse(i.end_at) : null) &&
   canonical(e.data) === canonical(i.data);
 
-export type NudgeCreate = Omit<Nudge, "id" | "created_at" | "sent_at">;
+export type NudgeCreate = Omit<
+  Nudge,
+  "id" | "created_at" | "sent_at" | "actions" | "acted_action" | "acted_at"
+> & {
+  actions?: Nudge["actions"];
+};
 
 /** A follow up draft to store; it starts as `proposed`. */
 export type NewDraft = Omit<Draft, "id" | "status" | "created_at" | "updated_at">;
@@ -317,6 +323,15 @@ export interface Store extends PrivacyBackend {
   /** Null when this key was already used on that day (the dedupe guard). */
   createNudge(input: NudgeCreate): Promise<Nudge | null>;
   updateNudgeStatus(id: string, status: NudgeStatus): Promise<Nudge | null>;
+  /** One nudge of the current user, or null. */
+  getNudge(id: string): Promise<Nudge | null>;
+  /**
+   * Marks the nudge as acted on (#399), only if it was not already: null when it was (or is not
+   * the current user's). This is what makes an action single use, whichever channel sent it.
+   */
+  claimNudgeAction(id: string, action: NudgeActionId): Promise<Nudge | null>;
+  /** Clears the action again: a snooze brought the nudge back, or the action failed. */
+  releaseNudgeAction(id: string): Promise<void>;
   // Web Push devices of the current user.
   listPushDevices(): Promise<PushDevice[]>;
   /** Saves the device for the current user (a device belongs to whoever subscribed it last). */
@@ -1056,9 +1071,37 @@ export class MemoryStore implements Store {
 
   async createNudge(i: NudgeCreate) {
     if (this.d.nudges.some((n) => n.day === i.day && n.key === i.key)) return null;
-    const nudge: Nudge = { ...i, id: crypto.randomUUID(), created_at: now(), sent_at: null };
+    const nudge: Nudge = {
+      ...i,
+      actions: i.actions ?? [],
+      id: crypto.randomUUID(),
+      created_at: now(),
+      sent_at: null,
+      acted_action: null,
+      acted_at: null,
+    };
     this.d.nudges.push(nudge);
     return nudge;
+  }
+
+  async getNudge(id: string) {
+    return this.d.nudges.find((n) => n.id === id) ?? null;
+  }
+
+  async claimNudgeAction(id: string, action: NudgeActionId) {
+    const nudge = this.d.nudges.find((n) => n.id === id);
+    if (!nudge || nudge.acted_at) return null;
+    nudge.acted_action = action;
+    nudge.acted_at = now();
+    return nudge;
+  }
+
+  async releaseNudgeAction(id: string) {
+    const nudge = this.d.nudges.find((n) => n.id === id);
+    if (nudge) {
+      nudge.acted_action = null;
+      nudge.acted_at = null;
+    }
   }
 
   async updateNudgeStatus(id: string, status: NudgeStatus) {

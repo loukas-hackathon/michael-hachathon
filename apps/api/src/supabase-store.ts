@@ -19,6 +19,7 @@ import type {
   InstructionUpdate,
   IntegrationProvider,
   Nudge,
+  NudgeActionId,
   NudgeStatus,
   PersonalRecord,
   Place,
@@ -29,7 +30,7 @@ import type {
   SourceSetting,
   WeeklyTarget,
 } from "@michael/shared";
-import { Source as SourceEnum } from "@michael/shared";
+import { NudgeAction, Source as SourceEnum } from "@michael/shared";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { z } from "zod";
 import { currentDemoVisitor, currentUserId } from "./context";
@@ -259,6 +260,11 @@ const toNudge = (r: Record<string, unknown>): Nudge => ({
   status: r.status as NudgeStatus,
   created_at: iso(r.created_at as string) as string,
   sent_at: iso(r.sent_at as string | null),
+  actions: NudgeAction.array()
+    .catch([])
+    .parse(r.actions ?? []),
+  acted_action: (r.acted_action as Nudge["acted_action"]) ?? null,
+  acted_at: iso(r.acted_at as string | null),
 });
 
 const toTarget = (r: Record<string, unknown>): WeeklyTarget => ({
@@ -1465,6 +1471,38 @@ export class SupabaseStore implements Store {
         .maybeSingle(),
     );
     return row ? toNudge(row) : null;
+  }
+
+  async getNudge(id: string) {
+    const row = check(
+      await this.db.from("nudges").select("*").eq("user_id", currentUserId()).eq("id", id).maybeSingle(),
+    );
+    return row ? toNudge(row) : null;
+  }
+
+  async claimNudgeAction(id: string, action: NudgeActionId) {
+    // One conditional update: two taps (or the watch and Telegram) racing, only one wins.
+    const row = check(
+      await this.db
+        .from("nudges")
+        .update({ acted_action: action, acted_at: new Date().toISOString() })
+        .eq("user_id", currentUserId())
+        .eq("id", id)
+        .is("acted_at", null)
+        .select("*")
+        .maybeSingle(),
+    );
+    return row ? toNudge(row) : null;
+  }
+
+  async releaseNudgeAction(id: string) {
+    check(
+      await this.db
+        .from("nudges")
+        .update({ acted_action: null, acted_at: null })
+        .eq("user_id", currentUserId())
+        .eq("id", id),
+    );
   }
 
   async listPushDevices(): Promise<PushDevice[]> {

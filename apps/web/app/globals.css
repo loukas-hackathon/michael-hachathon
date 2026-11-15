@@ -466,6 +466,13 @@ body::before {
   }
 }
 
+/* The block or card a nudge's tap opened (components/deep-link-focus.tsx, #399): a brief ring. */
+.m-deep-link {
+  outline: 2px solid var(--m-tint);
+  outline-offset: 2px;
+  transition: outline-color var(--m-dur-enter) var(--m-ease-out);
+}
+
 /* Score count up (components/count-up.tsx): once per session, 700ms, no bounce, after the splash. */
 @property --m-count {
   syntax: "<integer>";

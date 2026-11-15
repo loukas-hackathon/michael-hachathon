@@ -1,8 +1,8 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import type { Nudge, NudgeStatus } from "@michael/shared";
+import { type Nudge, NudgeActionId, type NudgeStatus, nudgeUrl } from "@michael/shared";
 import { z } from "zod";
 import { currentUserId, runAsUser } from "../context";
-import { env } from "../env";
+import { env, webUrl } from "../env";
 import { store } from "../store";
 import type { DeliveryChannel } from "./channels";
 
@@ -124,6 +124,16 @@ export function secretMatches(given: string | undefined): boolean {
 // Only the fields we read; zod drops the rest.
 export const TelegramUpdate = z.object({
   update_id: z.number(),
+  // A tap on a nudge's button (#399): data is `na:<nudge id>:<action>`.
+  callback_query: z
+    .object({
+      id: z.string(),
+      data: z.string().max(64).optional(),
+      message: z
+        .object({ message_id: z.number(), chat: z.object({ id: z.number(), type: z.string() }) })
+        .optional(),
+    })
+    .optional(),
   message: z
     .object({
       chat: z.object({ id: z.number(), type: z.string() }),
@@ -189,7 +199,7 @@ export async function registerWebhook(publicApiUrl = env.PUBLIC_API_URL): Promis
   const res = await telegramApi("setWebhook", {
     url,
     secret_token: c.secret,
-    allowed_updates: ["message"],
+    allowed_updates: ["message", "callback_query"],
   });
   if (!res.ok) console.error(`[telegram] setWebhook failed: ${res.status} ${res.description}`);
   else console.log(`[telegram] webhook set to ${url}`);
@@ -198,12 +208,49 @@ export async function registerWebhook(publicApiUrl = env.PUBLIC_API_URL): Promis
 
 // ---------- delivery ----------
 
-/** Sends one line to the current user's bound chat. */
-export async function telegramToCurrentUser(text: string): Promise<{ chats: number; delivered: number }> {
+type InlineButton = { text: string; callback_data: string } | { text: string; url: string };
+
+/** callback_data for a nudge's button: 48 bytes at most, inside Telegram's 64. */
+export const callbackData = (nudgeId: string, action: NudgeActionId) => `na:${nudgeId}:${action}`;
+
+export function parseCallbackData(
+  data: string | undefined,
+): { nudgeId: string; action: NudgeActionId } | null {
+  const m = /^na:([0-9a-f-]{36}):([a-z_]+)$/.exec(data ?? "");
+  const action = NudgeActionId.safeParse(m?.[2]);
+  return m?.[1] && action.success ? { nudgeId: m[1], action: action.data } : null;
+}
+
+/**
+ * A nudge's buttons as one row of an inline keyboard (#399). Open is a link to the exact card, and
+ * only when the web app has an https address (Telegram refuses anything else).
+ */
+export function nudgeKeyboard(
+  nudge: Pick<Nudge, "id" | "kind" | "key" | "day" | "recommendation_id" | "actions">,
+): { inline_keyboard: InlineButton[][] } | null {
+  const web = webUrl();
+  // Older stored nudges carry no actions.
+  const row: InlineButton[] = (nudge.actions ?? []).flatMap((a): InlineButton[] => {
+    if (a.id !== "open") return [{ text: a.label, callback_data: callbackData(nudge.id, a.id) }];
+    return web.startsWith("https://") ? [{ text: a.label, url: `${web}${nudgeUrl(nudge)}` }] : [];
+  });
+  return row.length ? { inline_keyboard: [row] } : null;
+}
+
+/** Sends one line to the current user's bound chat, with the nudge's buttons when given. */
+export async function telegramToCurrentUser(
+  text: string,
+  nudge?: Parameters<typeof nudgeKeyboard>[0],
+): Promise<{ chats: number; delivered: number }> {
   if (!config) return { chats: 0, delivered: 0 };
   const chat = await store.getTelegramChat();
   if (!chat) return { chats: 0, delivered: 0 };
-  const res = await telegramApi("sendMessage", { chat_id: chat.chat_id, text });
+  const keyboard = nudge ? nudgeKeyboard(nudge) : null;
+  const res = await telegramApi("sendMessage", {
+    chat_id: chat.chat_id,
+    text,
+    ...(keyboard ? { reply_markup: keyboard } : {}),
+  });
   if (res.ok) return { chats: 1, delivered: 1 };
   // 403: the user blocked the bot or deleted the chat. Forget it, as push forgets gone devices.
   if (res.status === 403) await store.unbindTelegramChat();
@@ -214,7 +261,7 @@ export async function telegramToCurrentUser(text: string): Promise<{ chats: numb
 export const telegramChannel: DeliveryChannel = {
   name: "telegram",
   async deliver(nudge: Nudge): Promise<NudgeStatus> {
-    const { chats, delivered } = await telegramToCurrentUser(nudge.text);
+    const { chats, delivered } = await telegramToCurrentUser(nudge.text, nudge);
     if (chats === 0) return "queued";
     return delivered > 0 ? "sent" : "failed";
   },

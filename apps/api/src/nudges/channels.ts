@@ -1,6 +1,9 @@
-import type { Nudge, NudgeChannel, NudgeStatus } from "@michael/shared";
+import { type Nudge, type NudgeChannel, type NudgeStatus, nudgeUrl } from "@michael/shared";
+import { currentUserId } from "../context";
+import { env } from "../env";
 import { type PushPayload, pushConfig, pushToCurrentUser } from "./push";
 import { telegramChannel, telegramConfig } from "./telegram";
+import { signActionToken } from "./token";
 
 /**
  * Where a nudge goes. One implementation per channel: Apple Watch and iPhone push (#44),
@@ -22,12 +25,23 @@ export const logChannel: DeliveryChannel = {
   },
 };
 
-export const nudgePayload = (n: Pick<Nudge, "text" | "kind">): PushPayload => ({
-  title: "Michael",
-  body: n.text,
-  tag: n.kind,
-  url: "/",
-});
+/** The API's own address, for the worker's act request. */
+const apiBase = () => env.PUBLIC_API_URL.replace(/\/$/, "");
+
+/**
+ * What the worker shows for a nudge: the line, a tap that opens the exact card, and its buttons
+ * with a token signed for this nudge and the current user (#399).
+ */
+export function nudgePayload(n: Nudge, now = Date.now()): PushPayload {
+  const payload: PushPayload = { title: "Michael", body: n.text, tag: n.kind, url: nudgeUrl(n) };
+  if (!n.actions?.length) return payload;
+  return {
+    ...payload,
+    actions: n.actions.map((a) => ({ action: a.id, title: a.label })),
+    act_url: `${apiBase()}/v1/nudges/${n.id}/act`,
+    token: signActionToken(n.id, currentUserId(), now),
+  };
+}
 
 /** Web Push to every device of the user: the iPhone shows it and the Apple Watch buzzes. */
 export const pushChannel: DeliveryChannel = {

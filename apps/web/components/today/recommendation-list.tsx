@@ -110,6 +110,7 @@ function Card({
 
   return (
     <li
+      data-rec-id={card.id}
       className={`flex flex-col gap-1.5 ${
         primary || booked
           ? "rounded-card bg-fill px-4 pt-3.5 pb-4"

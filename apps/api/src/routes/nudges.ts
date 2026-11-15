@@ -1,13 +1,17 @@
 import {
   countsTowardsCap,
+  NudgeActInput,
   type NudgeCheckResult,
   NudgesQuery,
   type NudgesResponse,
   type NudgeTestResult,
 } from "@michael/shared";
 import { Hono } from "hono";
-import { HttpError, parse } from "../http";
+import { z } from "zod";
+import { runAsUser } from "../context";
+import { HttpError, jsonBody, parse } from "../http";
 import { momentNudge } from "../moments/nudge";
+import { actionsFor, actOnNudge } from "../nudges/actions";
 import { nudgePayload, primaryChannel } from "../nudges/channels";
 import {
   decide,
@@ -19,6 +23,7 @@ import {
 } from "../nudges/engine";
 import { pushToCurrentUser } from "../nudges/push";
 import { telegramToCurrentUser } from "../nudges/telegram";
+import { verifyActionToken } from "../nudges/token";
 import { recoveryOffer } from "../recovery/offer";
 import { ritualNudgeText } from "../ritual/nudge";
 import { outcomesGoal } from "../ritual/ritual";
@@ -98,6 +103,7 @@ export async function checkNudges(): Promise<NudgeCheckResult> {
     text: candidate.text,
     reason: candidate.reason,
     status: decision.action === "suppress" ? "suppressed" : "queued",
+    actions: actionsFor(candidate),
   });
   // Another check stored the same key a moment ago: nothing new to say.
   if (!created) return { checked_at: now, nudge: null, skipped: "nothing_to_say", sent_today: counted };
@@ -146,18 +152,21 @@ export async function testNudge(): Promise<NudgeTestResult> {
     recommendation_id: null,
     goal_id: "goal_id" in pick ? pick.goal_id : null,
     kind: pick.kind,
-    key: `test:${pick.kind}:${now}:${crypto.randomUUID().slice(0, 8)}`,
+    // test:<press>:<the real key>, so the tap still opens the block it is about (nudgeUrl).
+    key: `test:${Date.parse(now).toString(36)}${crypto.randomUUID().slice(0, 8)}:${"key" in pick ? pick.key : pick.kind}`,
     day: win.day,
     channel: primaryChannel().name,
     text: pick.text,
     reason: pick.reason,
     status: "test",
+    // The stage moment shows the buttons too: the same ones a real nudge of this kind offers.
+    actions: "key" in pick ? actionsFor(pick) : [],
   });
   if (!nudge) throw new HttpError("internal", "Could not store the test nudge");
   // Push devices and the Telegram chat at once: either one buzzing the watch is enough on stage.
   const [push, telegram] = await Promise.all([
-    pushToCurrentUser(nudgePayload(pick)),
-    telegramToCurrentUser(pick.text),
+    pushToCurrentUser(nudgePayload(nudge)),
+    telegramToCurrentUser(nudge.text, nudge),
   ]);
   const devices = push.devices + telegram.chats;
   const delivered = push.delivered + telegram.delivered;
@@ -180,3 +189,20 @@ export const nudges = new Hono()
   .post("/nudges/check", async (c) => c.json(await checkNudges()))
   // POST /v1/nudges/test: push one nudge to the caller's own devices now (stage demo).
   .post("/nudges/test", async (c) => c.json(await testNudge()));
+
+/**
+ * POST /v1/nudges/:id/act: a button on a notification (#399). Mounted before the auth: the service
+ * worker has no session, so the signed token in the push says who it is, for this nudge only.
+ */
+export const nudgeActPublic = new Hono().post("/nudges/:id/act", async (c) => {
+  const id = parse(z.uuid(), c.req.param("id"));
+  const { action, token } = parse(NudgeActInput, await jsonBody(c));
+  const check = verifyActionToken(token, id);
+  if (!check.ok) {
+    throw new HttpError(
+      "unauthorized",
+      check.reason === "expired" ? "That nudge has expired. Open Michael." : "That link is not valid.",
+    );
+  }
+  return c.json(await runAsUser(check.userId, () => actOnNudge(id, action)));
+});
