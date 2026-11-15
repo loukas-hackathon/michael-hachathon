@@ -36,6 +36,7 @@ import { offerGoalActions } from "./checklist/offers";
 import { currentAgent } from "./context";
 import { currentSuggestions } from "./goals/suggestions";
 import { HttpError, parse } from "./http";
+import { knowledgeFor, knowledgeText } from "./knowledge";
 import {
   dayLabel,
   dur,
@@ -512,6 +513,21 @@ export function createMcpServer(): McpServer {
         ? memories.map((m) => `- ${m.text} (${m.from}, ${dayLabel(Date.parse(m.at))})`).join("\n")
         : "Nothing remembered yet.";
       return reply(text, { memories });
+    }),
+  );
+
+  server.registerTool(
+    "what_you_know",
+    {
+      title: "What Michael knows about the user",
+      description:
+        "Everything Michael uses about the user, in plain words: what they told him (memories, check in answers, standing instructions, setup), what each connection sends and when it last did, what he never keeps, and how often agents asked today. Use it when the user asks what Michael or you know about them. The user can forget any item in the app under You, Privacy.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+    },
+    safe(async () => {
+      const k = await knowledgeFor();
+      return reply(knowledgeText(k), k as Record<string, unknown>);
     }),
   );
 

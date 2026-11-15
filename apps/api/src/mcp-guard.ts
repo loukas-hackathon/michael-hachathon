@@ -43,6 +43,7 @@ export const TOOL_SCOPE: Record<string, AgentScope> = {
   plan_travel: "write_events",
   get_check_in: "timeline",
   get_memories: "timeline",
+  what_you_know: "timeline",
   remember: "write_events",
   answer_check_in: "timeline",
   // Done time and settled blocks (#317) change the timeline and the score: the same scope as add_event.
@@ -94,6 +95,8 @@ export function summarise(name: string, title: string | undefined, input: unknow
       return `Read your patterns${range}`;
     case "get_check_in":
       return "Read your check in";
+    case "what_you_know":
+      return "Read what I know about you";
     case "answer_check_in":
       return "Kept an answer to your check in";
     case "log_done": {

@@ -21,6 +21,7 @@ import { focusGuards } from "./routes/focus-guards";
 import { goals } from "./routes/goals";
 import { instructions } from "./routes/instructions";
 import { integrations, oauth } from "./routes/integrations";
+import { knowledge } from "./routes/knowledge";
 import { log } from "./routes/log";
 import { meData } from "./routes/me-data";
 import { moments } from "./routes/moments";
@@ -87,6 +88,7 @@ export const v1Routes = new Hono()
   .route("/", agents)
   .route("/", places)
   .route("/", meData)
+  .route("/", knowledge)
   .route("/", demo);
 
 const v1 = new Hono().use(requireUser()).route("/", v1Routes);

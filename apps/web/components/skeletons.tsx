@@ -647,3 +647,23 @@ export function SheetBodySkeleton({ rows = 3 }: { rows?: number }) {
     </div>
   );
 }
+
+/* ---------- What I know about you (app/you/knowledge/page.tsx) ---------- */
+
+/** The intro, then "Things you told me" (told-list.tsx) and "What I read": real titles, bones for rows. */
+export function KnowledgeSkeleton() {
+  return (
+    <div aria-hidden="true">
+      <Lines text="subhead" className="mt-1" widths={["100%", "55%"]} />
+      <section className="mt-6">
+        <h2 className="mb-2 text-title3 font-bold">Things you told me</h2>
+        <Lines text="footnote" className="px-4 pb-1.5" widths={["7rem"]} />
+        <RowsSkeleton rows={3} />
+      </section>
+      <section className="mt-8">
+        <h2 className="mb-2 text-title3 font-bold">What I read</h2>
+        <RowsSkeleton rows={2} />
+      </section>
+    </div>
+  );
+}

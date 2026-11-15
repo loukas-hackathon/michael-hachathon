@@ -986,6 +986,65 @@ export const SourcesStatusResponse = z.object({
 });
 export type SourcesStatusResponse = z.infer<typeof SourcesStatusResponse>;
 
+// ---------- what Michael knows about you (GET /v1/me/knowledge, MCP what_you_know) ----------
+
+// Everything Michael uses about the user, in plain words, built from the stores that already hold
+// it (no table of its own). `told` is what the user said; `reads` is what each connection sends.
+export const KnowledgeKind = z.enum(["memory", "check_in", "instruction", "profile"]);
+export type KnowledgeKind = z.infer<typeof KnowledgeKind>;
+
+// Where it came from: said in chat, kept by an agent the user approved, answered in a check in,
+// set by the user (instructions), or given at setup (the profile).
+export const KnowledgeOrigin = z.enum(["chat", "agent", "check_in", "you", "setup"]);
+export type KnowledgeOrigin = z.infer<typeof KnowledgeOrigin>;
+
+export const KnowledgeItem = z.object({
+  // memory: the event id; check_in: the check in id; instruction: its id; profile: the field
+  // ("quiet_hours", "usual_week") or "<field>:<value>" for one entry of a list
+  // ("weak_spots:late_nights", "fixed_titles:PT session").
+  id: z.string().min(1),
+  kind: KnowledgeKind,
+  // Plain words. A memory, an instruction or a check in question as written; a profile line in Michael's words.
+  text: z.string(),
+  // A check in's answer in the user's own words; null otherwise.
+  answer: z.string().nullable(),
+  // When it was told, or null when not known.
+  at: IsoDateTime.nullable(),
+  origin: KnowledgeOrigin,
+  // False for a paused instruction.
+  active: z.boolean(),
+  // Whether one tap really deletes it: memories (DELETE /v1/events/:id), check ins
+  // (DELETE /v1/check-in/:id), instructions (DELETE /v1/instructions/:id) and one entry of a profile
+  // list (PUT /v1/profile without it). Quiet hours and the usual week can be changed, not forgotten.
+  forgettable: z.boolean(),
+});
+export type KnowledgeItem = z.infer<typeof KnowledgeItem>;
+
+export const KnowledgeSource = z.object({
+  source: Source,
+  // What the user calls it, and one line of what it sends.
+  name: z.string(),
+  sends: z.string(),
+  enabled: z.boolean(),
+  collecting: z.boolean(),
+  last_event_at: IsoDateTime.nullable(),
+});
+export type KnowledgeSource = z.infer<typeof KnowledgeSource>;
+
+export const Knowledge = z.object({
+  // Newest first within each kind; kinds in the order memory, check_in, instruction, profile.
+  told: z.array(KnowledgeItem),
+  // Connections that are switched on or have ever sent something (never manual or agent).
+  reads: z.array(KnowledgeSource),
+  // Three short lines, true to the code: what Michael never keeps.
+  never_kept: z.array(z.string()),
+  off_the_record: z.boolean(),
+  // Agent calls logged today (Europe/Athens), and how many agents are approved now.
+  asked_today: z.number().int().nonnegative(),
+  agents_connected: z.number().int().nonnegative(),
+});
+export type Knowledge = z.infer<typeof Knowledge>;
+
 // ---------- profile: the onboarding answers (GET/PUT /v1/profile) ----------
 
 // `ClockTime` ("HH:MM", 24 hour, Europe/Athens wall clock) is defined with the goals above.

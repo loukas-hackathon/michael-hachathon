@@ -2047,6 +2047,63 @@ when Michael last received a new event from that source (the event's `created_at
 never sent one. An event that arrives again unchanged does not move it. The web app's Connections
 rows on You read it to say "Last data 12 min ago". Code: `apps/api/src/routes/sources.ts`.
 
+### What I know about you (#379)
+
+```ts
+type KnowledgeItem = {
+  id: string; // memory: event id; check_in: check in id; instruction: its id; profile: "quiet_hours",
+  // "usual_week", "gym_days", or "weak_spots:<value>" / "fixed_titles:<title>" for one entry
+  kind: "memory" | "check_in" | "instruction" | "profile";
+  text: string; // plain words: the memory, question or instruction as written, or a profile line
+  answer: string | null; // a check in answer, in the user's own words
+  at: string | null; // when it was told
+  origin: "chat" | "agent" | "check_in" | "you" | "setup";
+  active: boolean; // false for a paused instruction
+  forgettable: boolean;
+};
+type KnowledgeSource = {
+  source: Source;
+  name: string; // "Chrome"
+  sends: string; // "Sites you spend time on, never what you type"
+  enabled: boolean;
+  collecting: boolean;
+  last_event_at: string | null;
+};
+type Knowledge = {
+  told: KnowledgeItem[]; // memory, check_in, instruction, profile; newest first within each
+  reads: KnowledgeSource[]; // switched on or ever sent; never manual or agent
+  never_kept: string[]; // three lines, true to the code
+  off_the_record: boolean;
+  asked_today: number; // agent calls logged today (Europe/Athens)
+  agents_connected: number; // approved agents
+};
+```
+
+| Method | Path               | Response        | Status |
+| ------ | ------------------ | --------------- | ------ |
+| GET    | `/v1/me/knowledge` | `200 Knowledge` | live   |
+
+Everything Michael uses about the user, in plain words, for the "What I know about you" page under
+You, Privacy. Built from the stores that already hold it (`apps/api/src/knowledge.ts`), so no table
+of its own: memories (the newest 200, as `get_memories`), answered check ins from the last 90 days
+(the newest 60), every standing instruction (paused ones with `active: false`), and the profile once
+the user saved it (defaults are not something they told). `reads` uses the same switch and last
+event as `GET /v1/sources/status`.
+
+Forgetting goes through the route that owns each item, so it really deletes: a memory with
+`DELETE /v1/events/:id`, a check in with `DELETE /v1/check-in/:id`, an instruction with
+`DELETE /v1/instructions/:id`, one weak spot or fixed title with `PUT /v1/profile` without it. Quiet
+hours and the usual week have `forgettable: false`: they can be changed (on You, or in chat), not removed. Demo
+visitors may read the page; their forgets get the usual demo `403`.
+
+`never_kept` is fixed copy that must stay true to the code: voice audio is transcribed and dropped
+(`routes/voice.ts`), Omi keeps only the summary and action items (`ingest/omi.ts`), and calendar
+events keep a count of attendees, never their names or emails (`integrations/calendar-sync.ts`).
+
+The same answer is the MCP tool `what_you_know` (scope `timeline`, logged like every agent call:
+"Read what I know about you") and the chat tool `what_you_know`, which the chat calls when the user
+asks what Michael knows about them; the web chat shows a button to the page under that answer.
+
 ### Device keys (personal tokens)
 
 ```ts
@@ -2352,7 +2409,7 @@ type AgentQuery = {
   `list_drafts`, `draft_follow_up` = `recommendations`; `get_score`, `get_records`, `get_moments` = `score`; `add_event`, `execute_recommendation`,
   `undo_recommendation`, `create_focus_block`, `block_mac_app`, `plan_travel`, `log_done`,
   `confirm_block` = `write_events`;
-  `suggest_app_mute` = `recommendations`; `get_memories` = `timeline`; `remember` = `write_events`.
+  `suggest_app_mute` = `recommendations`; `get_memories`, `what_you_know` = `timeline`; `remember` = `write_events`.
   Memories are events of type `memory` (source `manual` from chat, `agent` from MCP); Michael's
   chat reads the newest 40 into every answer and keeps new ones with its own `remember` and
   `forget_memory` tools (`apps/api/src/memory.ts`). A tool not in that
@@ -3097,6 +3154,7 @@ offset. A refused or failed call returns `isError: true` with one plain sentence
 | `get_nudges`             | `recommendations` | `{ date?: LocalDay }` (default today)                                                   | `{ day, nudges: Nudge[] }`                                                                 |
 | `get_moments`            | `score`           | `{ kind?: MomentKind }` (default morning before 15:00 local, evening after)             | `Moment`                                                                                   |
 | `get_memories`           | `timeline`        | `{}`                                                                                    | `{ memories: { id, text, at, from: "chat" \| "agent" }[] }` (newest first, at most 40)     |
+| `what_you_know`          | `timeline`        | `{}`                                                                                    | `Knowledge` (see "What I know about you")                                                  |
 | `remember`               | `write_events`    | `{ fact: string (1..280) }`                                                             | `{ memory }` (same fact twice is kept once; `null` when off the record)                    |
 | `add_event`              | `write_events`    | `EventInput`                                                                            | `{ inserted, duplicates, ignored, events: Event[] }`                                       |
 | `add_goal`               | `goals`           | `{ category, title, description?, weekly_budget_minutes?, target? }`                    | `{ goal: Goal }`                                                                           |

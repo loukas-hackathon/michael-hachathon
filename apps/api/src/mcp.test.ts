@@ -82,6 +82,7 @@ const TOOLS = [
   "undo_recommendation",
   "update_goal",
   "update_recommendation",
+  "what_you_know",
 ];
 
 test("the tool set is complete and every tool explains itself", () =>
