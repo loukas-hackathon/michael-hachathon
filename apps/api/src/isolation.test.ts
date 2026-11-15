@@ -12,6 +12,7 @@ import { env } from "./env";
 import { errorResponse, HttpError } from "./http";
 import { createMcpServer } from "./mcp";
 import { remember } from "./memory";
+import { OUTCOMES_TITLE } from "./ritual/ritual";
 import { threadFor } from "./routes/chat-threads";
 import { store } from "./store";
 
@@ -521,7 +522,10 @@ test("the demo reseed puts goals and standing instructions back to the plan", as
   await runAsUser(DEMO, () => seedDemoWeek(store, { overwriteGoals: true }), "api_key");
 
   const { goals } = await ok(await request(asDemo, "GET", "/v1/goals"), "goals");
-  assert.deepEqual(goals.map((g: { id: string }) => g.id).sort(), demoGoals.map((g) => g.id).sort());
+  // The daily ritual's outcomes goal (#318) is seeded fresh after the reset, with its own id.
+  const kept = goals.filter((g: { title: string }) => g.title !== OUTCOMES_TITLE);
+  assert.deepEqual(kept.map((g: { id: string }) => g.id).sort(), demoGoals.map((g) => g.id).sort());
+  assert.equal(kept.length, goals.length - 1, "one outcomes goal, not a pile of them");
   assert.equal(goals.find((g: { id: string }) => g.id === plan.id).title, plan.title);
   const { instructions } = await ok(await request(asDemo, "GET", "/v1/instructions"), "instructions");
   assert.deepEqual(

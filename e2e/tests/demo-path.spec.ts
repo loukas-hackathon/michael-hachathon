@@ -109,7 +109,13 @@ test("Goals shows the demo goals", async ({ page }) => {
 
 test("a recommendation: Do it, then Undo", async ({ page }) => {
   await enterDemo(page);
+  // The day's ritual can take the next move (#318): the outreach block then sits in the fold.
+  await focusCard(page).waitFor({ state: "attached" });
+  const more = page.getByRole("button", { name: /^More suggestions/ });
+  if ((await more.count()) > 0 && (await more.getAttribute("aria-expanded")) !== "true") await tap(more);
   const card = focusCard(page);
+  // Clear of the floating tab bar, which covers the bottom of the screen.
+  await card.evaluate((el) => el.scrollIntoView({ block: "center" }));
   await tap(card.getByRole("button", { name: "Do it" }));
   await expect(card.getByRole("status")).toHaveText(/^Done\. Undo until 09:30\.$/);
 
