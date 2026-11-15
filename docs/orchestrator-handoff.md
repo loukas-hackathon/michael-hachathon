@@ -6,20 +6,20 @@ permission, keep building with parallel agents, close every issue we can, phone 
 developed), keep colours and branding exactly as they are (pink `#E6007A`, red `#FF3B30`), and pace
 the usage limit by slowing down at about 60% of the window.
 
-## State (updated 10:25 UTC)
-- Production healthy (965172a). This session (loukas-hackathon) is the lead orchestrator.
-- Merged since 09:35: #441 chat offline, #442 QA leftovers (#434), #452 Timeline overlaps on iPhone
-  (#448), #453 quick resume splash and session kept fresh (#449). Manolis' side: #440, #444, #439, #456.
-- Running here (all due 13:30 UTC at the latest):
-  - Michael edits and deletes everything (chat, voice, MCP): `remove_calendar_block` for the user's
-    own events with undo; Loukas changed the "never deletes" rule to "removes only the user's own
-    events, with undo until the event starts". Gap audit of app actions vs chat tools.
-  - Voice mode without a transcript: the Mi mark by state, action chips with Undo, words kept in Chat.
-  - Sign out broken and laggy, Google sign in with a second account fails (#459, PR #461).
-  - Install as app row on /login (iOS steps sheet, Android install prompt).
-- Human steps for Loukas: #450 (Supabase jwt_exp 86400 via the Management API), DEMO_PRESENTER_KEY,
-  Railway app sleeping off, maybe Google OAuth app publish (if the sign in agent finds Testing mode).
-- Manolis' side owns #432 (insights, real time nudges, /learnt, Do Not Disturb #451, discovery #455).
+## State (updated 11:15 UTC)
+- Production healthy (8aee7f0). This session (loukas-hackathon) is the lead orchestrator.
+- Merged since 10:25: #461/#462 sign in/out (service worker double navigation), #464/#467/#473 Michael
+  edits and removes the user's own events with undo (rule changed by Loukas), #465 Get the app on
+  /login, #469 shortcut no longer traps the installed app, #470 status bar one cover, #471 voice mode
+  with no transcript, #472 Timeline columns and no text on text (with a permanent overlap e2e),
+  #476/#477 iPhone hand run test and live connection rows, #482 email sign in, #485 first minute for a
+  new account, #486 Michael never claims an action he did not make, #487 chat timestamps with the day.
+- Open: #484 (email sign up creates confirmed accounts server side, no Supabase setting needed),
+  #489 (iPhone opens stored at once), #481 (Railway never sleeps via railway.json).
+- Scheduled: final stage rehearsal QA at 13:50 UTC (one agent, read only on production, CSS/copy fixes).
+- Human steps for Loukas: Google OAuth test users or publish; DEMO_PRESENTER_KEY on Vercel + Railway;
+  optional #450 jwt_exp 86400; reopen the installed app; reseed at T-60 and T-15.
+- Manolis' side owns #432 (insights, real time nudges, /learnt, Do Not Disturb, discovery).
 - Freeze: after 15:00 UTC only copy, CSS, test fixes; after 17:30 UTC no merges unless stage breaking.
 
 ## Rules learned the hard way
