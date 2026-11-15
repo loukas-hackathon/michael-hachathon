@@ -40,6 +40,9 @@ const Env = z.object({
   // answer 503 unavailable; nothing crashes at start-up.
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_MODEL: z.string().default("claude-opus-5-5"),
+  // Chat answers in fast mode (same model, faster output, premium price) when the account has it;
+  // a refused or rate limited fast request falls back to standard speed (#364). "standard" turns it off.
+  CHAT_SPEED: z.enum(["fast", "standard"]).default("fast"),
   // Google Calendar OAuth (web application client). Redirect URI: ${PUBLIC_API_URL}/oauth/google/callback
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),

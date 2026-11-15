@@ -105,7 +105,8 @@ Facts:
 Logging what the user did:
 - When the user says they did something for a goal ("I took a bath for 40 minutes at 13:00", "an hour of reading this morning"), log it at once with log_done. It counts as confirmed goal time straight away; no calendar block is needed. Then reply in one line with the new maths from the tool result and end with "Undo", e.g. "Logged. Everything bath 40 of 60 min this week. Undo".
 - When the user says how one of their past goal blocks went ("skipped the gym", "only did half of deep work"), settle it with confirm_block (did, minutes, reason).
-- You can always log time against a goal. Never say you cannot, and never offer a workaround such as renaming or moving another block instead. If the goal or the time is unclear, ask one short question.
+- You can always log time against a goal. Never say you cannot, and never offer a workaround such as renaming or moving another block instead.
+- When no goal title plainly fits, still call log_done at once with goal set to the activity in the user's words ("bath", "ice bath after the ride"): the server matches it against goal titles, calendar titles and descriptions. Ask which goal only when the tool says it could be two, or none fits. If the time is unclear, ask one short question.
 
 Acting:
 - You can write everything the user can write in the app: log time (log_done), settle a past block (confirm_block), add a block to their calendar (create_focus_block), move or rename one of their own solo blocks (move_calendar_block), add a goal (add_goal), change a goal's budget, title or description, or pause and resume it (update_goal), add, tick off or reword an outcome (add_checklist_item, update_checklist_item), keep or pause a standing instruction (add_instruction, update_instruction), save a place (save_place), change quiet hours and the usual week (update_profile), close distracting apps on their Mac for a while (block_mac_app), and take back something you did (undo_action).
@@ -517,24 +518,46 @@ const REFUSAL = "I can't help with that one. Ask me about your day or your goals
 // Model calls per answer: room to look a block up, act, and then say what was done.
 const MAX_ROUNDS = 5;
 
-function request(messages: Anthropic.MessageParam[], context: string, lastRound: boolean, spoken = false) {
+function request(
+  messages: Anthropic.MessageParam[],
+  context: string,
+  lastRound: boolean,
+  spoken: boolean,
+  fast: boolean,
+): Anthropic.MessageCreateParamsNonStreaming {
   return {
     model: env.ANTHROPIC_MODEL,
     max_tokens: 4000,
     // Chat is latency sensitive and the answers are short.
-    output_config: { effort: "low" as const },
+    output_config: { effort: "low" },
+    ...(fast ? { speed: "fast" as const } : {}),
+    // Caches the conversation so far as well, so the next round of a tool loop reads it back.
+    cache_control: { type: "ephemeral" },
     system: [
-      // Stable prompt first so it can be cached; the per-request context comes after.
-      { type: "text" as const, text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" as const } },
-      { type: "text" as const, text: `What I know about the user right now:\n\n${context}` },
+      // Stable prompt first so it can be cached; the per-request context comes after, cached too:
+      // every later round of the same answer (after a tool call) reads both back (#364).
+      { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
+      {
+        type: "text",
+        text: `What I know about the user right now:\n\n${context}`,
+        cache_control: { type: "ephemeral" },
+      },
       ...(spoken ? [{ type: "text" as const, text: SPOKEN_STYLE }] : []),
     ],
     tools: CHAT_TOOLS,
     // The last round must answer in words, not call another tool.
-    tool_choice: lastRound ? { type: "none" as const } : { type: "auto" as const },
+    tool_choice: lastRound ? { type: "none" } : { type: "auto" },
     messages,
   };
 }
+
+// Fast mode off for a while after the account refused it or was out of fast capacity.
+const FAST_BACKOFF_MS = 10 * 60_000;
+let fastOffUntil = 0;
+const fastWanted = () => env.CHAT_SPEED === "fast" && Date.now() >= fastOffUntil;
+/** A fast request the API turned down before writing anything: try again at standard speed. */
+const fastRefused = (err: unknown) =>
+  err instanceof Anthropic.APIError && (err.status === 429 || err.status === 400 || err.status === 403);
 
 function upstream(err: unknown): unknown {
   return err instanceof Anthropic.APIError
@@ -552,6 +575,8 @@ export interface MichaelAnswer {
   answer: string;
   /** Recommendations done or undone while answering, in order. */
   actions: Recommendation[];
+  /** Each model call of the answer, in order. */
+  timing?: RoundTiming[];
 }
 
 interface Hooks {
@@ -562,25 +587,74 @@ interface Hooks {
   spoken?: boolean;
 }
 
+/** Where the time of one model call went, for the chat_timing log and the stream's `timing` event. */
+export interface RoundTiming {
+  /** Until the first event of the response (thinking included). */
+  first_event_ms: number | null;
+  /** Until the first visible text of this round, if it wrote any. */
+  first_text_ms: number | null;
+  ms: number;
+  tools_ms: number;
+  speed: "fast" | "standard";
+  input_tokens?: number;
+  cache_read_tokens?: number;
+  cache_write_tokens?: number;
+  output_tokens?: number;
+}
+
 /** One model call: streamed piece by piece when `onText` is given. */
 async function callModel(
   messages: Anthropic.MessageParam[],
   context: string,
   lastRound: boolean,
   onText: Hooks["onText"],
-  spoken = false,
+  spoken: boolean,
+  timing: RoundTiming[],
 ): Promise<Anthropic.Message> {
+  const fast = fastWanted();
+  const start = performance.now();
+  const round: RoundTiming = {
+    first_event_ms: null,
+    first_text_ms: null,
+    ms: 0,
+    tools_ms: 0,
+    speed: fast ? "fast" : "standard",
+  };
+  timing.push(round);
+  const since = () => Math.round(performance.now() - start);
   try {
-    const body = request(messages, context, lastRound, spoken);
-    if (!onText) return await anthropic().messages.create(body);
-    const stream = anthropic().messages.stream(body);
-    for await (const event of stream) {
-      if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-        await onText(event.delta.text);
+    const body = request(messages, context, lastRound, spoken, fast);
+    // A fast request is not retried at fast speed: it falls back to standard at once.
+    const options = fast ? { maxRetries: 0 } : undefined;
+    let message: Anthropic.Message;
+    if (!onText) {
+      message = await anthropic().messages.create(body, options);
+    } else {
+      const stream = anthropic().messages.stream(body, options);
+      for await (const event of stream) {
+        round.first_event_ms ??= since();
+        if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+          round.first_text_ms ??= since();
+          await onText(event.delta.text);
+        }
       }
+      message = await stream.finalMessage();
     }
-    return await stream.finalMessage();
+    round.ms = since();
+    const u = message.usage;
+    round.input_tokens = u?.input_tokens;
+    round.cache_read_tokens = u?.cache_read_input_tokens ?? undefined;
+    round.cache_write_tokens = u?.cache_creation_input_tokens ?? undefined;
+    round.output_tokens = u?.output_tokens;
+    return message;
   } catch (err) {
+    // Nothing was written yet when fast mode is refused, so the same round runs at standard speed.
+    if (fast && round.first_text_ms === null && fastRefused(err)) {
+      console.warn("chat: fast mode refused, standard speed for a while", (err as Error).message);
+      fastOffUntil = Date.now() + FAST_BACKOFF_MS;
+      timing.pop();
+      return callModel(messages, context, lastRound, onText, spoken, timing);
+    }
     throw upstream(err);
   }
 }
@@ -609,9 +683,22 @@ export async function askMichael(
     : undefined;
 
   const turn: ChatTurnState = { proposals: 0 };
+  const timing: RoundTiming[] = [];
+  // A plain statement ("I took a bath for 40 minutes"), not a question: when every tool of a round
+  // hands back a finished line (log_done, confirm_block), that line is the answer and the model is
+  // not asked again just to repeat it, which saves a whole round trip (#364).
+  const last = turns.at(-1);
+  const statement = typeof last?.content === "string" && !last.content.includes("?");
   for (let round = 0; round < MAX_ROUNDS; round++) {
     wrote = false;
-    const response = await callModel(messages, context, round === MAX_ROUNDS - 1, onText, hooks.spoken);
+    const response = await callModel(
+      messages,
+      context,
+      round === MAX_ROUNDS - 1,
+      onText,
+      hooks.spoken ?? false,
+      timing,
+    );
     if (response.stop_reason === "refusal") {
       texts.push(REFUSAL);
       break;
@@ -624,8 +711,11 @@ export async function askMichael(
     // Hand the whole turn back unchanged (thinking blocks included), then every result in one turn.
     messages.push({ role: "assistant", content: response.content });
     const results: Anthropic.ToolResultBlockParam[] = [];
+    const replies: string[] = [];
+    const toolsStart = performance.now();
     for (const call of calls) {
       const outcome = await runChatTool(call.name, call.input, turn);
+      if (outcome.reply && !outcome.isError) replies.push(outcome.reply);
       if (outcome.action) {
         actions.push(outcome.action);
         await hooks.onAction?.(outcome.action);
@@ -636,6 +726,14 @@ export async function askMichael(
         content: outcome.content,
         ...(outcome.isError ? { is_error: true } : {}),
       });
+    }
+    const current = timing.at(-1);
+    if (current) current.tools_ms = Math.round(performance.now() - toolsStart);
+    if (statement && replies.length === calls.length) {
+      const line = replies.join(" ");
+      if (hooks.onText) await hooks.onText(text ? `\n\n${line}` : line);
+      texts.push(line);
+      break;
     }
     messages.push({ role: "user", content: results });
   }
@@ -659,7 +757,7 @@ export async function askMichael(
     if (actions.length) answer = `Undone: ${actions.map((a) => a.title).join("; ")}.`;
     else throw new HttpError("upstream_error", "Claude returned an empty answer");
   }
-  return { answer, actions };
+  return { answer, actions, timing };
 }
 
 /** The thread a request writes in, if it exists yet: a "new" one is only made once the answer is in. */
@@ -681,6 +779,8 @@ interface Prepared {
   thread: ChatThread | null;
   /** The thread's name, started alongside the answer when this is its first line. */
   title: Promise<string> | null;
+  /** How long building the context (and reading the thread) took. */
+  contextMs: number;
 }
 
 /** Everything both POST routes need before the model is called. */
@@ -690,6 +790,7 @@ async function prepare(body: unknown): Promise<Prepared> {
   const thread = await existingThread(thread_id);
   // Fail before storing anything when chat is not configured.
   anthropic();
+  const contextStart = performance.now();
   const [earlier, context] = await Promise.all([
     thread ? store.listChatMessages(thread.id, HISTORY_TURNS) : Promise.resolve([]),
     contextForNow(thread?.id ?? null),
@@ -697,7 +798,27 @@ async function prepare(body: unknown): Promise<Prepared> {
   const turns: Anthropic.MessageParam[] = [...toTurns(earlier), { role: "user", content: message }];
   // Named from the first line, in parallel with the answer, so naming adds no wait.
   const title = !thread || (untitled(thread) && earlier.length === 0) ? titleFor(message) : null;
-  return { message, turns, context, spoken, thread, title };
+  const contextMs = Math.round(performance.now() - contextStart);
+  return { message, turns, context, spoken, thread, title, contextMs };
+}
+
+/** Where the time of one answer went: logged as one JSON line, and sent as the stream's `timing`. */
+export interface ChatTiming {
+  context_ms: number;
+  rounds: RoundTiming[];
+  save_ms: number;
+  total_ms: number;
+}
+
+function timingOf(p: Prepared, answer: MichaelAnswer, start: number, saveMs: number): ChatTiming {
+  const t: ChatTiming = {
+    context_ms: p.contextMs,
+    rounds: answer.timing ?? [],
+    save_ms: saveMs,
+    total_ms: Math.round(performance.now() - start),
+  };
+  console.log(JSON.stringify({ event: "chat_timing", ...t }));
+  return t;
 }
 
 async function save(p: Prepared, { answer, actions }: MichaelAnswer): Promise<ChatResponse> {
@@ -743,8 +864,15 @@ export const chat = new Hono()
   // POST /v1/chat { message }  Michael answers from today's timeline, goals and patterns, and acts
   // on the user's own calendar when asked (ChatResponse.actions)
   .post("/chat", async (c) => {
+    const start = performance.now();
     const p = await prepare(await jsonBody(c));
-    const body = await save(p, await askMichael(p.turns, p.context, { spoken: p.spoken }));
+    const answer = await askMichael(p.turns, p.context, { spoken: p.spoken });
+    const saveStart = performance.now();
+    const body = await save(p, answer);
+    const t = timingOf(p, answer, start, Math.round(performance.now() - saveStart));
+    const model = t.rounds.reduce((sum, r) => sum + r.ms, 0);
+    c.header("Server-Timing", `context;dur=${t.context_ms}`, { append: true });
+    c.header("Server-Timing", `model;desc="${t.rounds.length} rounds";dur=${model}`, { append: true });
     return c.json(body, 201);
   })
   // POST /v1/chat/stream { message }  the same answer as server-sent events: `delta` { text } as it
@@ -752,7 +880,9 @@ export const chat = new Hono()
   // `error` ApiError if the model fails mid-way.
   .post("/chat/stream", async (c) => {
     // Validation and "not set up" still fail as plain JSON errors, before the stream opens.
+    const start = performance.now();
     const p = await prepare(await jsonBody(c));
+    c.header("Server-Timing", `context;dur=${p.contextMs}`, { append: true });
     return streamSSE(c, async (sse) => {
       try {
         const answer = await askMichael(p.turns, p.context, {
@@ -760,7 +890,10 @@ export const chat = new Hono()
           onText: (text) => sse.writeSSE({ event: "delta", data: JSON.stringify({ text }) }),
           onAction: (action) => sse.writeSSE({ event: "action", data: JSON.stringify(action) }),
         });
+        const saveStart = performance.now();
         const body = await save(p, answer);
+        const t = timingOf(p, answer, start, Math.round(performance.now() - saveStart));
+        await sse.writeSSE({ event: "timing", data: JSON.stringify(t) });
         await sse.writeSSE({ event: "done", data: JSON.stringify(body) });
       } catch (err) {
         const e = err instanceof HttpError ? err : new HttpError("internal", "Internal server error");

@@ -293,6 +293,8 @@ export interface ToolOutcome {
   isError: boolean;
   /** The recommendation done or undone, for the reply's `actions` and the stream's `action` event. */
   action?: Recommendation;
+  /** A finished line for the user ("Logged. 70.3 40 min of 9h this week. Undo"): chat may answer with it. */
+  reply?: string;
 }
 
 const zone = () => new Zone(DEFAULT_TIMEZONE);

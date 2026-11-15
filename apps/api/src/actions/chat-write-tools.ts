@@ -30,6 +30,8 @@ export interface WriteOutcome {
   content: string;
   isError: boolean;
   action?: Recommendation;
+  /** A finished line for the user, so chat can answer without asking the model again. */
+  reply?: string;
 }
 
 const GOAL_UNDO_MS = 7 * 24 * 3600_000;
@@ -203,6 +205,7 @@ const logged = (r: LogTimeResponse): WriteOutcome => ({
   content: `${r.message} Entry ${r.entry.id}, recommendation id ${r.recommendation.id}. Say it in one line with these numbers and end with "Undo".`,
   isError: false,
   action: r.recommendation,
+  reply: `${r.message} Undo`,
 });
 
 const GoalPatch = z.object({
