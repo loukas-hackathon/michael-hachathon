@@ -185,7 +185,7 @@ export default async function TodayPage({
                   <b className="font-semibold text-label tnum">
                     <Tween value={day.week.scorePct} format="pct" />
                   </b>{" "}
-                  optimisation score this week.{day.week.line ? ` ${day.week.line}` : ""}
+                  of your goal time this week.{day.week.line ? ` ${day.week.line}` : ""}
                   {keepWeek ? ` A day is kept at ${keepWeek.line}%.` : ""}
                 </span>
               </HowICount>

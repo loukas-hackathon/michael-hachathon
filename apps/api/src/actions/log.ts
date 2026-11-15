@@ -1,4 +1,5 @@
 import {
+  budgetMinutesDone,
   type Event,
   type Goal,
   goalKind,
@@ -20,8 +21,9 @@ import { goalForEvent, normaliseTitle } from "../score/match";
 import { store } from "../store";
 
 // Done time the user reports (#317), and past goal blocks they settle. "I took a bath for 40
-// minutes at 13:00" becomes the user's own manual entry (shape in score/logged.ts) that the score
-// counts as confirmed goal time. Every entry is held by a recommendation (log_time or
+// minutes at 13:00" becomes the user's own manual entry (shape in score/logged.ts): inside a block
+// of its goal it confirms that block, outside every block it counts toward the goal's weekly budget
+// but not the score (#372, score/score.ts). Every entry is held by a recommendation (log_time or
 // settle_block) carried out at once, so it shows like any other action and can be undone: undo
 // removes the entry, nothing else. The REST routes (routes/log.ts), the chat tools and the MCP
 // tools all come through here, so the rules live in one place:
@@ -203,7 +205,10 @@ async function goalWeek(goal: Goal, at: number): Promise<LogTimeResponse["goal"]
   const week = await loadWeek({ date: zone().dayOf(at) }).catch(() => null);
   const row = week?.score.goals.find((g) => g.goal_id === goal.id);
   const spent =
-    goalKind(goal) === "count" ? (row?.count?.done ?? 0) : Math.max(0, Math.round(row?.spent_minutes ?? 0));
+    goalKind(goal) === "count"
+      ? (row?.count?.done ?? 0)
+      : // Spent in its blocks plus logged outside them (#372): the goal's week against its budget.
+        Math.max(0, Math.round(row ? budgetMinutesDone(row) : 0));
   const budget =
     goalKind(goal) === "count"
       ? Number(goal.target?.per_week ?? 0) || 0

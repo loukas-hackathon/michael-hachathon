@@ -320,6 +320,7 @@ function Hero({
           <p>
             <b className="font-semibold text-label">{hm(goal.spentMinutes)}</b> of {hm(goal.budgetMinutes)}.
             On pace: {hm(due)} by now.
+            {goal.loggedMinutes ? ` ${loggedLine(goal.loggedMinutes)}` : ""}
           </p>
           <span className="-my-2 flex shrink-0 items-baseline gap-3">
             {/* "I did 30 min" (#317): time spent off the calendar counts too. */}
@@ -363,6 +364,9 @@ function Hero({
   );
 }
 
+/** #372: the part of a goal's week logged outside its blocks; it is in the budget, not the score. */
+const loggedLine = (minutes: number) => `${hm(minutes)} of it you logged outside your blocks.`;
+
 /** The week's target, balance and records (#165, #166), quietly under the answer. */
 function TheWeek({ week }: { week: Awaited<ReturnType<typeof getGoalsWeek>> }) {
   const explain = week.explain ?? null;
@@ -379,7 +383,9 @@ function TheWeek({ week }: { week: Awaited<ReturnType<typeof getGoalsWeek>> }) {
       ) : explain?.scorePct != null ? (
         <HowICount explain={explain}>
           <span className="block text-body">
-            <b className="font-num text-title3 font-bold tnum">{explain.scorePct}%</b> optimisation score.
+            {/* The same words as Today's headline (#372). */}
+            <b className="font-num text-title3 font-bold tnum">{explain.scorePct}%</b> of your goal time this
+            week.
           </span>
         </HowICount>
       ) : null}
@@ -484,6 +490,9 @@ function GoalRow({
           </>
         )}
       </p>
+      {goal.loggedMinutes ? (
+        <p className="mt-0.5 text-footnote text-label-2 tnum">{loggedLine(goal.loggedMinutes)}</p>
+      ) : null}
     </>
   );
   return (

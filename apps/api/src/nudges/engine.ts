@@ -1,6 +1,7 @@
 import {
   behindPaceMinutes,
   bookMinutes,
+  budgetMinutesDone,
   countsTowardsCap,
   type Event,
   type Goal,
@@ -237,11 +238,14 @@ const inRange = (minute: number, [start, end]: [number, number]) =>
   start <= end ? minute >= start && minute < end : minute >= start || minute < end;
 
 /**
- * Minutes of goal time spent this week up to now, as the score counts them (`spent_minutes` of the
- * goal's row): elapsed block time minus what was lost, plus what the user logged. Planned time
- * that was not spent is not in it. 0 for a goal outside the time score (sleep, a count, a checklist).
+ * Minutes of goal time done this week up to now, against the budget: spent in its blocks
+ * (elapsed minus lost) plus what the user logged outside them (#372, `budgetMinutesDone`). Planned
+ * time that was not spent is not in it. 0 for a goal outside the time score (sleep, a count, a checklist).
  */
-const spentThisWeek = (w: World, goal: Goal): number => w.rows().get(goal.id)?.spent_minutes ?? 0;
+const spentThisWeek = (w: World, goal: Goal): number => {
+  const row = w.rows().get(goal.id);
+  return row ? budgetMinutesDone(row) : 0;
+};
 
 function recentAttention(w: World, from: number): Segment[] {
   return buildTimeline(w.events, from, w.now).attention;
@@ -344,7 +348,7 @@ function behindList(w: World, anyGap = false): BehindGoal[] {
     const row = w.rows().get(goal.id);
     if (!row?.scored || row.budget_minutes <= 0) continue;
     const budget = row.budget_minutes;
-    const spent = row.spent_minutes;
+    const spent = budgetMinutesDone(row);
     const gap = behindPaceMinutes(budget, spent, share);
     const least = anyGap
       ? LIMITS.testBehindMinMinutes

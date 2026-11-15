@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import {
   type ApiError,
+  budgetMinutesDone,
   type ChatHistory,
   type ChatMessage,
   ChatRequest,
@@ -104,7 +105,7 @@ Facts:
 - Quote times and ids only from the context or from tool results.
 
 Logging what the user did:
-- When the user says they did something for a goal ("I took a bath for 40 minutes at 13:00", "an hour of reading this morning"), log it at once with log_done. It counts as confirmed goal time straight away; no calendar block is needed. Then reply in one line with the new maths from the tool result and end with "Undo", e.g. "Logged. Everything bath 40 of 60 min this week. Undo".
+- When the user says they did something for a goal ("I took a bath for 40 minutes at 13:00", "an hour of reading this morning"), log it at once with log_done. No calendar block is needed. Inside one of the goal's blocks it confirms that block; outside every block it counts toward the goal's weekly budget straight away but not toward the score, which is planned time only (say so if asked why the score did not move). Then reply in one line with the new maths from the tool result and end with "Undo", e.g. "Logged. Everything bath 40 of 60 min this week. Undo".
 - When the user says how one of their past goal blocks went ("skipped the gym", "only did half of deep work"), settle it with confirm_block (did, minutes, reason).
 - You can always log time against a goal. Never say you cannot, and never offer a workaround such as renaming or moving another block instead.
 - When no goal title plainly fits, still call log_done at once with goal set to the activity in the user's words ("bath", "ice bath after the ride"): the server matches it against goal titles, calendar titles and descriptions. Ask which goal only when the tool says it could be two, or none fits. If the time is unclear, ask one short question.
@@ -229,15 +230,22 @@ export function scoreLines(s: Score): string {
     `Score this week (Monday to Sunday, so far): ${pct(s.score_pct)} of planned goal time spent. ` +
       `${hm(s.spent_minutes)} spent of ${hm(s.elapsed_minutes)} planned time already passed; ` +
       `${hm(s.lost_minutes)} lost, ${hm(s.ahead_minutes)} still ahead, ${hm(s.planned_minutes)} planned in total. ` +
-      `Time won back this week: ${hm(s.time_won_back_minutes)}.`,
+      `Time won back this week: ${hm(s.time_won_back_minutes)}.` +
+      (s.logged_minutes
+        ? ` Plus ${hm(s.logged_minutes)} the person logged outside their blocks: it counts toward each goal's budget, never toward the score, which reads planned time only.`
+        : ""),
   ];
   const goals = s.goals.map((g) => {
     const budget = g.budget_minutes ? `budget ${hm(g.budget_minutes)}` : "no budget";
     if (!g.scored)
       return `- ${g.title} [${g.area}]: ${budget}, a ${g.kind} goal, not scored from calendar blocks`;
-    const left = Math.max(0, g.budget_minutes - g.spent_minutes);
+    const done = budgetMinutesDone(g);
+    const left = Math.max(0, g.budget_minutes - done);
+    const logged = g.logged_minutes
+      ? ` (${hm(g.spent_minutes)} in its blocks plus ${hm(g.logged_minutes)} logged outside them)`
+      : "";
     return (
-      `- ${g.title} [${g.area}]: ${hm(g.spent_minutes)} spent of ${budget}` +
+      `- ${g.title} [${g.area}]: ${hm(done)} spent of ${budget}${logged}` +
       (g.budget_minutes ? ` (${hm(left)} left to reach it)` : "") +
       `; ${hm(g.planned_minutes)} planned in the calendar, ${hm(g.lost_minutes)} lost, ` +
       `${hm(g.ahead_minutes)} planned still ahead; ` +
@@ -257,6 +265,9 @@ export function scoreLines(s: Score): string {
       `Score today: ${pct(d.score_pct)}, ${hm(d.spent_minutes)} spent of ${hm(d.elapsed_minutes)} passed ` +
         `(${hm(d.planned_minutes)} planned, ${hm(d.lost_minutes)} lost, ${hm(d.ahead_minutes)} ahead). ` +
         `Time won back today: ${hm(d.time_won_back.minutes)}.` +
+        (d.logged_minutes
+          ? ` Plus ${hm(d.logged_minutes)} logged outside the blocks, not in the score.`
+          : "") +
         (lost.length ? ` Biggest losses inside goal blocks: ${lost.join(", ")}.` : ""),
     );
   }

@@ -1,4 +1,5 @@
 import {
+  budgetMinutesDone,
   type Event,
   type Goal,
   goalArea,
@@ -191,7 +192,8 @@ export function computeMoment(input: MomentInput): MomentCore {
     goalLines.push({
       ...base,
       sleep: false,
-      spent_week_minutes: row.spent_minutes,
+      // Against the budget: spent in blocks plus logged outside them (#372).
+      spent_week_minutes: budgetMinutesDone(row),
       planned_today_minutes: todayRow?.planned_minutes ?? 0,
       spent_today_minutes: todayRow?.spent_minutes ?? 0,
       lost_today_minutes: sum(day.blocks.filter((b) => b.goal_id === g.id).map((b) => b.lost_minutes)),
@@ -200,7 +202,7 @@ export function computeMoment(input: MomentInput): MomentCore {
       unplanned_minutes:
         g.weekly_budget_minutes === null || !row.scored
           ? null
-          : Math.max(0, g.weekly_budget_minutes - row.spent_minutes - row.ahead_minutes),
+          : Math.max(0, g.weekly_budget_minutes - budgetMinutesDone(row) - row.ahead_minutes),
     });
   }
 

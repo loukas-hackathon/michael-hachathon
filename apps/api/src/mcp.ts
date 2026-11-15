@@ -127,7 +127,7 @@ function recommendationLine(r: Recommendation, goals: Map<string, Goal>): string
 
 function scoreText(s: Score): string {
   const lines = [
-    `Week from ${dayLabel(Date.parse(s.week_start))}: ${pct(s.score_pct)} of planned goal time spent (${dur(s.spent_minutes)} of ${dur(s.elapsed_minutes)} so far; ${dur(s.lost_minutes)} lost, ${dur(s.ahead_minutes)} still ahead, ${dur(s.planned_minutes)} planned).`,
+    `Week from ${dayLabel(Date.parse(s.week_start))}: ${pct(s.score_pct)} of planned goal time spent (${dur(s.spent_minutes)} of ${dur(s.elapsed_minutes)} so far; ${dur(s.lost_minutes)} lost, ${dur(s.ahead_minutes)} still ahead, ${dur(s.planned_minutes)} planned).${s.logged_minutes ? ` Plus ${dur(s.logged_minutes)} you logged outside your blocks: it counts toward each goal's budget, never the score, which reads planned time only.` : ""}`,
     `${dayLabel(zone.startOfDay(s.date) + 12 * 3600_000)}: ${pct(s.day.score_pct)} (${dur(s.day.spent_minutes)} of ${dur(s.day.elapsed_minutes)}; ${dur(s.day.lost_minutes)} lost, ${dur(s.day.unverified_minutes)} unverified). Time won back: ${dur(s.day.time_won_back_minutes)}${s.day.time_won_back.reason ? ` (${s.day.time_won_back.reason})` : ""}.`,
     targetText(s),
     `Balance: ${s.areas
@@ -140,7 +140,7 @@ function scoreText(s: Score): string {
     "Goals this week:",
     ...s.goals.map((g) =>
       g.scored
-        ? `- ${g.area} "${g.title}": budget ${dur(g.budget_minutes)}, planned ${dur(g.planned_minutes)}, spent ${dur(g.spent_minutes)}, lost ${dur(g.lost_minutes)}, ${pct(g.score_pct)} of planned time spent (not of the budget); ${dur(g.minutes_left)} left, ${g.open_blocks} ${g.open_blocks === 1 ? "block" : "blocks"} still open`
+        ? `- ${g.area} "${g.title}": budget ${dur(g.budget_minutes)}, planned ${dur(g.planned_minutes)}, spent ${dur(g.spent_minutes)}${g.logged_minutes ? `, plus ${dur(g.logged_minutes)} logged outside its blocks (counts toward the budget, not the score)` : ""}, lost ${dur(g.lost_minutes)}, ${pct(g.score_pct)} of planned time spent (not of the budget); ${dur(g.minutes_left)} left, ${g.open_blocks} ${g.open_blocks === 1 ? "block" : "blocks"} still open`
         : g.count
           ? `- ${g.area} "${g.title}": ${g.count.done} of ${g.count.target} this week, ${g.count.days_left} ${g.count.days_left === 1 ? "day" : "days"} left (outside the time score)`
           : g.checklist
@@ -521,7 +521,7 @@ export function createMcpServer(): McpServer {
     "log_done",
     {
       title: "Log time spent on a goal",
-      description: `Log time the user already spent on one of their goals ("I took a bath for 40 minutes at 13:00", "an hour of reading this morning"). It counts as confirmed goal time in the score at once; no calendar block is needed. Name the goal by goal_id or by the user's words (goal). Give minutes, plus start when the user said when (without it, it ends now), or start and end. Past only, the last 14 days. Can be undone with undo_recommendation for 24 hours. ${TZ_NOTE}`,
+      description: `Log time the user already spent on one of their goals ("I took a bath for 40 minutes at 13:00", "an hour of reading this morning"). Inside one of the goal's blocks it confirms that block; outside every block it counts toward the goal's weekly budget at once but not the score, which is planned time only. No calendar block is needed. Name the goal by goal_id or by the user's words (goal). Give minutes, plus start when the user said when (without it, it ends now), or start and end. Past only, the last 14 days. Can be undone with undo_recommendation for 24 hours. ${TZ_NOTE}`,
       inputSchema: {
         goal_id: Id.optional().describe("Goal id from get_goals"),
         goal: z.string().min(1).max(200).optional().describe("The goal in the user's words, e.g. 'bath'"),

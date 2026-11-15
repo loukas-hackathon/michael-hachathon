@@ -253,6 +253,8 @@ function buildPlan(
             lost_minutes: g.lost_minutes,
             unverified_minutes: g.unverified_minutes,
             ahead_minutes: g.ahead_minutes,
+            // Logged outside its blocks (#372): toward the budget, never the score.
+            ...(g.logged_minutes ? { logged_outside_blocks_minutes: g.logged_minutes } : {}),
             // Only a goal with a weekly budget can be short of it.
             ...(budgets.get(g.goal_id) == null
               ? {}

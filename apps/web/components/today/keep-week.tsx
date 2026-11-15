@@ -23,7 +23,8 @@ function label(d: KeepDay, i: number, line: number, isToday: boolean) {
     case "missed":
       return `${name}: ${d.pct}%, under the ${line}% line`;
     case "open":
-      return `${name}: ${d.pct}% so far, the line is ${line}%`;
+      // The share of the whole day's plan, not of the time gone by: never "so far" (#372).
+      return `${name}: ${d.pct}% of ${hm(d.planned)} planned, the line is ${line}%`;
     case "free":
       return d.rest ? `${name}: your rest day` : `${name}: no goal blocks, it does not count`;
     default:
