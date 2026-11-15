@@ -3844,15 +3844,17 @@ inside the first goal block, the evening, the phone after 23:00), meals. Built f
 per day numbers where this Mac had them (`history-facts.json`: dates, minutes, clock times, counts,
 names of well known apps and sites) and drawn in his measured range where it had none; the body's
 answer comes from a small model with noise. Their `external_id` starts `demo:past:`, so the same
-reseed covers them. Nothing of it falls inside the seven days ending now. The score and the
+reseed covers them. The history ends where the week starts, so the week's own days are never shared with it. The score and the
 Morning and Evening moments leave these rows out (`isDemoHistory`), so the usual day, the target
 and the records read what they read before.
 
-- A `sleep` event may carry `score` (0 to 100) in `data` when its source sends one; the history's
-  nights do. A reader uses it when present and works one out from the stages otherwise.
-- The history's mornings carry a `recovery` event (source `health_auto_export`):
-  `{ recovery_pct, hrv_ms, resting_hr }`, dated when the night ends, next to the watch's hourly
-  `heart_rate_variability` and `resting_heart_rate` with the same values.
+- A `sleep` event may carry `score` (0 to 100) in `data` when its source sends one; the stage
+  account's nights do, the week's and the history's alike. A reader uses it when present and works
+  one out from the stages otherwise.
+- Every stage account morning carries a `recovery` event (source `health_auto_export`):
+  `{ recovery_pct, hrv_ms, resting_hr }`, dated six minutes after the night ends, next to the
+  watch's hourly `heart_rate_variability` and `resting_heart_rate` with the same values. The rule
+  is `demo/body.ts`, shared by the week and the history.
 
 Travel in the demo is precomputed (`apps/api/src/demo/travel.ts`), never asked of Google: five
 neighbourhood level places (saved when the account has none), some blocks with a location (the

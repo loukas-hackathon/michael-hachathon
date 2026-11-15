@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import type { EventInput, Goal, InstructionCreate } from "@michael/shared";
+import { type EventInput, type Goal, type InstructionCreate, sleepScore } from "@michael/shared";
 import type { z } from "zod";
+import { LATE_WORKOUT_MINUTE, recoveryPct, SHORT_NIGHT_MINUTES } from "./body";
 import { addDays, at, athensMidnight, iso, localDate, weekday } from "./time";
 import { demoTravel } from "./travel";
 
@@ -406,6 +407,9 @@ function nightEvents(date: string, bed: number, wake: number, rnd: ReturnType<ty
         awake_min: awake,
         in_bed_min: inBed,
         device: DEVICE,
+        // The rule every reader uses for a night without a score (sleepScore in @michael/shared),
+        // written out as the weeks before this one write it (demo/history.ts).
+        score: sleepScore({ duration_min: asleep, deep_min: deep, rem_min: rem, awake_min: awake }) ?? 0,
       },
       // A night next to a moved morning is a different night (see replayLanes on ids).
       external_id: `${DEMO_PREFIX}${date}:sleep${movedMorning(date) ? ":early" : ""}`,
@@ -429,6 +433,42 @@ function nightEvents(date: string, bed: number, wake: number, rnd: ReturnType<ty
       1,
     ),
   ];
+}
+
+/**
+ * The morning's recovery, a few minutes after waking, in the shape of the weeks before this one
+ * (demo/history.ts) and by the same rule (demo/body.ts): from the night's score, a second short
+ * night in a row and a late hard workout the evening before. It carries the heart rate
+ * variability and resting heart rate the watch wrote in the night's last hour.
+ */
+function recoveryEvent(date: string, night: EventRow[], shortBefore: boolean): EventRow | null {
+  const sleep = night.find((e) => e.type === "sleep");
+  const reading = (metric: string) =>
+    night.find((e) => e.type === "biometric" && e.data.metric === metric)?.data.avg as number | undefined;
+  const hrv = reading("heart_rate_variability");
+  const resting = reading("resting_heart_rate");
+  if (!sleep?.end_at || hrv === undefined || resting === undefined) return null;
+  const evening = workout(addDays(date, -1));
+  const lateHard =
+    evening?.data.name === "Traditional Strength Training" &&
+    Date.parse(evening.end_at ?? evening.start_at) >
+      at(addDays(date, -1), "00:00") + LATE_WORKOUT_MINUTE * 60_000;
+  const pct = recoveryPct({
+    score: sleep.data.score as number,
+    twoShort: shortBefore && (sleep.data.duration_min as number) < SHORT_NIGHT_MINUTES,
+    lateHard,
+    noise: seeded(`recovery:${date}`).next(),
+  });
+  return {
+    source: "health_auto_export",
+    type: "recovery",
+    start_at: iso(Date.parse(sleep.end_at) + 6 * 60_000),
+    end_at: null,
+    title: `Recovery ${pct}%`,
+    data: { recovery_pct: pct, hrv_ms: hrv, resting_hr: resting },
+    // As the night's id: a night next to a moved morning is a different night.
+    external_id: `${DEMO_PREFIX}${date}:recovery${movedMorning(date) ? ":early" : ""}`,
+  };
 }
 
 /** Hourly heart rate and the day's steps, from waking up to bed (or now). */
@@ -681,6 +721,13 @@ export function buildDemoWeek(now: Date = new Date()): DemoWeek {
     ),
   ];
 
+  // Whether the night before was short. For the week's first day that night is not in the week:
+  // it is worked out the same way, so a day's recovery never depends on where the week starts.
+  const dayBefore = addDays(days[0] as string, -1);
+  const nightBefore = sleepFor(dayBefore, replayLanes(dayBefore), workout(dayBefore));
+  let shortBefore =
+    (nightEvents(dayBefore, nightBefore.bed, nightBefore.wake, nightBefore.rnd)[0]?.data
+      .duration_min as number) < SHORT_NIGHT_MINUTES;
   days.forEach((date, i) => {
     const night = nights[i] as (typeof nights)[number];
     const nextBed = nights[i + 1]?.bed ?? at(date, "24:30");
@@ -703,7 +750,10 @@ export function buildDemoWeek(now: Date = new Date()): DemoWeek {
     }
     const train = trains.get(date) ?? null;
     if (train) events.push(train);
-    events.push(...nightEvents(date, night.bed, night.wake, night.rnd));
+    const nightRows = nightEvents(date, night.bed, night.wake, night.rnd);
+    const recovery = recoveryEvent(date, nightRows, shortBefore);
+    events.push(...nightRows, ...(recovery ? [recovery] : []));
+    shortBefore = (nightRows[0]?.data.duration_min as number) < SHORT_NIGHT_MINUTES;
     events.push(...dayBiometrics(date, night.wake, nextBed, train, nowMs));
     events.push(...conversations(date), ...meals(date), ...visits(date));
   });
