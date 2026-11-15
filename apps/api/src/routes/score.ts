@@ -1,4 +1,5 @@
 import {
+  type ChecklistItem,
   type Event,
   type EventType,
   type Goal,
@@ -50,6 +51,10 @@ export interface Week {
   score: Score;
   history: ScoreHistory;
   goals: Goal[];
+  /** Every event the score was built from (the five weeks), for readers that need more (#376). */
+  events: Event[];
+  /** The week's checklist items (#238), the ritual's outcomes among them (#318). */
+  checklist: ChecklistItem[];
   now: string;
   /** False when `now` is in the future: a replay that must not write records. */
   real: boolean;
@@ -90,16 +95,17 @@ export async function loadWeek(query: { date?: string; now?: string }): Promise<
     store.listCheckIns({ fromDay: monday, toDay: sunday }).catch(() => []),
     ...chunks,
   ]);
-  const events = new Map<string, Event>();
-  for (const page of pages) for (const e of page) events.set(e.id, e);
-  const built = scoreWithHistory([...events.values()], goals, {
+  const byId = new Map<string, Event>();
+  for (const page of pages) for (const e of page) byId.set(e.id, e);
+  const events = [...byId.values()];
+  const built = scoreWithHistory(events, goals, {
     date,
     now,
     instructions,
     checklist,
     countCheckIns: countCheckInsFrom(checkIns),
   });
-  return { ...built, goals, now, real: Date.parse(now) <= clock };
+  return { ...built, goals, events, checklist, now, real: Date.parse(now) <= clock };
 }
 
 export interface TargetState {
@@ -151,7 +157,11 @@ export async function scoreFor(
   query: { date?: string; now?: string },
   opts: { readOnly?: boolean } = {},
 ): Promise<Score> {
-  const week = await loadWeek(query);
+  return scoreOfWeek(await loadWeek(query), opts);
+}
+
+/** The score of a week already loaded (loadWeek), with its target, records and offers. */
+export async function scoreOfWeek(week: Week, opts: { readOnly?: boolean } = {}): Promise<Score> {
   // Targets and records are extras: a failed read must never take the score down.
   const [state, records] = await Promise.all([
     targetState(week).catch((err) => {

@@ -53,6 +53,35 @@ export default async function YouPage({
         </Link>
       ) : null}
 
+      {/* The Mi button is on every tab, so the two things people look for in it come first. */}
+      <div className="mt-4 overflow-hidden rounded-group bg-fill">
+        <Link
+          href="/chat?talk=1"
+          className="press relative flex min-h-14 items-center justify-between gap-3 px-4 py-2"
+        >
+          <span className="flex flex-col">
+            <span className="text-body">Talk to Michael</span>
+            <span className="text-footnote text-label-2">Out loud, hands free</span>
+          </span>
+          <span aria-hidden="true" className="text-label-2">
+            ›
+          </span>
+        </Link>
+        <Link
+          href="/agents"
+          className="press relative flex min-h-14 items-center justify-between gap-3 px-4 py-2"
+        >
+          <span className={separator} />
+          <span className="flex flex-col">
+            <span className="text-body">Agents</span>
+            <span className="text-footnote text-label-2">Who asks about you, and what they may see</span>
+          </span>
+          <span aria-hidden="true" className="text-label-2">
+            ›
+          </span>
+        </Link>
+      </div>
+
       <ConnectionsList view={connections} flash={flash} demo={account === "The demo week"} />
 
       <section id="privacy" className="mt-8 scroll-mt-4">
@@ -61,12 +90,12 @@ export default async function YouPage({
           <OffTheRecordSwitch />
         </div>
         <Link
-          href="/agents"
-          className="press mt-5 flex min-h-14 items-center justify-between gap-3 rounded-group bg-fill px-4 py-2"
+          href="/you/knowledge"
+          className="press mt-4 flex min-h-14 items-center justify-between gap-3 rounded-group bg-fill px-4 py-2"
         >
           <span className="flex flex-col">
-            <span className="text-body">Agents</span>
-            <span className="text-footnote text-label-2">Who asks about you, and what they may see</span>
+            <span className="text-body">What I know about you</span>
+            <span className="text-footnote text-label-2">In plain words. Forget any of it</span>
           </span>
           <span aria-hidden="true" className="text-label-2">
             ›

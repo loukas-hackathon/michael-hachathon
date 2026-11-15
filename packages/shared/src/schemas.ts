@@ -986,6 +986,65 @@ export const SourcesStatusResponse = z.object({
 });
 export type SourcesStatusResponse = z.infer<typeof SourcesStatusResponse>;
 
+// ---------- what Michael knows about you (GET /v1/me/knowledge, MCP what_you_know) ----------
+
+// Everything Michael uses about the user, in plain words, built from the stores that already hold
+// it (no table of its own). `told` is what the user said; `reads` is what each connection sends.
+export const KnowledgeKind = z.enum(["memory", "check_in", "instruction", "profile"]);
+export type KnowledgeKind = z.infer<typeof KnowledgeKind>;
+
+// Where it came from: said in chat, kept by an agent the user approved, answered in a check in,
+// set by the user (instructions), or given at setup (the profile).
+export const KnowledgeOrigin = z.enum(["chat", "agent", "check_in", "you", "setup"]);
+export type KnowledgeOrigin = z.infer<typeof KnowledgeOrigin>;
+
+export const KnowledgeItem = z.object({
+  // memory: the event id; check_in: the check in id; instruction: its id; profile: the field
+  // ("quiet_hours", "usual_week") or "<field>:<value>" for one entry of a list
+  // ("weak_spots:late_nights", "fixed_titles:PT session").
+  id: z.string().min(1),
+  kind: KnowledgeKind,
+  // Plain words. A memory, an instruction or a check in question as written; a profile line in Michael's words.
+  text: z.string(),
+  // A check in's answer in the user's own words; null otherwise.
+  answer: z.string().nullable(),
+  // When it was told, or null when not known.
+  at: IsoDateTime.nullable(),
+  origin: KnowledgeOrigin,
+  // False for a paused instruction.
+  active: z.boolean(),
+  // Whether one tap really deletes it: memories (DELETE /v1/events/:id), check ins
+  // (DELETE /v1/check-in/:id), instructions (DELETE /v1/instructions/:id) and one entry of a profile
+  // list (PUT /v1/profile without it). Quiet hours and the usual week can be changed, not forgotten.
+  forgettable: z.boolean(),
+});
+export type KnowledgeItem = z.infer<typeof KnowledgeItem>;
+
+export const KnowledgeSource = z.object({
+  source: Source,
+  // What the user calls it, and one line of what it sends.
+  name: z.string(),
+  sends: z.string(),
+  enabled: z.boolean(),
+  collecting: z.boolean(),
+  last_event_at: IsoDateTime.nullable(),
+});
+export type KnowledgeSource = z.infer<typeof KnowledgeSource>;
+
+export const Knowledge = z.object({
+  // Newest first within each kind; kinds in the order memory, check_in, instruction, profile.
+  told: z.array(KnowledgeItem),
+  // Connections that are switched on or have ever sent something (never manual or agent).
+  reads: z.array(KnowledgeSource),
+  // Three short lines, true to the code: what Michael never keeps.
+  never_kept: z.array(z.string()),
+  off_the_record: z.boolean(),
+  // Agent calls logged today (Europe/Athens), and how many agents are approved now.
+  asked_today: z.number().int().nonnegative(),
+  agents_connected: z.number().int().nonnegative(),
+});
+export type Knowledge = z.infer<typeof Knowledge>;
+
 // ---------- profile: the onboarding answers (GET/PUT /v1/profile) ----------
 
 // `ClockTime` ("HH:MM", 24 hour, Europe/Athens wall clock) is defined with the goals above.
@@ -2667,6 +2726,123 @@ export const Moment = z.object({
   first_move: MomentMove.nullable(),
 });
 export type Moment = z.infer<typeof Moment>;
+
+// ---------- your week (GET /v1/week/review, #376) ----------
+// The Sunday evening review, on demand any time: the week's score with the maths, time won back,
+// each goal kept or behind, records set, the biggest thief of time, what was logged, one lesson,
+// next week's target and the first move. Every number comes from the score (GET /v1/score), the
+// target rule (#165), the records (#166), the done time log (#317) and the ritual (#318); only
+// `lesson` may be phrased by a model, under the moments' number guard.
+
+export const WeekReviewQuery = z.object({
+  // Any day of the week; default this week, Europe/Athens.
+  week: LocalDay.optional(),
+  // Replay the review as it stood at this instant.
+  now: IsoDateTime.optional(),
+});
+export type WeekReviewQuery = z.infer<typeof WeekReviewQuery>;
+
+export const WeekReviewGoal = z.object({
+  goal_id: z.uuid(),
+  title: z.string(),
+  area: GoalArea,
+  kind: z.enum(["time", "count"]),
+  // time: minutes held in blocks plus minutes logged outside them; count: sessions done.
+  done: z.number().int().nonnegative(),
+  // time: the weekly budget in minutes; count: sessions a week.
+  budget: z.number().int().positive(),
+  // time: still booked ahead this week (zero once it has ended).
+  planned_ahead: z.number().int().nonnegative(),
+  kept: z.boolean(),
+  // budget - done, never below 0.
+  short: z.number().int().nonnegative(),
+});
+export type WeekReviewGoal = z.infer<typeof WeekReviewGoal>;
+
+export const WeekReviewMove = z.object({
+  title: z.string(), // "Book 1h for University, Monday 08:00"
+  rationale: z.string(), // the maths
+  // "booked": the block is already on the calendar; "book": Plan next week books it.
+  status: z.enum(["booked", "book"]),
+  goal_id: z.uuid(),
+  minutes: z.number().int().positive(),
+  start_at: IsoDateTime,
+  end_at: IsoDateTime,
+});
+export type WeekReviewMove = z.infer<typeof WeekReviewMove>;
+
+export const WeekReview = z.object({
+  week_start: LocalDay, // Monday
+  week_end: LocalDay, // Sunday
+  timezone: z.string(),
+  generated_at: IsoDateTime,
+  // True once the week has ended.
+  complete: z.boolean(),
+  // The score's week: spent / elapsed.
+  score: z.object({
+    pct: z.number().int().min(0).max(100).nullable(),
+    planned_minutes: z.number().int().nonnegative(),
+    elapsed_minutes: z.number().int().nonnegative(),
+    spent_minutes: z.number().int().nonnegative(),
+    lost_minutes: z.number().int().nonnegative(),
+    ahead_minutes: z.number().int().nonnegative(),
+    unverified_minutes: z.number().int().nonnegative(),
+    // Median score of the full weeks before (at most 4); null with fewer than 2.
+    usual_pct: z.number().int().min(0).max(100).nullable(),
+    usual_weeks: z.number().int().nonnegative(),
+    // The week's target when there was one, and whether it was met (overall and every floor).
+    target_pct: z.number().int().min(0).max(100).nullable(),
+    on_target: z.boolean().nullable(),
+  }),
+  // The score's time won back: the sum of the days against the usual loss rate.
+  won_back_minutes: z.number().int().nonnegative(),
+  // Logged outside every block (#372): toward budgets, in no total.
+  logged_outside_minutes: z.number().int().nonnegative(),
+  goals: z.array(WeekReviewGoal),
+  // New bests set this week (baselines left out).
+  records: z.array(PersonalRecord),
+  // The longest unbroken verified run inside one goal block this week, record or not.
+  best_block: z
+    .object({
+      goal_id: z.uuid(),
+      goal_title: z.string(),
+      day: LocalDay,
+      minutes: z.number().int().positive(),
+    })
+    .nullable(),
+  // What took the most of the lost time.
+  thief: z
+    .object({
+      what: z.string(),
+      kind: z.enum(["app", "site"]),
+      minutes: z.number().int().positive(),
+      // Its share of the week's lost minutes.
+      share_pct: z.number().int().min(0).max(100),
+    })
+    .nullable(),
+  // Done time the user logged (#317): entries and minutes.
+  logged: z.object({ entries: z.number().int().nonnegative(), minutes: z.number().int().nonnegative() }),
+  // The daily ritual's outcomes (#318): set (moved ones left out) and done.
+  outcomes: z.object({ set: z.number().int().nonnegative(), done: z.number().int().nonnegative() }),
+  lesson: z.string(),
+  phrased_by: z.enum(["template", "model"]),
+  // Next week's target (#165): stored, else Michael's proposal; reason says why or what is missing.
+  next_week: z.object({
+    week_start: LocalDay,
+    target_pct: z.number().int().min(0).max(100).nullable(),
+    status: z.enum(["proposed", "accepted"]).nullable(),
+    reason: z.string().nullable(),
+  }),
+  next_move: WeekReviewMove.nullable(),
+});
+export type WeekReview = z.infer<typeof WeekReview>;
+
+// POST /v1/week/plan: book next week's first goal block.
+export const WeekPlanInput = z.object({
+  goal_id: z.uuid(),
+  minutes: z.number().int().min(15).max(360),
+});
+export type WeekPlanInput = z.infer<typeof WeekPlanInput>;
 
 // ---------- check in (#187) ----------
 // Michael asks a few questions about the day, drawn from the timeline, and keeps the answers as

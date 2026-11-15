@@ -1604,6 +1604,104 @@ semicolon, keeps the voice rules and every number in it appears in the facts; ot
 `phrased_by` is `template`. Lines are cached in memory per user, kind, day and facts, and checked
 again when read.
 
+### Your week (#376)
+
+| Method | Path                                   | Body                   | Response                                  | Status |
+| ------ | -------------------------------------- | ---------------------- | ----------------------------------------- | ------ |
+| GET    | `/v1/week/review?week=<day>&now=<iso>` |                        | `200 WeekReview`; `400` on a day not real | live   |
+| POST   | `/v1/week/plan`                        | `{ goal_id, minutes }` | `201 Recommendation`; `400`, `404`, `409` | live   |
+
+The Sunday evening review, on demand any time: one calm screen (`/week` on the web), reachable from
+Today on Sunday evening and from the Evening moment on Sundays, folded under "More from Michael" the
+rest of the week. `week` is any day of the week (default this week); `now` replays it. Read only:
+records are read, never synced, and no offers are made.
+
+```ts
+type WeekReviewGoal = {
+  goal_id: string;
+  title: string;
+  area: GoalArea;
+  kind: "time" | "count";
+  done: number; // time: held in blocks + logged outside them (minutes); count: sessions
+  budget: number; // time: weekly budget (minutes); count: sessions a week
+  planned_ahead: number; // time: still booked this week
+  kept: boolean; // done >= budget
+  short: number; // budget - done, never below 0
+};
+type WeekReviewMove = {
+  title: string; // "Book 90 minutes for University, Monday 07:00" or "University, Tuesday 09:00"
+  rationale: string; // the maths
+  status: "booked" | "book"; // already on the calendar, or Plan next week books it
+  goal_id: string;
+  minutes: number;
+  start_at: string;
+  end_at: string;
+};
+type WeekReview = {
+  week_start: string; // Monday
+  week_end: string; // Sunday
+  timezone: string;
+  generated_at: string;
+  complete: boolean; // the week has ended
+  score: {
+    pct: number | null; // the score's week: spent / elapsed
+    planned_minutes: number;
+    elapsed_minutes: number;
+    spent_minutes: number;
+    lost_minutes: number;
+    ahead_minutes: number;
+    unverified_minutes: number;
+    usual_pct: number | null; // median of the full weeks before (at most 4); null with fewer than 2
+    usual_weeks: number;
+    target_pct: number | null; // the week's target, when it had one
+    on_target: boolean | null; // the score's balanced week
+  };
+  won_back_minutes: number; // the score's time won back
+  logged_outside_minutes: number; // the score's logged_minutes (#372)
+  goals: WeekReviewGoal[];
+  records: PersonalRecord[]; // new bests set in the week; baselines left out
+  best_block: { goal_id: string; goal_title: string; day: string; minutes: number } | null; // longest verified run in one block
+  thief: { what: string; kind: "app" | "site"; minutes: number; share_pct: number } | null; // lost_by[0]
+  logged: { entries: number; minutes: number }; // done time entries (#317) that start in the week
+  outcomes: { set: number; done: number }; // the ritual's outcomes (#318), moved ones left out
+  lesson: string;
+  phrased_by: "template" | "model";
+  next_week: {
+    week_start: string;
+    target_pct: number | null;
+    status: "proposed" | "accepted" | null;
+    reason: string | null;
+  };
+  next_move: WeekReviewMove | null;
+};
+```
+
+**The review rule** (`apps/api/src/week/review.ts`, pure, with tests; the two change together):
+
+- **One source.** Every number is the score's week (`GET /v1/score`), the target rule, the records,
+  the done time log or the ritual; the review picks and words them and never counts again.
+- **Goals:** time goals with a budget (held plus logged outside blocks, the budget maths of #372)
+  and count goals (sessions done of sessions a week). Targets (sleep) and checklists are left out.
+- **Next week's target:** the target stored for next Monday, else Michael's proposal by the target
+  rule, reading the reviewed week as full from its Sunday on; else `reason` says why there is none
+  yet ("I need two full weeks of scores before I set a target. I have one."). Never stored here:
+  accepting it is `PUT /v1/targets/:week_start`.
+- **Next move:** next week's first goal block when one is already booked (`booked`). Otherwise the
+  goal furthest short this week (ties: the bigger budget), a fifth of its budget in quarter hours,
+  30 to 90 minutes, in the first free slot from next Monday that Book would take (`book`).
+- **Lesson:** the thief when it took 15 minutes or more ("Instagram took 2h 32 of your goal blocks,
+  51% of all you lost. Keep it out of next week's blocks."), else the goal furthest short, else a
+  plain line. Only `lesson` may be phrased by Claude, with the moments' checks: a finished reply,
+  a full stop, no semicolon, the voice rules, and every number in it appears in the facts (which
+  hold no dates); otherwise `phrased_by` is `template`.
+- **Plan next week:** `POST /v1/week/plan` books `minutes` for the goal (an active time goal, else
+  `404`) in the first free slot of next week, through Book (#309): same waking day, calendar and
+  standing instructions, the shorter block when the length no longer fits, `409` with the reason
+  when nothing does. A `create_focus_block` recommendation, undoable until it starts. Demo
+  visitors may use it, as they may Book.
+- **Chat and MCP:** the chat tool and the MCP tool `get_week_review` (scope `score`) answer "how
+  was my week" from the same review.
+
 ### Voice
 
 | Method | Path                   | Body                                                                                                                                         | Response                                                                                                                                                                                                                                                                                                 | Status |
@@ -2047,6 +2145,63 @@ when Michael last received a new event from that source (the event's `created_at
 never sent one. An event that arrives again unchanged does not move it. The web app's Connections
 rows on You read it to say "Last data 12 min ago". Code: `apps/api/src/routes/sources.ts`.
 
+### What I know about you (#379)
+
+```ts
+type KnowledgeItem = {
+  id: string; // memory: event id; check_in: check in id; instruction: its id; profile: "quiet_hours",
+  // "usual_week", "gym_days", or "weak_spots:<value>" / "fixed_titles:<title>" for one entry
+  kind: "memory" | "check_in" | "instruction" | "profile";
+  text: string; // plain words: the memory, question or instruction as written, or a profile line
+  answer: string | null; // a check in answer, in the user's own words
+  at: string | null; // when it was told
+  origin: "chat" | "agent" | "check_in" | "you" | "setup";
+  active: boolean; // false for a paused instruction
+  forgettable: boolean;
+};
+type KnowledgeSource = {
+  source: Source;
+  name: string; // "Chrome"
+  sends: string; // "Sites you spend time on, never what you type"
+  enabled: boolean;
+  collecting: boolean;
+  last_event_at: string | null;
+};
+type Knowledge = {
+  told: KnowledgeItem[]; // memory, check_in, instruction, profile; newest first within each
+  reads: KnowledgeSource[]; // switched on or ever sent; never manual or agent
+  never_kept: string[]; // three lines, true to the code
+  off_the_record: boolean;
+  asked_today: number; // agent calls logged today (Europe/Athens)
+  agents_connected: number; // approved agents
+};
+```
+
+| Method | Path               | Response        | Status |
+| ------ | ------------------ | --------------- | ------ |
+| GET    | `/v1/me/knowledge` | `200 Knowledge` | live   |
+
+Everything Michael uses about the user, in plain words, for the "What I know about you" page under
+You, Privacy. Built from the stores that already hold it (`apps/api/src/knowledge.ts`), so no table
+of its own: memories (the newest 200, as `get_memories`), answered check ins from the last 90 days
+(the newest 60), every standing instruction (paused ones with `active: false`), and the profile once
+the user saved it (defaults are not something they told). `reads` uses the same switch and last
+event as `GET /v1/sources/status`.
+
+Forgetting goes through the route that owns each item, so it really deletes: a memory with
+`DELETE /v1/events/:id`, a check in with `DELETE /v1/check-in/:id`, an instruction with
+`DELETE /v1/instructions/:id`, one weak spot or fixed title with `PUT /v1/profile` without it. Quiet
+hours and the usual week have `forgettable: false`: they can be changed (on You, or in chat), not removed. Demo
+visitors may read the page; their forgets get the usual demo `403`.
+
+`never_kept` is fixed copy that must stay true to the code: voice audio is transcribed and dropped
+(`routes/voice.ts`), Omi keeps only the summary and action items (`ingest/omi.ts`), and calendar
+events keep a count of attendees, never their names or emails (`integrations/calendar-sync.ts`).
+
+The same answer is the MCP tool `what_you_know` (scope `timeline`, logged like every agent call:
+"Read what I know about you") and the chat tool `what_you_know`, which the chat calls when the user
+asks what Michael knows about them; the web chat shows a button to the page under that answer.
+
 ### Device keys (personal tokens)
 
 ```ts
@@ -2352,7 +2507,7 @@ type AgentQuery = {
   `list_drafts`, `draft_follow_up` = `recommendations`; `get_score`, `get_records`, `get_moments` = `score`; `add_event`, `execute_recommendation`,
   `undo_recommendation`, `create_focus_block`, `block_mac_app`, `plan_travel`, `log_done`,
   `confirm_block` = `write_events`;
-  `suggest_app_mute` = `recommendations`; `get_memories` = `timeline`; `remember` = `write_events`.
+  `suggest_app_mute` = `recommendations`; `get_memories`, `what_you_know` = `timeline`; `remember` = `write_events`.
   Memories are events of type `memory` (source `manual` from chat, `agent` from MCP); Michael's
   chat reads the newest 40 into every answer and keeps new ones with its own `remember` and
   `forget_memory` tools (`apps/api/src/memory.ts`). A tool not in that
@@ -3096,7 +3251,9 @@ offset. A refused or failed call returns `isError: true` with one plain sentence
 | `list_recommendations`   | `recommendations` | `{ status?: RecommendationStatus }`                                                     | `{ recommendations: Recommendation[] }`                                                    |
 | `get_nudges`             | `recommendations` | `{ date?: LocalDay }` (default today)                                                   | `{ day, nudges: Nudge[] }`                                                                 |
 | `get_moments`            | `score`           | `{ kind?: MomentKind }` (default morning before 15:00 local, evening after)             | `Moment`                                                                                   |
+| `get_week_review`        | `score`           | `{ week?: LocalDay }` (any day of the week; default this week)                          | `WeekReview` (as `GET /v1/week/review`)                                                    |
 | `get_memories`           | `timeline`        | `{}`                                                                                    | `{ memories: { id, text, at, from: "chat" \| "agent" }[] }` (newest first, at most 40)     |
+| `what_you_know`          | `timeline`        | `{}`                                                                                    | `Knowledge` (see "What I know about you")                                                  |
 | `remember`               | `write_events`    | `{ fact: string (1..280) }`                                                             | `{ memory }` (same fact twice is kept once; `null` when off the record)                    |
 | `add_event`              | `write_events`    | `EventInput`                                                                            | `{ inserted, duplicates, ignored, events: Event[] }`                                       |
 | `add_goal`               | `goals`           | `{ category, title, description?, weekly_budget_minutes?, target? }`                    | `{ goal: Goal }`                                                                           |

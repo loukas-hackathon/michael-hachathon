@@ -1,5 +1,6 @@
 import type { Health } from "@michael/shared";
 import { Hono } from "hono";
+import { compress } from "hono/compress";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { requireUser } from "./auth";
@@ -21,6 +22,7 @@ import { focusGuards } from "./routes/focus-guards";
 import { goals } from "./routes/goals";
 import { instructions } from "./routes/instructions";
 import { integrations, oauth } from "./routes/integrations";
+import { knowledge } from "./routes/knowledge";
 import { log } from "./routes/log";
 import { meData } from "./routes/me-data";
 import { moments } from "./routes/moments";
@@ -42,6 +44,7 @@ import { telegram, telegramWebhook } from "./routes/telegram";
 import { tokens } from "./routes/tokens";
 import { voice } from "./routes/voice";
 import { webhooks } from "./routes/webhooks";
+import { week } from "./routes/week";
 import { store } from "./store";
 import { runTimed, serverTimingEntries } from "./timing";
 
@@ -68,6 +71,7 @@ export const v1Routes = new Hono()
   .route("/", chat)
   .route("/", checkIn)
   .route("/", moments)
+  .route("/", week)
   .route("/", voice)
   .route("/", integrations)
   .route("/", privacy)
@@ -87,6 +91,7 @@ export const v1Routes = new Hono()
   .route("/", agents)
   .route("/", places)
   .route("/", meData)
+  .route("/", knowledge)
   .route("/", demo);
 
 const v1 = new Hono().use(requireUser()).route("/", v1Routes);
@@ -104,6 +109,10 @@ export const app = new Hono()
     for (const entry of serverTimingEntries(t)) c.res.headers.append("Server-Timing", entry);
     c.res.headers.append("Server-Timing", `region;desc="${region}"`);
   })
+  // gzip for the REST API's JSON (#298): a week's timeline or score is hundreds of KB. Only
+  // application/json under /v1, so the chat's event stream is never buffered by the compressor,
+  // and MCP (/mcp) and OAuth answer exactly as before.
+  .use("/v1/*", compress({ contentTypeFilter: /^application\/json/i }))
   .use(cors({ origin: env.WEB_ORIGIN.split(",").map((s) => s.trim()) }))
   .get("/health", (c) => {
     const body: Health = {

@@ -1,5 +1,12 @@
 import "server-only";
-import { type Event, EventType, type Goal, type Score, type TimelineResponse } from "@michael/shared";
+import {
+  type Event,
+  EventType,
+  type Goal,
+  goalKind,
+  type Score,
+  type TimelineResponse,
+} from "@michael/shared";
 import { get } from "./api";
 import { addDays, athensDay, dayBounds, isLocalDay, weekOf } from "./athens";
 import { DATES_WITH_DATA, getTimelineDay, longestFrom, type Patterns } from "./days";
@@ -136,7 +143,10 @@ export async function loadTimeline(asked?: string, demo?: string): Promise<Timel
     earlier,
     calendarConnected,
     sleepGoal: sleepGoalMinutes(goals.goals),
-    goals: goals.goals.filter((g) => g.active).map((g) => ({ id: g.id, title: g.title })),
+    // Only goals a block can serve: time and count. Sleep is counted by nights, outcomes by ticks.
+    goals: goals.goals
+      .filter((g) => g.active && (goalKind(g) === "time" || goalKind(g) === "count"))
+      .map((g) => ({ id: g.id, title: g.title })),
     editable: true,
   };
 }
