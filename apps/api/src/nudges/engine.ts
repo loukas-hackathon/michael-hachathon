@@ -326,10 +326,17 @@ function windDown(w: World): Candidate | null {
   };
 }
 
-function goalBehind(w: World): Candidate | null {
-  if (w.minute >= LIMITS.goalBehindLatest) return null;
+export interface BehindGoal {
+  goal: Goal;
+  spent: number;
+  pace: number;
+  gap: number;
+}
+
+/** Goals behind their linear weekly pace by 60+ minutes and 15%+, the furthest behind first. */
+function behindList(w: World): BehindGoal[] {
   const elapsed = Math.min(1, (w.now - w.weekStart) / (7 * DAY));
-  let worst: { goal: Goal; spent: number; pace: number; gap: number } | null = null;
+  const out: BehindGoal[] = [];
   for (const goal of w.goals) {
     const budget = goal.weekly_budget_minutes;
     if (!budget) continue;
@@ -337,8 +344,17 @@ function goalBehind(w: World): Candidate | null {
     const pace = budget * elapsed;
     const gap = pace - spent;
     if (gap < Math.max(LIMITS.goalBehindMinMinutes, budget * LIMITS.goalBehindMinShare)) continue;
-    if (!worst || gap > worst.gap) worst = { goal, spent, pace, gap };
+    out.push({ goal, spent, pace, gap });
   }
+  return out.sort((a, b) => b.gap - a.gap);
+}
+
+/** The goal_behind rule at any hour, every goal it finds: the morning's suggestions (#318). */
+export const behindGoals = (input: EngineInput): BehindGoal[] => behindList(world(input));
+
+function goalBehind(w: World): Candidate | null {
+  if (w.minute >= LIMITS.goalBehindLatest) return null;
+  const worst = behindList(w)[0];
   if (!worst) return null;
   const { goal, spent, pace, gap } = worst;
   const next = goalBlocks(w.events, w.goals, w.now, w.dayEnd).find((b) => b.goal.id === goal.id);
@@ -418,6 +434,9 @@ export function momentTiming(w: World): MomentTiming {
     bedtime,
   };
 }
+
+/** When the Morning and Evening moments may go out today; the daily ritual follows them (#318). */
+export const momentTimes = (input: EngineInput): MomentTiming => momentTiming(world(input));
 
 /** Which moment is due now, if any. Each goes out at most once a day (its key is the kind). */
 export function momentDue(input: EngineInput): MomentKind | null {

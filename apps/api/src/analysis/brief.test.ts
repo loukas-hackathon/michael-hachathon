@@ -438,6 +438,9 @@ test("checklist and count goals: today's open outcomes and the count's pace reac
     settled_at: null,
     settled_by: null,
     carried_from: status === "open" && position === 0 ? "90000000-0000-4000-8000-000000000009" : null,
+    linked_goal_id: null,
+    estimate_minutes: null,
+    logged_minutes: null,
     created_at: T("2026-11-10 07:00"),
     updated_at: T("2026-11-10 07:00"),
   });

@@ -268,10 +268,13 @@ export type GoalUpdate = z.input<typeof GoalUpdate>;
 // ---------- checklist items (#238) ----------
 // The day's one to three outcomes of a goal of kind `checklist`, in the user's own words. Michael
 // never ticks an item himself: the user does, or the evening check in (`settled_by: "check_in"`).
+// The daily ritual (#318) writes them too: each outcome may name the goal it serves, of any kind
+// and area (`linked_goal_id`), with a time estimate and the minutes logged in the evening.
 
-// open -> done | dropped (settled by the user or the check in); open -> moved (carried to the next
-// day, where a new item continues it with `carried_from`).
-export const ChecklistStatus = z.enum(["open", "done", "dropped", "moved"]);
+// open -> done | partly | dropped (settled by the user or the check in); open -> moved (carried to
+// the next day, where a new item continues it with `carried_from`). `partly` (#318) is the
+// evening's "some of it": it counts as set, not done.
+export const ChecklistStatus = z.enum(["open", "done", "partly", "dropped", "moved"]);
 export type ChecklistStatus = z.infer<typeof ChecklistStatus>;
 
 export const ChecklistSettledBy = z.enum(["user", "check_in"]);
@@ -303,6 +306,12 @@ export const ChecklistItem = z.object({
   settled_by: ChecklistSettledBy.nullable(),
   // The item of the day before that this one continues (POST /v1/checklist/:id/carry).
   carried_from: z.uuid().nullable(),
+  // The goal this outcome serves, any kind and area (#318). Null: just for the day.
+  linked_goal_id: z.uuid().nullable().default(null),
+  // The user's own guess at how long it takes, minutes (#318).
+  estimate_minutes: z.number().int().positive().nullable().default(null),
+  // Minutes the user logged against the linked goal in the evening (#318).
+  logged_minutes: z.number().int().positive().nullable().default(null),
   created_at: IsoDateTime,
   updated_at: IsoDateTime,
 });
@@ -321,11 +330,17 @@ export const ChecklistResponse = z.object({
 });
 export type ChecklistResponse = z.infer<typeof ChecklistResponse>;
 
+/** A time estimate or logged time on an outcome: 5 minutes to 12 hours. */
+export const OutcomeMinutes = z.number().int().min(5).max(720);
+
 export const ChecklistItemCreate = z.object({
   goal_id: z.uuid(),
   // Default today in Europe/Athens.
   date: LocalDay.optional(),
   text: checklistText,
+  // #318: the goal the outcome serves (any kind) and the user's estimate.
+  linked_goal_id: z.uuid().nullish(),
+  estimate_minutes: OutcomeMinutes.nullish(),
 });
 export type ChecklistItemCreate = z.input<typeof ChecklistItemCreate>;
 
@@ -341,6 +356,103 @@ export type ChecklistItemUpdate = z.input<typeof ChecklistItemUpdate>;
 // POST /v1/checklist/:id/carry: the old item (now `moved`) and the new one on the next day.
 export const ChecklistCarryResponse = z.object({ moved: ChecklistItem, item: ChecklistItem });
 export type ChecklistCarryResponse = z.infer<typeof ChecklistCarryResponse>;
+
+// ---------- the daily ritual (#318) ----------
+// Morning: "What do you want to get done today?" Up to three outcomes in the user's words, each
+// optionally for a goal, with an optional estimate. Evening: "What did you get done?" Each outcome
+// done, partly or not, unfinished ones carried to tomorrow in one tap, time logged for the goal,
+// then one line with the maths. The outcomes are checklist items of one checklist goal (made
+// silently as "Today's outcomes" when the user has none). Skipping is fine: "Not today".
+
+export const RitualKind = z.enum(["morning", "evening"]);
+export type RitualKind = z.infer<typeof RitualKind>;
+
+// not_yet: too early (before waking, or before the evening window). due: show it now. done:
+// saved. skipped: "Not today". `evening` is also not_yet on a day without outcomes.
+export const RitualState = z.enum(["not_yet", "due", "done", "skipped"]);
+export type RitualState = z.infer<typeof RitualState>;
+
+export const RitualOutcomeInput = z.object({
+  text: checklistText,
+  goal_id: z.uuid().nullish(),
+  estimate_minutes: OutcomeMinutes.nullish(),
+});
+export type RitualOutcomeInput = z.input<typeof RitualOutcomeInput>;
+
+// POST /v1/ritual/morning. Outcomes already on today (carried ones) stay; the total stays at three.
+export const RitualMorningInput = z.object({
+  outcomes: z.array(RitualOutcomeInput).min(1).max(CHECKLIST_MAX_OPEN),
+});
+export type RitualMorningInput = z.input<typeof RitualMorningInput>;
+
+export const RitualResult = z.enum(["done", "partly", "not"]);
+export type RitualResult = z.infer<typeof RitualResult>;
+
+// POST /v1/ritual/evening. `carry`: continue it tomorrow (partly or not). `minutes`: time done
+// that counts toward the outcome's goal.
+export const RitualEveningInput = z.object({
+  results: z
+    .array(
+      z.object({
+        item_id: z.uuid(),
+        result: RitualResult,
+        carry: z.boolean().optional(),
+        minutes: OutcomeMinutes.nullish(),
+      }),
+    )
+    .min(1)
+    .max(CHECKLIST_MAX_OPEN * 2),
+});
+export type RitualEveningInput = z.input<typeof RitualEveningInput>;
+
+// A suggestion for the morning, from the calendar or a goal behind its pace.
+export const RitualSuggestion = z.object({
+  text: z.string().min(1).max(200),
+  goal_id: z.uuid().nullable(),
+  estimate_minutes: z.number().int().positive().nullable(),
+  // The maths: "University is 4h behind this week." or "On your calendar at 10:00."
+  reason: z.string(),
+  source: z.enum(["calendar", "behind"]),
+});
+export type RitualSuggestion = z.infer<typeof RitualSuggestion>;
+
+export const RitualGoalChip = z.object({ id: z.uuid(), title: z.string(), area: GoalArea });
+export type RitualGoalChip = z.infer<typeof RitualGoalChip>;
+
+// GET /v1/ritual?phase=morning|evening (phase: show that half now, for a preview or the stage)
+export const RitualQuery = z.object({ phase: RitualKind.optional() });
+export type RitualQuery = z.infer<typeof RitualQuery>;
+
+export const RitualToday = z.object({
+  day: LocalDay,
+  // Which half to show now: null before waking.
+  phase: RitualKind.nullable(),
+  morning: RitualState,
+  evening: RitualState,
+  // The checklist goal that holds the outcomes; null until the first morning.
+  goal_id: z.uuid().nullable(),
+  // Today's outcomes (not the ones moved to tomorrow), by position.
+  items: z.array(ChecklistItem),
+  // Morning only, at most two.
+  suggestions: z.array(RitualSuggestion),
+  // The user's active goals as quick chips (not the outcomes goal itself).
+  goals: z.array(RitualGoalChip),
+  // The evening line once saved: "2 of 3 done. 40 min logged for Training. ..."
+  summary: z.string().nullable(),
+  // "University at 09:00": tomorrow's first block, for the evening.
+  tomorrow: z.string().nullable(),
+});
+export type RitualToday = z.infer<typeof RitualToday>;
+
+export const RitualEveningResponse = z.object({
+  summary: z.string(),
+  // The new items on tomorrow.
+  carried: z.array(ChecklistItem),
+  // Minutes logged per goal.
+  logged: z.array(z.object({ goal_id: z.uuid(), minutes: z.number().int().positive() })),
+  ritual: RitualToday,
+});
+export type RitualEveningResponse = z.infer<typeof RitualEveningResponse>;
 
 // ---------- standing instructions ----------
 // Not goals: the user's ground rules ("keep Sundays clear", "home every day by 21:00"). Given at

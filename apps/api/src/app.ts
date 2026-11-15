@@ -31,6 +31,7 @@ import { product } from "./routes/product";
 import { profile } from "./routes/profile";
 import { push } from "./routes/push";
 import { recommendations } from "./routes/recommendations";
+import { ritual } from "./routes/ritual";
 import { score } from "./routes/score";
 import { setupPublic, setupTokens } from "./routes/setup";
 import { sources } from "./routes/sources";
@@ -53,6 +54,7 @@ export const v1Routes = new Hono()
   .route("/", events)
   .route("/", goals)
   .route("/", checklist)
+  .route("/", ritual)
   .route("/", instructions)
   .route("/", recommendations)
   .route("/", analysis)

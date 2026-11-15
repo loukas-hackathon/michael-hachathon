@@ -14,6 +14,7 @@ import {
   MICHAEL_VOICE,
   type PatternReport,
   type Recommendation,
+  type RitualToday,
   type Score,
   voiceDuration,
 } from "@michael/shared";
@@ -28,6 +29,7 @@ import { instructionLine } from "../instructions/protected";
 import { listMemories, type Memory, memoryContext } from "../memory";
 import { DEFAULT_TIMEZONE, NO_HEADLINES } from "../patterns";
 import { Zone } from "../patterns/time";
+import { ritualFor } from "../ritual/ritual";
 import { store } from "../store";
 import { latestThread, titleFor, untitled } from "./chat-threads";
 import { patternReportFor } from "./patterns";
@@ -95,7 +97,12 @@ Check in:
 
 Conversations:
 - The user keeps separate conversations with you, each on its own topic. You see the lines of this one only.
-- You know the others only by their titles under "Other conversations" and through what you remember. Never claim to recall their exact words; if it matters, ask.`;
+- You know the others only by their titles under "Other conversations" and through what you remember. Never claim to recall their exact words; if it matters, ask.
+
+The daily ritual (morning outcomes, evening log):
+- When the user tells you what they want to get done today ("my goals today are X and Y"), keep them with set_day_outcomes, in their words, linked to a goal only when one clearly fits. Three is the most.
+- When they tell you what they got done ("I finished X, did 30 min of Y"), log it with log_day using the item ids under "Today's outcomes", then give the line the tool returns, word for word.
+- If the morning is due and no outcomes are set, you may ask once: "What do you want to get done today?" In the evening, with outcomes open: "What did you get done?" Never guilt, never streaks; skipping a day is fine.`;
 
 // Added after the cached prompt when the answer is read aloud in a voice conversation (#299).
 const SPOKEN_STYLE = `This answer is spoken aloud in a voice conversation:
@@ -136,6 +143,28 @@ export interface ChatContextInput {
   memories?: Memory[];
   /** The user's other recent conversations, titles only (never their lines), latest first. */
   otherThreads?: Pick<ChatThread, "title" | "last_message_at">[];
+  /** The daily ritual (#318): today's outcomes and which half is due. */
+  ritual?: RitualToday | null;
+}
+
+/** "Today's outcomes" for the chat context, with the ids log_day needs. */
+export function ritualContext(r: RitualToday, goals: Goal[]): string {
+  const title = new Map(goals.map((g) => [g.id, g.title]));
+  const lines = r.items.map((i) => {
+    const extra = [
+      i.linked_goal_id ? `for ${title.get(i.linked_goal_id) ?? "a goal"}` : null,
+      i.estimate_minutes ? `about ${hm(i.estimate_minutes)}` : null,
+      i.logged_minutes ? `${hm(i.logged_minutes)} logged` : null,
+      i.carried_from ? "carried from yesterday" : null,
+    ].filter(Boolean);
+    return `- [${i.status}] ${i.text}${extra.length ? ` (${extra.join(", ")})` : ""} {item_id ${i.id}}`;
+  });
+  const state = (s: string) => s.replace("_", " ");
+  return [
+    `Today's outcomes (morning ${state(r.morning)}, evening ${state(r.evening)}):`,
+    ...(lines.length ? lines : ["- none set yet"]),
+    ...(r.summary ? [`Evening line: ${r.summary}`] : []),
+  ].join("\n");
 }
 
 const weekdayIn = (zone: Zone, ms: number) =>
@@ -317,6 +346,8 @@ export function buildChatContext(input: ChatContextInput): string {
     );
   }
 
+  if (input.ritual) parts.push(ritualContext(input.ritual, input.goals));
+
   const remembered = memoryContext(input.memories ?? []);
   if (remembered) parts.push(remembered);
 
@@ -349,7 +380,7 @@ async function contextForNow(threadId: string | null): Promise<string> {
   const nowIso = new Date(now).toISOString();
   // Pattern reports are best effort: a detector failing must not take the chat down.
   const report = (from: string) => patternReportFor({ from, to: nowIso }).catch(() => null);
-  const [goals, instructions, events, today, week, score, undoable, checkIns, memories, threads] =
+  const [goals, instructions, events, today, week, score, undoable, checkIns, memories, threads, ritual] =
     await Promise.all([
       store.listGoals(),
       store.listInstructions().catch(() => []),
@@ -368,6 +399,7 @@ async function contextForNow(threadId: string | null): Promise<string> {
       checkInContext(now),
       listMemories().catch(() => []),
       store.listChatThreads({ limit: OTHER_THREADS + 1 }).catch(() => []),
+      ritualFor(now).catch(() => null),
     ]);
   return buildChatContext({
     now,
@@ -386,6 +418,7 @@ async function contextForNow(threadId: string | null): Promise<string> {
         (a, b) =>
           Date.parse(b.last_message_at ?? b.created_at) - Date.parse(a.last_message_at ?? a.created_at),
       ),
+    ritual,
   });
 }
 
