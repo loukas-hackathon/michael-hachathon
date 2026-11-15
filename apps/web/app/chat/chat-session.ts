@@ -2,6 +2,7 @@
 
 import type { ChatMessage, ChatStep, ChatThread, Recommendation } from "@michael/shared";
 import { useSyncExternalStore } from "react";
+import { keepSteps } from "@/components/chat/steps";
 import { announceFocus } from "@/components/focus/focus-events";
 import { TABS_STALE } from "@/components/tab-bar";
 import { speakReply } from "@/components/voice/speech";
@@ -340,6 +341,8 @@ export async function sendLine(
       steps: [],
       worked: t.steps.some((s) => s.id !== "open") ? { ...t.worked, [res.data.reply.id]: t.steps } : t.worked,
     }));
+    // The line under the answer survives a reload of this tab.
+    keepSteps(res.data.reply.id, session.byKey[key]?.worked[res.data.reply.id] ?? []);
     if (thread) upsertThread(thread, base);
     // Michael changed the day: cached Today and Timeline must not show the old plan.
     if (done.length) window.dispatchEvent(new Event(TABS_STALE));

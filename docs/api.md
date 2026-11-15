@@ -1364,7 +1364,7 @@ travel site" or "an uncategorised site". Structured `data` carries the host for 
 `spoken: true` means the answer will be read aloud (the app's conversation mode): Michael keeps it
 to one or two short sentences with no lists or markdown, and says numbers as a person would.
 
-**Steps (how Michael is working it out).** The stream opens with `step` `{ id: "open", label: "Reading your day", status: "running" }`, marked `done` at the first word or the first tool step. Each tool call then sends `running` before it runs and `done` after, with the same `id` (`s1`, `s2`, ...) and a plain label in Michael's voice ("Reading your calendar", "Logging 40 min", "Blocking WhatsApp"; unknown tools say "Working it out"). Labels never carry other people's titles or raw ids. Clients that do not know `step` ignore it.
+**Steps (how Michael is working it out).** The stream opens with `step` `{ id: "open", label: "Reading your day", status: "running" }`, marked `done` at the first word or the first tool step. Each tool call then sends `running` before it runs and `done` after, with the same `id` (`s1`, `s2`, ...) and a plain label in Michael's voice ("Reading your calendar", "Logging 40 min", "Blocking WhatsApp"; when the call points at one of the user's goals by id, its name from their own goals: "Logging 40 min to Gym", "Booking time for Deep work"; unknown tools say "Working it out"). Labels never carry other people's titles or raw ids. Clients that do not know `step` ignore it.
 
 `/v1/chat` stays for callers that want the whole answer (MCP, voice); `/v1/chat/stream` gives the
 first words fast and stores the same pair when it finishes. The stored answer keeps the ids of what
@@ -2000,7 +2000,8 @@ type FocusActiveResponse = { now: string; session: FocusSession | null; last: Fo
   goal of `event_id`. `minutes` 5 to 180; the app offers 25, 45, 60 and 90 (`FOCUS_LENGTHS`). The
   session runs in the user's own block: the goal block running now (`event_id`, or found on its own
   when one of the goal's blocks runs now with 5 minutes left; then the default length is the rest of
-  it), else a new block from this minute, named after the goal, through the same create_focus_block
+  it; a block starting in the next 15 minutes may be named too, for "Start focus" on the block
+  about to start nudge), else a new block from this minute, named after the goal, through the same create_focus_block
   path as the Timeline (`source: "user"`). It has started by the time it exists, so it cannot be
   undone; End early is the way back. Off the record is `409` (nothing is kept, so nothing to count).
 - **Mac:** when Mac data arrived in the last 48 hours (the collector runs) and the user is not off
@@ -2774,23 +2775,29 @@ type PushConfig = { enabled: boolean; public_key: string | null; devices: number
 
 A nudge can carry up to two buttons, the action first, so the user acts without opening the app.
 
-| Kind             | Buttons                                                                     |
-| ---------------- | --------------------------------------------------------------------------- |
-| `block_soon`     | "Snooze 10 min" (the same nudge again in 10 minutes), "Open"                |
-| `focus_drift`    | "Mute Instagram 30 min" (a `block_mac_app` guard, 30 min from now), "Open"  |
-| `recovery_block` | "Do it" (executes its recommendation, undoable in the app as usual), "Open" |
-| others           | none: tapping opens the card                                                |
+| Kind             | Buttons                                                                                                                          |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `block_soon`     | "Start focus" (Focus now on the block's goal, from now to the block's end), "Snooze 10 min" (the same nudge again in 10 minutes) |
+| `focus_drift`    | "Mute Instagram 30 min" (a `block_mac_app` guard, 30 min from now), "Open"                                                       |
+| `recovery_block` | "Do it" (executes its recommendation, undoable in the app as usual), "Open"                                                      |
+| others           | none: tapping opens the card                                                                                                     |
 
 `focus_drift` offers Mute only when the top distractor was an allowlisted app in front on the Mac
 (`BLOCKABLE_MAC_APPS`), so the Mac is connected and the guard can act; sites and phone apps get no
-button. "Start focus" on `block_soon` waits for Focus now (branch `focus-now`). The buttons are not
+button. "Start focus" on `block_soon` (#397) starts a Focus now session with the block as
+`event_id`: it runs from the tap to the block's end in the user's own block (so the minutes before
+the block starts count toward the goal's budget, the rest confirms the block), mutes the Mac when
+it is connected, and the session screen shows it when the app opens. The answer reads "Focusing on
+University until 13:00." Refused like `POST /v1/focus/start` (another session running, off the
+record, the block gone): the reason comes back and the button can be tried again. The body still
+opens the block. The buttons are not
 stored (no database change before the pitch): a tap works them out again from the stored nudge
 (`offeredActions`, the Mac app read back from the line).
 
 ```ts
-type NudgeActionId = "open" | "snooze" | "mute_app" | "do_it";
+type NudgeActionId = "open" | "snooze" | "mute_app" | "do_it" | "focus";
 type NudgeAction = { id: NudgeActionId; label: string; app?: string }; // app: mute_app only
-type NudgeActInput = { action: "snooze" | "mute_app" | "do_it"; token: string };
+type NudgeActInput = { action: "snooze" | "mute_app" | "do_it" | "focus"; token: string };
 type NudgeActResult = {
   action: NudgeActionId;
   text: string; // "Done. Undo in the app until 15:00." / "Instagram is off until 14:30. Undo in the app." / "Snoozed. Back at 17:58."

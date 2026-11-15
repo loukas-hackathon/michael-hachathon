@@ -1,7 +1,7 @@
 "use client";
 
 import type { ChatStep } from "@michael/shared";
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { Collapse } from "@/components/motion-ui";
 import { Thinking } from "@/components/thinking";
 
@@ -13,8 +13,47 @@ export function currentStep(steps: ChatStep[]): ChatStep | null {
   return steps.findLast((s) => s.status === "running") ?? steps.at(-1) ?? null;
 }
 
-/** Only tool steps count: the opening "Reading your day" alone is not worth a line. */
-export const workedSteps = (steps: ChatStep[]) => (steps.some((s) => s.id !== "open") ? steps : []);
+/** Only tool steps count and show: the opening "Reading your day" is not part of the work. */
+export const workedSteps = (steps: ChatStep[]) => steps.filter((s) => s.id !== "open");
+
+// The steps behind answers given in this tab, by reply id, so a reload keeps the line under them.
+const STORE_KEY = "michael.chat.worked";
+const MAX_KEPT = 50;
+
+function readKept(): Record<string, ChatStep[]> {
+  try {
+    const raw = sessionStorage.getItem(STORE_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, ChatStep[]>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Keeps an answer's tool steps for this tab (sessionStorage); quietly does nothing without it. */
+export function keepSteps(replyId: string, steps: ChatStep[]) {
+  const list = workedSteps(steps).map(({ id, label }) => ({ id, label, status: "done" as const }));
+  if (!list.length) return;
+  try {
+    const kept = Object.entries({ ...readKept(), [replyId]: list }).slice(-MAX_KEPT);
+    sessionStorage.setItem(STORE_KEY, JSON.stringify(Object.fromEntries(kept)));
+  } catch {
+    // Private mode or full storage: the line just does not survive a reload.
+  }
+}
+
+/** An answer's steps: the live ones when given, else those kept in this tab (after mount only). */
+function useSteps(replyId: string | undefined, steps: ChatStep[] | undefined): ChatStep[] {
+  const [kept, setKept] = useState<ChatStep[] | null>(null);
+  useEffect(() => {
+    if (steps?.length || !replyId) return;
+    const found = readKept()[replyId];
+    if (Array.isArray(found)) {
+      setKept(found.filter((s) => s && typeof s.id === "string" && typeof s.label === "string"));
+    }
+  }, [replyId, steps]);
+  return steps?.length ? steps : (kept ?? []);
+}
 
 /** The breathing mark and the current step, crossfading as the step changes. */
 export function LiveStep({
@@ -35,11 +74,14 @@ export function LiveStep({
   );
 }
 
-/** "How I worked it out · 3 steps" under a finished reply; a tap shows each step with its tick. */
-export function WorkedSteps({ steps }: { steps: ChatStep[] }) {
+/**
+ * "How I worked it out · 3 steps" under a finished reply; a tap shows each tool step with its
+ * tick. Counts tool steps only, and hides when there were none.
+ */
+export function WorkedSteps({ replyId, steps }: { replyId?: string; steps?: ChatStep[] }) {
   const [open, setOpen] = useState(false);
   const id = useId();
-  const list = workedSteps(steps);
+  const list = workedSteps(useSteps(replyId, steps));
   if (!list.length) return null;
   return (
     <div className="mt-0.5 px-1">

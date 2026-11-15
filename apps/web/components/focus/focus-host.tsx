@@ -4,6 +4,7 @@ import type { FocusSession } from "@michael/shared";
 import { usePathname, useRouter } from "next/navigation";
 import { startTransition, useCallback, useEffect, useState } from "react";
 import { focusActiveAction } from "@/app/focus-actions";
+import { TABS_STALE } from "@/components/tab-bar";
 import { FOCUS_EVENT, minutesLeft } from "./focus-events";
 import { FocusResult, FocusSessionView } from "./focus-session";
 
@@ -128,6 +129,9 @@ export function FocusHost() {
       onDone={(s) => {
         setSession(null);
         setResult(s);
+        // Today, Goals and the Timeline read the counted time now, behind the result.
+        window.dispatchEvent(new Event(TABS_STALE));
+        startTransition(() => router.refresh());
       }}
     />
   );

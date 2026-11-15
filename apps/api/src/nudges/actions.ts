@@ -11,6 +11,7 @@ import {
 import { executeRecommendation, undoDeadline } from "../actions/calendar";
 import { guardMacApps } from "../actions/mac-apps";
 import { currentUserId, runAsUser } from "../context";
+import { startFocus } from "../focus/session";
 import { HttpError } from "../http";
 import { DEFAULT_TIMEZONE } from "../patterns/context";
 import { MINUTE, Zone } from "../patterns/time";
@@ -32,7 +33,11 @@ const OPEN: NudgeAction = { id: "open", label: "Open" };
 export function actionsFor(c: Pick<Candidate, "kind" | "recommendation_id" | "mac_app">): NudgeAction[] {
   switch (c.kind) {
     case "block_soon":
-      return [{ id: "snooze", label: `Snooze ${NUDGE_SNOOZE_MINUTES} min` }, OPEN];
+      // Focus now (#397): the action first; the body still opens the block.
+      return [
+        { id: "focus", label: "Start focus" },
+        { id: "snooze", label: `Snooze ${NUDGE_SNOOZE_MINUTES} min` },
+      ];
     case "focus_drift":
       return c.mac_app
         ? [{ id: "mute_app", label: `Mute ${c.mac_app} ${NUDGE_MUTE_MINUTES} min`, app: c.mac_app }, OPEN]
@@ -153,6 +158,20 @@ export async function actOnNudge(
         text: `${offered.app} is off until ${plainUntil(end)}. Undo in the app.`,
         undo_until: end,
         url: `/?card=${rec.id}`,
+        nudge_id: nudge.id,
+      };
+    }
+    if (action === "focus") {
+      // block_soon:<event id> (a test nudge carries the real key after test:<press>:).
+      const key = nudge.key.replace(/^test:[^:]*:/, "");
+      const eventId = key.startsWith("block_soon:") ? key.slice("block_soon:".length) : "";
+      if (!eventId) throw new HttpError("conflict", "No block on this nudge.");
+      const s = await startFocus({ event_id: eventId }, "app");
+      return {
+        action,
+        text: `Focusing on ${s.goal_title} until ${plainUntil(s.end_at)}.`,
+        undo_until: null,
+        url: "/",
         nudge_id: nudge.id,
       };
     }

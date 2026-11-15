@@ -27,7 +27,7 @@ import {
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
-import { OPENING_STEP, stepLabel } from "../actions/chat-steps";
+import { goalIdOf, OPENING_STEP, stepLabel } from "../actions/chat-steps";
 import { CHAT_TOOLS, type ChatTurnState, runChatTool, undoLine } from "../actions/chat-tools";
 import { checkInContext, checkInLine } from "../checkin/service";
 import { currentDemoVisitor, currentUserId } from "../context";
@@ -846,6 +846,17 @@ export async function askMichael(
 
   const turn: ChatTurnState = { proposals: 0 };
   let steps = 0;
+  // The user's own goals, read once and only when a step points at one ("Booking time for Gym").
+  let goals: Promise<Map<string, string>> | null = null;
+  const labelFor = async (call: Anthropic.ToolUseBlock) => {
+    const id = goalIdOf(call.name, call.input);
+    if (!id) return stepLabel(call.name, call.input);
+    goals ??= store
+      .listGoals()
+      .then((list) => new Map(list.map((g) => [g.id, g.title])))
+      .catch(() => new Map<string, string>());
+    return stepLabel(call.name, call.input, (await goals).get(id));
+  };
   const timing: RoundTiming[] = [];
   // A plain statement ("I took a bath for 40 minutes"), not a question: when every tool of a round
   // hands back a finished line (log_done, confirm_block), that line is the answer and the model is
@@ -877,7 +888,7 @@ export async function askMichael(
     const replies: string[] = [];
     const toolsStart = performance.now();
     for (const call of calls) {
-      const step = { id: `s${++steps}`, label: stepLabel(call.name, call.input) };
+      const step = { id: `s${++steps}`, label: hooks.onStep ? await labelFor(call) : "" };
       await hooks.onStep?.({ ...step, status: "running" });
       const outcome = await runChatTool(call.name, call.input, turn);
       await hooks.onStep?.({ ...step, status: "done" });

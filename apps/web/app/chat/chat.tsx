@@ -286,7 +286,9 @@ export function Chat({
                           <LiveStep steps={current.steps} />
                         </span>
                       ) : null}
-                      {current.worked[m.id] ? <WorkedSteps steps={current.worked[m.id] ?? []} /> : null}
+                      {m.role === "assistant" && m.id !== streamingId ? (
+                        <WorkedSteps replyId={m.id} steps={current.worked[m.id]} />
+                      ) : null}
                       {acted[m.id] ? <ActionChips actions={acted[m.id] ?? []} /> : null}
                       {connect ? <ConnectChip id={connect} /> : null}
                       {knows ? <KnowledgeChip /> : null}
