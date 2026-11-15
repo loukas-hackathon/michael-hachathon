@@ -12,7 +12,7 @@ import { HttpError, jsonBody, parse } from "../http";
 const MAX_PER_HOUR = 30;
 const recent: number[] = [];
 const allowAnother = (now = Date.now()) => {
-  while (recent.length && recent[0] <= now - 3_600_000) recent.shift();
+  while ((recent[0] ?? now) <= now - 3_600_000) recent.shift();
   if (recent.length >= MAX_PER_HOUR) return false;
   recent.push(now);
   return true;
