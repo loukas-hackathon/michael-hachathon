@@ -7,10 +7,14 @@ export type ChecklistItem = {
   date: string;
   text: string;
   position: number;
-  status: "open" | "done" | "dropped" | "moved";
+  status: "open" | "done" | "partly" | "dropped" | "moved";
   settled_at: string | null;
   settled_by: "user" | "check_in" | null;
   carried_from: string | null;
+  // The daily ritual (#318): the goal it serves, the estimate and the minutes logged.
+  linked_goal_id?: string | null;
+  estimate_minutes?: number | null;
+  logged_minutes?: number | null;
   created_at: string;
   updated_at: string;
 };

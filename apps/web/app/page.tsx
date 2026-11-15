@@ -8,6 +8,7 @@ import { Tween } from "@/components/motion-ui";
 import { ScreenHeader } from "@/components/screen";
 import { Tape, TapeKey } from "@/components/tape";
 import { BriefCard } from "@/components/today/brief-card";
+import { CalendarCard } from "@/components/today/calendar-card";
 import { TodayChecklist } from "@/components/today/checklist";
 import { MoreFromMichael } from "@/components/today/fold";
 import { GetStarted } from "@/components/today/get-started";
@@ -15,16 +16,27 @@ import { KeepWeekStrip, keepLine, streakLine } from "@/components/today/keep-wee
 import { MichaelCard } from "@/components/today/michael-card";
 import { MomentCard } from "@/components/today/moment-card";
 import { RecommendationsPanel, todaySuggestions } from "@/components/today/recommendations";
+import { RitualCard } from "@/components/today/ritual-card";
 import { TodayEmpty } from "@/components/today/today-empty";
 import { TravelCard } from "@/components/today/travel-card";
 import { WatchLine } from "@/components/today/watch-line";
-import { getChecklist, getGoals, getKeepWeek, getLostWeek, getToday, needsOnboarding } from "@/lib/api";
+import {
+  getChecklist,
+  getGoals,
+  getKeepWeek,
+  getLostWeek,
+  getRitual,
+  getToday,
+  needsOnboarding,
+} from "@/lib/api";
 import type { ChecklistDay } from "@/lib/checklist";
 import { type DayView, nowIndex, tape, totals } from "@/lib/day";
 import { formatDay, formatTime, hm } from "@/lib/format";
 import { verdict } from "@/lib/gamification";
 import type { LostWeek } from "@/lib/lost-week";
 import { momentKindFor } from "@/lib/moments";
+import { ritualPreview, ritualShows } from "@/lib/ritual";
+import { preloadTodaySections } from "@/lib/today-preload";
 
 const TITLE: Record<DayView["moment"], string> = { morning: "Morning", today: "Today", evening: "Evening" };
 
@@ -33,20 +45,32 @@ const TITLE: Record<DayView["moment"], string> = { morning: "Morning", today: "T
 // and the latest nudge). Everything else folds into "More from Michael" as quiet rows. A new user
 // with nothing on the tape gets the empty state (Get started, #181) as the hero instead of the score.
 
-export default async function TodayPage({ searchParams }: { searchParams: Promise<{ demo?: string }> }) {
-  const { demo } = await searchParams;
-  if (await needsOnboarding()) redirect("/onboarding");
-  // The day and the suggestions load side by side; "More from Michael" streams in behind
-  // Suspense, so the score never waits on the brief, the moment or the watch.
+export default async function TodayPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ demo?: string; ritual?: string }>;
+}) {
+  const { demo, ritual: preview } = await searchParams;
+  // Today loads in one wave (#221): the day, the suggestions and the rows under "More from Michael"
+  // all start while the onboarding check runs (a redirect simply drops them). Identical reads are
+  // deduped per render, so the sections pick up these answers instead of asking again. "More from
+  // Michael" streams in behind Suspense, so the score never waits on the brief, moment or watch.
   const suggestions = todaySuggestions();
-  const [day, checklist, goals, lostWeek, keepWeek] = await Promise.all([
+  const loads = Promise.all([
     getToday(demo),
     getChecklist().catch(() => null),
     getGoals().catch(() => []),
     getLostWeek(undefined, demo),
     getKeepWeek(demo),
+    demo === "sample" ? null : getRitual(ritualPreview(preview)),
   ]);
-  const lists = checklistsFor(checklist, goals);
+  loads.catch(() => {});
+  preloadTodaySections(demo);
+  if (await needsOnboarding()) redirect("/onboarding");
+  const [day, checklist, goals, lostWeek, keepWeek, ritual] = await loads;
+  // The daily ritual (#318): while its card shows, the outcomes live in it, not in the list.
+  const ritualCard = ritualShows(ritual) ? <RitualCard ritual={ritual} /> : null;
+  const lists = checklistsFor(checklist, goals).filter((l) => !ritualCard || l.goalId !== ritual?.goal_id);
   const ticks = tape(day);
   const t = totals(day);
   const firstBlock = day.blocks[0];
@@ -68,16 +92,20 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
       {day.blocks.length === 0 && day.week.scorePct == null ? (
         <>
           <GetStarted demo={demo} />
+          <Suspense fallback={null}>
+            <CalendarCard demo={demo} emptyDay />
+          </Suspense>
           <TodayEmpty demo={demo} />
+          {ritualCard}
           {lists.map((l) => (
             <TodayChecklist key={l.goalId} {...l} />
           ))}
           <RecommendationsPanel slot="primary" />
+          {/* No moment card or brief on an empty day: both would only say there is nothing yet, which
+              Get started already says with one action. */}
           <Suspense fallback={null}>
             <MoreFromMichael>
-              {momentKind && !day.sample ? <MomentCard kind={momentKind} sample={false} /> : null}
               <WatchLine demo={demo} />
-              <BriefCard sample={day.sample} />
               <RecommendationsPanel slot="rest" />
             </MoreFromMichael>
           </Suspense>
@@ -126,34 +154,30 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
               <p className="mt-1 text-subhead font-semibold">{verdict(day.balance).line}</p>
             ) : null}
 
-            {day.blocks.length > 0 ? (
+            {/* Before the first block starts the tape is all outline: the sentence above already says
+                when it starts, so a bar of nothing stays off the screen. */}
+            {day.blocks.length > 0 && t.scorePct !== null ? (
               <div className="mt-5">
                 <div className="mt-3">
                   <Tape
                     ticks={ticks}
-                    nowAt={day.moment === "evening" || t.scorePct === null ? null : nowIndex(ticks)}
+                    nowAt={day.moment === "evening" ? null : nowIndex(ticks)}
                     nowLabel={formatTime(day.now)}
                     recordAt={day.record?.tick ?? null}
                     label={`${hm(t.spent)} spent (${hm(t.unverified)} unconfirmed), ${hm(t.lost)} lost, ${hm(t.ahead)} still ahead`}
                   />
                 </div>
                 <TapeKey
-                  items={
-                    t.scorePct === null
-                      ? [{ kind: "ahead" as const, minutes: t.planned, text: "planned" }]
-                      : [
-                          ...(t.spent - t.unverified > 0 || t.unverified === 0
-                            ? [{ kind: "spent" as const, minutes: t.spent - t.unverified, text: "spent" }]
-                            : []),
-                          ...(t.unverified > 0
-                            ? [{ kind: "unverified" as const, minutes: t.unverified, text: "unconfirmed" }]
-                            : []),
-                          ...(t.lost > 0 ? [{ kind: "lost" as const, minutes: t.lost, text: "lost" }] : []),
-                          ...(t.ahead > 0
-                            ? [{ kind: "ahead" as const, minutes: t.ahead, text: "ahead" }]
-                            : []),
-                        ]
-                  }
+                  items={[
+                    ...(t.spent - t.unverified > 0 || t.unverified === 0
+                      ? [{ kind: "spent" as const, minutes: t.spent - t.unverified, text: "spent" }]
+                      : []),
+                    ...(t.unverified > 0
+                      ? [{ kind: "unverified" as const, minutes: t.unverified, text: "unconfirmed" }]
+                      : []),
+                    ...(t.lost > 0 ? [{ kind: "lost" as const, minutes: t.lost, text: "lost" }] : []),
+                    ...(t.ahead > 0 ? [{ kind: "ahead" as const, minutes: t.ahead, text: "ahead" }] : []),
+                  ]}
                 />
                 {day.record ? (
                   <p className="mt-2 flex items-center gap-2 text-subhead">
@@ -179,7 +203,15 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
             </p>
           ) : null}
 
+          {ritualCard}
+
           <RecommendationsPanel slot="primary" />
+
+          {day.sample ? null : (
+            <Suspense fallback={null}>
+              <CalendarCard demo={demo} emptyDay={false} />
+            </Suspense>
+          )}
 
           {lists.map((l) => (
             <TodayChecklist key={l.goalId} {...l} />

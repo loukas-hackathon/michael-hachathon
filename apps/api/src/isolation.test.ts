@@ -103,6 +103,7 @@ const ids: {
   recBefore?: string;
   item?: string;
   thread?: string;
+  block?: string;
 } = {};
 
 async function ok(res: Response, what: string) {
@@ -138,6 +139,16 @@ test("A writes through every write route", async () => {
     await request(asA, "PATCH", `/v1/goals/${goal.id}`, { description: `${MARK} description` }),
     "PATCH /v1/goals",
   );
+  // A block on the Timeline (#271), tomorrow so it can still change. Before off the record, which stops new events.
+  const block = await ok(
+    await request(asA, "POST", "/v1/blocks", {
+      start_at: new Date(Date.now() + 26 * 3_600_000).toISOString(),
+      end_at: new Date(Date.now() + 27 * 3_600_000).toISOString(),
+      title: `${MARK} block`,
+    }),
+    "POST /v1/blocks",
+  );
+  ids.block = block.event.id;
   const instruction = await ok(
     await request(asA, "POST", "/v1/instructions", { text: `${MARK} keep Sundays clear` }),
     "POST /v1/instructions",
@@ -228,6 +239,8 @@ for (const [name, who] of [
       ["DELETE", `/v1/goals/${ids.goal}`],
       ["PATCH", `/v1/instructions/${ids.instruction}`, { text: "taken over" }],
       ["DELETE", `/v1/instructions/${ids.instruction}`],
+      ["PATCH", `/v1/blocks/${ids.block}`, { title: "taken over" }],
+      ["DELETE", `/v1/blocks/${ids.block}`],
       ["PATCH", `/v1/checklist/${ids.item}`, { status: "done" }],
       ["POST", `/v1/checklist/${ids.item}/carry`],
       ["DELETE", `/v1/checklist/${ids.item}`],

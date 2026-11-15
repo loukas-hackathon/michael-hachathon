@@ -9,6 +9,12 @@ import { Fold } from "./fold";
 
 const iso = (ms: number) => new Date(ms).toISOString();
 
+/** Today's sleep and workouts. One path, so Today can start the same request early (#221). */
+export function watchTimelinePath(): string {
+  const { start, end } = dayBounds(athensDay());
+  return `/v1/timeline?${new URLSearchParams({ from: iso(start), to: iso(end), type: "sleep,workout" })}`;
+}
+
 /**
  * The watch on Today, a quiet row under "More from Michael" (#208): last night against the Sleep
  * goal, today's naps and today's workout. Last night follows the night rule in lib/health.ts: the
@@ -19,9 +25,8 @@ const iso = (ms: number) => new Date(ms).toISOString();
 export async function WatchLine({ demo }: { demo?: string }) {
   if (demo || USE_MOCKS) return null;
   const { start, end } = dayBounds(athensDay());
-  const qs = new URLSearchParams({ from: iso(start), to: iso(end), type: "sleep,workout" });
   const [timeline, goals] = await Promise.all([
-    get<{ events: Event[] }>(`/v1/timeline?${qs}`).catch(() => ({ events: [] as Event[] })),
+    get<{ events: Event[] }>(watchTimelinePath()).catch(() => ({ events: [] as Event[] })),
     get<{ goals: Goal[] }>("/v1/goals").catch(() => ({ goals: [] as Goal[] })),
   ]);
   const health = healthOf(timeline.events, start, end);

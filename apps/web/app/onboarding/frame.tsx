@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { MiMark } from "@/components/brand";
+import { ProgressBar } from "@/components/progress-bar";
 
 // The frame both onboarding screens share: Michael speaking, one question, the body, and one
 // primary action pinned to the bottom. Plain markup, so the server screen and the client screen
@@ -14,21 +15,14 @@ export const quietButton = "press mx-auto mt-1 flex h-11 items-center px-4 text-
 
 function Progress({ step }: { step: number }) {
   return (
-    <div
-      className="flex flex-1 justify-center gap-1.5"
-      role="progressbar"
-      aria-valuemin={1}
-      aria-valuemax={STEPS}
-      aria-valuenow={step + 1}
-      aria-label={`Step ${step + 1} of ${STEPS}`}
-    >
-      {Array.from({ length: STEPS }, (_, i) => (
-        <span
-          // biome-ignore lint/suspicious/noArrayIndexKey: fixed list of segments
-          key={i}
-          className={`h-[3px] w-5 rounded-full ${i <= step ? "bg-label" : "bg-context"}`}
-        />
-      ))}
+    <div className="flex flex-1 justify-center">
+      <ProgressBar
+        value={(step + 1) / STEPS}
+        size="sm"
+        label="Getting started"
+        valueText={`Step ${step + 1} of ${STEPS}`}
+        className="w-16"
+      />
     </div>
   );
 }

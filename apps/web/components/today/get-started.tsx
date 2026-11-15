@@ -3,6 +3,7 @@ import { Tween } from "@/components/motion-ui";
 import { SkipMacButton } from "@/components/setup/skip-mac-button";
 import { getSetup, getStartedDismissed, type SetupStep } from "@/lib/first-run";
 import { dismissGetStarted } from "@/lib/first-run-actions";
+import { ProgressBar } from "../progress-bar";
 import { HideButton } from "./hide-button";
 
 const HIDE_FROM = 3;
@@ -26,22 +27,13 @@ export async function GetStarted({ demo }: { demo?: string }) {
           <Tween value={setup.done} /> of {total}
         </p>
       </div>
-      <div
-        className="mt-2 grid gap-1"
-        style={{ gridTemplateColumns: `repeat(${total}, minmax(0, 1fr))` }}
-        role="progressbar"
-        aria-valuemin={0}
-        aria-valuemax={total}
-        aria-valuenow={setup.done}
-        aria-label={`${setup.done} of ${total} steps done`}
-      >
-        {setup.steps.map((s) => (
-          <span
-            key={s.key}
-            className={`h-1 rounded-full transition-colors duration-[var(--m-dur-ui)] ease-[var(--m-ease-out)] motion-reduce:transition-none ${s.done ? "bg-label" : "bg-context"}`}
-          />
-        ))}
-      </div>
+      <ProgressBar
+        value={setup.done / total}
+        size="sm"
+        label="Get started"
+        valueText={`${setup.done} of ${total} steps done`}
+        className="mt-2.5"
+      />
 
       <ol className="mt-1.5">
         {setup.steps.map((s, i) => (

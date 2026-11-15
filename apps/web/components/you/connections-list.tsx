@@ -1,5 +1,6 @@
 import { SkipMacButton } from "@/components/setup/skip-mac-button";
 import type { ConnectionsView } from "@/lib/connections-status";
+import { ProgressBar } from "../progress-bar";
 import { ConnectionRow } from "./connection-row";
 
 // The first part of You: everything the user can connect, what each one is doing right now, and
@@ -22,6 +23,9 @@ export function ConnectionsList({
       : view.connected === total
         ? `All ${total} connected.`
         : `${view.connected} of ${total} connected.`;
+  const live = view.rows.filter((r) => r.live);
+  // Coming soon is one line under the list, not a row each: nothing there can be tapped yet.
+  const soon = view.rows.filter((r) => !r.live).map((r) => r.name);
 
   return (
     <section id="connections" className="mt-6 scroll-mt-4">
@@ -35,6 +39,15 @@ export function ConnectionsList({
           </>
         ) : null}
       </p>
+      {view.connected > 0 && view.connected < total ? (
+        <ProgressBar
+          value={view.connected / total}
+          size="sm"
+          label="Connections"
+          valueText={`${view.connected} of ${total} connected`}
+          className="mb-4"
+        />
+      ) : null}
       {flash ? (
         <p
           role="status"
@@ -44,7 +57,7 @@ export function ConnectionsList({
         </p>
       ) : null}
       <div className="overflow-hidden rounded-group bg-fill">
-        {[...view.rows.filter((r) => r.live), ...view.rows.filter((r) => !r.live)].map((row, i) => (
+        {live.map((row, i) => (
           <div key={row.id} className="relative">
             {i > 0 ? <span className="absolute inset-x-0 top-0 ml-[52px] h-[0.5px] bg-separator" /> : null}
             <ConnectionRow row={row} />
@@ -53,12 +66,17 @@ export function ConnectionsList({
       </div>
       {noMacYet ? (
         <div className="mt-2 px-4">
-          <p className="text-footnote text-label-2">
-            No Mac? Calendar, Apple Watch, iPhone, Location, Claude and nudges all work without one.
-          </p>
+          <p className="text-footnote text-label-2">No Mac? Everything else works without one.</p>
           {mac?.state === "none" ? <SkipMacButton /> : null}
         </div>
+      ) : null}
+      {soon.length > 0 ? (
+        <p className="mt-2 px-4 text-footnote text-label-2">Coming soon: {listOf(soon)}.</p>
       ) : null}
     </section>
   );
 }
+
+/** "Apple Watch, Mac and iPhone". */
+const listOf = (names: string[]) =>
+  names.length < 2 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;

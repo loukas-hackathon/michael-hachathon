@@ -36,7 +36,12 @@ export function Sheet({
   useEffect(() => {
     const d = ref.current;
     if (!d) return;
-    if (open && !d.open) d.showModal();
+    if (open && !d.open) {
+      d.showModal();
+      // showModal focuses the first control (Cancel), and some browsers ring it even after a tap.
+      // Focus the sheet itself instead: screen readers hear its title, the next Tab reaches Cancel.
+      d.focus({ focusVisible: false } as FocusOptions);
+    }
     if (!open && d.open) d.close();
   }, [open]);
 
@@ -91,6 +96,7 @@ export function Sheet({
     // biome-ignore lint/a11y/useKeyWithClickEvents: the click closes on a backdrop tap; Escape closes the dialog natively
     <dialog
       ref={ref}
+      tabIndex={-1}
       aria-label={title}
       onClose={onClose}
       onCancel={(e) => {
@@ -115,7 +121,7 @@ export function Sheet({
             <button
               type="button"
               onClick={onClose}
-              className="press -ml-2 h-11 justify-self-start px-2 text-body text-tint-text"
+              className="press -ml-2 h-11 justify-self-start rounded-control px-2 text-body text-tint-text"
             >
               Cancel
             </button>

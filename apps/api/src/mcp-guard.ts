@@ -22,6 +22,9 @@ export const TOOL_SCOPE: Record<string, AgentScope> = {
   update_goal: "goals",
   get_checklist: "goals",
   add_checklist_item: "goals",
+  // The daily ritual (#318): the day's outcomes are kept with the goals.
+  set_day_outcomes: "goals",
+  log_day: "goals",
   list_recommendations: "recommendations",
   update_recommendation: "recommendations",
   get_nudges: "recommendations",
@@ -110,6 +113,12 @@ export function summarise(name: string, title: string | undefined, input: unknow
       return typeof a.text === "string"
         ? `Added "${a.text.slice(0, 80)}" to your outcomes`
         : "Added an outcome";
+    case "set_day_outcomes": {
+      const n = Array.isArray(a.outcomes) ? a.outcomes.length : 0;
+      return n === 1 ? "Set one outcome for today" : `Set ${n} outcomes for today`;
+    }
+    case "log_day":
+      return "Logged what you got done today";
     case "update_goal":
       return a.active === false ? "Paused one of your goals" : "Changed one of your goals";
     case "update_recommendation":

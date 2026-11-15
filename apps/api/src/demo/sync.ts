@@ -6,6 +6,7 @@ import { HttpError } from "../http";
 import { Zone } from "../patterns/time";
 import { goalForEvent } from "../score/match";
 import type { Store } from "../store";
+import { seedDemoRitual } from "./ritual";
 import { DEMO_TZ, localDate } from "./time";
 import { DEMO_PLACES, demoTravel } from "./travel";
 import { buildDemoWeek, DEMO_PREFIX, type DemoWeek, demoGoals } from "./week";
@@ -55,6 +56,10 @@ export async function seedDemoWeek(
     await seedDemoDrafts(store, (opts.now ?? new Date()).getTime(), week.days.length).catch((err) =>
       console.error("Demo drafts failed", err),
     );
+  }
+  // The daily ritual (#318): today's plan and two logged evenings. Best effort too.
+  if (!rules.offTheRecord) {
+    await seedDemoRitual(store, week.days).catch((err) => console.error("Demo ritual failed", err));
   }
   return { days: week.days, events, goals_written: goals };
 }
