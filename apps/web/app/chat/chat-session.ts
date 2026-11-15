@@ -149,6 +149,8 @@ export function setServerKey(key: string) {
 
 /** Lines added to the open thread since the page loaded. */
 export const currentLines = (s: Session): Line[] => s.byKey[s.key ?? serverKey]?.lines ?? [];
+/** The open thread's state (the voice conversation reads its actions and the reply in progress). */
+export const currentThread = (s: Session): ThreadState => s.byKey[s.key ?? serverKey] ?? EMPTY_THREAD;
 /** The steps of the answer in progress in the open thread (the voice conversation shows them). */
 export const currentSteps = (s: Session): ChatStep[] => s.byKey[s.key ?? serverKey]?.steps ?? [];
 /** How many, so a view can show only what comes after now. */

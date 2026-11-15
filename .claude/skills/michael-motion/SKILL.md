@@ -30,7 +30,7 @@ Do not animate:
 - Keyboard-driven actions, focus moves, typing.
 - Decoration: no loops, pulses or attention-seeking motion. The only loops allowed are the
   skeleton breath, the push-to-talk listening ring, the conversation's speaking breath
-  (`.m-speak-breath`) and Michael thinking (`.m-think`, `components/thinking.tsx`), all stopped
+  (`.m-speak-breath`, `.m-think-soft`) and Michael thinking (`.m-think`, `components/thinking.tsx`), all stopped
   by reduced motion.
 
 ## 2. Tokens (apps/web/app/globals.css)

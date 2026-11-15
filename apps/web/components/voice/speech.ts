@@ -273,6 +273,13 @@ export function unlockAudio(): void {
   }
 }
 
+// Each word the browser voice says, so the conversation's mark can pulse with it.
+const beats = new Set<() => void>();
+export function onSpeechBeat(l: () => void): () => void {
+  beats.add(l);
+  return () => beats.delete(l);
+}
+
 // Settles the reply being spoken, so whoever waits on speakReply carries on when it is cut short.
 let settle: (() => void) | null = null;
 // Bumped by every stop: a reply still loading when it was stopped is never played.
@@ -303,6 +310,9 @@ function speakWithBrowser(text: string, gen: number): Promise<void> {
         u.lang = voice?.lang ?? "en-GB";
         u.rate = 0.95;
         u.pitch = 0.8; // lower and calmer than the default
+        u.onboundary = (e) => {
+          if (e.name === "word") for (const l of beats) l();
+        };
         if (i === pieces.length - 1) {
           u.onend = () => resolve();
           u.onerror = () => resolve();
