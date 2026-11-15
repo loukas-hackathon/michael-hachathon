@@ -1,6 +1,8 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
+import { getPhoneFocusCost } from "@/lib/api";
 import type { Evidence, Lead } from "@/lib/day";
-import { formatTime } from "@/lib/format";
+import { formatTime, hm } from "@/lib/format";
 import { MiMark } from "../brand";
 import { RecoveryAction } from "./recovery";
 import { UndoButton } from "./undo-button";
@@ -105,7 +107,17 @@ function HoursStrip({ evidence }: { evidence: Extract<Evidence, { kind: "hours" 
  * Michael's lead: one finding, its evidence, the one fix he already made, and the undo. `primary`
  * is false when another suggestion is the one thing to do now, so its recovery button stays tinted.
  */
-export function MichaelCard({ lead, primary = true }: { lead: Lead; primary?: boolean }) {
+export function MichaelCard({
+  lead,
+  primary = true,
+  cost,
+}: {
+  lead: Lead;
+  primary?: boolean;
+  /** Under a phone finding: what it cost the week's focus (PhoneFocusLine). */
+  cost?: ReactNode;
+}) {
+  const phone = lead.evidence.kind === "cadence" || lead.evidence.kind === "hours";
   return (
     <article className="mt-5 flex flex-col gap-2.5 rounded-card bg-fill px-4 pt-3.5 pb-4">
       <header className="flex items-center gap-2 text-footnote font-semibold">
@@ -122,6 +134,7 @@ export function MichaelCard({ lead, primary = true }: { lead: Lead; primary?: bo
       <p className="text-insight tracking-[-0.01em] text-label-2">
         <Rich parts={lead.insight} strongClass="font-semibold text-label" />
       </p>
+      {phone ? cost : null}
       {lead.evidence.kind === "cadence" ? <CadenceStrip evidence={lead.evidence} /> : null}
       {lead.evidence.kind === "hours" ? <HoursStrip evidence={lead.evidence} /> : null}
       {lead.fix.length ? (
@@ -146,5 +159,24 @@ export function MichaelCard({ lead, primary = true }: { lead: Lead; primary?: bo
         </Link>
       </div>
     </article>
+  );
+}
+
+/**
+ * "That cost you 2h 10 of focus this week.": the line between the phone finding and its chart.
+ * Streams in on its own, so the card never waits on the week's report. Nothing when unknown or 0.
+ */
+export async function PhoneFocusLine({ demo }: { demo?: string }) {
+  const cost = await getPhoneFocusCost(demo);
+  if (!cost || cost.minutes < 1) return null;
+  return (
+    <p className="text-body font-semibold">
+      That cost you{" "}
+      <span className="tnum">
+        {cost.atLeast ? "at least " : ""}
+        {hm(cost.minutes)}
+      </span>{" "}
+      of focus this week.
+    </p>
   );
 }

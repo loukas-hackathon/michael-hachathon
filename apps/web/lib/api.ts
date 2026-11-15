@@ -15,6 +15,7 @@ import {
   type CheckInValue,
   DEFAULT_PROFILE,
   demoRecommendations,
+  FocusDisruptions,
   type Goal,
   type GoalCreate,
   type GoalSuggestion,
@@ -692,6 +693,38 @@ export async function getToday(variant?: string): Promise<DayView> {
   ]);
   return dayFromScore(score, leadFromPatterns(patterns, score.day.now));
 }
+
+/** The phone's cost to focus this week, for the line under Michael's phone finding on Today. */
+export type PhoneFocusCost = { minutes: number; atLeast: boolean };
+
+/**
+ * Minutes of focus the phone cost in the last 7 days: for each disruption that started on the
+ * iPhone inside a goal block or focus stretch, the time until the work was back in front (the time
+ * in the phone when it never came back). The report keeps the newest 100 disruptions, so when all
+ * 100 fall inside the week the figure is a floor and says so. Null when the report has no answer.
+ */
+export const getPhoneFocusCost = cache(async (variant?: string): Promise<PhoneFocusCost | null> => {
+  if (variant && variant in SAMPLE_DAYS) return null;
+  // The sample day's figure, beside its sample phone finding.
+  if (USE_MOCKS || variant === "sample") return { minutes: 94, atLeast: false };
+  try {
+    const to = new Date();
+    const from = new Date(to.getTime() - 7 * 86_400_000);
+    const report = await get<{ focus_disruptions?: { status: string; data: unknown } }>(
+      `/v1/patterns?${new URLSearchParams({ from: from.toISOString(), to: to.toISOString() })}`,
+    );
+    const parsed = FocusDisruptions.safeParse(report.focus_disruptions?.data);
+    if (!parsed.success) return null;
+    const since = athensDay(from);
+    const items = parsed.data.items;
+    const phone = items.filter((i) => i.device === "iphone" && i.day >= since);
+    const minutes = Math.round(phone.reduce((t, i) => t + (i.minutes_until_back ?? i.minutes_lost), 0));
+    const oldest = items[items.length - 1];
+    return { minutes, atLeast: items.length >= 100 && oldest !== undefined && oldest.day >= since };
+  } catch {
+    return null;
+  }
+});
 
 /**
  * The week per goal. Real: GET /v1/score (per goal, per day). Sample with mocks.
