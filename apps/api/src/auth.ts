@@ -78,12 +78,26 @@ export async function deleteAuthUser(userId: string): Promise<boolean> {
  * once with no email to click. "exists" when the address already has an account; "off" when Auth
  * is not configured (in-memory store).
  */
+export const CREATE_USER_WAIT_MS = 8_000;
+
 export async function createConfirmedUser(
   email: string,
   password: string,
 ): Promise<"created" | "exists" | "off"> {
   if (!supabase) return "off";
-  const { error } = await supabase.auth.admin.createUser({ email, password, email_confirm: true });
+  // Bounded (13:56 incident: createUser hung 12 s, then 504): answer 503 after CREATE_USER_WAIT_MS and
+  // let the web app fall back to signing in, since a timed out createUser often made the account.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new HttpError("unavailable", "Creating the account took too long. Try again")),
+      CREATE_USER_WAIT_MS,
+    );
+  });
+  const { error } = await Promise.race([
+    supabase.auth.admin.createUser({ email, password, email_confirm: true }),
+    late,
+  ]).finally(() => clearTimeout(timer));
   if (!error) return "created";
   if (error.code === "email_exists" || /already (been )?registered/i.test(error.message)) return "exists";
   throw new HttpError("upstream_error", `Could not create the account: ${error.message}`);
