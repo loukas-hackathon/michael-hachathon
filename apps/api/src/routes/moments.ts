@@ -42,17 +42,23 @@ export async function momentCoreFor(kind: MomentKind, now: string): Promise<Mome
   };
 }
 
-/** The moment with its headline (phrased by the model when it can). */
-export async function momentFor(kind: MomentKind, at?: string): Promise<Moment> {
+/**
+ * The moment with its headline (phrased by the model when it can). `wait: false` never waits for
+ * the model: Today shows the template or a cached line at once and asks again for the model's
+ * (`phrase_pending`, #378).
+ */
+export async function momentFor(kind: MomentKind, at?: string, { wait = true } = {}): Promise<Moment> {
   const core = await momentCoreFor(kind, at ?? new Date().toISOString());
-  const phrased = await phraseHeadline(core, `${currentUserId()}:${kind}:${core.day}`);
+  const phrased = await phraseHeadline(core, `${currentUserId()}:${kind}:${core.day}`, undefined, { wait });
   return { ...core, ...phrased };
 }
 
 export const moments = new Hono()
-  // GET /v1/moments/morning | /v1/moments/evening   (?at= to see the moment as of another instant)
+  // GET /v1/moments/morning | /v1/moments/evening   (?at= to see the moment as of another instant;
+  // ?phrase=cached never waits for the model)
   .get("/moments/:kind", async (c) => {
     const kind = parse(MomentKind, c.req.param("kind"));
     const at = c.req.query("at");
-    return c.json(await momentFor(kind, at === undefined ? undefined : parse(IsoDateTime, at)));
+    const wait = c.req.query("phrase") !== "cached";
+    return c.json(await momentFor(kind, at === undefined ? undefined : parse(IsoDateTime, at), { wait }));
   });
