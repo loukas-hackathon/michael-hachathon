@@ -61,7 +61,7 @@ export function NudgeOpened() {
   const action = nudgeAction(nudge.kind);
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-0 z-40 pt-[env(safe-area-inset-top)] lg:pl-64">
+    <div className="pointer-events-none fixed inset-x-0 top-0 z-40 pt-[var(--m-safe-top)] lg:pl-64">
       <section
         aria-label="From your nudge"
         data-testid="nudge-opened"

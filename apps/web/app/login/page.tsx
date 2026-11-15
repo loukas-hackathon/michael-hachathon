@@ -29,7 +29,7 @@ export default async function LoginPage({
   return (
     // Its own full screen above the tab bar: nothing to navigate to before signing in.
     <main className="fixed inset-0 z-30 overflow-y-auto bg-bg">
-      <div className="mx-auto flex min-h-full w-full max-w-[400px] flex-col px-[max(24px,env(safe-area-inset-left))] pt-[env(safe-area-inset-top)] pb-[calc(24px+env(safe-area-inset-bottom))]">
+      <div className="mx-auto flex min-h-full w-full max-w-[400px] flex-col px-[max(24px,env(safe-area-inset-left))] pt-[var(--m-safe-top)] pb-[calc(24px+env(safe-area-inset-bottom))]">
         <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
           <Wordmark className="h-9 w-auto text-label" />
           <h1 className="mt-10 text-large-title font-bold tracking-[-0.01em]">On your side.</h1>

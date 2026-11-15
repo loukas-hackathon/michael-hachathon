@@ -498,3 +498,44 @@ export function sideBySide(drives: DrawnSpan[], real: DrawnSpan[]): Set<string> 
   }
   return keys;
 }
+
+/** Height of one label line on the timeline (footnote and caption, leading 4 = 16px). */
+const LINE = 16;
+
+/**
+ * Where Michael's badge goes for each of his blocks, in px from the top of the day (#448). Inside the
+ * top right corner when the block is tall enough, else just above it. Badges never sit on top of each
+ * other: blocks tall enough to hold their badge are placed first, and a badge that would land within
+ * a line of one already placed is left out (both say "Michael"; one is enough), as with Walk and
+ * Boatspace on a real iPhone, which read "Michael Michael" at their boundary.
+ */
+export function michaelBadges(blocks: DrawnSpan[]): Map<string, number> {
+  const wanted = blocks.map((b) => ({ key: b.key, inside: b.bottom - b.top >= 17, top: b.top }));
+  wanted.sort((a, b) => Number(b.inside) - Number(a.inside) || a.top - b.top);
+  const placed = new Map<string, number>();
+  for (const w of wanted) {
+    const at = w.inside ? w.top + 3 : w.top - 8;
+    if ([...placed.values()].some((p) => Math.abs(p - at) < LINE)) continue;
+    placed.set(w.key, at);
+  }
+  return placed;
+}
+
+/**
+ * True when a badge sits on the title line of a block drawn from `top` (title from top + 4 to
+ * top + 20): that title then stops short of the badge instead of running under it.
+ */
+export function badgeOnTitle(top: number, badges: Iterable<number>): boolean {
+  for (const b of badges) if (b < top + 4 + LINE && b + LINE > top + 4) return true;
+  return false;
+}
+
+/**
+ * The logged block's own title (#448). Settling a block writes "Did Everything bath, 1h from 06:30"
+ * for the history; on the timeline the block already shows when and how long, so it reads
+ * "Everything bath" with "Logged · 1h" under it.
+ */
+export function loggedTitle(title: string): string {
+  const m = /^Did (.+), [^,]+ from \d{1,2}:\d{2}$/.exec(title.trim());
+  return m?.[1] ?? title;
+}

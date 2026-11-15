@@ -291,6 +291,12 @@ h3 {
 }
 
 /* Room for the floating tab bar under every screen. */
+/* The status bar height: env() where iOS reports it, set by components/safe-top.tsx where it
+ * draws the app under the clock but reports 0 (#448). */
+:root {
+  --m-safe-top: env(safe-area-inset-top);
+}
+
 /* Installed app: content scrolls under the clock and battery, so the status bar gets the page
  * colour behind it, as in a native app. Zero height in a browser tab. */
 body::before {
@@ -298,13 +304,13 @@ body::before {
   position: fixed;
   inset: 0 0 auto;
   z-index: 40;
-  height: env(safe-area-inset-top);
+  height: var(--m-safe-top);
   background: var(--m-bg);
   pointer-events: none;
 }
 
 .screen {
-  padding-top: env(safe-area-inset-top);
+  padding-top: var(--m-safe-top);
   padding-bottom: calc(var(--m-tabbar-h) + 40px + env(safe-area-inset-bottom));
   padding-left: max(16px, env(safe-area-inset-left));
   padding-right: max(16px, env(safe-area-inset-right));
