@@ -37,6 +37,12 @@ const PRECACHE = [SHELL_URL, "/manifest.webmanifest", "/icon-180.png", "/icon-51
 // behind it and replaces the shell the moment its first bytes arrive (the rest streams in), so
 // showing the shell early costs nothing: 700 ms keeps a cold open from ever looking frozen.
 const NAV_TIMEOUT_MS = 700;
+// Pages with their own loading screen and no tab bar: the skeleton shell would be the wrong shape,
+// and a brand new account's first page (onboarding) is exactly the slow one (#544).
+const OUTSIDE_SHELL = /^\/(onboarding|connect|setup|integrations|stage|live)(\/|$)/;
+// The shell adds this when it waited too long for the hand over (iOS can stop the worker that held
+// the request, and then no answer ever comes): that load goes straight to the network.
+const NET_PARAM = "m-net";
 const HANDOFF_TTL_MS = 30_000;
 
 /** url -> { promise: Promise<Response|null>, response?: Response|null, at: number } */
@@ -107,6 +113,12 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (request.mode === "navigate") {
+    // Never the Today shaped stand in for pages outside the tab bar (getting started, setup), and
+    // never when the stand in itself gave up waiting (?m-net=1, below): straight to the network.
+    if (OUTSIDE_SHELL.test(url.pathname) || url.searchParams.has(NET_PARAM)) {
+      event.respondWith(passThrough(event));
+      return;
+    }
     event.respondWith(navigate(event, url));
     return;
   }
