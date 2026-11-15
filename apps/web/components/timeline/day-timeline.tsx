@@ -614,10 +614,15 @@ export function DayTimeline({
         {/* Quiet stretches, collapsed. Ahead of now, a tap opens the hours to plan in them. */}
         {segments.map((s) => {
           if (s.kind !== "quiet") return null;
-          const times = `${formatTime(iso(s.from))} to ${
-            s.to - s.from >= 24 * HOUR - 60_000 ? "24:00" : formatTime(iso(s.to))
-          }`;
-          const label = nights.some((n) => n.start < s.to && n.end > s.from)
+          // A stretch spent asleep prints the night's own times, the ones the sleep row above
+          // says, not the hour edges it was collapsed to (01:37 to 08:54, not 02:00 to 09:00).
+          const night = nights.find((n) => n.start < s.to && n.end > s.from);
+          const times = night
+            ? `${formatTime(iso(night.start))} to ${formatTime(iso(night.end))}`
+            : `${formatTime(iso(s.from))} to ${
+                s.to - s.from >= 24 * HOUR - 60_000 ? "24:00" : formatTime(iso(s.to))
+              }`;
+          const label = night
             ? "Asleep"
             : (day.now != null && s.from >= day.now) || (day.now == null && editable)
               ? "Nothing planned"

@@ -44,10 +44,11 @@ export async function WatchLine({ demo }: { demo?: string }) {
       preview={[
         night ? `${hm(night.minutes)} sleep${verdict ? `, ${verdict}` : ""}` : null,
         ...naps.map((n) => `Nap ${hm(n.minutes)}`),
-        ...workouts.map((w) => w.name),
+        ...workouts.map((w) => `${w.name} ${hm(w.minutes)}`),
       ]
         .filter(Boolean)
-        .join(". ")}
+        .join(". ")
+        .concat(".")}
     >
       <div className="space-y-1 text-subhead text-label-2 tnum">
         {night ? (
