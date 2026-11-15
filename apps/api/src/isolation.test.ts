@@ -7,7 +7,12 @@ import { Hono } from "hono";
 import { app, v1Routes } from "./app";
 import { type AuthMethod, runAsUser } from "./context";
 import { seedDemoWeek } from "./demo/sync";
-import { DEMO_VISITOR_HEADER, DEMO_VISITOR_MESSAGE, demoVisitorMay } from "./demo/visitor";
+import {
+  DEMO_PRESENTER_HEADER,
+  DEMO_VISITOR_HEADER,
+  DEMO_VISITOR_MESSAGE,
+  demoVisitorMay,
+} from "./demo/visitor";
 import { env } from "./env";
 import { errorResponse, HttpError } from "./http";
 import { createMcpServer } from "./mcp";
@@ -550,6 +555,94 @@ test("the demo reseed puts goals and standing instructions back to the plan", as
   );
 });
 
+// ---------- the presenter (#343) ----------
+
+const PRESENTER_KEY = "test-presenter-key"; // test-env.ts
+
+/** A pending claude.ai connect request, made the way claude.ai makes one. Returns its id. */
+async function pendingConnectRequest(): Promise<string> {
+  const reg = await app.request("/oauth/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      client_name: "Claude",
+      redirect_uris: ["https://claude.ai/api/mcp/auth_callback"],
+    }),
+  });
+  const { client_id } = (await reg.json()) as { client_id: string };
+  const q = new URLSearchParams({
+    response_type: "code",
+    client_id,
+    redirect_uri: "https://claude.ai/api/mcp/auth_callback",
+    code_challenge: "x".repeat(43),
+    code_challenge_method: "S256",
+    state: "s",
+  });
+  const res = await app.request(`/oauth/authorize?${q}`);
+  const id = new URL(res.headers.get("location") ?? "").searchParams.get("request");
+  assert.ok(id, `authorize: ${res.status}`);
+  return id;
+}
+
+/** A connect decision with the given headers (the API key is added unless `key` is given). */
+const decide = (id: string, headers: Record<string, string>) =>
+  app.request(`/v1/connect/requests/${id}`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${env.API_KEY}`, "content-type": "application/json", ...headers },
+    body: JSON.stringify({ allow: true }),
+  });
+
+test("the presenter may answer the claude.ai consent; a plain visitor may not", async () => {
+  const id = await pendingConnectRequest();
+  const visitor = { [DEMO_VISITOR_HEADER]: randomUUID() };
+  assert.equal((await decide(id, visitor)).status, 403);
+  const res = await decide(id, { ...visitor, [DEMO_PRESENTER_HEADER]: PRESENTER_KEY });
+  const { redirect_to } = await ok(res, "presenter allows");
+  assert.ok(new URL(redirect_to).searchParams.get("code"), "a code goes back to claude.ai");
+  // Nothing else opens up for the presenter: the shared account stays as it is.
+  const goal = await app.request("/v1/goals", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${env.API_KEY}`,
+      "content-type": "application/json",
+      ...visitor,
+      [DEMO_PRESENTER_HEADER]: PRESENTER_KEY,
+    },
+    body: JSON.stringify({ category: "rest", title: "presenter goal" }),
+  });
+  assert.equal(goal.status, 403);
+});
+
+test("a visitor cannot escalate: a wrong, empty or borrowed presenter key is still a visitor", async () => {
+  const id = await pendingConnectRequest();
+  const visitor = { [DEMO_VISITOR_HEADER]: randomUUID() };
+  for (const wrong of ["", "wrong", `${PRESENTER_KEY}x`, env.API_KEY, PRESENTER_KEY.toUpperCase()]) {
+    const res = await decide(id, { ...visitor, [DEMO_PRESENTER_HEADER]: wrong });
+    assert.equal(res.status, 403, `presenter header ${JSON.stringify(wrong)}: ${res.status}`);
+  }
+  // Still pending: none of those answered it.
+  const read = await request(asDemo, "GET", `/v1/connect/requests/${id}`);
+  assert.equal(read.status, 200);
+});
+
+test("the presenter key means nothing without the API key", async () => {
+  const id = await pendingConnectRequest();
+  const presenter = { [DEMO_PRESENTER_HEADER]: PRESENTER_KEY, [DEMO_VISITOR_HEADER]: randomUUID() };
+  // No credentials, the presenter key in place of the API key, or a made up token: unauthorised.
+  for (const authorization of [undefined, `Bearer ${PRESENTER_KEY}`, "Bearer not-a-token"]) {
+    const headers: Record<string, string> = { "content-type": "application/json", ...presenter };
+    if (authorization) headers.authorization = authorization;
+    const res = await app.request(`/v1/connect/requests/${id}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ allow: true }),
+    });
+    assert.equal(res.status, 401, `${authorization ?? "no auth"}: ${res.status}`);
+  }
+  const read = await request(asDemo, "GET", `/v1/connect/requests/${id}`);
+  assert.equal(read.status, 200, "still pending");
+});
+
 test("demo visitors may save the ritual and log time on stage; the reseed puts both back to the plan", async () => {
   const { demoGoals } = await import("./demo/week");
   await runAsUser(DEMO, () => seedDemoWeek(store, { overwriteGoals: true }), "api_key");
@@ -609,6 +702,9 @@ test("the visitor rules fail closed for routes nobody listed", () => {
   assert.equal(demoVisitorMay("POST", "/v1/ritual/evening/skip"), true);
   assert.equal(demoVisitorMay("POST", "/v1/ritual/other"), false);
   assert.equal(demoVisitorMay("POST", "/v1/connect/requests/x"), false);
+  assert.equal(demoVisitorMay("POST", "/v1/connect/requests/x", true), true);
+  assert.equal(demoVisitorMay("POST", "/v1/goals", true), false);
+  assert.equal(demoVisitorMay("POST", "/mcp", true), false);
   assert.equal(demoVisitorMay("POST", "/v1/something-new"), false);
   assert.equal(demoVisitorMay("DELETE", "/v1/me/data"), false);
   assert.equal(demoVisitorMay("GET", "/v1/goals"), true);

@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { NEXT_COOKIE, safeNext } from "@/lib/next-path";
+import { PRESENTER_COOKIE } from "@/lib/presenter";
 import { authEnabled, DEMO_COOKIE, supabaseServer } from "@/lib/supabase/server";
 
 // Signs out and goes to /login. With ?next= (the Claude consent page, when its session turned out
@@ -18,6 +19,7 @@ export async function GET(request: NextRequest) {
   if (next) login.searchParams.set("next", next);
   const response = NextResponse.redirect(login);
   response.cookies.delete(DEMO_COOKIE);
+  response.cookies.delete(PRESENTER_COOKIE);
   if (next) {
     response.cookies.set(NEXT_COOKIE, next, {
       httpOnly: true,

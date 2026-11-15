@@ -8,6 +8,10 @@ const Env = z.object({
   DEMO_USER_ID: z.uuid().default("2ee12960-e594-456d-85cb-a672d0ff3ac3"),
   // "on": the demo account carries the generated demo week (src/demo), kept up to now. "off": not.
   DEMO_WEEK: z.enum(["on", "off"]).default("on"),
+  // The presenter link's secret (#343), the same value on the web app. With it, the web app's
+  // presenter (one laptop) may answer the claude.ai consent for the demo account; demo visitors
+  // never can. Empty = no presenter.
+  DEMO_PRESENTER_KEY: z.string().optional(),
   // End-to-end tests only (e2e/): "on" accepts `Bearer e2e_<uuid>` as that user, so the suite can
   // sign in a fresh, non demo user without Supabase. Ignored unless the store is in memory.
   E2E_TEST_AUTH: z.enum(["on", "off"]).default("off"),

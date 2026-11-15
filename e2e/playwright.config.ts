@@ -70,6 +70,8 @@ export default defineConfig({
         PORT: String(API_PORT),
         API_KEY: "dev-key",
         DEMO_WEEK: "on",
+        // The presenter link (#343), the same value as on the web app below and in tests/fixtures.ts.
+        DEMO_PRESENTER_KEY: "e2e-presenter-key",
         E2E_TEST_AUTH: "on",
         WEB_ORIGIN: WEB_URL,
         PUBLIC_API_URL: API_URL,
@@ -91,6 +93,7 @@ export default defineConfig({
         API_URL,
         API_KEY: "dev-key",
         MCP_URL: "",
+        DEMO_PRESENTER_KEY: "e2e-presenter-key",
         E2E_TEST_AUTH: "on",
         NEXT_TELEMETRY_DISABLED: "1",
       },

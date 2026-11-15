@@ -12,6 +12,13 @@ import { z } from "zod";
 /** The header the web app sends (server to server) with the API key. */
 export const DEMO_VISITOR_HEADER = "x-michael-demo-visitor";
 
+/**
+ * The header the web app adds (server to server, with the API key and the visitor header) for the
+ * presenter: the value is DEMO_PRESENTER_KEY. It only ever widens a demo visitor by the connect
+ * decision below; on its own, or with anything but the API key, it means nothing.
+ */
+export const DEMO_PRESENTER_HEADER = "x-michael-demo-presenter";
+
 /** A random id the web app made for one visitor (a UUID), never anything meaningful. */
 export const DemoVisitorId = z.uuid();
 
@@ -51,14 +58,22 @@ const ALLOWED: [string, RegExp][] = [
   ["POST", /^\/v1\/nudges\/test$/],
 ];
 
+// What the presenter may do on top: answer the claude.ai consent, which connects Claude to the demo
+// account with write access. Everything else stays as for any visitor.
+const PRESENTER_ALLOWED: [string, RegExp][] = [["POST", /^\/v1\/connect\/requests\/[^/]+$/]];
+
 // Never for a visitor, not even to read: device keys, ingest and MCP belong to real callers.
 const NEVER: RegExp[] = [/^\/mcp$/, /^\/v1\/webhooks(\/|$)/, /^\/v1\/tokens(\/|$)/];
 
-/** True when a demo visitor may make this request. Unknown writes are refused (fail closed). */
-export function demoVisitorMay(method: string, path: string): boolean {
+/**
+ * True when a demo visitor (or, with `presenter`, the presenter) may make this request. Unknown
+ * writes are refused (fail closed).
+ */
+export function demoVisitorMay(method: string, path: string, presenter = false): boolean {
   const p = path.replace(/\/+$/, "") || "/";
   if (NEVER.some((r) => r.test(p))) return false;
   const m = method.toUpperCase();
   if (m === "GET" || m === "HEAD" || m === "OPTIONS") return true;
-  return ALLOWED.some(([am, r]) => am === m && r.test(p));
+  const allowed = presenter ? [...ALLOWED, ...PRESENTER_ALLOWED] : ALLOWED;
+  return allowed.some(([am, r]) => am === m && r.test(p));
 }
