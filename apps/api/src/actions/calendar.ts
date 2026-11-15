@@ -140,14 +140,20 @@ const isOthers = (e: Event) => e.data.with_others === true || Number(e.data.atte
 /** A block Michael created (for Michael, for the user on the Timeline, or for an agent). */
 const isMichaels = (e: Event) => e.source === "agent" || e.data.michael === true;
 
+/** How far in the past a live block may start: the request took a moment to arrive. */
+const LIVE_SLACK_MS = 2 * 60_000;
+
 // `step` tells apart the blocks of one plan (#188), which share a recommendation.
 async function createFocusBlock(
   rec: Recommendation,
   action: RecommendationAction,
   step?: number,
+  live = false,
 ): Promise<Execution> {
   const p = parse(CreateFocusBlockPayload, action.payload);
-  if (Date.parse(p.start_at) <= Date.now()) throw conflict("That time has already started");
+  // A live block (Focus now, #397) starts this minute; any other block must be ahead.
+  if (live ? Date.parse(p.start_at) < Date.now() - LIVE_SLACK_MS : Date.parse(p.start_at) <= Date.now())
+    throw conflict("That time has already started");
   const title = p.title ?? "Focus block";
   const undoUntil = earliest(action.undo_until, p.start_at);
   const goalId = p.goal_id ?? null;
@@ -391,7 +397,36 @@ export async function executeUserChange(id: string): Promise<{ rec: Recommendati
   return { rec, execution: await store.getRecommendationExecution(id) };
 }
 
-async function execute(id: string, opts: { byUser?: boolean } = {}): Promise<Recommendation> {
+/**
+ * Focus now (#397): the user's own block from this minute, a create_focus_block recommendation
+ * (source "user") carried out at once. It has started by the time it exists, so it cannot be
+ * undone; the session ends it early instead (resizeLiveBlock).
+ */
+export async function executeLiveBlock(id: string): Promise<{ rec: Recommendation; execution: unknown }> {
+  const rec = await execute(id, { byUser: true, live: true });
+  return { rec, execution: await store.getRecommendationExecution(id) };
+}
+
+/**
+ * Moves the end of a block Michael made (a Focus now block that runs longer or ends early), in
+ * Google Calendar when it lives there. Never a block with other people, never the user's own.
+ */
+export async function resizeLiveBlock(eventId: string, endAt: string): Promise<Event | null> {
+  const event = await store.getEvent(eventId);
+  if (!event) return null;
+  if (isOthers(event)) throw conflict("That event has other people in it. I only advise on those.");
+  if (event.source === "google_calendar") {
+    if (!event.external_id) return null;
+    const g = await getCalendarEvent(event.external_id);
+    if (!createdByMichael(g) || withOthers(g)) throw conflict("I only change blocks made in Michael");
+    const patched = await patchCalendarEvent(g.id, { end: { dateTime: endAt, timeZone: g.end?.timeZone } });
+    return mirror(patched);
+  }
+  if (!isMichaels(event)) throw conflict("I only change blocks made in Michael");
+  return store.updateEvent(event.id, { end_at: endAt });
+}
+
+async function execute(id: string, opts: { byUser?: boolean; live?: boolean } = {}): Promise<Recommendation> {
   const rec = await store.getRecommendation(id);
   if (!rec) throw new HttpError("not_found", "Recommendation not found");
   const action = rec.action;
@@ -423,7 +458,8 @@ async function execute(id: string, opts: { byUser?: boolean } = {}): Promise<Rec
   }
 
   let execution: Execution;
-  if (action.kind === "create_focus_block") execution = await createFocusBlock(rec, action);
+  if (action.kind === "create_focus_block")
+    execution = await createFocusBlock(rec, action, undefined, opts.live === true);
   else if (action.kind === "move_calendar_block") execution = await moveCalendarBlock(action);
   else if (action.kind === "block_mac_app") execution = (await startFocusGuard(rec, action)).execution;
   else if (action.kind === "move_calendar_blocks") execution = await moveCalendarBlocks(action);

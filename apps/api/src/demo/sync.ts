@@ -99,6 +99,9 @@ async function resetToPlan(store: Store, days: string[]): Promise<void> {
   });
   const logged = manual.filter((e) => isLogEntry(e) && !e.external_id?.startsWith(DEMO_PREFIX));
   if (logged.length) await store.deleteEvents(logged.map((e) => e.id));
+  // Focus now sessions (#397) and the blocks they made on the demo day.
+  const focusBlocks = await store.clearFocusSessions();
+  if (focusBlocks.length) await store.deleteEvents(focusBlocks);
 }
 
 /**

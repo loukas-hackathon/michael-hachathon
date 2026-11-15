@@ -18,6 +18,7 @@ import { checklist } from "./routes/checklist";
 import { demo } from "./routes/demo";
 import { drafts } from "./routes/drafts";
 import { events } from "./routes/events";
+import { focus } from "./routes/focus";
 import { focusGuards } from "./routes/focus-guards";
 import { goals } from "./routes/goals";
 import { instructions } from "./routes/instructions";
@@ -78,6 +79,7 @@ export const v1Routes = new Hono()
   .route("/", actions)
   .route("/", blocks)
   .route("/", focusGuards)
+  .route("/", focus)
   .route("/", drafts)
   .route("/", profile)
   .route("/", product)

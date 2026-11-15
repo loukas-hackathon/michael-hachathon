@@ -26,7 +26,7 @@ returns `501 not_implemented`, `planned` = not routed yet. Update the status whe
     account's own), and only these writes are allowed: `POST /v1/chat`, `/v1/chat/stream`, `/v1/chat/warm`,
     `POST /v1/chat/threads`, `PATCH|DELETE /v1/chat/threads/:id` (their own threads),
     `/v1/recommendations/:id/execute|undo`, `PATCH /v1/recommendations/:id`, `POST /v1/analysis/run`,
-    `/v1/travel/plan`, `/v1/focus-guards/suggest`, `/v1/voice/speak`, `/v1/voice/transcribe`, `/v1/records/:id/announced`, `POST|DELETE /v1/push/subscriptions`, `POST /v1/nudges/test`, the daily ritual (`POST /v1/ritual/morning|evening`, `/v1/ritual/:kind/skip`) and done time (`POST /v1/log`, `/v1/log/block`, `DELETE /v1/log/:id`), which the reseed puts back to the plan.
+    `/v1/travel/plan`, `/v1/focus-guards/suggest`, Focus now (`POST /v1/focus/start`, `/v1/focus/:id/extend|end`, one session per visitor, cleared with the blocks it made by the reseed), `/v1/voice/speak`, `/v1/voice/transcribe`, `/v1/records/:id/announced`, `POST|DELETE /v1/push/subscriptions`, `POST /v1/nudges/test`, the daily ritual (`POST /v1/ritual/morning|evening`, `/v1/ritual/:kind/skip`) and done time (`POST /v1/log`, `/v1/log/block`, `DELETE /v1/log/:id`), which the reseed puts back to the plan.
     Anything else that writes (privacy, goals, instructions, places, profile, integrations,
     Telegram, agents, connecting an agent, keys, data deletion, ingest, `/mcp`) answers
     `403 forbidden` with the message "This is the demo week. Sign in with Google to make it yours."
@@ -1429,7 +1429,7 @@ did, minutes?, reason? }` (see Done time), `add_goal`, `update_goal { goal_id, w
 active?, title?, description? }` (a budget or a pause is a `change_goal` recommendation carried out at
 once, undoable for a week), `add_checklist_item`, `update_checklist_item { item_id, status?, text? }`,
 `add_instruction`, `update_instruction { instruction_id, active?, text?, ... }`, `save_place { key,
-label?, address }` (the other places stay) and `update_profile` (quiet hours, work hours, work and
+label?, address }` (the other places stay), `focus_now { goal_id? | goal?, minutes? }` (see Focus now; it answers with a finished line, the app opens the session) and `update_profile` (quiet hours, work hours, work and
 gym days, fixed titles). Deleting data, a goal, an instruction or a place, disconnecting and revoking
 stay in the app. The context gives ids for past own blocks (marked unconfirmed or settled), today's
 checklist items and the active instructions. After `log_done` the reply is one line with the new
@@ -1839,6 +1839,78 @@ type FocusGuardsResponse = { now: string; off_the_record: boolean; guards: Focus
   no block: "Mute WhatsApp 14:00 to 16:00", rationale "... took 47 min.". It is a `proposed`
   recommendation (`source: "analysis"`); nothing happens until Do it. Not repeated while an open one
   for the same app has not ended.
+
+### Focus now (#397)
+
+One tap turns an intention into protected time: a live session for one goal from this minute.
+Rules in `apps/api/src/focus/session.ts`; the REST routes, the chat tool `focus_now` and the MCP
+tool `focus_now` all call the same functions.
+
+| Method | Path                   | Body                                                    | Response                                | Status |
+| ------ | ---------------------- | ------------------------------------------------------- | --------------------------------------- | ------ |
+| GET    | `/v1/focus/active`     |                                                         | `200 FocusActiveResponse`               | live   |
+| POST   | `/v1/focus/start`      | `FocusStart { goal_id? \| goal?, minutes?, event_id? }` | `201 FocusSession`; `400`, `404`, `409` | live   |
+| POST   | `/v1/focus/:id/extend` | `FocusExtend { minutes? }` (optional, default 15)       | `200 FocusSession`; `404`, `409`        | live   |
+| POST   | `/v1/focus/:id/end`    | `FocusEnd { count? }` (optional, default true)          | `200 FocusSession`; `404`               | live   |
+
+```ts
+type FocusSession = {
+  id: string;
+  goal_id: string;
+  goal_title: string;
+  status: "active" | "done" | "ended"; // done: ran to its end; ended: ended early
+  start_at: string;
+  end_at: string; // the planned end; +15 moves it
+  ended_at: string | null;
+  minutes: number; // planned length, start to end
+  counted_minutes: number | null; // counted as goal time when it stopped; null while active
+  event_id: string | null; // the user's own block that holds it
+  guarded: boolean; // distracting Mac apps are muted for it
+  apps: string[];
+  log_recommendation_id: string | null; // the log_time that confirmed the time (undo for 24 hours)
+  message: string | null; // "Done. 45 min for University."
+  created_at: string;
+};
+type FocusActiveResponse = { now: string; session: FocusSession | null; last: FocusSession | null };
+```
+
+- **One at a time:** one active session per user (per demo visitor on the demo account, stored
+  like chat). A second start is `409` ("You are already focusing on University until 12:45. End
+  it first."). The state is on the server: the app reattaches to the same countdown after leaving.
+- **Start:** the goal by `goal_id` or by the user's words (`goal`, matched as in Done time), or the
+  goal of `event_id`. `minutes` 5 to 180; the app offers 25, 45, 60 and 90 (`FOCUS_LENGTHS`). The
+  session runs in the user's own block: the goal block running now (`event_id`, or found on its own
+  when one of the goal's blocks runs now with 5 minutes left; then the default length is the rest of
+  it), else a new block from this minute, named after the goal, through the same create_focus_block
+  path as the Timeline (`source: "user"`). It has started by the time it exists, so it cannot be
+  undone; End early is the way back. Off the record is `409` (nothing is kept, so nothing to count).
+- **Mac:** when Mac data arrived in the last 48 hours (the collector runs) and the user is not off
+  the record, distracting apps (WhatsApp, Telegram, Messages, Messenger, Discord, Instagram, X,
+  Reddit, TikTok, Netflix) are muted for the window through a focus guard (a `block_mac_app`
+  recommendation, "Muted distracting apps until 12:45"). Without a Mac this is skipped silently and
+  `guarded` is false, so the app never claims a guard that is not there.
+- **+15:** moves `end_at`, the block the session made, and adds a guard for the extra minutes. At
+  most 4 hours in all (`409` after). A block the user made is never changed: time past its end is
+  logged outside it and counts toward the goal's budget.
+- **The end on time:** at or after `end_at` (30 seconds early counts). The background finisher
+  (scheduler, every 30 seconds) and `GET /v1/focus/active` both end a due session, so it ends with
+  the app closed too. The whole length counts. The watch buzzes: a `focus_done` nudge ("Done. 45
+  min for University.", under 15 words) on the push and Telegram channels. **The cap rule:** the
+  user set this timer, so a `focus_done` nudge never counts towards the 5 a day or the 20 minute gap
+  (`countsTowardsCap(status, kind)`), and it never blocks one of Michael's nudges. Quiet hours still
+  hold: inside the profile's quiet hours it is stored `suppressed` and not sent. Off the record, no
+  nudge.
+- **End early:** before the end. `count` true (default) counts the whole minutes so far, false
+  counts nothing; the app asks "Count 30 min?" first. The block the session made is cut to the
+  minute it ended, the guards are undone at once (the apps open again), and an uncounted session's
+  block is settled as not done ("Ended early, not counted").
+- **Counted time** is confirmed goal time: logged through Done time (`log_time`, `POST /v1/log`'s
+  path) from `start_at` for `counted_minutes`, so inside its block it confirms the block and the
+  score, Today and Goals read it at once. When device attention (Mac, iPhone, ActivityWatch,
+  Chrome) or a workout already covers at least half of that span, nothing is logged and the score
+  reads the devices.
+- Ending twice is safe: a stopped session is returned as it is (the client's timer and the server
+  can both end it; only the first does the work).
 
 ### Follow up drafts
 
@@ -2351,7 +2423,7 @@ type AgentQuery = {
   `update_goal`, `propose_goals`, `get_checklist`, `add_checklist_item`, `set_day_outcomes`, `log_day` = `goals`; `list_recommendations`, `update_recommendation`, `get_nudges`,
   `list_drafts`, `draft_follow_up` = `recommendations`; `get_score`, `get_records`, `get_moments` = `score`; `add_event`, `execute_recommendation`,
   `undo_recommendation`, `create_focus_block`, `block_mac_app`, `plan_travel`, `log_done`,
-  `confirm_block` = `write_events`;
+  `confirm_block`, `focus_now` = `write_events`;
   `suggest_app_mute` = `recommendations`; `get_memories` = `timeline`; `remember` = `write_events`.
   Memories are events of type `memory` (source `manual` from chat, `agent` from MCP); Michael's
   chat reads the newest 40 into every answer and keeps new ones with its own `remember` and
@@ -2447,7 +2519,8 @@ scoped as that user. On by default when `NODE_ENV=production`, `SCHEDULER_ENABLE
 and Telegram chat (counted as one device in `devices` and `delivered`) at once, ignoring the cap, quiet hours and dedupe. It is for the stage moment: it stores the nudge
 with status `test` (a fresh key each press), so `GET /v1/nudges` and the stage view (`/stage`) show
 the same line as the watch buzzes. `test` nudges never count towards the 5 a day, the 20 minute gap
-or the daily dedupe (`countsTowardsCap` in `@michael/shared`).
+or the daily dedupe (`countsTowardsCap` in `@michael/shared`). Nor do `focus_done` nudges, the end of
+a Focus now session the user started (see Focus now); they still respect quiet hours.
 
 ```ts
 type NudgeTestResult = { text: string; reason: string; delivered: number; devices: number; nudge: Nudge };
@@ -3112,6 +3185,7 @@ offset. A refused or failed call returns `isError: true` with one plain sentence
 | `block_mac_app`          | `write_events`    | `{ apps: string[], start?: TimeInput, end: TimeInput, goal_id? }` (start default now)   | `{ recommendation, undo_until }`                                                           |
 | `log_done`               | `write_events`    | `{ goal_id? \| goal?, minutes?, start?: TimeInput, end?: TimeInput, note? }`            | `LogTimeResponse` (see Done time)                                                          |
 | `confirm_block`          | `write_events`    | `{ event_id, did: boolean, minutes?, reason? }`                                         | `LogTimeResponse`                                                                          |
+| `focus_now`              | `write_events`    | `{ goal_id? \| goal?, minutes? }` (5..180, default 45 or the rest of the running block) | `{ session: FocusSession }` (see Focus now)                                                |
 | `suggest_app_mute`       | `recommendations` | `{}`                                                                                    | `{ recommendation }` or `{}` when nothing stands out                                       |
 | `plan_travel`            | `write_events`    | `{ from?, to? }` (default today)                                                        | `TravelPlanResult` (see Places and travel)                                                 |
 | `list_drafts`            | `recommendations` | `{ status?: DraftStatus }` (default proposed)                                           | `{ drafts: Draft[] }`                                                                      |

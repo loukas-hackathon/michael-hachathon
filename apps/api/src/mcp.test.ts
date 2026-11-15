@@ -59,6 +59,7 @@ const TOOLS = [
   "create_focus_block",
   "draft_follow_up",
   "execute_recommendation",
+  "focus_now",
   "get_check_in",
   "get_checklist",
   "get_goals",

@@ -24,8 +24,8 @@ test("nudges/test: stored as test, visible to GET /v1/nudges, outside the 5 a da
 
   // The engine's own count leaves them out.
   const check = NudgeCheckResult.parse(await (await call("POST", "/v1/nudges/check")).json());
-  const counted = before.filter((n) => countsTowardsCap(n.status)).length;
-  const added = check.nudge && countsTowardsCap(check.nudge.status) ? 1 : 0;
+  const counted = before.filter((n) => countsTowardsCap(n.status, n.kind)).length;
+  const added = check.nudge && countsTowardsCap(check.nudge.status, check.nudge.kind) ? 1 : 0;
   assert.equal(check.sent_today, counted + added);
 
   // Another user never sees them.

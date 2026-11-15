@@ -48,6 +48,8 @@ export const TOOL_SCOPE: Record<string, AgentScope> = {
   // Done time and settled blocks (#317) change the timeline and the score: the same scope as add_event.
   log_done: "write_events",
   confirm_block: "write_events",
+  // Focus now (#397) books a block from this minute and may mute Mac apps: the same as booking.
+  focus_now: "write_events",
 };
 
 type ToolConfig = { title?: string; inputSchema?: unknown; annotations?: { readOnlyHint?: boolean } };
@@ -102,6 +104,12 @@ export function summarise(name: string, title: string | undefined, input: unknow
     }
     case "confirm_block":
       return a.did === false ? "Marked a block as not done" : "Confirmed a block you did";
+    case "focus_now": {
+      const what = typeof a.goal === "string" ? a.goal.slice(0, 60) : "a goal";
+      return typeof a.minutes === "number"
+        ? `Started ${a.minutes} min of focus on ${what}`
+        : `Started a focus session on ${what}`;
+    }
     case "get_goals":
       return "Read your goals";
     case "get_instructions":
@@ -281,6 +289,7 @@ const INFINITIVE: Record<string, string> = {
   Muted: "mute",
   Suggested: "suggest",
   Remembered: "remember",
+  Started: "start",
 };
 
 /** Every line that tells of a call that did not go through starts with this. */

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { CountUp } from "@/components/count-up";
+import { TodayFocusNow } from "@/components/focus/today-focus";
 import { LiveRefresh } from "@/components/live-refresh";
 import { LogTimeForm } from "@/components/log-time";
 import { Tween } from "@/components/motion-ui";
@@ -231,6 +232,10 @@ export default async function TodayPage({
             ) : null}
 
             <div className="max-xl:order-7">
+              {/* Focus now (#397): a goal block running now, or a free stretch, as one tap. */}
+              <Suspense fallback={null}>
+                <TodayFocusNow day={day} goals={goals} />
+              </Suspense>
               <RecommendationsPanel slot="primary" />
             </div>
           </div>

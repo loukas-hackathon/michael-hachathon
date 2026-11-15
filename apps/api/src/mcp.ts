@@ -34,6 +34,7 @@ import { answerCheckIn, checkInToday } from "./checkin/service";
 import { addItem, checklistFor, todayOf } from "./checklist/items";
 import { offerGoalActions } from "./checklist/offers";
 import { currentAgent } from "./context";
+import { startFocus } from "./focus/session";
 import { currentSuggestions } from "./goals/suggestions";
 import { HttpError, parse } from "./http";
 import {
@@ -576,6 +577,28 @@ export function createMcpServer(): McpServer {
     safe(async (input) => {
       const out = await settleBlock(input, "mcp", executeRecommendation);
       return reply(`${out.message} Undo with undo_recommendation ${out.recommendation.id}.`, { ...out });
+    }),
+  );
+
+  server.registerTool(
+    "focus_now",
+    {
+      title: "Start a focus session now",
+      description:
+        "Start a Focus now session for one of the user's goals, from this minute: \"let's focus on University for 45 minutes\". It runs in the user's own block (the goal block running now, or a new block), mutes distracting apps on their Mac when it is connected, and shows a countdown on their phone. When it ends on time their watch buzzes and the time counts as confirmed goal time; they can end it early or add 15 minutes in Michael. One session at a time. Name the goal by goal_id or by the user's words (goal). minutes 5 to 180, usually 25, 45, 60 or 90 (default 45, or the rest of the goal block running now).",
+      inputSchema: {
+        goal_id: Id.optional().describe("Goal id from get_goals"),
+        goal: z.string().min(1).max(200).optional().describe("The goal in the user's words"),
+        minutes: z.number().int().min(5).max(180).optional(),
+      },
+    },
+    safe(async (input) => {
+      const s = await startFocus(input, "mcp");
+      const until = zone.clock(Date.parse(s.end_at));
+      const mac = s.guarded ? " Distracting apps on their Mac are muted." : "";
+      return reply(`Focusing on ${s.goal_title} until ${until}, ${s.minutes} min.${mac}`, {
+        session: s,
+      });
     }),
   );
 

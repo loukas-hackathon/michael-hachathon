@@ -46,7 +46,9 @@ import {
   type DataDeleteScope,
   type DayRitual,
   type DeleteCounts,
+  type DueFocusSession,
   type EventPatch,
+  type FocusSessionPatch,
   type InsertResult,
   type IntegrationPatch,
   type IntegrationRecord,
@@ -56,14 +58,17 @@ import {
   type NewChecklistItem,
   type NewDraft,
   type NewFocusGuard,
+  type NewFocusSession,
   type NewRecommendation,
   type NudgeCreate,
+  ONE_ACTIVE_FOCUS,
   type PushDevice,
   previewOf,
   type RecommendationActionUpdate,
   type SeedResult,
   type Store,
   type StoredCheckIn,
+  type StoredFocusSession,
   sameEvent,
   summaryDayRange,
   type TargetInput,
@@ -126,6 +131,24 @@ const toFocusGuard = (r: Record<string, unknown>): FocusGuard => ({
   end_at: iso(r.end_at as string) as string,
   goal_id: (r.goal_id as string | null) ?? null,
   back_to: (r.back_to as string | null) ?? null,
+  created_at: iso(r.created_at as string) as string,
+});
+
+const toFocusSession = (r: Record<string, unknown>): StoredFocusSession => ({
+  id: r.id as string,
+  goal_id: r.goal_id as string,
+  status: r.status as StoredFocusSession["status"],
+  start_at: iso(r.start_at as string) as string,
+  end_at: iso(r.end_at as string) as string,
+  ended_at: iso(r.ended_at as string | null),
+  counted_minutes: (r.counted_minutes as number | null) ?? null,
+  event_id: (r.event_id as string | null) ?? null,
+  owns_block: r.owns_block === true,
+  block_recommendation_id: (r.block_recommendation_id as string | null) ?? null,
+  guard_recommendation_ids: (r.guard_recommendation_ids as string[] | null) ?? [],
+  apps: (r.apps as string[] | null) ?? [],
+  log_recommendation_id: (r.log_recommendation_id as string | null) ?? null,
+  message: (r.message as string | null) ?? null,
   created_at: iso(r.created_at as string) as string,
 });
 
@@ -345,6 +368,7 @@ export const USER_TABLES = [
   "oauth_grants",
   "agent_clients",
   "focus_guards",
+  "focus_sessions",
   "nudges",
   "drafts",
   "recommendations",
@@ -1085,6 +1109,77 @@ export class SupabaseStore implements Store {
         .select("*"),
     );
     return { run: saved, recommendations: (rows ?? []).map(toRecommendation) };
+  }
+
+  /** Focus sessions (#397), scoped like chat: the account's own rows, or this demo visitor's. */
+  private focusScope() {
+    const visitor = currentDemoVisitor();
+    const q = this.db.from("focus_sessions").select("*").eq("user_id", currentUserId());
+    return visitor ? q.eq("visitor_id", visitor) : q.is("visitor_id", null);
+  }
+
+  async getActiveFocusSession() {
+    const row = check(await this.focusScope().eq("status", "active").limit(1).maybeSingle());
+    return row ? toFocusSession(row) : null;
+  }
+
+  async getFocusSession(id: string) {
+    const row = check(await this.focusScope().eq("id", id).maybeSingle());
+    return row ? toFocusSession(row) : null;
+  }
+
+  async latestFocusSession() {
+    const row = check(
+      await this.focusScope().order("created_at", { ascending: false }).limit(1).maybeSingle(),
+    );
+    return row ? toFocusSession(row) : null;
+  }
+
+  async createFocusSession(input: NewFocusSession) {
+    const res = await this.db
+      .from("focus_sessions")
+      .insert({ ...input, user_id: currentUserId(), visitor_id: currentDemoVisitor() })
+      .select("*")
+      .single();
+    // The partial unique index keeps one active session per user (and visitor).
+    if (res.error?.code === "23505") throw new HttpError("conflict", ONE_ACTIVE_FOCUS);
+    return toFocusSession(check(res));
+  }
+
+  async updateFocusSession(id: string, patch: FocusSessionPatch, opts: { onlyActive?: boolean } = {}) {
+    const visitor = currentDemoVisitor();
+    let q = this.db.from("focus_sessions").update(patch).eq("user_id", currentUserId()).eq("id", id);
+    q = visitor ? q.eq("visitor_id", visitor) : q.is("visitor_id", null);
+    if (opts.onlyActive) q = q.eq("status", "active");
+    const row = check(await q.select("*").maybeSingle());
+    return row ? toFocusSession(row) : null;
+  }
+
+  async dueFocusSessions(before: string): Promise<DueFocusSession[]> {
+    const rows = check(
+      await this.db
+        .from("focus_sessions")
+        .select("id,user_id,visitor_id")
+        .eq("status", "active")
+        .lte("end_at", before)
+        .limit(100),
+    );
+    return (rows ?? []).map((r) => ({
+      id: r.id as string,
+      user_id: r.user_id as string,
+      visitor_id: (r.visitor_id as string | null) ?? null,
+    }));
+  }
+
+  async clearFocusSessions() {
+    const rows = check(
+      await this.db
+        .from("focus_sessions")
+        .delete()
+        .eq("user_id", currentUserId())
+        .select("event_id,owns_block"),
+    );
+    return (rows ?? []).flatMap((r) => (r.owns_block && r.event_id ? [r.event_id as string] : []));
   }
 
   /** A query on a chat table, scoped to the user and to the account's own rows or this visitor's. */
