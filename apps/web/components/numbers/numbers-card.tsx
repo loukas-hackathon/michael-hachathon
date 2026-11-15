@@ -71,7 +71,9 @@ function NumberRow({ stat, fix, q }: { stat: NumberStat; fix?: string; q: string
         </span>
         <span className="col-span-3 mt-1.5 block text-footnote">
           <b className="font-semibold">{LEAD[tone]}</b> {text}
-          {fix ? <span className="text-label-2"> Found in your data.</span> : null}
+          <span className="text-label-2">
+            {fix ? " Found in your data." : " General advice, not yet seen in your data."}
+          </span>
         </span>
       </Link>
     </li>

@@ -111,12 +111,14 @@ function dayWord(day: string, key: NumberKey, today: string) {
   if (day === today) return NIGHT.includes(key) ? "Last night" : "Today";
   // A night dated yesterday ended yesterday morning: its date says it plainer than any phrase.
   if (day === addDays(today, -1) && !NIGHT.includes(key)) return "Yesterday";
-  return new Intl.DateTimeFormat("en-GB", {
+  const date = new Intl.DateTimeFormat("en-GB", {
     weekday: "short",
     day: "numeric",
     month: "short",
     timeZone: "UTC",
   }).format(new Date(`${day}T12:00:00Z`));
+  // Lost time has a reading only on days with a goal block: an old date says when the last one was.
+  return key === "lost_min" ? `Last block ${date}` : date;
 }
 
 /** One figure against the user's own usual. Null under 2 readings: nothing to compare yet. */
