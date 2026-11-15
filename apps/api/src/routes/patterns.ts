@@ -1,6 +1,7 @@
 import { type Event, IsoDateTime, type PatternReport, PatternsQuery } from "@michael/shared";
 import { Hono } from "hono";
 import { HttpError, parse } from "../http";
+import { memo } from "../memo";
 import { buildPatternReport } from "../patterns";
 import { store } from "../store";
 
@@ -14,7 +15,17 @@ const LOOKAHEAD_MS = 18 * 3600_000;
  * The one place that reads the clock and the store for a pattern report; the detectors under
  * ../patterns stay pure. Defaults to the 7 days ending now.
  */
-export async function patternReportFor(range: { from?: string; to?: string }): Promise<PatternReport> {
+export function patternReportFor(range: { from?: string; to?: string }): Promise<PatternReport> {
+  // The same report is reused for a minute until the user writes (memo.ts, #298). A window that
+  // ends "now" (no `to`) is one entry however the clock moves within that minute.
+  return memo("patterns", { from: range.from ?? null, to: range.to ?? null }, PATTERNS_MEMO_MS, () =>
+    computePatternReport(range),
+  );
+}
+
+const PATTERNS_MEMO_MS = 60_000;
+
+async function computePatternReport(range: { from?: string; to?: string }): Promise<PatternReport> {
   const now = new Date().toISOString();
   const to = parse(IsoDateTime, range.to ?? now);
   const from = parse(
