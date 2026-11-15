@@ -93,7 +93,7 @@ export function LostWeekChart({
                   href={hrefFor(d.date)}
                   aria-label={label}
                   aria-current={isSelected ? "date" : undefined}
-                  className="press flex flex-col items-center rounded-[10px] focus-visible:outline-2 focus-visible:outline-label"
+                  className="press flex flex-col items-center rounded-control focus-visible:outline-2 focus-visible:outline-label"
                 >
                   {body}
                 </Link>

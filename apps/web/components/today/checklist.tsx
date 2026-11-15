@@ -2,7 +2,28 @@
 
 import { useOptimistic, useRef, useState, useTransition } from "react";
 import { addItem, carryItem, tickItem } from "@/app/checklist-actions";
+import { haptic } from "@/components/haptics";
 import type { ChecklistItem } from "@/lib/checklist";
+
+const OFFLINE = "I could not reach the server. Nothing changed.";
+
+/** A row to show while the server stores it; the stored one replaces it when the page reads again. */
+function draft(goalId: string, text: string): ChecklistItem {
+  const now = new Date().toISOString();
+  return {
+    id: `draft-${now}`,
+    goal_id: goalId,
+    date: now.slice(0, 10),
+    text,
+    position: 99,
+    status: "open",
+    settled_at: null,
+    settled_by: null,
+    carried_from: null,
+    created_at: now,
+    updated_at: now,
+  };
+}
 
 /** Most items one goal takes in a day (#238). */
 const MAX = 3;
@@ -44,18 +65,25 @@ export function TodayChecklist({
   items: ChecklistItem[];
   suggestions: ChecklistItem[];
 }) {
-  const [pending, start] = useTransition();
+  const [, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [text, setText] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  // Ticks, new items and carried items all show at once; the server's list replaces them when the
+  // action lands, and a failure drops them again with Michael's line (michael-feedback R2).
   const [list, setOptimistic] = useOptimistic(
     items.filter((i) => i.status === "open" || i.status === "done"),
-    (l, change: { id: string; done: boolean }) =>
-      l.map((i) =>
-        i.id === change.id ? { ...i, status: (change.done ? "done" : "open") as ChecklistItem["status"] } : i,
-      ),
+    (l, change: { id: string; done: boolean } | { add: ChecklistItem }) =>
+      "add" in change
+        ? [...l, change.add]
+        : l.map((i) =>
+            i.id === change.id
+              ? { ...i, status: (change.done ? "done" : "open") as ChecklistItem["status"] }
+              : i,
+          ),
   );
+  const [carried, setCarried] = useOptimistic<string[], string>([], (ids, id) => [...ids, id]);
   const done = list.filter((i) => i.status === "done").length;
   const room = list.length < MAX;
 
@@ -63,8 +91,9 @@ export function TodayChecklist({
     const next = i.status !== "done";
     start(async () => {
       setOptimistic({ id: i.id, done: next });
-      const r = await tickItem(i.id, next);
-      setError(r.ok ? null : r.message);
+      const r = await tickItem(i.id, next).catch(() => ({ ok: false, message: OFFLINE }));
+      setError(r.ok ? null : (r.message ?? OFFLINE));
+      if (r.ok) haptic();
     });
   };
 
@@ -74,14 +103,18 @@ export function TodayChecklist({
       setAdding(false);
       return;
     }
+    // The row appears at once and the field clears for the next one; a failure puts the text back.
+    setText("");
+    if (list.length + 1 >= MAX) setAdding(false);
+    else inputRef.current?.focus();
     start(async () => {
-      const r = await addItem(goalId, t);
-      if (r.ok) {
-        setText("");
-        if (list.length + 1 >= MAX) setAdding(false);
-        else inputRef.current?.focus();
+      setOptimistic({ add: draft(goalId, t) });
+      const r = await addItem(goalId, t).catch(() => ({ ok: false, message: OFFLINE }));
+      if (!r.ok) {
+        setText(t);
+        setAdding(true);
       }
-      setError(r.ok ? null : r.message);
+      setError(r.ok ? null : (r.message ?? OFFLINE));
     });
   };
 
@@ -140,7 +173,6 @@ export function TodayChecklist({
                   autoFocus
                   value={text}
                   maxLength={200}
-                  disabled={pending}
                   onChange={(e) => setText(e.target.value)}
                   onBlur={() => {
                     if (!text.trim()) setAdding(false);
@@ -186,25 +218,29 @@ export function TodayChecklist({
         <div className="mt-4">
           <h3 className="mb-2 px-4 text-footnote font-semibold text-label-2">Still open from yesterday</h3>
           <ul className="overflow-hidden rounded-group bg-fill">
-            {suggestions.slice(0, MAX - list.length).map((s, n) => (
-              <li key={s.id} className="relative flex min-h-12 items-center gap-3 py-1.5 pr-2 pl-4">
-                {n > 0 ? <span className="absolute inset-x-0 top-0 ml-4 h-[0.5px] bg-separator" /> : null}
-                <span className="min-w-0 flex-1 text-body text-label-2">{s.text}</span>
-                <button
-                  type="button"
-                  disabled={pending}
-                  onClick={() =>
-                    start(async () => {
-                      const r = await carryItem(s.id);
-                      setError(r.ok ? null : r.message);
-                    })
-                  }
-                  className="press min-h-11 shrink-0 px-2 text-subhead font-semibold text-tint-text"
-                >
-                  Carry over
-                </button>
-              </li>
-            ))}
+            {suggestions
+              .filter((s) => !carried.includes(s.id))
+              .slice(0, MAX - list.length)
+              .map((s, n) => (
+                <li key={s.id} className="relative flex min-h-12 items-center gap-3 py-1.5 pr-2 pl-4">
+                  {n > 0 ? <span className="absolute inset-x-0 top-0 ml-4 h-[0.5px] bg-separator" /> : null}
+                  <span className="min-w-0 flex-1 text-body text-label-2">{s.text}</span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      start(async () => {
+                        setCarried(s.id);
+                        setOptimistic({ add: { ...s, status: "open", carried_from: s.id } });
+                        const r = await carryItem(s.id).catch(() => ({ ok: false, message: OFFLINE }));
+                        setError(r.ok ? null : (r.message ?? OFFLINE));
+                      })
+                    }
+                    className="press min-h-11 shrink-0 px-2 text-subhead font-semibold text-tint-text"
+                  >
+                    Carry over
+                  </button>
+                </li>
+              ))}
           </ul>
         </div>
       ) : null}

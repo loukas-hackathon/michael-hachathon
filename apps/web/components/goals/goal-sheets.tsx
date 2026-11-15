@@ -13,6 +13,7 @@ import {
 } from "react";
 import { addGoal, editGoal, type FormState, pauseGoal, removeGoal } from "@/app/goals/actions";
 import { CATEGORY_TITLE, type Category } from "@/lib/categories";
+import { safeFormAction } from "@/lib/use-action";
 import { input, Row, Segmented } from "../form-controls";
 import { Sheet } from "../sheet";
 import { CalendarGoals } from "./calendar-goals";
@@ -113,7 +114,7 @@ function GoalForm({
   personalReady: boolean;
 }) {
   const action = draft.id ? editGoal.bind(null, draft.id) : addGoal;
-  const [state, formAction, pending] = useActionState(action, initial);
+  const [state, formAction, pending] = useActionState(safeFormAction(action), initial);
   const [category, setCategory] = useState<Category>(draft.category);
   const [kind, setKind] = useState<GoalDraft["kind"]>(draft.kind);
   const [unit, setUnit] = useState(draft.unit);
