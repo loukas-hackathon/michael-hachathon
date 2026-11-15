@@ -26,9 +26,9 @@ returns `501 not_implemented`, `planned` = not routed yet. Update the status whe
     account's own), and only these writes are allowed: `POST /v1/chat`, `/v1/chat/stream`,
     `POST /v1/chat/threads`, `PATCH|DELETE /v1/chat/threads/:id` (their own threads),
     `/v1/recommendations/:id/execute|undo`, `PATCH /v1/recommendations/:id`, `POST /v1/analysis/run`,
-    `/v1/travel/plan`, `/v1/focus-guards/suggest`, `/v1/voice/speak`, `/v1/records/:id/announced`, `POST|DELETE /v1/push/subscriptions`, `POST /v1/nudges/test` and
-    `POST /v1/connect/requests/:id`. Anything else that writes (privacy, goals, instructions,
-    places, profile, integrations, Telegram, agents, keys, data deletion, ingest, `/mcp`) answers
+    `/v1/travel/plan`, `/v1/focus-guards/suggest`, `/v1/voice/speak`, `/v1/records/:id/announced`, `POST|DELETE /v1/push/subscriptions` and `POST /v1/nudges/test`.
+    Anything else that writes (privacy, goals, instructions, places, profile, integrations,
+    Telegram, agents, connecting an agent, keys, data deletion, ingest, `/mcp`) answers
     `403 forbidden` with the message "This is the demo week. Sign in with Google to make it yours."
     and `details: { demo: true }`. A malformed visitor id is `401`. MCP OAuth tokens bound to the
     demo account and the bare `API_KEY` keep full access.
@@ -2791,7 +2791,9 @@ touched; days that leave the window are removed. The API refreshes the week on d
 most every 5 minutes (the first refresh after a deploy resets the goals to the Build Hub plan,
 later ones keep edits; `DEMO_WEEK=off` turns it off). `POST /v1/demo/reseed` also resets the goals.
 Any other account gets `403 forbidden`. The reseed (and the first refresh after a deploy) also
-deletes all demo visitor chat and turns off the record off; every refresh deletes visitor chat
+deletes all demo visitor chat, turns off the record off, removes goals that are not in the plan
+and replaces the standing instructions with the plan's (`demoInstructions`: only "Nothing between
+23:00 and 07:00", so a Saturday or Sunday evening stays bookable for the live demo); every refresh deletes visitor chat
 older than a day. Off the record, nothing changes. Per source switches are
 not applied: on the demo account they keep real collectors out (#114). From a terminal:
 `pnpm --filter @michael/api seed:demo` (or `--dry` to print the week without a database).

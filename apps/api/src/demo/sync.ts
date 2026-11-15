@@ -1,15 +1,16 @@
 import type { DemoSeedResult, Source } from "@michael/shared";
+import { InstructionCreate } from "@michael/shared";
 import { seedDemoDrafts } from "../actions/drafts";
 import { currentUserId } from "../context";
 import { env } from "../env";
-import { HttpError } from "../http";
+import { HttpError, parse } from "../http";
 import { Zone } from "../patterns/time";
 import { goalForEvent } from "../score/match";
 import type { Store } from "../store";
 import { seedDemoRitual } from "./ritual";
 import { DEMO_TZ, localDate } from "./time";
 import { DEMO_PLACES, demoTravel } from "./travel";
-import { buildDemoWeek, DEMO_PREFIX, type DemoWeek, demoGoals } from "./week";
+import { buildDemoWeek, DEMO_PREFIX, type DemoWeek, demoGoals, demoInstructions } from "./week";
 
 // How long a demo visitor's chat lives: the life of the visitor cookie.
 const VISITOR_CHAT_MS = 24 * 60 * 60_000;
@@ -31,16 +32,20 @@ export async function seedDemoWeek(
   const now = opts.now ?? new Date();
   const week = buildDemoWeek(now);
 
-  // A reset puts the stage back: no visitor chat from before it, and off the record off. Web
-  // visitors cannot change privacy (demo/visitor.ts), so this only undoes changes made with the
-  // API key or by hand. Per source switches stay as the team set them: on the demo account they
+  // A reset puts the stage back: no visitor chat from before it, off the record off, and the goals
+  // and standing instructions exactly the plan (goals added since are removed, plan goals are
+  // overwritten below). Web visitors cannot change any of it (demo/visitor.ts), so this undoes
+  // rehearsal changes made by Claude, the API key or by hand. Per source switches stay as the team set them: on the demo account they
   // keep real collectors out (#114). Visitor chat older than a day (the visitor cookie's life)
   // goes on every refresh.
   const resetState = opts.resetState ?? opts.overwriteGoals;
   await store.clearVisitorChat(
     resetState ? now.toISOString() : new Date(now.getTime() - VISITOR_CHAT_MS).toISOString(),
   );
-  if (resetState) await store.setOffTheRecord(false);
+  if (resetState) {
+    await store.setOffTheRecord(false);
+    await resetToPlan(store);
+  }
 
   // Off the record stops the demo week too (it is the switch people try on stage). Per source
   // switches are not applied: on the demo account they keep real collectors out (#114), and
@@ -49,7 +54,7 @@ export async function seedDemoWeek(
   const sources: Source[] = rules.offTheRecord ? [] : [...new Set(week.events.map((e) => e.source))];
 
   const events = await store.syncSeededEvents(DEMO_PREFIX, sources, week.events);
-  const goals = await store.seedGoals(demoGoals, { overwrite: opts.overwriteGoals });
+  const goals = await store.seedGoals(demoGoals, { overwrite: opts.overwriteGoals || resetState });
   if (!rules.offTheRecord) await seedDemoTravel(store, week, opts.now ?? new Date());
   // Follow up drafts for the latest conversations (#40). Best effort: never fails the seed.
   if (!rules.offTheRecord) {
@@ -62,6 +67,14 @@ export async function seedDemoWeek(
     await seedDemoRitual(store, week.days).catch((err) => console.error("Demo ritual failed", err));
   }
   return { days: week.days, events, goals_written: goals };
+}
+
+/** Goals not in the plan go; the standing instructions become the plan's. */
+async function resetToPlan(store: Store): Promise<void> {
+  const plan = new Set(demoGoals.map((g) => g.id));
+  for (const g of await store.listGoals()) if (!plan.has(g.id)) await store.deleteGoal(g.id);
+  for (const i of await store.listInstructions()) await store.deleteInstruction(i.id);
+  for (const i of demoInstructions) await store.createInstruction(parse(InstructionCreate, i));
 }
 
 /**

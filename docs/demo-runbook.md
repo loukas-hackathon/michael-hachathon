@@ -18,10 +18,18 @@ the stage and Claude will each see a different day.
 - [ ] **Production is the build we rehearsed.**
       `curl -s $API/health` shows `"status":"ok"`, `"storage":"supabase"` and a `commit` equal to
       `git rev-parse --short origin/main`. Freeze merges (label open PRs `wip`) until after the pitch.
-- [ ] **Reseed the demo week** (refreshes the seven days up to now, resets goals to the plan; never
+- [ ] **Reseed the demo week** (refreshes the seven days up to now, resets goals and standing
+      instructions to the plan, clears visitor chat, turns off the record off; never
       touches anything that is not a demo row):
       `curl -s -X POST -H "Authorization: Bearer $MICHAEL_API_KEY" $API/v1/demo/reseed`
       Expect `days` ending today and `goals_written` above 0.
+- [ ] **Book works on a Sunday.** The plan's only standing instruction is "Nothing between 23:00
+      and 07:00" (it follows the sleep goal). "Keep Sundays clear" made Book and Do it refuse all
+      Sunday with "No free 90 minutes left this week"; it must not be back:
+      `curl -s -H "Authorization: Bearer $MICHAEL_API_KEY" $API/v1/instructions` lists that one
+      rule. Then on **Goals** tap **Book time** on University: a block lands this evening (after the
+      20:00 finalists slot, before 23:00). Tap **Undo** so the stage starts clean. If it still
+      refuses, reseed again: the reseed replaces the instructions with the plan's.
 - [ ] **Laptop browser in the demo week.** Open `$WEB/auth/demo` (the "See the demo week" button on
       the login page). The cookie lasts 24 hours. Today shows a score, not "Nothing yet".
 - [ ] **Claude can talk.** In `$WEB/chat` send `How is my day going?`. A reply means
@@ -35,15 +43,20 @@ the stage and Claude will each see a different day.
 - [ ] **Watch mirrors it.** iPhone Watch app > Notifications > Michael (or the Home Screen app's
       entry): **Mirror my iPhone alerts**. Lock the iPhone, press **Send a test** from the laptop
       (You > Nudges) and feel the buzz.
-- [ ] **claude.ai connector on the demo account.** Do it in the laptop browser you present from,
-      the one signed in to claude.ai: 1. Open `$WEB/auth/demo` in that browser first. It signs out any Google session there (a
+- [ ] **claude.ai connector on the demo account.** The consent page refuses demo visitors ("This
+      is the demo week. Sign in with Google to make it yours."), because connecting an agent grants
+      it full write on the shared account. The presenter answers the consent with the API key, in
+      the laptop browser you present from (the one signed in to claude.ai). 1. Open `$WEB/auth/demo` in that browser first. It signs out any Google session there (a
       session always wins over the demo week, and Claude would connect to that account instead). 2. claude.ai > Settings > Connectors. If a `Michael` connector already exists, open it and
-      **Disconnect** or remove it. 3. **Add custom connector**: name `Michael`, URL `https://api-production-16521a26.up.railway.app/mcp`
-      (the same as `$API/mcp`; nothing in Advanced settings). Tap **Add**, then **Connect**. 4. A Michael tab opens: "Allow Claude to read and change your day?" with "Signed in as the
-      demo week" under the buttons. Tap **Allow**. If you see the Michael sign in page instead,
-      tap **See the demo week**: it comes straight back to this page. (Signing in with Google
-      also comes back here, but connects your own account, not the demo week.) 5. The tab returns to claude.ai and the connector shows as connected. "This link has expired"
-      means the request is over 30 minutes old: go back to claude.ai and press Connect again. 6. Check it worked: in a throwaway chat, Michael switched on in the tools menu, ask
+      **Disconnect** or remove it. 3. **Add custom connector**: name `Michael`, URL
+      `https://api-production-16521a26.up.railway.app/mcp` (the same as `$API/mcp`; nothing in
+      Advanced settings). Tap **Add**, then **Connect**. 4. A Michael tab opens on the consent page, which says "This is the demo week". Do not sign in
+      with Google (that connects your own account). Copy the id after `request=` in its address
+      bar, then in the terminal (the key never leaves it):
+      `REQ=paste-the-id; curl -s -X POST -H "Authorization: Bearer $MICHAEL_API_KEY" -H "content-type: application/json" -d '{"allow":true}' $API/v1/connect/requests/$REQ`
+      It answers `{"redirect_to":"https://claude.ai/..."}`. Open that URL in the same browser
+      tab within 5 minutes; claude.ai finishes connecting. If the request has expired, press
+      Connect on claude.ai again. 5. Check it worked: in a throwaway chat, Michael switched on in the tools menu, ask
       `Use Michael. What are my goals?`; the answer lists the demo goals. Then open
       `$WEB/agents`: Claude is listed under **What they can do**, and the line at the top says
       "Claude asked about you 1 today".
