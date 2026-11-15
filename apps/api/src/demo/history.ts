@@ -224,6 +224,15 @@ const TRAINING: Record<number, Training> = {
   5: { name: "Outdoor Run", from: "08:38", to: "09:27", kcal: 540, avg: 151, max: 174, km: 8.2 },
   0: { name: "Outdoor Cycle", from: "09:12", to: "10:48", kcal: 980, avg: 138, max: 176, km: 41.6 },
 };
+const SATURDAY_RUN: Training = {
+  name: "Outdoor Run",
+  from: "10:05",
+  to: "11:20",
+  kcal: 760,
+  avg: 146,
+  max: 171,
+  km: 12.6,
+};
 /** A workout that ends after this is a late one. */
 const LATE_WORKOUT = hm("21:30");
 
@@ -314,6 +323,18 @@ function drivers(date: string): Drivers {
       const to = hm(plan.to) + shift + Math.floor(d(4) * 9) - 4 - (early ? 8 : 0);
       workout = { plan, from, to, lateHard: !!plan.hard && to > LATE_WORKOUT, morning: to < hm("12:00") };
     }
+  }
+
+  // About every other Saturday, a long run with no block on the calendar.
+  if (wd === 6 && d(2) < 0.5) {
+    const from = hm("10:05") + Math.floor(d(3) * 20);
+    workout = {
+      plan: SATURDAY_RUN,
+      from,
+      to: from + 68 + Math.floor(d(4) * 14),
+      lateHard: false,
+      morning: true,
+    };
   }
 
   // AI coding and the Mac after 23:00: his own minutes where measured.
@@ -469,13 +490,23 @@ export function night(date: string): Night {
   const d = (i: number) => u[i] ?? 0;
   const wd = weekday(date);
 
-  const bedMin =
+  let bedMin =
     late.end !== null ? late.end + 4 + Math.floor(d(0) * 15) : 23 * 60 + 22 + Math.floor(d(0) * 36);
   let wakeMin = (WAKE[wd] ?? 480) + Math.floor(d(1) * 30) - 10;
+  // Friday and Saturday evenings often end late with no screen in it, and the morning moves with
+  // them: a late bedtime that costs nothing.
+  if ((p.wd === 5 || p.wd === 6) && d(8) < 0.55) {
+    const later = Math.max(0, 24 * 60 + 20 + Math.floor(d(9) * 60) - bedMin);
+    bedMin += later;
+    wakeMin += later;
+  }
   // After a late night of AI coding the morning starts later (not before a morning workout).
   if (p.aiLate >= 30 && wd !== 5 && wd !== 0) wakeMin += 30 + Math.floor(d(2) * 20);
   if (bedMin > 1440 + 75) wakeMin += 15;
   wakeMin = Math.max(wakeMin, bedMin - 1440 + 270);
+  // Up in time for a morning workout, whatever the night was.
+  const upBy: Record<number, number> = { 5: hm("07:55"), 6: hm("09:15"), 0: hm("08:27") };
+  wakeMin = Math.min(wakeMin, upBy[wd] ?? wakeMin);
 
   let phone = clamp((p.latePhone - 12) / 33, 0, 1);
   if (d(3) < 0.2) phone *= 0.15;
@@ -778,24 +809,28 @@ function meals(date: string): { rows: EventRow[]; lunch: number } {
       external_id: id(date, "meal:lunch"),
     },
   ];
-  if (wd !== 1 && wd !== 4) {
-    // After yoga on a Wednesday, before the swim on a Tuesday.
-    const from =
-      wd === 3
-        ? hm("20:15") + rnd.int(0, 30)
-        : wd === 2
-          ? hm("18:40") + rnd.int(0, 25)
-          : hm("19:30") + rnd.int(0, 60);
-    rows.push({
-      source: "manual",
-      type: "meal",
-      start_at: iso(wall(date, from)),
-      end_at: iso(wall(date, from + 35)),
-      title: rnd.pick(DINNERS),
-      data: { estimated_kcal: rnd.int(700, 1200), protein_g: rnd.int(25, 50) },
-      external_id: id(date, "meal:dinner"),
-    });
-  }
+  // Dinner: after yoga on a Wednesday, before the swim on a Tuesday, and on the gym evenings once
+  // he is back (the week logs none then; over months he eats after training).
+  const gym = wd === 1 || wd === 4;
+  const trained = drivers(date).workout;
+  const from = gym
+    ? trained
+      ? trained.to + 15 + rnd.int(0, 10)
+      : hm("19:40") + rnd.int(0, 30)
+    : wd === 3
+      ? hm("20:15") + rnd.int(0, 30)
+      : wd === 2
+        ? hm("18:40") + rnd.int(0, 25)
+        : hm("19:30") + rnd.int(0, 60);
+  rows.push({
+    source: "manual",
+    type: "meal",
+    start_at: iso(wall(date, from)),
+    end_at: iso(wall(date, from + (gym ? 25 : 35))),
+    title: rnd.pick(DINNERS),
+    data: { estimated_kcal: rnd.int(700, 1200), protein_g: rnd.int(25, 50) },
+    external_id: id(date, "meal:dinner"),
+  });
   return { rows, lunch };
 }
 
