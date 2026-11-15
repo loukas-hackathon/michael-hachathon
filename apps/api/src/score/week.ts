@@ -1,5 +1,6 @@
-import { type Event, type Goal, isNap, isSleepGoal, type ScoreSleep } from "@michael/shared";
-import { DAY, HOUR, MINUTE, type Zone } from "../patterns/time";
+import { type Event, type Goal, isSleepGoal, type ScoreSleep } from "@michael/shared";
+import { napIn } from "../patterns/sleep";
+import { DAY, MINUTE, type Zone } from "../patterns/time";
 import { overlapWith, type Span, union } from "../patterns/util";
 
 // The week around the score (#117, #165): the waking day, the fixed calendar commitments, the
@@ -118,7 +119,7 @@ export function sleepWeek(
     const start = Date.parse(e.start_at);
     const end = Date.parse(e.end_at);
     if (!(end > start) || end - start > DAY || end > now) continue;
-    if (isNap(start, end, (start - zone.startOfDay(zone.dayOf(start))) / HOUR)) continue;
+    if (napIn(zone, start, end)) continue;
     const day = zone.dayOf(end);
     const recorded = e.data?.duration_min;
     const minutes = typeof recorded === "number" && recorded > 0 ? recorded : (end - start) / MINUTE;

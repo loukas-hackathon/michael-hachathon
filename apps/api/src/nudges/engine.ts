@@ -11,6 +11,7 @@ import {
 } from "@michael/shared";
 import { DEFAULT_TIMEZONE } from "../patterns/context";
 import { goalBlocks } from "../patterns/focus";
+import { napIn } from "../patterns/sleep";
 import { DAY, MINUTE, Zone } from "../patterns/time";
 import { buildTimeline, type Segment } from "../patterns/timeline";
 import { type Span, union, unionLength } from "../patterns/util";
@@ -74,10 +75,9 @@ export const LIMITS = {
   goalBehindLatest: 19 * 60,
   goalBehindMinMinutes: 60,
   goalBehindMinShare: 0.15,
-  /** Morning: after the night's sleep ends (3 hours or more), else at 08:00; not after 12:00. */
+  /** Morning: after the night ends (a nap never counts, patterns/sleep.ts), else at 08:00; not after 12:00. */
   morningDefault: 8 * 60,
   morningLatest: 12 * 60,
-  mainSleepMs: 3 * 60 * MINUTE,
   /** Evening: an hour before the usual bedtime (median of 3+ recent nights), else 21:00... */
   eveningDefault: 21 * 60,
   eveningLead: 60,
@@ -239,6 +239,7 @@ export function spentThisWeek(w: World, goal: Goal): number {
   const spentType = isSleepGoal(goal) ? "sleep" : SPENT_TYPES[goal.category];
   for (const e of w.events) {
     if (e.type !== spentType || !e.end_at) continue;
+    if (e.type === "sleep" && napIn(w.zone, Date.parse(e.start_at), Date.parse(e.end_at))) continue;
     const start = Math.max(Date.parse(e.start_at), w.weekStart);
     const end = Math.min(Date.parse(e.end_at), w.now);
     if (end > start) spans.push({ start, end });
@@ -363,9 +364,9 @@ const mainSleeps = (w: World): Span[] =>
   w.events
     .filter((e) => e.type === "sleep" && e.end_at)
     .map((e) => ({ start: Date.parse(e.start_at), end: Date.parse(e.end_at as string) }))
-    .filter((s) => s.end - s.start >= LIMITS.mainSleepMs && s.end - s.start <= DAY);
+    .filter((s) => s.end > s.start && s.end - s.start <= DAY && !napIn(w.zone, s.start, s.end));
 
-/** When the user woke today: the end of the last main sleep that ended today, or null. */
+/** When the user woke today: the end of the last night (never a nap) that ended today, or null. */
 function wokeAt(w: World): number | null {
   const ends = mainSleeps(w)
     .map((s) => s.end)

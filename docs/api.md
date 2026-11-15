@@ -1218,7 +1218,7 @@ goal block the goal has a say: see Goals, "Categories that count as a goal's wor
   search term is never copied into the report. **Speaks from:** Any web visits and one focus stretch
   or work block. Zero minutes is a valid answer.
 - `late_screens`: Device use after the cut off, per night. Cut off: 23:00, or one hour before the
-  usual bedtime (median start of recorded sleeps of 3 hours or more) when sleep data exists. A night
+  usual bedtime (median start of recorded nights, naps left out) when sleep data exists. A night
   runs 6 hours from the cut off and belongs to the day of its evening. A night is late from 5
   minutes of use. `next_recovery_pct` and `next_sleep_minutes` come from the following morning.
   **Speaks from:** 3 nights inside the range on days with device data. Usual bedtime: 3 sleeps.
@@ -2185,7 +2185,7 @@ most urgent candidate of these rules (in this order):
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
 | `focus_drift`    | inside a work goal block, 3+ of the last 10 min on distractor apps or sites                                                  | "6 min on Instagram in your focus block. Back to it until 12:00."     |
 | `block_soon`     | a goal block starts in 2 to 15 min                                                                                           | "Gym at 18:00. Wrap up in 12 min."                                    |
-| `morning`        | after the night's sleep (3h+) ends today, else from 08:00; until 12:00                                                       | the Morning moment's headline, e.g. "Today holds 2h 00 of goal time." |
+| `morning`        | after the night's sleep (never a nap) ends today, else from 08:00; until 12:00                                               | the Morning moment's headline, e.g. "Today holds 2h 00 of goal time." |
 | `evening`        | an hour before the usual bedtime (median of 3+ of the last 8 nights), else 21:00; never later than 45 min before quiet hours | the Evening moment's headline                                         |
 | `wind_down`      | 30 min before the night, 3+ of the last 10 min on screens, a rest goal exists                                                | "Screens off by 22:00. Sleep is on the plan."                         |
 | `goal_behind`    | before 19:00, a weekly budget behind its linear pace by 60+ min and 15%+                                                     | "Gym 2h 34m behind this week. Book 90 min today."                     |
