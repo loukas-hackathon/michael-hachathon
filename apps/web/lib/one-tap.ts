@@ -72,15 +72,31 @@ export const SHORTCUT_FILE = `/${SHORTCUT_NAME}.shortcut`;
 export const shortcutUrl = () => process.env.MICHAEL_SHORTCUT_URL || SHORTCUT_FILE;
 
 /**
- * "Add the shortcut" from the installed app, which has no browser chrome: a file opened in its own
- * window leaves the person on a page with no way back (Loukas, 15 Nov), so the page opens this link
- * in a new context. It is always the plain absolute URL. An iCloud link opens Shortcuts itself; our
- * signed https file opens in Safari, which offers Add Shortcut, as Michael Focus does (#451). Never
- * shortcuts://import-shortcut: Shortcuts takes only iCloud links there and says "The shortcut URL
- * provided was invalid" for a file URL (Loukas' iPhone, 15 Nov).
+ * The plain absolute URL "Add the shortcut" opens. Never shortcuts://import-shortcut: Shortcuts
+ * takes only iCloud links there and says "The shortcut URL provided was invalid" for a file URL
+ * (Loukas' iPhone, 15 Nov).
  */
 export function shortcutAddLink(url: string, origin: string): string {
   return new URL(url, origin).href;
+}
+
+/** An iCloud link (www.icloud.com/shortcuts/...), which opens in Shortcuts itself. */
+export function isICloudLink(link: string): boolean {
+  try {
+    return /(^|\.)icloud\.com$/.test(new URL(link).hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether Add opens in a new context (target=_blank). Only an iCloud link from the installed app,
+ * which Shortcuts takes over. Our own signed file opens in the same window, in the installed app
+ * too: iOS previews it there with Open in Shortcuts and the import works, while the in-app sheet a
+ * new context opens stayed blank and Safari saved it to Files (Loukas, 15 Nov, #497, #508).
+ */
+export function shortcutAddInNewContext(link: string, standalone: boolean): boolean {
+  return standalone && isICloudLink(link);
 }
 
 /** The server hop that redirects to the Telegram bot with a one-time start token. */

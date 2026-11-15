@@ -42,6 +42,7 @@ export default async function IPhonePage({
       ) : null}
       <IPhoneShortcutSetup
         shortcutUrl={shortcutUrl()}
+        live={row.state === "on"}
         fallback={
           <KeySetup
             keyName="iPhone Shortcuts"
