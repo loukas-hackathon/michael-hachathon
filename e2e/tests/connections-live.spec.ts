@@ -105,12 +105,23 @@ test("iPhone: Shortcut added, then the shortcut's test run turns it Connected wh
   await expect(page).toHaveURL(/\/you\/connections\/iphone/);
   await expect(page.getByText("Waiting for iPhone…")).toBeVisible();
 
-  // The shortcut posts with its key (here an open, held until the next one: nothing is stored).
-  const res = await fetch(`${API_URL}/v1/webhooks/ios-shortcuts`, {
-    method: "POST",
-    headers: { authorization: `Bearer ${secret}`, "content-type": "application/json" },
-    body: JSON.stringify({ app: "Safari", action: "open" }),
-  });
-  expect(res.status).toBe(200);
+  // The shortcut run by hand in Shortcuts posts with its key and no app: the test, nothing stored.
+  const shortcut = (body: unknown) =>
+    fetch(`${API_URL}/v1/webhooks/ios-shortcuts`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${secret}`, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  expect((await shortcut({})).status).toBe(200);
   await expect(page.getByText(/^Connected · test received \d\d:\d\d$/)).toBeVisible({ timeout: 3_000 });
+  // The first app open is stored at once (#488), so the iPhone source has data, not only a test.
+  const open = await shortcut({ app: "Safari", action: "open" });
+  expect(((await open.json()) as { inserted: number }).inserted).toBe(1);
+  const status = await fetch(`${API_URL}/v1/sources/status`, {
+    headers: { authorization: `Bearer e2e_${user}` },
+  });
+  const { sources } = (await status.json()) as {
+    sources: { source: string; last_event_at: string | null }[];
+  };
+  expect(sources.find((s) => s.source === "ios_shortcuts")?.last_event_at).toBeTruthy();
 });
