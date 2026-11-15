@@ -478,6 +478,14 @@ test("demo visitors can still chat, act on recommendations and turn on nudges", 
   );
   assert.notEqual((await request(visitor1, "POST", `/v1/recommendations/${rec.id}/execute`)).status, 403);
   assert.notEqual((await request(visitor1, "POST", `/v1/recommendations/${rec.id}/undo`)).status, 403);
+  // Book on Goals is a stage beat: undoable like Do it, so a visitor may press it (and Undo it).
+  const { goals } = await ok(await request(visitor1, "GET", "/v1/goals"), "goals");
+  const goal = (goals as { id: string }[])[0];
+  assert.ok(goal, "the demo account has goals");
+  const book = await request(visitor1, "POST", `/v1/goals/${goal.id}/book`, { minutes: 30 });
+  assert.notEqual(book.status, 403, `Book as a demo visitor: ${book.status}`);
+  assert.ok(demoVisitorMay("POST", `/v1/goals/${goal.id}/book`));
+  assert.ok(!demoVisitorMay("POST", "/v1/goals"));
   const push = await request(visitor1, "POST", "/v1/push/subscriptions", {
     endpoint: `https://push.example.com/${randomUUID()}`,
     keys: { p256dh: "k", auth: "a" },
