@@ -727,8 +727,9 @@ export type Recommendation = z.infer<typeof Recommendation>;
 // What the user says they did, in their own words: "I took a bath for 40 minutes at 13:00". The
 // goal by id or by name (matched on the server), the time by start and end, or by minutes plus a
 // start ("at"); minutes alone end just now. Past only: an entry never ends in the future. Stored
-// as the user's own manual event (source `manual`), counted as confirmed goal time in the score
-// (docs/api.md, "Score"), and undoable through the recommendation that holds it.
+// as the user's own manual event (source `manual`): inside a block of its goal it confirms that
+// block; outside every block it counts toward the goal's budget, never the score (docs/api.md,
+// "Score", #372). Undoable through the recommendation that holds it.
 export const LogTimeInput = z
   .object({
     goal_id: z.uuid().optional(),
@@ -1951,7 +1952,8 @@ export const ScoreBlock = z.object({
   // The calendar event's own title ("Cold Outreach / Sales").
   title: z.string(),
   // Which rule tied the event to the goal.
-  // `logged`: not a calendar block but done time the user logged (#317); event_id is the entry.
+  // `logged`: no longer sent (#372). Logged time outside a block is not planned time: it is
+  // `logged_minutes` on the goal, the day and the week, never a block.
   matched_by: z.enum([
     "goal_id",
     "calendar_titles",
@@ -1973,7 +1975,7 @@ export const ScoreBlock = z.object({
   // on a clear Sunday). Empty when it breaks none. It never changes the block's minutes.
   instructions_broken: z.array(z.uuid()),
   // The user's word on a past block (#317): "did" (all or part of it, the rest lost) or "didnt"
-  // (all of it lost). Null or absent while unsettled. A logged entry reads "did".
+  // (all of it lost). Null or absent while unsettled.
   settled: z.enum(["did", "didnt"]).nullish(),
 });
 export type ScoreBlock = z.infer<typeof ScoreBlock>;
@@ -2000,10 +2002,17 @@ export const ScoreWeekArea = ScoreArea.extend({
 });
 export type ScoreWeekArea = z.infer<typeof ScoreWeekArea>;
 
+// Done time the user logged outside every block of its goal (#372): it counts toward the goal's
+// weekly budget, never toward the score (not planned, not spent). GET /v1/score always sends it
+// (0 when there is none); optional only so older fixtures still parse.
+const LoggedMinutes = Minutes.optional();
+
 export const ScoreDay = z.object({
   date: LocalDay,
   ...scoreTotals,
   time_won_back_minutes: Minutes,
+  // Logged outside the day's blocks; outside every total above.
+  logged_minutes: LoggedMinutes,
 });
 export type ScoreDay = z.infer<typeof ScoreDay>;
 
@@ -2061,9 +2070,20 @@ export const ScoreGoal = GoalScore.extend({
   ahead_minutes: Minutes,
   unverified_minutes: Minutes,
   score_pct: ScorePct,
+  // Logged this week outside the goal's blocks (#372): budget progress, outside the score. The
+  // goal's week against its budget is spent_minutes + logged_minutes (`budgetMinutesDone`).
+  logged_minutes: LoggedMinutes,
   // Monday to Sunday.
-  daily: z.array(z.object({ date: LocalDay, planned_minutes: Minutes, spent_minutes: Minutes })),
-  // Budget minus spent, never below 0 ("4h 10 left of 6h"). 0 for a goal outside the score.
+  daily: z.array(
+    z.object({
+      date: LocalDay,
+      planned_minutes: Minutes,
+      spent_minutes: Minutes,
+      logged_minutes: LoggedMinutes,
+    }),
+  ),
+  // Budget minus spent minus logged, never below 0 ("4h 10 left of 6h"). 0 for a goal outside
+  // the score.
   minutes_left: Minutes,
   // The goal's calendar blocks this week that have not ended yet ("two blocks still open").
   open_blocks: z.number().int().nonnegative(),
@@ -2072,6 +2092,13 @@ export const ScoreGoal = GoalScore.extend({
   count: ScoreCount.optional(),
 });
 export type ScoreGoal = z.infer<typeof ScoreGoal>;
+
+/**
+ * A goal's minutes this week against its budget (#372): spent in its blocks plus logged outside
+ * them. The score itself reads spent of planned only.
+ */
+export const budgetMinutesDone = (g: { spent_minutes: number; logged_minutes?: number | null }): number =>
+  g.spent_minutes + (g.logged_minutes ?? 0);
 
 // ---------- weekly target and the balanced week (#165) ----------
 
@@ -2217,6 +2244,8 @@ export const Score = WeeklyScore.extend({
   generated_at: IsoDateTime,
   // The local day asked for.
   date: LocalDay,
+  // Logged this week outside every block (#372): budget time, in no total of the score.
+  logged_minutes: LoggedMinutes,
   elapsed_minutes: Minutes,
   lost_minutes: Minutes,
   ahead_minutes: Minutes,

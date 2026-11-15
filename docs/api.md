@@ -2406,7 +2406,7 @@ each goes out at most once a day, and they count toward the 5. The push opens To
 The night's quiet hours come from the profile (`quiet_hours`, default 22:00 to 07:00).
 
 Goal time spent this week is the score's: the engine runs `buildScore` on the week so far and reads
-each goal's row (`spent_minutes`, `budget_minutes`, `minutes_left`), so a nudge and its reason
+each goal's row (`spent_minutes` plus `logged_minutes`, `budget_minutes`, `minutes_left`), so a nudge and its reason
 quote exactly what `GET /v1/score` and the Goals screen show at that minute (#330). Planned time
 that was not spent is not in it, and only goals in the time score can be behind. The pace is one
 rule for the app and the server, `packages/shared/src/pace.ts`: the share of the week gone by
@@ -2501,7 +2501,8 @@ type TelegramLinkResponse = { url: string };
 ### Done time (#317)
 
 Saying "I did x" is one call. The user's own word becomes a manual event (source `manual`) that the
-score counts as confirmed goal time (Score, the attribution rule). Rules in `apps/api/src/actions/log.ts`;
+score reads by the attribution rule (Score): inside a block of its goal it confirms that block;
+outside every block it counts toward the goal's weekly budget (`logged_minutes`), never the score. Rules in `apps/api/src/actions/log.ts`;
 the chat's `log_done` and `confirm_block` and the MCP tools of the same names call the same functions.
 
 | Method | Path            | Body                                                                        | Response                                    | Status |
@@ -2577,6 +2578,7 @@ type Score = ScoreTotals & {
   // the week: the WeeklyScore fields, except that score_pct may be null
   week_start: string; // Monday 00:00 in Athens, as an instant
   time_won_back_minutes: number; // the sum of the days
+  logged_minutes: number; // #372: logged outside every block this week; toward budgets, in no total
   goals: ScoreGoal[];
   timezone: string; // "Europe/Athens"
   generated_at: string; // the instant it was scored at
@@ -2631,8 +2633,11 @@ type ScoreGoal = ScoreTotals & {
   kind: GoalKind; // goalKind(goal)
   scored: boolean; // true only for kind "time"; a target (sleep), count or checklist is listed, outside the score
   budget_minutes: number; // weekly_budget_minutes, 0 when the goal has none
-  daily: { date: string; planned_minutes: number; spent_minutes: number }[]; // Monday to Sunday
-  minutes_left: number; // budget - spent, never below 0; 0 for a goal outside the score
+  // #372: logged this week outside the goal's blocks. Toward the budget, outside the score: the
+  // week against the budget is spent_minutes + logged_minutes (budgetMinutesDone).
+  logged_minutes: number;
+  daily: { date: string; planned_minutes: number; spent_minutes: number; logged_minutes: number }[]; // Monday to Sunday
+  minutes_left: number; // budget - spent - logged, never below 0; 0 for a goal outside the score
   open_blocks: number; // the goal's blocks this week that have not ended (one block across midnight counts once)
   // Kind checklist only (#238): items set (open, done or dropped; a carried item counts on the day
   // it moved to) and done, on `date` and in its week. Outside the time score.
@@ -2641,7 +2646,11 @@ type ScoreGoal = ScoreTotals & {
   count?: { done: number; target: number; left: number; days_left: number };
 };
 
-type ScoreDay = ScoreTotals & { date: string; time_won_back_minutes: number };
+type ScoreDay = ScoreTotals & {
+  date: string;
+  time_won_back_minutes: number;
+  logged_minutes: number; // #372: logged outside the day's blocks; in none of the totals
+};
 
 type ScoreDayDetail = ScoreDay & {
   now: string; // the boundary between past and ahead on the tape
@@ -2729,15 +2738,20 @@ Stated here and at the top of `apps/api/src/score/score.ts`; the two change toge
   `apps/api/src/score/logged.ts`; written by `POST /v1/log`, `POST /v1/log/block`, the chat and MCP.
   - **Logged:** done time the user reported ("a bath, 40 minutes, at 13:00"), past only. Inside a
     block of the same goal it confirms that time: verified and never lost, so the block becomes
-    confirmed instead of the minutes counting twice. The part outside every block of its goal is
-    goal time of its own: a block in `day.blocks` with `matched_by: "logged"` (`event_id` is the
-    entry, `title` its note or the goal) whose minutes are planned, elapsed, spent and verified.
+    confirmed instead of the minutes counting twice. **The part outside every block of its goal
+    was never planned (#372), so it stays out of the score entirely:** not planned, not elapsed, not
+    spent, no block in `day.blocks`, no ticks. It counts toward the goal's weekly budget instead:
+    `logged_minutes` on the goal row (and on each of its `daily` entries), on each day and on the
+    week, and `minutes_left` = budget - spent - logged. The goal's week against its budget is
+    `spent_minutes + logged_minutes` (`budgetMinutesDone` in `@michael/shared`). So the headline,
+    the day's tape and the Keep the Day strip all read the same planned and spent minutes, and the
+    maths shows the rest on its own line: "Plus 40 min you logged outside your blocks."
   - **Did it:** a past block settled with some of its minutes from its start: those are verified,
     the rest of its elapsed time is lost. All of it: the whole block is verified.
   - **Didn't:** a past block settled as not done: all of its elapsed time is lost.
-  - A settled block carries `settled: "did" | "didnt"` (absent while unsettled); a logged block
-    reads `"did"`. Logged blocks stay out of time won back and the records, which rest on the data
-    alone. A logged entry for a count goal is one occurrence of it, like a check in "yes".
+  - A settled block carries `settled: "did" | "didnt"` (absent while unsettled). `matched_by:
+    "logged"` is no longer sent. A logged entry for a count goal is one occurrence of it, like a
+    check in "yes".
 - **Sleep is outside the score.** It is a goal of kind `target` (an older goal of category `rest`
   with a `sleep` or `bed` key in its target, or the word in its title, reads as one). It is listed
   in `goals` with its budget and `scored: false`. It has no blocks and takes no part in any total;

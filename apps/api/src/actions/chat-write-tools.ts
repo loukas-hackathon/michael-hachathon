@@ -40,7 +40,7 @@ export const WRITE_TOOLS: Anthropic.Tool[] = [
   {
     name: "log_done",
     description:
-      "Log time the user says they already spent on a goal: 'I took a bath for 40 minutes at 13:00', 'did 30 min of reading', 'gym this morning, an hour'. It counts as confirmed goal time at once and can be undone. Name the goal by goal_id from the goals list, or by the words the user used (goal). Give minutes, and start_at when the user said when; without a start it ends just now. Past only, the last 14 days. Never ask the user to add a calendar block for this.",
+      "Log time the user says they already spent on a goal: 'I took a bath for 40 minutes at 13:00', 'did 30 min of reading', 'gym this morning, an hour'. It counts toward the goal's weekly budget at once (inside one of its blocks it confirms that block; outside, it is not in the score, which is planned time only) and can be undone. Name the goal by goal_id from the goals list, or by the words the user used (goal). Give minutes, and start_at when the user said when; without a start it ends just now. Past only, the last 14 days. Never ask the user to add a calendar block for this.",
     input_schema: {
       type: "object",
       properties: {

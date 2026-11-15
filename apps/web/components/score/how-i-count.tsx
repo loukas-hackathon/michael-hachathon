@@ -179,6 +179,16 @@ export function HowICountBody({ explain: e }: { explain: ScoreExplain }) {
         </ul>
       ) : null}
 
+      {/* #372: logged time outside a block was never planned, so it is not in the score above. */}
+      {e.logged > 0 ? (
+        <p className="text-subhead text-label-2 tnum">
+          <b className="font-semibold text-label">
+            Plus {minutesPhrase(e.logged)} you logged outside your blocks.
+          </b>{" "}
+          It counts toward your goals this week, not this score: the score is planned time only.
+        </p>
+      ) : null}
+
       <p className="text-subhead">{RULE}</p>
 
       <div>

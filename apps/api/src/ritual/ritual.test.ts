@@ -499,23 +499,27 @@ test("chat: 'my goals today are X, Y' sets the outcomes; 'I finished X, did 30 m
     assert.equal((await ritualFor()).evening, "done");
   }));
 
-test("the evening log moves the goal's score: logged minutes count as confirmed time (#317)", () =>
+test("the evening log moves the goal's week: logged minutes count toward its budget (#317, #372)", () =>
   asNewUser(async () => {
     const uni = await university();
     const now = Date.now();
     const goalRow = async () => (await loadWeek({})).score.goals.find((g) => g.goal_id === uni.id);
-    const before = (await goalRow())?.spent_minutes ?? 0;
+    const done = (g: { spent_minutes: number; logged_minutes?: number } | undefined) =>
+      (g?.spent_minutes ?? 0) + (g?.logged_minutes ?? 0);
+    const before = done(await goalRow());
 
     const planned = await planMorning({ outcomes: [{ text: "Past paper", goal_id: uni.id }] }, now);
     const [paper] = planned.items as [ChecklistItem];
     const out = await logEvening({ results: [{ item_id: paper.id, result: "partly", minutes: 25 }] }, now);
     assert.deepEqual(out.logged, [{ goal_id: uni.id, minutes: 25 }]);
     const after = await goalRow();
-    // 25 more confirmed minutes (a run just after midnight may put some in yesterday: skip then).
+    // 25 more minutes toward the budget, outside any block so outside the score (a run just after
+    // midnight may put some in yesterday: skip then).
     const athens = (ms: number) => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Athens" }).format(ms);
     const justAfterMidnight = athens(now - 25 * 60_000) !== athens(now);
     if (!justAfterMidnight) {
-      assert.equal((after?.spent_minutes ?? 0) - before, 25);
+      assert.equal(done(after) - before, 25);
+      assert.equal(after?.logged_minutes, 25);
       assert.equal(after?.unverified_minutes, 0);
     }
 

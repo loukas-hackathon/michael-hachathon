@@ -1,4 +1,4 @@
-import type { Score, ScoreBlock, TargetResponse } from "@michael/shared";
+import { budgetMinutesDone, type Score, type ScoreBlock, type TargetResponse } from "@michael/shared";
 import { categoryOf } from "./categories";
 import { type DayView, type GoalBlock, type Lead, type Tick, titleMomentAt } from "./day";
 import type { Balance, RecordMark, WeeklyTarget } from "./gamification";
@@ -118,12 +118,14 @@ export function goalsFromScore(score: Score, targets: TargetResponse | null = nu
         title: g.title,
         category: categoryOf(g.category),
         budgetMinutes: g.budget_minutes,
-        spentMinutes: g.spent_minutes,
+        // Against the budget: spent in its blocks plus logged outside them (#372).
+        spentMinutes: budgetMinutesDone(g),
+        loggedMinutes: g.logged_minutes ?? 0,
         unverifiedMinutes: g.unverified_minutes,
         plannedMinutes: g.planned_minutes,
         openBlocks: g.open_blocks,
         leftMinutes: g.minutes_left,
-        daily: g.daily.map((x) => (x.date > today ? null : x.spent_minutes)),
+        daily: g.daily.map((x) => (x.date > today ? null : budgetMinutesDone(x))),
       })),
     sleep: score.sleep ? { goalMinutes: score.sleep.goal_minutes, nightly: score.sleep.nightly } : null,
     target,

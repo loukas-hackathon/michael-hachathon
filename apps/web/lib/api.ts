@@ -462,7 +462,7 @@ async function logCall(path: string, body: unknown): Promise<LogResult> {
   }
 }
 
-/** POST /v1/log (#317): done time the user reports, counted as confirmed goal time. */
+/** POST /v1/log (#317): done time the user reports; it confirms a block or counts toward the budget (#372). */
 export const postLog = (input: LogTimeInput) => logCall("/v1/log", input);
 
 /** POST /v1/log/block (#317): Did it or Didn't on a past goal block. */
