@@ -34,7 +34,7 @@ export function FixRow({ id, fix, preview }: { id: string; fix: InsightFix; prev
                 strokeLinejoin="round"
               />
             </svg>
-            {action.done_label ?? "Done."}
+            {action.done_label}
           </p>
         ) : (
           <button

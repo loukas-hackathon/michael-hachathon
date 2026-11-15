@@ -106,7 +106,9 @@ export function StudySeries({
       </div>
       <p className="mt-2 px-4 text-footnote text-label-2">
         12 weeks.
-        {marks.size && triggerLabel ? ` Dashed on sleep: the nights after ${triggerLabel}.` : null}
+        {marks.size && triggerLabel
+          ? ` Dashed on sleep: the morning after each of the ${marks.size} nights with ${triggerLabel}.`
+          : null}
       </p>
     </section>
   );

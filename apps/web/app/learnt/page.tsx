@@ -56,7 +56,7 @@ export default async function LearntPage({
   const { patterns, watching } = sorted;
   const progress = view ? studyProgress(view.studied) : null;
   // The chain whose trigger nights the sleep line marks: the strongest one that says which nights.
-  const marked = patterns.find((i) => i.kind === "chain" && i.evidence.days?.length);
+  const marked = patterns.find((i) => i.kind === "chain" && i.evidence.days.length);
 
   return (
     <main className="screen screen-mid">
@@ -93,7 +93,7 @@ export default async function LearntPage({
               triggerDays={marked?.evidence.days}
               triggerLabel={
                 marked?.steps[0]
-                  ? `${marked.steps[0].value} of ${marked.steps[0].label.charAt(0).toLowerCase()}${marked.steps[0].label.slice(1)}`
+                  ? `${marked.steps[0].label.charAt(0).toLowerCase()}${marked.steps[0].label.slice(1)}`
                   : undefined
               }
             />

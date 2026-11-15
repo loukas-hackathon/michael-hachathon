@@ -65,7 +65,7 @@ export function LearntCard({
       <p className="text-title3 font-bold">{top.title}</p>
       <p className="mt-1 text-subhead text-label-2 tnum">{top.line}</p>
       <Evidence insight={top} className="mt-3" />
-      {top.fix ? <FixRow id={top.id} fix={top.fix} preview={preview} /> : null}
+      <FixRow id={top.id} fix={top.fix} preview={preview} />
     </article>
   );
 }

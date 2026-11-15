@@ -10,7 +10,7 @@ function kindLabel(i: Insight) {
 
 /** One pattern on /learnt: what it is, its steps, the proof, and the fix with its one tap. */
 export function PatternCard({ insight, preview }: { insight: Insight; preview: boolean }) {
-  const names = sourceNames(insight.sources ?? []);
+  const names = sourceNames(insight.sources);
   return (
     <article className="flex flex-col rounded-card bg-fill px-4 pt-3.5 pb-4">
       <p className="flex flex-wrap items-baseline gap-x-2 text-footnote">
@@ -21,7 +21,7 @@ export function PatternCard({ insight, preview }: { insight: Insight; preview: b
       <p className="sr-only">{insight.line}</p>
       <Chain steps={insight.steps} />
       <Evidence insight={insight} className="mt-4" />
-      {insight.fix ? <FixRow id={insight.id} fix={insight.fix} preview={preview} /> : null}
+      <FixRow id={insight.id} fix={insight.fix} preview={preview} />
     </article>
   );
 }
