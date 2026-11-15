@@ -3,7 +3,7 @@
 // app records the sentence with MediaRecorder and the API transcribes it with ElevenLabs Scribe.
 // The recording lives in memory only until it is sent; the API drops it once it has the text.
 
-import { VOICE_AUDIO_MAX_SECONDS } from "@michael/shared";
+import { VOICE_AUDIO_MAX_SECONDS } from "@michael/shared/voice-limits";
 import { isIos, readRefused, recognitionCtor, subscribeRefused } from "./speech";
 
 // ---------- which way to listen ----------
