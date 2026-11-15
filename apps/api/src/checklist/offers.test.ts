@@ -175,6 +175,31 @@ test("a count goal's slot skips a protected day and an exception by title is all
     assert.equal(String(made[0]?.action?.payload.start_at).slice(0, 10), "2026-11-15");
   }));
 
+test("an offer for an outcome that is ticked or gone is withdrawn", () =>
+  asNewUser(async () => {
+    await empty();
+    const { outcomes } = await goals();
+    const first = await addItem(
+      { goal_id: outcomes.id, date: "2026-11-13", text: "Send the term sheet" },
+      FRIDAY,
+    );
+    const [offer] = await offerGoalActions({ now: FRIDAY });
+    assert.equal(offer?.status, "proposed");
+    // Still open: the offer stays.
+    await offerGoalActions({ now: FRIDAY + 60_000 });
+    assert.equal((await ours([outcomeTitle("2026-11-13")]))[0]?.status, "proposed");
+    // Ticked: the next look withdraws it, and it is not offered again that day.
+    await store.updateChecklistItem(first.id, {
+      status: "done",
+      settled_at: new Date(FRIDAY).toISOString(),
+      settled_by: "user",
+    });
+    assert.deepEqual(await offerGoalActions({ now: FRIDAY + 120_000 }), []);
+    const after = await ours([outcomeTitle("2026-11-13")]);
+    assert.equal(after.length, 1);
+    assert.equal(after[0]?.status, "dismissed");
+  }));
+
 test("two reads at once store one offer", () =>
   asNewUser(async () => {
     await empty();

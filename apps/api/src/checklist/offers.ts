@@ -193,6 +193,25 @@ export function planOffers(input: OfferInput): NewRecommendation[] {
 }
 
 /**
+ * Today's first outcome offer, when the outcome it names is no longer open (ticked, dropped,
+ * carried or deleted, by any path): it is out of date and must not stay "Your next move".
+ */
+export function staleOutcomeOffer(
+  existing: Recommendation[],
+  items: ChecklistItem[],
+  goals: Goal[],
+  today: string,
+): Recommendation | null {
+  const offer = existing.find((r) => r.title === outcomeTitle(today) && r.status === "proposed");
+  if (!offer) return null;
+  const checklistGoals = new Set(
+    goals.filter((g) => g.active && goalKind(g) === "checklist").map((g) => g.id),
+  );
+  const open = items.filter((i) => i.date === today && i.status === "open" && checklistGoals.has(i.goal_id));
+  return open.some((i) => offer.rationale.includes(`"${i.text}"`)) ? null : offer;
+}
+
+/**
  * Makes today's offers that are due and not made yet, through the store (and so the guard).
  * `rows`: the score's goal rows for this week, when the caller has them; without them only the
  * checklist offer is considered.
@@ -230,6 +249,9 @@ async function makeOffers(opts: { now?: number; rows?: ScoreGoal[] }): Promise<R
     store.listRecommendations(),
     store.listInstructions(),
   ]);
+  // An offer for an outcome that is settled or gone is withdrawn before anything new is planned.
+  const stale = staleOutcomeOffer(existing, items, goals, today);
+  if (stale) await store.updateRecommendationStatus(stale.id, "dismissed");
   const offers = planOffers({
     now,
     zone: athens,
