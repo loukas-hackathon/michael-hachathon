@@ -1,16 +1,18 @@
 import type { Moment, MomentKind, MomentMove } from "@michael/shared";
 import { formatTime, hm } from "@/lib/format";
+import { lastTime, lastTimeSentence } from "@/lib/moment-risk";
 import { getMoment } from "@/lib/moments";
 import { Fold } from "./fold";
 
-function Move({ move, label }: { move: MomentMove; label?: string }) {
+/** `said`: a line the card has just said above; a move whose reason is that same line shows only its title. */
+function Move({ move, label, said }: { move: MomentMove; label?: string; said?: string | null }) {
   return (
     <li className="flex flex-col gap-0.5">
       <p className="text-subhead font-semibold">
         {label ? <span className="text-label-2">{label} </span> : null}
         {move.title}.
       </p>
-      <p className="text-footnote text-label-2">{move.rationale}</p>
+      {move.rationale === said ? null : <p className="text-footnote text-label-2">{move.rationale}</p>}
     </li>
   );
 }
@@ -41,6 +43,9 @@ function GoalLines({ moment }: { moment: Moment }) {
 /** Morning plan or Evening review as a quiet row on Today: the headline shows, the maths opens. */
 export function MomentView({ moment }: { moment: Moment }) {
   const risk = moment.at_risk;
+  // What this block lost the last time it ran, when the API has it; else the usual loss (#330).
+  const last = risk ? lastTime(risk, moment.day) : null;
+  const lastLine = risk ? lastTimeSentence(risk, moment.day) : null;
   const title = moment.kind === "morning" ? "Morning plan" : "Evening review";
   return (
     <Fold
@@ -55,9 +60,18 @@ export function MomentView({ moment }: { moment: Moment }) {
         <p className="text-subhead">
           <span className="font-semibold">Most at risk: </span>
           {risk.title}, <span className="tnum">{formatTime(risk.start_at)}</span> to{" "}
-          <span className="tnum">{formatTime(risk.end_at)}</span>. About{" "}
-          <b className="font-semibold tnum">{risk.expected_lost_minutes} minutes</b> usually go
-          {risk.usual_trigger ? ` to ${risk.usual_trigger}` : ""}.
+          <span className="tnum">{formatTime(risk.end_at)}</span>.{" "}
+          {last ? (
+            <>
+              {last.when} this block lost <b className="font-semibold tnum">{last.lost}</b>
+              {last.trigger ? ` to ${last.trigger}` : ""}.
+            </>
+          ) : (
+            <>
+              About <b className="font-semibold tnum">{risk.expected_lost_minutes} minutes</b> usually go
+              {risk.usual_trigger ? ` to ${risk.usual_trigger}` : ""}.
+            </>
+          )}
         </p>
       ) : null}
       {moment.lesson ? <p className="text-subhead">{moment.lesson}</p> : null}
@@ -70,7 +84,7 @@ export function MomentView({ moment }: { moment: Moment }) {
       {moment.suggestions.length > 0 || moment.first_move ? (
         <ul className="flex flex-col gap-2.5">
           {moment.suggestions.map((s) => (
-            <Move key={s.title} move={s} />
+            <Move key={s.title} move={s} said={lastLine} />
           ))}
           {moment.first_move ? <Move move={moment.first_move} label="Tomorrow:" /> : null}
         </ul>
