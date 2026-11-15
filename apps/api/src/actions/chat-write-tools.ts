@@ -432,7 +432,7 @@ async function focusNow(input: unknown): Promise<WriteOutcome> {
   const s = await startFocus(input, "chat");
   const until = new Zone("Europe/Athens").clock(Date.parse(s.end_at));
   const mac = s.guarded ? " Distracting apps on your Mac are muted." : "";
-  const line = `Focusing on ${s.goal_title} until ${until}, ${s.minutes} min.${mac} End early on Today.`;
+  const line = `Focusing on ${s.goal_title} until ${until}, ${voiceShortDuration(s.minutes)}.${mac} End early on Today.`;
   return { content: `${line} {focus_session_id ${s.id}}`, isError: false, reply: line };
 }
 

@@ -83,6 +83,9 @@ test("the lines: under 15 words, no dashes, the goal by its first five words", (
   assert.equal(doneLine(45, "University"), "Done. 45 min for University.");
   assert.equal(earlyLine(30, "University"), "Counted 30 min for University.");
   assert.equal(earlyLine(0, "University"), "Ended. Nothing counted for University.");
+  // An hour or more reads as the voice writes it, never "135 min".
+  assert.equal(doneLine(60, "University"), "Done. 1h for University.");
+  assert.equal(earlyLine(135, "University"), "Counted 2h 15 for University.");
   assert.equal(shortGoal("Ship the company - the big launch!"), "Ship the company the big");
   for (const line of [doneLine(90, "A very long goal title with many words"), earlyLine(0, "x")]) {
     assert.ok(line.split(/\s+/).length < 15, line);

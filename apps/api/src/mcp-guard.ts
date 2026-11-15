@@ -1,4 +1,4 @@
-import type { AgentScope } from "@michael/shared";
+import { type AgentScope, voiceShortDuration } from "@michael/shared";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { agentsStore } from "./agents-store";
 import { currentAgent } from "./context";
@@ -110,14 +110,16 @@ export function summarise(name: string, title: string | undefined, input: unknow
       return "Kept an answer to your check in";
     case "log_done": {
       const what = typeof a.goal === "string" ? a.goal.slice(0, 60) : "a goal";
-      return typeof a.minutes === "number" ? `Logged ${a.minutes} min of ${what}` : `Logged time for ${what}`;
+      return typeof a.minutes === "number"
+        ? `Logged ${voiceShortDuration(a.minutes)} of ${what}`
+        : `Logged time for ${what}`;
     }
     case "confirm_block":
       return a.did === false ? "Marked a block as not done" : "Confirmed a block you did";
     case "focus_now": {
       const what = typeof a.goal === "string" ? a.goal.slice(0, 60) : "a goal";
       return typeof a.minutes === "number"
-        ? `Started ${a.minutes} min of focus on ${what}`
+        ? `Started ${voiceShortDuration(a.minutes)} of focus on ${what}`
         : `Started a focus session on ${what}`;
     }
     case "get_goals":

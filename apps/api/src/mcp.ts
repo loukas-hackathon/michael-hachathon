@@ -22,6 +22,7 @@ import {
   type Score,
   Source,
   TravelPlanInput,
+  voiceShortDuration,
 } from "@michael/shared";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
@@ -662,7 +663,7 @@ export function createMcpServer(): McpServer {
       const s = await startFocus(input, "mcp");
       const until = zone.clock(Date.parse(s.end_at));
       const mac = s.guarded ? " Distracting apps on their Mac are muted." : "";
-      return reply(`Focusing on ${s.goal_title} until ${until}, ${s.minutes} min.${mac}`, {
+      return reply(`Focusing on ${s.goal_title} until ${until}, ${voiceShortDuration(s.minutes)}.${mac}`, {
         session: s,
       });
     }),

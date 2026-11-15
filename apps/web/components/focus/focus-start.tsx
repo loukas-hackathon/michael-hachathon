@@ -1,5 +1,6 @@
 "use client";
 
+import { voiceShortDuration } from "@michael/shared";
 import { useRef, useState } from "react";
 import { startFocusAction } from "@/app/focus-actions";
 import { Sheet } from "@/components/sheet";
@@ -75,7 +76,7 @@ export function FocusLengths({
             aria-label={`Focus for ${m} minutes`}
             className={chip}
           >
-            {busy === String(m) ? "Starting" : `${m} min`}
+            {busy === String(m) ? "Starting" : voiceShortDuration(m)}
           </button>
         ))}
       </fieldset>

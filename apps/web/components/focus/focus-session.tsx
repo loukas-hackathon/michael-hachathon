@@ -1,6 +1,6 @@
 "use client";
 
-import type { FocusSession } from "@michael/shared";
+import { type FocusSession, voiceShortDuration } from "@michael/shared";
 import { useEffect, useRef, useState } from "react";
 import { endFocusAction, extendFocusAction, focusActiveAction } from "@/app/focus-actions";
 import { haptic } from "@/components/haptics";
@@ -209,7 +209,7 @@ export function FocusSessionView({
             aria-label="End early"
           >
             <p className="text-title3 font-semibold tnum">
-              {soFar > 0 ? `Count ${soFar} min?` : "End without counting?"}
+              {soFar > 0 ? `Count ${voiceShortDuration(soFar)}?` : "End without counting?"}
             </p>
             <div className="flex flex-wrap items-center justify-center gap-2">
               {soFar > 0 ? (
@@ -220,7 +220,7 @@ export function FocusSessionView({
                   aria-busy={busy === "end"}
                   className={`${filled} min-w-[9rem]`}
                 >
-                  {busy === "end" ? "Saving" : `Count ${soFar} min`}
+                  {busy === "end" ? "Saving" : `Count ${voiceShortDuration(soFar)}`}
                 </button>
               ) : null}
               <button
@@ -296,7 +296,7 @@ export function FocusResult({ session, onClose }: { session: FocusSession; onClo
           role="status"
           className="m-swap mt-8 max-w-full text-insight font-bold outline-none"
         >
-          {session.message ?? (done ? `Done. ${counted} min.` : "Ended.")}
+          {session.message ?? (done ? `Done. ${voiceShortDuration(counted)}.` : "Ended.")}
         </h1>
         {counted > 0 ? (
           <p className="mt-2 text-subhead text-label-2">It counts as goal time on Today and Goals.</p>

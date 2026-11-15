@@ -1,5 +1,6 @@
 "use client";
 
+import { voiceShortDuration } from "@michael/shared";
 import { useRouter } from "next/navigation";
 import { startTransition, useId, useRef, useState } from "react";
 import { Sheet } from "@/components/sheet";
@@ -133,7 +134,7 @@ export function LogTimeForm({
             onClick={() => setMinutes(m)}
             className={CHIP}
           >
-            {m} min
+            {voiceShortDuration(m)}
           </button>
         ))}
         <label className="flex items-center gap-1.5 text-subhead text-label-2">
@@ -158,7 +159,7 @@ export function LogTimeForm({
       </div>
       {at ? (
         <p className="-mt-2 text-footnote text-label-2">
-          From {at}, {minutes} min.
+          From {at}, {voiceShortDuration(minutes)}.
         </p>
       ) : null}
       {result && !result.ok ? (
@@ -174,7 +175,7 @@ export function LogTimeForm({
           aria-busy={pending}
           className={`${PILL} min-w-[7.5rem]`}
         >
-          {pending ? "Logging" : `Log ${minutes} min`}
+          {pending ? "Logging" : `Log ${voiceShortDuration(minutes)}`}
         </button>
       </div>
     </div>
