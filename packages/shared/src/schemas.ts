@@ -2500,6 +2500,16 @@ export const ChatResponse = z.object({
 });
 export type ChatResponse = z.infer<typeof ChatResponse>;
 
+// `event: step` on /v1/chat/stream: how Michael is working it out. One "running" then one "done"
+// per tool call (same id), plus the opening "Reading your day". The label is plain, in Michael's
+// voice, and never holds other people's titles or raw ids. Clients that do not know it ignore it.
+export const ChatStep = z.object({
+  id: z.string(),
+  label: z.string(),
+  status: z.enum(["running", "done"]),
+});
+export type ChatStep = z.infer<typeof ChatStep>;
+
 export const ChatHistory = z.object({
   // Oldest first.
   messages: z.array(ChatMessage),

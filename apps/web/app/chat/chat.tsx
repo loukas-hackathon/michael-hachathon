@@ -5,6 +5,7 @@ import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } 
 import { ConnectChip, KnowledgeChip } from "@/components/chat/connect-chip";
 import { connectIntent } from "@/components/chat/connect-intent";
 import { knowledgeIntent } from "@/components/chat/knowledge-intent";
+import { LiveStep, WorkedSteps } from "@/components/chat/steps";
 import { Hint, markHintSeen } from "@/components/hint";
 import { useArrival } from "@/components/motion";
 import { ScreenHeader } from "@/components/screen";
@@ -280,6 +281,12 @@ export function Chat({
                       streaming={m.id === streamingId}
                       arriving={arriving(m.key ?? m.id)}
                     >
+                      {m.id === streamingId && current.steps.some((s) => s.status === "running") ? (
+                        <span className="mt-0.5 px-1">
+                          <LiveStep steps={current.steps} />
+                        </span>
+                      ) : null}
+                      {current.worked[m.id] ? <WorkedSteps steps={current.worked[m.id] ?? []} /> : null}
                       {acted[m.id] ? <ActionChips actions={acted[m.id] ?? []} /> : null}
                       {connect ? <ConnectChip id={connect} /> : null}
                       {knows ? <KnowledgeChip /> : null}
@@ -294,7 +301,7 @@ export function Chat({
                 {pending && lines.at(-1)?.role === "user" ? (
                   <li className="flex items-start">
                     <p className="m-pop-in rounded-card bg-fill px-3.5 py-2 text-body text-label-2 [--m-origin:0_100%]">
-                      Looking at your day…
+                      <LiveStep steps={current.steps} className="text-body text-label-2" />
                     </p>
                   </li>
                 ) : null}

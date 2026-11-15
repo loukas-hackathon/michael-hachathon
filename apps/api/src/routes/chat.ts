@@ -6,6 +6,7 @@ import {
   type ChatMessage,
   ChatRequest,
   type ChatResponse,
+  type ChatStep,
   type ChatThread,
   ChatWarmRequest,
   type CheckIn,
@@ -26,6 +27,7 @@ import {
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
+import { OPENING_STEP, stepLabel } from "../actions/chat-steps";
 import { CHAT_TOOLS, type ChatTurnState, runChatTool, undoLine } from "../actions/chat-tools";
 import { checkInContext, checkInLine } from "../checkin/service";
 import { currentDemoVisitor, currentUserId } from "../context";
@@ -709,6 +711,8 @@ interface Hooks {
   /** Streams text as it is written; without it the model is called without streaming. */
   onText?: (text: string) => Promise<void>;
   onAction?: (action: Recommendation) => Promise<void>;
+  /** How Michael is working it out: "running" then "done" for each tool call, in order. */
+  onStep?: (step: ChatStep) => Promise<void>;
   /** The answer is read aloud: brief, no lists (SPOKEN_STYLE). */
   spoken?: boolean;
   /** The "Now:" line, when the context leaves the clock out (contextFor). */
@@ -841,6 +845,7 @@ export async function askMichael(
     : undefined;
 
   const turn: ChatTurnState = { proposals: 0 };
+  let steps = 0;
   const timing: RoundTiming[] = [];
   // A plain statement ("I took a bath for 40 minutes"), not a question: when every tool of a round
   // hands back a finished line (log_done, confirm_block), that line is the answer and the model is
@@ -872,7 +877,10 @@ export async function askMichael(
     const replies: string[] = [];
     const toolsStart = performance.now();
     for (const call of calls) {
+      const step = { id: `s${++steps}`, label: stepLabel(call.name, call.input) };
+      await hooks.onStep?.({ ...step, status: "running" });
       const outcome = await runChatTool(call.name, call.input, turn);
+      await hooks.onStep?.({ ...step, status: "done" });
       if (outcome.reply && !outcome.isError) replies.push(outcome.reply);
       if (outcome.action) {
         actions.push(outcome.action);
@@ -1077,7 +1085,8 @@ export const chat = new Hono()
     c.header("Server-Timing", `model;desc="${t.rounds.length} rounds";dur=${model}`, { append: true });
     return c.json(body, 201);
   })
-  // POST /v1/chat/stream { message }  the same answer as server-sent events: `delta` { text } as it
+  // POST /v1/chat/stream { message }  the same answer as server-sent events: `step` ChatStep for how
+  // Michael is working it out (opening "Reading your day", then each tool call), `delta` { text } as it
   // is written, `action` Recommendation for each thing done or undone, then `done` ChatResponse, or
   // `error` ApiError if the model fails mid-way.
   .post("/chat/stream", async (c) => {
@@ -1086,13 +1095,31 @@ export const chat = new Hono()
     const p = await prepare(await jsonBody(c));
     c.header("Server-Timing", `context;dur=${p.contextMs}`, { append: true });
     return streamSSE(c, async (sse) => {
+      const step = (s: ChatStep) => sse.writeSSE({ event: "step", data: JSON.stringify(s) });
+      // Something specific shows before the first word: "Reading your day", done at the first
+      // word or the first tool step, whichever comes first.
+      let opening = true;
+      const closeOpening = async () => {
+        if (!opening) return;
+        opening = false;
+        await step({ ...OPENING_STEP, status: "done" });
+      };
       try {
+        await step({ ...OPENING_STEP, status: "running" });
         const answer = await askMichael(p.turns, p.context, {
           spoken: p.spoken,
           now: p.now,
-          onText: (text) => sse.writeSSE({ event: "delta", data: JSON.stringify({ text }) }),
+          onText: async (text) => {
+            await closeOpening();
+            await sse.writeSSE({ event: "delta", data: JSON.stringify({ text }) });
+          },
           onAction: (action) => sse.writeSSE({ event: "action", data: JSON.stringify(action) }),
+          onStep: async (s) => {
+            await closeOpening();
+            await step(s);
+          },
         });
+        await closeOpening();
         const saveStart = performance.now();
         const body = await save(p, answer);
         const t = timingOf(p, answer, start, Math.round(performance.now() - saveStart));
