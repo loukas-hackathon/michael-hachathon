@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { formatTime, hm } from "@/lib/format";
-import { type LostCause, type LostWeek, worstDay } from "@/lib/lost-week";
+import { hm } from "@/lib/format";
+import { type LostCause, type LostWeek, phoneLine, worstDay } from "@/lib/lost-week";
 
 const NAME = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const CHART_PX = 64;
@@ -107,9 +107,7 @@ export function LostWeekChart({
 
       <p className="mt-2 text-footnote text-label-2 tnum">
         {worst ? `Most on ${NAME[worstIdx]}, ${hm(worst.lost ?? 0)}. ` : null}
-        {week.phoneUntil
-          ? `Phone data up to ${week.phoneUntil.slice(0, 10) === week.today ? formatTime(week.phoneUntil) : `${NAME[(new Date(`${week.phoneUntil.slice(0, 10)}T12:00:00Z`).getUTCDay() + 6) % 7]} ${formatTime(week.phoneUntil)}`}, so today can still grow.`
-          : null}
+        {phoneLine(week)}
       </p>
     </section>
   );

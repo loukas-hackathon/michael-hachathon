@@ -1,4 +1,6 @@
 import type { Score } from "@michael/shared";
+import { athensDay } from "./athens";
+import { formatTime } from "./format";
 
 // Goal time lost per day of the week (Manolis, Sat night): from GET /v1/score `days[].lost_minutes`.
 // It is time lost INSIDE planned goal blocks, not all screen time, so labels say "from goal blocks".
@@ -31,8 +33,9 @@ export function lostWeekFrom(score: Score, today: string): LostWeek {
     planned: d.planned_minutes,
   }));
   const iphone = score.data_until?.iphone ?? null;
+  // The day in Athens, not the UTC date: 01:30 on Sunday in Athens is still Saturday in UTC.
   const phoneUntil =
-    iphone && iphone.slice(0, 10) <= today && days.some((d) => d.date === today) ? iphone : null;
+    iphone && athensDay(new Date(iphone)) <= today && days.some((d) => d.date === today) ? iphone : null;
   return { date: score.date, today, days, total: score.lost_minutes, phoneUntil, causes: causesOf(score) };
 }
 
@@ -50,4 +53,18 @@ export function causesOf(score: Score): LostCause[] {
 export function worstDay(w: LostWeek): LostDay | null {
   const past = w.days.filter((d): d is LostDay & { lost: number } => (d.lost ?? 0) > 0);
   return past.length ? past.reduce((a, b) => (b.lost > a.lost ? b : a)) : null;
+}
+
+const DAY_NAME = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+/**
+ * "Phone data up to 01:30, so today can still grow." The time is Athens time and so is the day:
+ * phone data that ends at 01:30 today never reads as yesterday. Null when there is nothing to say.
+ */
+export function phoneLine(w: Pick<LostWeek, "phoneUntil" | "today">): string | null {
+  if (!w.phoneUntil) return null;
+  const at = new Date(w.phoneUntil);
+  const day = athensDay(at);
+  const name = DAY_NAME[(new Date(`${day}T12:00:00Z`).getUTCDay() + 6) % 7];
+  return `Phone data up to ${day === w.today ? "" : `${name} `}${formatTime(at)}, so today can still grow.`;
 }
