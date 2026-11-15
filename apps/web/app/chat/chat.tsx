@@ -2,6 +2,8 @@
 
 import type { ChatMessage, ChatThread, Recommendation } from "@michael/shared";
 import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { ConnectChip } from "@/components/chat/connect-chip";
+import { connectIntent } from "@/components/chat/connect-intent";
 import { useArrival } from "@/components/motion";
 import { ScreenHeader } from "@/components/screen";
 import { Bone } from "@/components/skeleton";
@@ -205,22 +207,28 @@ export function Chat({
             </div>
           ) : (
             <ol className="flex flex-col gap-2">
-              {lines.map((m) => (
-                <MessageBubble
-                  key={m.key ?? m.id}
-                  role={m.role}
-                  content={m.content}
-                  streaming={m.id === streamingId}
-                  arriving={arriving(m.key ?? m.id)}
-                >
-                  {acted[m.id] ? <ActionChips actions={acted[m.id] ?? []} /> : null}
-                  {m.role === "assistant" && m.created_at ? (
-                    <span className="mt-0.5 px-1 text-caption text-label-2 tnum">
-                      {formatTime(m.created_at)}
-                    </span>
-                  ) : null}
-                </MessageBubble>
-              ))}
+              {lines.map((m, i) => {
+                // "Connect my calendar": the one tap button under the answer, once it has finished (#307).
+                const asked = m.role === "assistant" && m.id !== streamingId ? lines[i - 1] : undefined;
+                const connect = asked?.role === "user" ? connectIntent(asked.content) : null;
+                return (
+                  <MessageBubble
+                    key={m.key ?? m.id}
+                    role={m.role}
+                    content={m.content}
+                    streaming={m.id === streamingId}
+                    arriving={arriving(m.key ?? m.id)}
+                  >
+                    {acted[m.id] ? <ActionChips actions={acted[m.id] ?? []} /> : null}
+                    {connect ? <ConnectChip id={connect} /> : null}
+                    {m.role === "assistant" && m.created_at ? (
+                      <span className="mt-0.5 px-1 text-caption text-label-2 tnum">
+                        {formatTime(m.created_at)}
+                      </span>
+                    ) : null}
+                  </MessageBubble>
+                );
+              })}
               {pending && lines.at(-1)?.role === "user" ? (
                 <li className="flex items-start">
                   <p className="m-pop-in rounded-card bg-fill px-3.5 py-2 text-body text-label-2 [--m-origin:0_100%]">
