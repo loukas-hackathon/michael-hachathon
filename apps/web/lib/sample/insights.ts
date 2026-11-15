@@ -33,5 +33,9 @@ export const sampleInsightsWatching: Insights = {
       days: i.evidence.days.slice(-2),
     },
   })),
-  series: [],
+  // A week of readings and no recovery figure yet, as a watch in its first week sends.
+  series: mockInsights.series.map((line) => ({
+    ...line,
+    points: line.points.slice(-9).map((p) => (line.key === "recovery" ? { ...p, value: null } : p)),
+  })),
 };

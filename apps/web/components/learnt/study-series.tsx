@@ -4,6 +4,20 @@ import type { Series } from "@/lib/insights";
 const W = 160;
 const H = 44;
 const ORDER: Series["key"][] = ["sleep_score", "hrv", "resting_hr", "recovery"];
+/** Short names for three across on a phone, where the full ones would cut. */
+const SHORT: Partial<Record<Series["key"], string>> = {
+  sleep_score: "Sleep",
+  hrv: "HRV",
+  resting_hr: "Resting HR",
+  recovery: "Recovery",
+};
+/** Columns by how many lines have values, so three or two sit evenly instead of leaving a hole. */
+const GRID: Record<number, string> = {
+  1: "grid-cols-1",
+  2: "grid-cols-2",
+  3: "grid-cols-3",
+  4: "grid-cols-2 xl:grid-cols-4",
+};
 const UNIT: Record<string, string> = { score: "", pct: "%", ms: " ms", bpm: " bpm", min: " min", count: "" };
 
 /** The line split at every null, so a night without the watch is a gap, never a slope. */
@@ -24,7 +38,30 @@ function segments(s: Series, lo: number, hi: number) {
   return { runs, x: (i: number) => (i / n) * W, y };
 }
 
-function Multiple({ s, marks }: { s: Series; marks: Set<string> }) {
+/** The real span of the study: first to last day with any reading, as "8 days" or "5 weeks". */
+export function spanLabel(series: Series[]): string | null {
+  const days = series.flatMap((s) => s.points.filter((p) => p.value != null).map((p) => p.day)).sort();
+  const first = days[0];
+  const last = days[days.length - 1];
+  if (!first || !last) return null;
+  const n = Math.round((Date.parse(`${last}T12:00:00Z`) - Date.parse(`${first}T12:00:00Z`)) / 86_400_000) + 1;
+  if (n < 14) return `${n} ${n === 1 ? "day" : "days"}`;
+  return `${Math.round(n / 7)} weeks`;
+}
+
+const hasLine = (s: Series) => s.points.filter((p) => p.value != null).length >= 2;
+
+function Multiple({
+  s,
+  marks,
+  span,
+  short,
+}: {
+  s: Series;
+  marks: Set<string>;
+  span: string;
+  short: boolean;
+}) {
   const values = s.points.map((p) => p.value).filter((v): v is number => v != null);
   if (values.length < 2) return null;
   const lo = Math.min(...values);
@@ -36,11 +73,20 @@ function Multiple({ s, marks }: { s: Series; marks: Set<string> }) {
   return (
     <figure className="min-w-0">
       <figcaption className="flex flex-col">
-        <span className="truncate text-footnote text-label-2">{s.label}</span>
+        {short && SHORT[s.key] ? (
+          <>
+            <span className="truncate text-footnote text-label-2 sm:hidden">{SHORT[s.key]}</span>
+            <span className="truncate text-footnote text-label-2 max-sm:hidden">{s.label}</span>
+          </>
+        ) : (
+          <span className="truncate text-footnote text-label-2">{s.label}</span>
+        )}
         <span className="text-title3 font-bold tnum">
           {last}
           <span className="text-footnote font-semibold text-label-2">{UNIT[s.unit] ?? ""}</span>
-          <span className="ml-1.5 text-footnote font-normal text-label-2">usually {usual}</span>
+          <span className={`ml-1.5 text-footnote font-normal text-label-2 ${short ? "max-sm:hidden" : ""}`}>
+            usually {usual}
+          </span>
         </span>
       </figcaption>
       <svg
@@ -48,7 +94,7 @@ function Multiple({ s, marks }: { s: Series; marks: Set<string> }) {
         preserveAspectRatio="none"
         className="mt-1.5 block h-11 w-full overflow-visible"
         role="img"
-        aria-label={`${s.label} over 12 weeks: usually ${usual}${UNIT[s.unit] ?? ""}, lowest ${lo}, highest ${hi}, last ${last}.`}
+        aria-label={`${s.label} over ${span}: usually ${usual}${UNIT[s.unit] ?? ""}, lowest ${lo}, highest ${hi}, last ${last}.`}
       >
         {marked.map(({ p, i }) => (
           <line
@@ -81,8 +127,9 @@ function Multiple({ s, marks }: { s: Series; marks: Set<string> }) {
 }
 
 /**
- * The body over the 12 weeks Michael studied (#432): four small multiples, black lines, gaps where
- * there was no reading. With a chain open, the sleep line marks the night after each trigger.
+ * The body over the span Michael studied (#432, up to 12 weeks): up to four small multiples, black
+ * lines, gaps where there was no reading; a line without values is left out and the rest share the
+ * row evenly. With a chain open, the sleep line marks the night after each trigger.
  */
 export function StudySeries({
   series,
@@ -93,19 +140,33 @@ export function StudySeries({
   triggerDays?: string[];
   triggerLabel?: string;
 }) {
-  const shown = ORDER.map((k) => series.find((s) => s.key === k)).filter((s): s is Series => Boolean(s));
-  if (!shown.length) return null;
+  const shown = ORDER.map((k) => series.find((s) => s.key === k)).filter(
+    (s): s is Series => Boolean(s) && hasLine(s as Series),
+  );
+  const span = spanLabel(shown);
+  if (!shown.length || !span) return null;
+  // Every line covers the same days: the first to the last with any reading, so none starts indented.
+  const read = shown.flatMap((x) => x.points.filter((p) => p.value != null).map((p) => p.day)).sort();
+  const [from, to] = [read[0] ?? "", read[read.length - 1] ?? ""];
+  const lines = shown.map((x) => ({ ...x, points: x.points.filter((p) => p.day >= from && p.day <= to) }));
+  const three = shown.length === 3;
   // A trigger is an evening; its sleep is scored the morning after.
   const marks = new Set((triggerDays ?? []).map((d) => addDays(d, 1)));
   return (
-    <section aria-label="Your body over 12 weeks" className="mt-6">
-      <div className="grid grid-cols-2 gap-x-5 gap-y-5 rounded-group bg-fill px-4 py-4 xl:grid-cols-4">
-        {shown.map((s) => (
-          <Multiple key={s.key} s={s} marks={s.key === "sleep_score" ? marks : new Set()} />
+    <section aria-label={`Your body over ${span}`} className="mt-6">
+      <div className={`grid gap-x-5 gap-y-5 rounded-group bg-fill px-4 py-4 ${GRID[shown.length]}`}>
+        {lines.map((s) => (
+          <Multiple
+            key={s.key}
+            s={s}
+            span={span}
+            short={three}
+            marks={s.key === "sleep_score" ? marks : new Set()}
+          />
         ))}
       </div>
       <p className="mt-2 px-4 text-footnote text-label-2">
-        12 weeks.
+        {span.charAt(0).toUpperCase() + span.slice(1)}.
         {marks.size && triggerLabel
           ? ` Dashed on sleep: the morning after each of the ${marks.size} nights with ${triggerLabel}.`
           : null}

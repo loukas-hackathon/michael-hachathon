@@ -145,6 +145,9 @@ export default async function TodayPage({
             <TodayFocusNow day={day} goals={goals} />
           </Suspense>
           <RecommendationsPanel slot="primary" />
+          <Suspense fallback={null}>
+            <TodayLearnt demo={demo} />
+          </Suspense>
           {/* No moment card or brief on an empty day: both would only say there is nothing yet, which
               Get started already says with one action. */}
           <Suspense fallback={null}>
