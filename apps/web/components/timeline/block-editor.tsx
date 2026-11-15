@@ -4,6 +4,7 @@ import { type FormEvent, useState } from "react";
 import { formatTime } from "@/lib/format";
 import type { Plan } from "@/lib/timeline";
 import { input, Row, Segmented } from "../form-controls";
+import { TimeField } from "../time-field";
 
 // The editable half of the Timeline's detail sheet (#271): a new block, or one of the user's own
 // solo blocks that has not started. Title, start, length or end, goal, and Delete for blocks made in
@@ -87,27 +88,11 @@ export function BlockEditor({
           />
         </Row>
         <Row label="Starts" htmlFor={`${formId}-start`}>
-          <input
-            id={`${formId}-start`}
-            type="time"
-            step={900}
-            required
-            value={start}
-            onChange={(e) => setStart(e.target.value)}
-            className={input}
-          />
+          <TimeField id={`${formId}-start`} label="Starts" value={start} onChange={setStart} />
         </Row>
         {isNew ? null : (
           <Row label="Ends" htmlFor={`${formId}-end`}>
-            <input
-              id={`${formId}-end`}
-              type="time"
-              step={900}
-              required
-              value={end}
-              onChange={(e) => setEnd(e.target.value)}
-              className={input}
-            />
+            <TimeField id={`${formId}-end`} label="Ends" value={end} onChange={setEnd} />
           </Row>
         )}
       </div>

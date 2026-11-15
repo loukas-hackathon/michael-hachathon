@@ -493,7 +493,7 @@ function momentRule(kind: MomentKind) {
       kind === "morning"
         ? t.woke !== null
           ? `Sent after you woke at ${w.zone.clock(t.woke)}.`
-          : `Sent at ${w.zone.clock(t.morningAt)}: no sleep recorded this morning.`
+          : `Sent at ${w.zone.clock(t.morningAt)}, the usual morning time.`
         : t.bedtime !== null
           ? `Sent an hour before your usual bedtime of ${w.zone.clock(w.zone.at(w.day, t.bedtime))}.`
           : `Sent at ${w.zone.clock(t.eveningAt)}: not enough nights yet to learn your bedtime.`;

@@ -6,25 +6,35 @@ const CLAUDE_CONNECTORS = "https://claude.ai/settings/connectors";
 
 function useCopy(url: string) {
   const [copied, setCopied] = useState(false);
+  const [blocked, setBlocked] = useState(false);
   async function copy() {
     try {
       await navigator.clipboard.writeText(url);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Clipboard blocked: the link is selectable next to the button.
+      // Clipboard blocked: only then does the link itself show, selectable, to copy by hand.
+      setBlocked(true);
     }
   }
-  return { copied, copy };
+  return { copied, blocked, copy };
 }
 
 const TINTED = "bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] text-tint-text";
 
+/**
+ * The connection link as one Copy button and a short name, never the address itself: no URLs in the
+ * user's path (#385). The address shows only if the clipboard is blocked.
+ */
 function LinkField({ url, primary, surface = "bg-bg" }: { url: string; primary: boolean; surface?: string }) {
-  const { copied, copy } = useCopy(url);
+  const { copied, blocked, copy } = useCopy(url);
   return (
     <div className={`flex items-center gap-2 rounded-group py-1.5 pr-1.5 pl-3 ${surface}`}>
-      <code className="min-w-0 flex-1 truncate text-footnote select-all">{url}</code>
+      {blocked ? (
+        <code className="min-w-0 flex-1 truncate text-footnote select-all">{url}</code>
+      ) : (
+        <span className="min-w-0 flex-1 truncate text-subhead font-semibold">Your Michael link</span>
+      )}
       <button
         type="button"
         onClick={copy}
