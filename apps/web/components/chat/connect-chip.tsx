@@ -1,5 +1,7 @@
 import type { ConnectorId } from "@michael/shared";
 import Link from "next/link";
+import { TelegramConnectLink } from "@/components/telegram-connect-link";
+import { TELEGRAM_CONNECT } from "@/lib/one-tap";
 import { CONNECT_TARGET } from "./connect-intent";
 import { KNOWLEDGE_HREF } from "./knowledge-intent";
 
@@ -11,6 +13,8 @@ const CHIP =
 export function ConnectChip({ id }: { id: ConnectorId }) {
   const t = CONNECT_TARGET[id];
   // A plain link for hops that leave the app (Google, Telegram), so nothing prefetches them.
+  if (t.href === TELEGRAM_CONNECT)
+    return <TelegramConnectLink className={CHIP}>{t.label}</TelegramConnectLink>;
   return t.external ? (
     <a href={t.href} className={CHIP}>
       {t.label}

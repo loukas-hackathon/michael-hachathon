@@ -83,3 +83,42 @@ test("Do Not Disturb: the hand over page opens and offers nothing without a nudg
   await expect(page.getByRole("button", { name: "Switch it on" })).toHaveCount(0);
   await context.close();
 });
+
+// The installed app has no browser chrome (Loukas, 15 Nov): Add the shortcut opened the file in the
+// app's own window and left him on a page with no way back. In standalone mode it opens a new page
+// and this one stays put; the QR setup page has its own Close.
+test("installed app: Add the shortcut opens a new page, /setup has Close", async ({ browser, baseURL }) => {
+  const context = await browser.newContext({ userAgent: IPHONE_UA, viewport: { width: 390, height: 844 } });
+  await context.addInitScript(() => {
+    Object.defineProperty(Navigator.prototype, "standalone", { get: () => true, configurable: true });
+  });
+  await context.addCookies([{ name: "michael_e2e_user", value: randomUUID(), url: baseURL ?? "" }]);
+  const page = await context.newPage();
+
+  await page.goto(`${baseURL}/you/connections/iphone`);
+  const add = page.getByRole("link", { name: "Add the shortcut" });
+  await expect(add).toHaveAttribute("target", "_blank");
+  const here = page.url();
+  const opened = context.waitForEvent("page");
+  await add.click();
+  await (await opened).close();
+  expect(page.url()).toBe(here);
+  await expect(page.getByRole("button", { name: "Connect the shortcut" })).toBeVisible();
+
+  // If Shortcuts does not open: steps in a sheet, Safari in a new page, and Done.
+  await page.getByRole("button", { name: "Shortcuts did not open?" }).click();
+  await expect(page.getByRole("link", { name: "Open in Safari" })).toHaveAttribute("target", "_blank");
+  await page.getByRole("button", { name: "Done" }).click();
+  await expect(page.getByRole("link", { name: "Open in Safari" })).toHaveCount(0);
+
+  await page.goto(`${baseURL}/setup/iphone`);
+  await page.getByRole("button", { name: "Close" }).click();
+  await expect(page).toHaveURL(/\/you\/connections\/iphone/);
+  await context.close();
+});
+
+test("browser tab: /setup has no extra Close, the browser has its own back", async ({ page }) => {
+  await page.goto("/setup/iphone");
+  await expect(page.getByText("This link is not complete. Scan the code in Michael again.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Close" })).toHaveCount(0);
+});

@@ -1,6 +1,7 @@
 import { isLive, SetupConnection } from "@michael/shared";
 import { notFound } from "next/navigation";
 import { Wordmark } from "@/components/brand";
+import { StandaloneClose } from "@/components/standalone";
 import { shortcutUrl } from "@/lib/one-tap";
 import { SetupFromLink } from "./setup-from-link";
 
@@ -35,7 +36,9 @@ export default async function SetupPage({ params }: { params: Promise<{ connecti
   return (
     // .screen sets the safe area padding outside Tailwind's layers, so the gap above is a margin.
     <main className="screen flex min-h-dvh flex-col">
-      <Wordmark className="mt-10 h-8 w-auto shrink-0 text-label" />
+      {/* The installed app has no back button: Close, so this page is never a dead end. */}
+      <StandaloneClose />
+      <Wordmark className="h-8 w-auto shrink-0 text-label" />
       <h1 className="mt-6 text-insight font-bold tracking-[-0.01em]">{copy.title}</h1>
       <SetupFromLink connection={parsed.data} live={live} body={copy.body} shortcutUrl={shortcutUrl()} />
     </main>
