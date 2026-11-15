@@ -1359,7 +1359,7 @@ and fast mode rests for 10 minutes). The stable prompt, the context and the conv
 cached, so the second round of a tool loop reads them back. A plain statement (no question mark)
 whose tools all return a finished line (`log_done`, `confirm_block`) is answered with that line,
 without a second model call. Every answer logs one `chat_timing` JSON line and the stream sends it
-as `timing`: `ChatTiming { context_ms, rounds: { first_event_ms, first_text_ms, ms, tools_ms, speed,
+as `timing`: `ChatTiming { context_ms, context_parts (when each context read finished, and the database round trips), rounds: { first_event_ms, first_text_ms, ms, tools_ms, speed,
 input_tokens?, cache_read_tokens?, cache_write_tokens?, output_tokens? }[], save_ms, total_ms }`;
 `POST /v1/chat` sends `Server-Timing` `context` and `model` instead, and the stream `context`.
 

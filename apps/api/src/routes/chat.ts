@@ -35,6 +35,7 @@ import { Zone } from "../patterns/time";
 import { ritualFor } from "../ritual/ritual";
 import { isLogEntry } from "../score/logged";
 import { store } from "../store";
+import { currentTiming } from "../timing";
 import { latestThread, titleFor, untitled } from "./chat-threads";
 import { patternReportFor } from "./patterns";
 import { scoreFor } from "./score";
@@ -436,8 +437,14 @@ export function buildChatContext(input: ChatContextInput): string {
   return parts.join("\n\n");
 }
 
-async function contextForNow(threadId: string | null): Promise<string> {
+async function contextForNow(threadId: string | null, parts: Record<string, number> = {}): Promise<string> {
   const now = Date.now();
+  const t0 = performance.now();
+  // How long each read took, for chat_timing (#364).
+  const timed = <T>(name: string, p: Promise<T>): Promise<T> =>
+    p.finally(() => {
+      parts[name] = Math.round(performance.now() - t0);
+    });
   const zone = new Zone(DEFAULT_TIMEZONE);
   const dayStart = zone.startOfDay(zone.dayOf(now));
   const dayEnd = zone.startOfDay(zone.nextDay(zone.dayOf(now)));
@@ -458,25 +465,52 @@ async function contextForNow(threadId: string | null): Promise<string> {
     checklist,
     ritual,
   ] = await Promise.all([
-    store.listGoals(),
-    store.listInstructions().catch(() => []),
-    store.listEvents({
-      from: new Date(now - WEEK_MS).toISOString(),
-      to: new Date(dayEnd).toISOString(),
-      type: [...LISTED_TYPES],
-    }),
-    now - dayStart > 60_000 ? report(new Date(dayStart).toISOString()) : Promise.resolve(null),
-    report(new Date(now - WEEK_MS).toISOString()),
-    scoreFor({ now: nowIso }).catch((err) => {
-      console.error("chat: score failed", err);
-      return null;
-    }),
-    store.listRecommendations({ status: "done" }).catch(() => []),
-    checkInContext(now),
-    listMemories().catch(() => []),
-    store.listChatThreads({ limit: OTHER_THREADS + 1 }).catch(() => []),
-    store.listChecklist({ from: zone.dayOf(now), to: zone.dayOf(now) }).catch(() => []),
-    ritualFor(now).catch(() => null),
+    timed("goals", store.listGoals()),
+    timed(
+      "instructions",
+      store.listInstructions().catch(() => []),
+    ),
+    timed(
+      "events",
+      store.listEvents({
+        from: new Date(now - WEEK_MS).toISOString(),
+        to: new Date(dayEnd).toISOString(),
+        type: [...LISTED_TYPES],
+      }),
+    ),
+    timed(
+      "patterns_today",
+      now - dayStart > 60_000 ? report(new Date(dayStart).toISOString()) : Promise.resolve(null),
+    ),
+    timed("patterns_week", report(new Date(now - WEEK_MS).toISOString())),
+    timed(
+      "score",
+      scoreFor({ now: nowIso }).catch((err) => {
+        console.error("chat: score failed", err);
+        return null;
+      }),
+    ),
+    timed(
+      "undoable",
+      store.listRecommendations({ status: "done" }).catch(() => []),
+    ),
+    timed("check_ins", checkInContext(now)),
+    timed(
+      "memories",
+      listMemories().catch(() => []),
+    ),
+    timed(
+      "threads",
+      store.listChatThreads({ limit: OTHER_THREADS + 1 }).catch(() => []),
+    ),
+    timed(
+      "checklist",
+      store.listChecklist({ from: zone.dayOf(now), to: zone.dayOf(now) }).catch(() => []),
+    ),
+    timed(
+      "ritual",
+      ritualFor(now).catch(() => null),
+    ),
   ]);
   return buildChatContext({
     now,
@@ -781,6 +815,8 @@ interface Prepared {
   title: Promise<string> | null;
   /** How long building the context (and reading the thread) took. */
   contextMs: number;
+  /** When each context read finished, from the start of the context, and the database round trips. */
+  contextParts: Record<string, number>;
 }
 
 /** Everything both POST routes need before the model is called. */
@@ -791,20 +827,25 @@ async function prepare(body: unknown): Promise<Prepared> {
   // Fail before storing anything when chat is not configured.
   anthropic();
   const contextStart = performance.now();
+  const contextParts: Record<string, number> = {};
+  const db = currentTiming();
+  const dbBefore = db?.dbCount ?? 0;
   const [earlier, context] = await Promise.all([
     thread ? store.listChatMessages(thread.id, HISTORY_TURNS) : Promise.resolve([]),
-    contextForNow(thread?.id ?? null),
+    contextForNow(thread?.id ?? null, contextParts),
   ]);
   const turns: Anthropic.MessageParam[] = [...toTurns(earlier), { role: "user", content: message }];
   // Named from the first line, in parallel with the answer, so naming adds no wait.
   const title = !thread || (untitled(thread) && earlier.length === 0) ? titleFor(message) : null;
   const contextMs = Math.round(performance.now() - contextStart);
-  return { message, turns, context, spoken, thread, title, contextMs };
+  if (db) contextParts.db_round_trips = db.dbCount - dbBefore;
+  return { message, turns, context, spoken, thread, title, contextMs, contextParts };
 }
 
 /** Where the time of one answer went: logged as one JSON line, and sent as the stream's `timing`. */
 export interface ChatTiming {
   context_ms: number;
+  context_parts: Record<string, number>;
   rounds: RoundTiming[];
   save_ms: number;
   total_ms: number;
@@ -813,6 +854,7 @@ export interface ChatTiming {
 function timingOf(p: Prepared, answer: MichaelAnswer, start: number, saveMs: number): ChatTiming {
   const t: ChatTiming = {
     context_ms: p.contextMs,
+    context_parts: p.contextParts,
     rounds: answer.timing ?? [],
     save_ms: saveMs,
     total_ms: Math.round(performance.now() - start),
