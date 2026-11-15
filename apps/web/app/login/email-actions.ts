@@ -20,7 +20,10 @@ import { authEnabled, DEMO_COOKIE, supabaseServer } from "@/lib/supabase/server"
 // lands the session in Safari instead of the app.
 
 // Server to server with the API key and no visitor header: the only caller POST /v1/accounts accepts.
-async function createAccount(email: string, password: string): Promise<"created" | "exists" | "failed"> {
+async function createAccount(
+  email: string,
+  password: string,
+): Promise<"created" | "exists" | "busy" | "failed"> {
   const res = await fetch(`${API_URL}/v1/accounts`, {
     method: "POST",
     headers: { authorization: `Bearer ${API_KEY}`, "content-type": "application/json" },
@@ -29,6 +32,7 @@ async function createAccount(email: string, password: string): Promise<"created"
   });
   if (res.status === 201) return "created";
   if (res.status === 409) return "exists";
+  if (res.status === 429) return "busy";
   console.error(`[auth] create account failed: ${res.status} ${await res.text().catch(() => "")}`);
   return "failed";
 }
