@@ -48,6 +48,7 @@ import {
   type TargetResponse,
   type TargetUpdate,
   type TimelineResponse,
+  type WeekReview,
 } from "@michael/shared";
 import { cache } from "react";
 import { addDays } from "./athens";
@@ -466,10 +467,10 @@ async function logCall(path: string, body: unknown): Promise<LogResult> {
     const err = ApiError.safeParse(json);
     return {
       ok: false,
-      message: err.success ? err.data.error.message : `I could not log it (${res.status}).`,
+      message: err.success ? err.data.error.message : `I couldn't log it (${res.status}).`,
     };
   } catch {
-    return { ok: false, message: "I could not reach the server. Nothing was logged." };
+    return { ok: false, message: "I lost the line. Nothing was logged." };
   }
 }
 
@@ -495,6 +496,18 @@ export async function undoRecommendation(id: string): Promise<RecResult> {
 export async function bookGoal(goalId: string, minutes: number): Promise<RecResult> {
   if (USE_MOCKS) return { ok: false, status: 501, message: "Booking needs the live API" };
   return recCall("POST", `/v1/goals/${encodeURIComponent(goalId)}/book`, { minutes });
+}
+
+/** POST /v1/week/plan (#376): next week's first goal block, through Book. Undo as for Book. */
+export async function planWeek(goalId: string, minutes: number): Promise<RecResult> {
+  if (USE_MOCKS) return { ok: false, status: 501, message: "Booking needs the live API" };
+  return recCall("POST", "/v1/week/plan", { goal_id: goalId, minutes });
+}
+
+/** GET /v1/week/review (#376): the week's review; `week` is any day of it, default this week. */
+export async function getWeekReview(week?: string): Promise<WeekReview | null> {
+  if (USE_MOCKS) return null;
+  return get<WeekReview>(`/v1/week/review${week ? `?week=${encodeURIComponent(week)}` : ""}`);
 }
 
 /** PATCH /v1/recommendations/:id { status: dismissed }: "Not now". */
@@ -660,14 +673,19 @@ export async function getToday(variant?: string): Promise<DayView> {
   if (variant === "error") throw new Error("Preview of the error state");
   if (variant && variant in SAMPLE_DAYS) return SAMPLE_DAYS[variant] as DayView;
   if (USE_MOCKS || variant === "sample") return sampleDay;
-  const to = new Date().toISOString();
-  const from = new Date(Date.now() - 7 * 86_400_000).toISOString();
-  // Side by side: the lead never waits for the score, nor the score for the lead.
+  type Cadence = { phone_cadence?: { status: string; data: unknown } };
+  // Side by side: the lead never waits for the score, nor the score for the lead. The lead needs
+  // only the phone cadence (#298); the full week's report stands in while an older API is live.
+  const fullWeek = () => {
+    const to = new Date().toISOString();
+    const from = new Date(Date.now() - 7 * 86_400_000).toISOString();
+    return get<Cadence>(`/v1/patterns?${new URLSearchParams({ from, to })}`);
+  };
   const [score, patterns] = await Promise.all([
     getScore(),
-    get<{ phone_cadence?: { status: string; data: unknown } }>(
-      `/v1/patterns?${new URLSearchParams({ from, to })}`,
-    ).catch(() => ({})),
+    get<Cadence>("/v1/patterns/phone-cadence")
+      .catch(fullWeek)
+      .catch(() => ({})),
   ]);
   return dayFromScore(score, leadFromPatterns(patterns, score.day.now));
 }
@@ -990,9 +1008,9 @@ async function ritualWrite<T>(path: string, body?: unknown): Promise<RitualWrite
     });
     if (res.ok) return { ok: true, data: (await res.json()) as T };
     const err = ApiError.safeParse(await res.json().catch(() => null));
-    return { ok: false, message: err.success ? err.data.error.message : "I could not save that. Try again." };
+    return { ok: false, message: err.success ? err.data.error.message : "I couldn't save that. Try again." };
   } catch {
-    return { ok: false, message: "I could not reach the server. Nothing changed." };
+    return { ok: false, message: "I lost the line. Nothing changed." };
   }
 }
 

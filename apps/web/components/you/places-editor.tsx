@@ -72,7 +72,7 @@ function HereButton({
         </p>
       ) : state === "failed" ? (
         <p role="alert" className="text-footnote text-label-2">
-          I could not find you. Try again outside, or type the address.
+          I couldn't find you. Try again outside, or type the address.
         </p>
       ) : null}
     </div>
@@ -270,7 +270,7 @@ export function PlacesEditor({
     setPending(null);
     if (!r.ok) {
       setList(before);
-      setError(r.message || "I could not save that. Nothing changed.");
+      setError(r.message || "I couldn't save that. Nothing changed.");
       return;
     }
     // The first save switches Travel times on (the user's opt in), as the API does.
@@ -381,7 +381,7 @@ export function PlacesEditor({
             <span className="text-body">Travel times</span>
             <span className="text-footnote text-label-2">
               {travelError
-                ? "I could not save that. Try again."
+                ? "I couldn't save that. Try again."
                 : "Traffic between your places and plans, from Google Maps"}
             </span>
           </span>

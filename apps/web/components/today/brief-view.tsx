@@ -2,7 +2,8 @@
 
 import type { AnalysisRun } from "@michael/shared";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
+import { Thinking } from "@/components/thinking";
 import { askForBrief } from "@/lib/analysis-actions";
 import { briefRow } from "./brief-row";
 import { Fold } from "./fold";
@@ -29,6 +30,16 @@ export function BriefView({
   // True once a brief written on this visit lands, so it eases in instead of snapping.
   const [fresh, setFresh] = useState(false);
   const [, startTransition] = useTransition();
+  // Long work tells its steps (michael-feedback): reading first, then writing.
+  const [writing, setWriting] = useState(false);
+  useEffect(() => {
+    if (!busy) {
+      setWriting(false);
+      return;
+    }
+    const t = setTimeout(() => setWriting(true), 4000);
+    return () => clearTimeout(t);
+  }, [busy]);
 
   async function ask() {
     setBusy(true);
@@ -37,7 +48,7 @@ export function BriefView({
     try {
       r = await askForBrief();
     } catch {
-      setError("I could not reach the server. Try again in a minute.");
+      setError("I lost the line. Try again in a minute.");
       return;
     } finally {
       setBusy(false);
@@ -85,7 +96,14 @@ export function BriefView({
         ) : null}
 
         <button type="button" className={tinted} disabled={busy} onClick={ask}>
-          {busy ? "Reading your day" : run ? "Ask for a fresh brief" : "Ask Michael for a brief"}
+          {busy ? (
+            // Michael is thinking (#378): the Mi mark breathes in the button while the brief is written.
+            <Thinking text={writing ? "Writing the brief" : "Reading your day"} className="" />
+          ) : run ? (
+            "Ask for a fresh brief"
+          ) : (
+            "Ask Michael for a brief"
+          )}
         </button>
       </div>
     </Fold>

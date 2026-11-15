@@ -123,7 +123,7 @@ export function TargetCard({ target, baseline }: { target: WeeklyTarget | null; 
               start(async () => {
                 const r = await acceptTarget(week).catch(() => ({
                   ok: false as const,
-                  message: "I could not reach the server. Nothing changed.",
+                  message: "I lost the line. Nothing changed.",
                 }));
                 if (!r.ok) {
                   setT(before);
@@ -167,7 +167,7 @@ export function TargetCard({ target, baseline }: { target: WeeklyTarget | null; 
                   start(async () => {
                     const r = await setTarget(week, draft.overall, draft.areas).catch(() => ({
                       ok: false as const,
-                      message: "I could not reach the server. Nothing changed.",
+                      message: "I lost the line. Nothing changed.",
                     }));
                     if (!r.ok) {
                       setT(before);

@@ -61,6 +61,9 @@ const Env = z.object({
     .optional()
     .transform((v) => (v ? v === "true" : process.env.NODE_ENV === "production")),
   SCHEDULER_INTERVAL_MINUTES: z.coerce.number().positive().default(5),
+  // With the scheduler: opens the web app's Today as a demo visitor on every tick (read only), so
+  // the first open after hours meets warm functions and a phrased moment line (#378).
+  WEB_WARM: z.enum(["on", "off"]).default("on"),
   // Telegram bot for nudges (backup to Web Push). Token from BotFather; without it the channel is off.
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   // The bot's @username without the @. Empty: asked from Telegram (getMe) once.

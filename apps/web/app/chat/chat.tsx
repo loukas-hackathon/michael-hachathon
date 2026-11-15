@@ -2,14 +2,17 @@
 
 import type { ChatMessage, ChatThread, Recommendation } from "@michael/shared";
 import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { ConnectChip } from "@/components/chat/connect-chip";
+import { ConnectChip, KnowledgeChip } from "@/components/chat/connect-chip";
 import { connectIntent } from "@/components/chat/connect-intent";
+import { knowledgeIntent } from "@/components/chat/knowledge-intent";
+import { Hint, markHintSeen } from "@/components/hint";
 import { useArrival } from "@/components/motion";
 import { ScreenHeader } from "@/components/screen";
 import { Bone } from "@/components/skeleton";
-import { TalkButton } from "@/components/voice/conversation-sheet";
+import { TALK_HINT, TalkButton, useTalk } from "@/components/voice/conversation-sheet";
 import { PushToTalk } from "@/components/voice/push-to-talk";
 import { speakable } from "@/components/voice/speech";
+import { withoutUndoLine } from "@/lib/chat-undo";
 import { formatTime } from "@/lib/format";
 import { ActionChips } from "./action-chips";
 import {
@@ -42,7 +45,10 @@ export function Chat({
   starters,
   elevenlabs = false,
   checkIn,
+  talk: talkOnArrival = false,
 }: {
+  /** Arrived from "Talk to Michael" on the You sheet: open the conversation, ready for a tap. */
+  talk?: boolean;
   /** The thread the server rendered (the latest), or null when the user has none yet. */
   thread: ChatThread | null;
   initial: ChatMessage[];
@@ -92,6 +98,18 @@ export function Chat({
   const arriving = useArrival();
   const { atEnd, atEndRef, toEnd } = useLatest();
   const keyboard = useKeyboardInset();
+  const talk = useTalk(elevenlabs);
+
+  // From the You sheet: the conversation opens at once and starts on the first tap (iOS only lets
+  // Michael's voice play from a tap on this page). The address drops ?talk so a reload does not reopen it.
+  const arrivedToTalk = useRef(talkOnArrival);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: once, on arrival.
+  useEffect(() => {
+    if (!arrivedToTalk.current) return;
+    arrivedToTalk.current = false;
+    talk.show();
+    window.history.replaceState(window.history.state, "", "/chat");
+  }, []);
 
   // A fresh server list (coming back to the tab) replaces the one kept here.
   useEffect(() => {
@@ -183,12 +201,9 @@ export function Chat({
         }
         title="Chat"
         actions={
-          <>
-            <TalkButton elevenlabs={elevenlabs} />
-            <HeaderButton label="New chat" onClick={startNew}>
-              <path d="M12 6v12M6 12h12" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
-            </HeaderButton>
-          </>
+          <HeaderButton label="New chat" onClick={startNew}>
+            <path d="M12 6v12M6 12h12" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+          </HeaderButton>
         }
       />
       {checkIn}
@@ -231,16 +246,22 @@ export function Chat({
                 // "Connect my calendar": the one tap button under the answer, once it has finished (#307).
                 const asked = m.role === "assistant" && m.id !== streamingId ? lines[i - 1] : undefined;
                 const connect = asked?.role === "user" ? connectIntent(asked.content) : null;
+                const knows = asked?.role === "user" && knowledgeIntent(asked.content);
                 return (
                   <MessageBubble
                     key={m.key ?? m.id}
                     role={m.role}
-                    content={m.content}
+                    content={
+                      acted[m.id]?.some((a) => a.status !== "proposed")
+                        ? withoutUndoLine(m.content)
+                        : m.content
+                    }
                     streaming={m.id === streamingId}
                     arriving={arriving(m.key ?? m.id)}
                   >
                     {acted[m.id] ? <ActionChips actions={acted[m.id] ?? []} /> : null}
                     {connect ? <ConnectChip id={connect} /> : null}
+                    {knows ? <KnowledgeChip /> : null}
                     {m.role === "assistant" && m.created_at ? (
                       <span className="mt-0.5 px-1 text-caption text-label-2 tnum">
                         {formatTime(m.created_at)}
@@ -291,7 +312,12 @@ export function Chat({
                 </button>
               ) : null}
             </div>
-          ) : null}
+          ) : (
+            // First visit only: the two voice buttons do different things, said once.
+            <Hint id={TALK_HINT} className="mb-1 px-1">
+              Tap Talk to speak with me. Hold the mic to dictate a message.
+            </Hint>
+          )}
           {/* At 200% text the field keeps a usable width and the buttons wrap under it. */}
           <div className="m-field flex flex-wrap items-end justify-end gap-2 rounded-card bg-fill p-1.5 pl-4">
             <label htmlFor="chat-input" className="sr-only">
@@ -325,7 +351,10 @@ export function Chat({
               disabled={pending}
               onListeningChange={(on) => {
                 setListening(on);
-                if (on) setError(key, null);
+                if (on) {
+                  setError(key, null);
+                  markHintSeen(TALK_HINT);
+                }
               }}
               onTranscribingChange={setTranscribing}
               onInterim={(text) => setDraft(key, text)}
@@ -333,16 +362,22 @@ export function Chat({
               onError={(message) => setError(key, message)}
               onDictate={() => input.current?.focus()}
             />
-            <button
-              type="submit"
-              disabled={pending || !draft.trim()}
-              className="hit press h-9 shrink-0 rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint disabled:opacity-40"
-            >
-              Send
-            </button>
+            {/* An empty field offers the conversation, a written one sends: one pink button, as in the phone apps. */}
+            {draft.trim() || listening || transcribing ? (
+              <button
+                type="submit"
+                disabled={pending || !draft.trim()}
+                className="hit press h-9 min-w-[4.75rem] shrink-0 rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint disabled:opacity-40"
+              >
+                Send
+              </button>
+            ) : (
+              <TalkButton onTalk={talk.start} disabled={pending} />
+            )}
           </div>
         </form>
       </div>
+      {talk.sheet}
       <ThreadSheet
         open={listOpen}
         onClose={() => setListOpen(false)}

@@ -1,5 +1,9 @@
 import type { Page, Route } from "@playwright/test";
-import { NOTHING_HEARD_COPY, transcribeErrorCopy } from "../../apps/web/components/voice/recorder";
+import {
+  NOTHING_HEARD_COPY,
+  TAPPED_COPY,
+  transcribeErrorCopy,
+} from "../../apps/web/components/voice/recorder";
 import { enterDemo, expect, tap, test } from "./fixtures";
 import { type Mode, streamReply, stubSpeech, voice } from "./speech-stub";
 
@@ -97,7 +101,7 @@ test("a tap is not a sentence: nothing is sent or uploaded", async ({ page }) =>
   await expect(page.getByTestId("push-to-talk")).toHaveAttribute("data-mode", "recorder");
   await press(page);
   await page.mouse.up();
-  await expect(page.locator("form [role=alert]")).toHaveText(NOTHING_HEARD_COPY);
+  await expect(page.locator("form [role=alert]")).toHaveText(TAPPED_COPY);
   await page.waitForTimeout(300);
   expect(uploads).toHaveLength(0);
   expect(sent).toBe(false);

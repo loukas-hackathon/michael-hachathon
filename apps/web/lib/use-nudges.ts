@@ -86,7 +86,7 @@ export function useNudges(active = true) {
       await savePushSubscription(sub.toJSON());
       setState({ kind: "on" });
     } catch {
-      setError("I could not turn nudges on. Try again.");
+      setError("I couldn't turn nudges on. Try again.");
       setState({ kind: "off", key });
     }
   }, [state]);

@@ -14,7 +14,7 @@ import {
   type RecActionResult,
   undoRecommendationAction,
 } from "@/lib/recommendation-actions";
-import type { RecCard, TravelDriveRow } from "@/lib/recommendations";
+import { previewTitle, type RecCard, type TravelDriveRow } from "@/lib/recommendations";
 import { Fold } from "./fold";
 import { DriveBar } from "./travel-card";
 
@@ -110,6 +110,7 @@ function Card({
 
   return (
     <li
+      data-rec-id={card.id}
       className={`flex flex-col gap-1.5 ${
         primary || booked
           ? "rounded-card bg-fill px-4 pt-3.5 pb-4"
@@ -244,7 +245,7 @@ export function RecommendationList({
     const r = await ACTIONS[op](card.id).catch(
       (): RecActionResult => ({
         ok: false,
-        error: "I could not reach the server. Nothing changed.",
+        error: "I lost the line. Nothing changed.",
         gone: false,
       }),
     );
@@ -333,7 +334,7 @@ export function RecommendationList({
     <Fold
       title={n === 1 ? "One more suggestion" : `${n} more suggestions`}
       label="More suggestions"
-      preview={visible.map((c) => c.title.replace(/[.!?]$/, "")).join(". ")}
+      preview={visible.map(previewTitle).join(". ")}
     >
       <FlipList flipKey={flipKey} className="-mt-1 flex flex-col">
         {items}

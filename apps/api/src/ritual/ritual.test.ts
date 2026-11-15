@@ -205,7 +205,7 @@ test("the Morning and Evening nudges ask the ritual's question only while it is 
   const day = "2026-11-13";
   assert.equal(
     ritualNudgeText("morning", { items: [], rows: [] }),
-    "What do you want to get done today? Up to three.",
+    "What would make today a win? Up to three.",
   );
   assert.equal(ritualNudgeText("morning", { items: [item({})], rows: [] }), null);
   assert.equal(
@@ -218,7 +218,7 @@ test("the Morning and Evening nudges ask the ritual's question only while it is 
   assert.equal(ritualNudgeText("evening", { items: [], rows: [] }), null);
   assert.equal(
     ritualNudgeText("evening", { items: [item({}), item({}), item({ status: "moved" })], rows: [] }),
-    "2 outcomes today. What did you get done?",
+    "2 outcomes today. Which ones did you land?",
   );
 });
 

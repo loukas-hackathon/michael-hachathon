@@ -1508,6 +1508,13 @@ export class SupabaseStore implements Store {
     return row ? toNudge(row) : null;
   }
 
+  async getNudge(id: string) {
+    const row = check(
+      await this.db.from("nudges").select("*").eq("user_id", currentUserId()).eq("id", id).maybeSingle(),
+    );
+    return row ? toNudge(row) : null;
+  }
+
   async listPushDevices(): Promise<PushDevice[]> {
     const rows = check(
       await this.db

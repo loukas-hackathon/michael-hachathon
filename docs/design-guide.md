@@ -175,11 +175,13 @@ in #189): one question at a time, the time or the number first, quick answers as
 Yes and No) and an "Or in your own words" field. A no after a short night brings one follow up with
 its number, never a why. At most five questions. It ends on "Noted. I'll use it in tomorrow's
 plan." and "That's all for today. Sleep well." Below it, the free chat with Michael and push to
-talk. Michael's goal and plan proposals appear as a card with Accept and Undo (#188).
+talk. While the field is empty its pink button is Talk (waveform and the word), the hands
+free conversation; typing turns it into Send. The mic beside it is hold to dictate. Hints that point
+at a hidden gesture show once and go once used (`components/hint.tsx`). Michael's goal and plan proposals appear as a card with Accept and Undo (#188).
 
 ### The You sheet (Mi button)
 
-Agents first (a row into /agents, with a back link to You), then off the record (one switch),
+Talk to Michael and Agents first (rows into /chat?talk=1 and /agents), then off the record (one switch),
 standing instructions (quiet hours from the profile first, then the user's rules with a switch
 each), sources with one switch each, devices, settings. Off the record turns the Mi hollow and adds a grey line on every tab: "Off the
 record since 15:20."

@@ -5,7 +5,7 @@ import { addItem, carryItem, tickItem } from "@/app/checklist-actions";
 import { haptic } from "@/components/haptics";
 import type { ChecklistItem } from "@/lib/checklist";
 
-const OFFLINE = "I could not reach the server. Nothing changed.";
+const OFFLINE = "I lost the line. Nothing changed.";
 
 /** A row to show while the server stores it; the stored one replaces it when the page reads again. */
 function draft(goalId: string, text: string): ChecklistItem {
@@ -204,7 +204,7 @@ export function TodayChecklist({
             ? "One to three outcomes that would make today count." /* (Brand) */
             : room
               ? `Room for ${MAX - list.length} more. Three is the most.` /* (Brand) */
-              : "Three set. Finish these first." /* (Brand) */
+              : "Three set. That's a full plate, so finish these first." /* (Brand) */
         }
       </p>
 

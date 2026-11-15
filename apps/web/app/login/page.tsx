@@ -9,7 +9,7 @@ export const metadata = { title: "Sign in · Michael" };
 
 // Reasons /auth/callback can send back, as one line each.
 const ERRORS: Record<string, string> = {
-  cancelled: "Sign in cancelled. Try again when you're ready.",
+  cancelled: "No problem. Sign in whenever you're ready.",
   failed: "That sign in didn't go through. Try again.",
 };
 
@@ -47,7 +47,8 @@ export default async function LoginPage({
             See the demo week
           </a>
           <p className="mt-6 text-balance text-center text-footnote text-label-2">
-            Next, Google asks to share your calendar: that's how I see your week. I work for you only.
+            Next, Google asks to share your calendar: that's how I see your week. I work for you and nobody
+            else.
           </p>
         </div>
       </div>

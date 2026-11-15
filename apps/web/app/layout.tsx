@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Figtree } from "next/font/google";
 import type { ReactNode } from "react";
 import { MotionScript } from "@/components/count-up";
+import { DeepLinkFocus } from "@/components/deep-link-focus";
 import { Haptics } from "@/components/haptics";
 import { ServiceWorker } from "@/components/service-worker";
 import { Splash } from "@/components/splash";
@@ -42,6 +43,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         </div>
         <TabBar />
         <ServiceWorker />
+        <DeepLinkFocus />
       </body>
     </html>
   );

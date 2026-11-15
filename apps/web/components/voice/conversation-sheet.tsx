@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { chatLineCount, currentLines, useChatSession } from "@/app/chat/chat-session";
 import { MiMark } from "@/components/brand";
+import { markHintSeen } from "@/components/hint";
 import { Sheet } from "@/components/sheet";
 import {
   endConversation,
@@ -21,37 +22,66 @@ const STATUS: Record<Phase, string> = {
   unavailable: "",
 };
 
+/** The one time hint's id: gone once Talk or the mic has been used. */
+export const TALK_HINT = "talk";
+
 /**
- * Talk: the button left of the Mi button on Chat. One tap opens the conversation and starts
- * listening, inside the same tap so iOS lets Michael's voice play.
+ * Talk with Michael: a hands free conversation in a sheet. `start` runs inside the tap that asks
+ * for it, so iOS lets Michael's voice play. `show` only opens the sheet (arriving from the You
+ * sheet, before any tap on this screen); a tap on the orb then starts it.
  */
-export function TalkButton({ elevenlabs }: { elevenlabs: boolean }) {
+export function useTalk(elevenlabs: boolean) {
   const [open, setOpen] = useState(false);
   // Only this conversation's lines are shown as captions: the count when it started.
   const [from, setFrom] = useState(0);
+  const begin = () => {
+    setFrom(chatLineCount());
+    markHintSeen(TALK_HINT);
+    startConversation({ elevenlabs });
+  };
+  const start = () => {
+    setOpen(true);
+    begin();
+  };
+  const show = () => {
+    setFrom(chatLineCount());
+    setOpen(true);
+  };
+  const sheet = <ConversationSheet open={open} from={from} onStart={begin} onClose={() => setOpen(false)} />;
+  return { start, show, sheet };
+}
+
+/**
+ * Talk, in the chat composer where the phone apps put voice mode: the waveform and the word, in
+ * place of Send while the field is empty. The mic beside it is hold to dictate.
+ */
+export function TalkButton({ onTalk, disabled }: { onTalk: () => void; disabled?: boolean }) {
   return (
-    <>
-      <button
-        type="button"
-        aria-label="Talk to Michael"
-        data-testid="talk"
-        onClick={() => {
-          setFrom(chatLineCount());
-          setOpen(true);
-          startConversation({ elevenlabs });
-        }}
-        className="press -m-[7px] grid size-11 place-items-center rounded-full"
-      >
-        <span className="grid size-[30px] place-items-center rounded-full bg-fill text-tint-text">
-          <WaveIcon className="size-[18px]" />
-        </span>
-      </button>
-      <ConversationSheet open={open} from={from} onClose={() => setOpen(false)} />
-    </>
+    <button
+      type="button"
+      aria-label="Talk to Michael"
+      data-testid="talk"
+      disabled={disabled}
+      onClick={onTalk}
+      className="hit press flex h-9 min-w-[4.75rem] shrink-0 items-center justify-center gap-1.5 rounded-full bg-tint px-3.5 text-subhead font-semibold text-on-tint disabled:opacity-40"
+    >
+      <WaveIcon className="size-[18px]" />
+      Talk
+    </button>
   );
 }
 
-function ConversationSheet({ open, from, onClose }: { open: boolean; from: number; onClose: () => void }) {
+function ConversationSheet({
+  open,
+  from,
+  onStart,
+  onClose,
+}: {
+  open: boolean;
+  from: number;
+  onStart: () => void;
+  onClose: () => void;
+}) {
   const talk = useConversation();
   const session = useChatSession();
   // Leaving Chat ends the conversation; closing the sheet does too (close below).
@@ -63,7 +93,12 @@ function ConversationSheet({ open, from, onClose }: { open: boolean; from: numbe
   };
   const lines = currentLines(session).slice(from).slice(-4);
   const live = talk.phase === "listening" && talk.heard ? talk.heard : null;
-  const status = talk.phase === "speaking" && talk.bargeIn ? "Speak or tap to cut in" : STATUS[talk.phase];
+  const status =
+    talk.phase === "speaking" && talk.bargeIn
+      ? "Speak or tap to cut in"
+      : talk.phase === "off" && lines.length === 0 && !talk.note
+        ? "Tap to start"
+        : STATUS[talk.phase];
   const unavailable =
     hasTouchKeyboard() || isIosHomeScreenApp()
       ? `I can't listen in this app. ${DICTATE_COPY}`
@@ -80,7 +115,7 @@ function ConversationSheet({ open, from, onClose }: { open: boolean; from: numbe
           <>
             <button
               type="button"
-              onClick={tapConversation}
+              onClick={talk.phase === "off" ? onStart : tapConversation}
               aria-label={status || "Michael"}
               data-phase={talk.phase}
               data-testid="conversation-orb"

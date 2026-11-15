@@ -33,7 +33,7 @@ export function UndoButton({
     if (!recommendationId) return;
     const r = await undoRecommendationAction(recommendationId).catch(() => ({
       ok: false as const,
-      error: "I could not reach the server. Nothing changed.",
+      error: "I lost the line. Nothing changed.",
     }));
     inFlight.current = false;
     if (r.ok) router.refresh();

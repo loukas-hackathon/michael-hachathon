@@ -5,6 +5,7 @@ import { bookGoalAction } from "@/app/goals/book-actions";
 import { formatTime, hm } from "@/lib/format";
 import { undoRecommendationAction } from "@/lib/recommendation-actions";
 import { dayWord } from "@/lib/recommendations";
+import { undoneLine } from "@/lib/say";
 
 // Book time for a goal (#309): one tap finds the first free slot this week and puts it in the
 // calendar; the line that replaces the button says when, and Undo takes it back until it starts.
@@ -27,11 +28,17 @@ export function BookTime({
   goalId,
   minutes,
   primary = false,
+  nextWeek = false,
+  label,
 }: {
   goalId: string;
   minutes: number;
   /** The screen's one filled button; every other Book button is tinted. */
   primary?: boolean;
+  /** Plan next week (#376): the first free slot from next Monday. */
+  nextWeek?: boolean;
+  /** The button's words; default "Book 1h". */
+  label?: string;
 }) {
   const [state, setState] = useState<State>({ at: "idle" });
   const [error, setError] = useState<string | null>(null);
@@ -43,7 +50,7 @@ export function BookTime({
     setError(null);
     setState({ at: "booking" });
     try {
-      const r = await bookGoalAction(goalId, minutes);
+      const r = await bookGoalAction(goalId, minutes, nextWeek);
       if (r.ok) setState({ at: "booked", id: r.id, start: r.start, end: r.end, undoUntil: r.undoUntil });
       else {
         setState({ at: "idle" });
@@ -51,7 +58,7 @@ export function BookTime({
       }
     } catch {
       setState({ at: "idle" });
-      setError("I could not reach the server. Nothing changed.");
+      setError("I lost the line. Nothing changed.");
     } finally {
       busy.current = false;
     }
@@ -72,7 +79,7 @@ export function BookTime({
       }
     } catch {
       setState({ ...before, at: "booked" });
-      setError("I could not reach the server. Nothing changed.");
+      setError("I lost the line. Nothing changed.");
     } finally {
       busy.current = false;
     }
@@ -103,7 +110,7 @@ export function BookTime({
           </>
         ) : state.at === "undone" ? (
           <p role="status" className="m-swap text-subhead text-label-2">
-            Undone. Your calendar is back as it was.
+            {undoneLine("Your calendar is back as it was.")}
           </p>
         ) : (
           <button
@@ -113,7 +120,7 @@ export function BookTime({
             aria-busy={state.at === "booking"}
             className={primary ? filled : tinted}
           >
-            {state.at === "booking" ? "Booking" : `Book ${hm(minutes)}`}
+            {state.at === "booking" ? "Booking" : (label ?? `Book ${hm(minutes)}`)}
           </button>
         )}
       </div>

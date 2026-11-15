@@ -97,6 +97,7 @@ const READS = [
   () => "/v1/places/suggestions",
   () => "/v1/records",
   () => "/v1/sources/status",
+  () => "/v1/me/knowledge",
   () => "/v1/targets/current",
   () => `/v1/checklist?date=${day}`,
 ];
@@ -338,8 +339,10 @@ for (const [name, userId] of [
         ["get_moments", { kind: "evening" }],
         ["propose_goals", {}],
         ["get_records", {}],
+        ["get_week_review", {}],
         ["get_check_in", {}],
         ["get_memories", {}],
+        ["what_you_know", {}],
         ["list_drafts", {}],
         ["get_checklist", { date: day }],
       ];

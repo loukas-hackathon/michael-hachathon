@@ -1,4 +1,5 @@
 import {
+  type ChecklistItem,
   type Event,
   type EventType,
   type Goal,
@@ -11,6 +12,7 @@ import {
 import { Hono } from "hono";
 import { offerGoalActions } from "../checklist/offers";
 import { HttpError, parse } from "../http";
+import { memo } from "../memo";
 import { DEFAULT_TIMEZONE } from "../patterns";
 import { Zone } from "../patterns/time";
 import {
@@ -50,6 +52,10 @@ export interface Week {
   score: Score;
   history: ScoreHistory;
   goals: Goal[];
+  /** Every event the score was built from (the five weeks), for readers that need more (#376). */
+  events: Event[];
+  /** The week's checklist items (#238), the ritual's outcomes among them (#318). */
+  checklist: ChecklistItem[];
   now: string;
   /** False when `now` is in the future: a replay that must not write records. */
   real: boolean;
@@ -90,16 +96,17 @@ export async function loadWeek(query: { date?: string; now?: string }): Promise<
     store.listCheckIns({ fromDay: monday, toDay: sunday }).catch(() => []),
     ...chunks,
   ]);
-  const events = new Map<string, Event>();
-  for (const page of pages) for (const e of page) events.set(e.id, e);
-  const built = scoreWithHistory([...events.values()], goals, {
+  const byId = new Map<string, Event>();
+  for (const page of pages) for (const e of page) byId.set(e.id, e);
+  const events = [...byId.values()];
+  const built = scoreWithHistory(events, goals, {
     date,
     now,
     instructions,
     checklist,
     countCheckIns: countCheckInsFrom(checkIns),
   });
-  return { ...built, goals, now, real: Date.parse(now) <= clock };
+  return { ...built, goals, events, checklist, now, real: Date.parse(now) <= clock };
 }
 
 export interface TargetState {
@@ -147,11 +154,28 @@ export async function syncRecords(week: Week): Promise<PersonalRecord[]> {
  * `readOnly`: the numbers only, for the chat context (#364): personal records are not synced and
  * today's goal offers are not made, which saves their round trips (the screens still do both).
  */
-export async function scoreFor(
+export function scoreFor(
   query: { date?: string; now?: string },
   opts: { readOnly?: boolean } = {},
 ): Promise<Score> {
-  const week = await loadWeek(query);
+  // At the real clock, the same score is reused for a few seconds until the user writes (memo.ts,
+  // #298). A replay (`now`) is always computed.
+  if (query.now !== undefined) return computeScore(query, opts);
+  return memo("score", { date: query.date ?? null, readOnly: !!opts.readOnly }, SCORE_MEMO_MS, () =>
+    computeScore(query, opts),
+  );
+}
+
+// Long enough to serve one screen's several reads (Today asks three times), short enough that
+// the minutes on the tape keep moving.
+const SCORE_MEMO_MS = 20_000;
+
+async function computeScore(query: { date?: string; now?: string }, opts: { readOnly?: boolean }) {
+  return scoreOfWeek(await loadWeek(query), opts);
+}
+
+/** The score of a week already loaded (loadWeek), with its target, records and offers. */
+export async function scoreOfWeek(week: Week, opts: { readOnly?: boolean } = {}): Promise<Score> {
   // Targets and records are extras: a failed read must never take the score down.
   const [state, records] = await Promise.all([
     targetState(week).catch((err) => {

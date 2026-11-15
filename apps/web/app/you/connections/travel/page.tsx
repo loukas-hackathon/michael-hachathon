@@ -26,7 +26,7 @@ export default async function LocationPage({ searchParams }: { searchParams: Pro
           />
         ) : (
           <p className="rounded-group bg-fill px-4 py-3 text-subhead text-label-2">
-            I could not load your places. Pull to refresh.
+            I couldn't load your places. Pull to refresh.
           </p>
         )}
       </SetupSection>

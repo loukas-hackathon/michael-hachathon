@@ -69,7 +69,9 @@ test("a block Claude books is on Today's first screen with Undo, and gone once u
   await expect(page.getByText("Sales focus.")).toHaveCount(1);
 
   await tap(booked.getByRole("button", { name: "Undo" }));
-  await expect(booked.getByRole("status")).toHaveText("Undone. Your calendar is back as it was.");
+  await expect(booked.getByRole("status")).toHaveText(
+    /^(Undone|Taken back|Reversed)[^.]*\. Your calendar is back as it was\.$/,
+  );
   await expect(booked.getByRole("button")).toHaveCount(0);
   await expect.poll(status).toBe("undone");
 

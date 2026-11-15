@@ -89,7 +89,7 @@ export const sampleEveningMoment: Moment = {
   ...sampleMorningMoment,
   kind: "evening",
   generated_at: d("21:30"),
-  headline: "4h 23 of 5h 10 planned goal time held, 47 minutes lost.",
+  headline: "You held 4h 23 of 5h 10 planned goal time. 47 minutes got away.",
   goals: goals([
     { spent_week_minutes: 643, spent_today_minutes: 233, lost_today_minutes: 37 },
     { spent_week_minutes: 190, spent_today_minutes: 40 },

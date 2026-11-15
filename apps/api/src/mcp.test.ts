@@ -70,6 +70,7 @@ const TOOLS = [
   "get_records",
   "get_score",
   "get_timeline",
+  "get_week_review",
   "list_drafts",
   "list_recommendations",
   "log_day",
@@ -82,6 +83,7 @@ const TOOLS = [
   "undo_recommendation",
   "update_goal",
   "update_recommendation",
+  "what_you_know",
 ];
 
 test("the tool set is complete and every tool explains itself", () =>
@@ -127,6 +129,10 @@ test("reads answer with short text and structured content", () =>
     const moment = await call("get_moments", { kind: "evening" });
     assert.notEqual(moment.isError, true, text(moment));
     assert.match(text(moment), /^Evening/);
+    const review = await call("get_week_review");
+    assert.notEqual(review.isError, true, text(review));
+    assert.match(text(review), /^Your week, \d{4}-\d{2}-\d{2} to /);
+    assert.match(text(review), /- Lesson: /);
     const score = await call("get_score");
     const day = score.structuredContent?.day as { blocks: Record<string, unknown>[] };
     assert.ok(

@@ -16,7 +16,13 @@ export interface PushPayload {
   title: string;
   body: string;
   tag: string;
+  /** Where tapping the body goes: the exact card (nudgeUrl). */
   url: string;
+  /** Buttons (#399). `open` opens `url`; the others POST { action, token } to `act_url`. */
+  actions?: { action: string; title: string }[];
+  act_url?: string;
+  /** Signed for this nudge and user (nudges/token.ts): the worker has no session. */
+  token?: string;
 }
 
 type Subscription = { endpoint: string; keys: { p256dh: string; auth: string } };

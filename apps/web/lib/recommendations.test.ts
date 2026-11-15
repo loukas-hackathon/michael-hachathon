@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Recommendation } from "@michael/shared";
-import { bookedAhead, bookedRationale, openRecommendations } from "./recommendations";
+import { bookedAhead, bookedRationale, openRecommendations, previewTitle } from "./recommendations";
 
 // Sunday 15 November 2026, 12:00 in Athens.
 const now = new Date("2026-11-15T10:00:00.000Z");
@@ -96,4 +96,16 @@ test("a booked block's card keeps only who booked it: title, time and undo say t
   // Michael's own offer keeps its reasons.
   const offer = "0 of 4 done, 4 left and 3 days to go. I found 60 minutes free.";
   assert.equal(bookedRationale(block({ rationale: offer })), offer);
+});
+
+test("a folded suggestion for another day says which day (#385)", () => {
+  const title = "Block 09:30 to 11:00 for cold outreach";
+  assert.equal(previewTitle({ title, when: "Tomorrow" }), `Tomorrow: ${title}`);
+  assert.equal(previewTitle({ title: `${title}.`, when: "Monday, 09:30 to 11:00" }), `Monday: ${title}`);
+  assert.equal(previewTitle({ title, when: "Today" }), title);
+  assert.equal(previewTitle({ title, when: null }), title);
+  assert.equal(
+    previewTitle({ title: "Move Gym to tomorrow", when: "Moves to tomorrow" }),
+    "Move Gym to tomorrow",
+  );
 });

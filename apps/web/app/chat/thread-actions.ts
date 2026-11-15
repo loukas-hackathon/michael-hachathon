@@ -13,7 +13,7 @@ export async function loadThread(id: string): Promise<ThreadResult<ChatHistory>>
     return { ok: true, data: await getChatHistory(id) };
   } catch (err) {
     console.error("chat thread:", err);
-    return { ok: false, error: "I could not open that conversation. Try again." };
+    return { ok: false, error: "I couldn't open that conversation. Try again." };
   }
 }
 
@@ -22,7 +22,7 @@ export async function listThreads(q?: string): Promise<ThreadResult<ChatThread[]
     return { ok: true, data: await getChatThreads(q) };
   } catch (err) {
     console.error("chat threads:", err);
-    return { ok: false, error: "I could not load your conversations. Try again." };
+    return { ok: false, error: "I couldn't load your conversations. Try again." };
   }
 }
 
@@ -31,7 +31,7 @@ export async function changeThread(id: string, patch: ChatThreadPatch): Promise<
     return { ok: true, data: await patchChatThread(id, patch) };
   } catch (err) {
     console.error("chat thread patch:", err);
-    return { ok: false, error: "I could not save that. Nothing changed." };
+    return { ok: false, error: "I couldn't save that. Nothing changed." };
   }
 }
 
@@ -41,6 +41,6 @@ export async function removeThread(id: string): Promise<ThreadResult<null>> {
     return { ok: true, data: null };
   } catch (err) {
     console.error("chat thread delete:", err);
-    return { ok: false, error: "I could not delete that conversation. It is still here." };
+    return { ok: false, error: "I couldn't delete that conversation. It's still here." };
   }
 }

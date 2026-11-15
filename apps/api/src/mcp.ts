@@ -36,6 +36,7 @@ import { offerGoalActions } from "./checklist/offers";
 import { currentAgent } from "./context";
 import { currentSuggestions } from "./goals/suggestions";
 import { HttpError, parse } from "./http";
+import { knowledgeFor, knowledgeText } from "./knowledge";
 import {
   dayLabel,
   dur,
@@ -58,7 +59,9 @@ import { patternReportFor } from "./routes/patterns";
 import { travelPlanFor } from "./routes/places";
 import { scoreFor } from "./routes/score";
 import { recordsFor } from "./routes/targets";
+import { weekReviewFor } from "./routes/week";
 import { store } from "./store";
+import { weekReviewText } from "./week/text";
 
 // The claude.ai connector's tool set. Every tool answers with short text in the user's local time
 // (24 hour, Europe/Athens) plus structured content. Writes follow Michael's autonomy rules: only
@@ -498,6 +501,23 @@ export function createMcpServer(): McpServer {
   );
 
   server.registerTool(
+    "get_week_review",
+    {
+      title: "Get the week's review",
+      description:
+        "Michael's review of a week (Monday to Sunday, Europe/Athens), the Sunday evening moment: the week's score with the maths and the usual week, time won back, each goal kept or behind against its budget, personal records set, the biggest thief of time with its minutes, what the user logged and the daily outcomes done, one lesson, next week's target and the first move for next week. Use it for \"how was my week\". Give `week` as any day of an earlier week; default this week.",
+      inputSchema: {
+        week: LocalDayInput.optional().describe("Any day of the week, YYYY-MM-DD. Default this week"),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    safe(async ({ week }) => {
+      const r = await weekReviewFor({ week });
+      return reply(weekReviewText(r), r as Record<string, unknown>);
+    }),
+  );
+
+  server.registerTool(
     "get_memories",
     {
       title: "Get memories",
@@ -512,6 +532,21 @@ export function createMcpServer(): McpServer {
         ? memories.map((m) => `- ${m.text} (${m.from}, ${dayLabel(Date.parse(m.at))})`).join("\n")
         : "Nothing remembered yet.";
       return reply(text, { memories });
+    }),
+  );
+
+  server.registerTool(
+    "what_you_know",
+    {
+      title: "What Michael knows about the user",
+      description:
+        "Everything Michael uses about the user, in plain words: what they told him (memories, check in answers, standing instructions, setup), what each connection sends and when it last did, what he never keeps, and how often agents asked today. Use it when the user asks what Michael or you know about them. The user can forget any item in the app under You, Privacy.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+    },
+    safe(async () => {
+      const k = await knowledgeFor();
+      return reply(knowledgeText(k), k as Record<string, unknown>);
     }),
   );
 

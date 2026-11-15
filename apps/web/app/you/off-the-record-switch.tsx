@@ -6,7 +6,7 @@ import { formatTime } from "@/lib/format";
 import { setOffTheRecord, useOffTheRecord } from "@/lib/off-the-record";
 import { useAction } from "@/lib/use-action";
 
-const SAVE_ERROR = "I could not save that. Nothing changed.";
+const SAVE_ERROR = "I couldn't save that. Nothing changed.";
 
 export function OffTheRecordSwitch() {
   const { on, since } = useOffTheRecord();
@@ -36,6 +36,9 @@ export function OffTheRecordSwitch() {
           switch=""
           checked={on}
           aria-busy={save.pending || undefined}
+          // Disabled while saving, so a tap in that moment is visibly not taken rather than silently
+          // dropped (incident #402: the second tap was lost and the switch stayed on).
+          disabled={save.pending}
           onChange={(e) => {
             if (!save.pending) void save.run(e.target.checked);
           }}

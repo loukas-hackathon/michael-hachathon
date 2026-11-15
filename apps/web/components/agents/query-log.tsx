@@ -2,6 +2,7 @@ import type { AgentQuery } from "@michael/shared";
 import { UndoButton } from "@/components/today/undo-button";
 import { type AgentDay, countLine, isChange, isWrite } from "@/lib/agents";
 import { formatTime } from "@/lib/format";
+import { undoneLine } from "@/lib/say";
 
 // "Booked "Sales focus"" reads better with typographic quotes.
 const lower = (s: string) => (s.charAt(0).toLowerCase() + s.slice(1)).replace(/"([^"]*)"/g, "\u201c$1\u201d");
@@ -56,7 +57,7 @@ function Line({ name, q, sample, last }: { name: string; q: AgentQuery; sample: 
         {undoUntil ? (
           <UndoButton
             label={`Undo until ${formatTime(undoUntil)}`}
-            done="Undone. Your calendar is back as it was."
+            done={undoneLine("Your calendar is back as it was.")}
             recommendationId={sample ? undefined : (q.recommendation_id ?? undefined)}
           />
         ) : write && q.recommendation_id ? (
