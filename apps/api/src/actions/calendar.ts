@@ -26,6 +26,7 @@ import {
 import { store } from "../store";
 import { draftFromRecommendation } from "./drafts";
 import { startFocusGuard, stopFocusGuard } from "./focus-guard";
+import { executeLog, revertLog } from "./log";
 
 // Michael acts on the user's own time only. Rules (Build Hub, docs/api.md):
 // - never an event with other people (refused with 409, checked again against Google itself);
@@ -78,6 +79,9 @@ const Execution = z.discriminatedUnion("kind", [
     until: z.string().nullable(),
     undo_until: z.string(),
   }),
+  // #317: the manual entry a logged time or a settled block wrote; undo removes only that entry.
+  z.object({ kind: z.literal("log_time"), timeline_event_id: z.string(), undo_until: z.string() }),
+  z.object({ kind: z.literal("settle_block"), timeline_event_id: z.string(), undo_until: z.string() }),
 ]);
 type Execution = z.infer<typeof Execution>;
 
@@ -293,6 +297,8 @@ export async function executeRecommendation(id: string): Promise<Recommendation>
   else if (action.kind === "move_calendar_blocks") execution = await moveCalendarBlocks(action);
   else if (action.kind === "change_goal") execution = await executeGoalChange(action);
   else if (action.kind === "plan_change") execution = await executePlanChange(rec, action);
+  else if (action.kind === "log_time" || action.kind === "settle_block")
+    execution = await executeLog(rec, action);
   else throw new HttpError("not_implemented", `${action.kind} cannot be carried out yet`);
 
   const saved = await store.recordRecommendationAction(id, {
@@ -320,7 +326,9 @@ export async function undoRecommendation(id: string): Promise<Recommendation> {
         ? "Nothing to undo: that guard has already ended"
         : ex.kind === "change_goal"
           ? "Too late to undo: change the goal on the Goals screen"
-          : "Too late to undo: the block has started",
+          : ex.kind === "log_time" || ex.kind === "settle_block"
+            ? "Too late to undo: a logged entry can be taken back for 24 hours"
+            : "Too late to undo: the block has started",
     );
   }
 
@@ -336,7 +344,9 @@ export async function undoRecommendation(id: string): Promise<Recommendation> {
 
 /** Puts back what one execution changed. */
 async function revert(ex: Execution): Promise<void> {
-  if (ex.kind === "block_mac_app") {
+  if (ex.kind === "log_time" || ex.kind === "settle_block") {
+    await revertLog(ex);
+  } else if (ex.kind === "block_mac_app") {
     await stopFocusGuard(ex);
   } else if (ex.kind === "change_goal") {
     await revertGoalChange(ex);

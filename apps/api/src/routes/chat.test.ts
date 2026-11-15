@@ -81,7 +81,7 @@ test("chat context reads older categories as the three, and carries the active s
   // The mock rule carries its exception, in words.
   assert.match(
     text,
-    /Standing instructions \(never plan, move or suggest[^\n]*\):\n- Keep Sundays clear \(except: Rhefuel\)\n/,
+    /Standing instructions \(never plan, move or suggest[^\n]*\):\n- Keep Sundays clear \(except: Rhefuel\) \{instruction_id [0-9a-f-]+\}\n/,
   );
   // A paused instruction is not handed over; with none, the section is not there at all.
   assert.doesNotMatch(text, /No calls on Fridays/);

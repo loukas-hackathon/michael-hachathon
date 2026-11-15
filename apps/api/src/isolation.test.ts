@@ -103,6 +103,7 @@ const ids: {
   recBefore?: string;
   item?: string;
   thread?: string;
+  log?: string;
 } = {};
 
 async function ok(res: Response, what: string) {
@@ -138,6 +139,12 @@ test("A writes through every write route", async () => {
     await request(asA, "PATCH", `/v1/goals/${goal.id}`, { description: `${MARK} description` }),
     "PATCH /v1/goals",
   );
+  // Done time (#317): the entry lands on A's timeline and in A's score only.
+  const logged = await ok(
+    await request(asA, "POST", "/v1/log", { goal_id: goal.id, minutes: 30, note: `${MARK} logged` }),
+    "POST /v1/log",
+  );
+  ids.log = logged.entry.id;
   const instruction = await ok(
     await request(asA, "POST", "/v1/instructions", { text: `${MARK} keep Sundays clear` }),
     "POST /v1/instructions",
@@ -234,6 +241,8 @@ for (const [name, who] of [
       ["PATCH", `/v1/chat/threads/${ids.thread}`, { title: "taken" }],
       ["DELETE", `/v1/chat/threads/${ids.thread}`],
       ["POST", "/v1/chat", { message: "into A's thread", thread_id: ids.thread }],
+      ["DELETE", `/v1/log/${ids.log}`],
+      ["POST", "/v1/log", { goal_id: ids.goal, minutes: 10 }],
     ];
     for (const [method, path, body] of tries) {
       const res = await request(who, method, path, body);
@@ -331,6 +340,8 @@ for (const [name, userId] of [
       const update = await call("update_goal", { id: ids.goal, title: "taken" });
       assert.ok(update.isError, `update_goal on A's goal as ${name} must fail`);
       await call("update_recommendation", { id: ids.rec, status: "proposed" });
+      const logged = await call("log_done", { goal_id: ids.goal, minutes: 10 });
+      assert.ok(logged.isError, `log_done on A's goal as ${name} must fail`);
       // add_event and add_goal land in the caller's own account.
       await call("add_goal", { category: "rest", title: `${name} own goal` });
     }));
@@ -422,6 +433,8 @@ test("demo visitors cannot change the shared account", async () => {
       { source: "manual", type: "note", start_at: new Date().toISOString(), title: "x" },
     ],
     ["POST", "/v1/nudges/check"],
+    ["POST", "/v1/log", { goal: "bath", minutes: 30 }],
+    ["POST", "/v1/log/block", { event_id: randomUUID(), did: true }],
     ["DELETE", "/v1/me/data"],
     ["DELETE", `/v1/events/${randomUUID()}`],
     ["POST", `/v1/goals/suggestions/${randomUUID()}/accept`],

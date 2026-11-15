@@ -26,6 +26,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { z } from "zod";
 import { bookFocusBlock, executeRecommendation, undoDeadline, undoRecommendation } from "./actions/calendar";
 import { draftText, generateDrafts } from "./actions/drafts";
+import { logTime, settleBlock } from "./actions/log";
 import { guardMacApps, suggestAppGuard } from "./actions/mac-apps";
 import { answerCheckIn, checkInToday } from "./checkin/service";
 import { addItem, checklistFor, todayOf } from "./checklist/items";
@@ -510,6 +511,68 @@ export function createMcpServer(): McpServer {
   );
 
   // ---------- write ----------
+
+  server.registerTool(
+    "log_done",
+    {
+      title: "Log time spent on a goal",
+      description: `Log time the user already spent on one of their goals ("I took a bath for 40 minutes at 13:00", "an hour of reading this morning"). It counts as confirmed goal time in the score at once; no calendar block is needed. Name the goal by goal_id or by the user's words (goal). Give minutes, plus start when the user said when (without it, it ends now), or start and end. Past only, the last 14 days. Can be undone with undo_recommendation for 24 hours. ${TZ_NOTE}`,
+      inputSchema: {
+        goal_id: Id.optional().describe("Goal id from get_goals"),
+        goal: z.string().min(1).max(200).optional().describe("The goal in the user's words, e.g. 'bath'"),
+        minutes: z
+          .number()
+          .int()
+          .positive()
+          .max(16 * 60)
+          .optional(),
+        start: TimeInput.optional().describe("When it started"),
+        end: TimeInput.optional().describe("When it ended"),
+        note: z.string().min(1).max(280).optional(),
+      },
+    },
+    safe(async ({ goal_id, goal, minutes, start, end, note }) => {
+      const out = await logTime(
+        {
+          goal_id,
+          goal,
+          minutes,
+          note,
+          start_at: start ? toInstant(start) : undefined,
+          end_at: end ? toInstant(end) : undefined,
+        },
+        "mcp",
+        executeRecommendation,
+      );
+      return reply(`${out.message} Undo with undo_recommendation ${out.recommendation.id}.`, {
+        ...out,
+      });
+    }),
+  );
+
+  server.registerTool(
+    "confirm_block",
+    {
+      title: "Confirm or deny a past goal block",
+      description:
+        "Settle one of the user's own goal blocks that has started, from what they say: did=true when they did it (minutes when only part of it, from its start; the rest counts as lost), did=false when they did not (all of it counts as lost; reason in their words). Blocks with other people are never goal time. Once per block; undo_recommendation takes it back for 24 hours.",
+      inputSchema: {
+        event_id: Id.describe("Calendar block id from get_timeline"),
+        did: z.boolean(),
+        minutes: z
+          .number()
+          .int()
+          .positive()
+          .max(16 * 60)
+          .optional(),
+        reason: z.string().min(1).max(280).optional(),
+      },
+    },
+    safe(async (input) => {
+      const out = await settleBlock(input, "mcp", executeRecommendation);
+      return reply(`${out.message} Undo with undo_recommendation ${out.recommendation.id}.`, { ...out });
+    }),
+  );
 
   server.registerTool(
     "remember",

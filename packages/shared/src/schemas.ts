@@ -117,6 +117,10 @@ export const ActionKind = z.enum([
   // or new blocks on the user's own calendar. Payloads below.
   "change_goal",
   "plan_change",
+  // Done time the user reports (#317): "I took a bath for 40 minutes". Stored as the user's own
+  // manual entry; undo removes the entry. `settle_block`: a past goal block marked Did it or Didn't.
+  "log_time",
+  "settle_block",
 ]);
 export type ActionKind = z.infer<typeof ActionKind>;
 
@@ -605,6 +609,82 @@ export const Recommendation = z.object({
   updated_at: IsoDateTime,
 });
 export type Recommendation = z.infer<typeof Recommendation>;
+
+// ---------- done time (#317) ----------
+// What the user says they did, in their own words: "I took a bath for 40 minutes at 13:00". The
+// goal by id or by name (matched on the server), the time by start and end, or by minutes plus a
+// start ("at"); minutes alone end just now. Past only: an entry never ends in the future. Stored
+// as the user's own manual event (source `manual`), counted as confirmed goal time in the score
+// (docs/api.md, "Score"), and undoable through the recommendation that holds it.
+export const LogTimeInput = z
+  .object({
+    goal_id: z.uuid().optional(),
+    // The goal's name as the user said it ("bath"), when there is no id.
+    goal: z.string().trim().min(1).max(200).optional(),
+    minutes: z
+      .number()
+      .int()
+      .positive()
+      .max(16 * 60)
+      .optional(),
+    start_at: IsoDateTime.optional(),
+    end_at: IsoDateTime.optional(),
+    note: z.string().trim().min(1).max(280).optional(),
+  })
+  .refine((i) => i.goal_id || i.goal, { message: "Name the goal: goal_id or goal" })
+  .refine((i) => i.minutes || (i.start_at && i.end_at), { message: "Give minutes, or start_at and end_at" });
+export type LogTimeInput = z.input<typeof LogTimeInput>;
+
+// A past goal block settled by the user: Did it (all of it, or `minutes` of it from its start) or
+// Didn't (lost, with an optional reason in their words).
+export const SettleBlockInput = z.object({
+  event_id: z.uuid(),
+  did: z.boolean(),
+  minutes: z
+    .number()
+    .int()
+    .positive()
+    .max(16 * 60)
+    .optional(),
+  reason: z.string().trim().min(1).max(280).optional(),
+});
+export type SettleBlockInput = z.input<typeof SettleBlockInput>;
+
+// The payloads kept on the recommendation that holds the entry, so undo knows what to remove.
+export const LogTimePayload = z.object({
+  goal_id: z.uuid(),
+  start_at: IsoDateTime,
+  end_at: IsoDateTime,
+  note: z.string().max(280).nullish(),
+});
+export type LogTimePayload = z.infer<typeof LogTimePayload>;
+
+export const SettleBlockPayload = z.object({
+  event_id: z.uuid(),
+  goal_id: z.uuid(),
+  did: z.boolean(),
+  start_at: IsoDateTime,
+  end_at: IsoDateTime,
+  reason: z.string().max(280).nullish(),
+});
+export type SettleBlockPayload = z.infer<typeof SettleBlockPayload>;
+
+// What POST /v1/log and POST /v1/log/block answer: the entry, the recommendation that holds it
+// (undo it with POST /v1/recommendations/:id/undo or DELETE /v1/log/:entry_id), the goal's week
+// after it, and one line in Michael's voice with the maths.
+export const LogTimeResponse = z.object({
+  entry: Event,
+  recommendation: Recommendation,
+  goal: z.object({
+    goal_id: z.uuid(),
+    title: z.string(),
+    spent_minutes: z.number().int().nonnegative(),
+    budget_minutes: z.number().int().nonnegative(),
+  }),
+  // "Logged. Everything bath 40 of 60 min this week."
+  message: z.string(),
+});
+export type LogTimeResponse = z.infer<typeof LogTimeResponse>;
 
 export const RecommendationStatusUpdate = z.object({
   status: RecommendationStatus,
@@ -1715,7 +1795,15 @@ export const ScoreBlock = z.object({
   // The calendar event's own title ("Cold Outreach / Sales").
   title: z.string(),
   // Which rule tied the event to the goal.
-  matched_by: z.enum(["goal_id", "calendar_titles", "goal_category", "goal_title", "category_word"]),
+  // `logged`: not a calendar block but done time the user logged (#317); event_id is the entry.
+  matched_by: z.enum([
+    "goal_id",
+    "calendar_titles",
+    "goal_category",
+    "goal_title",
+    "category_word",
+    "logged",
+  ]),
   start_at: IsoDateTime,
   end_at: IsoDateTime,
   // The personal record set in this block (`longest_block`, not a baseline), so the tape can draw
@@ -1728,6 +1816,9 @@ export const ScoreBlock = z.object({
   // Ids of the active standing instructions this block's time falls under (a work block planned
   // on a clear Sunday). Empty when it breaks none. It never changes the block's minutes.
   instructions_broken: z.array(z.uuid()),
+  // The user's word on a past block (#317): "did" (all or part of it, the rest lost) or "didnt"
+  // (all of it lost). Null or absent while unsettled. A logged entry reads "did".
+  settled: z.enum(["did", "didnt"]).nullish(),
 });
 export type ScoreBlock = z.infer<typeof ScoreBlock>;
 
