@@ -6,7 +6,7 @@ permission, keep building with parallel agents, close every issue we can, phone 
 developed), keep colours and branding exactly as they are (pink `#E6007A`, red `#FF3B30`), and pace
 the usage limit by slowing down at about 60% of the window.
 
-## State (updated 13:50 UTC / 15:50 Athens)
+## State (updated 14:02 UTC / 16:02 Athens)
 - This session (loukas-hackathon) is the lead orchestrator. Production healthy (API f6c86ec).
 - Since 13:00: #528 iCloud shortcut links as defaults (Michael c0c2a08d..., Focus 76e297e8...),
   #530 off the record never set by focus/DND words, Michael always states it; #531 automation opens
@@ -18,13 +18,12 @@ the usage limit by slowing down at about 60% of the window.
 - Loukas' first iPhone open stored 13:38 UTC ("An app"). He edited his Michael shortcut so `app` = plain
   Shortcut Input (not its Name); with a per app automation (Text "Instagram" then Run Shortcut Michael)
   names should now arrive. His goal is literally named "Personal T".
-- Building (hard deadline 14:45 UTC): "My automation is for" picker on the iPhone page. Unnamed
-  shortcut opens get that app name (data.app_assumed); saving renames today's "An app" events; no
-  migration. Loukas asked for it; check it merged and tell him to pick Instagram.
-- Running (due 14:40 UTC): Focus agent fixing End early stuck on "Saving" and the hidden session pill
-  covering the chat composer, then "min kept" + finish moment; a chat agent fixing Michael saying the
-  iPhone is not connected (connections-state must match GET /live/connections).
-- Scheduled: final stage rehearsal QA at 13:50 UTC (send_later), next build cycle 13:56 UTC.
+- Merged since 13:45: #536/#538 Focus now (8 s timeout on End early/+15 via GET /focus/state, chip on
+  Chat clear of the composer, "min kept", finish moment), #541 one shared iPhone state rule.
+- Loukas has TWO accounts: email 7259e4cf (iPhone key, opens) and a Google one 6e2cc87b created 13:15
+  (calendar, no iPhone). The 13:38 chat was in the Google one. He must pick one; offered to delete the other.
+- Open: #542 "My automation is for" picker (due 14:15 UTC), #543 onboarding follow ups (Manolis' side).
+- Running: final stage rehearsal QA on production (read only), CSS/copy fixes before 15:00 UTC.
 - Known gaps for after the pitch: #514 (brief/check-ins ignore shortcut opens), app names need the
   re-signed shortcut or the user editing the shortcut to send "Shortcut Input" not its Name,
   Screen Time needs the Mac app (Apple gives it only to native apps).
