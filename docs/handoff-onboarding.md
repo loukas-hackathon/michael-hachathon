@@ -48,7 +48,15 @@ apps/web/lib/today-lines.ts. Tests: e2e/tests/onboarding.spec.ts, onboarding-iph
 
 ## In flight
 
-Nothing. Every PR from this session is merged (16:08 Athens, Sun 15 Nov).
+- PR 546, branch `claude/fix-signup-stuck` (urgent, auto-merge): after creating an account on an
+  iPhone the app stuck on a grey skeleton. Cause: the service worker's stand in skeleton
+  (public/shell.html, painted when a page takes over 0.7 s) waits for a hand over message that never
+  comes when iOS stops the worker; onboarding is the slow first page. Fix: onboarding, connect,
+  setup, integrations, stage and live never get the stand in (OUTSIDE_SHELL in public/sw.js), and
+  the stand in reloads straight from the network after 6 s (`?m-net=1`, cleaned from the address in
+  components/service-worker.tsx). Verify on a real iPhone: create an account, it must land on
+  "I'm Michael." A test account claude-repro-...@example.com was made on production while
+  reproducing; its data can be deleted.
 
 ## How to review a held PR, then release it
 
