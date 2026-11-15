@@ -122,7 +122,8 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
               </>
             )}
           </p>
-          {screen.calendarConnected === false ? (
+          {/* Not over a day you can already add blocks to: tapping a free time is the action there. */}
+          {screen.calendarConnected === false && !(screen.editable && date >= today) ? (
             <Link href="/integrations/google/connect" className={`${tinted} mt-3`}>
               Connect your calendar
             </Link>

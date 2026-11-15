@@ -5,7 +5,6 @@ import {
   type Goal,
   GoalCreate,
   goalKind,
-  InstructionCreate,
   type LogTimeResponse,
   PlaceInput,
   type Recommendation,
@@ -14,7 +13,7 @@ import {
 import { z } from "zod";
 import { addItem, updateItem } from "../checklist/items";
 import { HttpError, parse } from "../http";
-import { updateInstruction } from "../routes/instructions";
+import { createInstruction, updateInstruction } from "../routes/instructions";
 import { savePlaces } from "../routes/places";
 import { updateProfile } from "../routes/profile";
 import { store } from "../store";
@@ -316,7 +315,7 @@ async function updateChecklist(input: unknown): Promise<WriteOutcome> {
 }
 
 async function addInstruction(input: unknown): Promise<WriteOutcome> {
-  const i = await store.createInstruction(parse(InstructionCreate, input));
+  const i = await createInstruction(input);
   return { content: `Kept: ${i.text} {instruction_id ${i.id}}.`, isError: false };
 }
 

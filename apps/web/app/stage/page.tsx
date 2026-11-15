@@ -115,7 +115,10 @@ function Band({ day, titles }: { day: DayView | null; titles: Map<string, string
   }
   const ticks = tape(day);
   const t = totals(day);
-  const nowAt = day.moment === "evening" || t.scorePct === null ? null : nowIndex(ticks);
+  // Before the first block starts the tape is all outline, as on Today: the headline already says
+  // when it starts, so a projector wide row of empty boxes stays off the stage.
+  if (t.scorePct === null) return <section aria-label="Today" className="stage-empty" />;
+  const nowAt = day.moment === "evening" ? null : nowIndex(ticks);
   const key = [
     t.spent - t.unverified > 0 ? { kind: "spent", text: `${hm(t.spent - t.unverified)} spent` } : null,
     t.unverified > 0 ? { kind: "unverified", text: `${hm(t.unverified)} unconfirmed` } : null,

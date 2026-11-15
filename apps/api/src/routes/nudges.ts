@@ -126,8 +126,9 @@ export const SAMPLE_NUDGE = {
 
 /**
  * The stage moment: push one nudge to the caller's devices now. Uses the engine's best current
- * candidate (real maths) when there is one, otherwise the sample. Ignores the cap, quiet hours
- * and dedupe. Stored with status `test` so GET /v1/nudges (the stage screen) shows the same line
+ * candidate (real maths) when there is one, else the goal furthest behind its pace at any hour
+ * and from a 15 minute gap (`testCandidate`), and the sample only when every goal is on pace.
+ * Ignores the cap, quiet hours and dedupe. Stored with status `test` so GET /v1/nudges (the stage screen) shows the same line
  * at the same moment; `test` never counts towards the 5 a day or blocks a real nudge.
  */
 export async function testNudge(): Promise<NudgeTestResult> {

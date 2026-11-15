@@ -44,6 +44,13 @@ const WRITE_TOOLS = new Set([
 
 export const isWrite = (q: AgentQuery) => WRITE_TOOLS.has(q.tool);
 
+/**
+ * Did this call change something? An allowed write, unless the API says it changed nothing
+ * (`changed: false`: Michael refused it, or there was nothing to do). A line logged before the
+ * field has no `changed` and counts as it always did.
+ */
+export const isChange = (q: AgentQuery) => q.allowed && isWrite(q) && q.changed !== false;
+
 /** Is this the Claude connector? Reconnecting keeps one record named after the client. */
 export const isClaude = (a: AgentClient) => /claude/i.test(a.name);
 
@@ -180,7 +187,7 @@ export function groupByAgent(view: AgentsView): AgentDay[] {
     };
     const day = days.get(agent.id) ?? { agent, queries: [], changes: 0 };
     day.queries.push(q);
-    if (q.allowed && isWrite(q)) day.changes += 1;
+    if (isChange(q)) day.changes += 1;
     days.set(agent.id, day);
   }
   return [...days.values()];

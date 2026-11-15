@@ -14,8 +14,9 @@ import { forget, remember } from "../memory";
 import { DEFAULT_TIMEZONE } from "../patterns";
 import { Zone } from "../patterns/time";
 import { logEvening, planMorning } from "../ritual/ritual";
+import { goalBlockTitle } from "../score/match";
 import { store } from "../store";
-import { executeRecommendation, undoRecommendation } from "./calendar";
+import { bookedLine, executeRecommendation, undoRecommendation } from "./calendar";
 import { runWriteTool, WRITE_TOOLS } from "./chat-write-tools";
 import { draftText, generateDrafts } from "./drafts";
 import { guardMacApps } from "./mac-apps";
@@ -359,17 +360,19 @@ async function findBlocks(input: unknown): Promise<ToolOutcome> {
 async function createBlock(input: unknown): Promise<ToolOutcome> {
   const p = CreateInput.safeParse(input);
   if (!p.success) return invalid(p.error);
-  const { title, start_at, end_at } = p.data;
+  const { start_at, end_at } = p.data;
   if (Date.parse(end_at) <= Date.parse(start_at))
     return { content: "end_at must be after start_at", isError: true };
   const goal = p.data.goal_id ? await store.getGoal(p.data.goal_id).catch(() => null) : null;
+  // A bare "Study" for the University goal becomes "University": the block names its goal.
+  const title = goal ? goalBlockTitle(goal, p.data.title) : p.data.title;
   const rec = await store.createRecommendation({
     goal_id: goal?.id ?? null,
     title: `${title}, ${clock(start_at)} to ${clock(end_at)}`,
-    rationale: "Asked for in chat.",
+    rationale: bookedLine(title, start_at, end_at),
     action: {
       kind: "create_focus_block",
-      payload: { start_at, end_at, title },
+      payload: { start_at, end_at, title, ...(goal ? { goal_id: goal.id } : {}) },
       involves_others: false,
       undo_until: start_at,
     },

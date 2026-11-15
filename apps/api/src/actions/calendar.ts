@@ -10,6 +10,7 @@ import {
   type Recommendation,
   type RecommendationAction,
   RemoveCalendarBlockPayload,
+  voiceDuration,
 } from "@michael/shared";
 import { z } from "zod";
 import { HttpError, parse } from "../http";
@@ -24,6 +25,9 @@ import {
   patchCalendarEvent,
   withOthers,
 } from "../integrations/google";
+import { DEFAULT_TIMEZONE } from "../patterns/context";
+import { Zone } from "../patterns/time";
+import { goalBlockTitle } from "../score/match";
 import { store } from "../store";
 import { draftFromRecommendation } from "./drafts";
 import { startFocusGuard, stopFocusGuard } from "./focus-guard";
@@ -600,8 +604,29 @@ export interface FocusBlockRequest {
   end_at: string;
   title?: string;
   goal_id?: string | null;
-  /** Who asked, for the rationale the user reads ("Claude"). */
-  requested_by: string;
+  /** Who asked, for the rationale the user reads ("Claude"). Null: the user, in Michael. */
+  requested_by: string | null;
+  /** One more sentence for the rationale, such as why the block is shorter than asked for. */
+  note?: string;
+}
+
+const athens = new Zone(DEFAULT_TIMEZONE);
+
+/**
+ * What a booked block says, plainly: what, how long, who booked it when someone else did, any
+ * note, and until when it can be undone. "University, 90 minutes. Undo until 07:00."
+ */
+export function bookedLine(
+  title: string,
+  startAt: string,
+  endAt: string,
+  by?: string | null,
+  note?: string,
+): string {
+  const start = Date.parse(startAt);
+  const minutes = Math.round((Date.parse(endAt) - start) / 60_000);
+  const what = `${title}, ${voiceDuration(minutes)}${by ? `, booked by ${by}` : ""}`;
+  return `${what}.${note ? ` ${note}` : ""} Undo until ${athens.clock(start)}.`;
 }
 
 /**
@@ -620,7 +645,8 @@ export async function bookFocusBlock(req: FocusBlockRequest): Promise<Recommenda
   if (start <= Date.now()) throw conflict("That time has already started");
   if (end - start < MIN_BLOCK_MS) throw new HttpError("bad_request", "A block is at least 5 minutes");
   if (end - start > MAX_BLOCK_MS) throw new HttpError("bad_request", "A block is at most 6 hours");
-  if (req.goal_id && !(await store.getGoal(req.goal_id))) throw new HttpError("not_found", "Goal not found");
+  const goal = req.goal_id ? await store.getGoal(req.goal_id) : null;
+  if (req.goal_id && !goal) throw new HttpError("not_found", "Goal not found");
 
   const overlapping = await store.listEvents({
     from: payload.start_at,
@@ -637,14 +663,15 @@ export async function bookFocusBlock(req: FocusBlockRequest): Promise<Recommenda
     throw conflict(`That overlaps "${clash.title}", which has other people in it. Pick a free time.`);
   }
 
-  const title = payload.title ?? "Focus block";
+  // Named after the goal it serves ("University"), and carrying its id so the score counts it.
+  const title = goal ? goalBlockTitle(goal, payload.title) : (payload.title ?? "Focus block");
   const rec = await store.createRecommendation({
-    goal_id: req.goal_id ?? null,
+    goal_id: goal?.id ?? null,
     title,
-    rationale: `Booked at your request through ${req.requested_by}. Undo in Michael until it starts.`,
+    rationale: bookedLine(title, payload.start_at, payload.end_at, req.requested_by, req.note),
     action: {
       kind: "create_focus_block",
-      payload: { ...payload, title },
+      payload: { ...payload, title, ...(goal ? { goal_id: goal.id } : {}) },
       involves_others: false,
       undo_until: payload.start_at,
     },

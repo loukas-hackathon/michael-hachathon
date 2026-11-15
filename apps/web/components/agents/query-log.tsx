@@ -1,6 +1,6 @@
 import type { AgentQuery } from "@michael/shared";
 import { UndoButton } from "@/components/today/undo-button";
-import { type AgentDay, countLine, isWrite } from "@/lib/agents";
+import { type AgentDay, countLine, isChange, isWrite } from "@/lib/agents";
 import { formatTime } from "@/lib/format";
 
 // "Booked "Sales focus"" reads better with typographic quotes.
@@ -19,7 +19,8 @@ export function AgentMark({ name }: { name: string }) {
 }
 
 function Line({ name, q, sample, last }: { name: string; q: AgentQuery; sample: boolean; last: boolean }) {
-  const write = q.allowed && isWrite(q);
+  // A change is a write that went through: a booking Michael refused reads as a plain question.
+  const write = isChange(q);
   const undoUntil = write && q.recommendation_id && q.undo_until ? q.undo_until : null;
   return (
     <li className="relative grid grid-cols-[44px_14px_1fr] gap-x-2 px-4">

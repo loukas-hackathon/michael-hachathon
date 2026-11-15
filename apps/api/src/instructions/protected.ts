@@ -122,7 +122,7 @@ export function forbiddenBy(
 const DAY_NAMES = ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"];
 
 /** "Saturdays and Sundays", Monday first. */
-const dayList = (days: number[]): string => {
+export const dayList = (days: number[]): string => {
   const names = [...new Set(days)].sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7)).map((d) => DAY_NAMES[d]);
   return names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
 };
