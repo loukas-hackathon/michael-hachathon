@@ -56,6 +56,7 @@ export function BriefView({
   const row = briefRow(run);
   return (
     <Fold
+      wideOpen
       title="Michael's brief"
       label="Michael's brief"
       meta={run?.finished_at ? <time dateTime={run.finished_at}>{row.when}</time> : null}

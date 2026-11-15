@@ -23,7 +23,7 @@ function GoalLines({ moment }: { moment: Moment }) {
   const lines = moment.goals.filter((g) => !g.sleep && g.category !== "rest" && g.budget_minutes !== null);
   if (lines.length === 0) return null;
   return (
-    <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-footnote">
+    <dl className="grid grid-cols-[minmax(6rem,max-content)_1fr] gap-x-3 gap-y-1 text-footnote">
       {lines.map((g) => (
         <div key={g.goal_id} className="contents">
           <dt className="truncate text-label-2">{g.title}</dt>
@@ -49,6 +49,7 @@ export function MomentView({ moment }: { moment: Moment }) {
   const title = moment.kind === "morning" ? "Morning plan" : "Evening review";
   return (
     <Fold
+      wideOpen
       title={title}
       label={title}
       meta={<time dateTime={moment.generated_at}>{formatTime(moment.generated_at)}</time>}
