@@ -9,12 +9,29 @@ import { useEffect } from "react";
 const EVERY_MS = 5 * 60 * 1000;
 // Supabase's cookie (readable by design), or its chunks: only signed in visitors ask.
 const SESSION_COOKIE = /(?:^|;\s*)sb-[^=]+-auth-token(?:\.\d+)?=/;
+// The end to end tests' sign in (lib/auth-mode.ts), readable like Supabase's.
+const TEST_COOKIE = /(?:^|;\s*)michael_e2e_user=/;
+const hasSession = () => SESSION_COOKIE.test(document.cookie) || TEST_COOKIE.test(document.cookie);
 
 export function SessionFresh() {
   useEffect(() => {
     let last = Date.now();
+    // Signed in when this page was drawn. If the session has gone since (Sign out, then Back, which
+    // Safari serves from its page cache), the old account must not stay on screen (#459).
+    const drawnSignedIn = hasSession();
+    const gone = () => drawnSignedIn && !hasSession();
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted && gone()) location.replace("/login");
+    };
+    window.addEventListener("pageshow", onPageShow);
     const refresh = () => {
-      if (document.visibilityState !== "visible" || !SESSION_COOKIE.test(document.cookie)) return;
+      if (document.visibilityState !== "visible") return;
+      if (gone()) {
+        // Signed out in another tab: nothing to refresh, and this screen belongs to nobody now.
+        location.replace("/login");
+        return;
+      }
+      if (!SESSION_COOKIE.test(document.cookie)) return;
       last = Date.now();
       fetch("/auth/refresh", { method: "POST", cache: "no-store" }).catch(() => {});
     };
@@ -25,6 +42,7 @@ export function SessionFresh() {
     return () => {
       clearInterval(id);
       document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("pageshow", onPageShow);
     };
   }, []);
   return null;

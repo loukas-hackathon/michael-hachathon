@@ -1,5 +1,6 @@
 import { Wordmark } from "@/components/brand";
 import { safeNext } from "@/lib/next-path";
+import { ForgetDevice } from "./forget-device";
 import { GoogleButton } from "./google-button";
 
 export const metadata = { title: "Sign in · Michael" };
@@ -39,6 +40,7 @@ export default async function LoginPage({
         </div>
 
         <div className="flex flex-col">
+          <ForgetDevice />
           <GoogleButton initialError={message} />
           <a
             href={demoHref}
