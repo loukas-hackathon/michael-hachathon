@@ -1,6 +1,6 @@
 "use server";
 
-import { KnowledgeKind, type Profile, WeakSpot } from "@michael/shared";
+import { KnowledgeItem, KnowledgeKind, MemoryCreate, type Profile, WeakSpot } from "@michael/shared";
 import { revalidatePath } from "next/cache";
 import { API_URL, get } from "@/lib/api";
 import { authHeaders } from "@/lib/caller";
@@ -38,6 +38,31 @@ async function dropFromProfile(id: string): Promise<number> {
     cache: "no-store",
   });
   return res.status;
+}
+
+export type AddResult = { ok: true; item: KnowledgeItem } | { ok: false; error: string };
+
+/** A memory in the user's own words: POST /v1/memories, the same store the chat remembers in. */
+export async function addMemory(text: string): Promise<AddResult> {
+  const input = MemoryCreate.safeParse({ text });
+  if (!input.success) return { ok: false, error: "Write it in one line, under 280 characters." };
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/v1/memories`, {
+      method: "POST",
+      headers: { ...(await authHeaders()), "content-type": "application/json" },
+      body: JSON.stringify(input.data),
+      cache: "no-store",
+    });
+  } catch {
+    return { ok: false, error: "I lost the line. Nothing was kept." };
+  }
+  const item = res.ok ? KnowledgeItem.safeParse(await res.json().catch(() => null)) : null;
+  if (item?.success) {
+    revalidatePath("/you/knowledge");
+    return { ok: true, item: item.data };
+  }
+  return { ok: false, error: (await demoRefusal(res.status)) ?? "I couldn't keep that. Try again." };
 }
 
 export async function forgetItem(kind: string, id: string): Promise<ForgetResult> {

@@ -301,6 +301,36 @@ test("a spoken answer asks Claude to be brief and listless; a typed one does not
     },
   ));
 
+test("a lasting fact told in chat is remembered, shows on What I know and is in the next answer's context", () =>
+  withClaude(
+    [
+      { tool: { name: "remember", input: { fact: "Sleeps badly after late padel" } } },
+      { text: "Noted. I will keep padel early." },
+      { text: "Padel before 19:00 then." },
+    ],
+    async (requests) => {
+      const system = (r: Anthropic.MessageCreateParams | undefined) =>
+        (Array.isArray(r?.system) ? r.system : []).map((b) => b.text).join("\n");
+      const ask = (message: string) =>
+        app.request("/v1/chat", { method: "POST", headers: auth, body: JSON.stringify({ message }) });
+      // The prompt tells the model to keep lasting facts, and the tool is offered.
+      assert.equal((await ask("I sleep badly when I play padel late")).status, 201);
+      assert.match(system(requests[0]), /keep it with remember/);
+      assert.ok(requests[0]?.tools?.some((t) => "name" in t && t.name === "remember"));
+      const [result] = toolResults(requests[1]);
+      assert.match(String(result?.content), /^Remembered: Sleeps badly after late padel \(memory_id /);
+      // It is on What I know about you, from chat, and forgettable.
+      const k = (await (await app.request("/v1/me/knowledge", { headers: auth })).json()) as {
+        told: { kind: string; text: string; origin: string; forgettable: boolean }[];
+      };
+      const mem = k.told.find((i) => i.text === "Sleeps badly after late padel");
+      assert.deepEqual([mem?.kind, mem?.origin, mem?.forgettable], ["memory", "chat", true]);
+      // The next answer, in any conversation, reads it back.
+      assert.equal((await ask("When should I book padel?")).status, 201);
+      assert.match(system(requests[2]), /What the user told you before[\s\S]*Sleeps badly after late padel/);
+    },
+  ));
+
 test("every chat tool has its own plain step label; unknown tools get the fallback", () => {
   for (const tool of CHAT_TOOLS) {
     const label = stepLabel(tool.name, {});
