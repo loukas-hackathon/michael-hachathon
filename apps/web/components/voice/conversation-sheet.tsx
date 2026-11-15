@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { chatLineCount, currentLines, currentSteps, useChatSession } from "@/app/chat/chat-session";
-import { MiMark } from "@/components/brand";
 import { currentStep } from "@/components/chat/steps";
 import { markHintSeen } from "@/components/hint";
+import { Michael } from "@/components/michael";
 import { Sheet } from "@/components/sheet";
 import {
   endConversation,
@@ -146,7 +146,14 @@ function ConversationSheet({
                   talk.phase === "speaking" ? "m-speak-breath" : ""
                 } ${talk.phase === "thinking" || talk.phase === "off" ? "opacity-60" : ""}`}
               >
-                <MiMark className="block h-auto w-14" />
+                <Michael
+                  state={
+                    talk.phase === "listening" || talk.phase === "thinking" || talk.phase === "speaking"
+                      ? talk.phase
+                      : "idle"
+                  }
+                  className="block h-auto w-14"
+                />
               </span>
             </button>
             <p aria-live="polite" className="mt-9 min-h-6 text-subhead font-semibold text-label-2">
