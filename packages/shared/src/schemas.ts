@@ -265,6 +265,83 @@ export type GoalCreate = z.input<typeof GoalCreate>;
 export const GoalUpdate = GoalCreate.partial();
 export type GoalUpdate = z.input<typeof GoalUpdate>;
 
+// ---------- checklist items (#238) ----------
+// The day's one to three outcomes of a goal of kind `checklist`, in the user's own words. Michael
+// never ticks an item himself: the user does, or the evening check in (`settled_by: "check_in"`).
+
+// open -> done | dropped (settled by the user or the check in); open -> moved (carried to the next
+// day, where a new item continues it with `carried_from`).
+export const ChecklistStatus = z.enum(["open", "done", "dropped", "moved"]);
+export type ChecklistStatus = z.infer<typeof ChecklistStatus>;
+
+export const ChecklistSettledBy = z.enum(["user", "check_in"]);
+export type ChecklistSettledBy = z.infer<typeof ChecklistSettledBy>;
+
+/** At most this many open items per checklist goal and day. */
+export const CHECKLIST_MAX_OPEN = 3;
+
+const checklistText = z
+  .string()
+  .max(200)
+  .refine((t) => t.trim().length > 0, "Text must not be blank");
+
+export const ChecklistItem = z.object({
+  id: z.uuid(),
+  // A goal of kind `checklist`.
+  goal_id: z.uuid(),
+  // The local day, Europe/Athens.
+  date: LocalDay,
+  text: z.string().min(1).max(200),
+  // 0..2: the slot among the day's open items of the goal.
+  position: z
+    .number()
+    .int()
+    .min(0)
+    .max(CHECKLIST_MAX_OPEN - 1),
+  status: ChecklistStatus,
+  settled_at: IsoDateTime.nullable(),
+  settled_by: ChecklistSettledBy.nullable(),
+  // The item of the day before that this one continues (POST /v1/checklist/:id/carry).
+  carried_from: z.uuid().nullable(),
+  created_at: IsoDateTime,
+  updated_at: IsoDateTime,
+});
+export type ChecklistItem = z.infer<typeof ChecklistItem>;
+
+// GET /v1/checklist?date=YYYY-MM-DD (default today in Europe/Athens)
+export const ChecklistQuery = z.object({ date: LocalDay.optional() });
+export type ChecklistQuery = z.infer<typeof ChecklistQuery>;
+
+export const ChecklistResponse = z.object({
+  date: LocalDay,
+  // Every item of the day, any status, by goal and position.
+  items: z.array(ChecklistItem),
+  // Items still open on the day before: candidates to carry. Nothing else in this version.
+  suggestions: z.array(ChecklistItem),
+});
+export type ChecklistResponse = z.infer<typeof ChecklistResponse>;
+
+export const ChecklistItemCreate = z.object({
+  goal_id: z.uuid(),
+  // Default today in Europe/Athens.
+  date: LocalDay.optional(),
+  text: checklistText,
+});
+export type ChecklistItemCreate = z.input<typeof ChecklistItemCreate>;
+
+// `moved` is not set by hand: carry the item instead.
+export const ChecklistItemUpdate = z
+  .object({
+    text: checklistText.optional(),
+    status: ChecklistStatus.exclude(["moved"]).optional(),
+  })
+  .refine((u) => u.text !== undefined || u.status !== undefined, { message: "Send `text` or `status`" });
+export type ChecklistItemUpdate = z.input<typeof ChecklistItemUpdate>;
+
+// POST /v1/checklist/:id/carry: the old item (now `moved`) and the new one on the next day.
+export const ChecklistCarryResponse = z.object({ moved: ChecklistItem, item: ChecklistItem });
+export type ChecklistCarryResponse = z.infer<typeof ChecklistCarryResponse>;
+
 // ---------- standing instructions ----------
 // Not goals: the user's ground rules ("keep Sundays clear", "home every day by 21:00"). Given at
 // setup, changed any time. Michael never plans into the time they protect.
@@ -723,6 +800,13 @@ export const GoalSuggestionAccept = z.object({
   calendar_titles: z.array(z.string().min(1).max(200)).min(1).max(20).optional(),
 });
 export type GoalSuggestionAccept = z.input<typeof GoalSuggestionAccept>;
+
+// Book time for a goal from the Goals tab (#309): the first free slot of this length from now
+// until the end of the week, booked at once and undoable until it starts.
+export const GoalBook = z.object({
+  minutes: z.number().int().min(15).max(360).default(60),
+});
+export type GoalBook = z.input<typeof GoalBook>;
 
 // Where the user says their time leaks. Analysis and nudges can look for these first.
 export const WeakSpot = z.enum([
@@ -1538,6 +1622,8 @@ export const PatternReport = z.object({
   inputs: z.object({
     mac_app_usage: z.number().int().nonnegative(),
     iphone_app_usage: z.number().int().nonnegative(),
+    // ActivityWatch and Shortcuts intervals left out because Apple's own log covered the same hour.
+    app_usage_superseded: z.number().int().nonnegative(),
     web_visits: z.number().int().nonnegative(),
     // History visits left out because the extension covered the same window.
     web_visits_superseded: z.number().int().nonnegative(),
@@ -1610,6 +1696,16 @@ export const ScoreLostStretch = z.object({
   device: PatternDevice,
 });
 export type ScoreLostStretch = z.infer<typeof ScoreLostStretch>;
+
+// What took the lost time over a stretch of days: one entry per app, site or site category.
+export const ScoreLostBy = z.object({
+  what: z.string(),
+  kind: z.enum(["app", "site"]),
+  category: AppCategory,
+  // Whole minutes, at least 1.
+  minutes: z.number().int().positive(),
+});
+export type ScoreLostBy = z.infer<typeof ScoreLostBy>;
 
 export const ScoreBlock = z.object({
   // The calendar event. A block that crosses local midnight appears once on each day.
@@ -1686,6 +1782,23 @@ export const ScoreDayDetail = ScoreDay.extend({
 });
 export type ScoreDayDetail = z.infer<typeof ScoreDayDetail>;
 
+// A checklist goal on GET /v1/score (#238): items set and done on the day and in its week. An item
+// carried to the next day counts there, not twice; a dropped one counts as set, not done.
+const SetDone = z.object({ set: z.number().int().nonnegative(), done: z.number().int().nonnegative() });
+export const ScoreChecklist = z.object({ today: SetDone, week: SetDone });
+export type ScoreChecklist = z.infer<typeof ScoreChecklist>;
+
+// A count goal on GET /v1/score (#238): "1 of 2, 3 days left". Occurrences so far this week (own
+// blocks at least half spent, workouts, check ins answered yes, deduplicated per day), the weekly
+// target, what is left, and the days of the week that have not ended yet (today included).
+export const ScoreCount = z.object({
+  done: z.number().int().nonnegative(),
+  target: z.number().int().nonnegative(),
+  left: z.number().int().nonnegative(),
+  days_left: z.number().int().min(0).max(7),
+});
+export type ScoreCount = z.infer<typeof ScoreCount>;
+
 export const ScoreGoal = GoalScore.extend({
   title: z.string(),
   category: GoalCategory,
@@ -1707,6 +1820,9 @@ export const ScoreGoal = GoalScore.extend({
   minutes_left: Minutes,
   // The goal's calendar blocks this week that have not ended yet ("two blocks still open").
   open_blocks: z.number().int().nonnegative(),
+  // Only on goals of kind `checklist` and `count` (#238). Both stay outside the time score.
+  checklist: ScoreChecklist.optional(),
+  count: ScoreCount.optional(),
 });
 export type ScoreGoal = z.infer<typeof ScoreGoal>;
 
@@ -1840,8 +1956,8 @@ export type RecordsResponse = z.infer<typeof RecordsResponse>;
 export const ScoreSleep = z.object({
   // The nightly goal in minutes (sleep_hours x 60).
   goal_minutes: Minutes,
-  // Seven entries, Monday first: minutes slept in the night that ended that day. Null for a night
-  // with no sleep data and for nights to come.
+  // Seven entries, Monday first: minutes slept in the night that ended that day, naps left out
+  // (isNap, ./sleep.ts). Null for a night with no sleep data and for nights to come.
   nightly: z.array(Minutes.nullable()),
 });
 export type ScoreSleep = z.infer<typeof ScoreSleep>;
@@ -1876,6 +1992,10 @@ export const Score = WeeklyScore.extend({
   // Waking time left this week outside fixed calendar commitments and sleep (#117). Goal blocks
   // count as free: they are where goal time goes.
   free_minutes_left: Minutes,
+  // What took the week's lost time, most first: every lost stretch of the week's blocks summed
+  // by app or site. GET /v1/score always sends it. The entries are rounded one by one, so they
+  // can add up to a few minutes off `lost_minutes`.
+  lost_by: z.array(ScoreLostBy).optional(),
   // Null until there is a sleep goal and sleep data this week.
   sleep: ScoreSleep.nullable(),
 });
@@ -1900,6 +2020,8 @@ export type ChatMessage = z.infer<typeof ChatMessage>;
 
 export const ChatRequest = z.object({
   message: z.string().trim().min(1).max(2000),
+  // The answer will be read aloud (conversation mode): one or two short sentences, no lists.
+  spoken: z.boolean().optional(),
 });
 export type ChatRequest = z.input<typeof ChatRequest>;
 

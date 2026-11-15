@@ -10,7 +10,8 @@ export function ConnectionsList({
   view: ConnectionsView;
   flash: { ok: boolean; text: string } | null;
 }) {
-  const total = view.rows.length;
+  // Coming soon rows (#295) are not counted: "1 of 4 connected" means four the user can connect.
+  const total = view.live;
   const summary =
     view.connected === 0
       ? "Nothing connected yet."
@@ -39,7 +40,7 @@ export function ConnectionsList({
         </p>
       ) : null}
       <div className="overflow-hidden rounded-group bg-fill">
-        {view.rows.map((row, i) => (
+        {[...view.rows.filter((r) => r.live), ...view.rows.filter((r) => !r.live)].map((row, i) => (
           <div key={row.id} className="relative">
             {i > 0 ? <span className="absolute inset-x-0 top-0 ml-[52px] h-[0.5px] bg-separator" /> : null}
             <ConnectionRow row={row} />

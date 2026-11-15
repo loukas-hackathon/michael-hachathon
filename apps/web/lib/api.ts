@@ -17,6 +17,7 @@ import {
   mockEvents,
   mockGoals,
   mockRecommendations,
+  mockScore,
   type NudgeTestResult,
   type PlaceSuggestionsResponse,
   type PlacesResponse,
@@ -34,12 +35,15 @@ import {
   type TargetUpdate,
   type TimelineResponse,
 } from "@michael/shared";
+import { cache } from "react";
 import { authHeaders } from "./caller";
 import { categoryOf } from "./categories";
 import type { ChecklistDay, ChecklistItem } from "./checklist";
 import type { DayView } from "./day";
 import type { GoalsView } from "./goals-view";
 import type { Instruction, InstructionInput } from "./instructions";
+import { type KeepWeek, keepWeekFrom, restDaysFrom } from "./keep-day";
+import { type LostWeek, lostWeekFrom } from "./lost-week";
 import { API_URL, USE_MOCKS } from "./mode";
 import { sampleChecklist } from "./sample/checklist";
 import {
@@ -84,11 +88,11 @@ async function send<T>(method: "PUT" | "PATCH" | "POST", path: string, body?: un
  * The raw server-sent event stream of POST /v1/chat/stream, for the /chat/stream route to pass on.
  * Throws when signed out or the API cannot be reached.
  */
-export async function openChatStream(message: string): Promise<Response> {
+export async function openChatStream(message: string, spoken = false): Promise<Response> {
   return fetch(`${API_URL}/v1/chat/stream`, {
     method: "POST",
     headers: { ...(await authHeaders()), "content-type": "application/json" },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify(spoken ? { message, spoken } : { message }),
     cache: "no-store",
   });
 }
@@ -361,6 +365,12 @@ export async function undoRecommendation(id: string): Promise<RecResult> {
   return recCall("POST", `/v1/recommendations/${encodeURIComponent(id)}/undo`);
 }
 
+/** POST /v1/goals/:id/book: the first free slot this week, booked at once, undoable until it starts. */
+export async function bookGoal(goalId: string, minutes: number): Promise<RecResult> {
+  if (USE_MOCKS) return { ok: false, status: 501, message: "Booking needs the live API" };
+  return recCall("POST", `/v1/goals/${encodeURIComponent(goalId)}/book`, { minutes });
+}
+
 /** PATCH /v1/recommendations/:id { status: dismissed }: "Not now". */
 export async function dismissRecommendation(id: string): Promise<RecResult> {
   if (USE_MOCKS && isMockRec(id)) return mockRecAction(id, "dismiss");
@@ -425,8 +435,35 @@ const athensDay = (d = new Date()) =>
   new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Athens" }).format(d);
 
 /** GET /v1/score for a local day (default today). */
+// Deduped per request: Today asks for the score twice (the day and the week's lost time).
+const scoreFor = cache((date: string) => get<Score>(`/v1/score?date=${date}`));
 export async function getScore(date = athensDay()): Promise<Score> {
-  return get<Score>(`/v1/score?date=${date}`);
+  return scoreFor(date);
+}
+
+/** Keep the Day (Today): this week's days against the line, and the run of days kept. */
+export async function getKeepWeek(variant?: string): Promise<KeepWeek | null> {
+  const instructions = await getInstructions().catch(() => ({ available: false }) as const);
+  const rest = restDaysFrom(instructions.available ? instructions.items : []);
+  if (USE_MOCKS || variant === "sample") return keepWeekFrom(mockScore, null, mockScore.date, rest);
+  try {
+    const today = athensDay();
+    const lastWeek = new Date(Date.parse(`${today}T12:00:00Z`) - 7 * 86_400_000).toISOString().slice(0, 10);
+    const [week, before] = await Promise.all([getScore(today), getScore(lastWeek).catch(() => null)]);
+    return keepWeekFrom(week, before, today, rest);
+  } catch {
+    return null;
+  }
+}
+
+/** Goal time lost per day of the week holding `date` (Timeline chart, Today's week line). */
+export async function getLostWeek(date?: string, variant?: string): Promise<LostWeek | null> {
+  if (USE_MOCKS || variant === "sample") return lostWeekFrom(mockScore, mockScore.date);
+  try {
+    return lostWeekFrom(await getScore(date ?? athensDay()), athensDay());
+  } catch {
+    return null;
+  }
 }
 
 /**

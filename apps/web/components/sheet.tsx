@@ -1,6 +1,7 @@
 "use client";
 
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { useSmoothHeight } from "./motion";
 
 /**
  * A bottom sheet with one job (docs/design-guide.md): grabber, swipe down or tap outside to close,
@@ -38,6 +39,10 @@ export function Sheet({
     if (open && !d.open) d.showModal();
     if (!open && d.open) d.close();
   }, [open]);
+
+  // Once open with its content in, a change of content height (a step, a detail, a loaded list)
+  // eases the sheet to its new height instead of jumping.
+  useSmoothHeight(ref, open && render);
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.pointerType === "mouse" && e.button !== 0) return;

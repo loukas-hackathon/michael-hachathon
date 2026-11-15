@@ -159,7 +159,7 @@ try {
   assert.equal(byHost("example.com")[0]?.title, "Order 42");
   assert.equal(byHost("example.com").length, 1, "the zero second hop must be dropped");
   const doc = byHost("docs.google.com")[0]?.data;
-  assert.deepEqual([doc?.seconds, doc?.foreground, doc?.category], [12, true, "docs"]);
+  assert.deepEqual([doc?.seconds, doc?.foreground, doc?.category], [12, true, "work"]);
   assert.equal(byHost("shop.example.org")[0]?.data?.seconds, 7200);
   assert.equal(byHost("ads.example.net").length, 0);
   const order = byHost("example.com")[0];
@@ -180,7 +180,7 @@ try {
     ],
   );
   assert.equal(byHost("google.com").length, 3, "search pages with time on them are visits too");
-  assert.equal(byHost("google.com")[0]?.data?.category, "search");
+  assert.equal(byHost("google.com")[0]?.data?.category, undefined);
 
   // Profiles: ids are stable and never collide across profiles.
   const ids = first.events.map((event) => event.external_id);
@@ -197,10 +197,10 @@ try {
   // The shared helpers.
   assert.equal(hostFromUrl("https://WWW.Example.com:8443/a?b=c"), "example.com");
   assert.equal(hostFromUrl("chrome://settings"), null);
-  assert.equal(siteCategory("mail.google.com"), "mail");
-  assert.equal(siteCategory("google.co.uk"), "search");
+  assert.equal(siteCategory("mail.google.com"), "communication");
+  assert.equal(siteCategory("google.co.uk"), undefined);
   assert.equal(siteCategory("maps.google.com"), undefined);
-  assert.equal(siteCategory("aws.amazon.com"), "dev");
+  assert.equal(siteCategory("aws.amazon.com"), "work");
   assert.equal(siteCategory("amazon.de"), "shopping");
   assert.equal(siteCategory("unknown.example.com"), undefined);
   for (const host of [

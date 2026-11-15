@@ -194,6 +194,7 @@ export function Chat({
             onInterim={setDraft}
             onFinal={(text) => send(text, true)}
             onError={setError}
+            onDictate={() => input.current?.focus()}
           />
           <button
             type="submit"

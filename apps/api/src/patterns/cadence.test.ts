@@ -182,7 +182,7 @@ test("too little phone data gives a reason, not a number", () => {
   assert.equal(twoDays.status, "not_enough_data");
   assert.equal(twoDays.data, null);
   assert.equal(twoDays.summary, null);
-  assert.equal(twoDays.reason, "not enough data: needs at least 3 days of phone usage, found 2");
+  assert.equal(twoDays.reason, "Not enough data yet: needs at least 3 days of phone usage, found 2");
 
   // Three days, but one pick up each: 2 gaps, both overnight.
   const sparse = report(
@@ -193,7 +193,7 @@ test("too little phone data gives a reason, not a number", () => {
   assert.equal(sparse.data, null);
   assert.equal(
     sparse.reason,
-    "not enough data: needs at least 20 waking gaps between phone sessions, found 0",
+    "Not enough data yet: needs at least 20 waking gaps between phone sessions, found 0",
   );
 });
 
@@ -278,7 +278,7 @@ test("Mac cadence needs 3 days and an app with 10 activations", () => {
     "2026-11-13 00:00",
   ).mac_app_cadence;
   assert.equal(short.data, null);
-  assert.equal(short.reason, "not enough data: needs at least 3 days of Mac usage, found 2");
+  assert.equal(short.reason, "Not enough data yet: needs at least 3 days of Mac usage, found 2");
 
   const quiet = report(
     DAYS.map((day) => mac(APPS.editor, T(`${day} 09:00`), T(`${day} 10:00`))),
@@ -286,5 +286,5 @@ test("Mac cadence needs 3 days and an app with 10 activations", () => {
     "2026-11-13 00:00",
   ).mac_app_cadence;
   assert.equal(quiet.data, null);
-  assert.equal(quiet.reason, "not enough data: no Mac app reached 10 activations on 2 or more days");
+  assert.equal(quiet.reason, "Not enough data yet: no Mac app reached 10 activations on 2 or more days");
 });

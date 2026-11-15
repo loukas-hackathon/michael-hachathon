@@ -2,6 +2,7 @@
 
 import { useActionState, useCallback, useEffect, useId, useOptimistic, useState, useTransition } from "react";
 import {
+  addHouseRule,
   addInstruction,
   editInstruction,
   type FormState,
@@ -9,7 +10,7 @@ import {
   saveQuietHours,
   toggleInstruction,
 } from "@/app/you/instructions-actions";
-import { type Instruction, type InstructionKind, instructionText } from "@/lib/instructions";
+import { HOUSE_RULES, type Instruction, type InstructionKind, instructionText } from "@/lib/instructions";
 import { safeFormAction } from "@/lib/use-action";
 import { input, Row, Segmented } from "../form-controls";
 import { Sheet } from "../sheet";
@@ -241,6 +242,12 @@ export function StandingInstructions({
     setError(null);
   }, []);
   const editing = sheet?.type === "edit" ? sheet.item : null;
+  // House rules the user does not have yet, one tap each (#190). Gone once added.
+  const have = new Set(optimistic.map((i) => i.text.toLowerCase()));
+  const suggested = available
+    ? HOUSE_RULES.map((r, index) => ({ ...r, index })).filter((r) => !have.has(r.text.toLowerCase()))
+    : [];
+  const [adding, setAdding] = useState<number | null>(null);
 
   return (
     <section className="mt-8">
@@ -285,6 +292,32 @@ export function StandingInstructions({
             />
           </li>
         ))}
+        {suggested.map((r) => (
+          <li key={r.text} className={`relative flex min-h-11 items-center gap-3 pr-4 ${separator}`}>
+            <span className="min-w-0 flex-1 py-2.5 pl-4 text-body text-label-2">{r.text}</span>
+            <button
+              type="button"
+              disabled={adding !== null}
+              aria-busy={adding === r.index}
+              aria-label={`Add: ${r.text}`}
+              onClick={async () => {
+                setAdding(r.index);
+                setError(null);
+                try {
+                  const res = await addHouseRule(r.index);
+                  if (!res.ok) setError(res.message ?? "I could not add it. Nothing changed.");
+                } catch {
+                  setError("I could not reach the server. Nothing changed.");
+                } finally {
+                  setAdding(null);
+                }
+              }}
+              className="press flex h-9 shrink-0 items-center rounded-full bg-tint/14 px-4 text-subhead font-semibold text-tint-text disabled:opacity-60"
+            >
+              {adding === r.index ? "Adding" : "Add"}
+            </button>
+          </li>
+        ))}
         {available ? (
           <li className={`relative ${separator}`}>
             <button
@@ -300,6 +333,11 @@ export function StandingInstructions({
           </li>
         ) : null}
       </ul>
+      {error && sheet === null ? (
+        <p role="alert" className="mt-2 px-4 text-footnote text-danger">
+          {error}
+        </p>
+      ) : null}
       <p className="mt-2 px-4 text-footnote text-label-2">
         {available
           ? "Michael plans around these, and tells you when a block breaks one."

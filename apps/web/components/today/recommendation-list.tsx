@@ -5,7 +5,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { ActionError } from "@/components/action-feedback";
 import { FlipList } from "@/components/flip-list";
 import { haptic } from "@/components/haptics";
-import { useArrival } from "@/components/motion";
+import { useArrival, useDeparting } from "@/components/motion";
 import { NudgePrimer } from "@/components/nudge-primer";
 import { formatTime } from "@/lib/format";
 import {
@@ -268,7 +268,14 @@ export function RecommendationList({ cards, variant }: { cards: RecCard[]; varia
             : []),
           ...cards.filter((c) => c.id !== pinNow.id),
         ];
-  const visible = shown.filter((c) => !local[c.id]?.removed);
+  // A dismissed card stays in its place while it fades, even once the refresh has dropped it, so
+  // the refresh never cuts the fade short and the gap closes once (FlipList) when it ends.
+  const kept = useDeparting(
+    shown,
+    (c) => c.id,
+    (id) => Boolean(local[id]?.hidden && !local[id]?.removed),
+  );
+  const visible = kept.filter((c) => !local[c.id]?.removed);
   // The cards below slide up into the gap a dismissed card leaves.
   const flipKey = visible.map((c) => c.id).join();
   if (visible.length === 0) return null;

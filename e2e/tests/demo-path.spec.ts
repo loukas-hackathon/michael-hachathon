@@ -34,7 +34,7 @@ test("Today shows the demo week's real numbers, not the sample day", async ({ pa
   // The same numbers the API computes for the demo account.
   const score = await apiGet<Score>("/v1/score");
   if (score.score_pct != null) {
-    await expect(page.getByText(`We're at ${score.score_pct}% of goal time this week.`)).toBeVisible();
+    await expect(page.getByText(`${score.score_pct}% optimisation score this week.`)).toBeVisible();
   }
   if (score.day.blocks.length > 0 && score.day.score_pct != null) {
     await expect(page.getByText(/of your goal time (today|so far)\./)).toBeVisible();
@@ -78,6 +78,24 @@ test("Timeline shows today's blocks", async ({ page }) => {
   await expect(page.getByRole("navigation", { name: "Days" })).toBeVisible();
   // Blocks and calendar outlines carry "Title, HH:MM to HH:MM".
   await expect(page.locator('[title*=" to "]').first()).toBeVisible();
+});
+
+test("a night from the watch opens its stages", async ({ page }) => {
+  // The latest night in the demo week belongs to the day it ended on (the night rule, lib/health.ts).
+  const to = new Date();
+  const from = new Date(to.getTime() - 7 * 86_400_000);
+  const { events } = await apiGet<{ events: { end_at: string | null }[] }>(
+    `/v1/timeline?from=${from.toISOString()}&to=${to.toISOString()}&type=sleep`,
+  );
+  const last = events.filter((e) => e.end_at).at(-1);
+  test.skip(!last, "no night in the demo week yet");
+  const day = new Date(last?.end_at as string).toLocaleDateString("en-CA", { timeZone: "Europe/Athens" });
+  await enterDemo(page);
+  await page.goto(`/timeline?day=${day}`);
+  await tap(page.locator('[data-sleep-band="last-night"]'));
+  await expect(page.getByText("Last night, from the watch")).toBeVisible();
+  await expect(page.getByRole("img", { name: /^Awake .*Deep/ })).toBeVisible();
+  await expect(page.getByText("Bedtime")).toBeVisible();
 });
 
 test("Goals shows the demo goals", async ({ page }) => {

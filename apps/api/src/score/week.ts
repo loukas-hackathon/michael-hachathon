@@ -1,5 +1,5 @@
-import { type Event, type Goal, isSleepGoal, type ScoreSleep } from "@michael/shared";
-import { DAY, MINUTE, type Zone } from "../patterns/time";
+import { type Event, type Goal, isNap, isSleepGoal, type ScoreSleep } from "@michael/shared";
+import { DAY, HOUR, MINUTE, type Zone } from "../patterns/time";
 import { overlapWith, type Span, union } from "../patterns/util";
 
 // The week around the score (#117, #165): the waking day, the fixed calendar commitments, the
@@ -99,7 +99,10 @@ export function freeMinutesLeft(
   return Math.max(0, Math.round(ms / MINUTE));
 }
 
-/** Sleep per night this week, or null until there is a sleep goal and sleep data. */
+/**
+ * Sleep per night this week, or null until there is a sleep goal and sleep data. A night counts on
+ * the day it ended (the day you woke up); naps (packages/shared/src/sleep.ts) never count.
+ */
 export function sleepWeek(
   events: Event[],
   goals: Goal[],
@@ -115,6 +118,7 @@ export function sleepWeek(
     const start = Date.parse(e.start_at);
     const end = Date.parse(e.end_at);
     if (!(end > start) || end - start > DAY || end > now) continue;
+    if (isNap(start, end, (start - zone.startOfDay(zone.dayOf(start))) / HOUR)) continue;
     const day = zone.dayOf(end);
     const recorded = e.data?.duration_min;
     const minutes = typeof recorded === "number" && recorded > 0 ? recorded : (end - start) / MINUTE;

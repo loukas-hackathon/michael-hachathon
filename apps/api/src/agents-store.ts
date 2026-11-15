@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { z } from "zod";
 import { currentUserId } from "./context";
 import { env } from "./env";
-import { HttpError } from "./http";
+import { type DbError, dbError } from "./http";
 import { dbClient } from "./timing";
 
 // Michael for agents (#38): the agents a user allowed and every question they asked. Kept apart
@@ -113,8 +113,8 @@ const toQuery = (r: Record<string, unknown>): AgentQuery => ({
 });
 const AGENT_COLUMNS = "id, name, status, scopes, created_at, last_seen_at";
 
-function check<T>(res: { data: T; error: { message: string } | null }): T {
-  if (res.error) throw new HttpError("upstream_error", `Database error: ${res.error.message}`);
+function check<T>(res: { data: T; error: DbError | null }): T {
+  if (res.error) throw dbError(res.error);
   return res.data;
 }
 

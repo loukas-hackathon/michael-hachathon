@@ -54,3 +54,15 @@ export function instructionText(i: Pick<Instruction, "kind" | "days" | "time" | 
       return i.text;
   }
 }
+
+/**
+ * One tap house rules (Manolis, #190): offered on You under Standing instructions until the user
+ * has them. Picked by index on the server, so the browser can only ask for one of these.
+ */
+export const HOUSE_RULES: InstructionInput[] = (
+  [
+    { kind: "clear_day", days: [0], text: "", active: true },
+    { kind: "clear_day", days: [6], text: "", active: true },
+    { kind: "home_by", days: [1, 2, 3, 4, 5], time: "19:00", text: "", active: true },
+  ] satisfies InstructionInput[]
+).map((r) => ({ ...r, text: instructionText(r) }));

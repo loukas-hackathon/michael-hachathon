@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { APPS, mac, phone, screenOff, T, web } from "./testkit";
-import { buildTimeline, flatten, parseWebVisits, preferExtension } from "./timeline";
+import { APPS, activityWatch, mac, phone, screenOff, shortcut, T, web } from "./testkit";
+import {
+  buildTimeline,
+  flatten,
+  parseAppUsage,
+  parseWebVisits,
+  preferExtension,
+  preferRecord,
+} from "./timeline";
 
 const range = (events: Parameters<typeof buildTimeline>[0]) =>
   buildTimeline(events, Date.parse(T("2026-11-10 00:00")), Date.parse(T("2026-11-11 00:00")));
@@ -190,4 +197,73 @@ test("Apple Watch intervals from the iPhone collector are not phone use", () => 
   const tl = range([watch, phone(APPS.chat, T("2026-11-10 10:00"), T("2026-11-10 10:01"))]);
   assert.equal(tl.iphone.length, 1);
   assert.equal(tl.counts.iphoneAppUsage, 1);
+});
+
+test("Shortcuts and ActivityWatch feed the timeline, categorised by the app's name", () => {
+  const tl = range([
+    shortcut("Instagram", T("2026-11-10 09:00"), T("2026-11-10 09:04")),
+    activityWatch("Code", T("2026-11-10 10:00"), T("2026-11-10 10:30")),
+    activityWatch("Google Chrome", T("2026-11-10 10:30"), T("2026-11-10 10:40")),
+    activityWatch("Some Private Tool", T("2026-11-10 10:40"), T("2026-11-10 10:45")),
+  ]);
+  assert.deepEqual(
+    tl.iphone.map((s) => [s.key, s.category]),
+    [["com.burbn.instagram", "social"]],
+  );
+  assert.deepEqual(
+    tl.mac.map((s) => [s.key, s.category, s.appKey]),
+    [
+      ["com.microsoft.VSCode", "work", "mac:com.microsoft.VSCode"],
+      // A browser is a container, as with the Mac's own log.
+      ["com.google.Chrome", "other", "mac:browser"],
+      // An unknown name is kept, never guessed.
+      ["Some Private Tool", "other", "mac:Some Private Tool"],
+    ],
+  );
+  assert.equal(tl.counts.iphoneAppUsage, 1);
+  assert.equal(tl.counts.macAppUsage, 3);
+});
+
+test("Apple's log wins over the live sources for the hours it covers, so nothing is counted twice", () => {
+  const events = [
+    // 09:00 hour: the Biome backfill and Shortcuts describe the same phone session.
+    phone(APPS.social, T("2026-11-10 09:10"), T("2026-11-10 09:14")),
+    shortcut("Instagram", T("2026-11-10 09:10:05"), T("2026-11-10 09:14:02")),
+    // 11:00 hour: only Shortcuts so far (the backfill lands up to a day late).
+    shortcut("WhatsApp", T("2026-11-10 11:00"), T("2026-11-10 11:03")),
+    // The Mac: its own log at 14:00, ActivityWatch at 14:00 and at 16:00.
+    mac(APPS.editor, T("2026-11-10 14:00"), T("2026-11-10 14:30")),
+    activityWatch("Code", T("2026-11-10 14:00"), T("2026-11-10 14:30")),
+    activityWatch("Terminal", T("2026-11-10 16:00"), T("2026-11-10 16:20")),
+  ];
+  const tl = range(events);
+  assert.equal(tl.counts.appUsageSuperseded, 2);
+  assert.equal(minutes(tl.iphone), 4 + 3);
+  assert.equal(minutes(tl.mac), 30 + 20);
+  assert.equal(minutes(tl.attention), 4 + 3 + 30 + 20);
+  // The kept phone time in the covered hour is the record's, to the second.
+  assert.equal(tl.iphone[0]?.start, Date.parse(T("2026-11-10 09:10")));
+});
+
+test("preferRecord: hours are per device, and a record on the Mac never hides the phone's backup", () => {
+  const uses = parseAppUsage([
+    mac(APPS.editor, T("2026-11-10 09:00"), T("2026-11-10 09:30")),
+    shortcut("Instagram", T("2026-11-10 09:05"), T("2026-11-10 09:06")),
+  ]);
+  const { kept, superseded } = preferRecord(uses);
+  assert.equal(superseded, 0);
+  assert.equal(kept.length, 2);
+});
+
+test("a watch glance and an app with no name or bundle id are skipped", () => {
+  const uses = parseAppUsage([
+    {
+      ...shortcut("Instagram", T("2026-11-10 09:00"), T("2026-11-10 09:01")),
+      data: { device: "watch", app: "Instagram" },
+    },
+    { ...shortcut("", T("2026-11-10 09:00"), T("2026-11-10 09:01")), data: { device: "iphone" } },
+    // Apple's own log without a bundle id is broken, not a named app.
+    { ...mac(APPS.editor, T("2026-11-10 09:00"), T("2026-11-10 09:01")), data: { device: "mac" } },
+  ]);
+  assert.equal(uses.length, 0);
 });

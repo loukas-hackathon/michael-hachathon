@@ -412,3 +412,68 @@ test("bad ranges are refused and the window covers the week and the days before"
   assert.equal(window.from, new Date(T("2026-11-03 00:00")).toISOString());
   assert.equal(window.to, new Date(T("2026-11-16 00:00")).toISOString());
 });
+
+test("checklist and count goals: today's open outcomes and the count's pace reach the brief as data (#238)", () => {
+  const outcomes: Goal = {
+    ...goal(first, "10000000-0000-4000-8000-0000000000b1", "Outcomes"),
+    target: { kind: "checklist" },
+  };
+  const gym: Goal = {
+    ...goal(second, "10000000-0000-4000-8000-0000000000b2", "Gym three times"),
+    target: { kind: "count", per_week: 3, calendar_titles: ["Gym"] },
+  };
+  const item = (
+    id: string,
+    date: string,
+    text: string,
+    status: "open" | "done" | "moved",
+    position: number,
+  ) => ({
+    id,
+    goal_id: outcomes.id,
+    date,
+    text,
+    position,
+    status,
+    settled_at: null,
+    settled_by: null,
+    carried_from: status === "open" && position === 0 ? "90000000-0000-4000-8000-000000000009" : null,
+    created_at: T("2026-11-10 07:00"),
+    updated_at: T("2026-11-10 07:00"),
+  });
+  const { brief } = buildBrief(
+    input({
+      goals: [...GOALS, outcomes, gym],
+      checklist: [
+        item("90000000-0000-4000-8000-000000000001", "2026-11-10", "Send the deck", "open", 0),
+        item("90000000-0000-4000-8000-000000000002", "2026-11-10", "Pay the invoice", "done", 1),
+        item("90000000-0000-4000-8000-000000000003", "2026-11-09", "Yesterday's thing", "open", 0),
+      ],
+      // Monday's gym block (18:00 to 19:00) and a yes on Monday evening: one session.
+      countCheckIns: [
+        {
+          goal_id: gym.id,
+          event_id: null,
+          start: Date.parse(T("2026-11-09 21:00")),
+          end: Date.parse(T("2026-11-09 21:00")),
+          untimed: true,
+        },
+      ],
+    }),
+  );
+  assert.deepEqual(at(brief, "checklist_today"), [
+    { goal: "Outcomes", text: "Send the deck", carried: true },
+  ]);
+  const goals = at<Record<string, unknown>[]>(brief, "goals");
+  const row = (title: string) => goals.find((g) => g.title === title)?.this_week;
+  assert.deepEqual(row("Gym three times"), {
+    scored: false,
+    count: { done: 1, target: 3, left: 2, days_left: 6, behind_pace: false },
+  });
+  assert.deepEqual(row("Outcomes"), {
+    scored: false,
+    checklist: { today: { set: 2, done: 1 }, week: { set: 3, done: 1 } },
+  });
+  // Without items the brief carries no checklist line at all.
+  assert.equal(at<Record<string, unknown>>(built, "brief").checklist_today, undefined);
+});
