@@ -1,5 +1,6 @@
 import { isLive } from "@michael/shared";
 import { CONNECTION_BUTTON } from "@/components/you/connection-row";
+import { getGoals } from "@/lib/api";
 import { isDemoVisitor } from "@/lib/caller";
 import { getGoogleCalendar } from "@/lib/integrations";
 import { USE_MOCKS } from "@/lib/mode";
@@ -14,7 +15,13 @@ const CONNECT = `/integrations/google/connect?return_to=${encodeURIComponent("/"
 export async function CalendarCard({ demo, emptyDay }: { demo?: string; emptyDay: boolean }) {
   if (USE_MOCKS || demo || !isLive("google-calendar")) return null;
   if (await isDemoVisitor()) return null;
-  const card = calendarCardFor(await getGoogleCalendar(), { emptyDay });
+  const [cal, goals] = await Promise.all([getGoogleCalendar(), getGoals().catch(() => [])]);
+  const card = calendarCardFor(cal, {
+    emptyDay,
+    goals: goals
+      .filter((g) => g.active)
+      .map((g) => ({ title: g.title, budgetMinutes: g.weekly_budget_minutes, category: g.category })),
+  });
   if (!card) return null;
   return (
     <section

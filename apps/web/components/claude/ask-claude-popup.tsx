@@ -39,12 +39,15 @@ export function AskClaudePopup({
   place,
   connected,
   prompt,
+  line,
   delayMs = 10_000,
 }: {
   /** Where it shows ("today", "number:sleep_score"): each place has its own once a day. */
   place: string;
   connected: boolean;
   prompt: string;
+  /** A first sentence from the person's own week; it replaces the stock invitation. */
+  line?: string;
   delayMs?: number;
 }) {
   const [open, setOpen] = useState(false);
@@ -88,7 +91,17 @@ export function AskClaudePopup({
       <div className="flex items-start gap-3">
         <p className="min-w-0 flex-1 text-subhead">
           {/* (Brand) */}
-          {connected ? (
+          {line ? (
+            <>
+              <b className="font-semibold">{line}</b>
+              {connected ? null : (
+                <>
+                  {" "}
+                  <span className="text-label-2">One tap links Claude to Michael.</span>
+                </>
+              )}
+            </>
+          ) : connected ? (
             <>
               <b className="font-semibold">Not sure what a number means? Ask Claude.</b>{" "}
               <span className="text-label-2">
