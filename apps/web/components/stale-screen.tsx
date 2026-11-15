@@ -27,13 +27,18 @@ export function StaleScreen() {
   // When the screen on show was drawn, while it is older than what the server has; null when fresh.
   const [staleSince, setStaleSince] = useState<number | null>(null);
   const drawnAt = useRef(Date.now());
-  const started = useRef(false);
+  const sawPending = useRef(false);
+
+  // A tap to another tab draws a fresh screen of its own. First, so a snapshot's time below wins.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs on navigation only
+  useEffect(() => {
+    drawnAt.current = Date.now();
+  }, [pathname]);
 
   useEffect(() => {
     const refresh = (since: number) => {
       if (SIGNED_OUT.test(location.pathname)) return;
       setStaleSince(Date.now() - since > QUIET_UNDER_MS ? since : null);
-      started.current = true;
       startTransition(() => router.refresh());
     };
 
@@ -58,19 +63,17 @@ export function StaleScreen() {
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, [router]);
 
-  // The refresh landed: what is on show is current.
+  // The refresh landed (pending went on, then off): what is on show is current.
   useEffect(() => {
-    if (pending || !started.current) return;
-    started.current = false;
+    if (pending) {
+      sawPending.current = true;
+      return;
+    }
+    if (!sawPending.current) return;
+    sawPending.current = false;
     drawnAt.current = Date.now();
     setStaleSince(null);
   }, [pending]);
-
-  // A tap to another tab draws a fresh screen of its own.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: runs on navigation only
-  useEffect(() => {
-    drawnAt.current = Date.now();
-  }, [pathname]);
 
   if (staleSince === null || SIGNED_OUT.test(pathname)) return null;
   return (
