@@ -9,6 +9,7 @@ import {
   PlanChangePayload,
   type Recommendation,
   type RecommendationAction,
+  RemoveCalendarBlockPayload,
 } from "@michael/shared";
 import { z } from "zod";
 import { HttpError, parse } from "../http";
@@ -35,7 +36,13 @@ import { startFocusGuard, stopFocusGuard } from "./focus-guard";
 // With Google Calendar connected the change happens in the calendar and the timeline mirrors it;
 // without it, it happens on the timeline only (Michael's own blocks, source "agent").
 
-const Times = z.object({ start_at: z.string(), end_at: z.string().nullable(), title: z.string() });
+const Times = z.object({
+  start_at: z.string(),
+  end_at: z.string().nullable(),
+  title: z.string(),
+  // Set when the move also changed the goal (#271): undo puts this one back. Absent on older rows.
+  goal_id: z.string().nullable().optional(),
+});
 
 const CreateExecution = z.object({
   kind: z.literal("create_focus_block"),
@@ -51,6 +58,19 @@ const MoveExecution = z.object({
   undo_until: z.string(),
 });
 type MoveExecution = z.infer<typeof MoveExecution>;
+// #271: the user removed one of Michael's blocks. What it was, so undo can put it back.
+const RemoveExecution = z.object({
+  kind: z.literal("remove_calendar_block"),
+  google_event_id: z.string().nullable(),
+  block: z.object({
+    title: z.string(),
+    start_at: z.string(),
+    end_at: z.string().nullable(),
+    data: z.record(z.string(), z.unknown()),
+  }),
+  undo_until: z.string(),
+});
+type RemoveExecution = z.infer<typeof RemoveExecution>;
 const StepExecution = z.discriminatedUnion("kind", [CreateExecution, MoveExecution]);
 type StepExecution = z.infer<typeof StepExecution>;
 
@@ -58,6 +78,7 @@ type StepExecution = z.infer<typeof StepExecution>;
 const Execution = z.discriminatedUnion("kind", [
   CreateExecution,
   MoveExecution,
+  RemoveExecution,
   // Several moves carried out together (the whole day around traffic), undone together.
   z.object({
     kind: z.literal("move_calendar_blocks"),
@@ -108,6 +129,8 @@ async function mirror(g: GoogleEvent, fallbackZone = "Europe/Athens"): Promise<E
 }
 
 const isOthers = (e: Event) => e.data.with_others === true || Number(e.data.attendees ?? 0) >= 2;
+/** A block Michael created (for Michael, for the user on the Timeline, or for an agent). */
+const isMichaels = (e: Event) => e.source === "agent" || e.data.michael === true;
 
 // `step` tells apart the blocks of one plan (#188), which share a recommendation.
 async function createFocusBlock(
@@ -119,6 +142,7 @@ async function createFocusBlock(
   if (Date.parse(p.start_at) <= Date.now()) throw conflict("That time has already started");
   const title = p.title ?? "Focus block";
   const undoUntil = earliest(action.undo_until, p.start_at);
+  const goalId = p.goal_id ?? null;
 
   if (await googleConnected()) {
     const created = await insertCalendarEvent({
@@ -128,7 +152,9 @@ async function createFocusBlock(
       end: { dateTime: p.end_at },
       transparency: "opaque",
       reminders: { useDefault: true },
-      extendedProperties: { private: { michael: "1", recommendation_id: rec.id } },
+      extendedProperties: {
+        private: { michael: "1", recommendation_id: rec.id, ...(goalId ? { goal_id: goalId } : {}) },
+      },
     });
     const local = await mirror(created);
     return {
@@ -146,7 +172,13 @@ async function createFocusBlock(
       start_at: p.start_at,
       end_at: p.end_at,
       title,
-      data: { michael: true, with_others: false, attendees: 0, recommendation_id: rec.id },
+      data: {
+        michael: true,
+        with_others: false,
+        attendees: 0,
+        recommendation_id: rec.id,
+        ...(goalId ? { goal_id: goalId } : {}),
+      },
       external_id: step === undefined ? `michael:${rec.id}` : `michael:${rec.id}:${step}`,
     },
   ]);
@@ -198,7 +230,14 @@ async function moveOne(p: MoveCalendarBlockPayload, actionUndoUntil: string | nu
     p.end_at ?? (p.start_at ? new Date(Date.parse(p.start_at) + length).toISOString() : event.end_at);
   if (Date.parse(start) <= Date.now()) throw conflict("The new time has already started");
   if (end && Date.parse(end) <= Date.parse(start)) throw conflict("The block would end before it starts");
-  const original = { start_at: event.start_at, end_at: event.end_at, title: event.title };
+  const goalChange = p.goal_id !== undefined;
+  const oldGoal = typeof event.data.goal_id === "string" ? event.data.goal_id : null;
+  const original = {
+    start_at: event.start_at,
+    end_at: event.end_at,
+    title: event.title,
+    ...(goalChange ? { goal_id: oldGoal } : {}),
+  };
   const undoUntil = earliest(actionUndoUntil, event.start_at, start);
 
   if (event.source === "google_calendar") {
@@ -211,6 +250,9 @@ async function moveOne(p: MoveCalendarBlockPayload, actionUndoUntil: string | nu
       start: { dateTime: start, timeZone: g.start?.timeZone },
       end: { dateTime: end ?? start, timeZone: g.end?.timeZone },
       ...(p.new_title ? { summary: p.new_title } : {}),
+      ...(goalChange
+        ? { extendedProperties: { private: { ...g.extendedProperties?.private, goal_id: p.goal_id ?? "" } } }
+        : {}),
     });
     const local = await mirror(patched);
     return {
@@ -226,6 +268,7 @@ async function moveOne(p: MoveCalendarBlockPayload, actionUndoUntil: string | nu
     start_at: start,
     end_at: end,
     ...(p.new_title ? { title: p.new_title } : {}),
+    ...(goalChange ? { data: withGoal(event.data, p.goal_id ?? null) } : {}),
   });
   return {
     kind: "move_calendar_block",
@@ -246,18 +289,101 @@ async function restoreMove(ex: MoveExecution): Promise<void> {
       start: { dateTime: o.start_at, timeZone: g.start?.timeZone },
       end: { dateTime: o.end_at ?? o.start_at, timeZone: g.end?.timeZone },
       summary: o.title,
+      ...(o.goal_id !== undefined
+        ? { extendedProperties: { private: { ...g.extendedProperties?.private, goal_id: o.goal_id ?? "" } } }
+        : {}),
     });
     await mirror(restored);
   } else {
+    const event = o.goal_id !== undefined ? await store.getEvent(ex.timeline_event_id) : null;
     await store.updateEvent(ex.timeline_event_id, {
       start_at: o.start_at,
       end_at: o.end_at,
       title: o.title,
+      ...(event && o.goal_id !== undefined ? { data: withGoal(event.data, o.goal_id) } : {}),
     });
   }
 }
 
+function withGoal(data: Record<string, unknown>, goalId: string | null): Record<string, unknown> {
+  const { goal_id: _old, ...rest } = data;
+  return goalId ? { ...rest, goal_id: goalId } : rest;
+}
+
+/**
+ * #271: removes one of Michael's own blocks (never the user's events, never one with other people),
+ * keeping what it was so undo can put it back until it starts.
+ */
+async function removeCalendarBlock(action: RecommendationAction): Promise<RemoveExecution> {
+  const p = parse(RemoveCalendarBlockPayload, action.payload);
+  const event = await store.getEvent(p.event_id);
+  if (!event) throw new HttpError("not_found", "That block is no longer on the timeline");
+  if (event.type !== "calendar_event") throw conflict("Only calendar blocks can be removed");
+  if (isOthers(event)) throw conflict("That event has other people in it. I only advise on those.");
+  if (!isMichaels(event)) throw conflict("I only remove blocks made in Michael. Delete it in your calendar.");
+  if (Date.parse(event.start_at) <= Date.now()) throw conflict("That block has already started");
+  const block = { title: event.title, start_at: event.start_at, end_at: event.end_at, data: event.data };
+  const undoUntil = earliest(action.undo_until, event.start_at);
+
+  let googleId: string | null = null;
+  if (event.source === "google_calendar" && event.external_id) {
+    try {
+      const g = await getCalendarEvent(event.external_id);
+      if (!createdByMichael(g))
+        throw conflict("I only remove blocks made in Michael. Delete it in your calendar.");
+      if (withOthers(g)) throw conflict("Someone else is on that block now. Remove it in your calendar.");
+      await deleteCalendarEvent(g.id);
+      googleId = g.id;
+    } catch (err) {
+      // Already gone from the calendar: only the mirror is left to remove.
+      if (!(err instanceof HttpError && err.code === "not_found")) throw err;
+    }
+  }
+  await store.deleteEvents([event.id]);
+  return { kind: "remove_calendar_block", google_event_id: googleId, block, undo_until: undoUntil };
+}
+
+/** Puts a removed block back: in Google Calendar when it came from there, else on the timeline. */
+async function restoreRemoved(ex: RemoveExecution): Promise<void> {
+  const b = ex.block;
+  const goalId = typeof b.data.goal_id === "string" ? b.data.goal_id : null;
+  if (ex.google_event_id) {
+    const created = await insertCalendarEvent({
+      summary: b.title,
+      description: "Planned in Michael. Undo in Michael until it starts.",
+      start: { dateTime: b.start_at },
+      end: { dateTime: b.end_at ?? b.start_at },
+      transparency: "opaque",
+      reminders: { useDefault: true },
+      extendedProperties: { private: { michael: "1", ...(goalId ? { goal_id: goalId } : {}) } },
+    });
+    await mirror(created);
+    return;
+  }
+  await store.insertEvents([
+    {
+      source: "agent",
+      type: "calendar_event",
+      start_at: b.start_at,
+      end_at: b.end_at,
+      title: b.title,
+      data: b.data,
+      external_id: `michael:restored:${crypto.randomUUID()}`,
+    },
+  ]);
+}
+
 export async function executeRecommendation(id: string): Promise<Recommendation> {
+  return execute(id);
+}
+
+/** The user's own change on the Timeline (#271): their standing instructions are for Michael, not them. */
+export async function executeUserChange(id: string): Promise<{ rec: Recommendation; execution: unknown }> {
+  const rec = await execute(id, { byUser: true });
+  return { rec, execution: await store.getRecommendationExecution(id) };
+}
+
+async function execute(id: string, opts: { byUser?: boolean } = {}): Promise<Recommendation> {
   const rec = await store.getRecommendation(id);
   if (!rec) throw new HttpError("not_found", "Recommendation not found");
   const action = rec.action;
@@ -266,11 +392,13 @@ export async function executeRecommendation(id: string): Promise<Recommendation>
   if (rec.status === "dismissed") throw conflict("This recommendation was dismissed");
   if (action.involves_others) throw conflict("This involves other people. I only advise on it.");
   // Checked again now: an instruction added after the recommendation was made still holds.
-  const verdict = await refusalFor(action, {
-    instructions: await store.listInstructions(),
-    getEvent: (eventId) => store.getEvent(eventId),
-  });
-  if (!verdict.allowed) throw conflict(verdict.reason);
+  if (!opts.byUser) {
+    const verdict = await refusalFor(action, {
+      instructions: await store.listInstructions(),
+      getEvent: (eventId) => store.getEvent(eventId),
+    });
+    if (!verdict.allowed) throw conflict(verdict.reason);
+  }
 
   // A draft is stored for the user to copy and send themselves (#40). Nothing is sent, nothing on
   // the calendar changes, so there is nothing to undo: the draft is dismissed under Follow ups.
@@ -293,6 +421,7 @@ export async function executeRecommendation(id: string): Promise<Recommendation>
   else if (action.kind === "move_calendar_blocks") execution = await moveCalendarBlocks(action);
   else if (action.kind === "change_goal") execution = await executeGoalChange(action);
   else if (action.kind === "plan_change") execution = await executePlanChange(rec, action);
+  else if (action.kind === "remove_calendar_block") execution = await removeCalendarBlock(action);
   else throw new HttpError("not_implemented", `${action.kind} cannot be carried out yet`);
 
   const saved = await store.recordRecommendationAction(id, {
@@ -357,6 +486,8 @@ async function revert(ex: Execution): Promise<void> {
       }
     }
     if (ex.timeline_event_id) await store.deleteEvents([ex.timeline_event_id]);
+  } else if (ex.kind === "remove_calendar_block") {
+    await restoreRemoved(ex);
   } else if (ex.kind === "move_calendar_blocks") {
     // Check every block first, so undo puts all of them back or none.
     for (const m of ex.moves) {

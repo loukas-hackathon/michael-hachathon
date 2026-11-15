@@ -9,6 +9,7 @@ import { handleMcpRequest } from "./mcp";
 import { actions } from "./routes/actions";
 import { agents } from "./routes/agents";
 import { analysis } from "./routes/analysis";
+import { blocks } from "./routes/blocks";
 import { chat } from "./routes/chat";
 import { chatThreads } from "./routes/chat-threads";
 import { checkIn } from "./routes/check-in";
@@ -70,6 +71,7 @@ export const v1Routes = new Hono()
   .route("/", nudges)
   .route("/", push)
   .route("/", actions)
+  .route("/", blocks)
   .route("/", focusGuards)
   .route("/", drafts)
   .route("/", profile)

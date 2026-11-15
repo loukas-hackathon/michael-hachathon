@@ -71,7 +71,7 @@ Enums:
 - `GoalKind`: `time | target | count | checklist` (in `goal.target.kind`; `time` when absent)
 - `InstructionKind`: `clear_day | home_by | quiet_hours | custom`
 - `RecommendationStatus`: `proposed | accepted | dismissed | done | undone` (`done` = action executed)
-- `ActionKind`: `move_calendar_block | create_focus_block | block_mac_app | draft_follow_up | reminder`
+- `ActionKind`: `move_calendar_block | move_calendar_blocks | create_focus_block | block_mac_app | draft_follow_up | reminder | change_goal | plan_change | remove_calendar_block`
 - `AnalysisStatus`: `queued | running | succeeded | failed`
 - `AnalysisTrigger`: `manual | scheduled | mcp | morning | evening`
 - `AgentScope`: `timeline | goals | recommendations | score | write_events`
@@ -188,7 +188,7 @@ type Recommendation = {
   status: RecommendationStatus;
   executed_at: string | null;
   undone_at: string | null;
-  source?: "analysis" | "chat"; // "chat": asked for in chat or by voice and carried out at once
+  source?: "analysis" | "chat" | "user"; // "chat": asked for in chat or by voice and carried out at once; "user": an edit on the Timeline (#271), kept for Undo and never listed
   specialist?: "work" | "training" | "rest" | "food" | null; // runs in mode specialists only
   created_at: string;
   updated_at: string;
@@ -1598,6 +1598,37 @@ through the store's `createRecommendation`, so the instruction guard has the las
   minutes without one), titled with the goal's first `calendar_titles` entry so it counts. Title
   `One more session for <goal>, Fri 13 Nov`. Checked on `GET /v1/score` for the current week.
 - **Once a day:** an offer whose title is already stored, whatever its status, is not made again.
+
+### Calendar blocks (edit the day on the Timeline, #271)
+
+The user adds, moves, resizes, renames, gives a goal to, or removes blocks on their own time. Each
+write is stored as a recommendation with `source: "user"` and carried out at once by the same
+executor as Michael's actions, so the same rules hold: never an event with other people (`409`),
+nothing that has started (`409`), and only blocks made in Michael can be removed (the user's own
+events are never deleted). With Google Calendar connected the change is made there and mirrored;
+without it, the block lives on the timeline (`source: "agent"`, `data.michael: true`). Standing
+instructions bind Michael, not the user, so they do not refuse these. `source: "user"`
+recommendations are left out of `GET /v1/recommendations` and the MCP `list_recommendations`.
+
+| Method | Path             | Body                                                   | Response                          |
+| ------ | ---------------- | ------------------------------------------------------ | --------------------------------- |
+| POST   | `/v1/blocks`     | `BlockCreate { start_at, end_at, title?, goal_id? }`   | `201 BlockChange`                 |
+| PATCH  | `/v1/blocks/:id` | `BlockUpdate { start_at?, end_at?, title?, goal_id? }` | `200 BlockChange`                 |
+| DELETE | `/v1/blocks/:id` |                                                        | `200 BlockChange` (`event: null`) |
+
+```ts
+type BlockChange = {
+  event: Event | null; // the block as it is now
+  recommendation_id: string; // POST /v1/recommendations/:id/undo takes the change back
+  undo_until: string; // until the block starts
+};
+```
+
+- A block is 5 minutes to 12 hours; a new start without an end keeps the length. `goal_id: null`
+  clears the goal. The goal is saved as `data.goal_id` (and `extendedProperties.private.goal_id` in
+  Google, read back by the sync), so the score counts the block for it.
+- `404` unknown block or goal, `409` refused (with Michael's reason), `400` invalid body.
+- Demo visitors may use these routes on the demo week, like acting on a recommendation.
 
 ### Focus guards (block Mac apps, #41)
 
