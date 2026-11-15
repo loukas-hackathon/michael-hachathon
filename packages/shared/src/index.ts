@@ -8,6 +8,7 @@ export * from "./goal-areas";
 export * from "./mac-apps";
 export * from "./mocks";
 export * from "./pace";
+export * from "./plain-text";
 export * from "./schemas";
 export * from "./sleep";
 export * from "./voice";

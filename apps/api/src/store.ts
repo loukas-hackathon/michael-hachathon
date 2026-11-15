@@ -32,6 +32,7 @@ import {
   type PersonalRecord,
   type Place,
   type Profile,
+  plainText,
   type Recommendation,
   type RecommendationStatus,
   type RitualKind,
@@ -128,7 +129,8 @@ export type ChatThreadChange = Partial<Pick<ChatThread, "title" | "pinned" | "ar
 export const NEW_THREAD_TITLE = "New chat";
 /** Characters of the last line kept as the thread's preview. */
 export const PREVIEW_CHARS = 140;
-export const previewOf = (content: string) => content.replace(/\s+/g, " ").trim().slice(0, PREVIEW_CHARS);
+/** Plain words, no Markdown marks: the list shows it as text. */
+export const previewOf = (content: string) => plainText(content).slice(0, PREVIEW_CHARS);
 
 /** Pinned first, then the latest line (creation while empty), newest first. */
 export const threadOrder = (a: ChatThread, b: ChatThread) =>

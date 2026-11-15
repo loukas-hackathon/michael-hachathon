@@ -1354,7 +1354,7 @@ first words fast and stores the same pair when it finishes. The stored answer ke
 it did (`action_ids`), so a client can show the same Undo chips under it after a reload.
 
 **Threads (#308).** Conversations are separate, as in Messages: `ChatThread { id, title, pinned,
-archived, preview, last_message_at, created_at, updated_at }` (`preview` is the last line, cut to
+archived, preview, last_message_at, created_at, updated_at }` (`preview` is the last line as plain text, no Markdown marks, cut to
 140 characters). `thread_id` omitted writes in the latest thread (a new one when there is none);
 `"new"` starts one, made only once the answer is stored, so a failed call leaves no empty thread.
 The first line names a thread: the model writes 2 to 5 words in Michael's voice in parallel with
