@@ -83,6 +83,11 @@ const EVENT_PAGE = 1000;
 // Every column `toEvent` reads, and nothing else (no user_id): less to send for 10,000 rows.
 const EVENT_COLUMNS = "id, source, type, start_at, end_at, title, data, external_id, created_at";
 
+// events_window (#298) answers windows up to this long in one round trip; a busy day is about
+// 1,000 events, so three weeks stays a few megabytes. Longer windows read page by page.
+const WINDOW_MAX_MS = 21 * 24 * 3600_000;
+const WINDOW_RETRY_MS = 60_000;
+
 // A value inside a PostgREST or(...)/and(...) filter, quoted so `+`, `:` and `.` stay literal.
 const q = (v: string) => `"${v.replace(/["\\]/g, "")}"`;
 
@@ -385,8 +390,18 @@ export class SupabaseStore implements Store {
   }
 
   async lastEventAtBySource() {
-    // One tiny query per source (index on user_id, source, created_at): PostgREST has no group by.
+    // One round trip (#298): last_event_at_by_source does one index lookup per source in Postgres.
     const userId = currentUserId();
+    const res = await this.db.rpc("last_event_at_by_source", { p_user_id: userId });
+    if (!res.error && res.data && typeof res.data === "object" && !Array.isArray(res.data)) {
+      const out: Partial<Record<Source, string>> = {};
+      for (const [source, at] of Object.entries(res.data as Record<string, string | null>)) {
+        if (at && SourceEnum.safeParse(source).success) out[source as Source] = iso(at) as string;
+      }
+      return out;
+    }
+    console.error("last_event_at_by_source failed, one query per source:", res.error?.message);
+    // Fallback: one tiny query per source (index on user_id, source, created_at).
     const rows = await Promise.all(
       SourceEnum.options.map(async (source) => {
         const r = check(
@@ -407,7 +422,33 @@ export class SupabaseStore implements Store {
     return out;
   }
 
+  // When events_window last failed (missing before its migration ran, or broken): the paged read
+  // stands in for a minute before the function is tried again.
+  private windowDownAt = 0;
+
   async listEvents(f: TimelineFilter) {
+    // A window up to a few weeks comes back in one round trip as one json value (#298), which the
+    // row cap does not touch. Longer windows, and any failure of the function, read page by page.
+    const span = Date.parse(f.to) - Date.parse(f.from);
+    if (span <= WINDOW_MAX_MS && Date.now() - this.windowDownAt > WINDOW_RETRY_MS) {
+      const res = await this.db.rpc("events_window", {
+        p_user_id: currentUserId(),
+        p_from: f.from,
+        p_to: f.to,
+        p_sources: f.source?.length ? f.source : null,
+        p_types: f.type?.length ? f.type : null,
+      });
+      if (!res.error && Array.isArray(res.data)) {
+        return (res.data as Record<string, unknown>[]).map(toEvent);
+      }
+      this.windowDownAt = Date.now();
+      console.error("events_window failed, reading pages instead:", res.error?.message ?? "not an array");
+    }
+    return this.listEventsPaged(f);
+  }
+
+  /** The window page by page: the fallback, and every window longer than WINDOW_MAX_MS. */
+  async listEventsPaged(f: TimelineFilter) {
     // PostgREST caps every response (1000 rows by default) and a busy week holds 7,000+ events, so
     // read the whole window page by page with no ceiling. Keyset paging on (start_at, id): each page
     // starts strictly after the last row of the one before, so pages never skip or repeat, the
