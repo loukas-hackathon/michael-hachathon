@@ -2333,9 +2333,21 @@ type Knowledge = {
 };
 ```
 
-| Method | Path               | Response        | Status |
-| ------ | ------------------ | --------------- | ------ |
-| GET    | `/v1/me/knowledge` | `200 Knowledge` | live   |
+| Method | Path               | Body           | Response            | Status |
+| ------ | ------------------ | -------------- | ------------------- | ------ |
+| GET    | `/v1/me/knowledge` |                | `200 Knowledge`     | live   |
+| POST   | `/v1/memories`     | `MemoryCreate` | `201 KnowledgeItem` | live   |
+
+```ts
+type MemoryCreate = { text: string }; // trimmed, 1..280
+```
+
+`POST /v1/memories` adds a memory in the user's own words from the page, like the memory in other
+assistants: the same store as the chat's and MCP's `remember` (an event of type `memory`, source
+`manual`, `data.origin: "you"`), so the chat reads it into every answer. The answer is the new item
+with `origin: "you"`; the same words again (any case or spacing) return the memory already kept.
+Off the record does not stop it: like every manual entry it is typed by the user, not collected
+(`apps/api/src/privacy.ts`). Demo visitors get the usual demo `403`.
 
 Everything Michael uses about the user, in plain words, for the "What I know about you" page under
 You, Privacy. Built from the stores that already hold it (`apps/api/src/knowledge.ts`), so no table
@@ -3512,43 +3524,43 @@ model writes (`TimeInput`) are `YYYY-MM-DDTHH:MM` in Europe/Athens wall time, or
 offset. A refused or failed call returns `isError: true` with one plain sentence saying why
 (`HttpError` messages, validation issues listed). Scope per tool: see "Michael for agents".
 
-| Tool                     | Scope             | Input                                                                                   | `structuredContent`                                                                        |
-| ------------------------ | ----------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `get_timeline`           | `timeline`        | `{ date?: LocalDay, from?: TimeInput, to?: TimeInput, source?, type? }` (default: 24 h) | `{ from, to, count, truncated, events: Event[] }` (≤ 500)                                  |
-| `get_goals`              | `goals`           | `{ active_only?: boolean }` (default true)                                              | `{ goals: Goal[] }`                                                                        |
-| `get_instructions`       | `goals`           | `{ active_only?: boolean }` (default true)                                              | `{ instructions: Instruction[] }` (standing instructions)                                  |
-| `propose_goals`          | `goals`           | `{}`                                                                                    | `{ suggestions: GoalSuggestion[] }`                                                        |
-| `get_score`              | `score`           | `{ date?: LocalDay }` (default today)                                                   | `Score` without `day.blocks[].ticks` (target, verdict, records, free time, sleep included) |
-| `get_records`            | `score`           | `{}`                                                                                    | `{ records: PersonalRecord[] }` (as `GET /v1/records`)                                     |
-| `get_patterns`           | `timeline`        | `{ from?: TimeInput, to?: TimeInput }` (default: the last 7 days)                       | `PatternReport`                                                                            |
-| `get_check_in`           | `timeline`        | `{}`                                                                                    | `CheckInToday` (see Check in)                                                              |
-| `answer_check_in`        | `timeline`        | `{ id: uuid, value: "yes" \| "no" \| 1..5 \| string }`                                  | `CheckInAnswerResponse`                                                                    |
-| `list_recommendations`   | `recommendations` | `{ status?: RecommendationStatus }`                                                     | `{ recommendations: Recommendation[] }`                                                    |
-| `get_nudges`             | `recommendations` | `{ date?: LocalDay }` (default today)                                                   | `{ day, nudges: Nudge[] }`                                                                 |
-| `get_moments`            | `score`           | `{ kind?: MomentKind }` (default morning before 15:00 local, evening after)             | `Moment`                                                                                   |
-| `get_week_review`        | `score`           | `{ week?: LocalDay }` (any day of the week; default this week)                          | `WeekReview` (as `GET /v1/week/review`)                                                    |
-| `get_memories`           | `timeline`        | `{}`                                                                                    | `{ memories: { id, text, at, from: "chat" \| "agent" }[] }` (newest first, at most 40)     |
-| `what_you_know`          | `timeline`        | `{}`                                                                                    | `Knowledge` (see "What I know about you")                                                  |
-| `remember`               | `write_events`    | `{ fact: string (1..280) }`                                                             | `{ memory }` (same fact twice is kept once; `null` when off the record)                    |
-| `add_event`              | `write_events`    | `EventInput`                                                                            | `{ inserted, duplicates, ignored, events: Event[] }`                                       |
-| `add_goal`               | `goals`           | `{ category, title, description?, weekly_budget_minutes?, target? }`                    | `{ goal: Goal }`                                                                           |
-| `update_goal`            | `goals`           | `{ id, category?, title?, description?, weekly_budget_minutes?, target?, active? }`     | `{ goal: Goal }`, error when not found                                                     |
-| `get_checklist`          | `goals`           | `{ date?: LocalDay }` (default today)                                                   | `ChecklistResponse` (as `GET /v1/checklist`)                                               |
-| `add_checklist_item`     | `goals`           | `{ goal_id, text, date?: LocalDay }` (default today)                                    | `{ item: ChecklistItem }`; refused past three open items                                   |
-| `set_day_outcomes`       | `goals`           | `{ outcomes: [{ text, goal_id?, estimate_minutes? }] }` (1..3)                          | `RitualToday` (as `POST /v1/ritual/morning`)                                               |
-| `log_day`                | `goals`           | `{ results: [{ item_id, result: "done" \| "partly" \| "not", carry?, minutes? }] }`     | `RitualEveningResponse`; text is the evening line                                          |
-| `update_recommendation`  | `recommendations` | `{ id, status: "accepted" \| "dismissed" }`                                             | `{ recommendation }`; a `done` one is refused (undo it)                                    |
-| `execute_recommendation` | `write_events`    | `{ id }`                                                                                | `{ recommendation, undo_until }`                                                           |
-| `undo_recommendation`    | `write_events`    | `{ id }`                                                                                | `{ recommendation }`                                                                       |
-| `create_focus_block`     | `write_events`    | `{ start: TimeInput, end: TimeInput, title?, goal_id? }`                                | `{ recommendation, undo_until }`                                                           |
-| `block_mac_app`          | `write_events`    | `{ apps: string[], start?: TimeInput, end: TimeInput, goal_id? }` (start default now)   | `{ recommendation, undo_until }`                                                           |
-| `log_done`               | `write_events`    | `{ goal_id? \| goal?, minutes?, start?: TimeInput, end?: TimeInput, note? }`            | `LogTimeResponse` (see Done time)                                                          |
-| `confirm_block`          | `write_events`    | `{ event_id, did: boolean, minutes?, reason? }`                                         | `LogTimeResponse`                                                                          |
-| `focus_now`              | `write_events`    | `{ goal_id? \| goal?, minutes? }` (5..180, default 45 or the rest of the running block) | `{ session: FocusSession }` (see Focus now)                                                |
-| `suggest_app_mute`       | `recommendations` | `{}`                                                                                    | `{ recommendation }` or `{}` when nothing stands out                                       |
-| `plan_travel`            | `write_events`    | `{ from?, to? }` (default today)                                                        | `TravelPlanResult` (see Places and travel)                                                 |
-| `list_drafts`            | `recommendations` | `{ status?: DraftStatus }` (default proposed)                                           | `{ drafts: Draft[] }`                                                                      |
-| `draft_follow_up`        | `recommendations` | `{ event_id? }` (default: what ended in the last 24 h)                                  | `DraftGenerateResult`                                                                      |
+| Tool                     | Scope             | Input                                                                                   | `structuredContent`                                                                             |
+| ------------------------ | ----------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `get_timeline`           | `timeline`        | `{ date?: LocalDay, from?: TimeInput, to?: TimeInput, source?, type? }` (default: 24 h) | `{ from, to, count, truncated, events: Event[] }` (≤ 500)                                       |
+| `get_goals`              | `goals`           | `{ active_only?: boolean }` (default true)                                              | `{ goals: Goal[] }`                                                                             |
+| `get_instructions`       | `goals`           | `{ active_only?: boolean }` (default true)                                              | `{ instructions: Instruction[] }` (standing instructions)                                       |
+| `propose_goals`          | `goals`           | `{}`                                                                                    | `{ suggestions: GoalSuggestion[] }`                                                             |
+| `get_score`              | `score`           | `{ date?: LocalDay }` (default today)                                                   | `Score` without `day.blocks[].ticks` (target, verdict, records, free time, sleep included)      |
+| `get_records`            | `score`           | `{}`                                                                                    | `{ records: PersonalRecord[] }` (as `GET /v1/records`)                                          |
+| `get_patterns`           | `timeline`        | `{ from?: TimeInput, to?: TimeInput }` (default: the last 7 days)                       | `PatternReport`                                                                                 |
+| `get_check_in`           | `timeline`        | `{}`                                                                                    | `CheckInToday` (see Check in)                                                                   |
+| `answer_check_in`        | `timeline`        | `{ id: uuid, value: "yes" \| "no" \| 1..5 \| string }`                                  | `CheckInAnswerResponse`                                                                         |
+| `list_recommendations`   | `recommendations` | `{ status?: RecommendationStatus }`                                                     | `{ recommendations: Recommendation[] }`                                                         |
+| `get_nudges`             | `recommendations` | `{ date?: LocalDay }` (default today)                                                   | `{ day, nudges: Nudge[] }`                                                                      |
+| `get_moments`            | `score`           | `{ kind?: MomentKind }` (default morning before 15:00 local, evening after)             | `Moment`                                                                                        |
+| `get_week_review`        | `score`           | `{ week?: LocalDay }` (any day of the week; default this week)                          | `WeekReview` (as `GET /v1/week/review`)                                                         |
+| `get_memories`           | `timeline`        | `{}`                                                                                    | `{ memories: { id, text, at, from: "chat" \| "agent" \| "you" }[] }` (newest first, at most 40) |
+| `what_you_know`          | `timeline`        | `{}`                                                                                    | `Knowledge` (see "What I know about you")                                                       |
+| `remember`               | `write_events`    | `{ fact: string (1..280) }`                                                             | `{ memory }` (same fact twice is kept once; `null` when off the record)                         |
+| `add_event`              | `write_events`    | `EventInput`                                                                            | `{ inserted, duplicates, ignored, events: Event[] }`                                            |
+| `add_goal`               | `goals`           | `{ category, title, description?, weekly_budget_minutes?, target? }`                    | `{ goal: Goal }`                                                                                |
+| `update_goal`            | `goals`           | `{ id, category?, title?, description?, weekly_budget_minutes?, target?, active? }`     | `{ goal: Goal }`, error when not found                                                          |
+| `get_checklist`          | `goals`           | `{ date?: LocalDay }` (default today)                                                   | `ChecklistResponse` (as `GET /v1/checklist`)                                                    |
+| `add_checklist_item`     | `goals`           | `{ goal_id, text, date?: LocalDay }` (default today)                                    | `{ item: ChecklistItem }`; refused past three open items                                        |
+| `set_day_outcomes`       | `goals`           | `{ outcomes: [{ text, goal_id?, estimate_minutes? }] }` (1..3)                          | `RitualToday` (as `POST /v1/ritual/morning`)                                                    |
+| `log_day`                | `goals`           | `{ results: [{ item_id, result: "done" \| "partly" \| "not", carry?, minutes? }] }`     | `RitualEveningResponse`; text is the evening line                                               |
+| `update_recommendation`  | `recommendations` | `{ id, status: "accepted" \| "dismissed" }`                                             | `{ recommendation }`; a `done` one is refused (undo it)                                         |
+| `execute_recommendation` | `write_events`    | `{ id }`                                                                                | `{ recommendation, undo_until }`                                                                |
+| `undo_recommendation`    | `write_events`    | `{ id }`                                                                                | `{ recommendation }`                                                                            |
+| `create_focus_block`     | `write_events`    | `{ start: TimeInput, end: TimeInput, title?, goal_id? }`                                | `{ recommendation, undo_until }`                                                                |
+| `block_mac_app`          | `write_events`    | `{ apps: string[], start?: TimeInput, end: TimeInput, goal_id? }` (start default now)   | `{ recommendation, undo_until }`                                                                |
+| `log_done`               | `write_events`    | `{ goal_id? \| goal?, minutes?, start?: TimeInput, end?: TimeInput, note? }`            | `LogTimeResponse` (see Done time)                                                               |
+| `confirm_block`          | `write_events`    | `{ event_id, did: boolean, minutes?, reason? }`                                         | `LogTimeResponse`                                                                               |
+| `focus_now`              | `write_events`    | `{ goal_id? \| goal?, minutes? }` (5..180, default 45 or the rest of the running block) | `{ session: FocusSession }` (see Focus now)                                                     |
+| `suggest_app_mute`       | `recommendations` | `{}`                                                                                    | `{ recommendation }` or `{}` when nothing stands out                                            |
+| `plan_travel`            | `write_events`    | `{ from?, to? }` (default today)                                                        | `TravelPlanResult` (see Places and travel)                                                      |
+| `list_drafts`            | `recommendations` | `{ status?: DraftStatus }` (default proposed)                                           | `{ drafts: Draft[] }`                                                                           |
+| `draft_follow_up`        | `recommendations` | `{ event_id? }` (default: what ended in the last 24 h)                                  | `DraftGenerateResult`                                                                           |
 
 - `execute_recommendation` / `undo_recommendation` call the same functions as
   `POST /v1/recommendations/:id/execute` and `/undo` (`apps/api/src/actions/calendar.ts`), with the

@@ -1,14 +1,15 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
-import { DEFAULT_PROFILE, type Knowledge } from "@michael/shared";
+import { DEFAULT_PROFILE, type Knowledge, KnowledgeItem } from "@michael/shared";
 import { Hono } from "hono";
 import { runChatTool } from "./actions/chat-tools";
 import { v1Routes } from "./app";
 import { type AuthMethod, runAsUser } from "./context";
+import { demoVisitorMay } from "./demo/visitor";
 import { errorResponse, HttpError } from "./http";
 import { daysPhrase, knowledgeFor, knowledgeText, NEVER_KEPT, profileItems } from "./knowledge";
-import { remember } from "./memory";
+import { listMemories, memoryContext, remember } from "./memory";
 import { store } from "./store";
 
 // "What I know about you" (#379): every item comes from a store that already holds it, scoped
@@ -197,4 +198,58 @@ test("knowledge: profile lines only once the user saved it, days in words", () =
   );
   assert.equal(daysPhrase(["sun", "sat", "mon", "tue", "wed", "thu", "fri"]), "every day");
   assert.equal(daysPhrase(["sat"]), "Sat");
+});
+
+test("knowledge: a memory written by hand on the page is kept once, shown and forgettable", async () => {
+  const user = randomUUID();
+  const res = await call(user, "POST", "/v1/memories", { text: "  I think best   on long walks " });
+  assert.equal(res.status, 201);
+  const item = KnowledgeItem.parse(await res.json());
+  assert.deepEqual(
+    [item.kind, item.text, item.origin, item.forgettable],
+    ["memory", "I think best on long walks", "you", true],
+  );
+  // The same words again are the same memory.
+  const again = KnowledgeItem.parse(
+    await (await call(user, "POST", "/v1/memories", { text: "i think best on long walks" })).json(),
+  );
+  assert.equal(again.id, item.id);
+  const k = await knowledgeOf(user);
+  assert.equal(k.told.filter((i) => i.kind === "memory").length, 1);
+  assert.equal(k.told.find((i) => i.id === item.id)?.origin, "you");
+  // The chat reads it like any other memory.
+  const mems = await runAsUser(user, () => listMemories(), "session");
+  assert.deepEqual(
+    mems.map((m) => [m.text, m.from]),
+    [["I think best on long walks", "you"]],
+  );
+  // Empty or too long is refused; another user never sees it.
+  assert.equal((await call(user, "POST", "/v1/memories", { text: "   " })).status, 400);
+  assert.equal((await call(user, "POST", "/v1/memories", { text: "x".repeat(281) })).status, 400);
+  assert.ok(!JSON.stringify(await knowledgeOf(randomUUID())).includes("long walks"));
+  // Forget goes through the event route, like every memory.
+  assert.ok((await call(user, "DELETE", `/v1/events/${item.id}`)).status < 300);
+  assert.ok(!(await knowledgeOf(user)).told.some((i) => i.id === item.id));
+  // Off the record stops collection, not what the user types themself (privacy.ts, like every
+  // manual entry): a memory written by hand is still kept.
+  await runAsUser(user, () => store.setOffTheRecord(true), "session");
+  assert.equal((await call(user, "POST", "/v1/memories", { text: "Keep this" })).status, 201);
+  // Demo visitors share one account: adding a memory is refused for them like every other write.
+  assert.equal(demoVisitorMay("POST", "/v1/memories"), false);
+});
+
+test("knowledge: a fact told in chat lands on the page through the chat's remember tool", async () => {
+  const user = randomUUID();
+  const out = await runAsUser(
+    user,
+    () => runChatTool("remember", { fact: "Trains best before 08:00" }),
+    "session",
+  );
+  assert.equal(out.isError, false);
+  assert.match(out.content, /^Remembered: Trains best before 08:00 \(memory_id /);
+  const mem = (await knowledgeOf(user)).told.find((i) => i.kind === "memory");
+  assert.deepEqual([mem?.text, mem?.origin, mem?.forgettable], ["Trains best before 08:00", "chat", true]);
+  // The next chat answer carries it in its system prompt context.
+  const mems = await runAsUser(user, () => listMemories(), "session");
+  assert.match(memoryContext(mems) ?? "", /Trains best before 08:00 \{memory_id /);
 });

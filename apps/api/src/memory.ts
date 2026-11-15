@@ -5,8 +5,9 @@ import { store } from "./store";
 // What Michael and the user's agents remember across conversations: facts and preferences the user
 // stated ("I train better in the morning", "school pick up is 15:00 on weekdays"). Stored as
 // timeline events of type memory, so they live in the database with everything else, show on the
-// user's timeline and go with "delete my data". Only memories the user gave in chat (manual) or
-// through an approved agent (agent) are read back here; meeting lessons (omi) stay out, as the chat
+// user's timeline and go with "delete my data". Only memories the user gave in chat or wrote
+// themselves on What I know about you (both manual) or through an approved agent (agent) are read
+// back here; meeting lessons (omi) stay out, as the chat
 // never sees other people's words.
 
 const SOURCES = ["manual", "agent"] as const;
@@ -15,13 +16,15 @@ export const MEMORY_LIMIT = 40;
 const MAX_TEXT = 280;
 const YEAR_MS = 365 * 24 * 3600_000;
 
-export type Memory = { id: string; text: string; at: string; from: "chat" | "agent" };
+// chat: said in chat; agent: through an approved agent; you: written by the user on the page.
+export type MemoryFrom = "chat" | "agent" | "you";
+export type Memory = { id: string; text: string; at: string; from: MemoryFrom };
 
 const toMemory = (e: Event): Memory => ({
   id: e.id,
   text: e.title,
   at: e.start_at,
-  from: e.source === "agent" ? "agent" : "chat",
+  from: e.source === "agent" ? "agent" : e.data?.origin === "you" ? "you" : "chat",
 });
 
 /** The newest memories, newest first. */
@@ -37,7 +40,7 @@ export async function listMemories(limit = MEMORY_LIMIT): Promise<Memory[]> {
 }
 
 /** Keeps one fact. The same text twice is kept once. Null when collection is off. */
-export async function remember(text: string, from: "chat" | "agent"): Promise<Memory | null> {
+export async function remember(text: string, from: MemoryFrom): Promise<Memory | null> {
   const clean = text.replace(/\s+/g, " ").trim().slice(0, MAX_TEXT);
   if (!clean) throw new HttpError("bad_request", "Nothing to remember");
   const known = await listMemories(200);
