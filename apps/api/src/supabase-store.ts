@@ -2,7 +2,11 @@ import type {
   AnalysisRun,
   ChatMessage,
   ChatRole,
+  ChatThread,
   CheckInValue,
+  ChecklistItem,
+  Draft,
+  DraftStatus,
   Event,
   EventInput,
   EventSummary,
@@ -36,18 +40,26 @@ import { type PrivacyRules, screenEvents } from "./privacy";
 import type { NewRecord } from "./score/records";
 import {
   type AskedQuestion,
+  type ChatThreadChange,
+  type ChecklistPatch,
+  checklistOrder,
   type DataDeleteScope,
+  type DayRitual,
   type DeleteCounts,
   type EventPatch,
   type InsertResult,
   type IntegrationPatch,
   type IntegrationRecord,
+  NEW_THREAD_TITLE,
   type NewAnalysis,
   type NewCheckIn,
+  type NewChecklistItem,
+  type NewDraft,
   type NewFocusGuard,
   type NewRecommendation,
   type NudgeCreate,
   type PushDevice,
+  previewOf,
   type RecommendationActionUpdate,
   type SeedResult,
   type Store,
@@ -57,6 +69,7 @@ import {
   type TargetInput,
   type TelegramChat,
   type TimelineFilter,
+  threadOrder,
   toInstruction,
   type UpsertResult,
 } from "./store";
@@ -209,6 +222,17 @@ const toChatMessage = (r: Record<string, unknown>): ChatMessage => ({
   action_ids: (r.action_ids as string[] | null | undefined) ?? [],
 });
 
+const toChatThread = (r: Record<string, unknown>): ChatThread => ({
+  id: r.id as string,
+  title: r.title as string,
+  pinned: Boolean(r.pinned),
+  archived: Boolean(r.archived),
+  preview: (r.preview as string | null) ?? null,
+  last_message_at: iso(r.last_message_at as string | null),
+  created_at: iso(r.created_at as string) as string,
+  updated_at: iso(r.updated_at as string) as string,
+});
+
 const toIntegration = (r: Record<string, unknown>): IntegrationRecord => ({
   provider: r.provider as IntegrationRecord["provider"],
   status: r.status as IntegrationRecord["status"],
@@ -250,6 +274,31 @@ const toTarget = (r: Record<string, unknown>): WeeklyTarget => ({
   updated_at: iso(r.updated_at as string) as string,
 });
 
+const toChecklistItem = (r: Record<string, unknown>): ChecklistItem => ({
+  id: r.id as string,
+  goal_id: r.goal_id as string,
+  date: String(r.date).slice(0, 10),
+  text: r.text as string,
+  position: Number(r.position),
+  status: r.status as ChecklistItem["status"],
+  settled_at: iso((r.settled_at as string | null) ?? null),
+  settled_by: (r.settled_by as ChecklistItem["settled_by"]) ?? null,
+  carried_from: (r.carried_from as string | null) ?? null,
+  linked_goal_id: (r.linked_goal_id as string | null) ?? null,
+  estimate_minutes: r.estimate_minutes == null ? null : Number(r.estimate_minutes),
+  logged_minutes: r.logged_minutes == null ? null : Number(r.logged_minutes),
+  created_at: iso(r.created_at as string) as string,
+  updated_at: iso(r.updated_at as string) as string,
+});
+
+const toDayRitual = (r: Record<string, unknown>): DayRitual => ({
+  day: String(r.day).slice(0, 10),
+  kind: r.kind as DayRitual["kind"],
+  state: r.state as DayRitual["state"],
+  summary: (r.summary as string | null) ?? null,
+  updated_at: iso(r.updated_at as string) as string,
+});
+
 const toRecord = (r: Record<string, unknown>): PersonalRecord => ({
   id: r.id as string,
   type: r.type as PersonalRecord["type"],
@@ -264,6 +313,21 @@ const toRecord = (r: Record<string, unknown>): PersonalRecord => ({
   line: (r.line as string | null) ?? null,
   announced_at: iso((r.announced_at as string | null) ?? null),
   created_at: iso(r.created_at as string) as string,
+});
+
+const toDraft = (r: Record<string, unknown>): Draft => ({
+  id: r.id as string,
+  event_id: (r.event_id as string | null) ?? null,
+  recommendation_id: (r.recommendation_id as string | null) ?? null,
+  title: r.title as string,
+  event_at: iso((r.event_at as string | null) ?? null),
+  channel: r.channel as Draft["channel"],
+  subject: (r.subject as string | null) ?? null,
+  body: r.body as string,
+  written_by: r.written_by as Draft["written_by"],
+  status: r.status as DraftStatus,
+  created_at: iso(r.created_at as string) as string,
+  updated_at: iso(r.updated_at as string) as string,
 });
 
 function check<T>(res: { data: T; error: { message: string; code?: string } | null }): T {
@@ -282,12 +346,16 @@ export const USER_TABLES = [
   "agent_clients",
   "focus_guards",
   "nudges",
+  "drafts",
   "recommendations",
   "analysis_runs",
+  "checklist_items",
+  "day_rituals",
   "goals",
   "events",
   "event_summaries",
   "chat_messages",
+  "chat_threads",
   "check_ins",
   "instructions",
   "telegram_chats",
@@ -995,41 +1063,202 @@ export class SupabaseStore implements Store {
     return { run: saved, recommendations: (rows ?? []).map(toRecommendation) };
   }
 
-  async listChatMessages(limit: number) {
+  /** A query on a chat table, scoped to the user and to the account's own rows or this visitor's. */
+  private chatScope(table: "chat_threads" | "chat_messages", columns = "*") {
     const visitor = currentDemoVisitor();
-    const q = this.db.from("chat_messages").select("*").eq("user_id", currentUserId());
+    const q = this.db.from(table).select(columns).eq("user_id", currentUserId());
+    return visitor ? q.eq("visitor_id", visitor) : q.is("visitor_id", null);
+  }
+
+  async listChatThreads(opts: { archived?: boolean; q?: string; limit?: number } = {}) {
+    const limit = opts.limit ?? 100;
+    const q = opts.q?.trim();
+    let threadQuery = this.chatScope("chat_threads").eq("archived", opts.archived ?? false);
+    if (q) {
+      // Titles and line text, matched literally (no wildcards from the user).
+      const pattern = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+      const lines = check(
+        await this.chatScope("chat_messages", "thread_id")
+          .ilike("content", pattern)
+          .not("thread_id", "is", null)
+          .limit(500),
+      ) as unknown as { thread_id: string }[] | null;
+      const ids = [...new Set((lines ?? []).map((r) => r.thread_id))].slice(0, limit);
+      const byTitle = check(await threadQuery.ilike("title", pattern).limit(limit));
+      const byLine = ids.length
+        ? check(
+            await this.chatScope("chat_threads")
+              .eq("archived", opts.archived ?? false)
+              .in("id", ids),
+          )
+        : [];
+      const seen = new Map<string, ChatThread>();
+      for (const r of [...(byTitle ?? []), ...(byLine ?? [])]) {
+        const t = toChatThread(r as unknown as Record<string, unknown>);
+        seen.set(t.id, t);
+      }
+      return [...seen.values()].sort(threadOrder).slice(0, limit);
+    }
+    threadQuery = threadQuery.order("last_message_at", { ascending: false, nullsFirst: true }).limit(limit);
+    const rows = check(await threadQuery);
+    return (rows ?? []).map((r) => toChatThread(r as unknown as Record<string, unknown>)).sort(threadOrder);
+  }
+
+  async getChatThread(id: string) {
+    const row = check(await this.chatScope("chat_threads").eq("id", id).maybeSingle());
+    return row ? toChatThread(row as unknown as Record<string, unknown>) : null;
+  }
+
+  async createChatThread(title?: string) {
+    const row = check(
+      await this.db
+        .from("chat_threads")
+        .insert({
+          user_id: currentUserId(),
+          visitor_id: currentDemoVisitor(),
+          title: title ?? NEW_THREAD_TITLE,
+        })
+        .select("*")
+        .single(),
+    );
+    return toChatThread(row);
+  }
+
+  async updateChatThread(id: string, patch: ChatThreadChange) {
+    const visitor = currentDemoVisitor();
+    const q = this.db
+      .from("chat_threads")
+      .update({ ...withoutUndefined(patch), updated_at: new Date().toISOString() })
+      .eq("user_id", currentUserId())
+      .eq("id", id);
+    const rows = check(await (visitor ? q.eq("visitor_id", visitor) : q.is("visitor_id", null)).select("*"));
+    const row = rows?.[0];
+    return row ? toChatThread(row) : null;
+  }
+
+  async deleteChatThread(id: string) {
+    if (!(await this.getChatThread(id))) return null;
+    // Lines first, so the count is real (the foreign key would also cascade them).
+    const lines = await this.db
+      .from("chat_messages")
+      .delete({ count: "exact" })
+      .eq("user_id", currentUserId())
+      .eq("thread_id", id);
+    check(lines);
+    check(await this.db.from("chat_threads").delete().eq("user_id", currentUserId()).eq("id", id));
+    return lines.count ?? 0;
+  }
+
+  async listChatMessages(threadId: string, limit: number) {
     const rows = check(
-      await (visitor ? q.eq("visitor_id", visitor) : q.is("visitor_id", null))
+      await this.chatScope("chat_messages")
+        .eq("thread_id", threadId)
         .order("created_at", { ascending: false })
         .limit(limit),
     );
-    return (rows ?? []).map(toChatMessage).reverse();
+    return (rows ?? []).map((r) => toChatMessage(r as unknown as Record<string, unknown>)).reverse();
   }
 
-  async addChatMessage(role: ChatRole, content: string, actionIds: string[] = []) {
+  async addChatMessage(threadId: string, role: ChatRole, content: string, actionIds: string[] = []) {
+    if (!(await this.getChatThread(threadId))) throw new HttpError("not_found", "Chat thread not found");
     // action_ids only when there are some, so plain lines still save if the column is not there yet.
     const extra = actionIds.length ? { action_ids: actionIds } : {};
     const row = check(
       await this.db
         .from("chat_messages")
-        .insert({ user_id: currentUserId(), visitor_id: currentDemoVisitor(), role, content, ...extra })
+        .insert({
+          user_id: currentUserId(),
+          visitor_id: currentDemoVisitor(),
+          thread_id: threadId,
+          role,
+          content,
+          ...extra,
+        })
         .select("*")
         .single(),
     );
-    return toChatMessage(row);
+    const message = toChatMessage(row);
+    check(
+      await this.db
+        .from("chat_threads")
+        .update({
+          preview: previewOf(content),
+          last_message_at: message.created_at,
+          updated_at: message.created_at,
+        })
+        .eq("user_id", currentUserId())
+        .eq("id", threadId),
+    );
+    return message;
   }
 
   async clearVisitorChat(before: string) {
-    const rows = check(
-      await this.db
+    const userId = currentUserId();
+    const visitorThreads = () =>
+      this.db.from("chat_threads").select("id").eq("user_id", userId).not("visitor_id", "is", null);
+    const [active, empty] = await Promise.all([
+      visitorThreads().lte("last_message_at", before),
+      visitorThreads().is("last_message_at", null).lte("created_at", before),
+    ]);
+    const ids = [...(check(active) ?? []), ...(check(empty) ?? [])].map((r) => r.id as string);
+    let removed = 0;
+    // Chunks keep the id list inside a URL.
+    for (let i = 0; i < ids.length; i += 100) {
+      const chunk = ids.slice(i, i + 100);
+      const lines = await this.db
         .from("chat_messages")
-        .delete()
+        .delete({ count: "exact" })
+        .eq("user_id", userId)
+        .in("thread_id", chunk);
+      check(lines);
+      removed += lines.count ?? 0;
+      check(await this.db.from("chat_threads").delete().eq("user_id", userId).in("id", chunk));
+    }
+    // Lines from before threads, if any were left without one.
+    const legacy = await this.db
+      .from("chat_messages")
+      .delete({ count: "exact" })
+      .eq("user_id", userId)
+      .not("visitor_id", "is", null)
+      .is("thread_id", null)
+      .lte("created_at", before);
+    check(legacy);
+    return removed + (legacy.count ?? 0);
+  }
+
+  async listDrafts(filter?: { status?: DraftStatus }) {
+    let q = this.db
+      .from("drafts")
+      .select("*")
+      .eq("user_id", currentUserId())
+      .order("created_at", { ascending: false })
+      .limit(100);
+    if (filter?.status) q = q.eq("status", filter.status);
+    return (check(await q) ?? []).map(toDraft);
+  }
+
+  async createDraft(input: NewDraft) {
+    const res = await this.db
+      .from("drafts")
+      .insert({ ...input, user_id: currentUserId() })
+      .select("*")
+      .single();
+    // 23505: that event already has a draft (drafts_user_event_idx).
+    if (res.error?.code === "23505") return null;
+    return toDraft(check(res));
+  }
+
+  async updateDraftStatus(id: string, status: DraftStatus) {
+    const row = check(
+      await this.db
+        .from("drafts")
+        .update({ status, updated_at: new Date().toISOString() })
         .eq("user_id", currentUserId())
-        .not("visitor_id", "is", null)
-        .lte("created_at", before)
-        .select("id"),
+        .eq("id", id)
+        .select("*")
+        .maybeSingle(),
     );
-    return (rows ?? []).length;
+    return row ? toDraft(row) : null;
   }
 
   async getEvent(id: string) {
@@ -1302,6 +1531,105 @@ export class SupabaseStore implements Store {
       await this.db.from("telegram_chats").select("user_id").eq("chat_id", chatId).maybeSingle(),
     );
     return row?.user_id ?? null;
+  }
+
+  async listChecklist(f: { from: string; to: string }) {
+    const rows = check(
+      await this.db
+        .from("checklist_items")
+        .select("*")
+        .eq("user_id", currentUserId())
+        .gte("date", f.from)
+        .lte("date", f.to),
+    );
+    return (rows ?? []).map(toChecklistItem).sort(checklistOrder);
+  }
+
+  async getChecklistItem(id: string) {
+    const row = check(
+      await this.db
+        .from("checklist_items")
+        .select("*")
+        .eq("user_id", currentUserId())
+        .eq("id", id)
+        .maybeSingle(),
+    );
+    return row ? toChecklistItem(row) : null;
+  }
+
+  async createChecklistItem(input: NewChecklistItem) {
+    const res = await this.db
+      .from("checklist_items")
+      .insert({
+        user_id: currentUserId(),
+        goal_id: input.goal_id,
+        date: input.date,
+        text: input.text,
+        position: input.position,
+        carried_from: input.carried_from ?? null,
+        linked_goal_id: input.linked_goal_id ?? null,
+        estimate_minutes: input.estimate_minutes ?? null,
+      })
+      .select("*")
+      .single();
+    // The unique index on open items: two adds at once for the same slot.
+    if (res.error?.code === "23505") throw new HttpError("conflict", "That slot of the day is taken");
+    return toChecklistItem(check(res));
+  }
+
+  async updateChecklistItem(id: string, patch: ChecklistPatch) {
+    const changes = withoutUndefined(patch as Record<string, unknown>);
+    const q = this.db.from("checklist_items");
+    const res =
+      Object.keys(changes).length === 0
+        ? await q.select("*").eq("user_id", currentUserId()).eq("id", id).maybeSingle()
+        : await q.update(changes).eq("user_id", currentUserId()).eq("id", id).select("*").maybeSingle();
+    if (res.error?.code === "23505") throw new HttpError("conflict", "That slot of the day is taken");
+    const row = check(res);
+    return row ? toChecklistItem(row) : null;
+  }
+
+  async deleteChecklistItem(id: string) {
+    const rows = check(
+      await this.db.from("checklist_items").delete().eq("user_id", currentUserId()).eq("id", id).select("id"),
+    );
+    return (rows ?? []).length > 0;
+  }
+
+  async listRituals(f: { from: string; to: string }) {
+    const rows = check(
+      await this.db
+        .from("day_rituals")
+        .select("*")
+        .eq("user_id", currentUserId())
+        .gte("day", f.from)
+        .lte("day", f.to),
+    );
+    return (rows ?? []).map(toDayRitual);
+  }
+
+  async saveRitual(row: Omit<DayRitual, "updated_at">) {
+    const saved = check(
+      await this.db
+        .from("day_rituals")
+        .upsert({ user_id: currentUserId(), ...row }, { onConflict: "user_id,day,kind" })
+        .select("*")
+        .single(),
+    );
+    return toDayRitual(saved);
+  }
+
+  async clearRituals(f: { from: string; to: string }) {
+    const rows = check(
+      await this.db
+        .from("day_rituals")
+        .delete()
+        .eq("user_id", currentUserId())
+        .gte("day", f.from)
+        .lte("day", f.to)
+        .select("day"),
+    );
+    return (rows ?? []).length;
   }
 
   async listTargets(from: string, to: string) {

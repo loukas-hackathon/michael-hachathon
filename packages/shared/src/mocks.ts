@@ -1,5 +1,6 @@
 import type {
   AnalysisRun,
+  ChecklistItem,
   Event,
   Goal,
   Instruction,
@@ -210,6 +211,85 @@ export const mockGoals: Goal[] = [
     active: true,
     created_at: CREATED,
     updated_at: CREATED,
+  },
+];
+
+// A count goal and a checklist goal (#238). Not in `mockGoals`, which seeds the in-memory store:
+// they are part of the score scenario behind `mockScore` (apps/api/src/score/mock-scenario.ts).
+export const mockCountGoal: Goal = {
+  id: "10000000-0000-4000-8000-000000000006",
+  category: "health",
+  title: "Gym twice a week",
+  description: null,
+  target: { kind: "count", per_week: 2, calendar_titles: ["Gym"] },
+  weekly_budget_minutes: null,
+  active: true,
+  created_at: CREATED,
+  updated_at: CREATED,
+};
+
+export const mockChecklistGoal: Goal = {
+  id: "10000000-0000-4000-8000-000000000007",
+  category: "business",
+  title: "Today's outcomes",
+  description: null,
+  target: { kind: "checklist" },
+  weekly_budget_minutes: null,
+  active: true,
+  created_at: CREATED,
+  updated_at: CREATED,
+};
+
+// The checklist of the scenario's week: Tuesday's open item carried to Wednesday, and one done
+// on Wednesday. The carried one counts once, on the day it moved to.
+export const mockChecklistItems: ChecklistItem[] = [
+  {
+    id: "50000000-0000-4000-8000-000000000001",
+    goal_id: mockChecklistGoal.id,
+    date: "2026-11-10",
+    text: "Send the investor update",
+    position: 0,
+    status: "moved",
+    settled_at: "2026-11-10T19:00:00.000Z",
+    settled_by: "user",
+    carried_from: null,
+    linked_goal_id: null,
+    estimate_minutes: null,
+    logged_minutes: null,
+    created_at: "2026-11-10T06:30:00.000Z",
+    updated_at: "2026-11-10T19:00:00.000Z",
+  },
+  {
+    id: "50000000-0000-4000-8000-000000000002",
+    goal_id: mockChecklistGoal.id,
+    date: "2026-11-11",
+    text: "Send the investor update",
+    position: 0,
+    status: "open",
+    settled_at: null,
+    settled_by: null,
+    carried_from: "50000000-0000-4000-8000-000000000001",
+    linked_goal_id: null,
+    estimate_minutes: null,
+    logged_minutes: null,
+    created_at: "2026-11-10T19:00:00.000Z",
+    updated_at: "2026-11-10T19:00:00.000Z",
+  },
+  {
+    id: "50000000-0000-4000-8000-000000000003",
+    goal_id: mockChecklistGoal.id,
+    date: "2026-11-11",
+    text: "Book the venue for the launch",
+    position: 1,
+    status: "done",
+    settled_at: "2026-11-11T09:40:00.000Z",
+    settled_by: "user",
+    carried_from: null,
+    linked_goal_id: null,
+    estimate_minutes: null,
+    logged_minutes: null,
+    created_at: "2026-11-11T06:30:00.000Z",
+    updated_at: "2026-11-11T09:40:00.000Z",
   },
 ];
 
@@ -612,6 +692,118 @@ export const mockScore: Score = {
       minutes_left: 180,
       open_blocks: 0,
     },
+    {
+      goal_id: "10000000-0000-4000-8000-000000000006",
+      title: "Gym twice a week",
+      category: "health",
+      area: "health",
+      kind: "count",
+      scored: false,
+      budget_minutes: 0,
+      planned_minutes: 0,
+      elapsed_minutes: 0,
+      spent_minutes: 0,
+      lost_minutes: 0,
+      ahead_minutes: 0,
+      unverified_minutes: 0,
+      score_pct: null,
+      daily: [
+        {
+          date: "2026-11-09",
+          planned_minutes: 0,
+          spent_minutes: 0,
+        },
+        {
+          date: "2026-11-10",
+          planned_minutes: 0,
+          spent_minutes: 0,
+        },
+        {
+          date: "2026-11-11",
+          planned_minutes: 0,
+          spent_minutes: 0,
+        },
+        {
+          date: "2026-11-12",
+          planned_minutes: 0,
+          spent_minutes: 0,
+        },
+        {
+          date: "2026-11-13",
+          planned_minutes: 0,
+          spent_minutes: 0,
+        },
+        {
+          date: "2026-11-14",
+          planned_minutes: 0,
+          spent_minutes: 0,
+        },
+        {
+          date: "2026-11-15",
+          planned_minutes: 0,
+          spent_minutes: 0,
+        },
+      ],
+      minutes_left: 0,
+      open_blocks: 0,
+      count: { done: 1, target: 2, left: 1, days_left: 5 },
+    },
+    {
+      goal_id: "10000000-0000-4000-8000-000000000007",
+      title: "Today's outcomes",
+      category: "business",
+      area: "business",
+      kind: "checklist",
+      scored: false,
+      budget_minutes: 0,
+      planned_minutes: 0,
+      elapsed_minutes: 0,
+      spent_minutes: 0,
+      lost_minutes: 0,
+      ahead_minutes: 0,
+      unverified_minutes: 0,
+      score_pct: null,
+      daily: [
+        {
+          date: "2026-11-09",
+          planned_minutes: 0,
+          spent_minutes: 0,
+        },
+        {
+          date: "2026-11-10",
+          planned_minutes: 0,
+          spent_minutes: 0,
+        },
+        {
+          date: "2026-11-11",
+          planned_minutes: 0,
+          spent_minutes: 0,
+        },
+        {
+          date: "2026-11-12",
+          planned_minutes: 0,
+          spent_minutes: 0,
+        },
+        {
+          date: "2026-11-13",
+          planned_minutes: 0,
+          spent_minutes: 0,
+        },
+        {
+          date: "2026-11-14",
+          planned_minutes: 0,
+          spent_minutes: 0,
+        },
+        {
+          date: "2026-11-15",
+          planned_minutes: 0,
+          spent_minutes: 0,
+        },
+      ],
+      minutes_left: 0,
+      open_blocks: 0,
+      checklist: { today: { set: 2, done: 1 }, week: { set: 2, done: 1 } },
+    },
   ],
   timezone: "Europe/Athens",
   generated_at: "2026-11-11T13:20:00.000Z",
@@ -619,7 +811,7 @@ export const mockScore: Score = {
   areas: [
     {
       area: "business",
-      goal_ids: ["10000000-0000-4000-8000-000000000001"],
+      goal_ids: ["10000000-0000-4000-8000-000000000001", "10000000-0000-4000-8000-000000000007"],
       planned_minutes: 840,
       elapsed_minutes: 590,
       spent_minutes: 366,
@@ -637,6 +829,7 @@ export const mockScore: Score = {
         "10000000-0000-4000-8000-000000000002",
         "10000000-0000-4000-8000-000000000003",
         "10000000-0000-4000-8000-000000000004",
+        "10000000-0000-4000-8000-000000000006",
       ],
       planned_minutes: 160,
       elapsed_minutes: 60,
@@ -929,7 +1122,7 @@ export const mockScore: Score = {
     areas: [
       {
         area: "business",
-        goal_ids: ["10000000-0000-4000-8000-000000000001"],
+        goal_ids: ["10000000-0000-4000-8000-000000000001", "10000000-0000-4000-8000-000000000007"],
         planned_minutes: 270,
         elapsed_minutes: 260,
         spent_minutes: 213,
@@ -944,6 +1137,7 @@ export const mockScore: Score = {
           "10000000-0000-4000-8000-000000000002",
           "10000000-0000-4000-8000-000000000003",
           "10000000-0000-4000-8000-000000000004",
+          "10000000-0000-4000-8000-000000000006",
         ],
         planned_minutes: 40,
         elapsed_minutes: 0,
@@ -974,6 +1168,11 @@ export const mockScore: Score = {
   on_target: null,
   records: [],
   free_minutes_left: 4390,
+  lost_by: [
+    { what: "Instagram", kind: "app", category: "social", minutes: 148 },
+    { what: "WhatsApp", kind: "app", category: "communication", minutes: 81 },
+    { what: "Mail", kind: "app", category: "communication", minutes: 5 },
+  ],
   sleep: { goal_minutes: 450, nightly: [431, 388, 452, null, null, null, null] },
 };
 

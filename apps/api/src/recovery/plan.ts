@@ -8,6 +8,7 @@ import {
 } from "@michael/shared";
 import { forbiddenBy } from "../instructions/protected";
 import { DEFAULT_TIMEZONE, RULES } from "../patterns/context";
+import { napIn } from "../patterns/sleep";
 import { stays } from "../patterns/switching";
 import { DAY, HOUR, MINUTE, Zone } from "../patterns/time";
 import { buildTimeline } from "../patterns/timeline";
@@ -142,6 +143,7 @@ export function nightBefore(block: Span, events: Event[], zone: Zone): number | 
     const start = Date.parse(e.start_at);
     const end = Date.parse(e.end_at);
     if (!(end > start) || end - start > DAY || end > block.start || zone.dayOf(end) !== day) continue;
+    if (napIn(zone, start, end)) continue;
     const recorded = e.data?.duration_min;
     minutes =
       (minutes ?? 0) + (typeof recorded === "number" && recorded > 0 ? recorded : (end - start) / MINUTE);

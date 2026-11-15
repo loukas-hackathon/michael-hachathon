@@ -40,11 +40,14 @@ test("Timeline: add a block on a free slot, drag it later, undo the move", async
   await expect(title).toBeFocused();
   await title.fill("Deep work");
   await page.getByRole("button", { name: "Add", exact: true }).click();
+  // Shown at once; the Undo arrives with the server's answer.
   await expect(page.getByRole("status").filter({ hasText: "Added at 10:00." })).toBeVisible();
+  await expect(page.getByRole("status").getByRole("button", { name: "Undo" })).toBeVisible();
   const block = page.getByRole("button", { name: "Deep work, 10:00 to 11:00" });
   await expect(block).toBeVisible();
 
-  // Drag it two hours down (a mouse drags at once; touch needs a long press).
+  // Long press, then drag it two hours down (the emulated iPhone sends touch pointers; a real mouse
+  // would drag at once).
   await block.scrollIntoViewIfNeeded();
   const b = await block.boundingBox();
   if (!b) throw new Error("block not laid out");
@@ -52,6 +55,7 @@ test("Timeline: add a block on a free slot, drag it later, undo the move", async
   const y = b.y + b.height / 2;
   await page.mouse.move(x, y);
   await page.mouse.down();
+  await page.waitForTimeout(500);
   for (let i = 1; i <= 8; i++) await page.mouse.move(x, y + (112 * i) / 8);
   await page.mouse.up();
   await expect(page.getByRole("status").filter({ hasText: "Moved to 12:00." })).toBeVisible();
@@ -69,7 +73,7 @@ test("Timeline: add a block on a free slot, drag it later, undo the move", async
   };
   await expect.poll(startOf).toBe("12:00");
 
-  await page.getByRole("button", { name: "Undo" }).click();
+  await page.getByRole("status").getByRole("button", { name: "Undo" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Undone." })).toBeVisible();
   await expect(page.getByRole("button", { name: "Deep work, 10:00 to 11:00" })).toBeVisible();
   await expect.poll(startOf).toBe("10:00");

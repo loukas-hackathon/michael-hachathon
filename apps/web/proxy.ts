@@ -58,6 +58,10 @@ export async function proxy(request: NextRequest) {
     const next = path === "/" ? null : safeNext(path + request.nextUrl.search);
     login.search = next ? `?next=${encodeURIComponent(next)}` : "";
     const redirect = NextResponse.redirect(login);
+    // Keep what Supabase just wrote: a session whose refresh failed (an expired token of a deleted
+    // account, or one revoked elsewhere) is cleared here. Dropping it left the dead cookie in place,
+    // so every later navigation retried the same refresh and failed again.
+    for (const cookie of response.cookies.getAll()) redirect.cookies.set(cookie);
     // Supabase only returns to the allow listed /auth/callback, so the way back rides in a cookie.
     // Only a real page visit sets it: a background prefetch (the tab bar's /chat) must not
     // overwrite the consent page the person came for.
@@ -73,7 +77,8 @@ export async function proxy(request: NextRequest) {
         sameSite: "lax",
         secure: request.nextUrl.protocol === "https:",
         path: "/",
-        maxAge: 15 * 60,
+        // As long as an MCP authorisation request lives (apps/api/src/routes/oauth.ts).
+        maxAge: 30 * 60,
       });
     } else redirect.cookies.delete(NEXT_COOKIE);
     return redirect;
@@ -83,8 +88,8 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   // Everything except static files and images.
-  // Static files, images, the PWA manifest and the service worker stay public so the app can be installed signed out.
+  // Static files, images, the PWA manifest, the service worker and its data free shell stay public so the app can be installed signed out.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|shell.html|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };

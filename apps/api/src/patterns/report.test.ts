@@ -37,7 +37,7 @@ test("no events: every detector says why, none makes up a number", () => {
     assert.equal(d.status, "not_enough_data", key);
     assert.equal(d.data, null, key);
     assert.equal(d.summary, null, key);
-    assert.match(d.reason ?? "", /^not enough data: /, key);
+    assert.match(d.reason ?? "", /^Not enough data yet: /, key);
     assert.ok(d.minimum.length > 0, key);
     assert.deepEqual(d.evidence, [], key);
   }
@@ -225,7 +225,7 @@ test("context switching needs an hour of device time", () => {
   assert.equal(r.context_switching.data, null);
   assert.equal(
     r.context_switching.reason,
-    "not enough data: needs at least 60 minutes of device time, found 59",
+    "Not enough data yet: needs at least 60 minutes of device time, found 59",
   );
 });
 
@@ -305,7 +305,10 @@ test("late screens: with sleep data the cut off is one hour before the usual bed
 test("late screens: fewer than 3 observed nights gives a reason", () => {
   const r = report(lateWeek(), "2026-11-10 00:00", "2026-11-12 06:00");
   assert.equal(r.late_screens.data, null);
-  assert.equal(r.late_screens.reason, "not enough data: needs at least 3 nights with device data, found 2");
+  assert.equal(
+    r.late_screens.reason,
+    "Not enough data yet: needs at least 3 nights with device data, found 2",
+  );
 });
 
 test("late screens: recovery after late nights against the others needs 3 of each", () => {

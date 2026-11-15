@@ -145,6 +145,33 @@ test("a block an agent books carries its recommendation and can be undone from t
   assert.equal(after?.undo_until, null);
 });
 
+test("log_done and confirm_block need write_events; a logged entry can be undone from the log", async () => {
+  const created = await app.request("/v1/goals", {
+    method: "POST",
+    headers: { ...apiKey, "content-type": "application/json" },
+    body: JSON.stringify({ category: "personal", title: "Evening bath", weekly_budget_minutes: 60 }),
+  });
+  const goal = (await created.json()) as { id: string };
+  const reader = await connect("Perplexity", "timeline goals");
+  const refused = await callTool(reader, "log_done", { goal_id: goal.id, minutes: 40 });
+  assert.equal(refused.body.result.isError, true);
+  assert.match(refused.body.result.content[0].text, /Not allowed/);
+  const settle = await callTool(reader, "confirm_block", { event_id: goal.id, did: true });
+  assert.match(settle.body.result.content[0].text, /Not allowed/);
+
+  const writer = await connect("Mistral", "timeline write_events");
+  const logged = await callTool(writer, "log_done", { goal_id: goal.id, minutes: 40 });
+  assert.notEqual(logged.body.result.isError, true, logged.body.result.content?.[0]?.text);
+  assert.match(logged.body.result.content[0].text, /^Logged\. Evening bath \d+ of 60 min this week\./);
+  const recId = logged.body.result.structuredContent.recommendation.id;
+  const agent = (await listAgents()).find((a) => a.name === "Mistral");
+  const line = (await listQueries()).find((q) => q.agent_id === agent?.id && q.tool === "log_done");
+  assert.equal(line?.recommendation_id, recId);
+  assert.equal(line?.summary, "Logged 40 min of a goal");
+  const undo = await app.request(`/v1/recommendations/${recId}/undo`, { method: "POST", headers: apiKey });
+  assert.equal(undo.status, 200);
+});
+
 test("reconnecting the same agent updates one record", async () => {
   await connect("Claude", "timeline");
   await connect("Claude", "timeline goals");

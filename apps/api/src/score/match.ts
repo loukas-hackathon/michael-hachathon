@@ -27,7 +27,14 @@ import { type Event, type Goal, GoalCategory, goalArea } from "@michael/shared";
 // An event with other people in it (`data.attendees` above 0, the number of other people) is a
 // meeting: it is never the user's own block, whatever its title says.
 
-export type MatchRule = "goal_id" | "calendar_titles" | "goal_category" | "goal_title" | "category_word";
+// `logged` is never a match: it marks done time the user logged (#317), standing in for a block.
+export type MatchRule =
+  | "goal_id"
+  | "calendar_titles"
+  | "goal_category"
+  | "goal_title"
+  | "category_word"
+  | "logged";
 
 export interface GoalMatch {
   goal: Goal;

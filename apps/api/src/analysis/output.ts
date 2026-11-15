@@ -18,7 +18,8 @@ import { type ActionsAre, type BriefContext, DETECTOR_NAMES } from "./brief";
 //   3. `enforce`: the rules that must never depend on a model (whose goal, whose calendar block,
 //      how many recommendations). `lintCopy` checks the hard copy rules.
 
-const ACTION_KINDS = ActionKind.options;
+// Logged and settled time are the user's own word (#317): the analysis never makes them.
+const ACTION_KINDS = ActionKind.options.filter((k) => k !== "log_time" && k !== "settle_block");
 // What a recommendation may rest on besides a pattern: the goals and their blocks, or the score.
 export const EVIDENCE_BEYOND_PATTERNS: readonly string[] = ["plan", "score"];
 export const MAX_RECOMMENDATIONS = 3;
@@ -263,6 +264,9 @@ export function checkAction(
     case "plan_change":
       // Proposed in chat only (#188), from what the user said; an analysis run does not make them.
       return `"${a.kind}" is proposed in chat, not by the analysis`;
+    case "log_time":
+    case "settle_block":
+      return `"${a.kind}" is the person's own word, not the analysis'`;
     case "remove_calendar_block":
       // Only the user removes a block, on the Timeline (#271). Michael never deletes.
       return "Michael does not remove blocks";
@@ -321,7 +325,6 @@ export interface CopyViolation {
 
 const BANNED: [RegExp, string][] = [
   [/\bproductivity\b/i, "productivity"],
-  [/\boptimi[sz](e[ds]?|ing|ation)\b/i, "optimise"],
   [/\bhustl(e[ds]?|ing)\b/i, "hustle"],
   [/\bcrush(e[ds]|ing)?\b/i, "crush"],
   [/\bjourneys?\b/i, "journey"],

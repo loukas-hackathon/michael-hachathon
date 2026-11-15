@@ -1,5 +1,6 @@
 import "server-only";
 import { type AnalysisResult, ApiError, mockAnalysisRun, mockRecommendations } from "@michael/shared";
+import { cache } from "react";
 import { authHeaders } from "./caller";
 import { API_URL, USE_MOCKS } from "./mode";
 
@@ -16,7 +17,8 @@ const mockResult = (): AnalysisResult => ({
 });
 
 /** The latest run, or null when none has run yet or it cannot load (the card then offers the button). */
-export async function getLatestBrief(): Promise<AnalysisResult | null> {
+// Once per render (React cache), so Today can start it early and the brief card reuses it.
+export const getLatestBrief = cache(async (): Promise<AnalysisResult | null> => {
   if (USE_MOCKS) return null;
   try {
     const res = await fetch(`${API_URL}/v1/analysis/latest`, {
@@ -29,7 +31,7 @@ export async function getLatestBrief(): Promise<AnalysisResult | null> {
     console.error("latest brief:", err);
     return null;
   }
-}
+});
 
 /** Ask Michael for a brief now. 502 (the model failed) and 503 (no model key) come back as values. */
 export async function runBrief(): Promise<BriefResult> {

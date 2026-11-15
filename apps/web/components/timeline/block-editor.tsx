@@ -6,7 +6,7 @@ import type { Plan } from "@/lib/timeline";
 import { input, Row, Segmented } from "../form-controls";
 
 // The editable half of the Timeline's detail sheet (#271): a new block, or one of the user's own
-// solo blocks that has not started. Title, start, length or end, goal, and Remove for blocks made in
+// solo blocks that has not started. Title, start, length or end, goal, and Delete for blocks made in
 // Michael. Saving is optimistic: the sheet closes and the day shows the change at once.
 
 const MIN = 60_000;
@@ -163,7 +163,7 @@ export function BlockEditor({
             onClick={onRemove}
             className="press flex min-h-11 w-full items-center px-4 text-body text-danger disabled:opacity-60"
           >
-            {removing ? "Removing" : "Remove this block"}
+            {removing ? "Deleting" : "Delete this block"}
           </button>
         </div>
       ) : null}

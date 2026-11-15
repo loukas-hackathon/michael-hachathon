@@ -11,13 +11,17 @@ import { agents } from "./routes/agents";
 import { analysis } from "./routes/analysis";
 import { blocks } from "./routes/blocks";
 import { chat } from "./routes/chat";
+import { chatThreads } from "./routes/chat-threads";
 import { checkIn } from "./routes/check-in";
+import { checklist } from "./routes/checklist";
 import { demo } from "./routes/demo";
+import { drafts } from "./routes/drafts";
 import { events } from "./routes/events";
 import { focusGuards } from "./routes/focus-guards";
 import { goals } from "./routes/goals";
 import { instructions } from "./routes/instructions";
 import { integrations, oauth } from "./routes/integrations";
+import { log } from "./routes/log";
 import { meData } from "./routes/me-data";
 import { moments } from "./routes/moments";
 import { nudges } from "./routes/nudges";
@@ -29,6 +33,7 @@ import { product } from "./routes/product";
 import { profile } from "./routes/profile";
 import { push } from "./routes/push";
 import { recommendations } from "./routes/recommendations";
+import { ritual } from "./routes/ritual";
 import { score } from "./routes/score";
 import { setupPublic, setupTokens } from "./routes/setup";
 import { sources } from "./routes/sources";
@@ -50,12 +55,16 @@ const webhooksApp = new Hono().use(requireUser({ allowQueryKey: true })).route("
 export const v1Routes = new Hono()
   .route("/", events)
   .route("/", goals)
+  .route("/", checklist)
+  .route("/", ritual)
   .route("/", instructions)
   .route("/", recommendations)
   .route("/", analysis)
   .route("/", patterns)
   .route("/", score)
+  .route("/", log)
   .route("/", targets)
+  .route("/", chatThreads)
   .route("/", chat)
   .route("/", checkIn)
   .route("/", moments)
@@ -68,6 +77,7 @@ export const v1Routes = new Hono()
   .route("/", actions)
   .route("/", blocks)
   .route("/", focusGuards)
+  .route("/", drafts)
   .route("/", profile)
   .route("/", product)
   .route("/", tokens)

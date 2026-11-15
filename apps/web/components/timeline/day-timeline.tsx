@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import {
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
   type PointerEvent as ReactPointerEvent,
   useEffect,
@@ -12,9 +13,18 @@ import {
   useTransition,
 } from "react";
 import { addBlock, changeBlock, removeBlock, undoBlockChange } from "@/app/timeline/actions";
+import { SettleBlock } from "@/components/log-time";
 import { Sheet } from "@/components/sheet";
 import { formatTime, hm, minutesPhrase } from "@/lib/format";
-import { type HeartPoint, type Night, sleepAgainstGoal, workoutParts } from "@/lib/health";
+import {
+  type HeartPoint,
+  type Nap,
+  type Night,
+  type SleepStages,
+  sleepAgainstGoal,
+  stageParts,
+  workoutParts,
+} from "@/lib/health";
 import {
   type Block,
   blockTitle,
@@ -32,15 +42,17 @@ import { HeartToggle } from "./heart-toggle";
 const PER_HOUR = 56;
 const QUIET = 32;
 const HOUR = 3_600_000;
+const iso = (ms: number) => new Date(ms).toISOString();
+const span = (from: number, to: number) => `${formatTime(iso(from))} to ${formatTime(iso(to))}`;
 const MIN = 60_000;
 /** Moves and resizes snap to a quarter hour; a tap on a free slot to the half hour. */
 const SNAP = 15 * MIN;
-const iso = (ms: number) => new Date(ms).toISOString();
-const span = (from: number, to: number) => `${formatTime(iso(from))} to ${formatTime(iso(to))}`;
 const snapTo = (ms: number, step = SNAP) => Math.round(ms / step) * step;
 const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
+/** How long a finger holds a block before it lifts (about what Calendar on the iPhone takes). */
+const LONG_PRESS = 350;
 
-/** A short tick under the finger, where the device has one (not iOS Safari). */
+/** A short tick under the finger, where the device has one (Android; iOS Safari has none). */
 function buzz(ms: number) {
   try {
     if (navigator.userActivation?.hasBeenActive) navigator.vibrate?.(ms);
@@ -49,12 +61,18 @@ function buzz(ms: number) {
   }
 }
 
-type Picked = { kind: "block"; block: Block } | { kind: "plan"; plan: Plan } | { kind: "new"; plan: Plan };
+type Picked =
+  | { kind: "block"; block: Block }
+  | { kind: "plan"; plan: Plan }
+  | { kind: "new"; plan: Plan }
+  | { kind: "night"; night: Night; tonight: boolean }
+  | { kind: "nap"; nap: Nap };
 
 /** A block as the viewer sees it right now: the server's, or an edit still landing. */
 type Shown = Plan & { removed?: boolean; pending?: boolean };
 
-type Status = { text: string; error?: boolean; undo?: () => void; key: number } | null;
+/** The one line about the last change, shown in place under the block it is about. */
+type Status = { text: string; at: number; error?: boolean; undo?: () => void; key: number } | null;
 
 type Gesture = {
   plan: Plan;
@@ -93,21 +111,27 @@ function blockMeta(b: Block) {
  * Every label sits on a solid chip of its block's colour, so hatching never runs through text, and
  * the hour labels step aside for the now pill. Tap a block for its detail sheet.
  *
+ * The watch's nights frame the day (the night rule, lib/health.ts): the night you woke up from
+ * above it, the night you went to bed from below it, faint. Tap either for the stages.
+ *
  * Editing (#271), on the user's own live days, like Calendar on the iPhone: tap a free slot to add a
  * block; tap a block to change its title, time or goal; long press and drag to move it, or drag its
  * bottom edge to change the end (a mouse drags at once). Quarter hour snap, a tick per step where
  * the device has haptics. Every change shows at once, rolls back if the server refuses, and says
- * what happened with an Undo in one status line. Blocks with other people stay read only.
+ * what happened with an Undo in one line under the block. Blocks with other people stay read only.
  */
 export function DayTimeline({
   day,
   heartHidden = false,
+  sleepGoal = null,
   editable = false,
   goals = [],
 }: {
   day: TimelineDay;
   /** The heart rate lane starts hidden (the viewer turned it off). */
   heartHidden?: boolean;
+  /** Minutes a night the Sleep goal asks for; null without one. */
+  sleepGoal?: number | null;
   /** The user's own day, today or ahead: free slots and solo blocks can be edited. */
   editable?: boolean;
   goals?: GoalChip[];
@@ -118,11 +142,15 @@ export function DayTimeline({
   const health = day.health;
   const nights = [health?.lastNight, health?.tonight].filter((n): n is Night => Boolean(n));
   const workouts = health?.workouts ?? [];
+  const naps = health?.naps ?? [];
+  const lastNight = health?.lastNight ?? null;
+  const tonight = health?.tonight ?? null;
   const heart = health?.heart ?? [];
   const [picked, setPicked] = useState<Picked | null>(null);
   const [over, setOver] = useState<Record<string, Shown>>({});
   const [drag, setDrag] = useState<{ id: string; start: number; end: number } | null>(null);
-  const [opened, setOpened] = useState<number[]>([]);
+  // Stretches the viewer opened, kept as times so they stay open when a refresh redraws the rows.
+  const [opened, setOpened] = useState<{ start: number; end: number }[]>([]);
   const [status, setStatus] = useState<Status>(null);
   const [removing, setRemoving] = useState(false);
   const [sheetError, setSheetError] = useState<string | null>(null);
@@ -135,21 +163,20 @@ export function DayTimeline({
   const [seen, setSeen] = useState(day);
   if (seen !== day) {
     setSeen(day);
-    setOver((o) => Object.fromEntries(Object.entries(o).filter(([, s]) => s.pending)));
+    setOver((o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v.pending)));
   }
 
   // The server's blocks with the viewer's edits on top, and the one under the finger where it is now.
   const plans = useMemo(() => {
-    const base = day.plans ?? [];
     const out: Shown[] = [];
-    const seenIds = new Set<string>();
-    for (const p of base) {
+    const ids = new Set<string>();
+    for (const p of day.plans ?? []) {
       const o = p.id ? over[p.id] : undefined;
-      if (p.id) seenIds.add(p.id);
+      if (p.id) ids.add(p.id);
       if (!o) out.push(p);
       else if (!o.removed) out.push(o);
     }
-    for (const [id, o] of Object.entries(over)) if (!seenIds.has(id) && !o.removed) out.push(o);
+    for (const [id, o] of Object.entries(over)) if (!ids.has(id) && !o.removed) out.push(o);
     return out
       .map((p) => (drag && p.id === drag.id ? { ...p, start: drag.start, end: drag.end } : p))
       .sort((a, b) => a.start - b.start);
@@ -162,9 +189,8 @@ export function DayTimeline({
       ...plans.filter((p) => p.id && (over[p.id] || p.id === drag?.id)),
       ...(draft ? [draft] : []),
     ];
-    return openSegments(
-      day.segments,
-      (s) => opened.includes(s.from) || touched.some((p) => p.start < s.to && p.end > s.from),
+    return openSegments(day.segments, (s) =>
+      [...opened, ...touched].some((p) => p.start < s.to && p.end > s.from),
     );
   }, [day.segments, opened, plans, over, drag, draft]);
 
@@ -180,7 +206,7 @@ export function DayTimeline({
     for (let h = s.from; h <= s.to; h += HOUR) hours.push(h);
   }
 
-  // While a block is held, the page must not scroll under it (a non passive listener can say so).
+  // While a block is held, the page must not scroll under it (only a non passive listener can say so).
   useEffect(() => {
     const el = box.current;
     if (!el) return;
@@ -198,13 +224,13 @@ export function DayTimeline({
     return () => clearTimeout(t);
   }, [status]);
 
-  const say = (text: string, undo?: () => void) => setStatus({ text, undo, key: Date.now() });
-  const fail = (text: string) => setStatus({ text, error: true, key: Date.now() });
+  const say = (text: string, at: number, undo?: () => void) => setStatus({ text, at, undo, key: Date.now() });
+  const fail = (text: string, at: number) => setStatus({ text, at, error: true, key: Date.now() });
   const refresh = () => startRefresh(() => router.refresh());
-  const put = (id: string, s: Shown | null) =>
+  const put = (id: string, v: Shown | null) =>
     setOver((o) => {
       const next = { ...o };
-      if (s) next[id] = s;
+      if (v) next[id] = v;
       else delete next[id];
       return next;
     });
@@ -214,20 +240,19 @@ export function DayTimeline({
     if (inFlight.current.has(id)) return;
     inFlight.current.add(id);
     put(id, { ...to, pending: true });
-    setStatus(null);
+    say("Undone.", to.removed ? from.end : to.end);
     try {
       const r = await undoBlockChange(recId);
       if (!r.ok) {
         put(id, { ...from, pending: false });
-        fail(`I could not undo that. ${r.message ?? ""}`.trim());
+        fail(`I could not undo that. ${r.message ?? ""}`.trim(), from.end);
         return;
       }
       put(id, { ...to, pending: false });
-      say("Undone.");
       refresh();
     } catch {
       put(id, { ...from, pending: false });
-      fail("I could not reach the server. Nothing changed.");
+      fail("I could not reach the server. Nothing changed.", from.end);
     } finally {
       inFlight.current.delete(id);
     }
@@ -251,19 +276,20 @@ export function DayTimeline({
         : "Saved.";
     inFlight.current.add(id);
     put(id, { ...after, pending: true });
+    say(text, after.end);
     try {
       const r = await changeBlock(id, body);
       if (!r.ok) {
         put(id, { ...before, pending: false });
-        fail(`I could not ${moved ? "move it" : "change it"}. ${r.message}`);
+        fail(`I could not ${moved ? "move it" : "change it"}. ${r.message}`, before.end);
         return;
       }
       put(id, { ...after, pending: false });
-      say(text, () => undo(r.recId, id, before, after));
+      say(text, after.end, () => undo(r.recId, id, before, after));
       refresh();
     } catch {
       put(id, { ...before, pending: false });
-      fail("I could not reach the server. Nothing changed.");
+      fail("I could not reach the server. Nothing changed.", before.end);
     } finally {
       inFlight.current.delete(id);
     }
@@ -274,6 +300,8 @@ export function DayTimeline({
     const shown: Shown = { ...p, id: temp, michael: true, removable: true, editable: false, pending: true };
     put(temp, shown);
     setPicked(null);
+    const text = `Added at ${formatTime(iso(p.start))}.`;
+    say(text, p.end);
     try {
       const r = await addBlock({
         start_at: iso(p.start),
@@ -283,27 +311,24 @@ export function DayTimeline({
       });
       if (!r.ok) {
         put(temp, null);
-        fail(`I could not add it. ${r.message}`);
+        fail(`I could not add it. ${r.message}`, p.end);
         return;
       }
       const id = r.id;
+      const added: Shown = { ...shown, id: id ?? temp, editable: true, pending: false };
       setOver((o) => {
         const { [temp]: _, ...rest } = o;
-        return id ? { ...rest, [id]: { ...shown, id, editable: true, pending: false } } : rest;
+        return id ? { ...rest, [id]: added } : rest;
       });
-      const added: Shown = { ...shown, id: id ?? temp, editable: true, pending: false };
-      say(
-        `Added at ${formatTime(iso(p.start))}.`,
-        id ? () => undo(r.recId, id, { ...added, removed: true }, added) : undefined,
-      );
+      say(text, p.end, id ? () => undo(r.recId, id, { ...added, removed: true }, added) : undefined);
       refresh();
     } catch {
       put(temp, null);
-      fail("I could not reach the server. Nothing changed.");
+      fail("I could not reach the server. Nothing changed.", p.end);
     }
   };
 
-  /** Removing is not optimistic (it deletes): the button says so, then the line offers Undo. */
+  /** Deleting is not optimistic (michael-feedback): the button says so, then the line offers Undo. */
   const remove = async (p: Plan) => {
     const id = p.id;
     if (!id || removing) return;
@@ -312,12 +337,12 @@ export function DayTimeline({
     try {
       const r = await removeBlock(id);
       if (!r.ok) {
-        setSheetError(`I could not remove it. ${r.message}`);
+        setSheetError(`I could not delete it. ${r.message}`);
         return;
       }
       put(id, { ...p, removed: true, pending: false });
       setPicked(null);
-      say("Removed.", () => undo(r.recId, id, { ...p, removed: false }, { ...p, removed: true }));
+      say("Deleted.", p.start, () => undo(r.recId, id, { ...p, removed: false }, { ...p, removed: true }));
       refresh();
     } catch {
       setSheetError("I could not reach the server. Nothing changed.");
@@ -343,7 +368,7 @@ export function DayTimeline({
     const boxTop = box.current.getBoundingClientRect().top;
     const g: Gesture = {
       plan: p,
-      mode: rect.bottom - e.clientY <= 12 && rect.height >= 24 ? "resize" : "move",
+      mode: rect.bottom - e.clientY <= 14 && rect.height >= 24 ? "resize" : "move",
       pointerId: e.pointerId,
       x0: e.clientX,
       y0: e.clientY,
@@ -355,6 +380,8 @@ export function DayTimeline({
       end: p.end,
     };
     gesture.current = g;
+    // Keep the pointer's moves even when it leaves the block (a mouse would lose them).
+    e.currentTarget.setPointerCapture(e.pointerId);
     const id = p.id;
     if (!g.mouse) {
       // Touch: a long press lifts the block, so an ordinary swipe still scrolls the day.
@@ -363,7 +390,7 @@ export function DayTimeline({
         g.active = true;
         buzz(10);
         setDrag({ id, start: g.start, end: g.end });
-      }, 350);
+      }, LONG_PRESS);
     }
   };
 
@@ -374,7 +401,6 @@ export function DayTimeline({
       const dist = Math.hypot(e.clientX - g.x0, e.clientY - g.y0);
       if (g.mouse && dist > 4) {
         g.active = true;
-        e.currentTarget.setPointerCapture(e.pointerId);
       } else if (!g.mouse && dist > 8) {
         // The finger moved before the long press: it is a scroll.
         clearTimeout(g.timer);
@@ -384,13 +410,12 @@ export function DayTimeline({
     }
     const at = timeAt(e.clientY - g.boxTop);
     const len = g.plan.end - g.plan.start;
-    let start = g.start;
-    let end = g.end;
+    let start = g.plan.start;
+    let end: number;
     if (g.mode === "move") {
       start = clamp(snapTo(at - g.grab), earliest(), day.dayEnd - len);
       end = start + len;
     } else {
-      start = g.plan.start;
       end = clamp(snapTo(at), start + SNAP, day.dayEnd);
     }
     if (start === g.start && end === g.end && drag) return;
@@ -420,16 +445,12 @@ export function DayTimeline({
     setDrag(null);
   };
 
-  /** A tap on a free slot: a new block from the half hour, an hour long. */
-  const onBoxClick = (e: React.MouseEvent<HTMLDivElement>) => {
+  /** A tap or click on a free slot: a new block from that half hour, an hour long. */
+  const onBoxClick = (e: ReactMouseEvent<HTMLDivElement>) => {
     if (!editable || e.target !== e.currentTarget) return;
     const at = timeAt(e.clientY - e.currentTarget.getBoundingClientRect().top);
-    let start = Math.floor(at / (30 * MIN)) * 30 * MIN;
-    if (at < Date.now()) {
-      say("That time has passed. Tap a time ahead.");
-      return;
-    }
-    start = Math.max(start, earliest());
+    if (at < Date.now()) return say("That time has passed. Tap a time ahead.", at);
+    const start = Math.max(Math.floor(at / (30 * MIN)) * 30 * MIN, earliest());
     const end = Math.min(start + HOUR, day.dayEnd);
     if (end - start < SNAP) return;
     open({
@@ -460,30 +481,14 @@ export function DayTimeline({
 
   return (
     <>
-      {/* One line for what just changed, with Undo. It floats, so nothing below it moves. */}
-      <div aria-live="polite" className="sticky top-2 z-20 h-0">
-        {status ? (
-          <div
-            key={status.key}
-            role={status.error ? "alert" : "status"}
-            className="m-swap mx-auto mt-1 flex w-fit max-w-full items-center gap-3 rounded-full bg-bg py-1.5 pr-1.5 pl-3.5 text-subhead shadow-[0_1px_3px_rgb(0_0_0/0.12),0_0_0_0.5px_var(--m-separator)] tnum"
-          >
-            <span className={status.error ? "text-danger" : "text-label"}>{status.text}</span>
-            {status.undo ? (
-              <button
-                type="button"
-                onClick={status.undo}
-                className="press min-h-8 rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-3 text-subhead font-semibold text-tint-text"
-              >
-                Undo
-              </button>
-            ) : (
-              <span className="pr-2" />
-            )}
-          </div>
-        ) : null}
-      </div>
-      {/* biome-ignore lint/a11y/useKeyWithClickEvents lint/a11y/noStaticElementInteractions: a tap on a free slot is a pointer shortcut; the keyboard adds blocks through each block's sheet and the hour rows */}
+      {lastNight ? (
+        <SleepBand
+          night={lastNight}
+          goal={sleepGoal}
+          onOpen={() => setPicked({ kind: "night", night: lastNight, tonight: false })}
+        />
+      ) : null}
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents lint/a11y/noStaticElementInteractions: a tap on a free slot is a pointer shortcut; with a keyboard, each block's sheet sets its times */}
       <div
         ref={box}
         id={TIMELINE_ID}
@@ -518,7 +523,7 @@ export function DayTimeline({
               type="button"
               key={`q${s.from}`}
               aria-label={`${times}, ${label}. Open these hours to plan`}
-              onClick={() => setOpened((o) => [...o, s.from])}
+              onClick={() => setOpened((o) => [...o, { start: s.from, end: s.to }])}
               className={`press text-left ${cls}`}
               style={style}
             >
@@ -588,7 +593,7 @@ export function DayTimeline({
             >
               {live && h >= 24 ? (
                 // The bottom edge: drag it to change the end.
-                <span className="absolute inset-x-0 bottom-0 flex h-3 cursor-ns-resize items-end justify-center pb-[3px]">
+                <span className="absolute inset-x-0 bottom-0 flex h-3.5 cursor-ns-resize items-end justify-center pb-[3px]">
                   <span
                     className={`h-[3px] w-6 rounded-full bg-label-2 transition-opacity duration-[var(--m-dur-ui)] ease-[var(--m-ease-out)] ${
                       held ? "opacity-60" : "opacity-0 group-hover/plan:opacity-40"
@@ -605,14 +610,14 @@ export function DayTimeline({
             style={{ top: y(draft.start), height: Math.max(4, y(draft.end) - y(draft.start)) }}
           >
             <span className="absolute top-1 left-1 rounded-[4px] px-1 text-footnote leading-4 font-semibold text-tint-text">
-              New block, {span(draft.start, draft.end)}
+              New block
             </span>
           </div>
         ) : null}
         {drag ? (
           <span
             className="pointer-events-none absolute left-[58px] z-10 rounded-[4px] bg-bg px-1 text-caption font-semibold text-tint-text"
-            style={{ top: y(drag.start) - 16 }}
+            style={{ top: Math.max(0, y(drag.start) - 16) }}
           >
             {span(drag.start, drag.end)}
           </span>
@@ -705,6 +710,32 @@ export function DayTimeline({
           );
         })}
 
+        {/* Done time the user logged (#317): goal time in their own word, so pink like a workout. */}
+        {(day.logged ?? []).map((l) => {
+          const top = y(l.start);
+          const h = Math.max(3, y(l.end) - top);
+          return (
+            <div
+              key={`log${l.start}`}
+              data-live-key={`log${l.start}-${l.end}`}
+              className="absolute right-(--lane-r) left-[50px] overflow-hidden rounded-block bg-spark"
+              style={{ top, height: h }}
+              title={`${l.title}, logged, ${span(l.start, l.end)}`}
+            >
+              {h >= 17 ? (
+                <p className="absolute top-1 right-2 left-2 truncate text-footnote leading-4 font-semibold text-[#000]">
+                  {l.title}
+                </p>
+              ) : null}
+              {h >= 36 ? (
+                <p className="absolute top-[21px] right-2 left-2 truncate text-[12px] leading-4 font-medium text-[#000] opacity-80">
+                  Logged · {hm((l.end - l.start) / 60_000)}
+                </p>
+              ) : null}
+            </div>
+          );
+        })}
+
         {/* Workouts from the watch: goal time, so pink, with what it was and how hard. */}
         {workouts.map((w) => {
           const top = y(Math.max(w.start, day.dayStart));
@@ -731,11 +762,31 @@ export function DayTimeline({
           );
         })}
 
+        {/* Naps from the watch: small and quiet, with the sleep dots. Never the night. */}
+        {naps.map((n) => {
+          const top = y(n.start);
+          const h = Math.max(18, y(Math.min(n.end, day.dayEnd)) - top);
+          return (
+            <button
+              type="button"
+              key={`n${n.start}`}
+              onClick={() => setPicked({ kind: "nap", nap: n })}
+              aria-label={`Nap, ${minutesPhrase(n.minutes)}, ${span(n.start, n.end)}`}
+              className="dots absolute right-(--lane-r) left-[50px] overflow-hidden rounded-block bg-fill text-left"
+              style={{ top, height: h }}
+            >
+              <span className="absolute top-1/2 right-5 left-1 flex -translate-y-1/2 text-[12px] leading-4 font-medium text-label-2">
+                <span className="max-w-full truncate rounded-[4px] bg-fill px-1">Nap · {hm(n.minutes)}</span>
+              </span>
+            </button>
+          );
+        })}
+
         {/* Plan titles where nothing happened over their first lines, and Michael's marker always. */}
         {plans.map((p) => {
           const top = y(p.start);
           const h = y(p.end) - top;
-          const covered = [...day.blocks, ...workouts].some(
+          const covered = [...day.blocks, ...workouts, ...naps].some(
             (b) => y(b.start) < top + 18 && y(b.end) > top + 2,
           );
           return (
@@ -815,6 +866,31 @@ export function DayTimeline({
           />
         ))}
 
+        {/* What just changed, in place under the block it is about, with Undo (michael-feedback). */}
+        {status && !drag ? (
+          <div
+            key={status.key}
+            role={status.error ? "alert" : "status"}
+            className="m-swap absolute right-(--lane-r) left-[50px] z-10 flex"
+            style={{ top: Math.min(y(clamp(status.at, day.dayStart, day.dayEnd)) + 4, height - 28) }}
+          >
+            <p className="flex max-w-full min-w-0 items-center gap-2 rounded-[4px] bg-bg pl-1 text-footnote font-semibold tnum">
+              <span className={`min-w-0 truncate ${status.error ? "text-danger" : "text-label"}`}>
+                {status.text}
+              </span>
+              {status.undo ? (
+                <button
+                  type="button"
+                  onClick={status.undo}
+                  className="press -my-2 min-h-9 shrink-0 px-2 font-semibold text-tint-text"
+                >
+                  Undo
+                </button>
+              ) : null}
+            </p>
+          </div>
+        ) : null}
+
         {day.now != null && nowY != null ? (
           <div
             className="pointer-events-none absolute right-0 left-[34px] border-t-[1.5px] border-label"
@@ -827,18 +903,20 @@ export function DayTimeline({
         ) : null}
       </div>
 
+      {tonight ? (
+        <SleepBand
+          night={tonight}
+          goal={sleepGoal}
+          tonight
+          isToday={day.now != null}
+          onOpen={() => setPicked({ kind: "night", night: tonight, tonight: true })}
+        />
+      ) : null}
+
       <Sheet
         open={picked != null}
         onClose={() => setPicked(null)}
-        title={
-          picked?.kind === "block"
-            ? span(picked.block.start, picked.block.end)
-            : picked?.kind === "new"
-              ? "New block"
-              : picked?.kind === "plan"
-                ? span(picked.plan.start, picked.plan.end)
-                : ""
-        }
+        title={picked ? sheetTitle(picked) : ""}
         trailing={
           canEditSheet ? (
             <button
@@ -884,9 +962,20 @@ export function DayTimeline({
         ) : pickedPlan ? (
           <PlanDetail plan={pickedPlan} now={day.now} goals={goals} />
         ) : null}
+        {picked?.kind === "night" ? (
+          <NightDetail night={picked.night} goal={sleepGoal} tonight={picked.tonight} />
+        ) : null}
+        {picked?.kind === "nap" ? <NapDetail nap={picked.nap} /> : null}
       </Sheet>
     </>
   );
+}
+
+function sheetTitle(p: Picked) {
+  if (p.kind === "new") return "New block";
+  const { start, end } =
+    p.kind === "block" ? p.block : p.kind === "plan" ? p.plan : p.kind === "night" ? p.night : p.nap;
+  return span(start, end);
 }
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
@@ -962,7 +1051,7 @@ function BlockDetail({ block: b, plans, sample }: { block: Block; plans: Plan[];
 
 /** A block that cannot be edited here: with other people, started, or the sample day. Read only. */
 function PlanDetail({ plan: p, now, goals }: { plan: Plan; now?: number; goals: GoalChip[] }) {
-  const goal = p.goalId ? goals.find((g) => g.id === p.goalId)?.title : undefined;
+  const goalTitle = p.goal ? null : p.goalId ? goals.find((g) => g.id === p.goalId)?.title : undefined;
   return (
     <div className="tnum">
       <p className={`text-footnote font-semibold ${p.michael ? "text-tint-text" : "text-label-2"}`}>
@@ -972,8 +1061,8 @@ function PlanDetail({ plan: p, now, goals }: { plan: Plan; now?: number; goals: 
       <dl className="mt-3">
         <Row label="When">{span(p.start, p.end)}</Row>
         <Row label="How long">{minutesPhrase((p.end - p.start) / 60_000)}</Row>
-        {goal ? <Row label="Goal">{goal}</Row> : null}
-        <Row label="With others">{p.withOthers ? "Yes, I leave it alone" : "No"}</Row>
+        {goalTitle ? <Row label="Goal">{goalTitle}</Row> : null}
+        <Row label="With others">{p.withOthers ? "Read only" : "No"}</Row>
       </dl>
       {p.withOthers && p.htmlLink ? (
         <a
@@ -986,11 +1075,28 @@ function PlanDetail({ plan: p, now, goals }: { plan: Plan; now?: number; goals: 
         </a>
       ) : null}
       {p.withOthers ? (
-        <p className="mt-3 text-footnote text-label-2">
-          Other people are in this one. Change it in your calendar.
-        </p>
+        <p className="mt-3 text-footnote text-label-2">Other people are in this one. I leave it alone.</p>
       ) : p.michael && (now == null || now < p.start) ? (
         <p className="mt-3 text-footnote text-label-2">I booked this. Undo it in Today until it starts.</p>
+      ) : null}
+      {p.goal ? (
+        <dl className="mt-1">
+          <Row label="Goal">{p.goal.title}</Row>
+          {p.goal.settled ? (
+            <Row label="You said">{p.goal.settled === "did" ? "Did it" : "Didn't"}</Row>
+          ) : null}
+        </dl>
+      ) : null}
+      {/* Did it / Didn't (#317): a started goal block no data proves yet. */}
+      {p.id &&
+      p.goal &&
+      !p.goal.settled &&
+      p.goal.unverified >= 1 &&
+      !p.withOthers &&
+      (now ?? Date.now()) > p.start ? (
+        <div className="mt-4">
+          <SettleBlock eventId={p.id} minutes={Math.round((p.end - p.start) / 60_000)} />
+        </div>
       ) : null}
     </div>
   );
@@ -1001,33 +1107,146 @@ export const TIMELINE_ID = "day-timeline";
 
 /**
  * A night from the watch, collapsed to one calm row with the dot texture: when, how long, and the
- * Sleep goal's verdict. Last night sits above the day, tonight below it.
+ * Sleep goal's verdict. The night you woke up from sits above the day; the night you went to bed
+ * from sits below it, faint, because it belongs to the next day. Tap for the stages.
  */
-export function SleepBand({
+function SleepBand({
   night,
   goal,
   tonight = false,
+  isToday = false,
+  onOpen,
 }: {
   night: Night;
   goal: number | null;
   tonight?: boolean;
+  isToday?: boolean;
+  onOpen: () => void;
 }) {
   const verdict = sleepAgainstGoal(night.minutes, goal);
+  const name = tonight ? (isToday ? "Tonight" : "Then sleep") : "Sleep";
   return (
-    <div
-      className={`dots flex items-center justify-between gap-3 rounded-block bg-fill px-2.5 py-1.5 text-footnote text-label-2 tnum ${
-        tonight ? "mt-2" : "mt-3"
+    <button
+      type="button"
+      onClick={onOpen}
+      data-sleep-band={tonight ? "tonight" : "last-night"}
+      className={`press dots flex min-h-9 w-full items-center justify-between gap-3 rounded-block bg-fill px-2.5 py-1.5 text-left text-footnote text-label-2 tnum ${
+        tonight ? "mt-2 opacity-60" : "mt-3"
       }`}
     >
       <span className="min-w-0">
-        <span className="font-semibold text-label">Sleep</span> {formatTime(iso(night.start))} to{" "}
+        <span className="font-semibold text-label">{name}</span> {formatTime(iso(night.start))} to{" "}
         {formatTime(iso(night.end))}
-        <span className="sr-only">, {tonight ? "tonight" : "last night"}</span>
+        <span className="sr-only">
+          , {tonight ? "the night after this day" : "last night"}. Show the stages
+        </span>
       </span>
       <span className="shrink-0 text-right">
         <b className="font-semibold text-label">{hm(night.minutes)}</b>
         {verdict ? `, ${verdict.replace(/ (of )?your goal$/, "")}` : ""}
       </span>
+    </button>
+  );
+}
+
+// Stage fills, deepest darkest and all grey: pink is goal time only. Awake is the bare sleep dots.
+const STAGE_FILL: Record<keyof SleepStages, string> = {
+  deep: "bg-label",
+  core: "bg-label-2",
+  rem: "bg-context",
+  awake: "dots bg-fill shadow-[inset_0_0_0_1px_var(--m-separator)]",
+};
+
+/**
+ * The night's stages as one continuous bar (awake, REM, core, deep) on the same scale as the Sleep
+ * goal. The dashed line sits at awake time plus the goal, so it measures only the asleep stages:
+ * the gap between the bar's end and the line is exactly the time short of the goal.
+ */
+function StageBar({ stages, goal }: { stages: SleepStages; goal: number | null }) {
+  const parts = stageParts(stages);
+  const awake = parts.find((p) => p.key === "awake")?.minutes ?? 0;
+  const total = parts.reduce((n, p) => n + p.minutes, 0);
+  const asleep = total - awake;
+  const line = goal ? awake + goal : 0;
+  const scale = Math.max(total, line) || 1;
+  const pct = (m: number) => `${(m / scale) * 100}%`;
+  return (
+    <div className="mt-4">
+      <div
+        role="img"
+        aria-label={parts.map((p) => `${p.name} ${minutesPhrase(p.minutes)}`).join(", ")}
+        className="relative h-6"
+      >
+        <div className="absolute inset-y-0 left-0 flex gap-px" style={{ width: pct(total) }}>
+          {parts.map((p) => (
+            <span
+              key={p.key}
+              className={`h-full min-w-[3px] first:rounded-l-block last:rounded-r-block ${STAGE_FILL[p.key]}`}
+              style={{ flexGrow: p.minutes, flexBasis: 0 }}
+            />
+          ))}
+        </div>
+        {goal ? (
+          <span
+            aria-hidden="true"
+            className="absolute -top-1 -bottom-1 border-l-[1.5px] border-dashed border-label"
+            style={{ left: `calc(${pct(line)} - 1.5px)` }}
+          />
+        ) : null}
+      </div>
+      {goal ? (
+        <p className="mt-2 text-caption font-medium text-label-2">
+          {hm(asleep)} asleep against a goal of {hm(goal)}, the dashed line. Awake time stays out.
+        </p>
+      ) : null}
+      <ul className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2">
+        {parts.map((p) => (
+          <li key={p.key} className="flex items-center gap-2 text-subhead">
+            <span
+              aria-hidden="true"
+              className={`inline-block size-3 shrink-0 rounded-[3px] ${STAGE_FILL[p.key]}`}
+            />
+            <span className="text-label-2">{p.name}</span>
+            <span className="ml-auto font-semibold">{hm(p.minutes)}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** One night: the stages, bedtime and wake, the Sleep goal, and the heart around it. */
+function NightDetail({ night: n, goal, tonight }: { night: Night; goal: number | null; tonight: boolean }) {
+  const verdict = sleepAgainstGoal(n.minutes, goal);
+  return (
+    <div className="tnum">
+      <p className="text-footnote font-semibold text-label-2">
+        {tonight ? "The night after this day" : "Last night"}, from the watch
+      </p>
+      <h3 className="mt-0.5 text-title3 font-bold">
+        {hm(n.minutes)} asleep{verdict ? `, ${verdict}` : ""}
+      </h3>
+      {n.stages ? <StageBar stages={n.stages} goal={goal} /> : null}
+      <dl className="mt-3">
+        <Row label="Bedtime">{formatTime(iso(n.start))}</Row>
+        <Row label="Woke">{formatTime(iso(n.end))}</Row>
+        <Row label="Sleep goal">{goal ? hm(goal) : "None set"}</Row>
+        {n.restingHr !== undefined ? <Row label="Resting heart rate">{n.restingHr} bpm</Row> : null}
+        {n.hrv !== undefined ? <Row label="HRV">{n.hrv} ms</Row> : null}
+      </dl>
+    </div>
+  );
+}
+
+function NapDetail({ nap }: { nap: Nap }) {
+  return (
+    <div className="tnum">
+      <p className="text-footnote font-semibold text-label-2">Nap, from the watch</p>
+      <h3 className="mt-0.5 text-title3 font-bold">{minutesPhrase(nap.minutes)}</h3>
+      <dl className="mt-3">
+        <Row label="When">{span(nap.start, nap.end)}</Row>
+        <Row label="Sleep goal">Naps stay out of it</Row>
+      </dl>
     </div>
   );
 }

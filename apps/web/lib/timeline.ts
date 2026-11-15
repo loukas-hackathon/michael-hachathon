@@ -1,4 +1,12 @@
-import type { Event } from "@michael/shared";
+import {
+  type AppCategory,
+  bundleIdForAppName,
+  type CategoryRole,
+  categoriseEvent,
+  categoryRole,
+  type Event,
+  isBrowser,
+} from "@michael/shared";
 import { type DayHealth, healthOf } from "./health";
 import { driveFromEvent } from "./travel";
 
@@ -49,6 +57,11 @@ export type Plan = {
   removable?: boolean;
   /** Where the event lives in Google Calendar, for the read only "Open in Google Calendar". */
   htmlLink?: string;
+  /**
+   * The goal block this plan is in the score (#317), when it is one: its goal, the minutes no data
+   * proves yet, and the user's word on it. A past one with unconfirmed minutes offers Did it / Didn't.
+   */
+  goal?: { title: string; unverified: number; settled: "did" | "didnt" | null };
 };
 
 export type Segment =
@@ -77,70 +90,26 @@ export type TimelineDay = {
   plans?: Plan[];
   phone: Mark[];
   ai: Mark[];
+  /** Done time the user logged (#317), drawn as goal time. */
+  logged?: Mark[];
   segments: Segment[];
-  /** The Apple Watch: last night, tonight, workouts and heart rate per hour. */
+  /** The Apple Watch: last night, tonight, naps, workouts and heart rate per hour (lib/health.ts). */
   health?: DayHealth;
   totals: { workMinutes: number; lostMinutes: number; phoneSessions: number; phoneMinutes: number };
 };
 
 const MIN = 60_000;
 
-const WORK_APPS = new Set([
-  "VS Code",
-  "Cursor",
-  "Xcode",
-  "Terminal",
-  "iTerm",
-  "Claude",
-  "Notion",
-  "Word",
-  "Excel",
-  "PowerPoint",
-  "Pages",
-  "Numbers",
-  "Keynote",
-  "Figma",
-  "Linear",
-]);
-const MESSAGE_APPS = new Set([
-  "WhatsApp",
-  "WhatsApp Business",
-  "Telegram",
-  "Viber",
-  "Messages",
-  "Messenger",
-  "Mail",
-  "Outlook",
-  "Gmail",
-  "Slack",
-  "Discord",
-]);
-const SOCIAL_APPS = new Set([
-  "Instagram",
-  "Facebook",
-  "TikTok",
-  "YouTube",
-  "Netflix",
-  "LinkedIn",
-  "X",
-  "Reddit",
-]);
-const BROWSERS = new Set(["Chrome", "Safari", "Arc", "Brave Browser", "Browser", "Firefox"]);
+// Colours come from the one categoriser (packages/shared/src/categories.ts) and the role of each
+// category, the same rule the score and the patterns use: work and AI are work, messages, social,
+// video, news, shopping and travel are lost, music, the system and anything unknown are other.
+const KIND_OF_ROLE: Record<CategoryRole, Kind> = { work: "work", distractor: "lost", neutral: "other" };
+const kindOf = (category: AppCategory): Kind => KIND_OF_ROLE[categoryRole(category)];
 
-const WEB_KIND: Record<string, Kind> = {
-  ai: "work",
-  dev: "work",
-  docs: "work",
-  mail: "lost",
-  messaging: "lost",
-  social: "lost",
-  video: "lost",
-  news: "lost",
-  shopping: "lost",
-  travel: "other",
-  search: "other",
-  finance: "other",
-};
+const str = (v: unknown): string | null => (typeof v === "string" && v.length > 0 ? v : null);
+
+/** The app's bundle id, from the event or, failing that, from a well known name. */
+const bundleOf = (e: Event): string | null => str(e.data.bundle_id) ?? bundleIdForAppName(e.title);
 
 const t = (iso: string) => new Date(iso).getTime();
 
@@ -159,14 +128,12 @@ function browserKind(s: { start: number; end: number }, visits: Event[]): { kind
       best = v;
     }
   }
-  const cat = best ? String(best.data.category ?? "") : "";
-  return { kind: WEB_KIND[cat] ?? "other", what: best?.title ?? "Chrome" };
+  const category = best ? (categoriseEvent(best) ?? "other") : "other";
+  return { kind: kindOf(category), what: best?.title ?? "Chrome" };
 }
 
-function classify(app: string): Kind {
-  if (WORK_APPS.has(app)) return "work";
-  if (MESSAGE_APPS.has(app) || SOCIAL_APPS.has(app)) return "lost";
-  return "other";
+function classify(e: Event): Kind {
+  return kindOf(categoriseEvent(e) ?? "other");
 }
 
 function topApps(apps: Map<string, number>, n = 2) {
@@ -232,7 +199,8 @@ export function buildTimeline(
     if (e.source !== "macos_usage" || e.type !== "app_usage" || !e.end_at) continue;
     const [s, en] = clip(t(e.start_at), t(e.end_at));
     if (en - s < 5_000) continue;
-    if (BROWSERS.has(e.title)) {
+    const bundle = bundleOf(e);
+    if (bundle && isBrowser(bundle)) {
       const k = browserKind({ start: s, end: en }, visits);
       sessions.push({
         start: s,
@@ -242,7 +210,7 @@ export function buildTimeline(
         what: k.kind === "lost" ? k.what : e.title,
       });
     } else {
-      sessions.push({ start: s, end: en, app: e.title, kind: classify(e.title), what: e.title });
+      sessions.push({ start: s, end: en, app: e.title, kind: classify(e), what: e.title });
     }
   }
   sessions.sort((a, b) => a.start - b.start);
@@ -326,6 +294,8 @@ export function buildTimeline(
       .sort((a, b) => a.start - b.start);
   const phone = marks((e) => e.source === "iphone_usage" && e.type === "app_usage");
   const ai = marks((e) => e.type === "ai_session");
+  // Done time the user logged (#317): goal time, drawn pink like a workout.
+  const logged = marks((e) => e.source === "manual" && e.type === "focus_session" && e.data.log === "done");
   const plans = plansOf(events, dayStart, dayEnd, now);
   const health = healthOf(events, dayStart, dayEnd);
 
@@ -347,11 +317,13 @@ export function buildTimeline(
     .filter((d) => d.end > d.start);
 
   // 6. Quiet stretches of 90 minutes or more (no Mac block, no phone session, nothing planned, no
-  // workout, no drive) collapse to one row.
+  // workout, no nap, no drive) collapse to one row.
   const busy = [
     ...blocks.map((b) => [b.start, b.end] as const),
     ...health.workouts.map((w) => [Math.max(w.start, dayStart), Math.min(w.end, dayEnd)] as const),
+    ...health.naps.map((n) => [n.start, Math.min(n.end, dayEnd)] as const),
     ...phone.map((p) => [p.start, p.end] as const),
+    ...logged.map((l) => [l.start, l.end] as const),
     ...plans.map((p) => [p.start, p.end] as const),
     ...drives.map((d) => [d.start, d.end] as const),
   ];
@@ -404,6 +376,7 @@ export function buildTimeline(
     plans,
     phone,
     ai,
+    logged,
     segments,
     health,
     totals: { workMinutes, lostMinutes, phoneSessions: phone.length, phoneMinutes },

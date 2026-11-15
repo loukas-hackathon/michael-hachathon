@@ -67,6 +67,9 @@ const Env = z.object({
   ELEVENLABS_API_KEY: z.string().optional(),
   // "George": warm, calm, middle aged British male from the ElevenLabs default voices.
   ELEVENLABS_VOICE_ID: z.string().default("JBFqnCBsd6RMkjVDRZzb"),
+  // Built-in voice used when ElevenLabs refuses the chosen one (401/402: a Voice Library voice on
+  // the free plan). Default "George", which every plan can use.
+  ELEVENLABS_FALLBACK_VOICE_ID: z.string().default("JBFqnCBsd6RMkjVDRZzb"),
   ELEVENLABS_MODEL: z.string().default("eleven_flash_v2_5"),
 });
 

@@ -44,8 +44,19 @@ test("morning is due after the night's sleep ends, else from 08:00, and not afte
   assert.equal(momentDue(input("07:50")), null);
   assert.equal(momentDue(input("08:00")), "morning");
   assert.equal(momentDue(input("12:30")), null);
-  // A nap is not the night's sleep.
-  assert.equal(momentDue(input("07:00", [sleep(at("05:00"), at("06:30"))])), null);
+  // A short night is still the night (the nap rule, packages/shared/src/sleep.ts): 05:00 to 06:30.
+  assert.equal(momentDue(input("07:00", [sleep(at("05:00"), at("06:30"))])), "morning");
+});
+
+test("a nap never wakes the Morning moment or teaches the usual bedtime", () => {
+  // Woke at 06:40 after midnight; a nap from 09:00 to 10:30 changes nothing.
+  const night = sleep(at("00:30"), at("06:40"));
+  const nap = sleep(at("09:00"), at("10:30"));
+  assert.equal(momentDue(input("06:45", [night, nap])), "morning");
+  // Three late nights plus three afternoon naps at 15:00: the bedtime stays 00:30, not 15:00.
+  const naps = ["2026-11-08", "2026-11-09", "2026-11-10"].map((d) => sleep(at("15:00", d), at("15:40", d)));
+  assert.equal(momentDue(input("21:10", [...lateNights, ...naps])), null);
+  assert.equal(momentDue(input("21:15", [...lateNights, ...naps])), "evening");
 });
 
 test("evening is due an hour before the usual bedtime, else 21:00, always before quiet hours", () => {
