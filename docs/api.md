@@ -26,9 +26,9 @@ returns `501 not_implemented`, `planned` = not routed yet. Update the status whe
     account's own), and only these writes are allowed: `POST /v1/chat`, `/v1/chat/stream`,
     `POST /v1/chat/threads`, `PATCH|DELETE /v1/chat/threads/:id` (their own threads),
     `/v1/recommendations/:id/execute|undo`, `PATCH /v1/recommendations/:id`, `POST /v1/analysis/run`,
-    `/v1/travel/plan`, `/v1/focus-guards/suggest`, `/v1/voice/speak`, `/v1/records/:id/announced`, `POST|DELETE /v1/push/subscriptions`, `POST /v1/nudges/test` and
-    `POST /v1/connect/requests/:id`. Anything else that writes (privacy, goals, instructions,
-    places, profile, integrations, Telegram, agents, keys, data deletion, ingest, `/mcp`) answers
+    `/v1/travel/plan`, `/v1/focus-guards/suggest`, `/v1/voice/speak`, `/v1/records/:id/announced`, `POST|DELETE /v1/push/subscriptions`, `POST /v1/nudges/test`, the daily ritual (`POST /v1/ritual/morning|evening`, `/v1/ritual/:kind/skip`) and done time (`POST /v1/log`, `/v1/log/block`, `DELETE /v1/log/:id`), which the reseed puts back to the plan.
+    Anything else that writes (privacy, goals, instructions, places, profile, integrations,
+    Telegram, agents, connecting an agent, keys, data deletion, ingest, `/mcp`) answers
     `403 forbidden` with the message "This is the demo week. Sign in with Google to make it yours."
     and `details: { demo: true }`. A malformed visitor id is `401`. MCP OAuth tokens bound to the
     demo account and the bare `API_KEY` keep full access.
@@ -71,7 +71,7 @@ Enums:
 - `GoalKind`: `time | target | count | checklist` (in `goal.target.kind`; `time` when absent)
 - `InstructionKind`: `clear_day | home_by | quiet_hours | custom`
 - `RecommendationStatus`: `proposed | accepted | dismissed | done | undone` (`done` = action executed)
-- `ActionKind`: `move_calendar_block | move_calendar_blocks | create_focus_block | block_mac_app | draft_follow_up | reminder | change_goal | plan_change | remove_calendar_block`
+- `ActionKind`: `move_calendar_block | move_calendar_blocks | create_focus_block | block_mac_app | draft_follow_up | reminder | change_goal | plan_change | remove_calendar_block | log_time | settle_block`
 - `AnalysisStatus`: `queued | running | succeeded | failed`
 - `AnalysisTrigger`: `manual | scheduled | mcp | morning | evening`
 - `AgentScope`: `timeline | goals | recommendations | score | write_events`
@@ -1382,6 +1382,19 @@ refused before anything is stored; a proposal the user dismissed in the last 7 d
 goals or blocks is refused, so Michael does not repeat it that week. The recommendation is the
 record of who changed the goal (chat) and why (`rationale`).
 
+**Chat writes everything the user can (#317).** "I took a bath for 40 minutes at 13:00" is logged,
+never explained away. More tools, each through the same function as its REST route:
+`log_done { goal_id? | goal?, minutes?, start_at?, end_at?, note? }` and `confirm_block { event_id,
+did, minutes?, reason? }` (see Done time), `add_goal`, `update_goal { goal_id, weekly_budget_minutes?,
+active?, title?, description? }` (a budget or a pause is a `change_goal` recommendation carried out at
+once, undoable for a week), `add_checklist_item`, `update_checklist_item { item_id, status?, text? }`,
+`add_instruction`, `update_instruction { instruction_id, active?, text?, ... }`, `save_place { key,
+label?, address }` (the other places stay) and `update_profile` (quiet hours, work hours, work and
+gym days, fixed titles). Deleting data, a goal, an instruction or a place, disconnecting and revoking
+stay in the app. The context gives ids for past own blocks (marked unconfirmed or settled), today's
+checklist items and the active instructions. After `log_done` the reply is one line with the new
+maths and "Undo" ("Logged. Everything bath 40 of 60 min this week. Undo"); the chip under it undoes.
+
 **Check in in chat (#187).** The context lists the user's check in answers from the last 7 days
 ("What you told me", quoted, never invented) and today's open questions with their ids, and a tool
 `answer_check_in { check_in_id, value }` keeps an answer the user types in the chat (same rules as
@@ -2248,7 +2261,8 @@ type AgentQuery = {
 - Scope per tool: `get_timeline`, `get_patterns` = `timeline`; `get_goals`, `add_goal`,
   `update_goal`, `propose_goals`, `get_checklist`, `add_checklist_item`, `set_day_outcomes`, `log_day` = `goals`; `list_recommendations`, `update_recommendation`, `get_nudges`,
   `list_drafts`, `draft_follow_up` = `recommendations`; `get_score`, `get_records`, `get_moments` = `score`; `add_event`, `execute_recommendation`,
-  `undo_recommendation`, `create_focus_block`, `block_mac_app`, `plan_travel` = `write_events`;
+  `undo_recommendation`, `create_focus_block`, `block_mac_app`, `plan_travel`, `log_done`,
+  `confirm_block` = `write_events`;
   `suggest_app_mute` = `recommendations`; `get_memories` = `timeline`; `remember` = `write_events`.
   Memories are events of type `memory` (source `manual` from chat, `agent` from MCP); Michael's
   chat reads the newest 40 into every answer and keeps new ones with its own `remember` and
@@ -2256,7 +2270,7 @@ type AgentQuery = {
   list needs `timeline` if it is read only, else `write_events` (`apps/api/src/mcp-guard.ts`).
 - `queries`: `from` defaults to local midnight today (Europe/Athens), `to` to now; newest first,
   at most 500.
-- A change an agent made (`execute_recommendation`, `create_focus_block`, `block_mac_app`) carries
+- A change an agent made (`execute_recommendation`, `create_focus_block`, `block_mac_app`, `log_done`, `confirm_block`) carries
   `recommendation_id`. `undo_until` is set while that change can still be undone (the
   recommendation is `done` and its block has not started; a mute: has not ended), else `null`. The
   Agents screen shows Undo next to the line and calls `POST /v1/recommendations/:id/undo`.
@@ -2393,6 +2407,45 @@ type TelegramLinkResponse = { url: string };
   (https only; a repeat is a no-op). The bot username comes from `TELEGRAM_BOT_USERNAME`, else
   from `getMe`.
 
+### Done time (#317)
+
+Saying "I did x" is one call. The user's own word becomes a manual event (source `manual`) that the
+score counts as confirmed goal time (Score, the attribution rule). Rules in `apps/api/src/actions/log.ts`;
+the chat's `log_done` and `confirm_block` and the MCP tools of the same names call the same functions.
+
+| Method | Path            | Body                                                                        | Response                                    | Status |
+| ------ | --------------- | --------------------------------------------------------------------------- | ------------------------------------------- | ------ |
+| POST   | `/v1/log`       | `LogTimeInput` `{ goal_id? \| goal?, minutes?, start_at?, end_at?, note? }` | `201 LogTimeResponse`; `400`, `404`, `409`  | live   |
+| POST   | `/v1/log/block` | `SettleBlockInput` `{ event_id, did, minutes?, reason? }`                   | `201 LogTimeResponse`; `400`, `404`, `409`  | live   |
+| DELETE | `/v1/log/:id`   |                                                                             | `200 Recommendation` (undone); `404`, `409` | live   |
+
+```ts
+type LogTimeResponse = {
+  entry: Event; // the manual entry
+  recommendation: Recommendation; // kind log_time or settle_block, status done; undo it to take the entry back
+  goal: { goal_id; title; spent_minutes; budget_minutes }; // the goal's week after it (a count goal: done of per_week)
+  message: string; // "Logged. Everything bath 40 of 60 min this week."
+};
+```
+
+- **The goal** by `goal_id`, or by `goal`, the user's words, matched on the server among active time
+  and count goals: the same title, then a title holding the words (or held by them), then calendar
+  titles, then any word of three letters or more. Two candidates at the same step are a `400` that
+  names both ("could be Reading or Reading club"); none is a `404` that lists the goals.
+- **The time:** `start_at` and `end_at`; or `minutes` from `start_at`; or `minutes` up to `end_at`;
+  or `minutes` alone, ending now. Past only: an end after now is a `409` ("That has not happened
+  yet"); a start more than 14 days back is a `409`.
+- **Entries:** done time is type `focus_session` with `data { log: "done", goal_id, note,
+  recommendation_id }`. Did it adds `event_id` (the block) and runs from the block's start for
+  `minutes` (default all of it that has passed). Didn't is type `note` over the block with `data
+  { log: "didnt", goal_id, event_id, reason }`.
+- **A block** is settled only when it is the user's own goal block (an event with other people is
+  never goal time: `409`), has started (`409`), matches an active time goal (`400` otherwise), and is
+  not settled yet (`409`: undo the first answer to change it).
+- **Undo:** every entry is held by a recommendation (`source: "chat"`, carried out at once) and can
+  be taken back for 24 hours with `POST /v1/recommendations/:id/undo` or `DELETE /v1/log/:id`.
+  Undo removes the entry and nothing else. The analysis never makes these kinds.
+
 ### Score
 
 | Method | Path                                  | Response    | Status |
@@ -2511,7 +2564,7 @@ type ScoreBlock = ScoreTotals & {
   goal_id: string;
   goal_title: string;
   title: string; // the calendar event's own title
-  matched_by: "goal_id" | "calendar_titles" | "goal_category" | "goal_title" | "category_word";
+  matched_by: "goal_id" | "calendar_titles" | "goal_category" | "goal_title" | "category_word" | "logged"; // logged: done time the user logged (#317)
   start_at: string;
   end_at: string;
   // The longest_block record set in this block (not a baseline): the tape draws the mark at its
@@ -2531,6 +2584,7 @@ type ScoreBlock = ScoreTotals & {
   // clear Sunday), less those whose `exceptions` name the block. Empty when it breaks none. It
   // never changes the block's minutes.
   instructions_broken: string[];
+  settled?: "did" | "didnt"; // the user's word on a past block (#317); absent while unsettled
 };
 ```
 
@@ -2575,6 +2629,19 @@ Stated here and at the top of `apps/api/src/score/score.ts`; the two change toge
   the gym or studying on paper leaves no trace on a screen, and a coach who calls a real session
   "missed" loses trust. The price: a skipped session also scores as spent until a watch or a check
   in says otherwise. `unverified_minutes` shows how much of the score rests on that.
+- **The user's word settles what the data cannot (#317).** It beats the devices. Shapes in
+  `apps/api/src/score/logged.ts`; written by `POST /v1/log`, `POST /v1/log/block`, the chat and MCP.
+  - **Logged:** done time the user reported ("a bath, 40 minutes, at 13:00"), past only. Inside a
+    block of the same goal it confirms that time: verified and never lost, so the block becomes
+    confirmed instead of the minutes counting twice. The part outside every block of its goal is
+    goal time of its own: a block in `day.blocks` with `matched_by: "logged"` (`event_id` is the
+    entry, `title` its note or the goal) whose minutes are planned, elapsed, spent and verified.
+  - **Did it:** a past block settled with some of its minutes from its start: those are verified,
+    the rest of its elapsed time is lost. All of it: the whole block is verified.
+  - **Didn't:** a past block settled as not done: all of its elapsed time is lost.
+  - A settled block carries `settled: "did" | "didnt"` (absent while unsettled); a logged block
+    reads `"did"`. Logged blocks stay out of time won back and the records, which rest on the data
+    alone. A logged entry for a count goal is one occurrence of it, like a check in "yes".
 - **Sleep is outside the score.** It is a goal of kind `target` (an older goal of category `rest`
   with a `sleep` or `bed` key in its target, or the word in its title, reads as one). It is listed
   in `goals` with its budget and `scored: false`. It has no blocks and takes no part in any total;
@@ -2791,7 +2858,9 @@ touched; days that leave the window are removed. The API refreshes the week on d
 most every 5 minutes (the first refresh after a deploy resets the goals to the Build Hub plan,
 later ones keep edits; `DEMO_WEEK=off` turns it off). `POST /v1/demo/reseed` also resets the goals.
 Any other account gets `403 forbidden`. The reseed (and the first refresh after a deploy) also
-deletes all demo visitor chat and turns off the record off; every refresh deletes visitor chat
+deletes all demo visitor chat, turns off the record off, removes goals that are not in the plan
+clears the week's ritual and every logged entry that is not the demo week's own (the plan's ritual is written again), and replaces the standing instructions with the plan's (`demoInstructions`: only "Nothing between
+23:00 and 07:00", so a Saturday or Sunday evening stays bookable for the live demo); every refresh deletes visitor chat
 older than a day. Off the record, nothing changes. Per source switches are
 not applied: on the demo account they keep real collectors out (#114). From a terminal:
 `pnpm --filter @michael/api seed:demo` (or `--dry` to print the week without a database).
@@ -2895,6 +2964,8 @@ offset. A refused or failed call returns `isError: true` with one plain sentence
 | `undo_recommendation`    | `write_events`    | `{ id }`                                                                                | `{ recommendation }`                                                                       |
 | `create_focus_block`     | `write_events`    | `{ start: TimeInput, end: TimeInput, title?, goal_id? }`                                | `{ recommendation, undo_until }`                                                           |
 | `block_mac_app`          | `write_events`    | `{ apps: string[], start?: TimeInput, end: TimeInput, goal_id? }` (start default now)   | `{ recommendation, undo_until }`                                                           |
+| `log_done`               | `write_events`    | `{ goal_id? \| goal?, minutes?, start?: TimeInput, end?: TimeInput, note? }`            | `LogTimeResponse` (see Done time)                                                          |
+| `confirm_block`          | `write_events`    | `{ event_id, did: boolean, minutes?, reason? }`                                         | `LogTimeResponse`                                                                          |
 | `suggest_app_mute`       | `recommendations` | `{}`                                                                                    | `{ recommendation }` or `{}` when nothing stands out                                       |
 | `plan_travel`            | `write_events`    | `{ from?, to? }` (default today)                                                        | `TravelPlanResult` (see Places and travel)                                                 |
 | `list_drafts`            | `recommendations` | `{ status?: DraftStatus }` (default proposed)                                           | `{ drafts: Draft[] }`                                                                      |

@@ -45,6 +45,9 @@ export const TOOL_SCOPE: Record<string, AgentScope> = {
   get_memories: "timeline",
   remember: "write_events",
   answer_check_in: "timeline",
+  // Done time and settled blocks (#317) change the timeline and the score: the same scope as add_event.
+  log_done: "write_events",
+  confirm_block: "write_events",
 };
 
 type ToolConfig = { title?: string; inputSchema?: unknown; annotations?: { readOnlyHint?: boolean } };
@@ -89,6 +92,12 @@ export function summarise(name: string, title: string | undefined, input: unknow
       return "Read your check in";
     case "answer_check_in":
       return "Kept an answer to your check in";
+    case "log_done": {
+      const what = typeof a.goal === "string" ? a.goal.slice(0, 60) : "a goal";
+      return typeof a.minutes === "number" ? `Logged ${a.minutes} min of ${what}` : `Logged time for ${what}`;
+    }
+    case "confirm_block":
+      return a.did === false ? "Marked a block as not done" : "Confirmed a block you did";
     case "get_goals":
       return "Read your goals";
     case "get_instructions":
@@ -170,7 +179,13 @@ const SCOPE_WORDS: Record<AgentScope, string> = {
 type Callback = (...args: unknown[]) => unknown;
 
 /** Tools whose change the user can undo from the Agents screen. */
-export const UNDOABLE_TOOLS = new Set(["execute_recommendation", "create_focus_block", "block_mac_app"]);
+export const UNDOABLE_TOOLS = new Set([
+  "execute_recommendation",
+  "create_focus_block",
+  "block_mac_app",
+  "log_done",
+  "confirm_block",
+]);
 
 /** The recommendation an undoable tool's successful result carries, if any. */
 export function changedRecommendation(name: string, result: unknown): string | null {

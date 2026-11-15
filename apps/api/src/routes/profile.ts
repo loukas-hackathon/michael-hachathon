@@ -15,12 +15,15 @@ export async function readProfile(): Promise<Profile> {
   return Profile.parse(out);
 }
 
+/** A partial update (PUT /v1/profile, and Michael's update_profile in chat); the whole profile back. */
+export async function updateProfile(raw: unknown): Promise<Profile> {
+  const patch = parse(ProfileUpdate, raw);
+  const defined = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined));
+  const next: Profile = { ...(await readProfile()), ...defined, updated_at: new Date().toISOString() };
+  return store.saveProfile(next);
+}
+
 // Onboarding answers (docs/api.md, Profile). PUT takes a partial update and returns the whole profile.
 export const profile = new Hono()
   .get("/profile", async (c) => c.json(await readProfile()))
-  .put("/profile", async (c) => {
-    const patch = parse(ProfileUpdate, await jsonBody(c));
-    const defined = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined));
-    const next: Profile = { ...(await readProfile()), ...defined, updated_at: new Date().toISOString() };
-    return c.json(await store.saveProfile(next));
-  });
+  .put("/profile", async (c) => c.json(await updateProfile(await jsonBody(c))));

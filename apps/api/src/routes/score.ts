@@ -31,7 +31,18 @@ import { store } from "../store";
 
 // What the score is built from: the plan (calendar), proof of training (workouts), sleep (outside
 // the score, for the week's nights) and the device events the single line of attention is made of.
-const TYPES: EventType[] = ["calendar_event", "workout", "sleep", "app_usage", "web_visit", "screen"];
+// Plus the user's own word (#317): logged done time (focus_session) and blocks settled as not done
+// (note), both source manual (score/logged.ts).
+const TYPES: EventType[] = [
+  "calendar_event",
+  "workout",
+  "sleep",
+  "app_usage",
+  "web_visit",
+  "screen",
+  "focus_session",
+  "note",
+];
 const WEEK_MS = 7 * 24 * 3600_000;
 export interface Week {
   score: Score;

@@ -1,5 +1,5 @@
 import "server-only";
-import { type Event, EventType, type Goal, type TimelineResponse } from "@michael/shared";
+import { type Event, EventType, type Goal, type Score, type TimelineResponse } from "@michael/shared";
 import { get } from "./api";
 import { addDays, athensDay, dayBounds, isLocalDay, weekOf } from "./athens";
 import { DATES_WITH_DATA, getTimelineDay, longestFrom, type Patterns } from "./days";
@@ -7,7 +7,7 @@ import { devLatency } from "./dev-latency";
 import { getGoogleCalendar } from "./integrations";
 import { USE_MOCKS } from "./mode";
 import { sleepGoalMinutes } from "./sleep-goal";
-import { buildTimeline, type TimelineDay } from "./timeline";
+import { buildTimeline, type Plan, type TimelineDay } from "./timeline";
 
 // Loads the Timeline screen for one Athens day: the day itself from GET /v1/timeline, the longest
 // unbroken stretch from GET /v1/patterns, and which days of that week have anything recorded.
@@ -68,7 +68,13 @@ export async function loadTimeline(asked?: string, demo?: string): Promise<Timel
   const weekStart = dayBounds(week[0] as string).start;
   const weekEnd = dayBounds(week[6] as string).end;
 
-  const [timeline, patterns, light, goals, nextMorning] = await Promise.all([
+  // The score's blocks of the day (#317): which plans are goal blocks, and which of those the user
+  // can still confirm. Only for days that have started; best effort.
+  const score =
+    date <= today
+      ? get<Score>(`/v1/score?${new URLSearchParams({ date })}`).catch(() => null)
+      : Promise.resolve(null);
+  const [timeline, patterns, light, goals, nextMorning, scored] = await Promise.all([
     get<TimelineResponse>(`/v1/timeline?${new URLSearchParams({ from: iso(start), to: iso(end) })}`),
     get<Patterns>(`/v1/patterns?${new URLSearchParams({ from: iso(start), to: iso(end) })}`).catch(
       () => ({}) as Patterns,
@@ -80,6 +86,7 @@ export async function loadTimeline(asked?: string, demo?: string): Promise<Timel
     get<TimelineResponse>(
       `/v1/timeline?${new URLSearchParams({ from: iso(end), to: iso(end + NEXT_MORNING), type: "sleep,biometric" })}`,
     ).catch(() => ({ events: [] as Event[] })),
+    score,
   ]);
 
   const events = timeline.events;
@@ -102,17 +109,38 @@ export async function loadTimeline(asked?: string, demo?: string): Promise<Timel
     calendarConnected = calendar ? calendar.status === "connected" : null;
   }
 
+  const day = events.length > 0 ? buildTimeline(date, withNight, start, end, Date.now()) : null;
+  if (day?.plans && scored) day.plans = withGoals(day.plans, scored);
+
   return {
     date,
     today,
     source: "live",
-    day: events.length > 0 ? buildTimeline(date, withNight, start, end, Date.now()) : null,
+    day,
     longestUninterrupted: longestFrom(patterns),
     available,
     latest,
     calendarConnected,
     sleepGoal: sleepGoalMinutes(goals.goals),
   };
+}
+
+/** Each plan that is a goal block in the score carries its goal, unconfirmed minutes and the user's word. */
+export function withGoals(plans: Plan[], score: Pick<Score, "day">): Plan[] {
+  const blocks = new Map<string, { title: string; unverified: number; settled: "did" | "didnt" | null }>();
+  for (const b of score.day.blocks) {
+    if (b.matched_by === "logged") continue;
+    const seen = blocks.get(b.event_id);
+    blocks.set(b.event_id, {
+      title: b.goal_title,
+      unverified: (seen?.unverified ?? 0) + b.unverified_minutes,
+      settled: b.settled ?? null,
+    });
+  }
+  return plans.map((p) => {
+    const goal = p.id ? blocks.get(p.id) : undefined;
+    return goal ? { ...p, goal } : p;
+  });
 }
 
 function loadSample(asked?: string): TimelineScreen {
