@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { weekOf } from "@/lib/athens";
+import { formatDay } from "@/lib/format";
 
 const LETTERS = ["M", "T", "W", "T", "F", "S", "S"];
 
@@ -39,12 +40,21 @@ export function WeekStrip({
               : has
                 ? "font-semibold text-label"
                 : "text-label-2 opacity-50";
+        // VoiceOver reads "Friday 13 November", not "F 13".
+        const name = formatDay(`${day}T12:00:00+02:00`);
         const inner = (
           <>
-            <span className={`text-caption font-semibold ${isToday ? "text-tint-text" : "text-label-2"}`}>
+            <span className="sr-only">{has || isToday ? name : `${name}, nothing recorded`}</span>
+            <span
+              aria-hidden="true"
+              className={`text-caption font-semibold ${isToday ? "text-tint-text" : "text-label-2"}`}
+            >
               {LETTERS[i]}
             </span>
-            <span className={`grid size-[34px] place-items-center rounded-full text-body tnum ${circle}`}>
+            <span
+              aria-hidden="true"
+              className={`grid size-[34px] place-items-center rounded-full text-body tnum ${circle}`}
+            >
               {n}
             </span>
             <span

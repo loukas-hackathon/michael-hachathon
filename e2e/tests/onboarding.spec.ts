@@ -51,7 +51,7 @@ test("onboarding completes for a fresh user", async ({ page, context, baseURL })
   await page.goto("/you");
   await tap(page.getByRole("button", { name: "Add: Keep Sundays clear" }));
   await expect(page.getByRole("button", { name: "Add: Keep Sundays clear" })).toHaveCount(0);
-  await expect(page.getByRole("checkbox", { name: "Keep Sundays clear: on" })).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: "Keep Sundays clear" })).toBeChecked();
 });
 
 // Redo setup on the demo week: the visitor walks both screens; nothing is written (#239).

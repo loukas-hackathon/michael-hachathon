@@ -26,7 +26,7 @@ function SourceSwitch({ source, initial, native }: { source: Source; initial: bo
   return (
     <>
       <label htmlFor={id} className="flex min-h-14 items-center justify-between gap-4 px-4 py-2">
-        <span className="flex flex-col">
+        <span className="flex min-w-0 flex-col">
           <span className="text-body">{name}</span>
           <span className="text-footnote text-label-2">{what}</span>
         </span>

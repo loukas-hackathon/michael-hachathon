@@ -279,7 +279,7 @@ export function PushToTalk({
       // Without voice a tap (a click, so iOS lets the keyboard open) explains what to do instead.
       onClick={supported ? undefined : fallback}
       onContextMenu={(e) => e.preventDefault()}
-      className={`press relative grid h-9 w-9 shrink-0 touch-none select-none place-items-center rounded-full [-webkit-touch-callout:none] disabled:opacity-40 ${
+      className={`hit press relative grid h-9 w-9 shrink-0 touch-none select-none place-items-center rounded-full [-webkit-touch-callout:none] disabled:opacity-40 ${
         listening ? "bg-tint text-on-tint" : "bg-bg text-tint-text"
       } ${supported || dictate ? "" : "opacity-50"}`}
     >

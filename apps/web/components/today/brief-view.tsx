@@ -8,7 +8,7 @@ import { formatTime } from "@/lib/format";
 import { Fold } from "./fold";
 
 const tinted =
-  "press min-h-9 self-start rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-4 text-subhead font-semibold text-tint-text disabled:opacity-60";
+  "hit press min-h-9 self-start rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-4 text-subhead font-semibold text-tint-text disabled:opacity-60";
 
 /**
  * "Ask Michael for a brief", a quiet row on Today: runs the analysis, then shows the summary, his

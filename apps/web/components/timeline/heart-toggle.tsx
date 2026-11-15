@@ -22,7 +22,7 @@ export function HeartToggle({ target, hidden, range }: { target: string; hidden:
       type="button"
       onClick={flip}
       aria-pressed={shown}
-      className={`press inline-flex items-center gap-1.5 ${shown ? "" : "line-through opacity-60"}`}
+      className={`hit press inline-flex items-center gap-1.5 ${shown ? "" : "line-through opacity-60"}`}
     >
       <svg aria-hidden="true" width="16" height="12" viewBox="0 0 16 12" className="text-label-2">
         <polyline
