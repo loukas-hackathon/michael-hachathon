@@ -66,7 +66,9 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
   const daysLeft = 7 - today - 1;
   const ranked = rank(week);
   const top = needsMost(ranked);
-  const need = ranked.reduce((n, r) => n + r.leftMinutes, 0);
+  // The maths names only goals that still need time: a closed goal is no "0 min" row (QA round 3).
+  const open = ranked.filter((r) => r.leftMinutes > 0);
+  const need = open.reduce((n, r) => n + r.leftMinutes, 0);
   const cap = Math.max(60, ...week.goals.flatMap((g) => g.daily.map((m) => m ?? 0)));
   const context = `${formatWeekday(week.now)}. ${daysLeft === 0 ? "Last day" : `${daysLeft} ${daysLeft === 1 ? "day" : "days"} to go`}.`;
   const extras = week.extras ?? [];
@@ -149,14 +151,14 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
                 <h2 className="mb-2 text-title3 font-bold">The maths</h2>
                 <div className="rounded-group bg-fill px-4 pt-3 pb-3.5">
                   <p className="text-subhead">
-                    {ranked.length === 1
-                      ? "This goal needs"
-                      : `${["", "", "These two", "These three", "These four"][ranked.length] ?? `These ${ranked.length}`} need`}{" "}
+                    {open.length === 1
+                      ? `${open[0]?.goal.title} needs`
+                      : `${["", "", "These two", "These three", "These four"][open.length] ?? `These ${open.length}`} need`}{" "}
                     <b className="font-semibold tnum">{hm(need)}</b> more this week. You have{" "}
                     <b className="font-semibold tnum">{hm(week.freeMinutesLeft)}</b> free. Which one gives?
                   </p>
                   <SplitBar
-                    parts={[...ranked]
+                    parts={[...open]
                       .sort((a, b) => b.leftMinutes - a.leftMinutes)
                       .map((r) => ({ title: r.goal.title, minutes: r.leftMinutes }))}
                     freeMinutes={week.freeMinutesLeft}

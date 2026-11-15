@@ -185,7 +185,10 @@ test("log_done and confirm_block need write_events; a logged entry can be undone
   const writer = await connect("Mistral", "timeline write_events");
   const logged = await callTool(writer, "log_done", { goal_id: goal.id, minutes: 40 });
   assert.notEqual(logged.body.result.isError, true, logged.body.result.content?.[0]?.text);
-  assert.match(logged.body.result.content[0].text, /^Logged\. Evening bath \d+ of 60 min this week\./);
+  assert.match(
+    logged.body.result.content[0].text,
+    /^Logged \d+ min\. Evening bath: \d+ of 60 min this week\./,
+  );
   const recId = logged.body.result.structuredContent.recommendation.id;
   const agent = (await listAgents()).find((a) => a.name === "Mistral");
   const line = (await listQueries()).find((q) => q.agent_id === agent?.id && q.tool === "log_done");

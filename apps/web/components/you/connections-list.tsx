@@ -26,7 +26,7 @@ export function ConnectionsList({
   const noMacYet = !demo && (mac?.state === "none" || mac?.state === "optional");
   const sample = (id: string) => demo && DEMO_SAMPLE.has(id);
   const summary = demo
-    ? "The demo week runs on sample data from calendar, Mac, iPhone and watch."
+    ? "The demo week replays calendar, Mac, iPhone and watch data. Your own connections start off."
     : view.connected === 0
       ? "Nothing connected yet."
       : view.connected === total

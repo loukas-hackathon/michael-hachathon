@@ -33,7 +33,9 @@ test("a goal row logs 30 minutes with the maths, and Undo takes it back", async 
   const sheet = page.getByRole("dialog");
   await tap(sheet.getByRole("button", { name: "30 min", exact: true }));
   await tap(sheet.getByRole("button", { name: "Log 30 min" }));
-  await expect(sheet.getByRole("status")).toContainText("Logged. Everything bath 30 of 60 min this week.");
+  await expect(sheet.getByRole("status")).toContainText(
+    "Logged 30 min. Everything bath: 30 of 60 min this week.",
+  );
   // Nothing left to cancel once logged: the sheet closes with Done (QA round 2, #346).
   await expect(sheet.getByRole("button", { name: "Done", exact: true })).toBeVisible();
   await expect(sheet.getByRole("button", { name: "Cancel", exact: true })).toHaveCount(0);

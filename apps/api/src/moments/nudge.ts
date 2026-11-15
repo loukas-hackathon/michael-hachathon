@@ -53,5 +53,10 @@ export function momentNudge(m: MomentCore): { text: string; reason: string } {
   const text =
     options.find(isValidCopy) ??
     (m.kind === "morning" ? "Your morning plan is ready." : "Your evening review is ready.");
-  return { text, reason: reasons.join(" ") };
+  // The reason sits under the line on the stage and the watch: it never says the line again.
+  const reason = reasons
+    .map((r) => (r !== text && r.startsWith(text) ? r.slice(text.length).trim() : r))
+    .filter((r) => r && r !== text)
+    .join(" ");
+  return { text, reason };
 }
