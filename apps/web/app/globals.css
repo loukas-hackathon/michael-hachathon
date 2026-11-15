@@ -544,6 +544,23 @@ body::before {
   }
 }
 
+/* Onboarding (talk.tsx): Michael introduces himself, his words arriving one by one, once, on the
+ * spring. The one orchestrated moment of the first run; the words are in the DOM from the start. */
+@keyframes m-word-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.m-word-in {
+  animation: m-word-in var(--m-dur-spring) var(--m-spring) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .m-word-in {
+    animation: none;
+  }
+}
+
 /* ---------- motion (docs/design-guide.md, "Motion") ---------- */
 
 /* Tab bar: the icon gives under the finger and the newly selected one settles with a small spring. */

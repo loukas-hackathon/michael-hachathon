@@ -52,6 +52,8 @@ type Props = {
   onError: (message: string) => void;
   /** Where the app cannot listen on a phone: open the keyboard so its own mic can dictate. */
   onDictate?: () => void;
+  /** "lg": the onboarding talk's big round button. */
+  size?: "sm" | "lg";
 };
 
 /**
@@ -68,6 +70,7 @@ export function PushToTalk({
   onTranscribingChange,
   onError,
   onDictate,
+  size = "sm",
 }: Props) {
   // The server cannot know; assume the recogniser so the button does not jump in after hydration.
   const mode = useSyncExternalStore<InputMode>(subscribeInputMode, currentInputMode, () => "recognition");
@@ -294,8 +297,12 @@ export function PushToTalk({
       // Without voice a tap (a click, so iOS lets the keyboard open) explains what to do instead.
       onClick={supported ? undefined : fallback}
       onContextMenu={(e) => e.preventDefault()}
-      className={`hit press relative grid h-9 w-9 shrink-0 touch-none select-none place-items-center rounded-full [-webkit-touch-callout:none] disabled:opacity-40 ${
-        listening ? "bg-tint text-on-tint" : "bg-bg text-tint-text"
+      className={`hit press relative grid ${size === "lg" ? "size-[72px]" : "h-9 w-9"} shrink-0 touch-none select-none place-items-center rounded-full [-webkit-touch-callout:none] disabled:opacity-40 ${
+        listening
+          ? "bg-tint text-on-tint"
+          : size === "lg"
+            ? "bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] text-tint-text"
+            : "bg-bg text-tint-text"
       } ${supported || dictate ? "" : "opacity-50"}`}
     >
       {listening ? (
@@ -313,7 +320,7 @@ export function PushToTalk({
           style={{ transform: `scale(${1 + Math.min(level * 6, 0.8)})` }}
         />
       ) : null}
-      <MicIcon className="relative h-5 w-5" />
+      <MicIcon className={`relative ${size === "lg" ? "h-8 w-8" : "h-5 w-5"}`} />
     </button>
   );
 }

@@ -21,6 +21,7 @@ import {
   type GoalSuggestion,
   type GoalSuggestionAccept,
   type GoalUpdate,
+  GoalWordsResponse,
   type LocationSignal,
   type LocationSignalsResponse,
   type LocationStatus,
@@ -380,6 +381,28 @@ export async function getGoalSuggestions(): Promise<GoalSuggestion[]> {
     return (await get<{ suggestions: GoalSuggestion[] }>("/v1/goals/suggestions")).suggestions;
   } catch {
     return [];
+  }
+}
+
+/** Goals heard in the user's own words (onboarding talk). Nothing is saved. Null when the API is down. */
+export async function goalsFromWords(text: string): Promise<GoalWordsResponse | null> {
+  if (USE_MOCKS) return null;
+  try {
+    return GoalWordsResponse.parse(await send<unknown>("POST", "/v1/goals/from-words", { text }));
+  } catch (err) {
+    console.error("goals from words:", err instanceof Error ? err.message : "unknown");
+    return null;
+  }
+}
+
+/** One memory in the user's own words (POST /v1/memories). False when it was not kept. */
+export async function rememberNote(text: string): Promise<boolean> {
+  if (USE_MOCKS) return false;
+  try {
+    await send<unknown>("POST", "/v1/memories", { text });
+    return true;
+  } catch {
+    return false;
   }
 }
 

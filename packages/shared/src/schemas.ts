@@ -717,7 +717,9 @@ export const FocusSession = z.object({
   apps: z.array(z.string()),
   // The log_time recommendation that confirmed the time (undo takes it back for 24 hours).
   log_recommendation_id: z.uuid().nullable(),
-  // Michael's line for the result: "Done. 45 min for University."
+  // Michael's line for the result: "Done. 45 min for University." While active, set only when
+  // Michael started the session himself because a synced goal block began ("Your University block
+  // started. Focus is on until 12:00.").
   message: z.string().nullable(),
   created_at: IsoDateTime,
 });
@@ -1162,6 +1164,75 @@ export const GoalSuggestion = z.object({
   days: z.array(Weekday),
 });
 export type GoalSuggestion = z.infer<typeof GoalSuggestion>;
+
+// ---------- goals from the user's own words (onboarding talk) ----------
+
+// What the user said or typed about their goals, as it came: a voice transcript or a messy note.
+export const GoalWordsRequest = z.object({ text: z.string().trim().min(1).max(4000) });
+export type GoalWordsRequest = z.infer<typeof GoalWordsRequest>;
+
+// One goal heard in the user's words, ready to POST to /v1/goals as it is (nothing is saved here).
+export const HeardGoal = z.object({
+  title: z.string().min(1).max(60),
+  // Always one of the three areas for a new goal (#131).
+  category: GoalArea,
+  // Per week. A sleep goal holds the nights: 7 x hours.
+  weekly_budget_minutes: z
+    .number()
+    .int()
+    .min(0)
+    .max(7 * 24 * 60),
+  target: z.object({
+    kind: z.enum(["time", "target"]),
+    calendar_titles: z.array(z.string().min(1)).optional(),
+    sleep_hours: z.number().positive().max(12).optional(),
+  }),
+  // The user's own words it came from, short: "gym three times a week".
+  evidence: z.string().min(1).max(200),
+  // False when the user named the time ("ten hours"); true when Michael set a starting budget.
+  estimated: z.boolean(),
+});
+export type HeardGoal = z.infer<typeof HeardGoal>;
+
+export const GoalWordsResponse = z.object({
+  goals: z.array(HeardGoal).max(5),
+  // How the user works, in their words, worth remembering ("Loses evenings to the phone").
+  notes: z.array(z.string().min(1).max(200)).max(4),
+  // Michael's reply in his voice: what he heard, or the one question he still needs answered.
+  line: z.string().min(1),
+  // model: Claude read it; rules: the word lists did (no key, or the model failed).
+  source: z.enum(["model", "rules"]),
+});
+export type GoalWordsResponse = z.infer<typeof GoalWordsResponse>;
+
+// ---------- the onboarding conversation (voice agent) ----------
+
+// One turn of the first talk: what Michael said, or what the user said (a live transcript the user
+// may have corrected, or typed words). `skipped` marks a question the user passed on.
+export const OnboardingTurn = z.object({
+  role: z.enum(["michael", "user"]),
+  text: z.string().trim().max(1200),
+  skipped: z.boolean().optional(),
+});
+export type OnboardingTurn = z.infer<typeof OnboardingTurn>;
+
+// POST /v1/onboarding/turn. No turns yet: Michael's opener (from the calendar when it is connected).
+export const OnboardingTurnRequest = z.object({ turns: z.array(OnboardingTurn).max(24) });
+export type OnboardingTurnRequest = z.infer<typeof OnboardingTurnRequest>;
+
+export const OnboardingTurnResponse = z.object({
+  // What Michael says next, in his voice, spoken and shown: one short reaction and one question,
+  // or, when done, the line that hands over to the review ("That's plenty. Here's what I heard.").
+  line: z.string().min(1).max(320),
+  // True when he has enough (goals with some sense of time, and where time goes) or the user is
+  // tired of talking: the app reads the user's turns with POST /v1/goals/from-words.
+  done: z.boolean(),
+  // True when the line uses the user's calendar (the opener and follow ups about their real week).
+  from_calendar: z.boolean(),
+  // model: Claude wrote the line; script: the fixed questions (no key, the model failed or was slow).
+  source: z.enum(["model", "script"]),
+});
+export type OnboardingTurnResponse = z.infer<typeof OnboardingTurnResponse>;
 
 export const GoalSuggestionsResponse = z.object({
   from: IsoDateTime,

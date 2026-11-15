@@ -1,17 +1,16 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { ConnectionRow } from "@/components/you/connection-row";
 import { ConnectionsLive } from "@/components/you/connections-live";
-import { getGoalSuggestions, getGoals, getProfile } from "@/lib/api";
+import { getGoalSuggestions, getGoals, getVoiceEnabled } from "@/lib/api";
 import type { ConnectionId } from "@/lib/connections";
 import { type ConnectionStatus, getConnections } from "@/lib/connections-status";
 import { getFirstInsight, SAMPLE_INSIGHT } from "@/lib/first-insight";
-import { getGoogleCalendar, googleConnectUrl, syncGoogleCalendar } from "@/lib/integrations";
+import { getGoogleCalendar, syncGoogleCalendar } from "@/lib/integrations";
 import { arrivedFrom } from "@/lib/live-connections";
-import { signedInWithEmail } from "@/lib/supabase/server";
 import { FirstInsightCard } from "./first-insight";
 import { OnboardingFrame, primaryButton, Separator } from "./frame";
 import { GoalsStep } from "./goals-step";
+import { Talk } from "./talk";
 
 export const metadata = { title: "Getting started · Michael" };
 
@@ -23,13 +22,15 @@ type Search = {
   sync?: string;
 };
 
-// Getting started, in two screens and under a minute (#270):
-//   0. Sign in (/login). A brand new account goes straight on to Google's calendar consent from
-//      here, so the calendar is in before the first screen: one tap on "Continue with Google".
-//   1. Goals: found in the calendar, ticked, hours filled in. One tap keeps them.
-//   2. The week in one number, and the other connections, each optional, one tap each.
+// Getting started is a talk with Michael (Loukas, Sun 15 Nov):
+//   0. Sign in (/login).
+//   1. The talk (talk.tsx): Michael introduces himself, then asks three questions out loud. The
+//      user answers by voice or text, skips any; the API reads the answers into goals.
+//   2. What he heard: the goals with hours, edited and kept with one tap. "Pick from the usual"
+//      (?step=goals) is the old list, with calendar suggestions when the calendar is in.
+//   3. The week in one number, and the connections, the calendar first. Each optional, one tap.
 // Then Today. Nudges are asked later, when a buzz obviously helps (#207). You has "Redo setup".
-// ?demo=connected previews screen 2 with sample numbers, marked as such.
+// ?demo=connected previews screen 3 with sample numbers, marked as such.
 
 export const GOALS_PATH = "/onboarding?step=goals";
 const CONNECT_PATH = "/onboarding?step=connect";
@@ -61,32 +62,22 @@ function fromOnboarding(row: ConnectionStatus): ConnectionStatus {
 export default async function OnboardingPage({ searchParams }: { searchParams: Promise<Search> }) {
   const sp = await searchParams;
   const preview = sp.demo === "connected";
-  const step = preview || sp.step === "connect" || sp.step === "done" ? "connect" : "goals";
+  const step =
+    preview || sp.step === "connect" || sp.step === "done"
+      ? "connect"
+      : sp.step === "goals"
+        ? "goals"
+        : "talk";
   const failed = sp.integration_error === "google_calendar";
 
-  const [integration, goals, profile] = await Promise.all([
+  // First, the talk. The calendar no longer comes first: it is the first connection on screen 3.
+  if (step === "talk") return <Talk elevenlabs={await getVoiceEnabled().catch(() => false)} />;
+
+  const [integration, goals] = await Promise.all([
     preview ? null : getGoogleCalendar(),
     getGoals().catch(() => []),
-    getProfile().catch(() => null),
   ]);
   const calendarOn = preview || integration?.status === "connected" || sp.connected === "google_calendar";
-
-  // A brand new account with no calendar yet: straight to Google's consent, which comes back to the
-  // goals screen with four weeks read. Only when Google is set up here (the URL resolves), never
-  // after a refusal, and never on Redo setup. The login page says the calendar comes next.
-  if (
-    step === "goals" &&
-    !sp.step &&
-    !calendarOn &&
-    !failed &&
-    goals.length === 0 &&
-    !profile?.onboarded_at &&
-    // Signed up with email (#475): the calendar is a Connect step on the goals screen instead.
-    !(await signedInWithEmail())
-  ) {
-    const url = await googleConnectUrl(GOALS_PATH).catch(() => null);
-    if (url) redirect(url);
-  }
 
   if (step === "goals") {
     // Straight back from Google: read the last four weeks here, behind loading.tsx's "Reading your
@@ -116,7 +107,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
 
   return (
     <OnboardingFrame
-      step={1}
+      step={2}
       title={insight ? "Here's your week." : "Now, your days."}
       line={
         insight

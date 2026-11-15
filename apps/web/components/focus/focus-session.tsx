@@ -197,7 +197,12 @@ export function FocusSessionView({
             </span>
           </div>
         </div>
-        <p className="mt-6 text-body text-label-2 tnum">Until {formatTime(session.end_at)}</p>
+        {/* Started by Michael when a synced goal block began: he says so, once, here. */}
+        {session.message ? (
+          <p className="mt-6 max-w-[22rem] text-body text-label-2 tnum">{session.message}</p>
+        ) : (
+          <p className="mt-6 text-body text-label-2 tnum">Until {formatTime(session.end_at)}</p>
+        )}
         {session.guarded ? (
           <p className="mt-2 text-subhead text-label-2">Michael is guarding your Mac.</p>
         ) : null}

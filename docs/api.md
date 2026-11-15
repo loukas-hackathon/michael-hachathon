@@ -26,7 +26,7 @@ returns `501 not_implemented`, `planned` = not routed yet. Update the status whe
     account's own), and only these writes are allowed: `POST /v1/chat`, `/v1/chat/stream`, `/v1/chat/warm`,
     `POST /v1/chat/threads`, `PATCH|DELETE /v1/chat/threads/:id` (their own threads),
     `/v1/recommendations/:id/execute|undo`, `PATCH /v1/recommendations/:id`, `POST /v1/analysis/run`,
-    `/v1/travel/plan`, `/v1/focus-guards/suggest`, Focus now (`POST /v1/focus/start`, `/v1/focus/:id/extend|end`, one session per visitor, cleared with the blocks it made by the reseed), `/v1/voice/speak`, `/v1/voice/transcribe`, `/v1/records/:id/announced`, `POST|DELETE /v1/push/subscriptions`, `POST /v1/nudges/test`, the daily ritual (`POST /v1/ritual/morning|evening`, `/v1/ritual/:kind/skip`) and done time (`POST /v1/log`, `/v1/log/block`, `DELETE /v1/log/:id`), which the reseed puts back to the plan.
+    `/v1/travel/plan`, `/v1/focus-guards/suggest`, Focus now (`POST /v1/focus/start`, `/v1/focus/:id/extend|end`, one session per visitor, cleared with the blocks it made by the reseed), `/v1/voice/speak`, `/v1/voice/transcribe`, `POST /v1/goals/from-words` (reads only), `/v1/records/:id/announced`, `POST|DELETE /v1/push/subscriptions`, `POST /v1/nudges/test`, the daily ritual (`POST /v1/ritual/morning|evening`, `/v1/ritual/:kind/skip`) and done time (`POST /v1/log`, `/v1/log/block`, `DELETE /v1/log/:id`), which the reseed puts back to the plan.
     Anything else that writes (privacy, goals, instructions, places, profile, integrations,
     Telegram, agents, connecting an agent, keys, data deletion, ingest, `/mcp`) answers
     `403 forbidden` with the message "This is the demo week. Sign in with Google to make it yours."
@@ -470,16 +470,17 @@ AI tool events (`ai_session`, `ai_prompt`) from `claude_code`:
 
 ### Goals
 
-| Method | Path                               | Body                              | Response                      | Status |
-| ------ | ---------------------------------- | --------------------------------- | ----------------------------- | ------ |
-| GET    | `/v1/goals`                        |                                   | `200 { goals: Goal[] }`       | live   |
-| GET    | `/v1/goals/:id`                    |                                   | `200 Goal`, `404`             | live   |
-| POST   | `/v1/goals`                        | `GoalCreate`                      | `201 Goal`                    | live   |
-| PATCH  | `/v1/goals/:id`                    | `GoalUpdate`                      | `200 Goal`, `404`             | live   |
-| DELETE | `/v1/goals/:id`                    |                                   | `204`, `404`                  | live   |
-| GET    | `/v1/goals/suggestions`            |                                   | `200 GoalSuggestionsResponse` | live   |
-| POST   | `/v1/goals/suggestions/:id/accept` | `GoalSuggestionAccept` (optional) | `201 Goal`, `404`             | live   |
-| POST   | `/v1/goals/:id/book`               | `GoalBook` (optional)             | `201 Recommendation`, `409`   | live   |
+| Method | Path                               | Body                              | Response                       | Status |
+| ------ | ---------------------------------- | --------------------------------- | ------------------------------ | ------ |
+| GET    | `/v1/goals`                        |                                   | `200 { goals: Goal[] }`        | live   |
+| GET    | `/v1/goals/:id`                    |                                   | `200 Goal`, `404`              | live   |
+| POST   | `/v1/goals`                        | `GoalCreate`                      | `201 Goal`                     | live   |
+| PATCH  | `/v1/goals/:id`                    | `GoalUpdate`                      | `200 Goal`, `404`              | live   |
+| DELETE | `/v1/goals/:id`                    |                                   | `204`, `404`                   | live   |
+| GET    | `/v1/goals/suggestions`            |                                   | `200 GoalSuggestionsResponse`  | live   |
+| POST   | `/v1/goals/suggestions/:id/accept` | `GoalSuggestionAccept` (optional) | `201 Goal`, `404`              | live   |
+| POST   | `/v1/goals/from-words`             | `GoalWordsRequest`                | `200 GoalWordsResponse`, `429` | live   |
+| POST   | `/v1/goals/:id/book`               | `GoalBook` (optional)             | `201 Recommendation`, `409`    | live   |
 
 #### Book time for a goal (#309)
 
@@ -502,6 +503,29 @@ this week." when a standing instruction keeps the time that would have fitted ("
 21:00, so ...", "Your quiet hours cover the rest, so ..."), else "No free 90 minutes left this
 week." The same protected time is left out of `free_minutes_left`, so "The maths" and Book agree.
 Pure slot logic: `goalSlot`, `goalBooking` and `noSlotLine` in `apps/api/src/goals/book.ts`.
+
+#### Goals from the user's own words (onboarding talk)
+
+`POST /v1/goals/from-words` takes what the
+user said or typed (`{ text }`, up to 4000 characters, a messy voice transcript is fine, English or
+Greek) and returns at most five `HeardGoal`s (each a ready `GoalCreate`: `title`, `category` one of
+the three areas, `weekly_budget_minutes`, `target` of kind `time` with `calendar_titles` or of kind
+`target` with `sleep_hours`, plus `evidence`, the user's words it came from, and `estimated`, true
+when Michael set the hours because none were said), up to four `notes` on how the user works
+("Loses evenings to the phone", saved by the app as memories once the user keeps them), Michael's
+`line`, and `source`: `model` (Claude, low effort, 25 second cap, line checked against the voice
+rules) or `rules` (word lists, when there is no key or the model fails). Nothing is saved: the app
+shows what was heard, the user edits it, then creates the goals. 10 calls a minute per caller.
+
+#### The onboarding conversation (voice agent)
+
+`POST /v1/onboarding/turn` (`OnboardingTurnRequest` -> `200 OnboardingTurnResponse`) runs the
+first talk. With no turns it returns Michael's opener: from the user's own calendar when Google
+Calendar is connected (`from_calendar: true`, "Gym three times last week and deep work only on
+Monday. Is that a normal week?"), otherwise a warm open question. Each later call sends every turn
+so far and gets one short reaction plus one follow up, or `done: true` with the line that hands
+over to the review. The app then reads the user's turns with `POST /v1/goals/from-words`. Nothing
+is saved. `source: "script"` when the fixed questions stand in (no key, model failed or slow).
 
 #### Goals from the calendar (#134)
 
@@ -2373,6 +2397,13 @@ type FocusActiveResponse = { now: string; session: FocusSession | null; last: Fo
   Reddit, TikTok, Netflix) are muted for the window through a focus guard (a `block_mac_app`
   recommendation, "Muted distracting apps until 12:45"). Without a Mac this is skipped silently and
   `guarded` is false, so the app never claims a guard that is not there.
+- **Focus turns itself on:** `GET /v1/focus/active` with no session running and the user's own goal
+  block from the synced calendar running now (at least 5 minutes left, nobody else in it) starts the
+  session to the block's end, as if the user had tapped it. Once per block: a session that ran or
+  ended during the block means the user decided, so it never starts again. Never off the record,
+  never on the demo account (its week is replayed, not synced).
+  While it runs its `message` says so: "Your University block started. Focus is on until 12:00."
+  Chat and MCP reads never start one.
 - **+15:** moves `end_at`, the block the session made, and adds a guard for the extra minutes. At
   most 4 hours in all (`409` after). A block the user made is never changed: time past its end is
   logged outside it and counts toward the goal's budget.

@@ -144,7 +144,7 @@ function rowsFor(suggestions: GoalSuggestion[], saved: SavedGoal[]): Row[] {
   return [...found, ...starters];
 }
 
-function Check({ on }: { on: boolean }) {
+export function Check({ on }: { on: boolean }) {
   return (
     <span
       aria-hidden="true"
@@ -285,7 +285,7 @@ export function GoalsStep({
 
   return (
     <OnboardingFrame
-      step={0}
+      step={1}
       title={found ? "Here's what your week is for." : "What are we playing for?"}
       line={
         found
