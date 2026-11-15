@@ -87,6 +87,8 @@ type Row = HeardGoal & { key: string; on: boolean };
 /** A misheard answer being fixed: the one still being said, or one already sent. */
 type Editing = { at: "live" | number; text: string };
 
+const HOW_MANY = ["none", "one", "two", "three", "four", "five"];
+
 const count = (n: number) =>
   n === 1 ? "this goal" : n === 2 ? "these two" : n === 3 ? "these three" : `these ${n}`;
 
@@ -718,7 +720,15 @@ export function Talk({
       .map((g, i) => ({ ...g, key: `m${Date.now()}${i}`, on: true }));
     setRows((r) => [...r, ...added].slice(0, 5));
     setNotes((n) => [...n, ...res.notes.map((text) => ({ text, on: true, added: true }))].slice(0, 4));
-    setHeard(res);
+    // The API's line is about the new words only ("I heard one goal"): say the list as it now stands.
+    const total = Math.min(5, rows.length + added.length);
+    const line =
+      added.length === 0
+        ? rows.length === 0
+          ? res.line
+          : "Nothing new in that. The list stands. Check the hours, then keep them."
+        : `${added.length === 1 ? `Added ${added[0]?.title}` : `Added ${added.length} more`}. That makes ${HOW_MANY[total] ?? total}. Check the hours, then keep them.`;
+    setHeard({ ...res, line });
     setMore(added.length === 0 && rows.length === 0 ? "" : null);
   }
 

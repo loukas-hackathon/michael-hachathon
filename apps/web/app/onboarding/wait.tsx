@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { type ReactNode, useEffect, useState } from "react";
 import { MichaelWaits, OnboardingFrame } from "./frame";
-import { ReadingStatus } from "./reading-status";
+import { ReadingStatus, useShown } from "./reading-status";
 
 // What Michael says while the next onboarding screen loads (loading.tsx). It reads the address the
 // tap went to, so the wait matches what comes: the talk, the usual goals, the four week calendar
@@ -58,5 +60,44 @@ export function WaitScreen({ kind, screen }: { kind: Kind; screen?: string }) {
     >
       <MichaelWaits title={wait.title} status={<ReadingStatus steps={wait.steps} every={2200} />} />
     </OnboardingFrame>
+  );
+}
+
+/**
+ * A link to another step of onboarding that hands over to Michael thinking once the wait passes a
+ * moment, the same way the screens' own buttons do (a change of ?step never shows loading.tsx).
+ */
+export function StepLink({
+  href,
+  kind,
+  className,
+  children,
+}: {
+  href: string;
+  kind: Kind;
+  className?: string;
+  children: ReactNode;
+}) {
+  const [going, setGoing] = useState(false);
+  const shown = useShown(going);
+  // Back from the next screen with the browser's Back: the page comes from the cache, reset.
+  useEffect(() => {
+    const reset = (e: PageTransitionEvent) => {
+      if (e.persisted) setGoing(false);
+    };
+    window.addEventListener("pageshow", reset);
+    return () => window.removeEventListener("pageshow", reset);
+  }, []);
+  return (
+    <>
+      <Link href={href} onClick={() => setGoing(true)} aria-busy={going || undefined} className={className}>
+        {children}
+      </Link>
+      {going && shown ? (
+        <div className="fixed inset-0 z-50 bg-bg">
+          <WaitScreen kind={kind} screen={`to-${kind}`} />
+        </div>
+      ) : null}
+    </>
   );
 }
