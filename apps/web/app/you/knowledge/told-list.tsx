@@ -59,7 +59,7 @@ export function ToldList({ items }: { items: KnowledgeItem[] }) {
     timers.current.delete(k);
     const res = await forgetItem(item.kind, item.id).catch(() => ({
       ok: false as const,
-      error: "I could not reach the server. It is still here.",
+      error: "I lost the line. It's still here.",
     }));
     setWaiting((w) => w.filter((x) => x !== k));
     if (res.ok) {

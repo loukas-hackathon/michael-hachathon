@@ -26,6 +26,7 @@ import {
   stageParts,
   workoutParts,
 } from "@/lib/health";
+import { say as confirm } from "@/lib/say";
 import {
   type Block,
   blockTitle,
@@ -314,19 +315,19 @@ export function DayTimeline({
     if (inFlight.current.has(id)) return;
     inFlight.current.add(id);
     put(id, { ...to, pending: true });
-    say("Undone.", to.removed ? from.end : to.end);
+    say(confirm("undone"), to.removed ? from.end : to.end);
     try {
       const r = await undoBlockChange(recId);
       if (!r.ok) {
         put(id, { ...from, pending: false });
-        fail(`I could not undo that. ${r.message ?? ""}`.trim(), from.end);
+        fail(`I couldn't undo that. ${r.message ?? ""}`.trim(), from.end);
         return;
       }
       put(id, { ...to, pending: false });
       refresh();
     } catch {
       put(id, { ...from, pending: false });
-      fail("I could not reach the server. Nothing changed.", from.end);
+      fail("I lost the line. Nothing changed.", from.end);
     } finally {
       inFlight.current.delete(id);
     }
@@ -344,7 +345,7 @@ export function DayTimeline({
     if (Object.keys(body).length === 0) return;
     const moved = body.start_at !== undefined;
     const text = moved
-      ? `Moved to ${formatTime(iso(after.start))}.`
+      ? confirm("moved", { what: after.title || "The block", at: formatTime(iso(after.start)) })
       : body.end_at !== undefined
         ? `Now ends at ${formatTime(iso(after.end))}.`
         : "Saved.";
@@ -355,7 +356,7 @@ export function DayTimeline({
       const r = await changeBlock(id, body);
       if (!r.ok) {
         put(id, { ...before, pending: false });
-        fail(`I could not ${moved ? "move it" : "change it"}. ${r.message}`, before.end);
+        fail(`I couldn't ${moved ? "move it" : "change it"}. ${r.message}`, before.end);
         return;
       }
       put(id, { ...after, pending: false });
@@ -363,7 +364,7 @@ export function DayTimeline({
       refresh();
     } catch {
       put(id, { ...before, pending: false });
-      fail("I could not reach the server. Nothing changed.", before.end);
+      fail("I lost the line. Nothing changed.", before.end);
     } finally {
       inFlight.current.delete(id);
     }
@@ -385,7 +386,7 @@ export function DayTimeline({
       });
       if (!r.ok) {
         put(temp, null);
-        fail(`I could not add it. ${r.message}`, p.end);
+        fail(`I couldn't add it. ${r.message}`, p.end);
         return;
       }
       const id = r.id;
@@ -398,7 +399,7 @@ export function DayTimeline({
       refresh();
     } catch {
       put(temp, null);
-      fail("I could not reach the server. Nothing changed.", p.end);
+      fail("I lost the line. Nothing changed.", p.end);
     }
   };
 
@@ -411,7 +412,7 @@ export function DayTimeline({
     try {
       const r = await removeBlock(id);
       if (!r.ok) {
-        setSheetError(`I could not delete it. ${r.message}`);
+        setSheetError(`I couldn't delete it. ${r.message}`);
         return;
       }
       put(id, { ...p, removed: true, pending: false });
@@ -419,7 +420,7 @@ export function DayTimeline({
       say("Deleted.", p.start, () => undo(r.recId, id, { ...p, removed: false }, { ...p, removed: true }));
       refresh();
     } catch {
-      setSheetError("I could not reach the server. Nothing changed.");
+      setSheetError("I lost the line. Nothing changed.");
     } finally {
       setRemoving(false);
     }

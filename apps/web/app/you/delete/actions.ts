@@ -21,6 +21,6 @@ export async function deleteEverything(): Promise<DeleteOutcome> {
     if (!res.ok) throw new Error(String(res.status));
     return { result: (await res.json()) as DataDeleteResult };
   } catch {
-    return { error: "I could not reach my server. Nothing was deleted. Try again." };
+    return { error: "I lost the line. Nothing was deleted. Try again." };
   }
 }

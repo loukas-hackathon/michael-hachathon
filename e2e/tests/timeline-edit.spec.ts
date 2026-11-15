@@ -58,7 +58,8 @@ test("Timeline: add a block on a free slot, drag it later, undo the move", async
   await page.waitForTimeout(500);
   for (let i = 1; i <= 8; i++) await page.mouse.move(x, y + (112 * i) / 8);
   await page.mouse.up();
-  await expect(page.getByRole("status").filter({ hasText: "Moved to 12:00." })).toBeVisible();
+  // Michael varies the phrasing by day (#398); the block and the new time are always in it.
+  await expect(page.getByRole("status").filter({ hasText: /Deep work.*12:00\./ })).toBeVisible();
   await expect(page.getByRole("button", { name: "Deep work, 12:00 to 13:00" })).toBeVisible();
 
   const startOf = async () => {
@@ -74,7 +75,7 @@ test("Timeline: add a block on a free slot, drag it later, undo the move", async
   await expect.poll(startOf).toBe("12:00");
 
   await page.getByRole("status").getByRole("button", { name: "Undo" }).click();
-  await expect(page.getByRole("status").filter({ hasText: "Undone." })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: /^(Undone|Taken back|Reversed)/ })).toBeVisible();
   await expect(page.getByRole("button", { name: "Deep work, 10:00 to 11:00" })).toBeVisible();
   await expect.poll(startOf).toBe("10:00");
 });

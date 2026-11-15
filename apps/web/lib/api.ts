@@ -467,10 +467,10 @@ async function logCall(path: string, body: unknown): Promise<LogResult> {
     const err = ApiError.safeParse(json);
     return {
       ok: false,
-      message: err.success ? err.data.error.message : `I could not log it (${res.status}).`,
+      message: err.success ? err.data.error.message : `I couldn't log it (${res.status}).`,
     };
   } catch {
-    return { ok: false, message: "I could not reach the server. Nothing was logged." };
+    return { ok: false, message: "I lost the line. Nothing was logged." };
   }
 }
 
@@ -1003,9 +1003,9 @@ async function ritualWrite<T>(path: string, body?: unknown): Promise<RitualWrite
     });
     if (res.ok) return { ok: true, data: (await res.json()) as T };
     const err = ApiError.safeParse(await res.json().catch(() => null));
-    return { ok: false, message: err.success ? err.data.error.message : "I could not save that. Try again." };
+    return { ok: false, message: err.success ? err.data.error.message : "I couldn't save that. Try again." };
   } catch {
-    return { ok: false, message: "I could not reach the server. Nothing changed." };
+    return { ok: false, message: "I lost the line. Nothing changed." };
   }
 }
 

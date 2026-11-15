@@ -40,7 +40,7 @@ export function LiveCheckIn({ initial }: { initial: CheckIn[] }) {
     startTransition(async () => {
       const res = await answerCheckInAction(q.id, value).catch(() => ({
         ok: false as const,
-        error: "I could not reach the server. Nothing changed.",
+        error: "I lost the line. Nothing changed.",
       }));
       if (!res.ok) {
         setAnswer(q.id, null);

@@ -65,7 +65,7 @@ export function KeySetup({ keyName, copyAs, steps }: Props) {
           ) : null}
           <p role="status" className="mt-2 min-h-5 text-footnote text-label-2">
             {copy === "blocked"
-              ? "I could not copy it. Select the link above and copy it."
+              ? "I couldn't copy it. Select the link above and copy it."
               : "This link is yours alone. Keep it private."}
           </p>
         </>
@@ -79,7 +79,7 @@ export function KeySetup({ keyName, copyAs, steps }: Props) {
             try {
               setResult(await createDeviceKey(keyName));
             } catch {
-              setResult({ error: "I could not reach the server. Tap Connect again." });
+              setResult({ error: "I lost the line. Tap Connect again." });
             } finally {
               setBusy(false);
             }

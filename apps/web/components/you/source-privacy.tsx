@@ -15,7 +15,7 @@ export async function SourcePrivacy({ sources, note }: { sources: Source[]; note
         <SourceSwitches initial={privacy.sources} sources={sources} />
       ) : (
         <p className="rounded-group bg-fill px-4 py-3 text-subhead text-label-2">
-          I could not load these switches. Pull to refresh.
+          I couldn't load these switches. Pull to refresh.
         </p>
       )}
     </SetupSection>

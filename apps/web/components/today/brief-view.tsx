@@ -37,7 +37,7 @@ export function BriefView({
     try {
       r = await askForBrief();
     } catch {
-      setError("I could not reach the server. Try again in a minute.");
+      setError("I lost the line. Try again in a minute.");
       return;
     } finally {
       setBusy(false);

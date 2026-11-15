@@ -169,7 +169,7 @@ test("evening: plan against what happened, won back, one lesson, tomorrow's firs
   );
   assert.equal(
     templateHeadline(m),
-    "115 minutes of 2h planned goal time held, 5 minutes lost. 15 minutes won back against your usual day.",
+    "You held 115 minutes of 2h planned goal time. 5 minutes got away. 15 minutes won back against your usual day.",
   );
 });
 
@@ -192,7 +192,7 @@ test("a new user with no data gets budgets and no invented risk", () => {
   const empty = computeMoment({ kind: "evening", events: [], goals: [], now: T("2026-11-11 21:00") });
   assert.equal(empty.lesson, "No goal blocks today. Time you do not book goes elsewhere.");
   assert.equal(empty.first_move, null);
-  assert.equal(templateHeadline(empty), "No goal time booked today. Book tomorrow before you sleep.");
+  assert.equal(templateHeadline(empty), "No goal time today. Put tomorrow's in before bed.");
 });
 
 // ---------- row 1: the headline is a finished line or the template ----------
@@ -608,7 +608,7 @@ test("the evening counts only what was lost inside goal blocks, so the numbers a
   assert.equal(m.totals.lost_minutes, score.day.lost_minutes);
   assert.equal(m.totals.spent_minutes + m.totals.lost_minutes, m.totals.planned_minutes);
   assert.equal(m.totals.won_back_minutes, score.day.time_won_back.minutes);
-  assert.equal(templateHeadline(m), "98 minutes of 2h planned goal time held, 22 minutes lost.");
+  assert.equal(templateHeadline(m), "You held 98 minutes of 2h planned goal time. 22 minutes got away.");
   assert.equal(m.lesson, "Instagram cost 22 minutes in 1 interruption today.");
 
   // A block still ahead in the evening: held and lost cover what has elapsed, never more than planned.
@@ -618,14 +618,14 @@ test("the evening counts only what was lost inside goal blocks, so the numbers a
   assert.ok(early.totals.spent_minutes + early.totals.lost_minutes <= early.totals.planned_minutes);
   assert.equal(
     templateHeadline(early),
-    "98 minutes of 3h planned goal time held, 22 minutes lost, 60 minutes still ahead.",
+    "You held 98 minutes of 3h planned goal time. 22 minutes got away, 60 minutes still ahead.",
   );
 
   // A good day reads "against your usual day".
   const good = evening([...history(), ...todayPlan()], "2026-11-11 21:00");
   assert.equal(
     templateHeadline(good),
-    "2h of 2h planned goal time held, nothing lost. 20 minutes won back against your usual day.",
+    "All 2h of planned goal time held, nothing lost. 20 minutes won back against your usual day.",
   );
   // Before the first block has started there is nothing held or lost to report.
   const before = evening([...history(), ...todayPlan()], "2026-11-11 02:00");
