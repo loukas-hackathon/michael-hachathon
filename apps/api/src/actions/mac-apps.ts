@@ -35,6 +35,8 @@ export interface GuardRequest {
   requested_by: string;
   /** The line the user reads, when the app list would be too long for it (Focus now). */
   title?: string;
+  /** "user" for a guard that is part of something the user started (Focus now): not listed. */
+  source?: "chat" | "user";
 }
 
 /**
@@ -66,7 +68,7 @@ export async function guardMacApps(req: GuardRequest): Promise<Recommendation> {
       involves_others: false,
       undo_until: payload.end_at,
     },
-    source: "chat",
+    source: req.source ?? "chat",
   });
   try {
     return await executeRecommendation(rec.id);

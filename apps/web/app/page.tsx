@@ -134,6 +134,9 @@ export default async function TodayPage({
           {lists.map((l) => (
             <TodayChecklist key={l.goalId} {...l} />
           ))}
+          <Suspense fallback={null}>
+            <TodayFocusNow day={day} goals={goals} />
+          </Suspense>
           <RecommendationsPanel slot="primary" />
           {/* No moment card or brief on an empty day: both would only say there is nothing yet, which
               Get started already says with one action. */}

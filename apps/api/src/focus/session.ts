@@ -252,6 +252,8 @@ async function guard(goal: Goal, start: string, end: string): Promise<string | n
       goal_id: goal.id,
       back_to: shortGoal(goal.title).slice(0, 80),
       requested_by: "Focus now",
+      // Part of the session the user started: not a suggestion of its own on Today.
+      source: "user",
       title: `Muted distracting apps until ${zone().clock(Date.parse(end))}`,
     });
     return rec.id;
