@@ -29,6 +29,7 @@ import {
   rank,
   todayIndex,
 } from "@/lib/goals-view";
+import { MiConcerned } from "@/lib/mi-mood";
 import { openRecommendations, type RecCard, toCard } from "@/lib/recommendations";
 
 // Goals answers one question at a glance (#309): which goal needs me most this week, and by how
@@ -300,6 +301,8 @@ function Hero({
         {behind ? (
           <>
             needs you most: <b className="font-semibold text-label tnum">{hm(gap)}</b> behind pace.
+            {/* The Mi button shows concerned while this line is on screen (#319). */}
+            <MiConcerned />
           </>
         ) : (
           <>

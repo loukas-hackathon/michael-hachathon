@@ -4,6 +4,7 @@ import { useOptimistic, useRef, useState, useTransition } from "react";
 import { addItem, carryItem, tickItem } from "@/app/checklist-actions";
 import { haptic } from "@/components/haptics";
 import type { ChecklistItem } from "@/lib/checklist";
+import { miPleased } from "@/lib/mi-mood";
 
 const OFFLINE = "I lost the line. Nothing changed.";
 
@@ -89,6 +90,8 @@ export function TodayChecklist({
 
   const tick = (i: ChecklistItem) => {
     const next = i.status !== "done";
+    // Michael is pleased the moment an outcome is ticked done (#319); unticking says nothing.
+    if (next) miPleased();
     start(async () => {
       setOptimistic({ id: i.id, done: next });
       const r = await tickItem(i.id, next).catch(() => ({ ok: false, message: OFFLINE }));

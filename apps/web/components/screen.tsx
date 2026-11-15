@@ -3,12 +3,17 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { formatTime } from "@/lib/format";
+import { useMiState } from "@/lib/mi-mood";
 import { useOffTheRecord } from "@/lib/off-the-record";
 import { Michael } from "./michael";
 
-/** The Mi button: top right on every tab. Opens the You sheet. Dimmed while off the record. */
+/**
+ * The Mi button: top right on every tab. Opens the You sheet. Dimmed while off the record. Its dot
+ * lifts when an outcome is ticked done, tilts beside a goal behind pace, rests in quiet hours.
+ */
 export function MiButton({ size = 30 }: { size?: number }) {
   const { on } = useOffTheRecord();
+  const mi = useMiState();
   return (
     <Link
       href="/you"
@@ -27,7 +32,7 @@ export function MiButton({ size = 30 }: { size?: number }) {
         style={{ width: size, height: size }}
       >
         <span style={{ width: Math.round(size * 0.56) }} className="block">
-          <Michael className="block h-auto w-full" />
+          <Michael state={mi} className="block h-auto w-full" />
         </span>
       </span>
     </Link>
