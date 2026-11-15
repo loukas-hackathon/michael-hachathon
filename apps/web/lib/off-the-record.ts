@@ -40,7 +40,12 @@ function sync() {
   if (synced) return;
   synced = true;
   readPrivacy()
-    .then((p) => set({ on: p.off_the_record, since: p.since, failed: false }))
+    .then((p) => {
+      // Usually the local copy was already right: then no listener needs to render again.
+      const now = read();
+      if (now.on === p.off_the_record && now.since === p.since && !now.failed) return;
+      set({ on: p.off_the_record, since: p.since, failed: false });
+    })
     .catch(() => {
       // Offline or signed out: keep the local copy, try again on the next page load.
       synced = false;
