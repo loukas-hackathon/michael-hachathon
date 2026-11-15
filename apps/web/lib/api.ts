@@ -15,6 +15,7 @@ import {
   type CheckInValue,
   DEFAULT_PROFILE,
   demoRecommendations,
+  FocusDisruptions,
   type Goal,
   type GoalCreate,
   type GoalSuggestion,
@@ -77,6 +78,7 @@ import {
 } from "./sample/day";
 import { sampleGoals, sampleGoalsBaseline, sampleGoalsEmpty, sampleGoalsMonday } from "./sample/goals";
 import { dayFromScore, goalsFromScore, leadFromPatterns } from "./score-map";
+import { unionMs } from "./spans";
 
 // Server-side data access. The browser never sees API_KEY and never talks to the DB. Each request
 // carries the signed-in user's Supabase token, so the API returns only that user's data.
@@ -692,6 +694,46 @@ export async function getToday(variant?: string): Promise<DayView> {
   ]);
   return dayFromScore(score, leadFromPatterns(patterns, score.day.now));
 }
+
+/** The phone's cost to focus this week, for the line under Michael's phone finding on Today. */
+export type PhoneFocusCost = { minutes: number; atLeast: boolean };
+
+/**
+ * Minutes of focus the phone cost in the last 7 days. Each disruption that started on the iPhone
+ * inside a goal block or a focus stretch runs from its start until the work was back in front (or
+ * for its time in the phone when the work never came back); the figure is the union of those
+ * spans, so a second pick up before the first one's return is never counted twice. The report keeps
+ * the newest 100 disruptions, so when all 100 fall inside the week the figure is a floor and says
+ * so. Null when the report has no answer.
+ */
+export const getPhoneFocusCost = cache(async (variant?: string): Promise<PhoneFocusCost | null> => {
+  if (variant && variant in SAMPLE_DAYS) return null;
+  // The sample day's figure, beside its sample phone finding.
+  if (USE_MOCKS || variant === "sample") return { minutes: 94, atLeast: false };
+  try {
+    const to = new Date();
+    const from = new Date(to.getTime() - 7 * 86_400_000);
+    const report = await get<{ focus_disruptions?: { status: string; data: unknown } }>(
+      `/v1/patterns?${new URLSearchParams({ from: from.toISOString(), to: to.toISOString() })}`,
+    );
+    const parsed = FocusDisruptions.safeParse(report.focus_disruptions?.data);
+    if (!parsed.success) return null;
+    const items = parsed.data.items;
+    const spans = items
+      .filter((i) => i.device === "iphone" && Date.parse(i.start_at) >= from.getTime())
+      .map((i) => {
+        const start = Date.parse(i.start_at);
+        return [start, start + (i.minutes_until_back ?? i.minutes_lost) * 60_000] as const;
+      });
+    const oldest = items[items.length - 1];
+    return {
+      minutes: Math.round(unionMs(spans) / 60_000),
+      atLeast: items.length >= 100 && oldest !== undefined && Date.parse(oldest.start_at) >= from.getTime(),
+    };
+  } catch {
+    return null;
+  }
+});
 
 /**
  * The week per goal. Real: GET /v1/score (per goal, per day). Sample with mocks.

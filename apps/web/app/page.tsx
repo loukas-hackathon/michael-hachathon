@@ -22,7 +22,7 @@ import { GetStarted } from "@/components/today/get-started";
 import { KeepWeekStrip, keepLine, streakLine } from "@/components/today/keep-week";
 import { LastWeekLine } from "@/components/today/last-week-line";
 import { MeetingRecapCard } from "@/components/today/meeting-recap";
-import { MichaelCard } from "@/components/today/michael-card";
+import { MichaelCard, PhoneFocusLine } from "@/components/today/michael-card";
 import { MomentCard } from "@/components/today/moment-card";
 import { NextBlocks } from "@/components/today/next-blocks";
 import { RecommendationsPanel, todaySuggestions } from "@/components/today/recommendations";
@@ -258,8 +258,24 @@ export default async function TodayPage({
               ) : null}
             </section>
 
+            {/* Michael's phone finding second, straight under the score: the time the phone took and
+                what it cost the week's focus. */}
+            {day.lead ? (
+              <div className="max-xl:order-1 [&>article]:mt-5" data-live-key="lead" data-live-pop="">
+                <MichaelCard
+                  lead={day.lead}
+                  primary={!primary}
+                  cost={
+                    <Suspense fallback={null}>
+                      <PhoneFocusLine demo={demo} />
+                    </Suspense>
+                  }
+                />
+              </div>
+            ) : null}
+
             {lostWeek && lostWeek.total > 0 ? (
-              <LostWeekLine week={lostWeek} demo={demo} className="max-xl:order-3" />
+              <LostWeekLine week={lostWeek} demo={demo} className="max-xl:order-3 xl:mt-3" />
             ) : null}
             {lastWeek ? (
               <div className="max-xl:order-4">
@@ -355,15 +371,13 @@ export default async function TodayPage({
                 ))}
               </div>
             ) : null}
-            {day.lead || day.nudge ? (
+            {day.nudge ? (
               <section
-                aria-label="What I did"
-                // A flex item keeps its first child's margin inside; the card's own mt-5 would add to mt-6.
-                className="mt-6 max-xl:order-11 [&>article:first-child]:mt-0"
+                aria-label="Latest nudge"
+                className="mt-4 max-xl:order-11 [&>div:first-child]:mt-0"
                 data-live-key="did"
                 data-live-pop=""
               >
-                {day.lead ? <MichaelCard lead={day.lead} primary={!primary} /> : null}
                 {day.nudge ? (
                   // Polite: a new nudge arriving with a live refresh is read out once, without interrupting.
                   <div
