@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ConnectionRow } from "@/components/you/connection-row";
+import { ConnectionsLive } from "@/components/you/connections-live";
 import { getGoalSuggestions, getGoals, getProfile } from "@/lib/api";
 import type { ConnectionId } from "@/lib/connections";
 import { type ConnectionStatus, getConnections } from "@/lib/connections-status";
 import { getFirstInsight, SAMPLE_INSIGHT } from "@/lib/first-insight";
 import { getGoogleCalendar, googleConnectUrl, syncGoogleCalendar } from "@/lib/integrations";
+import { arrivedFrom } from "@/lib/live-connections";
 import { FirstInsightCard } from "./first-insight";
 import { OnboardingFrame, primaryButton, Separator } from "./frame";
 import { GoalsStep } from "./goals-step";
@@ -140,14 +142,17 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
           {insight ? (
             <h2 className="mb-2 text-subhead text-label-2">Add what really happened. Each is optional.</h2>
           ) : null}
-          <div className="overflow-hidden rounded-group bg-fill">
-            {rows.map((row, i) => (
-              <div key={row.id} className="relative">
-                {i > 0 ? <Separator inset={52} /> : null}
-                <ConnectionRow row={row} />
-              </div>
-            ))}
-          </div>
+          {/* Live (#466): a connection made from here flips its row without a reload. */}
+          <ConnectionsLive initial={preview ? [] : rows.map((r) => ({ id: r.id, state: r.state }))}>
+            <div className="overflow-hidden rounded-group bg-fill">
+              {rows.map((row, i) => (
+                <div key={row.id} className="relative">
+                  {i > 0 ? <Separator inset={52} /> : null}
+                  <ConnectionRow row={row} arrived={row.id === arrivedFrom(sp.connected)} />
+                </div>
+              ))}
+            </div>
+          </ConnectionsLive>
         </section>
       ) : null}
     </OnboardingFrame>

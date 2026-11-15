@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useArriveConnection } from "@/components/you/connections-live";
 import { sendTestNudge } from "@/lib/push-actions";
 import { type NudgeState, useNudges } from "@/lib/use-nudges";
 
@@ -12,6 +13,13 @@ export function NudgesButton() {
   const { state, turnOn, error } = useNudges();
   const [note, setNote] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
+  // Allowed and saved: the Nudges row and this page say Connected at once (#466).
+  const arrive = useArriveConnection("nudges");
+  const was = useRef(state.kind);
+  useEffect(() => {
+    if (was.current === "working" && state.kind === "on") arrive();
+    was.current = state.kind;
+  }, [state.kind, arrive]);
 
   async function test() {
     setTesting(true);

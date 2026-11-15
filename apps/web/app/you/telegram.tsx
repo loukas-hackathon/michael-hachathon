@@ -31,11 +31,14 @@ export async function TelegramRow() {
           <span className="text-body">Telegram</span>
           <span className="text-footnote text-label-2">Nudges in a chat too. Tap Start in Telegram.</span>
         </span>
+        {/* Beside the app, so this page stays and flips by itself once you tap Start (#466). */}
         <a
           href="/integrations/telegram/connect"
+          target="_blank"
+          rel="noopener"
           className="hit press flex h-9 shrink-0 items-center rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint"
         >
-          Connect Telegram
+          Connect
         </a>
       </div>
     );

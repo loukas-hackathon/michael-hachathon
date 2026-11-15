@@ -77,6 +77,12 @@ export default defineConfig({
         PUBLIC_API_URL: API_URL,
         SCHEDULER_ENABLED: "false",
         CALENDAR_SYNC_MINUTES: "0",
+        // A stand in bot, so the Telegram connection can be completed by a simulated webhook
+        // (tests/connections-live.spec.ts). Nothing reaches Telegram: the username is given (no
+        // getMe), the webhook is never registered over http, and replies ride the webhook response.
+        TELEGRAM_BOT_TOKEN: "e2e-bot-token",
+        TELEGRAM_BOT_USERNAME: "michael_e2e_bot",
+        TELEGRAM_WEBHOOK_SECRET: "e2e-telegram-secret",
         NODE_ENV: "test",
       },
     },
