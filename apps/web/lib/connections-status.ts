@@ -86,6 +86,16 @@ const unknown = (c: Connection): ConnectionStatus => ({
 
 export const SOON_LINE = "Coming soon. I will tell you when it is ready.";
 
+/** A device source that has sent nothing for this long needs attention (#307). */
+export const QUIET_MS = 24 * 60 * 60_000;
+
+/** The exact fix when a device source has gone quiet: one line, the one thing to do. */
+export const QUIET_FIX: Record<"apple-watch" | "mac" | "iphone", string> = {
+  "apple-watch": "Open Health Auto Export and tap Export Now on Michael health.",
+  mac: "Wake your Mac and open Michael there, or set it up again below.",
+  iphone: "Open an app you picked. If nothing arrives, check its automation in Shortcuts.",
+};
+
 /** Pure: the row for one connection from what the API said. Exported for tests. */
 export function statusFor(c: Connection, x: Inputs, now = Date.now()): ConnectionStatus {
   if (!c.live) return { ...c, state: "soon", line: SOON_LINE, action: { kind: "none" } };
@@ -136,6 +146,13 @@ export function statusFor(c: Connection, x: Inputs, now = Date.now()): Connectio
       if (!src) return unknown(c);
       if (last && switchedOff)
         return { ...c, state: "paused", line: `Switched off. Last data ${ago(last, now)}.`, action: manage };
+      if (last && !otr && now - Date.parse(last) > QUIET_MS)
+        return {
+          ...c,
+          state: "attention",
+          line: `Last data ${ago(last, now)}. ${QUIET_FIX[c.id]}`,
+          action: manage,
+        };
       if (last) return { ...c, state: "on", line: `${otr}Last data ${ago(last, now)}.`, action: manage };
       return {
         ...c,
@@ -221,7 +238,11 @@ export function statusFor(c: Connection, x: Inputs, now = Date.now()): Connectio
   }
 }
 
-export async function getConnections(): Promise<ConnectionsView> {
+/**
+ * `preview`: one Coming soon connection shown as if live, for its setup page with ?preview=1, so a
+ * person can prove it end to end on production before CONNECTOR_STATUS switches it on (#306).
+ */
+export async function getConnections(preview?: ConnectionId): Promise<ConnectionsView> {
   const [sources, integrations, push, agents, places, telegram] = await Promise.all([
     safe("/v1/sources/status", SourcesStatusResponse),
     safe("/v1/integrations", IntegrationsResponse),
@@ -242,7 +263,7 @@ export async function getConnections(): Promise<ConnectionsView> {
     agents,
     places,
   };
-  const rows = CONNECTIONS.map((c) => statusFor(c, inputs));
+  const rows = CONNECTIONS.map((c) => statusFor(c.id === preview ? { ...c, live: true } : c, inputs));
   return {
     rows,
     live: rows.filter((r) => r.live).length,
@@ -255,7 +276,8 @@ export async function getConnections(): Promise<ConnectionsView> {
 /** One connection's status, for its setup page. */
 export async function getConnection(
   id: ConnectionId,
+  { preview = false }: { preview?: boolean } = {},
 ): Promise<{ row: ConnectionStatus; view: ConnectionsView }> {
-  const view = await getConnections();
+  const view = await getConnections(preview ? id : undefined);
   return { row: view.rows.find((r) => r.id === id) as ConnectionStatus, view };
 }

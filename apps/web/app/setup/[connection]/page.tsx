@@ -27,21 +27,21 @@ export default async function SetupPage({ params }: { params: Promise<{ connecti
   const parsed = SetupConnection.safeParse((await params).connection);
   if (!parsed.success) notFound();
   const copy = TITLES[parsed.data];
-  // Not proven on production yet (#295): say so calmly, and offer nothing that could fail.
+  // Not proven on production yet (#295): say so calmly, and offer nothing that could fail. The one
+  // exception is a QR code made from a setup page opened with ?preview=1 (#306): its setup token
+  // shows the steps, so the path can be proven on production before it is switched on.
   const live = isLive(parsed.data);
   return (
     // .screen sets the safe area padding outside Tailwind's layers, so the gap above is a margin.
     <main className="screen flex min-h-dvh flex-col">
       <Wordmark className="mt-10 h-8 w-auto shrink-0 text-label" />
       <h1 className="mt-6 text-insight font-bold tracking-[-0.01em]">{copy.title}</h1>
-      <p className="mt-2 text-body text-label-2">
-        {live ? copy.body : "Coming soon. I will tell you when it is ready."}
-      </p>
-      {live ? (
-        <div className="mt-6">
-          <SetupFromLink connection={parsed.data} shortcutUrl={process.env.MICHAEL_SHORTCUT_URL || null} />
-        </div>
-      ) : null}
+      <SetupFromLink
+        connection={parsed.data}
+        live={live}
+        body={copy.body}
+        shortcutUrl={process.env.MICHAEL_SHORTCUT_URL || null}
+      />
     </main>
   );
 }
