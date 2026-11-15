@@ -5,7 +5,10 @@ the category and the user's own commitments (Omi's action items). The transcript
 words and their names are never stored. Raw audio never reaches us.
 
 Build Hub rule: conversations are recorded only in a user started meetings mode with a consent
-notice. That is the user's job in the Omi app; Michael only receives what Omi finished.
+notice. Michael enforces it (#400): a conversation is kept only when the user had meetings mode on
+(You, Privacy) when it started. Anything else Omi sends is dropped. Off the record drops
+everything. To try the curl below, start meetings mode first (`POST /v1/meetings/start` with
+`{"consent": true}` the first time) and make the body's `started_at` fall inside it.
 
 ## Set up (in the Omi app, about three minutes)
 

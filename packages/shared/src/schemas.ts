@@ -673,6 +673,78 @@ export const FocusGuardsResponse = z.object({
 });
 export type FocusGuardsResponse = z.infer<typeof FocusGuardsResponse>;
 
+// ---- Focus now (#397): one tap turns an intention into protected time ----
+
+/** The lengths the app offers. The API takes any whole number of minutes in FOCUS_MINUTES_RANGE. */
+export const FOCUS_LENGTHS = [25, 45, 60, 90] as const;
+export const FOCUS_MINUTES_RANGE = { min: 5, max: 180 } as const;
+/** What +15 adds, and the longest a session may run in all. */
+export const FOCUS_EXTEND_MINUTES = 15;
+export const FOCUS_MAX_MINUTES = 240;
+
+// active: running now. done: ran to its end (Michael buzzes the watch). ended: ended early.
+export const FocusSessionStatus = z.enum(["active", "done", "ended"]);
+export type FocusSessionStatus = z.infer<typeof FocusSessionStatus>;
+
+export const FocusSession = z.object({
+  id: z.uuid(),
+  goal_id: z.uuid(),
+  goal_title: z.string(),
+  status: FocusSessionStatus,
+  start_at: IsoDateTime,
+  // The planned end; +15 moves it.
+  end_at: IsoDateTime,
+  // When it actually stopped (the end on time, or the tap on End early); null while active.
+  ended_at: IsoDateTime.nullable(),
+  // Planned length now, start to end.
+  minutes: z.number().int().nonnegative(),
+  // Counted as goal time when it stopped (0 when the user said not to count it); null while active.
+  counted_minutes: z.number().int().nonnegative().nullable(),
+  // The user's own calendar block that holds the session (created from now, or the goal block
+  // already running).
+  event_id: z.uuid().nullable(),
+  // True when distracting Mac apps are muted for the session (a focus guard on a connected Mac).
+  guarded: z.boolean(),
+  apps: z.array(z.string()),
+  // The log_time recommendation that confirmed the time (undo takes it back for 24 hours).
+  log_recommendation_id: z.uuid().nullable(),
+  // Michael's line for the result: "Done. 45 min for University."
+  message: z.string().nullable(),
+  created_at: IsoDateTime,
+});
+export type FocusSession = z.infer<typeof FocusSession>;
+
+export const FocusStart = z
+  .object({
+    goal_id: z.uuid().optional(),
+    // The goal in the user's words ("University"), matched like POST /v1/log.
+    goal: z.string().min(1).max(200).optional(),
+    minutes: z.number().int().min(FOCUS_MINUTES_RANGE.min).max(FOCUS_MINUTES_RANGE.max).optional(),
+    // A goal block of the user's that is running now: the session uses it instead of a new block.
+    event_id: z.uuid().optional(),
+  })
+  .refine((v) => v.goal_id || v.goal || v.event_id, { message: "Name the goal" });
+export type FocusStart = z.input<typeof FocusStart>;
+
+export const FocusExtend = z.object({
+  minutes: z.number().int().min(5).max(60).optional(),
+});
+export type FocusExtend = z.input<typeof FocusExtend>;
+
+export const FocusEnd = z.object({
+  // End early: count the time so far (default) or not at all.
+  count: z.boolean().optional(),
+});
+export type FocusEnd = z.input<typeof FocusEnd>;
+
+export const FocusActiveResponse = z.object({
+  now: IsoDateTime,
+  session: FocusSession.nullable(),
+  // The session that stopped in the last 15 minutes, so a screen that comes back shows its result.
+  last: FocusSession.nullable(),
+});
+export type FocusActiveResponse = z.infer<typeof FocusActiveResponse>;
+
 export const RecommendationAction = z.object({
   kind: ActionKind,
   payload: z.record(z.string(), z.unknown()),
@@ -1409,8 +1481,12 @@ export type NudgeChannel = z.infer<typeof NudgeChannel>;
 export const NudgeStatus = z.enum(["queued", "sent", "failed", "suppressed", "test"]);
 export type NudgeStatus = z.infer<typeof NudgeStatus>;
 
-/** Whether a nudge counts towards the 5 a day (and the 20 minute gap). */
-export const countsTowardsCap = (status: NudgeStatus) => status !== "suppressed" && status !== "test";
+/**
+ * Whether a nudge counts towards the 5 a day (and the 20 minute gap). The end of a Focus now
+ * session (`focus_done`, #397) is the user's own timer going off, so it never counts either.
+ */
+export const countsTowardsCap = (status: NudgeStatus, kind?: NudgeKind) =>
+  status !== "suppressed" && status !== "test" && kind !== "focus_done";
 
 // What a nudge is about. Each kind is one rule of the engine (apps/api/src/nudges).
 // morning and evening carry the Morning and Evening moments (GET /v1/moments/:kind), once each a day.
@@ -1423,6 +1499,7 @@ export const NudgeKind = z.enum([
   "morning",
   "evening",
   "recovery_block",
+  "focus_done",
 ]);
 export type NudgeKind = z.infer<typeof NudgeKind>;
 
@@ -2499,6 +2576,16 @@ export const ChatResponse = z.object({
   thread: ChatThread,
 });
 export type ChatResponse = z.infer<typeof ChatResponse>;
+
+// `event: step` on /v1/chat/stream: how Michael is working it out. One "running" then one "done"
+// per tool call (same id), plus the opening "Reading your day". The label is plain, in Michael's
+// voice, and never holds other people's titles or raw ids. Clients that do not know it ignore it.
+export const ChatStep = z.object({
+  id: z.string(),
+  label: z.string(),
+  status: z.enum(["running", "done"]),
+});
+export type ChatStep = z.infer<typeof ChatStep>;
 
 export const ChatHistory = z.object({
   // Oldest first.

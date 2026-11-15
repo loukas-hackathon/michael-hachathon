@@ -33,6 +33,10 @@ export interface GuardRequest {
   back_to?: string | null;
   /** Who asked, for the rationale the user reads ("Claude", "chat"). */
   requested_by: string;
+  /** The line the user reads, when the app list would be too long for it (Focus now). */
+  title?: string;
+  /** "user" for a guard that is part of something the user started (Focus now): not listed. */
+  source?: "chat" | "user";
 }
 
 /**
@@ -56,7 +60,7 @@ export async function guardMacApps(req: GuardRequest): Promise<Recommendation> {
   const goal = req.goal_id ? await store.getGoal(req.goal_id).catch(() => null) : null;
   const rec = await store.createRecommendation({
     goal_id: goal?.id ?? null,
-    title: `Mute ${list(apps)} ${clock(payload.start_at)} to ${clock(payload.end_at)}`,
+    title: req.title ?? `Mute ${list(apps)} ${clock(payload.start_at)} to ${clock(payload.end_at)}`,
     rationale: `Asked for through ${req.requested_by}. I close ${list(apps)} on your Mac when it comes to the front. Undo in Michael any time before ${clock(payload.end_at)}.`,
     action: {
       kind: "block_mac_app",
@@ -64,7 +68,7 @@ export async function guardMacApps(req: GuardRequest): Promise<Recommendation> {
       involves_others: false,
       undo_until: payload.end_at,
     },
-    source: "chat",
+    source: req.source ?? "chat",
   });
   try {
     return await executeRecommendation(rec.id);

@@ -6,7 +6,6 @@ import {
   type Event,
   findBlockableMacApp,
   type Goal,
-  type GoalCategory,
   isSleepGoal,
   type Nudge,
   type NudgeKind,
@@ -109,7 +108,7 @@ export interface EngineInput {
   /** Every event from `engineWindow(now).from` (Monday 00:00, or 8 days back for the usual bedtime) to the end of today. */
   events: Event[];
   /** Every nudge of the local day so far, suppressed ones included. */
-  today: Pick<Nudge, "key" | "status" | "created_at">[];
+  today: (Pick<Nudge, "key" | "status" | "created_at"> & Partial<Pick<Nudge, "kind">>)[];
   offTheRecord?: boolean;
   quiet?: QuietHours;
   /**
@@ -162,17 +161,6 @@ const PRIORITY: NudgeKind[] = [
   "wind_down",
   "goal_behind",
 ];
-
-// The three goal categories, and the four older names goals may still carry.
-const LABEL: Record<GoalCategory, string> = {
-  business: "Focus block",
-  health: "Training",
-  personal: "Your own time",
-  work: "Focus block",
-  gym: "Gym",
-  rest: "Rest",
-  food: "Meal",
-};
 
 /** Compact durations the voice sheet way: "47 min", "2h 10", "6h". */
 export const shortDuration = voiceShortDuration;
@@ -312,7 +300,7 @@ function blockSoon(w: World): Candidate | null {
     kind: "block_soon",
     key: `block_soon:${block.eventId}`,
     goal_id: goal.id,
-    text: `${LABEL[goal.category]} at ${start}. Wrap up in ${lead} min.`,
+    text: `${nameOf(goal)} at ${start}. Wrap up in ${lead} min.`,
     reason: `${goal.title}: block ${start} to ${w.zone.clock(block.end)} on your calendar${progress}.`,
   };
 }
@@ -535,6 +523,8 @@ const RULES: Record<NudgeKind, (w: World) => Candidate | null> = {
   evening: momentRule("evening"),
   wind_down: windDown,
   goal_behind: (w) => goalBehind(w),
+  // Not a rule: the end of a Focus now session is sent by focus/session.ts when the user's timer ends.
+  focus_done: () => null,
 };
 
 /** Every candidate right now, most urgent first, before quiet hours, the cap and repeats. */
@@ -595,7 +585,7 @@ export function decide(input: EngineInput): Decision {
   const best = fresh[0];
   if (!best) return { action: "skip", skipped: "quiet_hours" };
 
-  const counted = real.filter((n) => countsTowardsCap(n.status));
+  const counted = real.filter((n) => countsTowardsCap(n.status, n.kind));
   if (counted.length >= LIMITS.perDay) return { action: "suppress", candidate: best, skipped: "daily_cap" };
 
   const now = Date.parse(input.now);

@@ -26,7 +26,7 @@ returns `501 not_implemented`, `planned` = not routed yet. Update the status whe
     account's own), and only these writes are allowed: `POST /v1/chat`, `/v1/chat/stream`, `/v1/chat/warm`,
     `POST /v1/chat/threads`, `PATCH|DELETE /v1/chat/threads/:id` (their own threads),
     `/v1/recommendations/:id/execute|undo`, `PATCH /v1/recommendations/:id`, `POST /v1/analysis/run`,
-    `/v1/travel/plan`, `/v1/focus-guards/suggest`, `/v1/voice/speak`, `/v1/voice/transcribe`, `/v1/records/:id/announced`, `POST|DELETE /v1/push/subscriptions`, `POST /v1/nudges/test`, the daily ritual (`POST /v1/ritual/morning|evening`, `/v1/ritual/:kind/skip`) and done time (`POST /v1/log`, `/v1/log/block`, `DELETE /v1/log/:id`), which the reseed puts back to the plan.
+    `/v1/travel/plan`, `/v1/focus-guards/suggest`, Focus now (`POST /v1/focus/start`, `/v1/focus/:id/extend|end`, one session per visitor, cleared with the blocks it made by the reseed), `/v1/voice/speak`, `/v1/voice/transcribe`, `/v1/records/:id/announced`, `POST|DELETE /v1/push/subscriptions`, `POST /v1/nudges/test`, the daily ritual (`POST /v1/ritual/morning|evening`, `/v1/ritual/:kind/skip`) and done time (`POST /v1/log`, `/v1/log/block`, `DELETE /v1/log/:id`), which the reseed puts back to the plan.
     Anything else that writes (privacy, goals, instructions, places, profile, integrations,
     Telegram, agents, connecting an agent, keys, data deletion, ingest, `/mcp`) answers
     `403 forbidden` with the message "This is the demo week. Sign in with Google to make it yours."
@@ -267,7 +267,8 @@ Response `200`: `Health`.
 - `200`: `{ from, to, events: Event[] }`. `400` on bad dates or unknown enum values.
 
 `POST /v1/events` body `EventInput` → `201 { inserted: number, duplicates: number, ignored: number, events: Event[] }`.
-`ignored` counts events dropped because their source is switched off or the user is off the record.
+`ignored` counts events dropped because their source is switched off, the user is off the record,
+or (for a conversation) meetings mode was not on at its start (see Meetings mode).
 A duplicate `(source, external_id)` is skipped and counted in `duplicates` (not an error).
 
 `POST /v1/events/batch` body `{ events: EventInput[] }` (1..1000) → same response as above.
@@ -316,6 +317,8 @@ event, `start_at`/`end_at` = `started_at`/`finished_at`, `title` = `structured.t
 `duration_min`. `external_id` = `omi:<id>`. Only those fields are read: transcript segments, speaker
 names, app results and folders are never stored. A `discarded` conversation, a real time transcript
 batch (a JSON array) or any other Omi payload answers `200` with nothing inserted.
+A conversation is kept only when meetings mode was on at its `started_at` (#400, see Meetings
+mode); otherwise it answers `200` with `ignored: 1` and nothing is stored.
 
 `POST /v1/webhooks/ios-shortcuts` takes our own tiny body, sent by a Shortcuts personal automation
 ("App is opened" / "App is closed", then "Get Contents of URL"). Setup: `docs/sources/ios-shortcuts.md`.
@@ -1347,19 +1350,21 @@ travel site" or "an uncategorised site". Structured `data` carries the host for 
 
 ### Chat
 
-| Method | Path                                           | Body                                                                               | Response                                                                                                                                                                                                                                                                                                                              | Status |
-| ------ | ---------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| GET    | `/v1/chat?thread_id=&limit=50`                 |                                                                                    | `200 { messages: ChatMessage[], actions: Recommendation[], thread: ChatThread \| null }` (one thread's lines, oldest first, limit 1..100; without `thread_id` the latest thread; `actions` are the ones named in `action_ids`, as they stand now); `404` for a thread that is not the caller's                                        | live   |
-| POST   | `/v1/chat`                                     | `{ message: string, spoken?: boolean, thread_id?: uuid \| "new" }` (1..2000 chars) | `201 ChatResponse` `{ message, reply, actions: Recommendation[], thread: ChatThread }`; `404` unknown thread; `503 unavailable` without `ANTHROPIC_API_KEY`; `502 upstream_error` if Claude fails                                                                                                                                     | live   |
-| POST   | `/v1/chat/stream`                              | same as `POST /v1/chat`                                                            | `200 text/event-stream`: `event: delta` `{ text }` per piece, `event: action` `Recommendation` per thing done or undone, `event: timing` `ChatTiming` (where the time went), then `event: done` `ChatResponse`, or `event: error` `ApiError`. Validation, `404` and `503 unavailable` come back as plain JSON before the stream opens | live   |
-| POST   | `/v1/chat/warm`                                | `{ thread_id?: uuid \| "new" }` (or no body)                                       | `204`: the chat screen is open, so the API reads the context now and warms the model's prompt cache with it; nothing is stored, and without `ANTHROPIC_API_KEY` it does nothing                                                                                                                                                       | live   |
-| GET    | `/v1/chat/threads?archived=false&q=&limit=100` |                                                                                    | `200 ChatThreadList` `{ threads: ChatThread[] }`, pinned first, then latest line first. `q` (1..100 chars) matches titles and line text                                                                                                                                                                                               | live   |
-| POST   | `/v1/chat/threads`                             | `{ title? }` (or no body)                                                          | `201 ChatThread`, empty, titled "New chat" unless named                                                                                                                                                                                                                                                                               | live   |
-| PATCH  | `/v1/chat/threads/:id`                         | `{ title?, pinned?, archived? }` (at least one)                                    | `200 ChatThread`; `404` when not the caller's                                                                                                                                                                                                                                                                                         | live   |
-| DELETE | `/v1/chat/threads/:id`                         |                                                                                    | `200 { id, messages }`: the thread and every line in it, really deleted; `404` when not the caller's                                                                                                                                                                                                                                  | live   |
+| Method | Path                                           | Body                                                                               | Response                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Status |
+| ------ | ---------------------------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| GET    | `/v1/chat?thread_id=&limit=50`                 |                                                                                    | `200 { messages: ChatMessage[], actions: Recommendation[], thread: ChatThread \| null }` (one thread's lines, oldest first, limit 1..100; without `thread_id` the latest thread; `actions` are the ones named in `action_ids`, as they stand now); `404` for a thread that is not the caller's                                                                                                                                                             | live   |
+| POST   | `/v1/chat`                                     | `{ message: string, spoken?: boolean, thread_id?: uuid \| "new" }` (1..2000 chars) | `201 ChatResponse` `{ message, reply, actions: Recommendation[], thread: ChatThread }`; `404` unknown thread; `503 unavailable` without `ANTHROPIC_API_KEY`; `502 upstream_error` if Claude fails                                                                                                                                                                                                                                                          | live   |
+| POST   | `/v1/chat/stream`                              | same as `POST /v1/chat`                                                            | `200 text/event-stream`: `event: step` `ChatStep` `{ id, label, status: "running" \| "done" }` for how Michael is working it out (see below), `event: delta` `{ text }` per piece, `event: action` `Recommendation` per thing done or undone, `event: timing` `ChatTiming` (where the time went), then `event: done` `ChatResponse`, or `event: error` `ApiError`. Validation, `404` and `503 unavailable` come back as plain JSON before the stream opens | live   |
+| POST   | `/v1/chat/warm`                                | `{ thread_id?: uuid \| "new" }` (or no body)                                       | `204`: the chat screen is open, so the API reads the context now and warms the model's prompt cache with it; nothing is stored, and without `ANTHROPIC_API_KEY` it does nothing                                                                                                                                                                                                                                                                            | live   |
+| GET    | `/v1/chat/threads?archived=false&q=&limit=100` |                                                                                    | `200 ChatThreadList` `{ threads: ChatThread[] }`, pinned first, then latest line first. `q` (1..100 chars) matches titles and line text                                                                                                                                                                                                                                                                                                                    | live   |
+| POST   | `/v1/chat/threads`                             | `{ title? }` (or no body)                                                          | `201 ChatThread`, empty, titled "New chat" unless named                                                                                                                                                                                                                                                                                                                                                                                                    | live   |
+| PATCH  | `/v1/chat/threads/:id`                         | `{ title?, pinned?, archived? }` (at least one)                                    | `200 ChatThread`; `404` when not the caller's                                                                                                                                                                                                                                                                                                                                                                                                              | live   |
+| DELETE | `/v1/chat/threads/:id`                         |                                                                                    | `200 { id, messages }`: the thread and every line in it, really deleted; `404` when not the caller's                                                                                                                                                                                                                                                                                                                                                       | live   |
 
 `spoken: true` means the answer will be read aloud (the app's conversation mode): Michael keeps it
 to one or two short sentences with no lists or markdown, and says numbers as a person would.
+
+**Steps (how Michael is working it out).** The stream opens with `step` `{ id: "open", label: "Reading your day", status: "running" }`, marked `done` at the first word or the first tool step. Each tool call then sends `running` before it runs and `done` after, with the same `id` (`s1`, `s2`, ...) and a plain label in Michael's voice ("Reading your calendar", "Logging 40 min", "Blocking WhatsApp"; unknown tools say "Working it out"). Labels never carry other people's titles or raw ids. Clients that do not know `step` ignore it.
 
 `/v1/chat` stays for callers that want the whole answer (MCP, voice); `/v1/chat/stream` gives the
 first words fast and stores the same pair when it finishes. The stored answer keeps the ids of what
@@ -1439,7 +1444,7 @@ did, minutes?, reason? }` (see Done time), `add_goal`, `update_goal { goal_id, w
 active?, title?, description? }` (a budget or a pause is a `change_goal` recommendation carried out at
 once, undoable for a week), `add_checklist_item`, `update_checklist_item { item_id, status?, text? }`,
 `add_instruction`, `update_instruction { instruction_id, active?, text?, ... }`, `save_place { key,
-label?, address }` (the other places stay) and `update_profile` (quiet hours, work hours, work and
+label?, address }` (the other places stay), `focus_now { goal_id? | goal?, minutes? }` (see Focus now; it answers with a finished line, the app opens the session) and `update_profile` (quiet hours, work hours, work and
 gym days, fixed titles). Deleting data, a goal, an instruction or a place, disconnecting and revoking
 stay in the app. The context gives ids for past own blocks (marked unconfirmed or settled), today's
 checklist items and the active instructions. After `log_done` the reply is one line with the new
@@ -1954,6 +1959,78 @@ type FocusGuardsResponse = { now: string; off_the_record: boolean; guards: Focus
   recommendation (`source: "analysis"`); nothing happens until Do it. Not repeated while an open one
   for the same app has not ended.
 
+### Focus now (#397)
+
+One tap turns an intention into protected time: a live session for one goal from this minute.
+Rules in `apps/api/src/focus/session.ts`; the REST routes, the chat tool `focus_now` and the MCP
+tool `focus_now` all call the same functions.
+
+| Method | Path                   | Body                                                    | Response                                | Status |
+| ------ | ---------------------- | ------------------------------------------------------- | --------------------------------------- | ------ |
+| GET    | `/v1/focus/active`     |                                                         | `200 FocusActiveResponse`               | live   |
+| POST   | `/v1/focus/start`      | `FocusStart { goal_id? \| goal?, minutes?, event_id? }` | `201 FocusSession`; `400`, `404`, `409` | live   |
+| POST   | `/v1/focus/:id/extend` | `FocusExtend { minutes? }` (optional, default 15)       | `200 FocusSession`; `404`, `409`        | live   |
+| POST   | `/v1/focus/:id/end`    | `FocusEnd { count? }` (optional, default true)          | `200 FocusSession`; `404`               | live   |
+
+```ts
+type FocusSession = {
+  id: string;
+  goal_id: string;
+  goal_title: string;
+  status: "active" | "done" | "ended"; // done: ran to its end; ended: ended early
+  start_at: string;
+  end_at: string; // the planned end; +15 moves it
+  ended_at: string | null;
+  minutes: number; // planned length, start to end
+  counted_minutes: number | null; // counted as goal time when it stopped; null while active
+  event_id: string | null; // the user's own block that holds it
+  guarded: boolean; // distracting Mac apps are muted for it
+  apps: string[];
+  log_recommendation_id: string | null; // the log_time that confirmed the time (undo for 24 hours)
+  message: string | null; // "Done. 45 min for University."
+  created_at: string;
+};
+type FocusActiveResponse = { now: string; session: FocusSession | null; last: FocusSession | null };
+```
+
+- **One at a time:** one active session per user (per demo visitor on the demo account, stored
+  like chat). A second start is `409` ("You are already focusing on University until 12:45. End
+  it first."). The state is on the server: the app reattaches to the same countdown after leaving.
+- **Start:** the goal by `goal_id` or by the user's words (`goal`, matched as in Done time), or the
+  goal of `event_id`. `minutes` 5 to 180; the app offers 25, 45, 60 and 90 (`FOCUS_LENGTHS`). The
+  session runs in the user's own block: the goal block running now (`event_id`, or found on its own
+  when one of the goal's blocks runs now with 5 minutes left; then the default length is the rest of
+  it), else a new block from this minute, named after the goal, through the same create_focus_block
+  path as the Timeline (`source: "user"`). It has started by the time it exists, so it cannot be
+  undone; End early is the way back. Off the record is `409` (nothing is kept, so nothing to count).
+- **Mac:** when Mac data arrived in the last 48 hours (the collector runs) and the user is not off
+  the record, distracting apps (WhatsApp, Telegram, Messages, Messenger, Discord, Instagram, X,
+  Reddit, TikTok, Netflix) are muted for the window through a focus guard (a `block_mac_app`
+  recommendation, "Muted distracting apps until 12:45"). Without a Mac this is skipped silently and
+  `guarded` is false, so the app never claims a guard that is not there.
+- **+15:** moves `end_at`, the block the session made, and adds a guard for the extra minutes. At
+  most 4 hours in all (`409` after). A block the user made is never changed: time past its end is
+  logged outside it and counts toward the goal's budget.
+- **The end on time:** at or after `end_at` (30 seconds early counts). The background finisher
+  (scheduler, every 30 seconds) and `GET /v1/focus/active` both end a due session, so it ends with
+  the app closed too. The whole length counts. The watch buzzes: a `focus_done` nudge ("Done. 45
+  min for University.", under 15 words) on the push and Telegram channels. **The cap rule:** the
+  user set this timer, so a `focus_done` nudge never counts towards the 5 a day or the 20 minute gap
+  (`countsTowardsCap(status, kind)`), and it never blocks one of Michael's nudges. Quiet hours still
+  hold: inside the profile's quiet hours it is stored `suppressed` and not sent. Off the record, no
+  nudge.
+- **End early:** before the end. `count` true (default) counts the whole minutes so far, false
+  counts nothing; the app asks "Count 30 min?" first. The block the session made is cut to the
+  minute it ended, the guards are undone at once (the apps open again), and an uncounted session's
+  block is settled as not done ("Ended early, not counted").
+- **Counted time** is confirmed goal time: logged through Done time (`log_time`, `POST /v1/log`'s
+  path) from `start_at` for `counted_minutes`, so inside its block it confirms the block and the
+  score, Today and Goals read it at once. When device attention (Mac, iPhone, ActivityWatch,
+  Chrome) or a workout already covers at least half of that span, nothing is logged and the score
+  reads the devices.
+- Ending twice is safe: a stopped session is returned as it is (the client's timer and the server
+  can both end it; only the first does the work).
+
 ### Follow up drafts
 
 After a conversation (Omi: summary and the user's own commitments) or a calendar meeting with other
@@ -2091,6 +2168,68 @@ MCP). `manual` events, typed by the user, are always kept. `since` is when colle
 `null`. Never set sources show `updated_at` as `1970-01-01T00:00:00.000Z`. The check lives in
 `apps/api/src/privacy.ts` and runs inside `Store.insertEvents`.
 
+Conversations need one more thing: meetings mode (below). Any `conversation` event, and every event
+from a conversation source (`omi`), is dropped and counted in `ignored` unless a meetings mode
+session covered its `start_at`. Off the record and the source switch are checked first and still
+win. `manual` events are the user's own and never need it. Rule: `decideEvent` in `privacy.ts`.
+
+### Meetings mode
+
+Conversations are kept only while the user has started meetings mode (#400, Build Hub n10). Only
+the user starts it, from You (Privacy) or the Mi sheet, after a one time consent notice: "Only you
+start this. Tell the people in the room you're recording. I keep a short summary and your own
+commitments; the audio and full transcript are never kept." It ends when the user taps End, by
+itself after 2 hours or at the end of the calendar block it began in (a block running at the start
+with 10 minutes or more left, or one starting within 15 minutes; all day events do not count),
+whichever is first, and when the user goes off the record. Michael never stores other speakers'
+words: the Omi mapper keeps only the summary and the user's own action items.
+
+```ts
+const MEETING_MAX_MINUTES = 120;
+const MEETING_RECAP_HOURS = 12;
+type MeetingSession = {
+  id: string;
+  started_at: string;
+  ends_at: string; // when it ends by itself (2 hours, or the calendar block's end)
+  ended_at: string | null; // when the user (or off the record) ended it
+};
+type MeetingStart = { consent?: boolean }; // true the first time
+type MeetingCommitment = { text: string; event_id: string }; // the conversation it came from
+type MeetingRecap = {
+  session_id: string;
+  started_at: string;
+  ended_at: string; // ended_at, or ends_at when it ran out
+  conversation_ids: string[];
+  commitments: MeetingCommitment[]; // the user's own, never other speakers'
+  lesson: string | null; // a conversation's `data.lesson`, when one carried it
+};
+type MeetingsState = {
+  consented: boolean; // a session was started before: the notice was read
+  active: MeetingSession | null;
+  last: MeetingRecap | null; // the latest session that ended in the last 12 hours
+};
+```
+
+| Method | Path                       | Body                 | Response                                                  | Status |
+| ------ | -------------------------- | -------------------- | --------------------------------------------------------- | ------ |
+| GET    | `/v1/meetings/active`      |                      | `200 MeetingsState`                                       | live   |
+| POST   | `/v1/meetings/start`       | `MeetingStart` (opt) | `200 MeetingsState`; `409` without consent the first time | live   |
+| POST   | `/v1/meetings/end`         |                      | `200 MeetingsState` (nothing running: nothing changes)    | live   |
+| POST   | `/v1/meetings/commitments` | `{ text: string }`   | `201 { item: ChecklistItem }`; `409` when today is full   | live   |
+
+- Start is idempotent: while a session runs it answers that session. Off the record answers `409`.
+- The gate: a conversation is kept when its `start_at` lies inside a session, from 2 minutes before
+  `started_at` (the recorder often starts a breath before the tap) to `ended_at`, or `ends_at`
+  when it ran out. Ingest reads the latest 100 sessions.
+- `commitments` puts one commitment on today's outcomes (the checklist goal "Today's outcomes",
+  made when missing; at most three open a day). A follow up for the conversation is
+  `POST /v1/drafts/generate { event_id }` (Follow up drafts).
+- Sessions live in `meeting_sessions` and go with "Delete everything". Demo visitors may start,
+  end and add commitments; the demo reseed clears the sessions, so the notice shows again.
+- Web: a "Meetings mode" row under Privacy on You (the Mi sheet), the consent sheet before the
+  first start, and while on, a pill "Meeting on · 12 min · End" above the tab bar on every screen.
+  The recap card on Today ("Meeting at 14:00: 2 commitments", from `last`) comes next.
+
 ### Your data: deletion and retention
 
 ```ts
@@ -2122,7 +2261,7 @@ Deletion really deletes: rows are removed from the database, not hidden. `DELETE
 no parameters removes every row of the account: events, event summaries, goals, recommendations,
 analysis runs, nudges, chat messages, standing instructions, the Telegram chat, integrations (Google is revoked first), push subscriptions,
 device keys, agents with their query log, OAuth grants and tokens, places, the geocode cache, source
-switches, the off the record state and the profile. Then the Supabase Auth user itself is deleted,
+switches, the off the record state, meetings mode sessions and the profile. Then the Supabase Auth user itself is deleted,
 so the next sign in starts a new, empty account. With any of `source`, `from`, `to` (ISO date times,
 `from` < `to`) only the matching timeline events (`start_at` in `[from, to)`) and the summaries of
 the days they cover are removed (`scope: "timeline"`).
@@ -2522,7 +2661,7 @@ type AgentQuery = {
   `update_goal`, `propose_goals`, `get_checklist`, `add_checklist_item`, `set_day_outcomes`, `log_day` = `goals`; `list_recommendations`, `update_recommendation`, `get_nudges`,
   `list_drafts`, `draft_follow_up` = `recommendations`; `get_score`, `get_records`, `get_moments` = `score`; `add_event`, `execute_recommendation`,
   `undo_recommendation`, `create_focus_block`, `block_mac_app`, `plan_travel`, `log_done`,
-  `confirm_block` = `write_events`;
+  `confirm_block`, `focus_now` = `write_events`;
   `suggest_app_mute` = `recommendations`; `get_memories`, `what_you_know` = `timeline`; `remember` = `write_events`.
   Memories are events of type `memory` (source `manual` from chat, `agent` from MCP); Michael's
   chat reads the newest 40 into every answer and keeps new ones with its own `remember` and
@@ -2572,7 +2711,7 @@ most urgent candidate of these rules (in this order):
 | Kind             | When                                                                                                                         | Example                                                               |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
 | `focus_drift`    | inside a work goal block, 3+ of the last 10 min on distractor apps or sites                                                  | "6 min on Instagram in your focus block. Back to it until 12:00."     |
-| `block_soon`     | a goal block starts in 2 to 15 min                                                                                           | "Gym at 18:00. Wrap up in 12 min."                                    |
+| `block_soon`     | a goal block starts in 2 to 15 min, named by its goal's own title                                                            | "70.3 at 18:00. Wrap up in 12 min."                                   |
 | `morning`        | after the night's sleep (never a nap) ends today, else from 08:00; until 12:00                                               | the Morning moment's headline, e.g. "Today holds 2h 00 of goal time." |
 | `evening`        | an hour before the usual bedtime (median of 3+ of the last 8 nights), else 21:00; never later than 45 min before quiet hours | the Evening moment's headline                                         |
 | `wind_down`      | 30 min before the night, 3+ of the last 10 min on screens, a rest goal exists                                                | "Screens off by 22:00. Sleep is on the plan."                         |
@@ -2618,7 +2757,8 @@ scoped as that user. On by default when `NODE_ENV=production`, `SCHEDULER_ENABLE
 and Telegram chat (counted as one device in `devices` and `delivered`) at once, ignoring the cap, quiet hours and dedupe. It is for the stage moment: it stores the nudge
 with status `test` (a fresh key each press), so `GET /v1/nudges` and the stage view (`/stage`) show
 the same line as the watch buzzes. `test` nudges never count towards the 5 a day, the 20 minute gap
-or the daily dedupe (`countsTowardsCap` in `@michael/shared`).
+or the daily dedupe (`countsTowardsCap` in `@michael/shared`). Nor do `focus_done` nudges, the end of
+a Focus now session the user started (see Focus now); they still respect quiet hours.
 
 ```ts
 type NudgeTestResult = { text: string; reason: string; delivered: number; devices: number; nudge: Nudge };
@@ -3225,7 +3365,7 @@ start has finished, a demo request waits for it at most 2 s, since the week from
 the database) (the first refresh after a deploy resets the goals to the Build Hub plan,
 later ones keep edits; `DEMO_WEEK=off` turns it off). `POST /v1/demo/reseed` also resets the goals.
 Any other account gets `403 forbidden`. The reseed (and the first refresh after a deploy) also
-deletes all demo visitor chat, turns off the record off, removes goals that are not in the plan
+deletes all demo visitor chat, turns off the record off, clears meetings mode sessions, removes goals that are not in the plan
 clears the week's ritual and every logged entry that is not the demo week's own (the plan's ritual is written again), and replaces the standing instructions with the plan's (`demoInstructions`: only "Nothing between
 23:00 and 07:00", so a Saturday or Sunday evening stays bookable for the live demo); every refresh deletes visitor chat
 older than a day. Off the record, nothing changes. Per source switches are
@@ -3355,6 +3495,7 @@ offset. A refused or failed call returns `isError: true` with one plain sentence
 | `block_mac_app`          | `write_events`    | `{ apps: string[], start?: TimeInput, end: TimeInput, goal_id? }` (start default now)   | `{ recommendation, undo_until }`                                                           |
 | `log_done`               | `write_events`    | `{ goal_id? \| goal?, minutes?, start?: TimeInput, end?: TimeInput, note? }`            | `LogTimeResponse` (see Done time)                                                          |
 | `confirm_block`          | `write_events`    | `{ event_id, did: boolean, minutes?, reason? }`                                         | `LogTimeResponse`                                                                          |
+| `focus_now`              | `write_events`    | `{ goal_id? \| goal?, minutes? }` (5..180, default 45 or the rest of the running block) | `{ session: FocusSession }` (see Focus now)                                                |
 | `suggest_app_mute`       | `recommendations` | `{}`                                                                                    | `{ recommendation }` or `{}` when nothing stands out                                       |
 | `plan_travel`            | `write_events`    | `{ from?, to? }` (default today)                                                        | `TravelPlanResult` (see Places and travel)                                                 |
 | `list_drafts`            | `recommendations` | `{ status?: DraftStatus }` (default proposed)                                           | `{ drafts: Draft[] }`                                                                      |

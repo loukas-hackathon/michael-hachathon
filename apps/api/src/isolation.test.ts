@@ -93,6 +93,7 @@ const READS = [
   () => "/v1/telegram",
   () => "/v1/goals/suggestions",
   () => "/v1/focus-guards/active",
+  () => "/v1/focus/active",
   () => "/v1/voice",
   () => "/v1/places/suggestions",
   () => "/v1/records",
@@ -100,6 +101,7 @@ const READS = [
   () => "/v1/me/knowledge",
   () => "/v1/targets/current",
   () => `/v1/checklist?date=${day}`,
+  () => "/v1/meetings/active",
 ];
 
 const ids: {
@@ -194,6 +196,8 @@ test("A writes through every write route", async () => {
     }),
     "PUT /v1/places",
   );
+  // Meetings mode (#400): A's session must not show for, or open conversations of, anyone else.
+  await ok(await request(asA, "POST", "/v1/meetings/start", { consent: true }), "POST /v1/meetings/start");
   await ok(
     await request(asA, "PUT", "/v1/privacy/off-the-record", { off_the_record: true }),
     "off the record",
@@ -244,6 +248,8 @@ for (const [name, who] of [
     assert.equal(privacy.off_the_record, false, `A's off the record must not apply to ${name}`);
     const push = await (await request(who, "GET", "/v1/push")).json();
     assert.equal(push.devices, 0, `${name} must not count A's device`);
+    const meetings = await (await request(who, "GET", "/v1/meetings/active")).json();
+    assert.equal(meetings.active, null, `A's meeting must not run for ${name}`);
   });
 
   test(`${name} cannot change or delete A's data`, async () => {
@@ -727,4 +733,77 @@ test("the visitor rules fail closed for routes nobody listed", () => {
   assert.equal(demoVisitorMay("DELETE", "/v1/me/data"), false);
   assert.equal(demoVisitorMay("GET", "/v1/goals"), true);
   assert.equal(demoVisitorMay("POST", "/v1/chat/"), true);
+});
+
+test("focus sessions (#397): only their owner sees, extends or ends one; visitors keep their own", async () => {
+  const goalOf = async (who: Who, title: string) =>
+    (
+      await ok(
+        await request(who, "POST", "/v1/goals", {
+          category: "personal",
+          title,
+          description: null,
+          target: null,
+          weekly_budget_minutes: 300,
+          active: true,
+        }),
+        `goal ${title}`,
+      )
+    ).id as string;
+  const aGoal = await goalOf(asA, `Focus ${MARK}`);
+  const bGoal = await goalOf(asB, "Focus of B");
+  // A is off the record from the first test: nothing is kept, so no session either.
+  assert.equal((await request(asA, "POST", "/v1/focus/start", { goal_id: aGoal })).status, 409);
+  await ok(await request(asA, "PUT", "/v1/privacy/off-the-record", { off_the_record: false }), "A back on");
+  const started = await request(asA, "POST", "/v1/focus/start", { goal_id: aGoal, minutes: 25 });
+  assert.equal(started.status, 201, await started.clone().text());
+  const session = (await started.json()) as { id: string; event_id: string };
+
+  // B cannot read, extend or end A's session, nor start one on A's goal.
+  const bActive = await ok(await request(asB, "GET", "/v1/focus/active"), "B active");
+  assert.equal(bActive.session, null);
+  assert.ok(!JSON.stringify(bActive).includes(MARK));
+  assert.equal((await request(asB, "POST", `/v1/focus/${session.id}/extend`, {})).status, 404);
+  assert.equal((await request(asB, "POST", `/v1/focus/${session.id}/end`, { count: true })).status, 404);
+  assert.equal((await request(asB, "POST", "/v1/focus/start", { goal_id: aGoal })).status, 404);
+  // B's own session runs beside A's: one per user, not one in all.
+  assert.equal((await request(asB, "POST", "/v1/focus/start", { goal_id: bGoal, minutes: 25 })).status, 201);
+  // A second one for A is refused.
+  assert.equal((await request(asA, "POST", "/v1/focus/start", { goal_id: aGoal, minutes: 25 })).status, 409);
+
+  // Demo visitors: allowed, one each, never another's.
+  await runAsUser(DEMO, () => seedDemoWeek(store, { overwriteGoals: true }), "api_key");
+  const { demoGoals } = await import("./demo/week");
+  const uni = demoGoals.find((g) => g.title === "University") ?? demoGoals[0];
+  const v1Start = await request(visitor1, "POST", "/v1/focus/start", { goal_id: uni?.id, minutes: 25 });
+  assert.equal(v1Start.status, 201, await v1Start.clone().text());
+  const v1Session = (await v1Start.json()) as { id: string; event_id: string };
+  const v2Active = await ok(await request(visitor2, "GET", "/v1/focus/active"), "visitor 2 active");
+  assert.equal(v2Active.session, null);
+  assert.equal((await request(visitor2, "POST", `/v1/focus/${v1Session.id}/end`, {})).status, 404);
+  const accountActive = await ok(await request(asDemo, "GET", "/v1/focus/active"), "account active");
+  assert.equal(accountActive.session, null);
+  const extended = await ok(
+    await request(visitor1, "POST", `/v1/focus/${v1Session.id}/extend`, {}),
+    "extend",
+  );
+  assert.equal(extended.minutes, 40);
+
+  // The reseed clears visitors' sessions and the blocks they made on the demo day.
+  await runAsUser(DEMO, () => seedDemoWeek(store, { overwriteGoals: true }), "api_key");
+  const after = await ok(await request(visitor1, "GET", "/v1/focus/active"), "visitor 1 after reseed");
+  assert.equal(after.session, null);
+  assert.equal(await runAsUser(DEMO, () => store.getEvent(v1Session.event_id), "api_key"), null);
+
+  // A's session is untouched by all of it, and A can end it.
+  const aActive = await ok(await request(asA, "GET", "/v1/focus/active"), "A active");
+  assert.equal(aActive.session?.id, session.id);
+  const ended = await ok(
+    await request(asA, "POST", `/v1/focus/${session.id}/end`, { count: false }),
+    "A end",
+  );
+  assert.equal(ended.status, "ended");
+  assert.equal(demoVisitorMay("POST", "/v1/focus/start"), true);
+  assert.equal(demoVisitorMay("POST", "/v1/focus/x/end"), true);
+  assert.equal(demoVisitorMay("POST", "/v1/focus/x/delete"), false);
 });

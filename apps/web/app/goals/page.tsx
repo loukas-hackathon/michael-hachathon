@@ -1,4 +1,5 @@
 import { type Goal, GoalCategory, type GoalSuggestion, type Recommendation } from "@michael/shared";
+import { FocusNowButton } from "@/components/focus/focus-start";
 import { BalanceBars } from "@/components/gamification/balance";
 import { TargetCard } from "@/components/gamification/target-card";
 import { BookTime } from "@/components/goals/book-time";
@@ -326,6 +327,9 @@ function Hero({
           </p>
           <span className="-my-2 flex shrink-0 items-baseline gap-3">
             {/* "I did 30 min" (#317): time spent off the calendar counts too. */}
+            {canLog ? (
+              <FocusNowButton goal={{ id: goal.id, title: goal.title }} className={btnPlain} />
+            ) : null}
             {canLog ? <LogTimeButton goal={{ id: goal.id, title: goal.title }} className={btnPlain} /> : null}
             {draft ? (
               <EditGoal draft={draft} personalReady={personalReady} className={btnPlain}>
@@ -512,6 +516,7 @@ function GoalRow({
       </p>
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
         {split.open > 0 ? <BookTime goalId={goal.id} minutes={bookMinutes(split.open, toGo)} /> : null}
+        {canLog ? <FocusNowButton goal={{ id: goal.id, title: goal.title }} className={btnPlain} /> : null}
         {canLog ? <LogTimeButton goal={{ id: goal.id, title: goal.title }} className={btnPlain} /> : null}
         {draft ? (
           <EditGoal draft={draft} personalReady={personalReady} className={btnPlain}>

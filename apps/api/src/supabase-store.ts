@@ -18,6 +18,7 @@ import type {
   InstructionCreate,
   InstructionUpdate,
   IntegrationProvider,
+  MeetingSession,
   Nudge,
   NudgeStatus,
   PersonalRecord,
@@ -46,24 +47,33 @@ import {
   type DataDeleteScope,
   type DayRitual,
   type DeleteCounts,
+  type DueFocusSession,
   type EventPatch,
+  type FocusSessionPatch,
   type InsertResult,
   type IntegrationPatch,
   type IntegrationRecord,
+  isRunning,
+  MEETING_LOOKBACK,
+  meetingWindows,
   NEW_THREAD_TITLE,
   type NewAnalysis,
   type NewCheckIn,
   type NewChecklistItem,
   type NewDraft,
   type NewFocusGuard,
+  type NewFocusSession,
+  type NewMeetingSession,
   type NewRecommendation,
   type NudgeCreate,
+  ONE_ACTIVE_FOCUS,
   type PushDevice,
   previewOf,
   type RecommendationActionUpdate,
   type SeedResult,
   type Store,
   type StoredCheckIn,
+  type StoredFocusSession,
   sameEvent,
   summaryDayRange,
   type TargetInput,
@@ -131,6 +141,24 @@ const toFocusGuard = (r: Record<string, unknown>): FocusGuard => ({
   end_at: iso(r.end_at as string) as string,
   goal_id: (r.goal_id as string | null) ?? null,
   back_to: (r.back_to as string | null) ?? null,
+  created_at: iso(r.created_at as string) as string,
+});
+
+const toFocusSession = (r: Record<string, unknown>): StoredFocusSession => ({
+  id: r.id as string,
+  goal_id: r.goal_id as string,
+  status: r.status as StoredFocusSession["status"],
+  start_at: iso(r.start_at as string) as string,
+  end_at: iso(r.end_at as string) as string,
+  ended_at: iso(r.ended_at as string | null),
+  counted_minutes: (r.counted_minutes as number | null) ?? null,
+  event_id: (r.event_id as string | null) ?? null,
+  owns_block: r.owns_block === true,
+  block_recommendation_id: (r.block_recommendation_id as string | null) ?? null,
+  guard_recommendation_ids: (r.guard_recommendation_ids as string[] | null) ?? [],
+  apps: (r.apps as string[] | null) ?? [],
+  log_recommendation_id: (r.log_recommendation_id as string | null) ?? null,
+  message: (r.message as string | null) ?? null,
   created_at: iso(r.created_at as string) as string,
 });
 
@@ -335,6 +363,13 @@ const toDraft = (r: Record<string, unknown>): Draft => ({
   updated_at: iso(r.updated_at as string) as string,
 });
 
+const toMeetingSession = (r: Record<string, unknown>): MeetingSession => ({
+  id: r.id as string,
+  started_at: iso(r.started_at as string) as string,
+  ends_at: iso(r.ends_at as string) as string,
+  ended_at: iso((r.ended_at as string | null) ?? null),
+});
+
 function check<T>(res: { data: T; error: { message: string; code?: string } | null }): T {
   if (res.error) throw new HttpError("upstream_error", `Database error: ${res.error.message}`);
   return res.data;
@@ -350,12 +385,14 @@ export const USER_TABLES = [
   "oauth_grants",
   "agent_clients",
   "focus_guards",
+  "focus_sessions",
   "nudges",
   "drafts",
   "recommendations",
   "analysis_runs",
   "checklist_items",
   "day_rituals",
+  "meeting_sessions",
   "goals",
   "events",
   "event_summaries",
@@ -650,15 +687,17 @@ export class SupabaseStore implements Store {
 
   async privacyRules(): Promise<PrivacyRules> {
     const userId = currentUserId();
-    const [state, settings] = await Promise.all([
+    const [state, settings, meetings] = await Promise.all([
       this.db.from("privacy_state").select("off_the_record, since").eq("user_id", userId).maybeSingle(),
       this.db.from("source_settings").select("source, enabled, updated_at").eq("user_id", userId),
+      this.listMeetingSessions({ limit: MEETING_LOOKBACK }),
     ]);
     const s = check(state);
     const rules: PrivacyRules = {
       offTheRecord: s?.off_the_record ?? false,
       since: iso(s?.since ?? null),
       sources: {},
+      meetings: meetingWindows(meetings),
     };
     for (const r of check(settings) ?? []) {
       rules.sources[r.source as Source] = {
@@ -682,7 +721,57 @@ export class SupabaseStore implements Store {
       current.offTheRecord = on;
       current.since = since;
     }
+    // Off the record ends a running meetings mode session (#400).
+    if (on) {
+      const running = (await this.listMeetingSessions({ limit: 5 })).filter((m) => isRunning(m));
+      if (running.length) {
+        const at = new Date().toISOString();
+        for (const m of running) await this.updateMeetingSession(m.id, { ended_at: at });
+        return this.privacyRules();
+      }
+    }
     return current;
+  }
+
+  async listMeetingSessions(f: { since?: string; limit: number }): Promise<MeetingSession[]> {
+    let q = this.db
+      .from("meeting_sessions")
+      .select("id, started_at, ends_at, ended_at")
+      .eq("user_id", currentUserId());
+    if (f.since) q = q.gte("started_at", f.since);
+    const rows = check(await q.order("started_at", { ascending: false }).limit(f.limit));
+    return (rows ?? []).map(toMeetingSession);
+  }
+
+  async createMeetingSession(input: NewMeetingSession): Promise<MeetingSession> {
+    const row = check(
+      await this.db
+        .from("meeting_sessions")
+        .insert({ user_id: currentUserId(), started_at: input.started_at, ends_at: input.ends_at })
+        .select("id, started_at, ends_at, ended_at")
+        .single(),
+    ) as Record<string, unknown>;
+    return toMeetingSession(row);
+  }
+
+  async updateMeetingSession(id: string, patch: { ended_at: string }): Promise<MeetingSession | null> {
+    const row = check(
+      await this.db
+        .from("meeting_sessions")
+        .update({ ended_at: patch.ended_at })
+        .eq("user_id", currentUserId())
+        .eq("id", id)
+        .select("id, started_at, ends_at, ended_at")
+        .maybeSingle(),
+    );
+    return row ? toMeetingSession(row) : null;
+  }
+
+  async clearMeetingSessions(): Promise<number> {
+    const rows = check(
+      await this.db.from("meeting_sessions").delete().eq("user_id", currentUserId()).select("id"),
+    );
+    return (rows ?? []).length;
   }
 
   async setSourceEnabled(source: Source, enabled: boolean): Promise<SourceSetting> {
@@ -1151,6 +1240,77 @@ export class SupabaseStore implements Store {
         .select("*"),
     );
     return { run: saved, recommendations: (rows ?? []).map(toRecommendation) };
+  }
+
+  /** Focus sessions (#397), scoped like chat: the account's own rows, or this demo visitor's. */
+  private focusScope() {
+    const visitor = currentDemoVisitor();
+    const q = this.db.from("focus_sessions").select("*").eq("user_id", currentUserId());
+    return visitor ? q.eq("visitor_id", visitor) : q.is("visitor_id", null);
+  }
+
+  async getActiveFocusSession() {
+    const row = check(await this.focusScope().eq("status", "active").limit(1).maybeSingle());
+    return row ? toFocusSession(row) : null;
+  }
+
+  async getFocusSession(id: string) {
+    const row = check(await this.focusScope().eq("id", id).maybeSingle());
+    return row ? toFocusSession(row) : null;
+  }
+
+  async latestFocusSession() {
+    const row = check(
+      await this.focusScope().order("created_at", { ascending: false }).limit(1).maybeSingle(),
+    );
+    return row ? toFocusSession(row) : null;
+  }
+
+  async createFocusSession(input: NewFocusSession) {
+    const res = await this.db
+      .from("focus_sessions")
+      .insert({ ...input, user_id: currentUserId(), visitor_id: currentDemoVisitor() })
+      .select("*")
+      .single();
+    // The partial unique index keeps one active session per user (and visitor).
+    if (res.error?.code === "23505") throw new HttpError("conflict", ONE_ACTIVE_FOCUS);
+    return toFocusSession(check(res));
+  }
+
+  async updateFocusSession(id: string, patch: FocusSessionPatch, opts: { onlyActive?: boolean } = {}) {
+    const visitor = currentDemoVisitor();
+    let q = this.db.from("focus_sessions").update(patch).eq("user_id", currentUserId()).eq("id", id);
+    q = visitor ? q.eq("visitor_id", visitor) : q.is("visitor_id", null);
+    if (opts.onlyActive) q = q.eq("status", "active");
+    const row = check(await q.select("*").maybeSingle());
+    return row ? toFocusSession(row) : null;
+  }
+
+  async dueFocusSessions(before: string): Promise<DueFocusSession[]> {
+    const rows = check(
+      await this.db
+        .from("focus_sessions")
+        .select("id,user_id,visitor_id")
+        .eq("status", "active")
+        .lte("end_at", before)
+        .limit(100),
+    );
+    return (rows ?? []).map((r) => ({
+      id: r.id as string,
+      user_id: r.user_id as string,
+      visitor_id: (r.visitor_id as string | null) ?? null,
+    }));
+  }
+
+  async clearFocusSessions() {
+    const rows = check(
+      await this.db
+        .from("focus_sessions")
+        .delete()
+        .eq("user_id", currentUserId())
+        .select("event_id,owns_block"),
+    );
+    return (rows ?? []).flatMap((r) => (r.owns_block && r.event_id ? [r.event_id as string] : []));
   }
 
   /** A query on a chat table, scoped to the user and to the account's own rows or this visitor's. */

@@ -84,8 +84,13 @@ test("sw: a nudge shows its buttons (two at most) and keeps the card and token f
   const [note] = w.shown;
   assert.equal(note?.title, "Michael");
   assert.deepEqual(plain(note?.options.actions), PAYLOAD.actions.slice(0, 2));
-  assert.deepEqual(plain(note?.options.data), {
+  const { at, ...data } = plain(note?.options.data) as Record<string, unknown>;
+  assert.equal(typeof at, "number");
+  assert.deepEqual(data, {
     url: PAYLOAD.url,
+    // What the app paints the moment it opens (#405).
+    text: PAYLOAD.body,
+    kind: PAYLOAD.tag,
     act_url: PAYLOAD.act_url,
     token: PAYLOAD.token,
   });
@@ -101,6 +106,18 @@ test("sw: tapping the body opens the exact card, never another site", async () =
   await w.click({ url: "https://evil.example/x" });
   assert.deepEqual(w.opened, [`${ORIGIN}${PAYLOAD.url}`, `${ORIGIN}${PAYLOAD.url}`, `${ORIGIN}/`]);
   assert.equal(w.fetched.length, 0);
+});
+
+test("sw: the tap carries the nudge in the fragment, so the app shows it before any data (#405)", async () => {
+  const w = worker(async () => Response.json({}));
+  await w.click({ url: PAYLOAD.url, text: PAYLOAD.body, kind: PAYLOAD.tag, at: 5 });
+  const opened = new URL(w.opened[0] ?? "");
+  assert.equal(opened.origin + opened.pathname + opened.search, `${ORIGIN}${PAYLOAD.url}`);
+  assert.deepEqual(JSON.parse(decodeURIComponent(opened.hash.slice("#nudge=".length))), {
+    text: PAYLOAD.body,
+    kind: PAYLOAD.tag,
+    at: 5,
+  });
 });
 
 test("sw: a button posts the action with the token and shows the result", async () => {

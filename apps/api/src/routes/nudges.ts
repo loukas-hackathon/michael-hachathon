@@ -86,7 +86,7 @@ export async function checkNudges(): Promise<NudgeCheckResult> {
     offTheRecord: privacy.offTheRecord,
   });
   const decision = decide(input);
-  const counted = today.filter((n) => countsTowardsCap(n.status)).length;
+  const counted = today.filter((n) => countsTowardsCap(n.status, n.kind)).length;
   if (decision.action === "skip") {
     return { checked_at: now, nudge: null, skipped: decision.skipped, sent_today: counted };
   }

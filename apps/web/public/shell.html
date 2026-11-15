@@ -110,6 +110,35 @@
         font: inherit;
         font-weight: 600;
       }
+      .nudge {
+        position: fixed;
+        z-index: 40;
+        top: calc(env(safe-area-inset-top) + 8px);
+        left: 16px;
+        right: 16px;
+        max-width: 528px;
+        margin: 0 auto;
+        padding: 12px 16px;
+        border-radius: 16px;
+        background: var(--m-bg);
+        box-shadow:
+          0 8px 30px -12px rgb(0 0 0 / 0.35),
+          0 0 0 1px var(--m-separator);
+      }
+      .nudge[hidden] {
+        display: none;
+      }
+      .nudge small {
+        display: block;
+        font-size: 13px;
+        line-height: 18px;
+        font-weight: 600;
+        color: var(--m-label-2);
+      }
+      .nudge p {
+        margin-top: 2px;
+        font-weight: 600;
+      }
       [data-state="offline"] .skeleton {
         display: none;
       }
@@ -155,7 +184,27 @@
       </section>
     </main>
     <div class="tabbar" aria-hidden="true"></div>
+    <!-- A tapped nudge (sw.js puts it in the fragment): shown at once, the app's own card takes over. -->
+    <section class="nudge" id="nudge" aria-label="From your nudge" hidden>
+      <small id="nudge-when">From your nudge</small>
+      <p id="nudge-text"></p>
+    </section>
     <script>
+      (() => {
+        try {
+          if (location.hash.indexOf("#nudge=") === 0) {
+            const n = JSON.parse(decodeURIComponent(location.hash.slice(7)));
+            if (n && typeof n.text === "string" && n.text) {
+              document.getElementById("nudge-text").textContent = n.text.slice(0, 300);
+              if (typeof n.at === "number") {
+                const t = new Date(n.at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+                document.getElementById("nudge-when").textContent = "From your nudge at " + t;
+              }
+              document.getElementById("nudge").hidden = false;
+            }
+          }
+        } catch (_) {}
+      })();
       (() => {
         // The real page plays the launch animation only once per session; the shell already
         // stood in for it, so skip it when the page arrives.

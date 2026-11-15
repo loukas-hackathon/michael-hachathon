@@ -20,6 +20,7 @@ import { checklist } from "./routes/checklist";
 import { demo } from "./routes/demo";
 import { drafts } from "./routes/drafts";
 import { events } from "./routes/events";
+import { focus } from "./routes/focus";
 import { focusGuards } from "./routes/focus-guards";
 import { goals } from "./routes/goals";
 import { instructions } from "./routes/instructions";
@@ -27,6 +28,7 @@ import { integrations, oauth } from "./routes/integrations";
 import { knowledge } from "./routes/knowledge";
 import { log } from "./routes/log";
 import { meData } from "./routes/me-data";
+import { meetings } from "./routes/meetings";
 import { moments } from "./routes/moments";
 import { nudgeActPublic, nudges } from "./routes/nudges";
 import { connect, oauthPublic } from "./routes/oauth";
@@ -90,12 +92,14 @@ export const v1Routes = new Hono()
   .route("/", voice)
   .route("/", integrations)
   .route("/", privacy)
+  .route("/", meetings)
   .route("/", sources)
   .route("/", nudges)
   .route("/", push)
   .route("/", actions)
   .route("/", blocks)
   .route("/", focusGuards)
+  .route("/", focus)
   .route("/", drafts)
   .route("/", profile)
   .route("/", product)
