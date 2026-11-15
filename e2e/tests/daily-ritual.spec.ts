@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { API_URL, expect, tap, test } from "./fixtures";
+import { API_URL, expect, fillReady, tap, test } from "./fixtures";
 
 // The daily ritual (#318) for a fresh signed in user: the morning card keeps two outcomes (one for
 // a goal, with an estimate), the outcomes move into Today's list, and the evening card ticks them
@@ -29,9 +29,8 @@ test("morning outcomes saved, evening ticked and logged", async ({ page, context
   const morning = page.getByRole("region", { name: "Morning plan" });
   await expect(morning.getByRole("heading", { name: "What do you want to get done today?" })).toBeVisible();
   const first = morning.getByLabel("Outcome 1");
-  await tap(first);
-  await first.fill("Send the deck");
-  await morning.getByLabel("Outcome 2").fill("Long swim");
+  await fillReady(first, "Send the deck");
+  await fillReady(morning.getByLabel("Outcome 2"), "Long swim");
   await tap(morning.getByRole("button", { name: "Training" }));
   await tap(morning.getByRole("button", { name: "1h", exact: true }));
   await tap(morning.getByRole("button", { name: "Keep these 2" }));
