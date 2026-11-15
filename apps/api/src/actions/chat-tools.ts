@@ -1,11 +1,19 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import { CheckInValue, type Event, IsoDateTime, type Recommendation } from "@michael/shared";
+import {
+  CheckInValue,
+  type Event,
+  IsoDateTime,
+  type Recommendation,
+  RitualEveningInput,
+  RitualMorningInput,
+} from "@michael/shared";
 import { z } from "zod";
 import { answerCheckIn } from "../checkin/service";
 import { HttpError } from "../http";
 import { forget, remember } from "../memory";
 import { DEFAULT_TIMEZONE } from "../patterns";
 import { Zone } from "../patterns/time";
+import { logEvening, planMorning } from "../ritual/ritual";
 import { store } from "../store";
 import { executeRecommendation, undoRecommendation } from "./calendar";
 import { runWriteTool, WRITE_TOOLS } from "./chat-write-tools";
@@ -119,6 +127,59 @@ export const CHAT_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "set_day_outcomes",
+    description:
+      'The morning plan: keep the one to three outcomes the user wants to get done today, in their own words, when they tell you ("my goals today are X and Y"). goal_id links an outcome to one of their goals when it clearly serves one (ids from the goals list); estimate_minutes only if they said how long. Outcomes already on today stay; three is the most.',
+    input_schema: {
+      type: "object",
+      properties: {
+        outcomes: {
+          type: "array",
+          minItems: 1,
+          maxItems: 3,
+          items: {
+            type: "object",
+            properties: {
+              text: {
+                type: "string",
+                description: "The outcome in the user's words, at most 200 characters",
+              },
+              goal_id: { type: "string" },
+              estimate_minutes: { type: "integer", minimum: 5, maximum: 720 },
+            },
+            required: ["text"],
+          },
+        },
+      },
+      required: ["outcomes"],
+    },
+  },
+  {
+    name: "log_day",
+    description:
+      "The evening log: record what the user says they got done of today's outcomes (listed with an item_id in the context), when they tell you (\"I finished X, did 30 min of Y\"). result is done, partly or not. carry: true continues an unfinished one tomorrow, only if they want that. minutes: time they did on it, which counts toward the outcome's goal. Only outcomes they spoke about; never tick one for them.",
+    input_schema: {
+      type: "object",
+      properties: {
+        results: {
+          type: "array",
+          minItems: 1,
+          items: {
+            type: "object",
+            properties: {
+              item_id: { type: "string" },
+              result: { type: "string", enum: ["done", "partly", "not"] },
+              carry: { type: "boolean" },
+              minutes: { type: "integer", minimum: 5, maximum: 720 },
+            },
+            required: ["item_id", "result"],
+          },
+        },
+      },
+      required: ["results"],
+    },
+  },
+  {
     name: "remember",
     description:
       "Keep one lasting fact or preference the user told you about themselves, their routine or their goals, so you know it in every later conversation. One short line in the user's words, e.g. 'Trains best before 08:00'. Not one off plans and nothing about other people.",
@@ -181,6 +242,26 @@ async function answerQuestion(input: unknown): Promise<ToolOutcome> {
         : ""),
     isError: false,
   };
+}
+
+/** The morning plan from chat (#318): same rules as POST /v1/ritual/morning. */
+async function setOutcomes(input: unknown): Promise<ToolOutcome> {
+  const p = RitualMorningInput.safeParse(input);
+  if (!p.success) return invalid(p.error);
+  const day = await planMorning(p.data);
+  const lines = day.items.map((i) => `- ${i.text} {item_id ${i.id}}`);
+  return {
+    content: `Kept today's outcomes (${day.items.length} of 3):\n${lines.join("\n")}`,
+    isError: false,
+  };
+}
+
+/** The evening log from chat (#318): same rules as POST /v1/ritual/evening. */
+async function logDay(input: unknown): Promise<ToolOutcome> {
+  const p = RitualEveningInput.safeParse(input);
+  if (!p.success) return invalid(p.error);
+  const { summary } = await logEvening(p.data);
+  return { content: `Logged. Tell the user this line, word for word: "${summary}"`, isError: false };
 }
 
 const FindInput = z.object({ from: IsoDateTime, to: IsoDateTime });
@@ -382,6 +463,10 @@ export async function runChatTool(
     switch (name) {
       case "answer_check_in":
         return await answerQuestion(input);
+      case "set_day_outcomes":
+        return await setOutcomes(input);
+      case "log_day":
+        return await logDay(input);
       case "find_calendar_blocks":
         return await findBlocks(input);
       case "create_focus_block":

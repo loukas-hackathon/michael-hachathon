@@ -267,6 +267,9 @@ export function checkAction(
     case "log_time":
     case "settle_block":
       return `"${a.kind}" is the person's own word, not the analysis'`;
+    case "remove_calendar_block":
+      // Only the user removes a block, on the Timeline (#271). Michael never deletes.
+      return "Michael does not remove blocks";
   }
 }
 

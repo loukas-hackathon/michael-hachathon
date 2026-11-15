@@ -55,13 +55,15 @@ export function toTimelineEvent(e: GoogleEvent, zoneName: string): z.output<type
     html_link: e.htmlLink ?? null,
     updated: e.updated ?? null,
   };
+  // The goal the user gave the block on the Timeline (#271), kept on the event so the score counts it.
+  const goalId = e.extendedProperties?.private?.goal_id;
   return {
     source: "google_calendar",
     type: "calendar_event",
     start_at: startIso,
     end_at: endIso,
     title: e.summary?.trim() || "Busy",
-    data,
+    data: goalId ? { ...data, goal_id: goalId } : data,
     external_id: e.id,
   };
 }

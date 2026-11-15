@@ -7,7 +7,7 @@ import { type Segment, subjectOf } from "./timeline";
 import { iso, lowerBound, median, mins, round1, subjectId, sum } from "./util";
 
 const LATE_MINIMUM =
-  "at least 3 nights inside the range on days with device data; usual bedtime needs 3 recorded sleeps of 3 hours or more; the recovery comparison needs 3 late and 3 other nights";
+  "at least 3 nights inside the range on days with device data; usual bedtime needs 3 recorded nights (naps left out); the recovery comparison needs 3 late and 3 other nights";
 
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 
@@ -21,7 +21,7 @@ export function lateScreens(ctx: Ctx): Detector<LateScreens> {
 
   let cutoff: number = RULES.lateCutoffMinutes;
   let bedtime: number | null = null;
-  const mainSleeps = ctx.sleeps.filter((s) => s.end - s.start >= RULES.mainSleepMs);
+  const mainSleeps = ctx.sleeps.filter((s) => !s.nap);
   if (mainSleeps.length >= RULES.minSleepsForBedtime) {
     // Measured from noon so that 23:40 and 00:30 sit next to each other.
     const afterNoon = mainSleeps.map((s) => (zone.minuteOfDay(s.start) - 720 + 1440) % 1440);

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import type { EventInput, Goal } from "@michael/shared";
+import type { EventInput, Goal, InstructionCreate } from "@michael/shared";
 import type { z } from "zod";
 import { addDays, at, athensMidnight, iso, localDate, weekday } from "./time";
 import { demoTravel } from "./travel";
@@ -680,4 +680,13 @@ export const demoGoals: Goal[] = [
     target: { calendar_titles: ["Study", "Φροντιστήριο"] },
     weekly_budget_minutes: 360,
   }),
+];
+
+// The demo account's standing instructions, restored by every reset (demo/sync.ts). The rule
+// follows the sleep goal (screens off by 23:00) and no block of the week breaks it. It must never
+// protect a free hour on a Saturday or Sunday evening: the finals demo runs on a Sunday evening and
+// books time live (Book on Goals, Do it). "Keep Sundays clear" refused both, and "home by 21:00"
+// would mark every gym evening as broken. demo/sunday.test.ts holds this.
+export const demoInstructions: z.input<typeof InstructionCreate>[] = [
+  { text: "Nothing between 23:00 and 07:00", kind: "quiet_hours", time: "23:00", end_time: "07:00" },
 ];

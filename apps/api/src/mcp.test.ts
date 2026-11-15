@@ -71,10 +71,12 @@ const TOOLS = [
   "get_timeline",
   "list_drafts",
   "list_recommendations",
+  "log_day",
   "log_done",
   "plan_travel",
   "propose_goals",
   "remember",
+  "set_day_outcomes",
   "suggest_app_mute",
   "undo_recommendation",
   "update_goal",
@@ -352,4 +354,27 @@ test("add_checklist_item and get_checklist keep the day's outcomes (#238)", () =
       summarise("add_checklist_item", undefined, { text: "Send the deck" }),
       'Added "Send the deck" to your outcomes',
     );
+  }));
+
+test("set_day_outcomes and log_day run the daily ritual without a checklist goal (#318)", () =>
+  asNewUserWithoutRules(async () => {
+    await store.deleteMyData({ everything: true });
+    const { call } = await connect();
+    const set = await call("set_day_outcomes", { outcomes: [{ text: "Send the deck" }, { text: "Gym" }] });
+    assert.ok(!set.isError, text(set));
+    assert.match(text(set), /^Today's outcomes, 2 of 3:\n- Send the deck \(id /);
+    const items = (set.structuredContent?.items ?? []) as { id: string }[];
+    const logged = await call("log_day", {
+      results: [
+        { item_id: items[0]?.id, result: "done" },
+        { item_id: items[1]?.id, result: "not", carry: true },
+      ],
+    });
+    assert.ok(!logged.isError, text(logged));
+    assert.equal(text(logged), "1 of 2 done. One carried to tomorrow.");
+    assert.equal(
+      summarise("set_day_outcomes", undefined, { outcomes: [{}, {}] }),
+      "Set 2 outcomes for today",
+    );
+    assert.equal(summarise("log_day", undefined, {}), "Logged what you got done today");
   }));

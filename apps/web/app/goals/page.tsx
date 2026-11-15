@@ -7,6 +7,7 @@ import { GoalBar, SleepBars, SplitBar, WeekBars } from "@/components/goals/goal-
 import { AddGoal, EditGoal, type GoalDraft, NewGoalButton } from "@/components/goals/goal-sheets";
 import { LogTimeButton } from "@/components/log-time";
 import { Tween } from "@/components/motion-ui";
+import { ProgressBar } from "@/components/progress-bar";
 import { ScreenHeader } from "@/components/screen";
 import { RecommendationList } from "@/components/today/recommendation-list";
 import { getGoalSuggestions, getGoals, getGoalsWeek, getRecommendations } from "@/lib/api";
@@ -497,15 +498,13 @@ function ExtraRow({
       </div>
       {c ? (
         <>
-          <ol aria-label={countLine(c)} className="mt-2 flex flex-wrap gap-1.5">
-            {Array.from({ length: Math.max(c.target, c.done) }, (_, i) => (
-              <li
-                // biome-ignore lint/suspicious/noArrayIndexKey: fixed slots
-                key={i}
-                className={`size-3.5 rounded-full ${i < c.done ? "bg-label" : "shadow-[inset_0_0_0_1.5px_var(--m-label-2)]"}`}
-              />
-            ))}
-          </ol>
+          <ProgressBar
+            value={c.target > 0 ? c.done / c.target : 0}
+            size="sm"
+            label={countLine(c)}
+            valueText={`${c.done} of ${c.target}`}
+            className="mt-2.5"
+          />
           <p className="mt-1.5 text-footnote text-label-2 tnum">
             {c.left === 0 ? (
               <b className="font-semibold text-label">Done for the week.</b>

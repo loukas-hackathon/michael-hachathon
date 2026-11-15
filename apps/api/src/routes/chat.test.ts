@@ -14,7 +14,7 @@ import {
   mockScore,
 } from "@michael/shared";
 import { app } from "../app";
-import { buildChatContext, scoreLines, setChatClientForTests, toTurns } from "./chat";
+import { buildChatContext, CONNECT_LINE, scoreLines, setChatClientForTests, toTurns } from "./chat";
 
 const auth = { Authorization: "Bearer dev-key", "content-type": "application/json" };
 
@@ -203,4 +203,13 @@ test("POST /v1/chat/stream sends deltas, then the stored reply", async () => {
   } finally {
     setChatClientForTests(null);
   }
+});
+
+test("Michael points to the Connect button only for live connections (#307)", () => {
+  assert.match(CONNECT_LINE, /connect their calendar, Claude, Telegram or nudges/);
+  assert.match(
+    CONNECT_LINE,
+    /their Apple Watch, their Mac, their iPhone apps or their location: coming soon/,
+  );
+  assert.match(CONNECT_LINE, /Never give steps, links or keys\./);
 });

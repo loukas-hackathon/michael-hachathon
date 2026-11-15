@@ -26,9 +26,9 @@ returns `501 not_implemented`, `planned` = not routed yet. Update the status whe
     account's own), and only these writes are allowed: `POST /v1/chat`, `/v1/chat/stream`,
     `POST /v1/chat/threads`, `PATCH|DELETE /v1/chat/threads/:id` (their own threads),
     `/v1/recommendations/:id/execute|undo`, `PATCH /v1/recommendations/:id`, `POST /v1/analysis/run`,
-    `/v1/travel/plan`, `/v1/focus-guards/suggest`, `/v1/voice/speak`, `/v1/records/:id/announced`, `POST|DELETE /v1/push/subscriptions`, `POST /v1/nudges/test` and
-    `POST /v1/connect/requests/:id`. Anything else that writes (privacy, goals, instructions,
-    places, profile, integrations, Telegram, agents, keys, data deletion, ingest, `/mcp`) answers
+    `/v1/travel/plan`, `/v1/focus-guards/suggest`, `/v1/voice/speak`, `/v1/records/:id/announced`, `POST|DELETE /v1/push/subscriptions` and `POST /v1/nudges/test`.
+    Anything else that writes (privacy, goals, instructions, places, profile, integrations,
+    Telegram, agents, connecting an agent, keys, data deletion, ingest, `/mcp`) answers
     `403 forbidden` with the message "This is the demo week. Sign in with Google to make it yours."
     and `details: { demo: true }`. A malformed visitor id is `401`. MCP OAuth tokens bound to the
     demo account and the bare `API_KEY` keep full access.
@@ -71,7 +71,7 @@ Enums:
 - `GoalKind`: `time | target | count | checklist` (in `goal.target.kind`; `time` when absent)
 - `InstructionKind`: `clear_day | home_by | quiet_hours | custom`
 - `RecommendationStatus`: `proposed | accepted | dismissed | done | undone` (`done` = action executed)
-- `ActionKind`: `move_calendar_block | move_calendar_blocks | create_focus_block | block_mac_app | draft_follow_up | reminder | change_goal | plan_change | log_time | settle_block`
+- `ActionKind`: `move_calendar_block | move_calendar_blocks | create_focus_block | block_mac_app | draft_follow_up | reminder | change_goal | plan_change | remove_calendar_block | log_time | settle_block`
 - `AnalysisStatus`: `queued | running | succeeded | failed`
 - `AnalysisTrigger`: `manual | scheduled | mcp | morning | evening`
 - `AgentScope`: `timeline | goals | recommendations | score | write_events`
@@ -188,7 +188,7 @@ type Recommendation = {
   status: RecommendationStatus;
   executed_at: string | null;
   undone_at: string | null;
-  source?: "analysis" | "chat"; // "chat": asked for in chat or by voice and carried out at once
+  source?: "analysis" | "chat" | "user"; // "chat": asked for in chat or by voice and carried out at once; "user": an edit on the Timeline (#271), kept for Undo and never listed
   specialist?: "work" | "training" | "rest" | "food" | null; // runs in mode specialists only
   created_at: string;
   updated_at: string;
@@ -646,13 +646,13 @@ The day's one to three outcomes of a goal of kind `checklist`, in the user's own
 `checklist_items` (RLS like every table: only the API reads and writes). Rules in
 `apps/api/src/checklist/items.ts`.
 
-| Method | Path                      | Body                       | Response                                 | Status |
-| ------ | ------------------------- | -------------------------- | ---------------------------------------- | ------ |
-| GET    | `/v1/checklist?date=`     |                            | `200 ChecklistResponse`                  | live   |
-| POST   | `/v1/checklist`           | `{ goal_id, date?, text }` | `201 ChecklistItem`, `400`, `404`, `409` | live   |
-| PATCH  | `/v1/checklist/:id`       | `{ text?, status? }`       | `200 ChecklistItem`, `400`, `404`, `409` | live   |
-| DELETE | `/v1/checklist/:id`       |                            | `204`, `404`                             | live   |
-| POST   | `/v1/checklist/:id/carry` |                            | `201 { moved, item }`, `404`, `409`      | live   |
+| Method | Path                      | Body                                                           | Response                                 | Status |
+| ------ | ------------------------- | -------------------------------------------------------------- | ---------------------------------------- | ------ |
+| GET    | `/v1/checklist?date=`     |                                                                | `200 ChecklistResponse`                  | live   |
+| POST   | `/v1/checklist`           | `{ goal_id, date?, text, linked_goal_id?, estimate_minutes? }` | `201 ChecklistItem`, `400`, `404`, `409` | live   |
+| PATCH  | `/v1/checklist/:id`       | `{ text?, status? }`                                           | `200 ChecklistItem`, `400`, `404`, `409` | live   |
+| DELETE | `/v1/checklist/:id`       |                                                                | `204`, `404`                             | live   |
+| POST   | `/v1/checklist/:id/carry` |                                                                | `201 { moved, item }`, `404`, `409`      | live   |
 
 ```ts
 type ChecklistItem = {
@@ -661,10 +661,13 @@ type ChecklistItem = {
   date: string; // local day, YYYY-MM-DD, Europe/Athens
   text: string; // the user's words, 1..200
   position: number; // 0..2, the slot among the day's open items of the goal
-  status: "open" | "done" | "dropped" | "moved";
+  status: "open" | "done" | "partly" | "dropped" | "moved";
   settled_at: string | null;
   settled_by: "user" | "check_in" | null;
   carried_from: string | null; // id of the item of the day before that this one continues
+  linked_goal_id: string | null; // #318: the goal the outcome serves, any kind and area
+  estimate_minutes: number | null; // #318: the user's guess, 5..720
+  logged_minutes: number | null; // #318: time logged for it in the evening
   created_at: string;
   updated_at: string;
 };
@@ -678,7 +681,7 @@ type ChecklistResponse = {
 - `date` defaults to today in Athens; `400` on a day that does not exist. `text` is trimmed.
 - `POST`: `404` for an unknown goal, `400` for a goal that is not of kind `checklist`, `409` when
   the goal already has three open items that day. The item takes the lowest free `position`.
-- `PATCH`: `status` is `open`, `done` or `dropped`. Settling sets `settled_at` and
+- `PATCH`: `status` is `open`, `done`, `partly` or `dropped` (`partly` counts as set, not done). Settling sets `settled_at` and
   `settled_by: "user"`; reopening clears both and takes a free slot (`409` when three are open).
   `moved` is never set by hand (`400`): carry instead. A moved item cannot change status (`409`).
 - `carry`: only an open item (`409` otherwise, or when the next day already has three open). The
@@ -688,6 +691,73 @@ type ChecklistResponse = {
 - Deleting the goal deletes its items. Another user's items are never visible (`404`).
 - The first open item of today gets one offered focus block, at most once a day (see
   Recommendations, Offers for checklist and count goals).
+- `linked_goal_id` (#318) names any of the user's goals (`404` otherwise); deleting that goal sets
+  it to null. A carried item keeps its link and estimate.
+
+### Daily ritual (#318)
+
+Every morning the user writes what they want to get done; every evening they log what they did.
+The outcomes are checklist items of one checklist goal ("Today's outcomes", category personal,
+made silently on the first morning when the user has no checklist goal), each optionally for any
+goal. Table `day_rituals` keeps which half was saved or skipped per day, and the evening's line.
+Rules in `apps/api/src/ritual/ritual.ts`.
+
+| Method | Path                    | Body                                                           | Response                                          | Status |
+| ------ | ----------------------- | -------------------------------------------------------------- | ------------------------------------------------- | ------ |
+| GET    | `/v1/ritual?phase=`     |                                                                | `200 RitualToday`                                 | live   |
+| POST   | `/v1/ritual/morning`    | `{ outcomes: [{ text, goal_id?, estimate_minutes? }] }` (1..3) | `201 RitualToday`, `400`, `404` goal, `409` full  | live   |
+| POST   | `/v1/ritual/evening`    | `{ results: [{ item_id, result, carry?, minutes? }] }`         | `201 RitualEveningResponse`, `404`, `409`         | live   |
+| POST   | `/v1/ritual/:kind/skip` |                                                                | `200 RitualToday` ("Not today"), `400` other kind | live   |
+
+```ts
+type RitualState = "not_yet" | "due" | "done" | "skipped";
+type RitualToday = {
+  day: string; // local YYYY-MM-DD
+  phase: "morning" | "evening" | null; // which half shows now; null before waking
+  morning: RitualState;
+  evening: RitualState; // not_yet on a day without outcomes
+  goal_id: string | null; // the checklist goal holding the outcomes
+  items: ChecklistItem[]; // today's outcomes, moved ones left out
+  suggestions: { text; goal_id; estimate_minutes; reason; source: "calendar" | "behind" }[]; // morning, at most 2
+  goals: { id; title; area }[]; // active goals as quick chips (checklist goals left out)
+  summary: string | null; // the evening line once saved
+  tomorrow: string | null; // evening: "University at 09:00"
+};
+type RitualEveningResponse = {
+  summary: string; // "2 of 3 done. 40 min logged for Training. One carried to tomorrow. Tomorrow starts with University at 09:00."
+  carried: ChecklistItem[]; // the new items on tomorrow
+  logged: { goal_id: string; minutes: number }[];
+  ritual: RitualToday;
+};
+```
+
+- **When:** the morning from waking (end of last night's sleep, else 08:00, the Morning moment's
+  rule) or once the morning nudge went out; the evening from an hour before the usual bedtime
+  (else 21:00, never later than 45 minutes before quiet hours, the Evening moment's rule) or once
+  the evening nudge went out. `?phase=` shows that half now (previews, the stage, e2e). The app
+  shows the half named by `phase` while its state is `due`, and the evening line once `done`.
+- **Morning done** once saved, skipped, or when the user wrote an outcome for today any other way;
+  an outcome carried from yesterday still asks the morning, listed as already set. Saving keeps
+  outcomes already on today, skips duplicates (same words), refuses a fourth (`409`) and checks
+  every `goal_id` before writing anything. The first outcome gets the usual offered hour.
+- **Suggestions** (at most two): time goals behind their weekly pace (the `goal_behind` rule, any
+  hour): "University is 4h behind this week. One block today?", or "Keep the 10:00 block." when
+  today has one; then today's own goal blocks still ahead ("On your calendar at 10:00, for
+  University."). Never a goal an outcome already serves.
+- **Evening:** `result` done, partly or not. `carry: true` (partly or not) makes a new item on
+  tomorrow with `carried_from`; a "not" that is carried becomes `moved`, a "partly" stays
+  `partly`. Room on tomorrow is checked before anything is written (`409`). `minutes` (done or
+  partly) is kept as `logged_minutes` and handed to the done time log (`apps/api/src/ritual/log.ts`,
+  the seam to `POST /v1/log`, #317); until that lands the minutes are named in the line but do not
+  count in the score yet. The line counts every outcome of the day, settled earlier or now.
+- **Calm:** no streaks, no guilt copy; "Not today" hides that half for the day. No new nudge: the
+  Morning and Evening nudges (#169) ask the ritual's question while its half is to do ("What do you
+  want to get done today? Up to three." / "2 outcomes today. What did you get done?") and open
+  Today, inside the 5 a day cap and quiet hours.
+- **Everywhere:** chat tools `set_day_outcomes` and `log_day` (the chat context lists today's
+  outcomes with their ids), MCP tools of the same names (scope `goals`).
+- **Demo week:** today's plan is filled (one carried from yesterday) and the two evenings before
+  are logged, written once per day (`apps/api/src/demo/ritual.ts`).
 
 ### Standing instructions
 
@@ -1218,7 +1288,7 @@ goal block the goal has a say: see Goals, "Categories that count as a goal's wor
   search term is never copied into the report. **Speaks from:** Any web visits and one focus stretch
   or work block. Zero minutes is a valid answer.
 - `late_screens`: Device use after the cut off, per night. Cut off: 23:00, or one hour before the
-  usual bedtime (median start of recorded sleeps of 3 hours or more) when sleep data exists. A night
+  usual bedtime (median start of recorded nights, naps left out) when sleep data exists. A night
   runs 6 hours from the cut off and belongs to the day of its evening. A night is late from 5
   minutes of use. `next_recovery_pct` and `next_sleep_minutes` come from the following morning.
   **Speaks from:** 3 nights inside the range on days with device data. Usual bedtime: 3 sleeps.
@@ -1329,6 +1399,12 @@ maths and "Undo" ("Logged. Everything bath 40 of 60 min this week. Undo"); the c
 ("What you told me", quoted, never invented) and today's open questions with their ids, and a tool
 `answer_check_in { check_in_id, value }` keeps an answer the user types in the chat (same rules as
 `POST /v1/check-in/:id/answer`; the result gives the follow up to ask, word for word).
+
+**Daily ritual in chat (#318).** The context lists "Today's outcomes" with their ids and which half
+is due. `set_day_outcomes { outcomes: [{ text, goal_id?, estimate_minutes? }] }` keeps "my goals
+today are X, Y" and `log_day { results: [{ item_id, result, carry?, minutes? }] }` logs "I finished
+X, did 30 min of Y" (same rules as `POST /v1/ritual/morning` and `/evening`); Michael repeats the
+evening line the tool returns, word for word.
 
 ### Check in (#187)
 
@@ -1472,10 +1548,10 @@ the facts; otherwise `phrased_by` is `template`. Lines are cached per user, kind
 
 ### Voice
 
-| Method | Path              | Body                               | Response                                                                                                   | Status |
-| ------ | ----------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------- | ------ |
-| GET    | `/v1/voice`       |                                    | `200 { elevenlabs: boolean }`: whether the API can speak with ElevenLabs                                   | live   |
-| POST   | `/v1/voice/speak` | `{ text: string }` (1..1000 chars) | `200 audio/mpeg`; `503 unavailable` without `ELEVENLABS_API_KEY`; `502 upstream_error` if ElevenLabs fails | live   |
+| Method | Path              | Body                               | Response                                                                                                       | Status |
+| ------ | ----------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------- | ------ |
+| GET    | `/v1/voice`       |                                    | `200 VoiceStatus` `{ elevenlabs: boolean, voice: "chosen" \| "fallback" \| "device", reason: string \| null }` | live   |
+| POST   | `/v1/voice/speak` | `{ text: string }` (1..1000 chars) | `200 audio/mpeg`; `503 unavailable` without `ELEVENLABS_API_KEY`; `502 upstream_error` if ElevenLabs fails     | live   |
 
 Push to talk in the app: the browser turns speech into text (Web Speech API, en-GB), the text goes
 to `POST /v1/chat`, and the reply is read aloud. `POST /v1/voice/speak` proxies ElevenLabs text to
@@ -1483,6 +1559,13 @@ speech (`ELEVENLABS_VOICE_ID`, default "George", a calm British male; `ELEVENLAB
 `eleven_flash_v2_5`) so the key stays on the server. Without a key, or when it fails, the app uses
 the browser's own speech synthesis, preferring a low en-GB male voice. Audio is never stored:
 only text goes in, and the mp3 is streamed straight back and played once.
+
+If ElevenLabs refuses the chosen voice with `401` or `402` (a Voice Library voice on the free plan
+answers `402 paid_plan_required`), the API retries once with the built-in fallback voice
+(`ELEVENLABS_FALLBACK_VOICE_ID`, default "George") and keeps using it for an hour before trying the
+chosen voice again. `GET /v1/voice` then reports `voice: "fallback"` with the reason ("paid plan
+required"). If both are refused the route answers `502` and the app speaks with the device voice;
+the words are always on screen as captions. Logs carry the status only, never the key or the text.
 
 ### Recommendations
 
@@ -1611,6 +1694,37 @@ through the store's `createRecommendation`, so the instruction guard has the las
   minutes without one), titled with the goal's first `calendar_titles` entry so it counts. Title
   `One more session for <goal>, Fri 13 Nov`. Checked on `GET /v1/score` for the current week.
 - **Once a day:** an offer whose title is already stored, whatever its status, is not made again.
+
+### Calendar blocks (edit the day on the Timeline, #271)
+
+The user adds, moves, resizes, renames, gives a goal to, or removes blocks on their own time. Each
+write is stored as a recommendation with `source: "user"` and carried out at once by the same
+executor as Michael's actions, so the same rules hold: never an event with other people (`409`),
+nothing that has started (`409`), and only blocks made in Michael can be removed (the user's own
+events are never deleted). With Google Calendar connected the change is made there and mirrored;
+without it, the block lives on the timeline (`source: "agent"`, `data.michael: true`). Standing
+instructions bind Michael, not the user, so they do not refuse these. `source: "user"`
+recommendations are left out of `GET /v1/recommendations` and the MCP `list_recommendations`.
+
+| Method | Path             | Body                                                   | Response                          |
+| ------ | ---------------- | ------------------------------------------------------ | --------------------------------- |
+| POST   | `/v1/blocks`     | `BlockCreate { start_at, end_at, title?, goal_id? }`   | `201 BlockChange`                 |
+| PATCH  | `/v1/blocks/:id` | `BlockUpdate { start_at?, end_at?, title?, goal_id? }` | `200 BlockChange`                 |
+| DELETE | `/v1/blocks/:id` |                                                        | `200 BlockChange` (`event: null`) |
+
+```ts
+type BlockChange = {
+  event: Event | null; // the block as it is now
+  recommendation_id: string; // POST /v1/recommendations/:id/undo takes the change back
+  undo_until: string; // until the block starts
+};
+```
+
+- A block is 5 minutes to 12 hours; a new start without an end keeps the length. `goal_id: null`
+  clears the goal. The goal is saved as `data.goal_id` (and `extendedProperties.private.goal_id` in
+  Google, read back by the sync), so the score counts the block for it.
+- `404` unknown block or goal, `409` refused (with Michael's reason), `400` invalid body.
+- Demo visitors may use these routes on the demo week, like acting on a recommendation.
 
 ### Focus guards (block Mac apps, #41)
 
@@ -2145,7 +2259,7 @@ type AgentQuery = {
   the payload. A call outside the agent's scopes, or by an agent that is not `approved`, returns a
   tool result with `isError: true` ("Not allowed. ...") and is logged with `allowed: false`.
 - Scope per tool: `get_timeline`, `get_patterns` = `timeline`; `get_goals`, `add_goal`,
-  `update_goal`, `propose_goals`, `get_checklist`, `add_checklist_item` = `goals`; `list_recommendations`, `update_recommendation`, `get_nudges`,
+  `update_goal`, `propose_goals`, `get_checklist`, `add_checklist_item`, `set_day_outcomes`, `log_day` = `goals`; `list_recommendations`, `update_recommendation`, `get_nudges`,
   `list_drafts`, `draft_follow_up` = `recommendations`; `get_score`, `get_records`, `get_moments` = `score`; `add_event`, `execute_recommendation`,
   `undo_recommendation`, `create_focus_block`, `block_mac_app`, `plan_travel`, `log_done`,
   `confirm_block` = `write_events`;
@@ -2199,7 +2313,7 @@ most urgent candidate of these rules (in this order):
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
 | `focus_drift`    | inside a work goal block, 3+ of the last 10 min on distractor apps or sites                                                  | "6 min on Instagram in your focus block. Back to it until 12:00."     |
 | `block_soon`     | a goal block starts in 2 to 15 min                                                                                           | "Gym at 18:00. Wrap up in 12 min."                                    |
-| `morning`        | after the night's sleep (3h+) ends today, else from 08:00; until 12:00                                                       | the Morning moment's headline, e.g. "Today holds 2h 00 of goal time." |
+| `morning`        | after the night's sleep (never a nap) ends today, else from 08:00; until 12:00                                               | the Morning moment's headline, e.g. "Today holds 2h 00 of goal time." |
 | `evening`        | an hour before the usual bedtime (median of 3+ of the last 8 nights), else 21:00; never later than 45 min before quiet hours | the Evening moment's headline                                         |
 | `wind_down`      | 30 min before the night, 3+ of the last 10 min on screens, a rest goal exists                                                | "Screens off by 22:00. Sleep is on the plan."                         |
 | `goal_behind`    | before 19:00, a weekly budget behind its linear pace by 60+ min and 15%+                                                     | "Gym 2h 34m behind this week. Book 90 min today."                     |
@@ -2744,7 +2858,9 @@ touched; days that leave the window are removed. The API refreshes the week on d
 most every 5 minutes (the first refresh after a deploy resets the goals to the Build Hub plan,
 later ones keep edits; `DEMO_WEEK=off` turns it off). `POST /v1/demo/reseed` also resets the goals.
 Any other account gets `403 forbidden`. The reseed (and the first refresh after a deploy) also
-deletes all demo visitor chat and turns off the record off; every refresh deletes visitor chat
+deletes all demo visitor chat, turns off the record off, removes goals that are not in the plan
+and replaces the standing instructions with the plan's (`demoInstructions`: only "Nothing between
+23:00 and 07:00", so a Saturday or Sunday evening stays bookable for the live demo); every refresh deletes visitor chat
 older than a day. Off the record, nothing changes. Per source switches are
 not applied: on the demo account they keep real collectors out (#114). From a terminal:
 `pnpm --filter @michael/api seed:demo` (or `--dry` to print the week without a database).
@@ -2841,6 +2957,8 @@ offset. A refused or failed call returns `isError: true` with one plain sentence
 | `update_goal`            | `goals`           | `{ id, category?, title?, description?, weekly_budget_minutes?, target?, active? }`     | `{ goal: Goal }`, error when not found                                                     |
 | `get_checklist`          | `goals`           | `{ date?: LocalDay }` (default today)                                                   | `ChecklistResponse` (as `GET /v1/checklist`)                                               |
 | `add_checklist_item`     | `goals`           | `{ goal_id, text, date?: LocalDay }` (default today)                                    | `{ item: ChecklistItem }`; refused past three open items                                   |
+| `set_day_outcomes`       | `goals`           | `{ outcomes: [{ text, goal_id?, estimate_minutes? }] }` (1..3)                          | `RitualToday` (as `POST /v1/ritual/morning`)                                               |
+| `log_day`                | `goals`           | `{ results: [{ item_id, result: "done" \| "partly" \| "not", carry?, minutes? }] }`     | `RitualEveningResponse`; text is the evening line                                          |
 | `update_recommendation`  | `recommendations` | `{ id, status: "accepted" \| "dismissed" }`                                             | `{ recommendation }`; a `done` one is refused (undo it)                                    |
 | `execute_recommendation` | `write_events`    | `{ id }`                                                                                | `{ recommendation, undo_until }`                                                           |
 | `undo_recommendation`    | `write_events`    | `{ id }`                                                                                | `{ recommendation }`                                                                       |

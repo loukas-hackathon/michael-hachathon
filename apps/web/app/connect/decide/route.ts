@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
+import { isDemoVisitor } from "@/lib/caller";
 import { decideConnect } from "@/lib/connect";
 import { consentPath, signInAgainPath } from "@/lib/connect-outcome";
 
@@ -15,6 +16,8 @@ export async function POST(request: NextRequest) {
   const form = await request.formData();
   const id = String(form.get("request") ?? "");
   const allow = form.get("allow") === "yes";
+  // Demo visitors cannot connect agents (the API refuses too): back to the page, which says why.
+  if (id && (await isDemoVisitor())) return NextResponse.redirect(new URL(consentPath(id), request.url), 303);
   const decided = id ? await decideConnect(id, allow) : ({ kind: "expired" } as const);
   const target =
     decided.kind === "ok"

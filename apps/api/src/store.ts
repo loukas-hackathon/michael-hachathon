@@ -34,6 +34,7 @@ import {
   type Profile,
   type Recommendation,
   type RecommendationStatus,
+  type RitualKind,
   type Source,
   type SourceSetting,
   type WeeklyTarget,
@@ -166,11 +167,22 @@ export type NewDraft = Omit<Draft, "id" | "status" | "created_at" | "updated_at"
 /** A new checklist item (#238); the rules (kind, three open, position) are checked in checklist/. */
 export type NewChecklistItem = Pick<ChecklistItem, "goal_id" | "date" | "text" | "position"> & {
   carried_from?: string | null;
+  linked_goal_id?: string | null;
+  estimate_minutes?: number | null;
 };
 /** What may change on a checklist item. `status` with `settled_at` and `settled_by` together. */
 export type ChecklistPatch = Partial<
-  Pick<ChecklistItem, "text" | "status" | "settled_at" | "settled_by" | "position">
+  Pick<ChecklistItem, "text" | "status" | "settled_at" | "settled_by" | "position" | "logged_minutes">
 >;
+
+/** One half of the daily ritual (#318) saved or skipped on a local day. */
+export type DayRitual = {
+  day: string;
+  kind: RitualKind;
+  state: "done" | "skipped";
+  summary: string | null;
+  updated_at: string;
+};
 
 /** Items by date, then goal (oldest first), then position. */
 export const checklistOrder = (a: ChecklistItem, b: ChecklistItem) =>
@@ -322,6 +334,14 @@ export interface Store extends PrivacyBackend {
    */
   updateChecklistItem(id: string, patch: ChecklistPatch): Promise<ChecklistItem | null>;
   deleteChecklistItem(id: string): Promise<boolean>;
+
+  // ---- the daily ritual (#318): which halves were saved or skipped ----
+  /** Rows with `day` in [from, to] (local days, inclusive). */
+  listRituals(filter: { from: string; to: string }): Promise<DayRitual[]>;
+  /** Insert or replace the row for that day and half. */
+  saveRitual(row: Omit<DayRitual, "updated_at">): Promise<DayRitual>;
+  /** Deletes the rows with `day` in [from, to]. Only the demo reseed uses it (back to the plan). */
+  clearRituals(filter: { from: string; to: string }): Promise<number>;
 
   // ---- weekly targets (#165), one per Monday ----
   /** Stored targets with `week_start` in [from, to] (local days), oldest first. */
@@ -485,6 +505,7 @@ export class MemoryStore implements Store {
       records: (PersonalRecord & { key: string })[];
       checkIns: StoredCheckIn[];
       checklist: ChecklistItem[];
+      rituals: DayRitual[];
     }
   >();
   private fresh(sample: boolean) {
@@ -511,6 +532,7 @@ export class MemoryStore implements Store {
       records: [] as (PersonalRecord & { key: string })[],
       checkIns: [] as StoredCheckIn[],
       checklist: [] as ChecklistItem[],
+      rituals: [] as DayRitual[],
     };
   }
   private get d() {
@@ -641,6 +663,8 @@ export class MemoryStore implements Store {
     this.goals = this.goals.filter((g) => g.id !== id);
     // As the foreign key's cascade does in Postgres.
     this.d.checklist = this.d.checklist.filter((i) => i.goal_id !== id);
+    // ON DELETE SET NULL on linked_goal_id (#318).
+    for (const i of this.d.checklist) if (i.linked_goal_id === id) i.linked_goal_id = null;
     return this.goals.length < before;
   }
 
@@ -1107,6 +1131,9 @@ export class MemoryStore implements Store {
       settled_at: null,
       settled_by: null,
       carried_from: input.carried_from ?? null,
+      linked_goal_id: input.linked_goal_id ?? null,
+      estimate_minutes: input.estimate_minutes ?? null,
+      logged_minutes: null,
       created_at: now(),
       updated_at: now(),
     };
@@ -1129,6 +1156,24 @@ export class MemoryStore implements Store {
     // ON DELETE SET NULL on carried_from.
     for (const i of d.checklist) if (i.carried_from === id) i.carried_from = null;
     return d.checklist.length < before;
+  }
+
+  async listRituals(f: { from: string; to: string }) {
+    return structuredClone(this.d.rituals.filter((r) => r.day >= f.from && r.day <= f.to));
+  }
+
+  async saveRitual(row: Omit<DayRitual, "updated_at">) {
+    const d = this.d;
+    const saved: DayRitual = { ...row, updated_at: now() };
+    d.rituals = [...d.rituals.filter((r) => !(r.day === row.day && r.kind === row.kind)), saved];
+    return structuredClone(saved);
+  }
+
+  async clearRituals(f: { from: string; to: string }) {
+    const d = this.d;
+    const before = d.rituals.length;
+    d.rituals = d.rituals.filter((r) => r.day < f.from || r.day > f.to);
+    return before - d.rituals.length;
   }
 
   async listTargets(from: string, to: string) {
@@ -1262,6 +1307,7 @@ export class MemoryStore implements Store {
         weekly_targets: d.targets.length,
         records: d.records.length,
         checklist_items: d.checklist.length,
+        day_rituals: d.rituals.length,
       };
       // An empty account, not the sample day a first visit gets.
       this.data.set(userId, this.fresh(false));

@@ -8,7 +8,8 @@ import { API_KEY, API_URL, expect, test } from "./fixtures";
 // and opens /oauth/authorize with PKCE; signed out, Michael asks the person to sign in and keeps
 // the way back to the consent page; one tap on Allow returns a code to claude.ai, which swaps it
 // for a token and calls initialize and tools/list. Google is not reachable here, so the test user
-// cookie stands in for the Google round trip; the presenter's path is the demo week.
+// cookie stands in for the Google round trip. Demo visitors cannot connect (#197): the presenter
+// answers the demo week's consent with the API key.
 
 const CLAUDE_CALLBACK = "https://claude.ai/api/mcp/auth_callback";
 const MCP_HEADERS = { "content-type": "application/json", accept: "application/json, text/event-stream" };
@@ -113,7 +114,12 @@ async function signedOutToLogin(page: Page, context: BrowserContext, flow: Flow)
 async function allowAndFinish(page: Page, flow: Flow) {
   await page.getByRole("button", { name: "Allow" }).click();
   await expect(page).toHaveTitle("Claude");
-  const back = new URL((await page.locator("#callback").textContent()) ?? "");
+  await claudeFinishes((await page.locator("#callback").textContent()) ?? "", flow);
+}
+
+/** claude.ai's server side: the callback's code for a token, then initialize and tools/list. */
+async function claudeFinishes(callback: string, flow: Flow) {
+  const back = new URL(callback);
   expect(`${back.origin}${back.pathname}`).toBe(CLAUDE_CALLBACK);
   expect(back.searchParams.get("state")).toBe("s1");
   expect(back.searchParams.get("iss")).toBe(API_URL);
@@ -182,31 +188,40 @@ test("connect Claude as claude.ai does: discovery, sign in round trip, Allow, to
   await expect(page.getByText("Claude").first()).toBeVisible();
 });
 
-test("the presenter connects Claude to the demo week from the login page", async ({ page, context }) => {
+test("a demo visitor cannot connect; the presenter answers the consent with the API key", async ({
+  page,
+  context,
+}) => {
   await stubClaudeCallback(page);
   const flow = await claudeStarts();
   await signedOutToLogin(page, context, flow);
 
-  // "See the demo week" keeps the way back: it lands on the consent page, not on Today.
+  // "See the demo week" keeps the way back to the consent page, which refuses: connecting would
+  // give the agent full write on the shared demo account (#197).
   await page.getByRole("link", { name: "See the demo week" }).click();
   await expect(page).toHaveURL(/\/connect\?request=/);
-  await expect(
-    page.getByRole("heading", { name: "Allow Claude to read and change your day?" }),
-  ).toBeVisible();
-  await expect(page.getByText(/Signed in as the demo week/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "This is the demo week." })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Allow" })).toHaveCount(0);
 
-  await allowAndFinish(page, flow);
-
-  await page.goto("/agents");
-  await expect(page.getByRole("heading", { name: "What they can do" })).toBeVisible();
-  await expect(page.getByText("Claude").first()).toBeVisible();
+  // The presenter path (docs/demo-runbook.md): the request id from the address bar, answered with
+  // the API key from a terminal, then the redirect it returns opened in the browser.
+  const id = new URL(page.url()).searchParams.get("request") ?? "";
+  const auth = { authorization: `Bearer ${API_KEY}`, "content-type": "application/json" };
+  const answer = await fetch(`${API_URL}/v1/connect/requests/${id}`, {
+    method: "POST",
+    headers: auth,
+    body: JSON.stringify({ allow: true }),
+  });
+  expect(answer.status).toBe(200);
+  const { redirect_to } = (await answer.json()) as { redirect_to: string };
+  await claudeFinishes(redirect_to, flow);
 
   // The demo account is shared by the whole suite: switch Claude off again, so the other tests
   // still see Agents with nothing connected.
-  const auth = { authorization: `Bearer ${API_KEY}`, "content-type": "application/json" };
   const { agents } = (await (await fetch(`${API_URL}/v1/agents`, { headers: auth })).json()) as {
     agents: { id: string; name: string; status: string }[];
   };
+  expect(agents.some((a) => a.name === "Claude" && a.status === "approved")).toBe(true);
   for (const a of agents.filter((x) => x.name === "Claude" && x.status === "approved")) {
     const res = await fetch(`${API_URL}/v1/agents/${a.id}`, {
       method: "PATCH",

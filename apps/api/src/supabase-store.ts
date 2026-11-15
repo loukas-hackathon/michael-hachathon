@@ -44,6 +44,7 @@ import {
   type ChecklistPatch,
   checklistOrder,
   type DataDeleteScope,
+  type DayRitual,
   type DeleteCounts,
   type EventPatch,
   type InsertResult,
@@ -283,7 +284,18 @@ const toChecklistItem = (r: Record<string, unknown>): ChecklistItem => ({
   settled_at: iso((r.settled_at as string | null) ?? null),
   settled_by: (r.settled_by as ChecklistItem["settled_by"]) ?? null,
   carried_from: (r.carried_from as string | null) ?? null,
+  linked_goal_id: (r.linked_goal_id as string | null) ?? null,
+  estimate_minutes: r.estimate_minutes == null ? null : Number(r.estimate_minutes),
+  logged_minutes: r.logged_minutes == null ? null : Number(r.logged_minutes),
   created_at: iso(r.created_at as string) as string,
+  updated_at: iso(r.updated_at as string) as string,
+});
+
+const toDayRitual = (r: Record<string, unknown>): DayRitual => ({
+  day: String(r.day).slice(0, 10),
+  kind: r.kind as DayRitual["kind"],
+  state: r.state as DayRitual["state"],
+  summary: (r.summary as string | null) ?? null,
   updated_at: iso(r.updated_at as string) as string,
 });
 
@@ -338,6 +350,7 @@ export const USER_TABLES = [
   "recommendations",
   "analysis_runs",
   "checklist_items",
+  "day_rituals",
   "goals",
   "events",
   "event_summaries",
@@ -1554,6 +1567,8 @@ export class SupabaseStore implements Store {
         text: input.text,
         position: input.position,
         carried_from: input.carried_from ?? null,
+        linked_goal_id: input.linked_goal_id ?? null,
+        estimate_minutes: input.estimate_minutes ?? null,
       })
       .select("*")
       .single();
@@ -1579,6 +1594,42 @@ export class SupabaseStore implements Store {
       await this.db.from("checklist_items").delete().eq("user_id", currentUserId()).eq("id", id).select("id"),
     );
     return (rows ?? []).length > 0;
+  }
+
+  async listRituals(f: { from: string; to: string }) {
+    const rows = check(
+      await this.db
+        .from("day_rituals")
+        .select("*")
+        .eq("user_id", currentUserId())
+        .gte("day", f.from)
+        .lte("day", f.to),
+    );
+    return (rows ?? []).map(toDayRitual);
+  }
+
+  async saveRitual(row: Omit<DayRitual, "updated_at">) {
+    const saved = check(
+      await this.db
+        .from("day_rituals")
+        .upsert({ user_id: currentUserId(), ...row }, { onConflict: "user_id,day,kind" })
+        .select("*")
+        .single(),
+    );
+    return toDayRitual(saved);
+  }
+
+  async clearRituals(f: { from: string; to: string }) {
+    const rows = check(
+      await this.db
+        .from("day_rituals")
+        .delete()
+        .eq("user_id", currentUserId())
+        .gte("day", f.from)
+        .lte("day", f.to)
+        .select("day"),
+    );
+    return (rows ?? []).length;
   }
 
   async listTargets(from: string, to: string) {

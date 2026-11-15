@@ -104,6 +104,7 @@ const ids: {
   item?: string;
   thread?: string;
   log?: string;
+  block?: string;
 } = {};
 
 async function ok(res: Response, what: string) {
@@ -145,6 +146,16 @@ test("A writes through every write route", async () => {
     "POST /v1/log",
   );
   ids.log = logged.entry.id;
+  // A block on the Timeline (#271), tomorrow so it can still change. Before off the record, which stops new events.
+  const block = await ok(
+    await request(asA, "POST", "/v1/blocks", {
+      start_at: new Date(Date.now() + 26 * 3_600_000).toISOString(),
+      end_at: new Date(Date.now() + 27 * 3_600_000).toISOString(),
+      title: `${MARK} block`,
+    }),
+    "POST /v1/blocks",
+  );
+  ids.block = block.event.id;
   const instruction = await ok(
     await request(asA, "POST", "/v1/instructions", { text: `${MARK} keep Sundays clear` }),
     "POST /v1/instructions",
@@ -235,6 +246,8 @@ for (const [name, who] of [
       ["DELETE", `/v1/goals/${ids.goal}`],
       ["PATCH", `/v1/instructions/${ids.instruction}`, { text: "taken over" }],
       ["DELETE", `/v1/instructions/${ids.instruction}`],
+      ["PATCH", `/v1/blocks/${ids.block}`, { title: "taken over" }],
+      ["DELETE", `/v1/blocks/${ids.block}`],
       ["PATCH", `/v1/checklist/${ids.item}`, { status: "done" }],
       ["POST", `/v1/checklist/${ids.item}/carry`],
       ["DELETE", `/v1/checklist/${ids.item}`],
@@ -433,9 +446,9 @@ test("demo visitors cannot change the shared account", async () => {
       { source: "manual", type: "note", start_at: new Date().toISOString(), title: "x" },
     ],
     ["POST", "/v1/nudges/check"],
-    ["POST", "/v1/log", { goal: "bath", minutes: 30 }],
-    ["POST", "/v1/log/block", { event_id: randomUUID(), did: true }],
     ["DELETE", "/v1/me/data"],
+    // Connecting an agent grants full write: never from the shared demo week.
+    ["POST", `/v1/connect/requests/${randomUUID()}`, { allow: true }],
     ["DELETE", `/v1/events/${randomUUID()}`],
     ["POST", `/v1/goals/suggestions/${randomUUID()}/accept`],
     ["PUT", "/v1/targets/2026-11-09", {}],
@@ -502,7 +515,100 @@ test("the demo reseed clears visitor chat and puts off the record back off", asy
   assert.equal(privacy.off_the_record, false);
 });
 
+test("the presenter path: the API key alone may still answer a connect request", async () => {
+  // An unknown request is 404, not 403: the route is open to the key (docs/demo-runbook.md).
+  const res = await request(asDemo, "POST", `/v1/connect/requests/${randomUUID()}`, { allow: true });
+  assert.equal(res.status, 404);
+});
+
+test("the demo reseed puts goals and standing instructions back to the plan", async () => {
+  const { demoGoals, demoInstructions } = await import("./demo/week");
+  const plan = demoGoals[0] as { id: string; title: string };
+  // Rehearsal changes, made the ways that still can: Claude or the API key.
+  await ok(await request(asDemo, "POST", "/v1/goals", { category: "rest", title: "Rehearsal goal" }), "add");
+  await ok(await request(asDemo, "PATCH", `/v1/goals/${plan.id}`, { title: "Renamed" }), "rename");
+  await ok(await request(asDemo, "POST", "/v1/instructions", { text: "Rehearsal rule" }), "rule");
+
+  await runAsUser(DEMO, () => seedDemoWeek(store, { overwriteGoals: true }), "api_key");
+
+  const { goals } = await ok(await request(asDemo, "GET", "/v1/goals"), "goals");
+  // The plan is the demo goals plus the ritual's outcomes goal, which the reseed writes again (#318).
+  const { OUTCOMES_TITLE } = await import("./ritual/ritual");
+  assert.deepEqual(
+    goals
+      .filter((g: { title: string }) => g.title !== OUTCOMES_TITLE)
+      .map((g: { id: string }) => g.id)
+      .sort(),
+    demoGoals.map((g) => g.id).sort(),
+  );
+  assert.ok(!goals.some((g: { title: string }) => g.title === "Rehearsal goal"));
+  assert.equal(goals.find((g: { id: string }) => g.id === plan.id).title, plan.title);
+  const { instructions } = await ok(await request(asDemo, "GET", "/v1/instructions"), "instructions");
+  assert.deepEqual(
+    instructions.map((i: { text: string }) => i.text),
+    demoInstructions.map((i) => i.text),
+  );
+});
+
+test("demo visitors may save the ritual and log time on stage; the reseed puts both back to the plan", async () => {
+  const { demoGoals } = await import("./demo/week");
+  await runAsUser(DEMO, () => seedDemoWeek(store, { overwriteGoals: true }), "api_key");
+  const tri = demoGoals.find((g) => g.title === "70.3") as { id: string };
+  const ritualBefore = await ok(await request(asDemo, "GET", "/v1/ritual"), "ritual before");
+  const textsBefore = (ritualBefore.items as { text: string }[]).map((i) => i.text).sort();
+
+  const logged = await request(visitor1, "POST", "/v1/log", {
+    goal_id: tri.id,
+    minutes: 20,
+    note: "Stage swim",
+  });
+  assert.equal(logged.status, 201);
+  const entry = (await logged.json()).entry as { id: string };
+  const second = await ok(
+    await request(visitor1, "POST", "/v1/log", { goal_id: tri.id, minutes: 10, note: "Stage run" }),
+    "second log",
+  );
+  assert.equal((await request(visitor1, "DELETE", `/v1/log/${second.entry.id}`)).status, 200);
+  // Settling a block that is not there is a clean 404, past the visitor guard.
+  assert.equal(
+    (await request(visitor1, "POST", "/v1/log/block", { event_id: randomUUID(), did: true })).status,
+    404,
+  );
+  // The ritual: a morning save (refused only if today is full) and Not today on the evening.
+  const morning = await request(visitor1, "POST", "/v1/ritual/morning", {
+    outcomes: [{ text: "Visitor outcome" }],
+  });
+  assert.notEqual(morning.status, 403);
+  assert.notEqual((await request(visitor1, "POST", "/v1/ritual/evening/skip")).status, 403);
+
+  await runAsUser(DEMO, () => seedDemoWeek(store, { overwriteGoals: true }), "api_key");
+
+  assert.equal(await runAsUser(DEMO, () => store.getEvent(entry.id), "api_key"), null);
+  const ritualAfter = await ok(await request(asDemo, "GET", "/v1/ritual"), "ritual after");
+  assert.deepEqual((ritualAfter.items as { text: string }[]).map((i) => i.text).sort(), textsBefore);
+  assert.notEqual(ritualAfter.evening, "skipped");
+  // The demo week's own logged entry stays.
+  const from = new Date(Date.now() - 3 * 86_400_000).toISOString();
+  const to = new Date().toISOString();
+  const { events } = await ok(
+    await request(asDemo, "GET", `/v1/timeline?${new URLSearchParams({ from, to })}`),
+    "timeline",
+  );
+  assert.ok(
+    (events as { external_id: string | null; data: { log?: string } }[]).some(
+      (e) => e.data.log === "done" && e.external_id?.startsWith("demo:"),
+    ),
+  );
+});
+
 test("the visitor rules fail closed for routes nobody listed", () => {
+  assert.equal(demoVisitorMay("POST", "/v1/log"), true);
+  assert.equal(demoVisitorMay("POST", "/v1/log/block"), true);
+  assert.equal(demoVisitorMay("DELETE", "/v1/log/x"), true);
+  assert.equal(demoVisitorMay("POST", "/v1/ritual/morning"), true);
+  assert.equal(demoVisitorMay("POST", "/v1/ritual/evening/skip"), true);
+  assert.equal(demoVisitorMay("POST", "/v1/ritual/other"), false);
+  assert.equal(demoVisitorMay("POST", "/v1/connect/requests/x"), false);
   assert.equal(demoVisitorMay("POST", "/v1/something-new"), false);
   assert.equal(demoVisitorMay("DELETE", "/v1/me/data"), false);
   assert.equal(demoVisitorMay("GET", "/v1/goals"), true);

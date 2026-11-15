@@ -9,6 +9,7 @@ import { handleMcpRequest } from "./mcp";
 import { actions } from "./routes/actions";
 import { agents } from "./routes/agents";
 import { analysis } from "./routes/analysis";
+import { blocks } from "./routes/blocks";
 import { chat } from "./routes/chat";
 import { chatThreads } from "./routes/chat-threads";
 import { checkIn } from "./routes/check-in";
@@ -32,6 +33,7 @@ import { product } from "./routes/product";
 import { profile } from "./routes/profile";
 import { push } from "./routes/push";
 import { recommendations } from "./routes/recommendations";
+import { ritual } from "./routes/ritual";
 import { score } from "./routes/score";
 import { setupPublic, setupTokens } from "./routes/setup";
 import { sources } from "./routes/sources";
@@ -54,6 +56,7 @@ export const v1Routes = new Hono()
   .route("/", events)
   .route("/", goals)
   .route("/", checklist)
+  .route("/", ritual)
   .route("/", instructions)
   .route("/", recommendations)
   .route("/", analysis)
@@ -72,6 +75,7 @@ export const v1Routes = new Hono()
   .route("/", nudges)
   .route("/", push)
   .route("/", actions)
+  .route("/", blocks)
   .route("/", focusGuards)
   .route("/", drafts)
   .route("/", profile)
