@@ -181,6 +181,20 @@ export class MicError extends Error {
 let mic: MediaStream | null = null;
 let ctx: AudioContext | null = null;
 
+// The microphone level for the living voice, from whichever meter is running: a recording's, or
+// the side meter that runs beside the browser's recogniser. Listeners get 0 when it stops.
+const micLevels = new Set<(level: number) => void>();
+
+/** The microphone level 0..1 (root mean square), about twenty times a second. Returns the unsubscribe. */
+export function onMicLevel(l: (level: number) => void): () => void {
+  micLevels.add(l);
+  return () => micLevels.delete(l);
+}
+
+function emitMicLevel(level: number) {
+  for (const l of micLevels) l(level);
+}
+
 /**
  * Call inside a tap: an AudioContext made or resumed in a gesture is allowed to run on iOS, which
  * the level meter and the conversation's pause detection need. Harmless elsewhere.
@@ -217,6 +231,55 @@ async function getMic(): Promise<MediaStream> {
 export function releaseMic(): void {
   for (const t of mic?.getTracks() ?? []) t.stop();
   mic = null;
+  for (const stop of sideMeters) stop();
+}
+
+const sideMeters = new Set<() => void>();
+
+/**
+ * A level meter beside the browser's recogniser, for the living voice only (turn taking stays with
+ * the recogniser). It never asks for the microphone: it starts only where permission is already
+ * granted, and never on iOS, where a second capture can cut the recogniser off. Resolves to its
+ * stop, a no op where it could not start.
+ */
+export async function startSideMeter(): Promise<() => void> {
+  const none = () => {};
+  try {
+    if (typeof window === "undefined" || isIos() || !navigator.mediaDevices?.getUserMedia) return none;
+    const status = await navigator.permissions?.query({ name: "microphone" as PermissionName });
+    if (status?.state !== "granted" || !ctx) return none;
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    });
+    const source = ctx.createMediaStreamSource(stream);
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 1024;
+    source.connect(analyser);
+    const frame = new Float32Array(analyser.fftSize);
+    const meter = setInterval(() => {
+      analyser.getFloatTimeDomainData(frame);
+      emitMicLevel(levelOf(frame));
+    }, 50);
+    let stopped = false;
+    const stop = () => {
+      if (stopped) return;
+      stopped = true;
+      sideMeters.delete(stop);
+      clearInterval(meter);
+      try {
+        source.disconnect();
+      } catch {
+        // Already gone.
+      }
+      for (const t of stream.getTracks()) t.stop();
+      emitMicLevel(0);
+    };
+    sideMeters.add(stop);
+    return stop;
+  } catch {
+    // Firefox cannot query the microphone permission; the visual swells with words instead.
+    return none;
+  }
 }
 
 export type Recording = {
@@ -268,6 +331,7 @@ export async function startRecording(opts: RecordOptions = {}): Promise<Recordin
         analyser.getFloatTimeDomainData(frame);
         const level = levelOf(frame);
         opts.onLevel?.(level);
+        emitMicLevel(level);
         const turn = turns.feed(level, Date.now());
         if (turn === "speech") opts.onSpeech?.();
         if (turn === "pause") opts.onPause?.();
@@ -281,6 +345,7 @@ export async function startRecording(opts: RecordOptions = {}): Promise<Recordin
   const finish = () => {
     clearInterval(meter);
     clearTimeout(limit);
+    if (meter !== undefined) emitMicLevel(0);
     try {
       source?.disconnect();
     } catch {

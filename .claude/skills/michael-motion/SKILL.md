@@ -29,9 +29,11 @@ Do not animate:
 - Tab switches, the tab bar, headers, or anything the user does many times a minute.
 - Keyboard-driven actions, focus moves, typing.
 - Decoration: no loops, pulses or attention-seeking motion. The only loops allowed are the
-  skeleton breath, the push-to-talk listening ring, the conversation's speaking breath
-  (`.m-speak-breath`, `.m-think-soft`) and Michael thinking (`.m-think`, `components/thinking.tsx`), all stopped
-  by reduced motion.
+  skeleton breath, the push-to-talk listening ring, Michael thinking (`.m-think`,
+  `components/thinking.tsx`) and his living voice (`components/voice/living-voice.tsx`, onboarding
+  talk and the conversation sheet), all stopped by reduced motion. The living voice is the one
+  place allowed soft pink glow and continuous audio driven motion (founder's call, Sun 15 Nov);
+  reuse it rather than drawing another voice visual.
 
 ## 2. Tokens (apps/web/app/globals.css)
 

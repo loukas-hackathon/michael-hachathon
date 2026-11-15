@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  beatLevel,
+  envelopeOf,
   isEcho,
+  levelAt,
   meansNoVoiceHere,
   type RecognitionEvent,
   recognitionErrorCopy,
@@ -68,4 +71,34 @@ test("transcriptOf does not repeat the phrase when Android sends it whole in eve
     results: [r("how"), r("how much"), r("How much deep work")],
   } as unknown as RecognitionEvent;
   assert.equal(transcriptOf(e), "How much deep work");
+});
+
+test("envelopeOf gives one loudness per frame, loud speech near 1 and silence at 0", () => {
+  const rate = 600;
+  // Half a second of silence, then half a second of a loud tone (10 frames per second).
+  const samples = new Float32Array(rate);
+  for (let i = rate / 2; i < rate; i++) samples[i] = Math.sin(i) * 0.5;
+  const env = envelopeOf(samples, rate, 10);
+  assert.equal(env.length, 10);
+  assert.equal(env[0], 0);
+  assert.ok((env[9] ?? 0) > 0.9);
+  assert.ok(Array.from(env).every((v) => v >= 0 && v <= 1));
+  assert.deepEqual(Array.from(envelopeOf(new Float32Array(100), rate, 10)), [0, 0]);
+});
+
+test("levelAt reads the envelope between frames and is 0 outside it", () => {
+  const env = [0, 1, 0.5];
+  assert.equal(levelAt(env, 0, 10), 0);
+  assert.equal(levelAt(env, 0.05, 10), 0.5);
+  assert.equal(levelAt(env, 0.1, 10), 1);
+  assert.equal(levelAt(env, 1, 10), 0);
+  assert.equal(levelAt(env, Number.NaN, 10), 0);
+});
+
+test("beatLevel swells on a word and dies away, with a rhythm when no words are reported", () => {
+  assert.ok(beatLevel(0, 500) > beatLevel(200, 500));
+  assert.ok(beatLevel(800, 1000) < 0.02);
+  const rhythm = [1000, 1100, 1200, 1300].map((t) => beatLevel(5000, t));
+  assert.ok(rhythm.every((v) => v > 0 && v < 0.6));
+  assert.ok(new Set(rhythm.map((v) => v.toFixed(3))).size > 1);
 });
