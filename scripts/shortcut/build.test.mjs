@@ -188,11 +188,15 @@ test("otherwise it reads the key and posts the app's name with it", () => {
 
   // { app: <Shortcut Input's Name>, action: "open" }
   const body = items(p.WFJSONValues);
-  assert.deepEqual(Object.keys(body), ["app", "action"]);
+  assert.deepEqual(Object.keys(body), ["app", "input", "action"]);
   assert.equal(body.app.string, OBJ);
   const app = body.app.attachmentsByRange["{0, 1}"];
   assert.equal(app.Type, "ExtensionInput");
   assert.equal(app.Aggrandizements[0].PropertyName, "Name");
+  // { input: <Shortcut Input as Text> }: the app name a Text action typed in, as it is.
+  const input = body.input.attachmentsByRange["{0, 1}"];
+  assert.equal(input.Type, "ExtensionInput");
+  assert.equal(input.Aggrandizements[0].CoercionItemClass, "WFStringContentItem");
   assert.deepEqual(body.action, { string: "open" });
 });
 
