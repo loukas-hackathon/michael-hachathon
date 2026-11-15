@@ -35,6 +35,7 @@ On the Build Hub: notes `decision-onboarding-talk`, `decision-personal-not-gener
 | 518 | `POST /v1/onboarding/turn`: Michael's next line on the quick model (`ANTHROPIC_FAST_MODEL`, default the Haiku model), opener from calendar facts, script fallback |
 | 521 | Word lists understand twice, weekdays, an hour and a half, a couple of hours |
 | 522 | Today: every line from the user's own data |
+| 540 | Every onboarding tap answers (Michael thinks, thinking loading screens, one transition per screen), iOS style footer with no black band, dark mode bars readable |
 | 537 | Siri like living voice: audio reactive pink light around Michael, onboarding and chat |
 | 529 | Hands free voice agent onboarding: intro voice, calendar first, live words, pause ends turn, laptop column; review fixes (You said ... Fix, startup and deep work one goal) |
 
@@ -44,29 +45,13 @@ apps/web/lib/onboarding-script.ts, apps/api/src/onboarding/turn.ts,
 apps/api/src/goals/from-words.ts, apps/api/src/focus/session.ts (autoStartFocus),
 apps/web/lib/today-lines.ts. Tests: e2e/tests/onboarding.spec.ts, onboarding-iphone.spec.ts.
 
-## In flight when this was written (check GitHub for their state)
+## In flight when this was written (check GitHub for its state)
 
-1. PR 537, branch `claude/onboarding-living-voice`: Siri like living voice
-   (apps/web/components/voice/living-voice.tsx, a canvas of translucent pink light around the Mi
-   core), used by onboarding's VoiceOrb and chat's conversation sheet. Speaking follows the real
-   loudness of his voice (a side decode of the ElevenLabs audio, playback untouched so iPhone
-   routing is unchanged; browser voice by word beats), listening follows the mic, thinking is two
-   lights circling the rim, muted is grey and still. Reviewed by screenshots and released (wip
-   removed); MERGED (live after deploy). Only a real iPhone can confirm: Safari decodes the mp3
-   for the loudness curve, Michael stays loud on the speaker after the mic, 60 fps on the stage
-   phone. Unused CSS left for later: .m-speak-breath and .m-think-soft in globals.css.
-2. PR 540, branch `claude/onboarding-alive`: every onboarding tap shows Michael responding
-   (thinking lines after 250 ms, at least 400 ms), Michael thinking loading screens, one calm
-   transition per screen change, the footer now an iOS style toolbar with a hairline (no black
-   band), dark mode planned bars as a lighter grey (`--m-bar-ahead`). Reviewed by screenshots and
-   released (wip removed); auto-merges when CI is green. Follow ups: after Add it the review line
-   can say "I heard one goal" when there are two (the line comes from the API); the Goals back link
-   on the connect step has no thinking hand over yet; the unused .m-speak-breath and .m-think-soft
-   CSS can go. Real iPhone checks: footer against the home indicator, footer with the keyboard
-   open, transitions at 120 Hz.
-
-If either branch has no PR yet, finish it on that branch: run the checks below, open the PR with
-`wip`, then review.
+- PR 543, branch `claude/onboarding-followups` (no `wip`, auto-merges when CI is green): after
+  Add it the review line counts the whole list ("Added Reading. That makes three."), the Goals back
+  link on the connect step hands over to Michael thinking (`StepLink` in
+  apps/web/app/onboarding/wait.tsx), unused `.m-speak-breath` and `.m-think-soft` removed.
+  Checks passed locally: pnpm check, web unit tests, 21 e2e. If CI is red, fix it on that branch.
 
 ## How to review a held PR, then release it
 
@@ -81,7 +66,7 @@ If either branch has no PR yet, finish it on that branch: run the checks below, 
 5. After merge: production API `https://api-production-16521a26.up.railway.app/health` reports
    the deployed commit; web is https://michael-zeta-sand.vercel.app. Update the Build Hub.
 
-## Next, once the in-flight work is merged
+## Next, once PR 543 is merged
 
 - Lucas to test on a real iPhone and laptop: Michael's voice plays, words appear, follow ups react
   to what was said (if every line sounds scripted, "Got it." each time, the model is not reaching
@@ -94,4 +79,5 @@ If either branch has no PR yet, finish it on that branch: run the checks below, 
 - Known gaps: the turn API's invented number check catches digits only, not number words; on
   iPhone the user's words show only after transcription (iOS limit); speaking over Michael does
   not cut him off (tap the orb).
-- The stale branch `claude/onboarding-turn-api` (pre squash history) can be deleted.
+- The stale branch `claude/onboarding-turn-api` (pre squash history) should be deleted by a
+  human in GitHub: branch deletion is blocked for the agent in this environment.
