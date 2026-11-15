@@ -35,6 +35,7 @@ On the Build Hub: notes `decision-onboarding-talk`, `decision-personal-not-gener
 | 518 | `POST /v1/onboarding/turn`: Michael's next line on the quick model (`ANTHROPIC_FAST_MODEL`, default the Haiku model), opener from calendar facts, script fallback |
 | 521 | Word lists understand twice, weekdays, an hour and a half, a couple of hours |
 | 522 | Today: every line from the user's own data |
+| 546 | Sign up no longer sticks on the grey skeleton on iPhone (onboarding skips the stand in; stand in gives up after 6 s) |
 | 543 | Follow ups: review line counts the whole list after Add it, Goals back link hands over to Michael thinking, unused voice CSS removed |
 | 540 | Every onboarding tap answers (Michael thinks, thinking loading screens, one transition per screen), iOS style footer with no black band, dark mode bars readable |
 | 537 | Siri like living voice: audio reactive pink light around Michael, onboarding and chat |
@@ -48,7 +49,10 @@ apps/web/lib/today-lines.ts. Tests: e2e/tests/onboarding.spec.ts, onboarding-iph
 
 ## In flight
 
-- PR 546, branch `claude/fix-signup-stuck` (urgent, auto-merge): after creating an account on an
+Nothing in flight. Last item below is merged and needs a real iPhone check.
+
+
+- PR 546 MERGED 16:22 (was urgent): after creating an account on an
   iPhone the app stuck on a grey skeleton. Cause: the service worker's stand in skeleton
   (public/shell.html, painted when a page takes over 0.7 s) waits for a hand over message that never
   comes when iOS stops the worker; onboarding is the slow first page. Fix: onboarding, connect,
