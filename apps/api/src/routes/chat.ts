@@ -30,7 +30,7 @@ import { z } from "zod";
 import { blockIdOf, goalIdOf, OPENING_STEP, stepLabel } from "../actions/chat-steps";
 import { CHAT_TOOLS, type ChatTurnState, runChatTool, undoLine } from "../actions/chat-tools";
 import { checkInContext, checkInLine } from "../checkin/service";
-import { connectionsNow } from "../connections-state";
+import { connectionsNow, deniesIphone } from "../connections-state";
 import { currentDemoVisitor, currentUserId } from "../context";
 import { env } from "../env";
 import { HttpError, jsonBody, parse } from "../http";
@@ -787,6 +787,8 @@ interface Hooks {
   earlierDone?: number;
   /** Off the record: the line any question about the user's data gets (connectionsNow). */
   offTheRecord?: string | null;
+  /** The iPhone is connected: the line Michael gives about it (connectionsNow), else null. */
+  iphone?: string | null;
 }
 
 /** Where the time of one model call went, for the chat_timing log and the stream's `timing` event. */
@@ -896,6 +898,9 @@ export const asksAboutData = (text: string) =>
   /\b(see|seen|saw|notice[ds]?|track(ed|ing)?|collect(ed|ing)?|record(ed|ing)?|data|open(ed|s)?|log(ged)?|came through|show(s|ed)? up|got|receiv(e|ed)|connected|check again)\b|instagram/i.test(
     text,
   );
+
+/** A question about an app open ("did I open the instagram"). */
+export const asksAboutOpen = (text: string) => /\b(open(ed|s)?|apps?|instagram)\b/i.test(text);
 
 /**
  * Michael's answer, acting through the chat tools when asked. Tools run here, server side; the
@@ -1013,6 +1018,13 @@ export async function askMichael(
   // Off the record, a question about their data is answered with that, not a promise of data later.
   if (hooks.offTheRecord && userText && asksAboutData(userText) && !/off the record/i.test(answer))
     answer = hooks.offTheRecord;
+  // A connected iPhone is never "not connected" (15 Nov), and an unnamed open is said as such.
+  else if (hooks.iphone && userText && asksAboutData(userText)) {
+    const unnamed = hooks.iphone.startsWith("An app opened at");
+    if (deniesIphone(answer)) answer = hooks.iphone;
+    else if (unnamed && asksAboutOpen(userText) && !answer.includes("An app opened at"))
+      answer = hooks.iphone;
+  }
   const done = actions.filter((a) => a.status === "done");
   const missing = done.flatMap((a) => {
     const line = undoLine(a);
@@ -1054,6 +1066,7 @@ interface Prepared {
   earlierDone: number;
   /** Off the record: the line any question about the user's data gets. */
   offTheRecord: string | null;
+  iphone: string | null;
   /** The answer is read aloud (conversation mode): brief, no lists. */
   spoken: boolean;
   /** Null when the pair starts a new thread (made in save, so a failed answer leaves nothing). */
@@ -1112,6 +1125,7 @@ async function prepare(body: unknown): Promise<Prepared> {
     ].join("\n\n"),
     earlierDone: earlierActions.filter((a) => a.status === "done").length,
     offTheRecord: connections?.offTheRecord ?? null,
+    iphone: connections?.iphone ?? null,
     spoken,
     thread,
     title,
@@ -1259,6 +1273,7 @@ export const chat = new Hono()
       now: p.now,
       earlierDone: p.earlierDone,
       offTheRecord: p.offTheRecord,
+      iphone: p.iphone,
     });
     const saveStart = performance.now();
     const body = await save(p, answer);
@@ -1294,6 +1309,7 @@ export const chat = new Hono()
           now: p.now,
           earlierDone: p.earlierDone,
           offTheRecord: p.offTheRecord,
+          iphone: p.iphone,
           onText: async (text) => {
             await closeOpening();
             await sse.writeSSE({ event: "delta", data: JSON.stringify({ text }) });

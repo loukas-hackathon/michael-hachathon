@@ -4,6 +4,7 @@
 export * from "./ai-prompts";
 export * from "./categories";
 export * from "./connectors";
+export * from "./device-state";
 export * from "./focus-shortcut";
 export * from "./goal-areas";
 export * from "./mac-apps";
