@@ -298,13 +298,17 @@ h3 {
 }
 
 /* Installed app: content scrolls under the clock and battery, so the status bar gets the page
- * colour behind it, as in a native app. Zero height in a browser tab. */
+ * colour behind it, as in a native app. One cover, from above the page down to the safe top: it
+ * also hides what iOS paints above a page that starts below the status bar (#452 follow up), and
+ * shows nothing in a browser tab, where the safe top is 0. */
 body::before {
   content: "";
   position: fixed;
-  inset: 0 0 auto;
+  top: -200px;
+  right: 0;
+  left: 0;
   z-index: 40;
-  height: var(--m-safe-top);
+  height: calc(200px + var(--m-safe-top));
   background: var(--m-bg);
   pointer-events: none;
 }
