@@ -307,6 +307,8 @@ test("a training block is never most at risk", () => {
   );
   assert.equal(templateHeadline(m), "Today holds 90 minutes of goal time.");
   assert.equal(momentNudge(m).text, "Today holds 90 minutes of goal time.");
+  // The stage shows the reason under the line: it never says the line twice (QA round 3).
+  assert.ok(!momentNudge(m).reason.includes("Today holds 90 minutes"), momentNudge(m).reason);
 
   // A work block later the same day is the one at risk, not the session before it.
   const both = morning([...events, ...history(), ...todayPlan()], "2026-11-11 07:30", all);
@@ -426,7 +428,7 @@ test("the same block's last time is quoted in place of the average", () => {
   const nudge = momentNudge(m);
   assert.equal(nudge.text, "Yesterday the 10:30 block lost 24 minutes to Instagram.");
   assert.ok(isValidCopy(nudge.text), nudge.text);
-  assert.match(nudge.reason, /Yesterday the 10:30 block lost 24 minutes to Instagram\./);
+  assert.ok(!nudge.reason.includes(nudge.text), nudge.reason);
 
   // Read while the block is running, the line says "this block" and guards what is left of it.
   const running = morning(events, "2026-11-11 10:47", all);

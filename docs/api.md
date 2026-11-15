@@ -1433,7 +1433,7 @@ label?, address }` (the other places stay) and `update_profile` (quiet hours, wo
 gym days, fixed titles). Deleting data, a goal, an instruction or a place, disconnecting and revoking
 stay in the app. The context gives ids for past own blocks (marked unconfirmed or settled), today's
 checklist items and the active instructions. After `log_done` the reply is one line with the new
-maths and "Undo" ("Logged. Everything bath 40 of 60 min this week. Undo"); the chip under it undoes.
+maths and "Undo" ("Logged 40 min. Everything bath: 40 of 60 min this week. Undo"); the chip under it undoes.
 
 **Check in in chat (#187).** The context lists the user's check in answers from the last 7 days
 ("What you told me", quoted, never invented) and today's open questions with their ids, and a tool
@@ -2525,7 +2525,7 @@ type LogTimeResponse = {
   entry: Event; // the manual entry
   recommendation: Recommendation; // kind log_time or settle_block, status done; undo it to take the entry back
   goal: { goal_id; title; spent_minutes; budget_minutes }; // the goal's week after it (a count goal: done of per_week)
-  message: string; // "Logged. Everything bath 40 of 60 min this week."
+  message: string; // "Logged 40 min. Everything bath: 40 of 60 min this week."
 };
 ```
 

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { API_URL, enterDemo, expect, fillReady, tap, test } from "./fixtures";
+import { API_URL, apiGet, enterDemo, expect, fillReady, PRESENTER_KEY, tap, test } from "./fixtures";
 
 // A fresh, non demo user: Today sends them to onboarding, two screens, and Today takes them in.
 // The test sign in (cookie michael_e2e_user) only works with E2E_TEST_AUTH=on on the in-memory API.
@@ -109,14 +109,16 @@ test("You shows all eight connections, each with Connect", async ({ page, contex
 
 // The demo week replays recorded sources, so a demo visitor sees them as what they are, and a tap
 // the API refuses says the one demo line next to the control (#330).
-test("You on the demo week: sources read Sample data, a refused tap says why", async ({ page }) => {
+test("You on the demo week: sources read Replayed, a refused tap says why", async ({ page }) => {
   await enterDemo(page);
   await page.goto("/you");
   const list = page.locator("#connections");
   await expect(
-    list.getByText("The demo week runs on sample data from calendar, Mac, iPhone and watch."),
+    list.getByText(
+      "The demo week replays calendar, Mac, iPhone and watch data. Your own connections start off.",
+    ),
   ).toBeVisible();
-  await expect(list.getByText("Sample data", { exact: true })).toHaveCount(4);
+  await expect(list.getByText("Replayed", { exact: true })).toHaveCount(4);
   await expect(list.getByRole("link", { name: /Google Calendar|Apple Watch|Mac|iPhone/ })).toHaveCount(0);
 
   const privacy = page.locator("section", { has: page.getByRole("heading", { name: "Privacy" }) });
@@ -127,4 +129,27 @@ test("You on the demo week: sources read Sample data, a refused tap says why", a
     ).toBeVisible({ timeout: 2000 });
   }).toPass({ timeout: 15_000 });
   await expect(page.locator("#off-the-record")).not.toBeChecked();
+});
+
+test("the presenter: no sign in lines on the projector, Off the record switches on and off", async ({
+  page,
+}) => {
+  await page.goto(`/auth/presenter?key=${PRESENTER_KEY}`);
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  await expect(page.getByText("Sign in to make it yours.")).toHaveCount(0);
+
+  await page.goto("/you");
+  await expect(page.getByText("Sign in with Google to make it yours.")).toHaveCount(0);
+  const record = page.locator("#off-the-record");
+  const offTheRecord = async () => (await apiGet<{ off_the_record: boolean }>("/v1/privacy")).off_the_record;
+  // One tap each way, each waiting for the server: a double tap would leave the shared demo
+  // account off the record and refuse every later write.
+  await tap(record);
+  await expect(page.getByText(/^Nothing is being collected/)).toBeVisible();
+  await expect.poll(offTheRecord).toBe(true);
+  await tap(record);
+  await expect(page.getByText("Collecting from your connections.")).toBeVisible();
+  await expect.poll(offTheRecord).toBe(false);
+  await expect(record).not.toBeChecked();
 });

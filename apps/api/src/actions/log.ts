@@ -219,9 +219,10 @@ async function goalWeek(goal: Goal, at: number): Promise<LogTimeResponse["goal"]
 function lineFor(goal: Goal, week: LogTimeResponse["goal"], lead: string): string {
   if (goalKind(goal) === "count") {
     const target = week.budget_minutes ? ` of ${week.budget_minutes}` : "";
-    return `${lead} ${goal.title} ${week.spent_minutes}${target} this week.`;
+    return `${lead} ${goal.title}: ${week.spent_minutes}${target} this week.`;
   }
-  return `${lead} ${goal.title} ${weekMaths(week.spent_minutes, week.budget_minutes)}.`;
+  // The colon keeps a goal named with a number ("70.3") apart from the maths after it.
+  return `${lead} ${goal.title}: ${weekMaths(week.spent_minutes, week.budget_minutes)}.`;
 }
 
 // ---------- carrying out (called by actions/calendar.ts for log_time and settle_block) ----------
@@ -336,7 +337,12 @@ export async function logTime(raw: unknown, via: LogVia, execute: Execute): Prom
     source: "chat",
   });
   const week = await goalWeek(goal, start);
-  return { entry, recommendation: rec, goal: week, message: lineFor(goal, week, "Logged.") };
+  return {
+    entry,
+    recommendation: rec,
+    goal: week,
+    message: lineFor(goal, week, `Logged ${voiceShortDuration(minutes)}.`),
+  };
 }
 
 /** The log entries that settle a block already, if any. */

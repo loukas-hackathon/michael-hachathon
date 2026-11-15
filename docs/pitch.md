@@ -2,6 +2,8 @@
 
 One speaker talks, one drives. Rehearsed end to end against production on Sun 15 Nov 06:40 Athens
 (commit `8f65dde`; fixes in #335 and #361, Playwright at 390x844 and `/stage` at 1920x1080; issue #253).
+QA round 3 (Sun 15 Nov 08:00, #346) walked production read only and ran every write beat locally
+on the demo week with the clock at 20:10; the notes in brackets below come from that run.
 Run `docs/demo-runbook.md` first. Lines in quotes are said out loud. Numbers are read off the
 screen, never from this page: the demo week follows the clock, and the examples below are what the
 screen said at rehearsal.
@@ -49,9 +51,11 @@ Fallback: none needed. Keep talking.
 
 Screen: **Today** (`/`).
 
-1. Point at the big number under "Optimisation score" and the seven day columns.
-   > "This is Manolis' real week, private names removed. [76]% of his goal time this week, two
-   > days kept in a row. A day is kept at 70%."
+1. Point at the big number under "Optimisation score" and the seven day columns. In the evening
+   the big number is today's ("[100]% of your goal time today. Today is kept."); the week's number
+   is the line under the columns. (QA round 3, local run at 20:10: today 100%, week 76%.)
+   > "This is Manolis' real week, private names removed. [100]% of today's goal time, [76]% this
+   > week, two days kept in a row. A day is kept at 70%."
 2. Point at the lost line: "[4h 57] lost from your goal blocks this week. [Instagram] took [2h 32]
    of it." Read it as it is.
 3. Tap **How I count**. The sheet reads e.g. "15h 23 spent of 20h 20 gone by", Planned 21h 50,
@@ -60,8 +64,9 @@ Screen: **Today** (`/`).
 
 ## 0:50 to 1:10 · The evening log
 
-Screen: Today with `?ritual=evening` (tab 3 in the runbook; after about 19:00 Today shows it by
-itself). The morning plan already set three outcomes (at rehearsal: Statistics past paper, Call
+Screen: Today with `?ritual=evening` (tab 3 in the runbook; always use the tab: Today opens the
+evening log by itself only from the evening moment, which follows the usual bedtime, so at 20:10 it
+had not yet). The morning plan already set three outcomes (at rehearsal: Statistics past paper, Call
 three leads, Yoga before bed).
 
 > "Every morning Michael asks for three outcomes. Every evening, one tap each."
@@ -81,8 +86,11 @@ Screen: **Chat** on the laptop (Chrome listens; the projector shows it). Tap the
 
 > "I took an ice bath for 40 minutes after the ride."
 
-About 12 seconds later he answers aloud, with the words on screen: "I logged the 40 minute ice
-bath to 70.3, so you're at [7h 51] of 9h this week." A **Done. Undo until tomorrow HH:MM** chip
+A few seconds later (the log line no longer waits for a second model round, #367) he answers
+aloud, with the words on screen: "Logged 40 min. 70.3: [9h 21] of 9h this week. Undo". By the
+evening 70.3 is close to its 9h, so the ice bath can take it past it: read the number as it is. In
+the evening Chat may open with Michael's check in questions at the top ("Were you in a meeting?");
+leave them. A **Done. Undo until tomorrow HH:MM** chip
 sits under it. Tap **End**.
 
 > "Same coach, hands free. He logs it, and shows the maths."
@@ -134,7 +142,9 @@ Screen: `/stage`, full screen. Click the page once so N reaches it. Speaker rais
 1. Driver presses **N**. The watch buzzes and the same line slides in on the projector with its
    reason underneath; the status line reads "Sent to [2] of [2] devices" (push and Telegram).
    The line is the goal furthest behind its pace, at any hour and by its own name (#361), e.g.
-   "University 3h 22 behind this week. Book 90 min today." with the pace maths underneath. Only
+   "University 3h 22 behind this week. Book 90 min today." with the pace maths underneath. With a
+   University block already booked tonight it says to keep it instead (QA round 3 at 20:10:
+   "University 3h 51 behind pace. Keep the 21:00 block."). Only
    when every goal is on pace does it say "Nudges are on. At most five a day, only when it
    matters."
    > "That is Michael on my wrist. Under fifteen words, tied to a goal, at most five a day, never
@@ -156,7 +166,9 @@ Screen: tap the Mi button (top right) on Today to open **You**.
 > "Your data lives in the EU, conversations only when you start them, raw audio deleted once it
 > is transcribed."
 
-Off the record needs the presenter link on this laptop: a plain demo visitor gets "This is the
+As the presenter, You shows no sign in card and the four sources read "Replayed" under "The demo
+week replays calendar, Mac, iPhone and watch data. Your own connections start off." Off the record
+needs the presenter link on this laptop: a plain demo visitor gets "This is the
 demo week. Sign in with Google to make it yours." and the switch flips back (rehearsal finding,
 fixed on this branch for the presenter). If that line appears, do not tap again; say the line over
 the screen.

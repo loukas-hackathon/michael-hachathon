@@ -3,6 +3,7 @@ import { ConnectionsList } from "@/components/you/connections-list";
 import { StandingInstructions } from "@/components/you/instructions";
 import { signedInAs } from "@/lib/account";
 import { getInstructions, getProfile } from "@/lib/api";
+import { isPresenter } from "@/lib/caller";
 import { getConnections } from "@/lib/connections-status";
 import { DeleteDataRow } from "./delete-data-row";
 import { OffTheRecordSwitch } from "./off-the-record-switch";
@@ -18,11 +19,12 @@ export default async function YouPage({
 }) {
   const params = await searchParams;
   // Every call fails on its own: if the API is down, the rest of the page still works.
-  const [connections, instructions, profile, account] = await Promise.all([
+  const [connections, instructions, profile, account, presenter] = await Promise.all([
     getConnections(),
     getInstructions().catch(() => ({ available: false as const })),
     getProfile().catch(() => null),
     signedInAs(),
+    isPresenter(),
   ]);
   const flash =
     params.connected === "google_calendar"
@@ -42,8 +44,9 @@ export default async function YouPage({
         </Link>
       </header>
       <h1 className="text-large-title font-bold tracking-[0.01em]">You</h1>
-      {account === "The demo week" ? (
+      {account === "The demo week" && !presenter ? (
         // The API refuses account changes from demo visitors; say so before a switch bounces back.
+        // The presenter may switch Off the record (#343), so the projector shows no sign in card.
         <Link href="/login" className="press mt-4 block rounded-group bg-fill px-4 py-3">
           <span className="block text-body font-semibold">This is the demo week.</span>
           <span className="block text-subhead text-label-2">Sign in with Google to make it yours.</span>
