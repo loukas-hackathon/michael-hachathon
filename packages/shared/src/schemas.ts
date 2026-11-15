@@ -2300,6 +2300,12 @@ export const InsightsResponse = z.object({
 });
 export type InsightsResponse = z.infer<typeof InsightsResponse>;
 
+// POST /v1/insights/run: study again now. started: the discovery pass (the model proposes further
+// relations, the server verifies them) runs behind the answer. running: one already is. skipped:
+// this server has no model key, so only the rules' insights were refreshed.
+export const InsightsRunResponse = z.object({ status: z.enum(["started", "running", "skipped"]) });
+export type InsightsRunResponse = z.infer<typeof InsightsRunResponse>;
+
 // ---------- score (GET /v1/score) ----------
 
 // The rule lives in apps/api/src/score/score.ts and docs/api.md ("Score"). All minutes are whole

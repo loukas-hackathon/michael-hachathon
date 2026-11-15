@@ -1,7 +1,7 @@
 import { median } from "../patterns/util";
 import { FEATURES, type FeatureDef, featureDef } from "./dictionary";
 import type { FeatureKey, FeatureTable } from "./features";
-import { benjaminiHochberg, clamp01, hash, mean, permutationP, pooledSd, sd, spearman } from "./stats";
+import { clamp01, hash, mean, passFalseDiscovery, permutationP, pooledSd, sd, spearman } from "./stats";
 
 // The miner: every sensible ordered pair of columns, same day and next day, split into the days
 // the trigger was there and the days it was not, compared, and kept only when it clears a strict
@@ -33,6 +33,8 @@ export const MINER_RULES = {
   sameStory: 0.6,
   historyCap: 30,
   maxPatterns: 8,
+  /** Relations the model proposed and the server verified, shown at most. */
+  maxDiscovered: 4,
   maxWatching: 3,
 } as const;
 
@@ -128,6 +130,8 @@ export interface Mined {
   watching: Link[];
   /** How many pairs had enough days on both sides to be tested. */
   tested: number;
+  /** The chance value of every pair tested: the family any later hypothesis is judged within. */
+  ps: number[];
 }
 
 const present = (v: number | null | undefined): v is number => v !== null && v !== undefined;
@@ -300,7 +304,7 @@ function strongestPer<T extends { strength: number }>(list: T[], sameAs: (item: 
 const familyOf = (key: FeatureKey) => featureDef(key).family;
 
 /** How much two triggers fall on the same days, 0 to 1, allowing one day's shift either way. */
-function sameDays(a: (boolean | null)[], b: (boolean | null)[]): number {
+export function sameDays(a: (boolean | null)[], b: (boolean | null)[]): number {
   let best = 0;
   for (const shift of [-1, 0, 1]) {
     let both = 0;
@@ -333,6 +337,7 @@ export function mine(table: FeatureTable): Mined {
   interface Tested {
     link: Link;
     rho: number;
+    sides: { a: number[]; b: number[]; seed: number };
   }
   const tested: Tested[] = [];
   const rare: Link[] = [];
@@ -344,8 +349,12 @@ export function mine(table: FeatureTable): Mined {
         const { cmp, a, b } = built;
         if (cmp.seen >= R.needed && cmp.other >= R.needed) {
           if (sd([...a, ...b]) === 0) continue;
-          const p = permutationP(a, b, pairSeed(trigger, y.key, lag));
-          tested.push({ link: toLink(trigger, y.key, lag, built, p), rho: spearman(built.px, built.py) });
+          const seed = pairSeed(trigger, y.key, lag);
+          tested.push({
+            link: toLink(trigger, y.key, lag, built, permutationP(a, b, seed)),
+            rho: spearman(built.px, built.py),
+            sides: { a, b, seed },
+          });
         }
         // Too rare to test, or too early to call: a candidate is watched when the outcome moved
         // far, and every time while it has been seen fewer times than a pattern needs.
@@ -363,10 +372,12 @@ export function mine(table: FeatureTable): Mined {
   }
 
   // The bar. The more pairs were tested, the smaller a pair's chance value must be.
-  const passes = benjaminiHochberg(
-    tested.map((t) => t.link.p),
-    R.falseDiscoveryRate,
-  );
+  const family = tested.map((t) => ({ p: t.link.p, sides: t.sides }));
+  const passes = passFalseDiscovery(family, R.falseDiscoveryRate);
+  // A pair that was looked at deeper keeps the value that decided it.
+  tested.forEach((t, i) => {
+    t.link.p = family[i]?.p ?? t.link.p;
+  });
   const found = (studied < R.minDays ? [] : tested)
     .filter((t, i) => {
       const { link, rho } = t;
@@ -486,5 +497,5 @@ export function mine(table: FeatureTable): Mined {
     watching.push(l);
   }
 
-  return { links, chains: finalChains, watching, tested: tested.length };
+  return { links, chains: finalChains, watching, tested: tested.length, ps: tested.map((t) => t.link.p) };
 }

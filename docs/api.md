@@ -1459,7 +1459,7 @@ the evening check in's ratings. Conversations, memories, searches and prompts ar
    the next day. The days are split on the trigger: a fixed threshold where one is usual (30
    minutes of late phone), else the person's own median. The two sides are compared: difference in
    means, the same in standard deviations, a rank correlation, and a permutation test with a fixed
-   seed (up to 50,000 shuffles, stopping early once the answer is settled). "Held" on a trigger day means the outcome was beyond the other
+   seed (10,000 shuffles, stopping early once the answer is settled, and 50,000 for the few pairs no shuffle matched when the bar needs a smaller value). "Held" on a trigger day means the outcome was beyond the other
    days' median, on the side the means differ.
 4. **The bar for `pattern`**: the trigger and its absence each seen `evidence.needed` times (4);
    at least `studied.needed_days` (14) days of data; the pair survives a false discovery rate of 2%
@@ -1500,7 +1500,56 @@ gets the usual `403` on both.
 
 **Speed.** A study reads 12 weeks of events, so it is worked out at most once every ten minutes
 per user (every 30 seconds while fewer than 14 days are studied) and kept in the process; a read
-past that age is answered at once with the kept study while a new one runs behind it.
+past that age is answered at once with the kept study while a new one runs behind it. The
+scheduler studies ahead for active users, so the first open after a deploy does not wait either.
+
+**The discovery pass** ("think outside the box", `insights/discover.ts`, `insights/hypothesis.ts`).
+Hypothesise, then verify: the model is free to be creative and can never be wrong about a number.
+
+1. The model (effort high, Michael's voice in the system prompt) is given summaries only: the
+   columns of the daily table with their mean, quartiles and mean per weekday, what the miner
+   already found, and the goals (title, kind, weekly minutes). Never an event, a title or a name.
+   It proposes up to 12 further relations as tests in a small grammar:
+
+   ```ts
+   type Hypothesis = {
+     when: Condition | null; // null only for a plain weekday effect
+     and: Condition | null; // a second condition on the same day (an interaction)
+     weekdays: number[] | null; // 0 = Sunday .. 6 = Saturday: only these count as trigger days
+     outcome: FeatureKey; // any column of the daily table
+     lag: 0 | 1 | 2; // days from the trigger to the outcome
+     direction: "higher" | "lower";
+   };
+   type Condition = {
+     feature: FeatureKey;
+     transform: "none" | "lag1" | "lag2" | "rolling3" | "rolling7" | "streak2" | "streak3";
+     op: ">=" | "<=";
+     threshold: number | null; // null = the person's own median of that column
+   };
+   ```
+
+2. The server runs each test on the daily table with the miner's own statistics and bar: 4 days
+   on both sides, 14 days studied, the same 0.6 standard deviations and 65% held, the direction
+   the hypothesis named, and the same 2% false discovery rate counted over every pair the miner
+   tested plus every hypothesis, so asking more questions never makes one easier to pass. A
+   hypothesis the data does not support, one that cannot be read, one that tests a column against
+   its own family, and one that retells a story the rules already tell are dropped silently.
+3. A second, short call (effort low) writes a title, a line and a fix for the survivors from the
+   verified figures. Words are refused, and the template used instead, when they break the voice
+   (`voiceProblems`), the shape (a title without a full stop, a line that starts with a number
+   and ends with a full stop, a short fix), or carry any number that is not among the verified
+   ones. A fix with a one tap action always keeps the template's words.
+4. What is stored is the test and its words, never its numbers: table `insight_runs`, one jsonb
+   document per user (`ran_at`, `data_day`, `model`, up to 12 `discoveries`), RLS like every
+   table, deleted with the account. Every study runs the stored tests again on the current
+   table, so the figures are always today's, the words are checked against them again, and a
+   relation that stops holding stops being shown. They come back as `kind: "discovered"`,
+   `found_by: "model"`, at most 4.
+5. When it runs: `POST /v1/insights/run` studies again at once and answers `202` with
+   `status: "started"` (the pass runs behind the answer), `"running"` (one already is) or
+   `"skipped"` (this server has no model key: the rules' insights still work). The scheduler's
+   five minute beat keeps a study from today for every active user and starts the pass once per
+   new day of data. A demo visitor gets the usual `403` on `run`.
 
 **Other readers.** MCP `get_insights` and the chat tool of the same name give the same findings
 as text. The real time nudges (`nudges/learnt.ts`) cite the kept study's strongest pattern about
