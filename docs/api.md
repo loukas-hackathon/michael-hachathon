@@ -3641,6 +3641,24 @@ webhook mappers. Calendar events carry `attendees` (the number of other people, 
 own blocks), `calendar`, `location?`, `status`, `all_day`. Meals are `manual` `meal` events with
 `estimated_kcal`, `protein_g`; typed notes are `manual` `note` events with `category`.
 
+**The weeks before this one** (`apps/api/src/demo/history.ts`): the 77 Athens days before those
+seven, twelve weeks in all, so the pattern engine has months to read. Lighter than the week, a few
+dozen events a day: the night, the morning's readings, the workout, the recurring blocks and the
+day's meetings, the stretches on the Mac and the phone that matter (the working day, the phone
+inside the first goal block, the evening, the phone after 23:00), meals. Built from Manolis' own
+per day numbers where this Mac had them (`history-facts.json`: dates, minutes, clock times, counts,
+names of well known apps and sites) and drawn in his measured range where it had none; the body's
+answer comes from a small model with noise. Their `external_id` starts `demo:past:`, so the same
+reseed covers them. Nothing of it falls inside the seven days ending now. The score and the
+Morning and Evening moments leave these rows out (`isDemoHistory`), so the usual day, the target
+and the records read what they read before.
+
+- A `sleep` event may carry `score` (0 to 100) in `data` when its source sends one; the history's
+  nights do. A reader uses it when present and works one out from the stages otherwise.
+- The history's mornings carry a `recovery` event (source `health_auto_export`):
+  `{ recovery_pct, hrv_ms, resting_hr }`, dated when the night ends, next to the watch's hourly
+  `heart_rate_variability` and `resting_heart_rate` with the same values.
+
 Travel in the demo is precomputed (`apps/api/src/demo/travel.ts`), never asked of Google: five
 neighbourhood level places (saved when the account has none), some blocks with a location (the
 place is part of the calendar event's `external_id`), a `maps` `travel` event per drive with a

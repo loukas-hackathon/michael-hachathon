@@ -11,6 +11,7 @@ import {
 } from "@michael/shared";
 import { Hono } from "hono";
 import { offerGoalActions } from "../checklist/offers";
+import { isDemoHistory } from "../demo/history";
 import { HttpError, parse } from "../http";
 import { memo } from "../memo";
 import { DEFAULT_TIMEZONE } from "../patterns";
@@ -100,7 +101,9 @@ export async function loadWeek(query: { date?: string; now?: string }): Promise<
     ...chunks,
   ]);
   const byId = new Map<string, Event>();
-  for (const page of pages) for (const e of page) byId.set(e.id, e);
+  // The stage account's history (demo/history.ts) is for the pattern engine: the score, its usual
+  // day, the target and the records read the same weeks as before it existed.
+  for (const page of pages) for (const e of page) if (!isDemoHistory(e)) byId.set(e.id, e);
   const events = [...byId.values()];
   const built = scoreWithHistory(events, goals, {
     date,

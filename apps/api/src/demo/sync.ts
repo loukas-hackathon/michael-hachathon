@@ -8,6 +8,7 @@ import { Zone } from "../patterns/time";
 import { isLogEntry } from "../score/logged";
 import { goalForEvent } from "../score/match";
 import type { Store } from "../store";
+import { buildDemoHistory } from "./history";
 import { seedDemoKnowledge } from "./knowledge";
 import { removeRetiredSamples } from "./retired";
 import { seedDemoRitual } from "./ritual";
@@ -56,9 +57,13 @@ export async function seedDemoWeek(
   // switches are not applied: on the demo account they keep real collectors out (#114), and
   // everything seeded here is synthetic.
   const rules = await store.privacyRules();
-  const sources: Source[] = rules.offTheRecord ? [] : [...new Set(week.events.map((e) => e.source))];
+  // The weeks before this one (demo/history.ts) go in with the week, in the one sync: both carry
+  // the "demo:" prefix, so a day that leaves the week is replaced by its history in the same pass.
+  const history = buildDemoHistory(now);
+  const seeded = [...history.events, ...week.events];
+  const sources: Source[] = rules.offTheRecord ? [] : [...new Set(seeded.map((e) => e.source))];
 
-  const events = await store.syncSeededEvents(DEMO_PREFIX, sources, week.events);
+  const events = await store.syncSeededEvents(DEMO_PREFIX, sources, seeded);
   const goals = await store.seedGoals(demoGoals, { overwrite: opts.overwriteGoals || resetState });
   if (!rules.offTheRecord) await seedDemoTravel(store, week, opts.now ?? new Date());
   // Follow up drafts for the latest conversations (#40). Best effort: never fails the seed.
