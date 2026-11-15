@@ -2,6 +2,7 @@ import { goalKind } from "@michael/shared";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
+import { AskClaude } from "@/components/claude/ask-claude";
 import { CountUp } from "@/components/count-up";
 import { TodayFocusNow } from "@/components/focus/today-focus";
 import { TodayLearnt } from "@/components/learnt/learnt-card";
@@ -62,6 +63,10 @@ function tapeLabel(t: ReturnType<typeof totals>) {
   if (t.ahead > 0) parts.push(`${spokenDuration(t.ahead)} still ahead`);
   return `Today's tape: ${parts.join(", ")}`;
 }
+
+/** Typed into Claude for the person by the Ask Claude card. (Brand) */
+const TODAY_PROMPT =
+  "Using my Michael connector, look at my week: my Optimisation score, my phone and my numbers (sleep, recovery, phone late at night and time lost in goal blocks). Explain them in plain words and tell me the one thing to change first.";
 
 const TITLE: Record<DayView["moment"], string> = { morning: "Morning", today: "Today", evening: "Evening" };
 
@@ -459,6 +464,11 @@ export default async function TodayPage({
           </div>
         </div>
       )}
+
+      {/* A small card a few seconds in: ask Claude to explain the numbers, or connect it first. */}
+      <Suspense fallback={null}>
+        <AskClaude place="today" prompt={TODAY_PROMPT} demo={demo} />
+      </Suspense>
 
       {day.sample ? (
         <p className="mt-8 text-footnote text-label-2">

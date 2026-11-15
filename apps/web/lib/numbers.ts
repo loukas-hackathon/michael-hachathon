@@ -170,9 +170,6 @@ export const insightKeys = (i: Insight) => i.id.split(/[:>]/).slice(1);
 export const patternsFor = (key: NumberKey, patterns: Insight[]) =>
   patterns.filter((i) => insightKeys(i).includes(key));
 
-/** The first sentence of a fix, for a one line row: "Phone down at 22:30." */
-export const firstSentence = (text: string) => /^.*?[.?](?=\s|$)/.exec(text.trim())?.[0] ?? text.trim();
-
 /**
  * A trailing 7 day mean: each day the mean of the readings in it and the 6 days before, kept only
  * when at least 4 of the 7 have one, so a week without the watch stays a gap.
