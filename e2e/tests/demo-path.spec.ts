@@ -158,6 +158,10 @@ test("stage: N sends a test nudge and shows it", async ({ page }) => {
   await enterDemo(page);
   await page.goto("/stage");
   await expect(page.getByText(athensToday()).first()).toBeVisible();
+  // Before the first block starts, the headline says when; no row of empty tape boxes beside it.
+  if (await page.getByText(/Your first block starts at/).count()) {
+    await expect(page.locator(".stage-tape")).toHaveCount(0);
+  }
   const status = page.getByText("Shown here. No device has nudges on.");
   // N only works once the page has hydrated; press until the stage answers.
   await expect(async () => {
