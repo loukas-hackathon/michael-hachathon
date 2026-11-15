@@ -504,9 +504,9 @@ this week." when a standing instruction keeps the time that would have fitted ("
 week." The same protected time is left out of `free_minutes_left`, so "The maths" and Book agree.
 Pure slot logic: `goalSlot`, `goalBooking` and `noSlotLine` in `apps/api/src/goals/book.ts`.
 
-#### Goals from the calendar (#134)
+#### Goals from the user's own words (onboarding talk)
 
-**Goals from the user's own words (onboarding talk).** `POST /v1/goals/from-words` takes what the
+`POST /v1/goals/from-words` takes what the
 user said or typed (`{ text }`, up to 4000 characters, a messy voice transcript is fine, English or
 Greek) and returns at most five `HeardGoal`s (each a ready `GoalCreate`: `title`, `category` one of
 the three areas, `weekly_budget_minutes`, `target` of kind `time` with `calendar_titles` or of kind
@@ -516,6 +516,8 @@ when Michael set the hours because none were said), up to four `notes` on how th
 `line`, and `source`: `model` (Claude, low effort, 25 second cap, line checked against the voice
 rules) or `rules` (word lists, when there is no key or the model fails). Nothing is saved: the app
 shows what was heard, the user edits it, then creates the goals. 10 calls a minute per caller.
+
+#### Goals from the calendar (#134)
 
 People already live by goals they never wrote down. `GET /v1/goals/suggestions` reads the user's own
 calendar blocks (no other people, not all day, not booked by Michael) from four weeks back to a week
