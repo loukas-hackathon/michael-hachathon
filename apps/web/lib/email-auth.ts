@@ -17,6 +17,7 @@ export const EMAIL_LINES = {
   closed: "Sign in isn't open yet. See the demo week for now.",
   busy: "Too many tries. Wait a minute, then try again.",
   failed: "I couldn't sign you in. Check your connection and try again.",
+  slow: "That took too long on our side. Try again in a moment.",
 } as const;
 
 export type EmailLine = keyof typeof EMAIL_LINES;
@@ -68,3 +69,42 @@ export function emailAuthLine(error: AuthErrorLike, mode: EmailMode): EmailLine 
 export type EmailAuthResult = { ok: true; to: string } | { ok: false; line: EmailLine; text: string };
 
 export const failWith = (line: EmailLine): EmailAuthResult => ({ ok: false, line, text: EMAIL_LINES[line] });
+
+/** How long the form waits on creating an account, and on signing in, before it moves on. */
+export const AUTH_WAIT_MS = 8_000;
+
+/** Resolves to "slow" when `work` has not answered within `ms`. */
+export async function withinWait<T>(work: Promise<T>, ms = AUTH_WAIT_MS): Promise<T | "slow"> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<"slow">((resolve) => {
+    timer = setTimeout(() => resolve("slow"), ms);
+  });
+  try {
+    return await Promise.race([work, late]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** What POST /v1/accounts answered: "slow" is a timeout or a 5xx, when the account may exist anyway. */
+export type CreateOutcome = "created" | "exists" | "busy" | "failed" | "slow";
+/** What the password sign in answered: null is signed in. */
+export type SignInOutcome = AuthErrorLike | null | "slow";
+
+/**
+ * Creating an account, robust to a slow Supabase (13:56 incident): createUser can time out and still
+ * make the account. So on a timeout, a 5xx or "exists", the same email and password try to sign in,
+ * and only when that fails too does the form show one line. `isNew` sends the visitor to onboarding.
+ */
+export async function signUpFlow(deps: {
+  createAccount: () => Promise<CreateOutcome>;
+  signIn: () => Promise<SignInOutcome>;
+}): Promise<{ ok: true; isNew: boolean } | { ok: false; line: EmailLine }> {
+  const created = await deps.createAccount();
+  if (created === "busy" || created === "failed") return { ok: false, line: created };
+  const signedIn = await deps.signIn();
+  if (signedIn === null) return { ok: true, isNew: created !== "exists" };
+  if (created === "slow" || signedIn === "slow") return { ok: false, line: "slow" };
+  if (created === "exists") return { ok: false, line: "exists" };
+  return { ok: false, line: emailAuthLine(signedIn, "signin") };
+}

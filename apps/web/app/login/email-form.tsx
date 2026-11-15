@@ -2,6 +2,7 @@
 
 import { useId, useRef, useState } from "react";
 import { Collapse } from "@/components/motion-ui";
+import { Thinking } from "@/components/thinking";
 import { checkEmailForm, EMAIL_LINES, type EmailLine, type EmailMode } from "@/lib/email-auth";
 import { emailAuth } from "./email-actions";
 
@@ -13,7 +14,7 @@ import { emailAuth } from "./email-actions";
 const LABEL: Record<EmailMode, { idle: string; busy: string; other: string; switchTo: string }> = {
   signup: {
     idle: "Create account",
-    busy: "Creating account",
+    busy: "Creating your account",
     other: "Have an account?",
     switchTo: "Sign in",
   },
@@ -32,6 +33,8 @@ export function EmailForm({ next, initialError }: { next: string | null; initial
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<EmailMode>("signup");
   const [busy, setBusy] = useState(false);
+  // One submission at a time: a ref, so a second tap before the re-render is ignored too.
+  const inFlight = useRef(false);
   const [line, setLine] = useState<EmailLine | null>(null);
   const [reveal, setReveal] = useState(false);
   const emailRef = useRef<HTMLInputElement>(null);
@@ -45,7 +48,7 @@ export function EmailForm({ next, initialError }: { next: string | null; initial
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (busy) return;
+    if (inFlight.current) return;
     const form = new FormData(e.currentTarget);
     const email = String(form.get("email") ?? "");
     const password = String(form.get("password") ?? "");
@@ -55,6 +58,7 @@ export function EmailForm({ next, initialError }: { next: string | null; initial
       (typed === "email" ? emailRef : passwordRef).current?.focus();
       return;
     }
+    inFlight.current = true;
     setBusy(true);
     setLine(null);
     try {
@@ -68,9 +72,11 @@ export function EmailForm({ next, initialError }: { next: string | null; initial
       setLine(result.line);
       // Already has an account: the button becomes Sign in, the password stays typed.
       if (result.line === "exists") setMode("signin");
+      inFlight.current = false;
       setBusy(false);
     } catch {
       setLine("failed");
+      inFlight.current = false;
       setBusy(false);
     }
   }
@@ -148,7 +154,7 @@ export function EmailForm({ next, initialError }: { next: string | null; initial
             </button>
           </div>
           <button type="submit" disabled={busy} aria-busy={busy} className={`${primary} mt-2`}>
-            {busy ? label.busy : label.idle}
+            {busy ? <Thinking text={label.busy} className="" /> : label.idle}
           </button>
           <p
             role={quiet ? "status" : "alert"}

@@ -4,11 +4,16 @@ import { createHash, randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
 import { E2E_COOKIE } from "@/lib/auth-mode";
 import {
+  AUTH_WAIT_MS,
+  type CreateOutcome,
   checkEmailForm,
   type EmailAuthResult,
   type EmailMode,
   emailAuthLine,
   failWith,
+  type SignInOutcome,
+  signUpFlow,
+  withinWait,
 } from "@/lib/email-auth";
 import { API_KEY, API_URL } from "@/lib/mode";
 import { NEXT_COOKIE, safeNext } from "@/lib/next-path";
@@ -20,24 +25,42 @@ import { authEnabled, DEMO_COOKIE, supabaseServer } from "@/lib/supabase/server"
 // lands the session in Safari instead of the app.
 
 // Server to server with the API key and no visitor header: the only caller POST /v1/accounts accepts.
-async function createAccount(
-  email: string,
-  password: string,
-): Promise<"created" | "exists" | "busy" | "failed"> {
-  const res = await fetch(`${API_URL}/v1/accounts`, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${API_KEY}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({ email, password }),
-    cache: "no-store",
-  });
-  if (res.status === 201) return "created";
-  if (res.status === 409) return "exists";
-  if (res.status === 429) return "busy";
-  console.error(`[auth] create account failed: ${res.status} ${await res.text().catch(() => "")}`);
-  return "failed";
+// Bounded: a slow Supabase must never hold the form (AUTH_WAIT_MS), and a timeout or a 5xx is
+// "slow", because the account is often made anyway; signUpFlow then tries to sign in.
+async function createAccount(email: string, password: string): Promise<CreateOutcome> {
+  try {
+    const res = await fetch(`${API_URL}/v1/accounts`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${API_KEY}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ email, password }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(AUTH_WAIT_MS),
+    });
+    if (res.status === 201) return "created";
+    if (res.status === 409) return "exists";
+    if (res.status === 429) return "busy";
+    const body = await res.text().catch(() => "");
+    console.error(`[auth] create account failed: ${res.status} ${body.slice(0, 200)}`);
+    return res.status >= 500 ? "slow" : "failed";
+  } catch (err) {
+    console.error(`[auth] create account did not answer: ${(err as Error).name}`);
+    return "slow";
+  }
+}
+
+type Auth = Awaited<ReturnType<typeof supabaseServer>>["auth"];
+
+// The password sign in, bounded like createAccount: null is signed in.
+async function signIn(auth: Auth, email: string, password: string): Promise<SignInOutcome> {
+  const answer = await withinWait(auth.signInWithPassword({ email, password }));
+  if (answer === "slow") {
+    console.error("[auth] sign in did not answer in time");
+    return "slow";
+  }
+  return answer.error ?? null;
 }
 
 type Input = { mode: EmailMode; email: string; password: string; next: string | null };
@@ -76,18 +99,21 @@ export async function emailAuth(raw: unknown): Promise<EmailAuthResult> {
     try {
       const auth = (await supabaseServer()).auth;
       if (mode === "signin") {
-        const { error } = await auth.signInWithPassword({ email, password });
+        const error = await signIn(auth, email, password);
+        if (error === "slow") return failWith("slow");
         if (error) return failWith(emailAuthLine(error, mode));
       } else {
         // The API creates the account already confirmed (POST /v1/accounts), so no confirmation
         // email and no Supabase setting stand in the way; then the normal password sign in.
         // An address that already has an account and the right password simply signs in: creating
         // an account must never end on "now sign in" (#492).
-        const created = await createAccount(email, password);
-        if (created !== "created" && created !== "exists") return failWith(created);
-        isNew = created === "created";
-        const { error } = await auth.signInWithPassword({ email, password });
-        if (error) return failWith(created === "exists" ? "exists" : emailAuthLine(error, "signin"));
+        // A timeout or a 5xx falls back to signing in too (signUpFlow).
+        const result = await signUpFlow({
+          createAccount: () => createAccount(email, password),
+          signIn: () => signIn(auth, email, password),
+        });
+        if (!result.ok) return failWith(result.line);
+        isNew = result.isNew;
       }
     } catch (err) {
       console.error(`[auth] email ${mode} failed: ${(err as Error).message}`);

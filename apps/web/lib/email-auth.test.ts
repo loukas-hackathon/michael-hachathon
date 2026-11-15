@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { voiceProblems } from "@michael/shared";
-import { checkEmailForm, EMAIL_LINES, emailAuthLine, failWith } from "./email-auth";
+import { checkEmailForm, EMAIL_LINES, emailAuthLine, failWith, signUpFlow, withinWait } from "./email-auth";
 
 test("Supabase Auth codes map to one line each", () => {
   const cases: [string, "signin" | "signup", string][] = [
@@ -52,4 +52,60 @@ test("every line is in Michael's voice", () => {
     assert.ok(line.split(/\s+/).length < 15, `${key} is under 15 words`);
   }
   assert.deepEqual(failWith("exists"), { ok: false, line: "exists", text: EMAIL_LINES.exists });
+});
+
+// 13:56 incident: createUser timed out yet made the account; the same password then signs in.
+test("sign up: createUser times out, sign in works, lands on onboarding", async () => {
+  const result = await signUpFlow({ createAccount: async () => "slow", signIn: async () => null });
+  assert.deepEqual(result, { ok: true, isNew: true });
+});
+
+test("sign up: email_exists with the right password signs in", async () => {
+  const result = await signUpFlow({ createAccount: async () => "exists", signIn: async () => null });
+  assert.deepEqual(result, { ok: true, isNew: false });
+});
+
+test("sign up: email_exists with the wrong password says sign in instead", async () => {
+  const result = await signUpFlow({
+    createAccount: async () => "exists",
+    signIn: async () => ({ code: "invalid_credentials", status: 400 }),
+  });
+  assert.deepEqual(result, { ok: false, line: "exists" });
+});
+
+test("sign up: timeout and a failed sign in end on the one calm line", async () => {
+  const slowSignIn = await signUpFlow({ createAccount: async () => "slow", signIn: async () => "slow" });
+  assert.deepEqual(slowSignIn, { ok: false, line: "slow" });
+  const wrong = await signUpFlow({
+    createAccount: async () => "slow",
+    signIn: async () => ({ code: "invalid_credentials", status: 400 }),
+  });
+  assert.deepEqual(wrong, { ok: false, line: "slow" });
+  assert.equal(EMAIL_LINES.slow, "That took too long on our side. Try again in a moment.");
+});
+
+test("sign up: created then signed in; busy and failed never try to sign in", async () => {
+  assert.deepEqual(await signUpFlow({ createAccount: async () => "created", signIn: async () => null }), {
+    ok: true,
+    isNew: true,
+  });
+  let tried = false;
+  const signIn = async () => {
+    tried = true;
+    return null;
+  };
+  assert.deepEqual(await signUpFlow({ createAccount: async () => "busy", signIn }), {
+    ok: false,
+    line: "busy",
+  });
+  assert.deepEqual(await signUpFlow({ createAccount: async () => "failed", signIn }), {
+    ok: false,
+    line: "failed",
+  });
+  assert.equal(tried, false);
+});
+
+test("withinWait: answers slow when the work outlasts the wait", async () => {
+  assert.equal(await withinWait(new Promise(() => {}), 10), "slow");
+  assert.equal(await withinWait(Promise.resolve(1), 1000), 1);
 });
