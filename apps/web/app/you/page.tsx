@@ -53,17 +53,25 @@ export default async function YouPage({
         </Link>
       ) : null}
 
-      <ConnectionsList view={connections} flash={flash} demo={account === "The demo week"} />
-
-      <section id="privacy" className="mt-8 scroll-mt-4">
-        <h2 className="mb-2 text-title3 font-bold">Privacy</h2>
-        <div className="overflow-hidden rounded-group bg-fill">
-          <OffTheRecordSwitch />
-        </div>
+      {/* The Mi button is on every tab, so the two things people look for in it come first. */}
+      <div className="mt-4 overflow-hidden rounded-group bg-fill">
+        <Link
+          href="/chat?talk=1"
+          className="press relative flex min-h-14 items-center justify-between gap-3 px-4 py-2"
+        >
+          <span className="flex flex-col">
+            <span className="text-body">Talk to Michael</span>
+            <span className="text-footnote text-label-2">Out loud, hands free</span>
+          </span>
+          <span aria-hidden="true" className="text-label-2">
+            ›
+          </span>
+        </Link>
         <Link
           href="/agents"
-          className="press mt-5 flex min-h-14 items-center justify-between gap-3 rounded-group bg-fill px-4 py-2"
+          className="press relative flex min-h-14 items-center justify-between gap-3 px-4 py-2"
         >
+          <span className={separator} />
           <span className="flex flex-col">
             <span className="text-body">Agents</span>
             <span className="text-footnote text-label-2">Who asks about you, and what they may see</span>
@@ -72,6 +80,15 @@ export default async function YouPage({
             ›
           </span>
         </Link>
+      </div>
+
+      <ConnectionsList view={connections} flash={flash} demo={account === "The demo week"} />
+
+      <section id="privacy" className="mt-8 scroll-mt-4">
+        <h2 className="mb-2 text-title3 font-bold">Privacy</h2>
+        <div className="overflow-hidden rounded-group bg-fill">
+          <OffTheRecordSwitch />
+        </div>
         <DeleteDataRow />
       </section>
 

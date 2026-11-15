@@ -13,6 +13,7 @@ import {
   useTransition,
 } from "react";
 import { addBlock, changeBlock, removeBlock, undoBlockChange } from "@/app/timeline/actions";
+import { markHintSeen } from "@/components/hint";
 import { SettleBlock } from "@/components/log-time";
 import { Sheet } from "@/components/sheet";
 import { formatTime, hm, minutesPhrase, spokenDuration } from "@/lib/format";
@@ -190,6 +191,9 @@ export function DayTimelineList({ day }: { day: TimelineDay }) {
  * the device has haptics. Every change shows at once, rolls back if the server refuses, and says
  * what happened with an Undo in one line under the block. Blocks with other people stay read only.
  */
+/** The one time hint over an editable day: gone once a block is added or moved. */
+export const TIMELINE_HINT = "timeline-edit";
+
 export function DayTimeline({
   day,
   heartHidden = false,
@@ -501,6 +505,7 @@ export function DayTimeline({
     clearTimeout(g.timer);
     gesture.current = null;
     if (!g.active) return; // A plain tap: the click opens the sheet.
+    markHintSeen(TIMELINE_HINT);
     swallowClick.current = true;
     setDrag(null);
     if (g.start !== g.plan.start || g.end !== g.plan.end) {
@@ -518,6 +523,7 @@ export function DayTimeline({
   /** A tap or click on a free slot: a new block from that half hour, an hour long. */
   const onBoxClick = (e: ReactMouseEvent<HTMLDivElement>) => {
     if (!editable || e.target !== e.currentTarget) return;
+    markHintSeen(TIMELINE_HINT);
     const at = timeAt(e.clientY - e.currentTarget.getBoundingClientRect().top);
     if (at < Date.now()) return say("That time has passed. Tap a time ahead.", at);
     const start = Math.max(Math.floor(at / (30 * MIN)) * 30 * MIN, earliest());
