@@ -222,6 +222,7 @@ export function Chat({
             )
           }
           title="Chat"
+          pinned
           actions={
             <HeaderButton label="New chat" onClick={startNew}>
               <path d="M12 6v12M6 12h12" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
