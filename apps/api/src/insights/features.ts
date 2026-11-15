@@ -7,7 +7,7 @@ import { lateScreens } from "../patterns/late";
 import { contextSwitching } from "../patterns/switching";
 import { DAY, MINUTE } from "../patterns/time";
 import { median, overlapWith, round1, union } from "../patterns/util";
-import { attendeesOf, scoreWithHistory } from "../score";
+import { attendeesOf, isTrainingGoal, scoreWithHistory } from "../score";
 import { SCORE_RULES } from "../score/score";
 
 // One row per local day, one column per figure: the table every insight is mined from. Built from
@@ -312,6 +312,7 @@ export function buildFeatures(input: FeatureInput): FeatureTable {
 
   // ---------- goal blocks: planned, spent and lost, as the score counts them ----------
   const firstBlock = new Set<string>();
+  const training = new Set(input.goals.filter(isTrainingGoal).map((g) => g.id));
   const elapsedByDay = new Map<string, number>();
   for (const b of scoredBlocks(input, ctx)) {
     const start = Date.parse(b.start_at);
@@ -322,7 +323,9 @@ export function buildFeatures(input: FeatureInput): FeatureTable {
     add("spent_min", day, b.spent_minutes);
     add("lost_min", day, b.lost_minutes);
     elapsedByDay.set(day, (elapsedByDay.get(day) ?? 0) + b.elapsed_minutes);
-    if (!firstBlock.has(day)) {
+    // The first block is the first one where focus is the point: a training block's phone is a
+    // timer and a playlist (the same line the real time nudge draws).
+    if (!firstBlock.has(day) && !training.has(b.goal_id)) {
       firstBlock.add(day);
       set("first_block_start_min", day, zone.minuteOfDay(start));
       set("first_block_lost_min", day, b.lost_minutes);

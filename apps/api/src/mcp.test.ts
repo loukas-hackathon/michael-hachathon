@@ -55,6 +55,7 @@ const TOOLS = [
   "add_goal",
   "answer_check_in",
   "block_mac_app",
+  "change_calendar_block",
   "confirm_block",
   "create_focus_block",
   "draft_follow_up",
@@ -651,3 +652,36 @@ test("remove_calendar_block needs write_events and never reaches another user's 
   });
   await runAsUser(owner, async () => assert.ok(await store.getEvent(id), "the owner's block is untouched"));
 });
+
+test("change_calendar_block renames and resizes the user's own block over MCP, with undo and the scope guard", () =>
+  asNewUserWithoutRules(async () => {
+    const { call } = await connect();
+    const { inserted } = await store.insertEvents([
+      {
+        source: "manual",
+        type: "calendar_event",
+        start_at: toInstant(tomorrow("15:00")),
+        end_at: toInstant(tomorrow("16:00")),
+        title: "Boatspace",
+        data: {},
+      },
+    ]);
+    const id = inserted[0]?.id ?? "";
+    const r = await call("change_calendar_block", {
+      event_id: id,
+      title: "Deep work",
+      end: tomorrow("16:30"),
+    });
+    assert.notEqual(r.isError, true, text(r));
+    assert.match(
+      text(r),
+      /^Deep work, now 15:00 to 16:30\. Undo with undo_recommendation .* until .*15:00\./,
+    );
+    assert.equal((await store.getEvent(id))?.title, "Deep work");
+    const rec = r.structuredContent?.recommendation as Recommendation;
+    await call("undo_recommendation", { id: rec.id });
+    assert.equal((await store.getEvent(id))?.title, "Boatspace");
+    assert.equal(TOOL_SCOPE.change_calendar_block, "write_events");
+    const empty = await call("change_calendar_block", { event_id: id });
+    assert.equal(empty.isError, true);
+  }));

@@ -1445,7 +1445,8 @@ the evening check in's ratings. Conversations, memories, searches and prompts ar
    6 hours". The morning: heart rate variability, resting heart rate, recovery. The day: phone
    opens and minutes, workout minutes, "trained", "trained after 19:00", "day after training",
    meeting minutes and count, "3 or more meetings", first block start, planned, spent and lost
-   minutes in goal blocks, lost minutes in the first block, share of goal time held, app switches
+   minutes in goal blocks, lost minutes in the first block (the first block that is not a
+   training block: there the phone is a timer and a playlist), share of goal time held, app switches
    an hour, AI tool minutes, last meal and last coffee (when `meal` events carry them), the check
    in's training and meeting ratings. The day still running has no figures for the day or the
    evening.
@@ -1459,7 +1460,7 @@ the evening check in's ratings. Conversations, memories, searches and prompts ar
    the next day. The days are split on the trigger: a fixed threshold where one is usual (30
    minutes of late phone), else the person's own median. The two sides are compared: difference in
    means, the same in standard deviations, a rank correlation, and a permutation test with a fixed
-   seed (up to 50,000 shuffles, stopping early once the answer is settled). "Held" on a trigger day means the outcome was beyond the other
+   seed (10,000 shuffles, stopping early once the answer is settled, and 50,000 for the few pairs no shuffle matched when the bar needs a smaller value). "Held" on a trigger day means the outcome was beyond the other
    days' median, on the side the means differ.
 4. **The bar for `pattern`**: the trigger and its absence each seen `evidence.needed` times (4);
    at least `studied.needed_days` (14) days of data; the pair survives a false discovery rate of 2%
@@ -1469,17 +1470,35 @@ the evening check in's ratings. Conversations, memories, searches and prompts ar
 5. **Chains**: when x then y, and y then z both passed, and x then z holds too (its own
    permutation test, p at most 0.05, same direction), one chain of three steps is given, counted
    on the trigger days where both later readings exist and held when both moved. One chain per kind
-   of trigger; the links it is made of are not listed again, and neither is the same story told
+   of trigger: one that ends in the user's goal time before one that ends elsewhere, then the
+   strongest; the links it is made of are not listed again, and neither is the same story told
    from another column (two triggers on the same days, or the day after, ending in the same kind
    of outcome).
-6. **`watching`**: a short list of named candidates (late phone and the night, a second late night
+6. **The plain trigger leads.** Some columns are derived versions of another column's trigger
+   (`variantOf` in `insights/dictionary.ts`): a streak of it ("second late night in a row" of
+   late phone), a stricter threshold ("night under 6 hours" of sleep, "3 or more meetings" of the
+   meeting count), a wider or narrower cut of the same thing (every screen after the cut off and
+   the phone in the hour before sleep, of late phone; "trained after 19:00" and "day after
+   training", of training). When the plain trigger and a derived one both pass the bar and end in
+   the same kind of outcome, they tell one story and the plain one tells it: it is simpler and it
+   covers more of the person's days. The derived one is shown as well only when it moves the
+   outcome at least 1.5 times as far in standard deviations (`MINER_RULES.variantMargin`); it is
+   then listed after the plain one (its `strength` is held just below), its title says so ("Two
+   late nights in a row hit harder") and its line ends "That is more than late phone alone
+   (17 min)." The same holds for the discovery pass: a hypothesis built on a column the rules
+   already found a relation from (a streak of it, a rolling mean, another threshold, a second
+   condition), ending in the same kind of outcome, is dropped unless it clears the same margin,
+   and is then shown after the plain relation, in the template's words. Between two equally
+   strong findings the dictionary's order decides (the phone before every screen, the sleep score
+   before the minutes).
+7. **`watching`**: a short list of named candidates (late phone and the night, a second late night
    in a row and recovery, a short night and the first block, training and deep sleep, three
    meetings and the day's lost time, late coffee and the night) is shown before it can be tested:
    seen 2 or 3 times with the outcome moving every time by 1.5 standard deviations or more, or
    seen often enough but with fewer than 14 days studied. Only the candidates are named in code;
    whether one shows, which way it points and its numbers come from the data. Its `line` says what
    was seen and never carries the count (`evidence` has it).
-7. **Words** (`insights/phrase.ts`): title, line, steps and the one fix come from templates in
+8. **Words** (`insights/phrase.ts`): title, line, steps and the one fix come from templates in
    Michael's voice, filled with the miner's numbers. `strength` is half the share of times it held
    and half the distance between the two sides (1 standard deviation is 0.49, 2 are 0.74); a
    watched one is halved. At most 8 patterns and 3 watched.
@@ -1500,7 +1519,65 @@ gets the usual `403` on both.
 
 **Speed.** A study reads 12 weeks of events, so it is worked out at most once every ten minutes
 per user (every 30 seconds while fewer than 14 days are studied) and kept in the process; a read
-past that age is answered at once with the kept study while a new one runs behind it.
+past that age is answered at once with the kept study while a new one runs behind it. The
+scheduler studies ahead for active users, so the first open after a deploy does not wait either.
+
+**The discovery pass** ("think outside the box", `insights/discover.ts`, `insights/hypothesis.ts`).
+Hypothesise, then verify: the model is free to be creative and can never be wrong about a number.
+
+1. The model (effort high, Michael's voice in the system prompt) is given summaries only: the
+   columns of the daily table with their mean, quartiles and mean per weekday, what the miner
+   already found, and the goals (title, kind, weekly minutes). Never an event, a title or a name.
+   It proposes up to 12 further relations as tests in a small grammar:
+
+   ```ts
+   type Hypothesis = {
+     when: Condition | null; // null only for a plain weekday effect
+     and: Condition | null; // a second condition on the same day (an interaction)
+     weekdays: number[] | null; // 0 = Sunday .. 6 = Saturday: only these count as trigger days
+     outcome: FeatureKey; // any column of the daily table
+     lag: 0 | 1 | 2; // days from the trigger to the outcome
+     direction: "higher" | "lower";
+   };
+   type Condition = {
+     feature: FeatureKey;
+     transform: "none" | "lag1" | "lag2" | "rolling3" | "rolling7" | "streak2" | "streak3";
+     op: ">=" | "<=";
+     threshold: number | null; // null = the person's own median of that column
+   };
+   ```
+
+2. The server runs each test on the daily table with the miner's own statistics and bar: 4 days
+   on both sides, 14 days studied, the same 0.6 standard deviations and 65% held, the direction
+   the hypothesis named, and the same 2% false discovery rate counted over every pair the miner
+   tested plus every hypothesis, so asking more questions never makes one easier to pass. A
+   hypothesis the data does not support, one that cannot be read, one that tests a column against
+   its own family, and one that retells a story the rules already tell are dropped silently.
+3. A second, short call (effort low) writes a title, a line and a fix for the survivors from the
+   verified figures. Words are refused, and the template used instead, when they break the voice
+   (`voiceProblems`), the shape (a title without a full stop, a line that starts with a number
+   and ends with a full stop, a short fix), or carry any number that is not among the verified
+   ones. A fix with a one tap action always keeps the template's words.
+4. What is stored is the test and its words, never its numbers: table `insight_runs`, one jsonb
+   document per user (`ran_at`, `data_day`, `model`, up to 12 `discoveries`), RLS like every
+   table, deleted with the account. Every study runs the stored tests again on the current
+   table, so the figures are always today's, the words are checked against them again, and a
+   relation that stops holding stops being shown. They come back as `kind: "discovered"`,
+   `found_by: "model"`, at most 4.
+5. When it runs: `POST /v1/insights/run` studies again at once and answers `202` with
+   `status: "started"` (the pass runs behind the answer), `"running"` (one already is) or
+   `"skipped"` (this server has no model key: the rules' insights still work). The scheduler's
+   five minute beat keeps a study from today for every active user and starts the pass once per
+   new day of data. A demo visitor gets the usual `403` on `run`.
+6. What cannot go wrong. One pass per user at a time (a second tap answers `running`; the
+   scheduler skips a user whose pass is in flight). The scheduler asks once per user per new day
+   of data: the day is remembered in the process and stored with the run (`data_day`), also when
+   the model failed, so a failing model is not asked again every beat. For a user with nothing
+   new the beat costs a look at the kept study: no event is read, no row, no model. A failed or
+   unreadable model answer never loses the stored tests: they are read before the model is asked
+   and written back with whatever was newly found. When nothing is stored yet, the first pass
+   writes it; when the stored run is there but cannot be read, nothing is asked and nothing is
+   written. When the write fails the pass still shows from the kept study.
 
 **Other readers.** MCP `get_insights` and the chat tool of the same name give the same findings
 as text. The real time nudges (`nudges/learnt.ts`) cite the kept study's strongest pattern about
@@ -1587,7 +1664,24 @@ anything is stored; a block that has started is refused. It is a done recommenda
 puts the block back with the same time and title until it starts (in Google with its description
 and location, still the user's own, not tagged as Michael's). Step label `Removing Boatspace` (the
 user's own block title), else `Removing your block`. The reply says what was removed and
-`Undo until HH:MM.` `ChatResponse.actions` lists what was done (`status: "done"`,
+`Undo until HH:MM.`
+
+**Chat changes the rest of the app (#457).** So Michael acts instead of sending the user to a screen:
+
+- `change_calendar_block { event_id, title?, start_at?, end_at?, goal_id? }`: rename, move, resize
+  or give a goal to one of the user's own blocks, as `PATCH /v1/blocks/:id` does (a
+  `move_calendar_block` recommendation, `source: "chat"`, title `Deep work, now 15:00 to 16:30` or
+  `Renamed Boatspace to Deep work`). Same refusals; `undo_action` until it starts. Step `Changing
+  Boatspace`.
+- `change_focus { action: "end" | "extend", minutes?, count? }`: the running Focus now session, as
+  `POST /v1/focus/:id/end` and `/extend`.
+- `meetings_mode { on }`: `POST /v1/meetings/start` and `/end`. Michael never gives consent: the
+  first start is refused with the consent notice until the user has started it once in the app.
+- `go_off_the_record {}`: off the record ON (`PUT /v1/privacy/off-the-record { off_the_record:
+  true }`). No tool turns it off; that switch is the user's own.
+
+Still only in the app: deleting a goal, an instruction, a place, an outcome or data, connecting or
+disconnecting a source, per source switches, revoking an agent, and turning off the record off. `ChatResponse.actions` lists what was done (`status: "done"`,
 deadline in `action.undo_until`) or undone in this answer, and the reply always ends with
 "Undo until HH:MM." for each thing done. The context gives Claude ids only for the user's own blocks
 that have not started, goal ids, and the things that can still be undone.
@@ -2886,7 +2980,7 @@ type AgentQuery = {
 - Scope per tool: `get_timeline`, `get_patterns`, `get_insights` = `timeline`; `get_goals`, `add_goal`,
   `update_goal`, `propose_goals`, `get_checklist`, `add_checklist_item`, `set_day_outcomes`, `log_day` = `goals`; `list_recommendations`, `update_recommendation`, `get_nudges`,
   `list_drafts`, `draft_follow_up` = `recommendations`; `get_score`, `get_records`, `get_moments` = `score`; `add_event`, `execute_recommendation`,
-  `undo_recommendation`, `create_focus_block`, `remove_calendar_block`, `block_mac_app`, `plan_travel`, `log_done`,
+  `undo_recommendation`, `create_focus_block`, `change_calendar_block`, `remove_calendar_block`, `block_mac_app`, `plan_travel`, `log_done`,
   `confirm_block`, `focus_now` = `write_events`;
   `suggest_app_mute` = `recommendations`; `get_memories`, `what_you_know` = `timeline`; `remember` = `write_events`.
   Memories are events of type `memory` (source `manual` from chat, `agent` from MCP); Michael's
@@ -2895,7 +2989,7 @@ type AgentQuery = {
   list needs `timeline` if it is read only, else `write_events` (`apps/api/src/mcp-guard.ts`).
 - `queries`: `from` defaults to local midnight today (Europe/Athens), `to` to now; newest first,
   at most 500.
-- A change an agent made (`execute_recommendation`, `create_focus_block`, `remove_calendar_block`, `block_mac_app`, `log_done`, `confirm_block`) carries
+- A change an agent made (`execute_recommendation`, `create_focus_block`, `change_calendar_block`, `remove_calendar_block`, `block_mac_app`, `log_done`, `confirm_block`) carries
   `recommendation_id`. `undo_until` is set while that change can still be undone (the
   recommendation is `done` and its block has not started; a mute: has not ended), else `null`. The
   Agents screen shows Undo next to the line and calls `POST /v1/recommendations/:id/undo`.
@@ -3784,6 +3878,7 @@ offset. A refused or failed call returns `isError: true` with one plain sentence
 | `execute_recommendation` | `write_events`    | `{ id }`                                                                                | `{ recommendation, undo_until }`                                                                |
 | `undo_recommendation`    | `write_events`    | `{ id }`                                                                                | `{ recommendation }`                                                                            |
 | `create_focus_block`     | `write_events`    | `{ start: TimeInput, end: TimeInput, title?, goal_id? }`                                | `{ recommendation, undo_until }`                                                                |
+| `change_calendar_block`  | `write_events`    | `{ event_id, title?, start?: TimeInput, end?: TimeInput, goal_id? }`                    | `{ recommendation, undo_until }`; other people on it or started: refused                        |
 | `remove_calendar_block`  | `write_events`    | `{ event_id }` (the user's own block, from `get_timeline`)                              | `{ recommendation, undo_until }`; other people on it or started: refused                        |
 | `block_mac_app`          | `write_events`    | `{ apps: string[], start?: TimeInput, end: TimeInput, goal_id? }` (start default now)   | `{ recommendation, undo_until }`                                                                |
 | `log_done`               | `write_events`    | `{ goal_id? \| goal?, minutes?, start?: TimeInput, end?: TimeInput, note? }`            | `LogTimeResponse` (see Done time)                                                               |

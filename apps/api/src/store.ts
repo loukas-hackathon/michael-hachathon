@@ -292,6 +292,12 @@ export interface Store extends PrivacyBackend {
   // The onboarding answers (routes/profile.ts fills in defaults); null until first saved.
   getProfile(): Promise<Profile | null>;
   saveProfile(profile: Profile): Promise<Profile>;
+  /**
+   * The last discovery pass of the insights (insights/discover.ts): one document per user, the
+   * tests that passed and their words. The reader validates it.
+   */
+  getInsightRun(): Promise<Record<string, unknown> | null>;
+  saveInsightRun(run: Record<string, unknown>): Promise<void>;
   // ---- standing instructions (the user's ground rules), oldest first ----
   listInstructions(): Promise<Instruction[]>;
   createInstruction(input: z.output<typeof InstructionCreate>): Promise<Instruction>;
@@ -828,6 +834,16 @@ export class MemoryStore implements Store {
   async saveProfile(profile: Profile) {
     this.profiles.set(currentUserId(), structuredClone(profile));
     return structuredClone(profile);
+  }
+
+  private insightRuns = new Map<string, Record<string, unknown>>();
+
+  async getInsightRun() {
+    return structuredClone(this.insightRuns.get(currentUserId()) ?? null);
+  }
+
+  async saveInsightRun(run: Record<string, unknown>) {
+    this.insightRuns.set(currentUserId(), structuredClone(run));
   }
 
   async listInstructions() {
@@ -1546,6 +1562,7 @@ export class MemoryStore implements Store {
         source_settings: Object.keys(d.privacy.sources).length,
         privacy_state: d.privacy.offTheRecord || d.privacy.since ? 1 : 0,
         user_profiles: this.profiles.has(userId) ? 1 : 0,
+        insight_runs: this.insightRuns.has(userId) ? 1 : 0,
         weekly_targets: d.targets.length,
         records: d.records.length,
         checklist_items: d.checklist.length,
@@ -1555,6 +1572,7 @@ export class MemoryStore implements Store {
       // An empty account, not the sample day a first visit gets.
       this.data.set(userId, this.fresh(false));
       this.profiles.delete(userId);
+      this.insightRuns.delete(userId);
       return counts;
     }
     const from = scope.from ? Date.parse(scope.from) : -Infinity;

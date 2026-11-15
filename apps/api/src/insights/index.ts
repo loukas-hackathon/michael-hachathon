@@ -1,7 +1,8 @@
 import { type Insight, type InsightSeries, InsightSource, type InsightsResponse } from "@michael/shared";
 import { FEATURES, featureDef, unitOf } from "./dictionary";
+import { discoveredInsights, type StoredDiscovery, type Story } from "./discover";
 import { buildFeatures, type FeatureInput, type FeatureKey, type FeatureTable } from "./features";
-import { MINER_RULES, mine, studiedDays } from "./miner";
+import { MINER_RULES, type Mined, mine, studiedDays } from "./miner";
 import { type FixPlan, type Phrased, phraseChain, phraseLink } from "./phrase";
 
 export type { FeatureInput, FeatureKey, FeatureTable } from "./features";
@@ -35,6 +36,13 @@ const SERIES: InsightSeries["key"][] = [
 
 export interface Study {
   table: FeatureTable;
+  /** The chance value of every pair the miner tested: a hypothesis is judged within them. */
+  minerPs: number[];
+  /** What the rules show, by trigger days and the kind of outcome, so nothing is told twice. */
+  stories: Story[];
+  /** The rules' own insights, before any discovery is added. */
+  rules: Phrased[];
+  goals: FeatureInput["goals"];
   /** What the user reads, in order: patterns before watching, strongest first. */
   response: InsightsResponse;
   /** What applying each fix does, by insight id. */
@@ -80,12 +88,50 @@ export function studiedOf(table: FeatureTable): InsightsResponse["studied"] {
   };
 }
 
-/** The whole study of one person over a range of days. */
-export function buildInsights(input: FeatureInput): Study {
+const familyOf = (key: FeatureKey) => featureDef(key).family;
+
+/** What the rules show, as the discovery pass reads it: who triggers, how strongly, how far. */
+export const storiesOf = (mined: Pick<Mined, "chains" | "links">): Story[] => [
+  ...mined.chains.map((c) => ({
+    on: c.x.on,
+    ends: [familyOf(c.y), familyOf(c.z)],
+    key: c.x.key,
+    strength: c.strength,
+    effects: { [familyOf(c.y)]: c.first.cmp.effect, [familyOf(c.z)]: c.direct.cmp.effect },
+  })),
+  ...mined.links.map((l) => ({
+    on: l.x.on,
+    ends: [familyOf(l.y)],
+    key: l.x.key,
+    strength: l.strength,
+    effects: { [familyOf(l.y)]: l.cmp.effect },
+  })),
+];
+
+/** The study with the stored tests of the discovery pass run again on its table. */
+export function withDiscoveries(study: Study, stored: StoredDiscovery[]): Study {
+  const ctx = { table: study.table, goals: study.goals };
+  const discovered = discoveredInsights(study.table, study.minerPs, study.stories, stored, ctx).map(
+    (d) => d.phrased,
+  );
+  const phrased = [...study.rules, ...discovered].sort((a, b) => byRank(a.insight, b.insight));
+  return {
+    ...study,
+    response: { ...study.response, insights: phrased.map((p) => p.insight) },
+    plans: new Map(phrased.flatMap((p) => (p.plan ? [[p.insight.id, p.plan] as const] : []))),
+    features: new Map(phrased.map((p) => [p.insight.id, p.features] as const)),
+  };
+}
+
+/**
+ * The whole study of one person over a range of days. `discoveries` are the tests the discovery
+ * pass kept (insights/discover.ts): they are run again here, on this table.
+ */
+export function buildInsights(input: FeatureInput, discoveries: StoredDiscovery[] = []): Study {
   const table = buildFeatures(input);
   const mined = mine(table);
   const ctx = { table, goals: input.goals };
-  const phrased: Phrased[] = [
+  const rules: Phrased[] = [
     ...mined.chains.map((c) => phraseChain(c, ctx)),
     ...mined.links.map((l) => phraseLink(l, "pattern", ctx)),
   ]
@@ -93,17 +139,22 @@ export function buildInsights(input: FeatureInput): Study {
     .slice(0, MINER_RULES.maxPatterns)
     .concat(mined.watching.map((l) => phraseLink(l, "watching", ctx)))
     .sort((a, b) => byRank(a.insight, b.insight));
-  return {
+  const study: Study = {
     table,
+    minerPs: mined.ps,
+    stories: storiesOf(mined),
+    rules,
+    goals: input.goals,
     response: {
       generated_at: new Date(Date.parse(input.now)).toISOString(),
       studied: studiedOf(table),
-      insights: phrased.map((p) => p.insight),
+      insights: rules.map((p) => p.insight),
       series: seriesOf(table),
     },
-    plans: new Map(phrased.flatMap((p) => (p.plan ? [[p.insight.id, p.plan] as const] : []))),
-    features: new Map(phrased.map((p) => [p.insight.id, p.features] as const)),
+    plans: new Map(rules.flatMap((p) => (p.plan ? [[p.insight.id, p.plan] as const] : []))),
+    features: new Map(rules.map((p) => [p.insight.id, p.features] as const)),
   };
+  return discoveries.length > 0 ? withDiscoveries(study, discoveries) : study;
 }
 
 /**

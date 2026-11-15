@@ -4,6 +4,7 @@ import { generateDrafts } from "./actions/drafts";
 import { runAsUser } from "./context";
 import { env, webUrl } from "./env";
 import { finishDueFocusSessions } from "./focus/session";
+import { studyAhead } from "./insights/service";
 import { prewarmMoment } from "./moments/prewarm";
 
 import { HOUR } from "./patterns/time";
@@ -75,6 +76,11 @@ export async function runNudgeChecks(now = Date.now()): Promise<UserCheck[] | nu
       // Today's moment line, written ahead so a cold open finds it cached (#378). One model call
       // only when the numbers changed since the last tick; not awaited, so no nudge waits on it.
       void runAsUser(userId, () => prewarmMoment(now));
+      // What Michael has learnt: a study kept from today, so a nudge can cite it and the screen
+      // opens at once; the discovery pass runs behind it when there is a new day of data.
+      await runAsUser(userId, () => studyAhead(now)).catch((err) =>
+        console.error(`[scheduler] insights failed for ${userId}`, err),
+      );
       // Follow up drafts for conversations and meetings that just ended (#40). Once per event, so
       // a tick with nothing new costs one read and no model call.
       await runAsUser(userId, () => generateDrafts({ now, windowMs: DRAFT_WINDOW_MS })).catch((err) =>

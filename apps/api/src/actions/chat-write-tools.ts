@@ -5,6 +5,7 @@ import {
   type Goal,
   GoalCreate,
   goalKind,
+  IsoDateTime,
   type LogTimeResponse,
   PlaceInput,
   type Recommendation,
@@ -12,21 +13,24 @@ import {
 } from "@michael/shared";
 import { z } from "zod";
 import { addItem, updateItem } from "../checklist/items";
-import { startFocus } from "../focus/session";
+import { activeFocus, endFocus, extendFocus, startFocus } from "../focus/session";
 import { HttpError, parse } from "../http";
+import { endMeeting, startMeeting } from "../meetings/meetings";
 import { Zone } from "../patterns/time";
 import { createInstruction, updateInstruction } from "../routes/instructions";
 import { savePlaces } from "../routes/places";
 import { updateProfile } from "../routes/profile";
 import { store } from "../store";
-import { executeRecommendation } from "./calendar";
+import { changeOwnBlock, executeRecommendation } from "./calendar";
 import { logTime, settleBlock } from "./log";
 
 // Michael writes everything the user can write in the app (#317), so "I took a bath for 40
 // minutes" is logged, not explained away. Each tool goes through the same function as its REST
 // route. What can be taken back is held by a recommendation (log_time, settle_block, change_goal)
 // and undone with undo_action. Destructive things stay in the app: no tool deletes data, a goal,
-// an instruction or a place, disconnects a source or revokes an agent.
+// an instruction or a place, disconnects a source or revokes an agent. #457: Michael also changes a
+// block (rename, resize, goal), ends or extends a focus session, starts and ends meetings mode
+// (never giving consent for the user) and turns off the record ON, never off: that switch is theirs.
 
 export interface WriteOutcome {
   content: string;
@@ -198,6 +202,58 @@ export const WRITE_TOOLS: Anthropic.Tool[] = [
         fixed_titles: { type: "array", items: { type: "string" } },
       },
     },
+  },
+  {
+    name: "change_calendar_block",
+    description:
+      "Rename, resize or give a goal to one of the user's own blocks when they ask: 'rename Boatspace to Deep work', 'make the gym block 90 minutes', 'end deep work at 17:00', 'count that block for University'. Give only what changes: title, start_at (the length is kept unless end_at is given), end_at, goal_id (null clears it). Refused for events with other people and blocks that have started. It can be undone with undo_action until the block starts.",
+    input_schema: {
+      type: "object",
+      properties: {
+        event_id: {
+          type: "string",
+          description: "The block's id, from today's list or find_calendar_blocks",
+        },
+        title: { type: "string", description: "New title (optional)" },
+        start_at: { type: "string", description: "New start, ISO 8601 with offset (optional)" },
+        end_at: { type: "string", description: "New end, ISO 8601 with offset (optional)" },
+        goal_id: {
+          type: ["string", "null"],
+          description: "The goal it counts for, from the goals list (optional)",
+        },
+      },
+      required: ["event_id"],
+    },
+  },
+  {
+    name: "change_focus",
+    description:
+      "End or extend the Focus now session that is running, when the user asks: action end ('stop the focus', 'I'm done early'), with count=false only when they say the time should not count; action extend ('15 more minutes') with minutes 5 to 60, default 15.",
+    input_schema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["end", "extend"] },
+        minutes: { type: "integer", description: "Minutes to add, for extend (optional)" },
+        count: { type: "boolean", description: "For end: false when the time should not count (optional)" },
+      },
+      required: ["action"],
+    },
+  },
+  {
+    name: "meetings_mode",
+    description:
+      "Start (on=true) or end (on=false) meetings mode when the user asks: while it runs, their conversations are kept as lessons and their own commitments, raw audio deleted. Only the user can start it, so call it only when they ask in this message. The first time needs their consent in the app; the tool says so.",
+    input_schema: {
+      type: "object",
+      properties: { on: { type: "boolean" } },
+      required: ["on"],
+    },
+  },
+  {
+    name: "go_off_the_record",
+    description:
+      "Turn off the record ON when the user asks ('go off the record', 'stop tracking me for now'): every collection stops at once. You can only turn it on. Turning it back off is the user's own switch, on You.",
+    input_schema: { type: "object", properties: {} },
   },
   {
     name: "focus_now",
@@ -380,6 +436,79 @@ async function focusNow(input: unknown): Promise<WriteOutcome> {
   return { content: `${line} {focus_session_id ${s.id}}`, isError: false, reply: line };
 }
 
+const BlockChangeInput = z.object({
+  event_id: z.uuid(),
+  title: z.string().trim().min(1).max(200).optional(),
+  start_at: IsoDateTime.optional(),
+  end_at: IsoDateTime.optional(),
+  goal_id: z.uuid().nullable().optional(),
+});
+
+/** #457: rename, move, resize or give a goal to one of the user's own blocks, with undo. */
+async function changeBlock(input: unknown): Promise<WriteOutcome> {
+  const { event_id, ...patch } = parse(BlockChangeInput, input);
+  if (!patch.title && !patch.start_at && !patch.end_at && patch.goal_id === undefined)
+    return { content: "Nothing to change: give a title, start_at, end_at or goal_id.", isError: true };
+  const done = await changeOwnBlock(event_id, patch);
+  const until = done.action?.undo_until
+    ? `Undo until ${new Zone("Europe/Athens").clock(Date.parse(done.action.undo_until))}`
+    : null;
+  return {
+    content: `Done: ${done.title}. ${until ?? "No undo deadline"}. Recommendation id ${done.id}.`,
+    isError: false,
+    action: done,
+    reply: `${done.title}.${until ? ` ${until}.` : ""}`,
+  };
+}
+
+const FocusChange = z.object({
+  action: z.enum(["end", "extend"]),
+  minutes: z.number().int().min(5).max(60).optional(),
+  count: z.boolean().optional(),
+});
+
+/** #457: ends or extends the running Focus now session, as the buttons on Today do. */
+async function changeFocus(input: unknown): Promise<WriteOutcome> {
+  const p = parse(FocusChange, input);
+  const { session } = await activeFocus();
+  if (!session) return { content: "No focus session is running.", isError: true };
+  const clock = (iso: string) => new Zone("Europe/Athens").clock(Date.parse(iso));
+  if (p.action === "extend") {
+    const s = await extendFocus(session.id, p.minutes ? { minutes: p.minutes } : {});
+    const line = `Focus on ${s.goal_title} runs until ${clock(s.end_at)} now.`;
+    return { content: line, isError: false, reply: line };
+  }
+  const s = await endFocus(session.id, p.count === undefined ? {} : { count: p.count }, "chat");
+  const counted = s.counted_minutes ?? 0;
+  const line = counted
+    ? `Focus ended. ${voiceShortDuration(counted)} counted to ${s.goal_title}.`
+    : `Focus ended. Nothing counted to ${s.goal_title}.`;
+  return { content: line, isError: false, reply: line };
+}
+
+const MeetingsInput = z.object({ on: z.boolean() });
+
+/** #457: meetings mode on or off. Michael never gives consent for the user: a first start needs the app. */
+async function meetings(input: unknown): Promise<WriteOutcome> {
+  const { on } = parse(MeetingsInput, input);
+  if (!on) {
+    const state = await endMeeting();
+    const line = state.active ? "Meetings mode is still on." : "Meetings mode is off. Nothing more is kept.";
+    return { content: line, isError: state.active !== null, reply: line };
+  }
+  const state = await startMeeting(undefined);
+  if (!state.active) return { content: "Meetings mode did not start.", isError: true };
+  const line = `Meetings mode is on until ${new Zone("Europe/Athens").clock(Date.parse(state.active.ends_at))}. I keep lessons and your own commitments.`;
+  return { content: line, isError: false, reply: line };
+}
+
+/** #457: off the record on, never off (the user's own switch). */
+async function offTheRecord(): Promise<WriteOutcome> {
+  await store.setOffTheRecord(true);
+  const line = "You are off the record. Nothing is collected until you switch it back on You.";
+  return { content: line, isError: false, reply: line };
+}
+
 /** Runs one write tool; HttpError refusals are turned into tool errors by the caller. */
 export async function runWriteTool(name: string, input: unknown): Promise<WriteOutcome | null> {
   switch (name) {
@@ -405,6 +534,14 @@ export async function runWriteTool(name: string, input: unknown): Promise<WriteO
       return changeProfile(input);
     case "focus_now":
       return focusNow(input);
+    case "change_calendar_block":
+      return changeBlock(input);
+    case "change_focus":
+      return changeFocus(input);
+    case "meetings_mode":
+      return meetings(input);
+    case "go_off_the_record":
+      return offTheRecord();
     default:
       return null;
   }

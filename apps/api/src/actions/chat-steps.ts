@@ -37,6 +37,10 @@ const LABELS: Record<string, string> = {
   save_place: "Saving the place",
   update_profile: "Updating your profile",
   focus_now: "Starting your focus",
+  change_calendar_block: "Changing your block",
+  change_focus: "Changing your focus",
+  meetings_mode: "Switching meetings mode",
+  go_off_the_record: "Going off the record",
 };
 
 const obj = (v: unknown): Record<string, unknown> =>
@@ -65,6 +69,7 @@ const WITH_GOAL: Record<string, (goal: string, args: Record<string, unknown>) =>
 /** Labels that name the user's own block, for tools whose input points at one by event_id. */
 const WITH_BLOCK: Record<string, (block: string) => string> = {
   remove_calendar_block: (b) => `Removing ${b}`,
+  change_calendar_block: (b) => `Changing ${b}`,
 };
 
 /** The event id a call points at, for the tools whose label can name the block. */
