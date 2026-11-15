@@ -1165,6 +1165,42 @@ export const GoalSuggestion = z.object({
 });
 export type GoalSuggestion = z.infer<typeof GoalSuggestion>;
 
+// ---------- goals from the user's own words (onboarding talk) ----------
+
+// What the user said or typed about their goals, as it came: a voice transcript or a messy note.
+export const GoalWordsRequest = z.object({ text: z.string().trim().min(1).max(4000) });
+export type GoalWordsRequest = z.infer<typeof GoalWordsRequest>;
+
+// One goal heard in the user's words, ready to POST to /v1/goals as it is (nothing is saved here).
+export const HeardGoal = z.object({
+  title: z.string().min(1).max(60),
+  // Always one of the three areas for a new goal (#131).
+  category: GoalArea,
+  // Per week. A sleep goal holds the nights: 7 x hours.
+  weekly_budget_minutes: z.number().int().min(0).max(7 * 24 * 60),
+  target: z.object({
+    kind: z.enum(["time", "target"]),
+    calendar_titles: z.array(z.string().min(1)).optional(),
+    sleep_hours: z.number().positive().max(12).optional(),
+  }),
+  // The user's own words it came from, short: "gym three times a week".
+  evidence: z.string().min(1).max(200),
+  // False when the user named the time ("ten hours"); true when Michael set a starting budget.
+  estimated: z.boolean(),
+});
+export type HeardGoal = z.infer<typeof HeardGoal>;
+
+export const GoalWordsResponse = z.object({
+  goals: z.array(HeardGoal).max(5),
+  // How the user works, in their words, worth remembering ("Loses evenings to the phone").
+  notes: z.array(z.string().min(1).max(200)).max(4),
+  // Michael's reply in his voice: what he heard, or the one question he still needs answered.
+  line: z.string().min(1),
+  // model: Claude read it; rules: the word lists did (no key, or the model failed).
+  source: z.enum(["model", "rules"]),
+});
+export type GoalWordsResponse = z.infer<typeof GoalWordsResponse>;
+
 export const GoalSuggestionsResponse = z.object({
   from: IsoDateTime,
   to: IsoDateTime,

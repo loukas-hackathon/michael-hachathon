@@ -479,6 +479,7 @@ AI tool events (`ai_session`, `ai_prompt`) from `claude_code`:
 | DELETE | `/v1/goals/:id`                    |                                   | `204`, `404`                  | live   |
 | GET    | `/v1/goals/suggestions`            |                                   | `200 GoalSuggestionsResponse` | live   |
 | POST   | `/v1/goals/suggestions/:id/accept` | `GoalSuggestionAccept` (optional) | `201 Goal`, `404`             | live   |
+| POST   | `/v1/goals/from-words`             | `GoalWordsRequest`                | `200 GoalWordsResponse`, `429` | live   |
 | POST   | `/v1/goals/:id/book`               | `GoalBook` (optional)             | `201 Recommendation`, `409`   | live   |
 
 #### Book time for a goal (#309)
@@ -504,6 +505,17 @@ week." The same protected time is left out of `free_minutes_left`, so "The maths
 Pure slot logic: `goalSlot`, `goalBooking` and `noSlotLine` in `apps/api/src/goals/book.ts`.
 
 #### Goals from the calendar (#134)
+
+**Goals from the user's own words (onboarding talk).** `POST /v1/goals/from-words` takes what the
+user said or typed (`{ text }`, up to 4000 characters, a messy voice transcript is fine, English or
+Greek) and returns at most five `HeardGoal`s (each a ready `GoalCreate`: `title`, `category` one of
+the three areas, `weekly_budget_minutes`, `target` of kind `time` with `calendar_titles` or of kind
+`target` with `sleep_hours`, plus `evidence`, the user's words it came from, and `estimated`, true
+when Michael set the hours because none were said), up to four `notes` on how the user works
+("Loses evenings to the phone", saved by the app as memories once the user keeps them), Michael's
+`line`, and `source`: `model` (Claude, low effort, 25 second cap, line checked against the voice
+rules) or `rules` (word lists, when there is no key or the model fails). Nothing is saved: the app
+shows what was heard, the user edits it, then creates the goals. 10 calls a minute per caller.
 
 People already live by goals they never wrote down. `GET /v1/goals/suggestions` reads the user's own
 calendar blocks (no other people, not all day, not booked by Michael) from four weeks back to a week
