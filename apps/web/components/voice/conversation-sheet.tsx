@@ -70,7 +70,7 @@ function ConversationSheet({ open, from, onClose }: { open: boolean; from: numbe
       : UNSUPPORTED_COPY;
 
   return (
-    <Sheet open={open} onClose={close} title="Talk to Michael">
+    <Sheet open={open} onClose={close} title="Talk to Michael" closeLabel="Done">
       <div className="flex min-h-[60dvh] flex-col items-center pt-6" data-testid="conversation">
         {talk.phase === "unavailable" ? (
           <p role="alert" className="mt-10 max-w-[28ch] text-center text-body text-label-2">
