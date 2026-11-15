@@ -250,7 +250,7 @@ export function StandingInstructions({
   const [adding, setAdding] = useState<number | null>(null);
 
   return (
-    <section className="mt-8">
+    <section id="michael" className="mt-8 scroll-mt-4">
       <h2 className="mb-2 text-title3 font-bold">Standing instructions</h2>
       <ul className="overflow-hidden rounded-group bg-fill">
         {quiet ? (

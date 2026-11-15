@@ -1,7 +1,8 @@
 "use client";
 
-import { createContext, type ReactNode, useContext, useId, useState, useSyncExternalStore } from "react";
+import { createContext, type ReactNode, useContext, useId, useState } from "react";
 import { Collapse } from "@/components/motion-ui";
+import { useWide } from "@/components/use-wide";
 
 // Today's supporting detail ("More from Michael"): one inset group of quiet rows. Each row shows a
 // title and one line, and opens in place: the body eases open under it while the preview line folds
@@ -10,23 +11,7 @@ import { Collapse } from "@/components/motion-ui";
 // On a laptop (1280 px and up) Today has room for the detail, so the rows of "More from Michael"
 // start open there (#285). CSS opens them from the first paint ([data-wide-open] in globals.css),
 // so nothing moves when the page hydrates; the state follows once the media query is known.
-const WIDE = "(min-width: 1280px)";
 const WideOpen = createContext(false);
-
-function subscribeWide(onChange: () => void) {
-  const mq = window.matchMedia(WIDE);
-  mq.addEventListener("change", onChange);
-  return () => mq.removeEventListener("change", onChange);
-}
-
-/** True on a laptop wide enough for Today's three columns. False on the server and on phones. */
-function useWide() {
-  return useSyncExternalStore(
-    subscribeWide,
-    () => window.matchMedia(WIDE).matches,
-    () => false,
-  );
-}
 
 /**
  * The "More from Michael" section. Hides itself when no row inside rendered anything, so an empty
