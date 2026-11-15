@@ -39,6 +39,21 @@ Google Cloud console has renamed menus over time; both names are given.
 
 Done when: you are signed in as yourself. Tick "google-oauth-client" on the board.
 
+### Open Google sign in to everyone (2 min)
+
+In Testing, only the Google accounts listed as test users can sign in; everyone else gets
+"Access blocked: Michael has not completed the Google verification process".
+
+1. https://console.cloud.google.com/auth/audience (pick the `Michael` project in the top bar; do the
+   same in the project that holds the `michael-api` Calendar client if it is a different one).
+2. Publishing status **Testing**: **Publish app**, then **Confirm**. Status reads **In production**.
+3. Test: a private window, a Google account that was never a test user, **Continue with Google**.
+
+What changes: sign in asks only for name and email (no sensitive scopes), so it works for anyone at
+once, with no warning. Connecting Google Calendar uses a sensitive scope: until Google verifies the
+app, people see "Google hasn't verified this app" and tap **Advanced**, then **Go to Michael**
+(up to 100 people). Calendar refresh tokens also stop expiring after 7 days.
+
 ## 2. Your Claude connector (Loukas and Manolis, 2 min each, after step 1)
 
 No key: Claude signs in to Michael like any built-in connector, and sees only your own data.

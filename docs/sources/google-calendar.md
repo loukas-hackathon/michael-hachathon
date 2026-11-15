@@ -9,7 +9,8 @@ timeline, then keeps it fresh every 15 minutes. Contract: `docs/api.md`, "Integr
 1. https://console.cloud.google.com: create or pick a project (for example `michael`).
 2. APIs and Services, Library: enable **Google Calendar API**.
 3. Google Auth Platform (OAuth consent screen):
-   - Audience: **External**. Publishing status **Testing** is fine for the demo; add every Google
+   - Audience: **External**. Publishing status **In production** (setup manual, "Open Google sign in
+     to everyone"). In Testing, add every Google
      account that will connect (Manolis, Loukas) under **Test users**. In Testing, refresh tokens
      expire after 7 days, so reconnect before the pitch or publish the app.
    - Branding: app name `Michael`, support email, and authorised domains `vercel.app` and
