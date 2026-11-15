@@ -50,6 +50,10 @@ const ALLOWED: [string, RegExp][] = [
   ["POST", /^\/v1\/ritual\/(morning|evening)\/skip$/],
   ["POST", /^\/v1\/log(\/block)?$/],
   ["DELETE", /^\/v1\/log\/[^/]+$/],
+  // Focus now (#397): a session per visitor (stored per visitor, like chat) in a block on the demo
+  // day; the demo reseed clears the sessions and their blocks.
+  ["POST", /^\/v1\/focus\/start$/],
+  ["POST", /^\/v1\/focus\/[^/]+\/(extend|end)$/],
   ["POST", /^\/v1\/analysis\/run$/],
   ["POST", /^\/v1\/travel\/plan$/],
   ["POST", /^\/v1\/focus-guards\/suggest$/],

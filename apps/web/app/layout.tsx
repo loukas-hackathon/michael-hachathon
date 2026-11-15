@@ -3,6 +3,7 @@ import { Figtree } from "next/font/google";
 import type { ReactNode } from "react";
 import { MotionScript } from "@/components/count-up";
 import { DeepLinkFocus } from "@/components/deep-link-focus";
+import { FocusHost } from "@/components/focus/focus-host";
 import { Haptics } from "@/components/haptics";
 import { MeetingPill } from "@/components/meetings";
 import { NudgeOpened } from "@/components/nudge-opened";
@@ -46,6 +47,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <MeetingPill />
         <NudgeOpened />
         <TabBar />
+        <FocusHost />
         <ServiceWorker />
         <DeepLinkFocus />
       </body>

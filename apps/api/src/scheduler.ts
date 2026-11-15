@@ -3,7 +3,9 @@ import { revertExpiredGoalChanges } from "./actions/calendar";
 import { generateDrafts } from "./actions/drafts";
 import { runAsUser } from "./context";
 import { env, webUrl } from "./env";
+import { finishDueFocusSessions } from "./focus/session";
 import { prewarmMoment } from "./moments/prewarm";
+
 import { HOUR } from "./patterns/time";
 import { runRetention } from "./retention";
 import { checkNudges } from "./routes/nudges";
@@ -24,6 +26,9 @@ export interface UserCheck {
   result?: NudgeCheckResult;
   error?: string;
 }
+
+/** How often sessions whose end has passed are finished. */
+const FOCUS_TICK_MS = 30_000;
 
 /** Follow ups are drafted for what ended this recently; older meetings are left alone. */
 const DRAFT_WINDOW_MS = 2 * HOUR;
@@ -59,7 +64,9 @@ export async function runNudgeChecks(now = Date.now()): Promise<UserCheck[] | nu
         console.error(`[scheduler] follow up drafts failed for ${userId}`, err),
       );
     }
-    const sent = out.filter((c) => c.result?.nudge && countsTowardsCap(c.result.nudge.status)).length;
+    const sent = out.filter(
+      (c) => c.result?.nudge && countsTowardsCap(c.result.nudge.status, c.result.nudge.kind),
+    ).length;
     if (users.length) console.log(`[scheduler] checked ${users.length} users, ${sent} nudges`);
     return out;
   } catch (err) {
@@ -119,6 +126,11 @@ export function startScheduler(): void {
   // First pass shortly after boot, once the health check has passed.
   setTimeout(() => void runNudgeChecks(), 30_000).unref();
   setInterval(() => void runNudgeChecks(), every).unref();
+  // Focus now (#397): sessions end on time with the app closed, so the watch buzzes at the minute.
+  setInterval(
+    () => void finishDueFocusSessions().catch((err) => console.error("[scheduler] focus", err)),
+    FOCUS_TICK_MS,
+  ).unref();
   // The web app's Today, kept warm on the same beat (#378).
   if (env.WEB_WARM === "on") {
     console.log(`[scheduler] web warm every ${env.SCHEDULER_INTERVAL_MINUTES} min`);

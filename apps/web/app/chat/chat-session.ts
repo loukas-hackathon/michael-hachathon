@@ -2,6 +2,7 @@
 
 import type { ChatMessage, ChatStep, ChatThread, Recommendation } from "@michael/shared";
 import { useSyncExternalStore } from "react";
+import { announceFocus } from "@/components/focus/focus-events";
 import { TABS_STALE } from "@/components/tab-bar";
 import { speakReply } from "@/components/voice/speech";
 import { streamChat, warmChat } from "./stream-chat";
@@ -342,6 +343,8 @@ export async function sendLine(
     if (thread) upsertThread(thread, base);
     // Michael changed the day: cached Today and Timeline must not show the old plan.
     if (done.length) window.dispatchEvent(new Event(TABS_STALE));
+    // A Focus now session started in chat (#397): the session screen reads it and opens.
+    if (res.data.reply.content.includes("Focusing on ")) announceFocus();
     // ...and Michael reads the changed day again before the next question (#364).
     if (done.length) warmChat(key, true);
     // Spoken once the whole answer is in: a voice reading half sentences sounds broken.
