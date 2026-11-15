@@ -434,6 +434,21 @@ body::before {
 .m-think {
   animation: m-think 2.4s ease-in-out infinite;
 }
+/* The conversation's Michael while he thinks (#458): the same breath, gentler at his full size. */
+@keyframes m-think-soft {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(0.96);
+    opacity: 0.78;
+  }
+}
+.m-think-soft {
+  animation: m-think-soft 2.4s ease-in-out infinite;
+}
 
 /* Michael's character (components/michael.tsx, #319): only the dot of the i moves. Units are the
  * mark's own (viewBox 346 x 209); the dot sits at about 318, 26 with a radius of 27. States change
@@ -514,6 +529,7 @@ body::before {
   }
   .m-speak-breath,
   .m-think,
+  .m-think-soft,
   .m-mi .m-mi-dot {
     animation: none;
     transition: none;

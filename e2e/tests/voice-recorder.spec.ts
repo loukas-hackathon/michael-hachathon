@@ -172,7 +172,8 @@ test("Talk to Michael in the home screen app: a recorded turn, answered by voice
     message: "When should I train tomorrow?",
     spoken: true,
   });
-  await expect(page.getByTestId("conversation")).toContainText("Train at 18:00.");
+  // Not written on screen (#458): the hidden live region holds it for screen readers.
+  await expect(page.getByTestId("conversation-reply")).toHaveText("Train at 18:00.");
   await expect.poll(() => voice<string[]>(page, "v.spoken")).toEqual(["Train at 18:00."]);
   // Then it listens again, recording the next turn.
   await expect(orb).toHaveAttribute("data-phase", "listening");
