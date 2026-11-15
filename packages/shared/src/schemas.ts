@@ -1119,6 +1119,11 @@ export const Knowledge = z.object({
 });
 export type Knowledge = z.infer<typeof Knowledge>;
 
+// POST /v1/memories: a memory the user writes themselves on What I know about you, like the memory
+// in other assistants. The answer is the new item (origin "you"); the same words twice are kept once.
+export const MemoryCreate = z.object({ text: z.string().trim().min(1).max(280) });
+export type MemoryCreate = z.infer<typeof MemoryCreate>;
+
 // ---------- profile: the onboarding answers (GET/PUT /v1/profile) ----------
 
 // `ClockTime` ("HH:MM", 24 hour, Europe/Athens wall clock) is defined with the goals above.

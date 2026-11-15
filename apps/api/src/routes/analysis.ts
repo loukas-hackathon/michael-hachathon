@@ -35,8 +35,8 @@ export const analysis = new Hono()
     return c.json(await run(input, { store, model }), 201);
   })
   .get("/analysis/latest", async (c) => {
-    const run = await store.latestAnalysisRun();
+    // Side by side (#298): the recommendations never wait for the run.
+    const [run, recs] = await Promise.all([store.latestAnalysisRun(), store.listRecommendations()]);
     if (!run) throw new HttpError("not_found", "No analysis has run yet");
-    const recs = await store.listRecommendations();
     return c.json({ run, recommendations: recs.filter((r) => r.analysis_run_id === run.id) });
   });
