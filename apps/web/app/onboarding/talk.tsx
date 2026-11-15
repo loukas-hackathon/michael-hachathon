@@ -1,69 +1,104 @@
 "use client";
 
-import type { GoalArea, GoalWordsResponse, HeardGoal } from "@michael/shared";
+import type { GoalArea, GoalWordsResponse, HeardGoal, OnboardingTurn } from "@michael/shared";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Michael, type MichaelState } from "@/components/michael";
-import { PushToTalk } from "@/components/voice/push-to-talk";
-import { checkRecorderPath, currentInputMode, subscribeInputMode } from "@/components/voice/recorder";
+import { listenTurn, type Turn, type TurnError } from "@/components/voice/listen-turn";
+import {
+  checkRecorderPath,
+  currentInputMode,
+  primeRecorder,
+  releaseMic,
+  subscribeInputMode,
+} from "@/components/voice/recorder";
 import { primeSpeech, speakReply, stopSpeaking, unlockAudio } from "@/components/voice/speech";
 import { hm } from "@/lib/format";
-import { finishOnboarding, hearGoals, skipOnboarding } from "./actions";
+import { SCRIPT_DONE, scriptTurn, splitLine, userWords, withoutGreeting } from "@/lib/onboarding-script";
+import { finishOnboarding, hearGoals, nextTurn, skipOnboarding } from "./actions";
 import { OnboardingFrame, primaryButton, quietButton, Separator } from "./frame";
 import { Check } from "./goals-step";
+import { MicIcon, type TalkState, VoiceOrb } from "./voice-orb";
 
-// Getting started is a talk with Michael, not a form (Loukas, Sun 15 Nov). He introduces himself in
-// a few animated lines (with his voice, one tap away), then asks three questions out loud. The user
-// holds the mic and answers, or types: a noisy room is one tap from the keyboard, and any question
-// can be skipped. Every answer lands in a text box first, so a misheard word is fixed before it
-// counts. Then the API reads the answers, however messy, into goals with weekly hours, and the
-// review shows what he heard, each goal with the user's own words under it and "my estimate" on
-// hours nobody said. Nothing is saved until the user keeps it. The calendar comes after, on connect.
+// Getting started is a conversation with Michael, hands free (Loukas, Sun 15 Nov). The first tap
+// plays his voice, his intro lighting up as he says it. Then, unless the calendar is already in,
+// one question: look at the calendar first, so he can ask about the real week. Then the talk: he
+// says a line, listens on his own, shows the user's words as they come, notices the pause, and
+// answers with a follow up. His lines come from POST /v1/onboarding/turn; when that cannot answer
+// (not deployed, no model, slow) his own script of three questions stands in. When he has enough,
+// the API reads everything the user said into goals with weekly hours, and the review shows what
+// he heard, each goal with the user's own words under it. Nothing is saved until the user keeps it.
+// Escape hatches stay one tap away and never in the way: type instead, skip a question, mute the
+// microphone, fix a misheard answer by tapping it. No microphone, or none allowed: typing, said kindly.
 
 const INTRO = [
   "I'm Michael.",
   "I find the time you lose every day and give it back to your goals.",
-  "Tell me what you're working towards. Connect your calendar, and I learn how your days really go.",
-  "Every day I learn more. I tell you what pulls you off course, and what to fix.",
+  "Tell me what you're working towards. I'll learn how your days really go, and tell you what to fix.",
 ];
 
-type Question = { ask: string; hint: string };
+const CALENDAR_ASK = "Want me to look at your calendar first?";
+const CALENDAR_WHY = "I'll ask about your real week.";
 
-const QUESTIONS: Question[] = [
-  {
-    ask: "What are you working towards right now?",
-    hint: "Business, health, the people in your life. Whatever matters most.",
-  },
-  {
-    ask: "What would make this a good week?",
-    hint: "Say roughly how much time each thing needs.",
-  },
-  {
-    ask: "Where does your time go that you wish it didn't?",
-    hint: "The phone, meetings, late nights. It stays between us.",
-  },
-];
+// Under the text box, whose placeholder already says "Type it as it comes": short, never repeated.
+const NO_MIC = "I can't hear you on this device. We'll type.";
+const QUIET = "Take your time. Tap me when you're ready.";
+const ERROR_COPY: Record<TurnError, string> = {
+  "not-allowed": "No microphone, no problem. We'll type.",
+  "audio-capture": "I can't find a microphone. We'll type.",
+  "no-voice": "I can't listen in this browser. We'll type.",
+  failed: "I lost you for a second. Type it, or tap Talk instead.",
+};
 
 const AREA_LABEL: Record<GoalArea, string> = { business: "Business", health: "Health", personal: "Personal" };
 
-/** Words per second the intro shows at: quick when silent, at his speaking pace with the voice. */
+/** Milliseconds per word for the intro: quick when silent, his pace when the length is unknown. */
 const SILENT_MS = 55;
-const SPOKEN_MS = 330;
+const SPOKEN_MS = 360;
+/** The API gets this long for his next line; then the script answers. */
+const TURN_WAIT_MS = 10_000;
+/** The contract keeps at most 24 turns: wrap up before that. */
+const MAX_TURNS = 22;
 
-type Phase = "intro" | "ask" | "hearing" | "review";
+type Phase = "intro" | "calendar" | "ready" | "talk" | "hearing" | "review";
 type Input = "voice" | "text";
 type Row = HeardGoal & { key: string; on: boolean };
+/** A misheard answer being fixed: the one still being said, or one already sent. */
+type Editing = { at: "live" | number; text: string };
 
 const count = (n: number) =>
   n === 1 ? "this goal" : n === 2 ? "these two" : n === 3 ? "these three" : `these ${n}`;
 
-// ---------- the intro: his words arrive one by one ----------
+const wordCount = (lines: string[]) => lines.join(" ").split(/\s+/).filter(Boolean).length;
 
-function AnimatedLines({ lines, pace, run }: { lines: string[]; pace: number; run: number }) {
+function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    const t = setTimeout(() => resolve(fallback), ms);
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      () => {
+        clearTimeout(t);
+        resolve(fallback);
+      },
+    );
+  });
+}
+
+// ---------- the intro: his words arrive, or light up as he says them ----------
+
+/** null: arrive once, quickly. pace null: dimmed, waiting for his voice. pace: lit at that pace. */
+type Lit = { run: number; pace: number | null } | null;
+
+function IntroLines({ lines, lit }: { lines: string[]; lit: Lit }) {
   let i = 0;
+  const pace = lit ? (lit.pace ?? 0) : SILENT_MS;
+  const cls = !lit ? "m-word-in" : lit.pace === null ? "m-word-wait" : "m-word-lit";
   return (
-    <div key={run} className="flex flex-col gap-3">
+    <div key={`${lit?.run ?? 0}-${cls}`} className="flex flex-col gap-3">
       {lines.map((line, n) => {
         const Tag = n === 0 ? "h1" : "p";
         return (
@@ -76,7 +111,10 @@ function AnimatedLines({ lines, pace, run }: { lines: string[]; pace: number; ru
               return (
                 // biome-ignore lint/suspicious/noArrayIndexKey: fixed copy, a word can repeat in a line
                 <Fragment key={`${word}-${w}`}>
-                  <span className="m-word-in inline-block" style={{ animationDelay: `${delay}ms` }}>
+                  <span
+                    className={`${cls} inline-block`}
+                    style={cls === "m-word-wait" ? undefined : { animationDelay: `${delay}ms` }}
+                  >
                     {word}
                   </span>{" "}
                 </Fragment>
@@ -89,7 +127,7 @@ function AnimatedLines({ lines, pace, run }: { lines: string[]; pace: number; ru
   );
 }
 
-// ---------- the sound switch ----------
+// ---------- the sound switch: Michael's voice ----------
 
 function SoundButton({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
   return (
@@ -115,89 +153,6 @@ function SoundButton({ on, onChange }: { on: boolean; onChange: (on: boolean) =>
         )}
       </svg>
     </button>
-  );
-}
-
-// ---------- one answer: the mic, or the keyboard, always the text box ----------
-
-function Answer({
-  value,
-  onChange,
-  input,
-  onInput,
-  voicePossible,
-  onListening,
-  label,
-  placeholder,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  input: Input;
-  onInput: (i: Input) => void;
-  voicePossible: boolean;
-  onListening: (on: boolean) => void;
-  label: string;
-  placeholder: string;
-}) {
-  const box = useRef<HTMLTextAreaElement>(null);
-  // What was there before this hold: a second hold adds to the answer instead of replacing it.
-  const before = useRef("");
-  const [error, setError] = useState<string | null>(null);
-  const [listening, setListening] = useState(false);
-  const join = (a: string, b: string) => (a.trim() ? `${a.trim()} ${b}` : b).trim();
-  const voice = input === "voice" && voicePossible;
-
-  useEffect(() => {
-    if (!voice) box.current?.focus({ preventScroll: true });
-  }, [voice]);
-
-  return (
-    <div className="flex flex-col">
-      {voice ? (
-        <div className="flex flex-col items-center gap-3 pb-6">
-          <PushToTalk
-            size="lg"
-            onListeningChange={(on) => {
-              if (on) {
-                before.current = value;
-                setError(null);
-              }
-              setListening(on);
-              onListening(on);
-            }}
-            onInterim={(t) => onChange(join(before.current, t))}
-            onFinal={(t) => onChange(join(before.current, t))}
-            onError={setError}
-            onDictate={() => box.current?.focus()}
-          />
-          <p aria-live="polite" className="min-h-[1.375em] text-subhead text-label-2">
-            {error ?? (listening ? "Listening. Let go when you're done." : "Hold and talk")}
-          </p>
-        </div>
-      ) : null}
-      <label htmlFor="answer" className="sr-only">
-        {label}
-      </label>
-      <textarea
-        id="answer"
-        ref={box}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        rows={voice ? 3 : 5}
-        maxLength={1200}
-        placeholder={voice ? "What I hear shows here. Fix anything I got wrong." : placeholder}
-        className="w-full resize-none rounded-group bg-fill px-4 py-3 text-body text-label outline-none placeholder:text-label-2"
-      />
-      {voicePossible ? (
-        <button
-          type="button"
-          onClick={() => onInput(voice ? "text" : "voice")}
-          className="press mx-auto mt-2 flex h-11 items-center px-3 text-subhead font-semibold text-tint-text"
-        >
-          {voice ? "Noisy here? Type instead" : "Talk instead"}
-        </button>
-      ) : null}
-    </div>
   );
 }
 
@@ -278,87 +233,283 @@ function HeardRow({ row, onChange }: { row: Row; onChange: (r: Row) => void }) {
 
 // ---------- the talk ----------
 
-export function Talk({ elevenlabs }: { elevenlabs: boolean }) {
+const textBox =
+  "w-full resize-none rounded-group bg-fill px-4 py-3 text-body text-label outline-none placeholder:text-label-2";
+const tintedButton =
+  "press flex h-11 items-center rounded-full bg-tint/14 px-5 text-subhead font-semibold text-tint-text disabled:opacity-40";
+const controlButton =
+  "press flex h-11 items-center gap-1.5 px-3 text-subhead font-semibold text-label-2 disabled:opacity-40";
+
+export function Talk({
+  elevenlabs,
+  calendar,
+  back,
+  calendarHref,
+}: {
+  elevenlabs: boolean;
+  /** Google Calendar is already connected: no need to ask. */
+  calendar: boolean;
+  /** Straight back from Google: one tap starts the talk (a phone needs a fresh tap for sound). */
+  back: "connected" | "failed" | null;
+  calendarHref: string;
+}) {
   const router = useRouter();
   const mode = useSyncExternalStore(subscribeInputMode, currentInputMode, () => "recognition" as const);
   const voicePossible = mode !== "none";
-  const [phase, setPhase] = useState<Phase>("intro");
-  const [sound, setSound] = useState(false);
+
+  const [phase, setPhase] = useState<Phase>(back ? "ready" : "intro");
+  const [sound, setSound] = useState(true);
   const [speaking, setSpeaking] = useState(false);
-  const [listening, setListening] = useState(false);
-  const [introRun, setIntroRun] = useState(0);
-  const [introPace, setIntroPace] = useState(SILENT_MS);
-  const [q, setQ] = useState(0);
-  const [answers, setAnswers] = useState<string[]>(() => QUESTIONS.map(() => ""));
+  const [lit, setLit] = useState<Lit>(null);
+  const [introStarted, setIntroStarted] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+
+  // The conversation.
+  const [turns, setTurns] = useState<OnboardingTurn[]>([]);
+  const [line, setLine] = useState("");
+  const [talk, setTalk] = useState<TalkState>("thinking");
+  const [live, setLive] = useState("");
+  const [level, setLevel] = useState(0);
+  const [recorded, setRecorded] = useState(false);
+  const [spoke, setSpoke] = useState(false);
+  const [muted, setMuted] = useState(false);
   const [input, setInput] = useState<Input>("voice");
+  const [note, setNote] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [editing, setEditing] = useState<Editing | null>(null);
+
+  // The review.
   const [heard, setHeard] = useState<GoalWordsResponse | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
   const [notes, setNotes] = useState<{ text: string; on: boolean }[]>([]);
   const [more, setMore] = useState<string | null>(null);
   const [busy, setBusy] = useState<"save" | "skip" | "more" | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
+
   const heading = useRef<HTMLHeadingElement>(null);
+  const answerBox = useRef<HTMLTextAreaElement>(null);
+  // Read inside async callbacks, where state would be stale.
   const soundRef = useRef(sound);
+  const inputRef = useRef(input);
+  const mutedRef = useRef(muted);
+  const editingRef = useRef(editing);
+  const turnsRef = useRef(turns);
   soundRef.current = sound;
+  inputRef.current = input;
+  mutedRef.current = muted;
+  editingRef.current = editing;
+  turnsRef.current = turns;
+  // Bumped whenever the talk moves on, so a late answer, speech end or turn is ignored.
+  const gen = useRef(0);
+  const turn = useRef<Turn | null>(null);
 
   useEffect(() => {
     checkRecorderPath();
-    return () => stopSpeaking();
+    return () => {
+      gen.current++;
+      turn.current?.cancel();
+      stopSpeaking();
+      releaseMic();
+    };
   }, []);
 
-  /** Michael says a line when his voice is on. Never awaited by the flow: the screen never waits on sound. */
+  /** Michael says a line when his voice is on; resolves when he has said it or was cut short. */
   const say = useCallback(
-    (text: string) => {
+    async (text: string) => {
       stopSpeaking();
       if (!soundRef.current) return;
       setSpeaking(true);
-      void speakReply(text, elevenlabs).finally(() => setSpeaking(false));
+      await speakReply(text, elevenlabs).finally(() => setSpeaking(false));
     },
     [elevenlabs],
   );
 
-  // Each new question, or the review, moves focus to its heading and is said out loud.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: on a new step only
+  // A new step, a new line or the review: focus its heading (no ring: tabIndex -1).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: on a new step or line only
   useEffect(() => {
     if (phase === "intro") return;
     heading.current?.focus({ preventScroll: true });
-    if (phase === "ask") {
-      const question = QUESTIONS[q] as Question;
-      say(`${question.ask} ${question.hint}`);
-    }
-    if (phase === "review" && heard) say(heard.line);
-  }, [phase, q, heard]);
+    if (phase === "review" && heard) void say(heard.line);
+  }, [phase, line, heard]);
 
-  function hearIntro() {
+  // Typing: the box gets the keyboard as soon as it is there.
+  useEffect(() => {
+    if (phase === "talk" && input === "text" && !editing) answerBox.current?.focus({ preventScroll: true });
+  }, [phase, input, editing]);
+
+  function cancelTurn() {
+    turn.current?.cancel();
+    turn.current = null;
+    setLevel(0);
+  }
+
+  // ----- the intro -----
+
+  function introTap() {
+    if (introStarted) return goOn();
+    // Inside the first tap: from here on the phone lets him speak, and the meter may run.
     primeSpeech();
     unlockAudio();
-    setSound(true);
-    soundRef.current = true;
-    setIntroPace(SPOKEN_MS);
-    setIntroRun((r) => r + 1);
-    say(INTRO.join(" "));
+    primeRecorder();
+    checkRecorderPath();
+    setIntroStarted(true);
+    if (!soundRef.current) return goOn();
+    const mine = ++gen.current;
+    const run = (lit?.run ?? 0) + 1;
+    const units = wordCount(INTRO) + INTRO.length * 2;
+    let started = false;
+    const begin = (ms: number | null) => {
+      if (started || mine !== gen.current) return;
+      started = true;
+      setLit({ run, pace: ms ? (ms * 0.94) / units : SPOKEN_MS });
+    };
+    setLit({ run, pace: null });
+    // Never left dimmed: if the voice gives no start signal, the words go at his usual pace.
+    const fallback = setTimeout(() => begin(null), 1500);
+    setSpeaking(true);
+    void speakReply(INTRO.join(" "), elevenlabs, { onStart: begin }).finally(() => {
+      clearTimeout(fallback);
+      setSpeaking(false);
+      if (mine === gen.current) goOn();
+    });
   }
 
-  function start() {
-    // The tap that starts the talk is what lets the phone play his voice from here on.
-    primeSpeech();
-    unlockAudio();
-    setSound(true);
-    soundRef.current = true;
-    if (!voicePossible) setInput("text");
-    setPhase("ask");
-  }
-
-  async function hear(text: string): Promise<GoalWordsResponse | null> {
-    return hearGoals(text).catch(() => null);
-  }
-
-  async function finishQuestions(final: string[]) {
+  function goOn() {
+    gen.current++;
     stopSpeaking();
-    const text = final
-      .map((a) => a.trim())
-      .filter(Boolean)
-      .join("\n");
+    if (calendar) return beginTalk();
+    setPhase("calendar");
+    void say(`${CALENDAR_ASK} ${CALENDAR_WHY}`);
+  }
+
+  // ----- the conversation -----
+
+  /** Starts the talk. Called from a tap where it can be, so the phone allows his voice and the mic. */
+  function beginTalk() {
+    unlockAudio();
+    primeRecorder();
+    checkRecorderPath();
+    stopSpeaking();
+    if (currentInputMode() === "none") {
+      setInput("text");
+      inputRef.current = "text";
+      setNote(NO_MIC);
+    }
+    setPhase("talk");
+    turnsRef.current = [];
+    setTurns([]);
+    void ask([]);
+  }
+
+  /** Gets Michael's next line (the API, else the script), says it, then listens. */
+  async function ask(so: OnboardingTurn[]) {
+    const mine = ++gen.current;
+    setTalk("thinking");
+    setLive("");
+    if (so.length >= MAX_TURNS) return finish(so, SCRIPT_DONE);
+    const got = (await withTimeout(nextTurn(so), TURN_WAIT_MS, null)) ?? scriptTurn(so);
+    const res = { ...got, line: withoutGreeting(got.line) };
+    if (mine !== gen.current) return;
+    const next: OnboardingTurn[] = [...so, { role: "michael", text: res.line }];
+    turnsRef.current = next;
+    setTurns(next);
+    setLine(res.line);
+    if (res.done) return finish(next, res.line);
+    if (soundRef.current) {
+      setTalk("speaking");
+      await say(res.line);
+      if (mine !== gen.current) return;
+    }
+    listen(mine);
+  }
+
+  /** Listens for the user's answer, hands free, unless they type, muted the mic or are fixing a line. */
+  function listen(mine = gen.current) {
+    if (mine !== gen.current) return;
+    cancelTurn();
+    if (inputRef.current === "text" || mutedRef.current || editingRef.current) {
+      setTalk("waiting");
+      return;
+    }
+    const how = currentInputMode();
+    if (how === "none") return toText(NO_MIC);
+    setRecorded(how === "recorder");
+    setTalk("listening");
+    setLive("");
+    setSpoke(false);
+    setNote(null);
+    const t = listenTurn(
+      {
+        onWords: (text) => {
+          if (mine === gen.current) setLive(text);
+        },
+        // A recording shows no words until it is text: this is how the screen knows they talk.
+        onSpeech: () => {
+          if (mine === gen.current) setSpoke(true);
+        },
+        onLevel: (l) => {
+          if (mine === gen.current) setLevel(l);
+        },
+        onTranscribing: () => {
+          if (mine === gen.current) setTalk("transcribing");
+        },
+        onDone: (text) => {
+          if (turn.current === t) turn.current = null;
+          if (mine !== gen.current) return;
+          // Only noise: listen on.
+          if (text.trim()) submit(text);
+          else listen(mine);
+        },
+        onQuiet: () => {
+          if (turn.current === t) turn.current = null;
+          if (mine !== gen.current) return;
+          setTalk("waiting");
+          setNote(QUIET);
+        },
+        onError: (e) => {
+          if (turn.current === t) turn.current = null;
+          if (mine === gen.current) toText(ERROR_COPY[e]);
+        },
+      },
+      { mode: how },
+    );
+    turn.current = t;
+  }
+
+  /** The rest of the talk by keyboard, with one kind line saying why. */
+  function toText(why: string | null) {
+    cancelTurn();
+    inputRef.current = "text";
+    setInput("text");
+    setNote(why);
+    setTalk((s) => (s === "listening" || s === "transcribing" ? "waiting" : s));
+  }
+
+  /** The user's turn is in: said, typed, fixed or skipped. */
+  function submit(text: string, skipped = false) {
+    cancelTurn();
+    stopSpeaking();
+    const said: OnboardingTurn = skipped
+      ? { role: "user", text: "", skipped: true }
+      : { role: "user", text: text.trim().slice(0, 1200) };
+    const next = [...turnsRef.current, said];
+    turnsRef.current = next;
+    setTurns(next);
+    setLive("");
+    setDraft("");
+    editingRef.current = null;
+    setEditing(null);
+    setNote(null);
+    void ask(next);
+  }
+
+  /** Michael has enough: read everything the user said into goals, then the review. */
+  async function finish(so: OnboardingTurn[], last: string) {
+    cancelTurn();
+    const mine = ++gen.current;
+    setPhase("hearing");
+    void say(last);
+    const text = userWords(so);
     if (!text) {
       setHeard({
         goals: [],
@@ -372,8 +523,8 @@ export function Talk({ elevenlabs }: { elevenlabs: boolean }) {
       setPhase("review");
       return;
     }
-    setPhase("hearing");
-    const res = await hear(text);
+    const res = await hearGoals(text).catch(() => null);
+    if (mine !== gen.current) return;
     if (!res) {
       setFailed("I couldn't read that just now. Try again, or pick from the usual.");
       setHeard({ goals: [], notes: [], line: "Something went wrong on my side.", source: "rules" });
@@ -390,23 +541,100 @@ export function Talk({ elevenlabs }: { elevenlabs: boolean }) {
     setPhase("review");
   }
 
-  function next(skip: boolean) {
-    const final = skip ? answers.map((a, i) => (i === q ? "" : a)) : answers;
-    if (skip) setAnswers(final);
-    if (q < QUESTIONS.length - 1) {
+  /** The orb does the one obvious thing: cut in, done talking, or listen again. */
+  function tapOrb() {
+    primeRecorder();
+    if (talk === "speaking") {
       stopSpeaking();
-      setQ(q + 1);
+    } else if (talk === "listening") {
+      // Always: a recording whose level never rose (a quiet voice, a broken meter) still ends here.
+      turn.current?.finish();
+    } else if (talk === "waiting" && input === "voice") {
+      if (muted) {
+        mutedRef.current = false;
+        setMuted(false);
+      }
+      setNote(null);
+      listen();
+    }
+  }
+
+  function toggleMute() {
+    const on = !muted;
+    mutedRef.current = on;
+    setMuted(on);
+    if (on) {
+      if (talk === "listening") {
+        cancelTurn();
+        setLive("");
+        setTalk("waiting");
+      }
+    } else if (talk === "waiting" || talk === "listening") {
+      primeRecorder();
+      listen();
+    }
+  }
+
+  function typeInstead() {
+    toText(null);
+    setDraft(live);
+    setLive("");
+  }
+
+  function talkInstead() {
+    primeRecorder();
+    inputRef.current = "voice";
+    setInput("voice");
+    setNote(null);
+    if (talk === "waiting") listen();
+  }
+
+  /** Tap a line to fix it: the one being said (stops listening) or the last one sent. */
+  function startEditing(at: Editing["at"], text: string) {
+    if (at === "live" || talk === "listening") {
+      cancelTurn();
+      setLive("");
+      setTalk((s) => (s === "listening" ? "waiting" : s));
+    }
+    const e = { at, text };
+    editingRef.current = e;
+    setEditing(e);
+  }
+
+  function saveEdit() {
+    const e = editing;
+    if (!e) return;
+    editingRef.current = null;
+    setEditing(null);
+    if (e.at === "live") {
+      if (e.text.trim()) submit(e.text);
+      else listen();
       return;
     }
-    void finishQuestions(final);
+    const at = e.at;
+    const next = turnsRef.current.map((t, i) =>
+      i === at ? { ...t, text: e.text.trim().slice(0, 1200), skipped: e.text.trim() ? undefined : true } : t,
+    );
+    turnsRef.current = next;
+    setTurns(next);
+    if (talk === "waiting" && input === "voice" && !muted) listen();
   }
+
+  function cancelEdit() {
+    const e = editing;
+    editingRef.current = null;
+    setEditing(null);
+    if (e && talk === "waiting" && input === "voice" && !muted) listen();
+  }
+
+  // ----- the review -----
 
   async function addMore() {
     const text = (more ?? "").trim();
     if (!text) return;
     setBusy("more");
     setFailed(null);
-    const res = await hear(text);
+    const res = await hearGoals(text).catch(() => null);
     setBusy(null);
     if (!res) {
       setFailed("I couldn't read that just now. Try once more.");
@@ -441,29 +669,29 @@ export function Talk({ elevenlabs }: { elevenlabs: boolean }) {
   }
 
   async function skipAll() {
+    gen.current++;
+    cancelTurn();
     stopSpeaking();
     setBusy("skip");
     await skipOnboarding().catch(() => null);
     router.replace("/");
   }
 
-  const michael: MichaelState =
-    phase === "hearing" || busy === "more"
-      ? "thinking"
-      : listening
-        ? "listening"
-        : speaking
-          ? "speaking"
-          : phase === "review" && rows.length > 0
-            ? "pleased"
-            : "idle";
+  // ----- the frame -----
 
   const left = (
     <SoundButton
       on={sound}
       onChange={(on) => {
         if (on) unlockAudio();
-        else stopSpeaking();
+        else {
+          // Silencing the intro keeps it on screen rather than moving on.
+          if (phase === "intro") {
+            gen.current++;
+            setLit(null);
+          }
+          stopSpeaking();
+        }
         soundRef.current = on;
         setSound(on);
       }}
@@ -479,7 +707,7 @@ export function Talk({ elevenlabs }: { elevenlabs: boolean }) {
       Skip
     </button>
   );
-  const face = <Michael state={michael} className="h-auto w-[52px] text-label" />;
+  const face = (state: MichaelState) => <Michael state={state} className="h-auto w-[52px] text-label" />;
 
   if (phase === "intro") {
     return (
@@ -490,80 +718,297 @@ export function Talk({ elevenlabs }: { elevenlabs: boolean }) {
         left={left}
         right={right}
         footer={
-          <>
-            <button type="button" onClick={start} className={primaryButton}>
-              Let's talk
-            </button>
-            <button type="button" onClick={hearIntro} className={quietButton}>
-              Hear it from me
-            </button>
-          </>
+          <button type="button" onClick={introTap} className={primaryButton}>
+            {introStarted ? "Continue" : "Let's talk"}
+          </button>
         }
       >
         <div className="flex flex-col gap-8">
-          {face}
-          <AnimatedLines lines={INTRO} pace={introPace} run={introRun} />
+          {face(speaking ? "speaking" : "idle")}
+          <IntroLines lines={INTRO} lit={lit} />
         </div>
       </OnboardingFrame>
     );
   }
 
-  if (phase === "ask") {
-    const question = QUESTIONS[q] as Question;
-    const value = answers[q] ?? "";
-    const last = q === QUESTIONS.length - 1;
+  if (phase === "calendar" || phase === "ready") {
+    const ready = phase === "ready";
+    const title = !ready
+      ? CALENDAR_ASK
+      : back === "failed"
+        ? "Your calendar didn't connect."
+        : "Got your calendar.";
+    const sub = !ready
+      ? CALENDAR_WHY
+      : back === "failed"
+        ? "We can talk anyway, and add it after."
+        : "I've read your last four weeks. Tap when you're ready to talk.";
     return (
       <OnboardingFrame
         step={0}
-        progress={(q + 1) / (QUESTIONS.length + 1)}
+        progress={0.1}
         title={null}
         left={left}
         right={right}
         footer={
-          <>
-            <button
-              type="button"
-              onClick={() => next(false)}
-              disabled={!value.trim()}
-              className={primaryButton}
-            >
-              {last ? "That's it" : "Next"}
-            </button>
-            <button type="button" onClick={() => next(true)} className={quietButton}>
-              Skip this one
-            </button>
-          </>
+          ready ? (
+            <>
+              <button type="button" onClick={beginTalk} className={primaryButton}>
+                Start talking
+              </button>
+              {back === "failed" ? (
+                <a href={calendarHref} className={`${quietButton} w-fit`}>
+                  Try again
+                </a>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <a
+                href={calendarHref}
+                onClick={() => {
+                  gen.current++;
+                  stopSpeaking();
+                  setConnecting(true);
+                }}
+                aria-busy={connecting}
+                className={`${primaryButton} ${connecting ? "pointer-events-none opacity-60" : ""}`}
+              >
+                {connecting ? "Connecting" : "Connect Google Calendar"}
+              </a>
+              <button type="button" onClick={beginTalk} disabled={connecting} className={quietButton}>
+                Not now
+              </button>
+            </>
+          )
         }
       >
         <div className="flex flex-col">
-          {face}
+          {face(speaking ? "speaking" : ready && back !== "failed" ? "pleased" : "idle")}
           <h1
             ref={heading}
             tabIndex={-1}
-            key={q}
             className="m-swap mt-6 text-large-title font-bold tracking-[0.01em] outline-none"
           >
-            {question.ask}
+            {title}
           </h1>
-          <p className="mt-2 text-body text-label-2">{question.hint}</p>
-          <div className="mt-8">
-            <Answer
-              key={q}
-              value={value}
-              onChange={(v) => setAnswers((a) => a.map((x, i) => (i === q ? v : x)))}
-              input={input}
-              onInput={(i) => {
-                stopSpeaking();
-                setInput(i);
-              }}
-              voicePossible={voicePossible}
-              onListening={(on) => {
-                if (on) stopSpeaking();
-                setListening(on);
-              }}
-              label="Your answer"
-              placeholder="Type it as it comes. I'll sort it out."
-            />
+          <p className="mt-2 text-body text-label-2">{sub}</p>
+        </div>
+      </OnboardingFrame>
+    );
+  }
+
+  if (phase === "talk") {
+    const answered = turns.filter((t) => t.role === "user").length;
+    const lastAt = turns.findLastIndex((t) => t.role === "user" && !t.skipped && t.text);
+    const lastSent =
+      lastAt >= 0 && lastAt === turns.length - 1 - (talk === "thinking" ? 0 : 1) ? turns[lastAt] : null;
+    const thinking = talk === "thinking" || talk === "transcribing";
+    const said = splitLine(line);
+    const listening = talk === "listening" && !muted;
+    const orbLabel =
+      talk === "speaking"
+        ? "Tap to answer now"
+        : talk === "listening"
+          ? live.trim() || spoke
+            ? "Tap when you're done"
+            : recorded
+              ? "Listening. Tap when you're done"
+              : "Listening"
+          : talk === "thinking"
+            ? "Thinking"
+            : talk === "transcribing"
+              ? "Reading what you said"
+              : muted
+                ? "Muted. Tap to listen"
+                : input === "voice"
+                  ? "Tap to talk"
+                  : "Michael";
+    const status =
+      talk === "transcribing"
+        ? "Reading what you said."
+        : muted && input === "voice"
+          ? "Muted. I'm not listening."
+          : (note ??
+            (listening
+              ? live.trim()
+                ? "I'll answer when you pause. Tap your words to fix them."
+                : spoke
+                  ? "I'll answer when you pause, or tap me."
+                  : recorded
+                    ? "I'm listening. Pause or tap me when you're done."
+                    : "I'm listening. Take your time."
+              : null));
+
+    return (
+      <OnboardingFrame
+        step={0}
+        progress={Math.min(0.9, 0.2 + answered * 0.25)}
+        title={null}
+        left={left}
+        right={right}
+        footer={
+          input === "text" ? (
+            <>
+              <button
+                type="button"
+                onClick={() => submit(draft)}
+                disabled={!draft.trim() || thinking || editing !== null}
+                className={primaryButton}
+              >
+                Send
+              </button>
+              <div className="mt-1 flex items-center justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => submit("", true)}
+                  disabled={thinking}
+                  className={controlButton}
+                >
+                  Skip this one
+                </button>
+                {voicePossible ? (
+                  <button type="button" onClick={talkInstead} className={controlButton}>
+                    Talk instead
+                  </button>
+                ) : null}
+              </div>
+            </>
+          ) : (
+            <div className="flex items-center justify-between">
+              <button
+                type="button"
+                aria-pressed={muted}
+                onClick={toggleMute}
+                className={`${controlButton} -ml-3`}
+              >
+                <MicIcon off={muted} className="size-[18px]" />
+                {muted ? "Unmute" : "Mute"}
+              </button>
+              <button
+                type="button"
+                onClick={() => submit("", true)}
+                disabled={thinking}
+                className={controlButton}
+              >
+                Skip this one
+              </button>
+              <button type="button" onClick={typeInstead} className={`${controlButton} -mr-3`}>
+                Type instead
+              </button>
+            </div>
+          )
+        }
+      >
+        <div className="flex flex-col items-center text-center">
+          <VoiceOrb
+            state={talk}
+            muted={muted && input === "voice"}
+            recorded={recorded}
+            level={level}
+            words={live.trim() ? live.trim().split(/\s+/).length : 0}
+            label={orbLabel}
+            onTap={tapOrb}
+            disabled={thinking}
+          />
+          {/* His line, read at a glance: the question bold, the reaction and the hint quiet around it. */}
+          <div
+            key={line}
+            aria-live="polite"
+            data-testid="michael-line"
+            className="m-swap mt-6 flex min-h-[5.5rem] max-w-[32ch] flex-col items-center justify-start"
+          >
+            {said.before ? <p className="mb-1 text-body text-label-2">{said.before}</p> : null}
+            <h1 ref={heading} tabIndex={-1} className="text-insight font-bold text-balance outline-none">
+              {said.ask}
+            </h1>
+            {said.after ? <p className="mt-2 text-body text-balance text-label-2">{said.after}</p> : null}
+          </div>
+
+          <div className="mt-6 flex w-full flex-col items-center">
+            {editing ? (
+              <div className="flex w-full flex-col gap-2">
+                <label htmlFor="fix" className="sr-only">
+                  Fix what I heard
+                </label>
+                <textarea
+                  id="fix"
+                  // biome-ignore lint/a11y/noAutofocus: the user just tapped their words to fix them
+                  autoFocus
+                  value={editing.text}
+                  onChange={(e) => setEditing({ ...editing, text: e.target.value })}
+                  rows={3}
+                  maxLength={1200}
+                  className={`${textBox} text-left`}
+                />
+                <div className="flex items-center justify-center gap-2">
+                  <button type="button" onClick={cancelEdit} className={controlButton}>
+                    Cancel
+                  </button>
+                  <button type="button" onClick={saveEdit} className={tintedButton}>
+                    {editing.at === "live" ? "Send" : "Save"}
+                  </button>
+                </div>
+              </div>
+            ) : live.trim() ? (
+              <button
+                type="button"
+                onClick={() => startEditing("live", live)}
+                aria-label={`You said: ${live}. Tap to fix.`}
+                data-testid="live-words"
+                className="press max-w-full rounded-group bg-fill px-4 py-3 text-left text-body text-label"
+              >
+                <span aria-live="polite">{live}</span>
+              </button>
+            ) : lastSent ? (
+              <button
+                type="button"
+                onClick={() => startEditing(lastAt, lastSent.text)}
+                disabled={thinking}
+                aria-label={`You said: ${lastSent.text}. Tap to fix.`}
+                // Quiet and labelled: the last answer, kept to fix, never read as an answer to the new question.
+                className="press max-w-full rounded-control px-3 py-2 text-footnote text-label-2"
+              >
+                <span className="line-clamp-2">
+                  You said “{lastSent.text}” <span className="font-semibold text-tint-text">Fix</span>
+                </span>
+              </button>
+            ) : null}
+
+            {input === "text" && !editing ? (
+              <div className="mt-3 w-full">
+                <label htmlFor="answer" className="sr-only">
+                  Your answer
+                </label>
+                <textarea
+                  id="answer"
+                  ref={answerBox}
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey && draft.trim() && !thinking) {
+                      e.preventDefault();
+                      submit(draft);
+                    }
+                  }}
+                  rows={4}
+                  maxLength={1200}
+                  placeholder="Type it as it comes. I'll sort it out."
+                  className={`${textBox} text-left`}
+                />
+              </div>
+            ) : null}
+
+            <p role="status" className="mt-3 min-h-[1.125rem] text-footnote text-label-2">
+              {status ? (
+                <span key={status} className="m-swap">
+                  {status}
+                </span>
+              ) : thinking ? (
+                // Reduced motion: the mark holds still, so the state is said in words.
+                <span className="hidden motion-reduce:inline">Thinking</span>
+              ) : null}
+            </p>
           </div>
         </div>
       </OnboardingFrame>
@@ -574,7 +1019,7 @@ export function Talk({ elevenlabs }: { elevenlabs: boolean }) {
     return (
       <OnboardingFrame
         step={0}
-        progress={QUESTIONS.length / (QUESTIONS.length + 1)}
+        progress={0.95}
         title={null}
         left={left}
         right={right}
@@ -585,7 +1030,7 @@ export function Talk({ elevenlabs }: { elevenlabs: boolean }) {
         }
       >
         <div className="flex flex-col">
-          {face}
+          {face("thinking")}
           <h1
             ref={heading}
             tabIndex={-1}
@@ -635,7 +1080,7 @@ export function Talk({ elevenlabs }: { elevenlabs: boolean }) {
       }
     >
       <div className="flex flex-col">
-        {face}
+        {face(busy === "more" ? "thinking" : speaking ? "speaking" : rows.length > 0 ? "pleased" : "idle")}
         <h1
           ref={heading}
           tabIndex={-1}
@@ -690,25 +1135,24 @@ export function Talk({ elevenlabs }: { elevenlabs: boolean }) {
             ) : null
           ) : (
             <div className="flex flex-col gap-2">
-              <Answer
+              <label htmlFor="more" className="sr-only">
+                Anything I missed
+              </label>
+              <textarea
+                id="more"
                 value={more}
-                onChange={setMore}
-                input={input}
-                onInput={setInput}
-                voicePossible={voicePossible}
-                onListening={(on) => {
-                  if (on) stopSpeaking();
-                  setListening(on);
-                }}
-                label="Anything I missed"
+                onChange={(e) => setMore(e.target.value)}
+                rows={3}
+                maxLength={1200}
                 placeholder="Anything I missed, in your own words"
+                className={textBox}
               />
               <button
                 type="button"
                 onClick={addMore}
                 disabled={!more.trim() || busy !== null}
                 aria-busy={busy === "more"}
-                className="press mx-auto flex h-11 items-center rounded-full bg-tint/14 px-5 text-subhead font-semibold text-tint-text disabled:opacity-40"
+                className={`${tintedButton} mx-auto`}
               >
                 {busy === "more" ? "Reading" : "Add it"}
               </button>

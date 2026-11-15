@@ -6,6 +6,8 @@ import {
   type GoalWordsResponse,
   HeardGoal,
   MemoryCreate,
+  OnboardingTurnRequest,
+  type OnboardingTurnResponse,
   ProfileUpdate,
 } from "@michael/shared";
 import { revalidatePath } from "next/cache";
@@ -14,6 +16,7 @@ import {
   createGoal,
   getGoals,
   goalsFromWords,
+  onboardingTurn,
   patchGoal,
   putProfile,
   rememberNote,
@@ -115,6 +118,16 @@ export async function hearGoals(text: string): Promise<GoalWordsResponse | null>
   const parsed = GoalWordsRequest.safeParse({ text: typeof text === "string" ? text.slice(0, 4000) : "" });
   if (!parsed.success) return null;
   return goalsFromWords(parsed.data.text);
+}
+
+/**
+ * Michael's next line in the talk, from the API. Null when it cannot answer (not deployed yet, no
+ * model, slow, down): the screen then asks its own script. Nothing is saved.
+ */
+export async function nextTurn(turns: unknown): Promise<OnboardingTurnResponse | null> {
+  const parsed = OnboardingTurnRequest.safeParse({ turns });
+  if (!parsed.success) return null;
+  return onboardingTurn(parsed.data);
 }
 
 export async function finishOnboarding(input: Answers): Promise<{ ok: boolean }> {

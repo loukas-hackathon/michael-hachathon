@@ -555,9 +555,26 @@ body::before {
 .m-word-in {
   animation: m-word-in var(--m-dur-spring) var(--m-spring) both;
 }
+/* With his voice, the intro's words light up roughly as he says them, like lyrics: dimmed until his
+ * voice starts, then each word comes up to full on its own delay. Opacity only. */
+@keyframes m-word-lit {
+  from {
+    opacity: 0.28;
+  }
+}
+.m-word-wait {
+  opacity: 0.28;
+}
+.m-word-lit {
+  animation: m-word-lit var(--m-dur-ui) var(--m-ease-out) both;
+}
 @media (prefers-reduced-motion: reduce) {
-  .m-word-in {
+  .m-word-in,
+  .m-word-lit {
     animation: none;
+  }
+  .m-word-wait {
+    opacity: 1;
   }
 }
 

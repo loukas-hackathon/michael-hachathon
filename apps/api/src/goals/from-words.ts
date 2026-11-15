@@ -270,7 +270,23 @@ export function readByRules(text: string): Omit<GoalWordsResponse, "line" | "sou
       estimated: said === null,
     });
   }
-  return { goals, notes };
+  return { goals: mergeWork(goals), notes };
+}
+
+/**
+ * "The startup, ten hours of deep work": the deep work is the startup's, not a second goal. The
+ * product keeps its name and takes the hours said for deep work, so the week is not counted twice.
+ */
+function mergeWork(goals: HeardGoal[]): HeardGoal[] {
+  const product = goals.find((g) => g.title === "Ship the product");
+  const deep = goals.find((g) => g.title === "Deep work");
+  if (!product || !deep) return goals;
+  if (product.estimated) {
+    product.weekly_budget_minutes = deep.weekly_budget_minutes;
+    product.estimated = deep.estimated;
+  }
+  product.evidence = `${product.evidence}, ${deep.evidence}`.slice(0, 200);
+  return goals.filter((g) => g !== deep);
 }
 
 // ---------- Michael's line ----------

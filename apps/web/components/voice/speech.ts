@@ -294,7 +294,10 @@ export function stopSpeaking(): void {
   settle = null;
 }
 
-function speakWithBrowser(text: string, gen: number): Promise<void> {
+/** Called once the voice is actually heard, with how long it lasts when known (ElevenLabs audio). */
+export type SpeakOptions = { onStart?: (durationMs: number | null) => void };
+
+function speakWithBrowser(text: string, gen: number, opts: SpeakOptions = {}): Promise<void> {
   if (!("speechSynthesis" in window)) return Promise.resolve();
   const synth = window.speechSynthesis;
   const pieces = speechChunks(text);
@@ -310,6 +313,10 @@ function speakWithBrowser(text: string, gen: number): Promise<void> {
         u.lang = voice?.lang ?? "en-GB";
         u.rate = 0.95;
         u.pitch = 0.8; // lower and calmer than the default
+        if (i === 0 && opts.onStart) {
+          const start = opts.onStart;
+          u.onstart = () => start(null);
+        }
         u.onboundary = (e) => {
           if (e.name === "word") for (const l of beats) l();
         };
@@ -333,7 +340,7 @@ function speakWithBrowser(text: string, gen: number): Promise<void> {
   });
 }
 
-async function speakWithElevenLabs(text: string, gen: number): Promise<boolean> {
+async function speakWithElevenLabs(text: string, gen: number, opts: SpeakOptions = {}): Promise<boolean> {
   try {
     const res = await fetch("/chat/speak", {
       method: "POST",
@@ -350,6 +357,7 @@ async function speakWithElevenLabs(text: string, gen: number): Promise<boolean> 
     const player = audio;
     player.src = audioUrl;
     await player.play();
+    opts.onStart?.(Number.isFinite(player.duration) ? player.duration * 1000 : null);
     // Resolves when the reply has been said, or was cut short.
     await new Promise<void>((resolve) => {
       const done = () => {
@@ -369,7 +377,7 @@ async function speakWithElevenLabs(text: string, gen: number): Promise<boolean> 
 }
 
 /** Reads Michael's reply aloud: ElevenLabs when the API has it, else (or on any failure) the browser. */
-export async function speakReply(text: string, elevenlabs: boolean): Promise<void> {
+export async function speakReply(text: string, elevenlabs: boolean, opts: SpeakOptions = {}): Promise<void> {
   if (typeof window === "undefined") return;
   const line = speakable(text);
   if (!line) return;
@@ -379,8 +387,8 @@ export async function speakReply(text: string, elevenlabs: boolean): Promise<voi
   });
   const gen = generation;
   const said = (async () => {
-    if (elevenlabs && (await speakWithElevenLabs(line, gen))) return;
-    await speakWithBrowser(line, gen);
+    if (elevenlabs && (await speakWithElevenLabs(line, gen, opts))) return;
+    await speakWithBrowser(line, gen, opts);
   })();
   if ((await Promise.race([said, stopped])) === "stopped") return;
   settle = null;

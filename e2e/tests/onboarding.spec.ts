@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { Page } from "@playwright/test";
 import {
   API_URL,
   apiGet,
@@ -10,12 +11,44 @@ import {
   tap,
   test,
 } from "./fixtures";
+import { live, stubSpeech, voice } from "./speech-stub";
+
+// Onboarding is a hands free talk with Michael, run here with the scripted recogniser and the
+// recording speech synthesiser from speech-stub.ts. The API in e2e has no model key, so his lines
+// come from a script (the API's, or the app's own when the turn endpoint is not there), and the
+// answers are read into goals by word lists. Nothing below depends on the exact questions.
+
+const review = (page: Page) =>
+  page.getByRole("heading", { name: /^(Here's what I heard\.|I need a little more\.)$/ });
+
+/** Skips whatever Michael still asks until the review is on screen. */
+async function untilReview(page: Page) {
+  await expect(async () => {
+    if (await review(page).isVisible()) return;
+    await page.getByRole("button", { name: "Skip this one" }).click({ timeout: 1000 });
+    throw new Error("still talking");
+  }).toPass({ timeout: 20_000 });
+}
+
+/** Past the intro (said out loud on the first tap) and, when asked, the calendar ("Not now"). */
+async function intoTheTalk(page: Page) {
+  await expect(page.getByText("I'm Michael.")).toBeVisible();
+  await tap(page.getByRole("button", { name: "Let's talk" }));
+  const notNow = page.getByRole("button", { name: "Not now" });
+  await expect(notNow.or(page.getByTestId("talk-orb"))).toBeVisible();
+  if (await notNow.isVisible()) await tap(notNow);
+  await expect(page.getByTestId("michael-line")).not.toBeEmpty();
+}
 
 // A fresh, non demo user: Today sends them to onboarding, the talk, what Michael heard, the
 // connections, and Today takes them in.
 // The test sign in (cookie michael_e2e_user) only works with E2E_TEST_AUTH=on on the in-memory API.
-
-test("onboarding completes for a fresh user", async ({ page, context, baseURL }) => {
+test("onboarding completes for a fresh user, by voice and by keyboard", async ({
+  page,
+  context,
+  baseURL,
+}) => {
+  await stubSpeech(page);
   const user = randomUUID();
   await context.addCookies([{ name: "michael_e2e_user", value: user, url: baseURL ?? "" }]);
   const asUser = async <T>(path: string, method = "GET"): Promise<T> => {
@@ -32,34 +65,57 @@ test("onboarding completes for a fresh user", async ({ page, context, baseURL })
 
   await page.goto("/");
   await expect(page).toHaveURL(/\/onboarding$/);
-  // Michael introduces himself, then the talk: three questions, by voice or by keyboard.
+  // The first tap: Michael says his intro, then offers to read the calendar first.
   await expect(page.getByText("I'm Michael.")).toBeVisible();
   await tap(page.getByRole("button", { name: "Let's talk" }));
-  await expect(page.getByRole("heading", { name: "What are you working towards right now?" })).toBeVisible();
-  // Messy, as people talk. Every answer lands in the text box, so a misheard word is fixed first.
+  await expect(page.getByRole("heading", { name: "Want me to look at your calendar first?" })).toBeVisible();
+  expect((await voice<string[]>(page, "v.spoken")).join(" ")).toContain("I'm Michael.");
+  await expect(page.getByRole("link", { name: "Connect Google Calendar" })).toHaveAttribute(
+    "href",
+    "/integrations/google/connect?return_to=%2Fonboarding%3Fstep%3Dtalk",
+  );
+  await tap(page.getByRole("button", { name: "Not now" }));
+
+  // The talk: he asks out loud, then listens on his own.
+  const orb = page.getByTestId("talk-orb");
+  await expect(orb).toHaveAttribute("data-state", "listening");
+  await expect.poll(() => live(page)).toBe(1);
+  const first = (await page.getByTestId("michael-line").textContent()) ?? "";
+  expect((await voice<string[]>(page, "v.spoken")).join(" ")).toContain(first.split(" ").slice(-3).join(" "));
+  // The words show as they are said; the pause after them ends the turn.
+  await voice(page, `r.say("mostly the startup")`);
+  await expect(page.getByTestId("live-words")).toHaveText("mostly the startup");
+  await expect(page.getByTestId("michael-line")).not.toHaveText(first);
+  await expect(orb).toHaveAttribute("data-state", "listening");
+
+  // Misheard or half said: a tap on the answer fixes it, and the fixed words are what count.
+  await tap(page.getByRole("button", { name: /^You said: mostly the startup/ }));
   await fillReady(
-    page.getByLabel("Your answer"),
+    page.getByLabel("Fix what I heard"),
     "um mostly the startup, ten hours of deep work, and get back to the gym three times a week",
   );
-  await tap(page.getByRole("button", { name: "Next" }));
-  await expect(page.getByRole("heading", { name: "What would make this a good week?" })).toBeVisible();
-  // A noisy room, or nothing to add: any question can be skipped.
+  await tap(page.getByRole("button", { name: "Save" }));
+  await expect(page.getByRole("button", { name: /^You said: um mostly the startup/ })).toBeVisible();
+
+  // Nothing to add: skip it. A noisy room: type the rest.
   await tap(page.getByRole("button", { name: "Skip this one" }));
-  await expect(
-    page.getByRole("heading", { name: "Where does your time go that you wish it didn't?" }),
-  ).toBeVisible();
+  await expect(orb).toHaveAttribute("data-state", "listening");
+  await tap(page.getByRole("button", { name: "Type instead" }));
   await fillReady(page.getByLabel("Your answer"), "I lose my evenings on my phone");
-  await tap(page.getByRole("button", { name: "That's it" }));
+  await tap(page.getByRole("button", { name: "Send" }));
+  await untilReview(page);
 
   // What he heard: no model key in CI, so the word lists read it. Hours said are kept as said.
   await expect(page.getByRole("heading", { name: "Here's what I heard." })).toBeVisible();
   const heard = page.getByRole("list", { name: "Goals I heard" });
-  await expect(heard.getByRole("textbox", { name: "Goal name" })).toHaveCount(3);
+  // The startup and its ten hours of deep work are one goal, not two.
+  await expect(heard.getByRole("textbox", { name: "Goal name" })).toHaveCount(2);
+  await expect(heard.getByText("10h a week")).toBeVisible();
   await expect(heard.getByText("3h a week")).toBeVisible();
   await expect(page.getByRole("region", { name: "What I'll remember" })).toContainText(
     "I lose my evenings on my phone",
   );
-  await tap(page.getByRole("button", { name: "Keep these three" }));
+  await tap(page.getByRole("button", { name: "Keep these two" }));
 
   await expect(page.getByRole("heading", { name: "Now, your days." })).toBeVisible();
   // Everything that adds to the day is offered, each with Connect; nudges wait for a moment (#207).
@@ -75,7 +131,7 @@ test("onboarding completes for a fresh user", async ({ page, context, baseURL })
 
   // Saved for this user only, never on the demo account.
   const { goals } = await asUser<{ goals: { title: string }[] }>("/v1/goals");
-  expect(goals.map((g) => g.title).sort()).toEqual(["Deep work", "Ship the product", "Training"]);
+  expect(goals.map((g) => g.title).sort()).toEqual(["Ship the product", "Training"]);
   const profile = await asUser<{ onboarded_at: string | null }>("/v1/profile");
   expect(profile.onboarded_at).not.toBeNull();
 
@@ -86,15 +142,18 @@ test("onboarding completes for a fresh user", async ({ page, context, baseURL })
   await expect(page.getByRole("checkbox", { name: "Keep Sundays clear" })).toBeChecked();
 });
 
-// Redo setup on the demo week: the visitor walks the whole talk; nothing is written (#239).
-test("a demo visitor can walk onboarding to the end", async ({ page }) => {
+// Redo setup on the demo week, on a device that cannot listen: the talk goes to the keyboard by
+// itself, said kindly, and the visitor walks it to the end; nothing is written (#239).
+test("a demo visitor without a microphone types the talk to the end", async ({ page }) => {
+  await stubSpeech(page, { recognition: false });
   await enterDemo(page);
   await page.goto("/onboarding");
-  await tap(page.getByRole("button", { name: "Let's talk" }));
+  await intoTheTalk(page);
+  await expect(page.getByText("I can't hear you on this device.", { exact: false })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Type instead" })).toHaveCount(0);
   await fillReady(page.getByLabel("Your answer"), "Study for my exams and train twice a week");
-  await tap(page.getByRole("button", { name: "Next" }));
-  await tap(page.getByRole("button", { name: "Skip this one" }));
-  await tap(page.getByRole("button", { name: "Skip this one" }));
+  await tap(page.getByRole("button", { name: "Send" }));
+  await untilReview(page);
   await expect(page.getByRole("heading", { name: "Here's what I heard." })).toBeVisible();
   await tap(page.getByRole("button", { name: /^Keep (this goal|these .+)$/ }));
   await expect(page.getByRole("heading", { name: /^(Here's your week\.|Now, your days\.)$/ })).toBeVisible();
@@ -103,15 +162,30 @@ test("a demo visitor can walk onboarding to the end", async ({ page }) => {
 
 // The usual list stays one tap away: "Pick from the usual" when the talk heard nothing.
 test("skipping every question offers the usual goals", async ({ page }) => {
+  await stubSpeech(page);
   await enterDemo(page);
   await page.goto("/onboarding");
-  await tap(page.getByRole("button", { name: "Let's talk" }));
-  for (let i = 0; i < 3; i++) await tap(page.getByRole("button", { name: "Skip this one" }));
+  await intoTheTalk(page);
+  await untilReview(page);
   await expect(page.getByRole("heading", { name: "I need a little more." })).toBeVisible();
   await tap(page.getByRole("link", { name: "Pick from the usual" }));
   await expect(
     page.getByRole("heading", { name: /^(What are we playing for\?|Here's what your week is for\.)$/ }),
   ).toBeVisible();
+});
+
+// Back from Google the talk is one clear tap away (a phone needs a fresh tap for sound), and a
+// calendar that did not connect never blocks it.
+test("back from Google: one tap starts the talk", async ({ page }) => {
+  await stubSpeech(page);
+  await enterDemo(page);
+  await page.goto("/onboarding?step=talk&integration_error=google_calendar");
+  await expect(page.getByRole("heading", { name: "Your calendar didn't connect." })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Try again" })).toBeVisible();
+  await page.goto("/onboarding?step=talk&connected=google_calendar");
+  await expect(page.getByRole("heading", { name: "Got your calendar." })).toBeVisible();
+  await tap(page.getByRole("button", { name: "Start talking" }));
+  await expect(page.getByTestId("talk-orb")).toHaveAttribute("data-state", "listening");
 });
 
 // Every connection is a row on You with Connect and a real status (Loukas, Sun 15 Nov), and each
