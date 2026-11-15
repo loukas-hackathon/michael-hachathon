@@ -24,10 +24,11 @@ returns `501 not_implemented`, `planned` = not routed yet. Update the status whe
     `X-Michael-Demo-Visitor: <uuid>`, one random id per visitor. Same demo account, but read
     mostly: chat is stored and read per visitor (a visitor never sees another's, nor the
     account's own), and only these writes are allowed: `POST /v1/chat`, `/v1/chat/stream`,
+    `POST /v1/chat/threads`, `PATCH|DELETE /v1/chat/threads/:id` (their own threads),
     `/v1/recommendations/:id/execute|undo`, `PATCH /v1/recommendations/:id`, `POST /v1/analysis/run`,
-    `/v1/travel/plan`, `/v1/focus-guards/suggest`, `/v1/voice/speak`, `/v1/records/:id/announced`, `POST|DELETE /v1/push/subscriptions`, `POST /v1/nudges/test` and
-    `POST /v1/connect/requests/:id`. Anything else that writes (privacy, goals, instructions,
-    places, profile, integrations, Telegram, agents, keys, data deletion, ingest, `/mcp`) answers
+    `/v1/travel/plan`, `/v1/focus-guards/suggest`, `/v1/voice/speak`, `/v1/records/:id/announced`, `POST|DELETE /v1/push/subscriptions` and `POST /v1/nudges/test`.
+    Anything else that writes (privacy, goals, instructions, places, profile, integrations,
+    Telegram, agents, connecting an agent, keys, data deletion, ingest, `/mcp`) answers
     `403 forbidden` with the message "This is the demo week. Sign in with Google to make it yours."
     and `details: { demo: true }`. A malformed visitor id is `401`. MCP OAuth tokens bound to the
     demo account and the bare `API_KEY` keep full access.
@@ -70,7 +71,7 @@ Enums:
 - `GoalKind`: `time | target | count | checklist` (in `goal.target.kind`; `time` when absent)
 - `InstructionKind`: `clear_day | home_by | quiet_hours | custom`
 - `RecommendationStatus`: `proposed | accepted | dismissed | done | undone` (`done` = action executed)
-- `ActionKind`: `move_calendar_block | create_focus_block | block_mac_app | draft_follow_up | reminder`
+- `ActionKind`: `move_calendar_block | move_calendar_blocks | create_focus_block | block_mac_app | draft_follow_up | reminder | change_goal | plan_change | remove_calendar_block`
 - `AnalysisStatus`: `queued | running | succeeded | failed`
 - `AnalysisTrigger`: `manual | scheduled | mcp | morning | evening`
 - `AgentScope`: `timeline | goals | recommendations | score | write_events`
@@ -78,7 +79,15 @@ Enums:
 - `NudgeChannel`: `watch | push | telegram`; `NudgeStatus`: `queued | sent | failed | suppressed | test`
 - `NudgeKind`: `focus_drift | block_soon | wind_down | goal_behind | morning | evening`; `NudgeSkip`: `nothing_to_say | quiet_hours | daily_cap | too_soon | off_the_record`
 - `AppCategory`: `work | communication | social | video | news | shopping | travel | ai | music | system | other`
-  (one shared categoriser for apps and sites, `packages/shared/src/categories.ts`; unknown = `other`)
+  (one shared categoriser for apps and sites, `packages/shared/src/categories.ts`; unknown = `other`).
+  `categoriseEvent` is the entry point for an event (host, then bundle id, then a well known app
+  name) and `categoryRole` says what a category does to a goal (`work`: work, ai; `distractor`:
+  communication, social, video, news, shopping, travel; `neutral`: the rest). The patterns, the
+  score, the retention roll up, the web timeline colours, ActivityWatch focus, the collector and
+  (as a generated copy) the browser extension all use them.
+- `ConnectorId`: `google-calendar | apple-watch | mac | iphone | claude | nudges | telegram | travel`;
+  `ConnectorStatus`: `live | soon`. `CONNECTOR_STATUS` (shared, not served by the API) says which
+  connections are proven end to end on production; the apps show the rest as Coming soon (#295).
 - `IntegrationProvider`: `google_calendar | whoop`
 - `IntegrationStatus`: `connected | disconnected | error`
 - `DraftStatus`: `proposed | done | dismissed`; `DraftChannel`: `email | chat`; `DraftAuthor`: `model | template | analysis`
@@ -179,7 +188,7 @@ type Recommendation = {
   status: RecommendationStatus;
   executed_at: string | null;
   undone_at: string | null;
-  source?: "analysis" | "chat"; // "chat": asked for in chat or by voice and carried out at once
+  source?: "analysis" | "chat" | "user"; // "chat": asked for in chat or by voice and carried out at once; "user": an edit on the Timeline (#271), kept for Undo and never listed
   specialist?: "work" | "training" | "rest" | "food" | null; // runs in mode specialists only
   created_at: string;
   updated_at: string;
@@ -321,7 +330,8 @@ type ShortcutsPayload = {
   than two hours, is dropped. Held opens live in the API's memory, so a deploy in the middle of a
   session loses that session.
 - While off the record or with the source off, a call answers `ignored: 1` and an open is not held.
-- The patterns layer reads `iphone_usage` only for now; these events show on the timeline.
+- The patterns layer uses these sessions for the hours the Biome backfill (`iphone_usage`) has not
+  covered yet, and steps aside once it has (see "One timeline first").
 
 `POST /v1/webhooks/activitywatch` takes ActivityWatch bucket events exactly as
 `GET /api/0/buckets/<id>/events` returns them (`{ timestamp, duration, data: { app, title } }`
@@ -333,7 +343,8 @@ Format: https://docs.activitywatch.net/en/latest/buckets-and-events.html. Mappin
 - Away time (`afk`) is cut out, then the same app within 10 seconds is one run: one `app_usage`
   event (`title` = app, `data`: `app`, `device: "mac"`, `seconds`; `external_id` =
   `aw:<app lowercased>:<start, UTC second>`). Window titles are never stored.
-- Focus rule: work app runs (editors, terminals, design and writing tools, see `WORK_APPS`) where
+- Focus rule: work app runs (an app whose name the shared categoriser reads as a `work` or `ai`
+  app, `bundleIdForAppName` in `packages/shared/src/categories.ts`) where
   every gap or non work stretch between them is at most 3 minutes, lasting at least 25 minutes from
   the first work run to the last, with work apps at least 70% of that time. Browsers neither break
   nor count. Gives a `focus_session` (`title` `Deep work: Code + Terminal (36m)`, `data`: `apps`
@@ -385,9 +396,11 @@ visit can arrive from both; the patterns layer decides which to trust. From `his
 
 - `foreground` is `true` when `seconds` is the time Chrome measured the page in front, and `false`
   when Chrome did not measure it and `seconds` is how long the page stayed open. Capped at two hours.
-- `category` is one of `travel`, `shopping`, `social`, `news`, `video`, `messaging`, `mail`, `dev`,
-  `ai`, `docs`, `finance`, `search`, from a short built in list of well known sites
-  (`apps/collector/src/site-categories.ts`). A site we do not know has no category.
+- `category` is an `AppCategory` (`work`, `ai`, `communication`, `social`, `video`, `news`,
+  `shopping`, `travel`, `music`), from the one list of well known sites in
+  `packages/shared/src/categories.ts` (the extension uses a generated copy). A site we do not know,
+  and a search engine, has no category. Older events may carry the earlier labels (`messaging`,
+  `mail`, `dev`, `docs`, `finance`, `search`); `categoriseVisit` reads them as the same categories.
 - `profile` is the Chrome profile folder (`Default`, `Profile 1`).
 - Visits to excluded hosts (banking, health, adult, password managers, the local network, and the
   user's own list) are never sent, and neither are their titles or search terms
@@ -446,6 +459,20 @@ AI tool events (`ai_session`, `ai_prompt`) from `claude_code`:
 | DELETE | `/v1/goals/:id`                    |                                   | `204`, `404`                  | live   |
 | GET    | `/v1/goals/suggestions`            |                                   | `200 GoalSuggestionsResponse` | live   |
 | POST   | `/v1/goals/suggestions/:id/accept` | `GoalSuggestionAccept` (optional) | `201 Goal`, `404`             | live   |
+| POST   | `/v1/goals/:id/book`               | `GoalBook` (optional)             | `201 Recommendation`, `409`   | live   |
+
+#### Book time for a goal (#309)
+
+The Goals tab's one action. `type GoalBook = { minutes?: number }` (15 to 360, default 60). Michael
+takes the first free slot of that length from now (at least 5 minutes ahead, on the quarter hour)
+to Sunday night, inside the waking day (the sleep goal sets it), clear of every calendar entry that
+holds time and of time an active standing instruction protects for the goal's block title. The
+block is titled with the goal's first `calendar_titles` entry (else its title), so the score counts
+it, and is booked at once as a `create_focus_block` recommendation (`status: "done"`, rationale
+"Booked at your request through Goals."), the same path as the MCP `create_focus_block` tool.
+Undo with `POST /v1/recommendations/:id/undo` until it starts. `404` for an unknown or paused goal,
+`409` "No free 90 minutes left this week" when nothing fits. Pure slot logic: `goalSlot` in
+`apps/api/src/goals/book.ts`.
 
 #### Goals from the calendar (#134)
 
@@ -487,7 +514,8 @@ type GoalSuggestionAccept = { title?: string; weekly_budget_minutes?: number; ca
   given, or `POST /v1/goals/suggestions/:id/accept` with optional edits. The goal's description says
   where it came from. `404` when the calendar no longer suggests that id.
 - **Where it shows:** the Google Calendar callback syncs four weeks back on first connect and adds
-  `goal_suggestions=<n>` to the redirect when there are any; onboarding's first step, the Goals tab
+  `goal_suggestions=<n>` to the redirect when there are any (from onboarding, the page runs that
+  sync itself with `?past_days=28`); onboarding's first step, the Goals tab
   and the calendar row on You list them with one tap to keep. MCP: `propose_goals` (scope `goals`).
 
 #### Three categories, four kinds
@@ -618,13 +646,13 @@ The day's one to three outcomes of a goal of kind `checklist`, in the user's own
 `checklist_items` (RLS like every table: only the API reads and writes). Rules in
 `apps/api/src/checklist/items.ts`.
 
-| Method | Path                      | Body                       | Response                                 | Status |
-| ------ | ------------------------- | -------------------------- | ---------------------------------------- | ------ |
-| GET    | `/v1/checklist?date=`     |                            | `200 ChecklistResponse`                  | live   |
-| POST   | `/v1/checklist`           | `{ goal_id, date?, text }` | `201 ChecklistItem`, `400`, `404`, `409` | live   |
-| PATCH  | `/v1/checklist/:id`       | `{ text?, status? }`       | `200 ChecklistItem`, `400`, `404`, `409` | live   |
-| DELETE | `/v1/checklist/:id`       |                            | `204`, `404`                             | live   |
-| POST   | `/v1/checklist/:id/carry` |                            | `201 { moved, item }`, `404`, `409`      | live   |
+| Method | Path                      | Body                                                           | Response                                 | Status |
+| ------ | ------------------------- | -------------------------------------------------------------- | ---------------------------------------- | ------ |
+| GET    | `/v1/checklist?date=`     |                                                                | `200 ChecklistResponse`                  | live   |
+| POST   | `/v1/checklist`           | `{ goal_id, date?, text, linked_goal_id?, estimate_minutes? }` | `201 ChecklistItem`, `400`, `404`, `409` | live   |
+| PATCH  | `/v1/checklist/:id`       | `{ text?, status? }`                                           | `200 ChecklistItem`, `400`, `404`, `409` | live   |
+| DELETE | `/v1/checklist/:id`       |                                                                | `204`, `404`                             | live   |
+| POST   | `/v1/checklist/:id/carry` |                                                                | `201 { moved, item }`, `404`, `409`      | live   |
 
 ```ts
 type ChecklistItem = {
@@ -633,10 +661,13 @@ type ChecklistItem = {
   date: string; // local day, YYYY-MM-DD, Europe/Athens
   text: string; // the user's words, 1..200
   position: number; // 0..2, the slot among the day's open items of the goal
-  status: "open" | "done" | "dropped" | "moved";
+  status: "open" | "done" | "partly" | "dropped" | "moved";
   settled_at: string | null;
   settled_by: "user" | "check_in" | null;
   carried_from: string | null; // id of the item of the day before that this one continues
+  linked_goal_id: string | null; // #318: the goal the outcome serves, any kind and area
+  estimate_minutes: number | null; // #318: the user's guess, 5..720
+  logged_minutes: number | null; // #318: time logged for it in the evening
   created_at: string;
   updated_at: string;
 };
@@ -650,7 +681,7 @@ type ChecklistResponse = {
 - `date` defaults to today in Athens; `400` on a day that does not exist. `text` is trimmed.
 - `POST`: `404` for an unknown goal, `400` for a goal that is not of kind `checklist`, `409` when
   the goal already has three open items that day. The item takes the lowest free `position`.
-- `PATCH`: `status` is `open`, `done` or `dropped`. Settling sets `settled_at` and
+- `PATCH`: `status` is `open`, `done`, `partly` or `dropped` (`partly` counts as set, not done). Settling sets `settled_at` and
   `settled_by: "user"`; reopening clears both and takes a free slot (`409` when three are open).
   `moved` is never set by hand (`400`): carry instead. A moved item cannot change status (`409`).
 - `carry`: only an open item (`409` otherwise, or when the next day already has three open). The
@@ -660,6 +691,73 @@ type ChecklistResponse = {
 - Deleting the goal deletes its items. Another user's items are never visible (`404`).
 - The first open item of today gets one offered focus block, at most once a day (see
   Recommendations, Offers for checklist and count goals).
+- `linked_goal_id` (#318) names any of the user's goals (`404` otherwise); deleting that goal sets
+  it to null. A carried item keeps its link and estimate.
+
+### Daily ritual (#318)
+
+Every morning the user writes what they want to get done; every evening they log what they did.
+The outcomes are checklist items of one checklist goal ("Today's outcomes", category personal,
+made silently on the first morning when the user has no checklist goal), each optionally for any
+goal. Table `day_rituals` keeps which half was saved or skipped per day, and the evening's line.
+Rules in `apps/api/src/ritual/ritual.ts`.
+
+| Method | Path                    | Body                                                           | Response                                          | Status |
+| ------ | ----------------------- | -------------------------------------------------------------- | ------------------------------------------------- | ------ |
+| GET    | `/v1/ritual?phase=`     |                                                                | `200 RitualToday`                                 | live   |
+| POST   | `/v1/ritual/morning`    | `{ outcomes: [{ text, goal_id?, estimate_minutes? }] }` (1..3) | `201 RitualToday`, `400`, `404` goal, `409` full  | live   |
+| POST   | `/v1/ritual/evening`    | `{ results: [{ item_id, result, carry?, minutes? }] }`         | `201 RitualEveningResponse`, `404`, `409`         | live   |
+| POST   | `/v1/ritual/:kind/skip` |                                                                | `200 RitualToday` ("Not today"), `400` other kind | live   |
+
+```ts
+type RitualState = "not_yet" | "due" | "done" | "skipped";
+type RitualToday = {
+  day: string; // local YYYY-MM-DD
+  phase: "morning" | "evening" | null; // which half shows now; null before waking
+  morning: RitualState;
+  evening: RitualState; // not_yet on a day without outcomes
+  goal_id: string | null; // the checklist goal holding the outcomes
+  items: ChecklistItem[]; // today's outcomes, moved ones left out
+  suggestions: { text; goal_id; estimate_minutes; reason; source: "calendar" | "behind" }[]; // morning, at most 2
+  goals: { id; title; area }[]; // active goals as quick chips (checklist goals left out)
+  summary: string | null; // the evening line once saved
+  tomorrow: string | null; // evening: "University at 09:00"
+};
+type RitualEveningResponse = {
+  summary: string; // "2 of 3 done. 40 min logged for Training. One carried to tomorrow. Tomorrow starts with University at 09:00."
+  carried: ChecklistItem[]; // the new items on tomorrow
+  logged: { goal_id: string; minutes: number }[];
+  ritual: RitualToday;
+};
+```
+
+- **When:** the morning from waking (end of last night's sleep, else 08:00, the Morning moment's
+  rule) or once the morning nudge went out; the evening from an hour before the usual bedtime
+  (else 21:00, never later than 45 minutes before quiet hours, the Evening moment's rule) or once
+  the evening nudge went out. `?phase=` shows that half now (previews, the stage, e2e). The app
+  shows the half named by `phase` while its state is `due`, and the evening line once `done`.
+- **Morning done** once saved, skipped, or when the user wrote an outcome for today any other way;
+  an outcome carried from yesterday still asks the morning, listed as already set. Saving keeps
+  outcomes already on today, skips duplicates (same words), refuses a fourth (`409`) and checks
+  every `goal_id` before writing anything. The first outcome gets the usual offered hour.
+- **Suggestions** (at most two): time goals behind their weekly pace (the `goal_behind` rule, any
+  hour): "University is 4h behind this week. One block today?", or "Keep the 10:00 block." when
+  today has one; then today's own goal blocks still ahead ("On your calendar at 10:00, for
+  University."). Never a goal an outcome already serves.
+- **Evening:** `result` done, partly or not. `carry: true` (partly or not) makes a new item on
+  tomorrow with `carried_from`; a "not" that is carried becomes `moved`, a "partly" stays
+  `partly`. Room on tomorrow is checked before anything is written (`409`). `minutes` (done or
+  partly) is kept as `logged_minutes` and handed to the done time log (`apps/api/src/ritual/log.ts`,
+  the seam to `POST /v1/log`, #317); until that lands the minutes are named in the line but do not
+  count in the score yet. The line counts every outcome of the day, settled earlier or now.
+- **Calm:** no streaks, no guilt copy; "Not today" hides that half for the day. No new nudge: the
+  Morning and Evening nudges (#169) ask the ritual's question while its half is to do ("What do you
+  want to get done today? Up to three." / "2 outcomes today. What did you get done?") and open
+  Today, inside the 5 a day cap and quiet hours.
+- **Everywhere:** chat tools `set_day_outcomes` and `log_day` (the chat context lists today's
+  outcomes with their ids), MCP tools of the same names (scope `goals`).
+- **Demo week:** today's plan is filled (one carried from yesterday) and the two evenings before
+  are logged, written once per day (`apps/api/src/demo/ritual.ts`).
 
 ### Standing instructions
 
@@ -858,7 +956,13 @@ rules, no model): the same events always give the same report. Days and hours ar
 (`Europe/Athens`), correct across the daylight saving change.
 
 This is what the analysis (`POST /v1/analysis/run`) reads instead of raw events: `headlines` holds
-the one line summary of every detector that had enough data, most important first.
+the one line summary of every detector that had enough data and found something worth leading
+with, most important first. A detector can answer and still stay out of `headlines` when its
+finding is trivial or its sample small (`RULES.headline` in `apps/api/src/patterns/context.ts`):
+under 5 minutes of drift, lost time or AI tool time; fewer than 5 disruptions or under 60 minutes
+of focus; recovery measured on fewer than 10 disruptions; no late night; under 60 minutes of screen
+time; fewer than 3 AI sessions. Its `summary` and `data` stay for the detail. When nothing clears
+the bar `headlines` is empty and the chat and the connector say "Not enough data yet".
 
 ```ts
 type PatternReport = {
@@ -870,7 +974,8 @@ type PatternReport = {
   inputs: {
     // how many events the report was built from
     mac_app_usage: number;
-    iphone_app_usage: number;
+    iphone_app_usage: number; // Apple's logs, plus ActivityWatch and Shortcuts where they have nothing
+    app_usage_superseded: number; // ActivityWatch and Shortcuts intervals ignored because Apple's log covered the hour
     web_visits: number;
     web_visits_superseded: number; // history visits ignored because the extension covered them
     web_visits_unmeasured: number; // history visits ignored because Chrome did not measure them in front
@@ -895,7 +1000,7 @@ type PatternReport = {
 // Every detector answers in the same envelope.
 type Detector<T> = {
   status: "ok" | "not_enough_data";
-  reason: string | null; // "not enough data: needs at least 3 days of phone usage, found 1"
+  reason: string | null; // "Not enough data yet: needs at least 3 days of phone usage, found 1"
   minimum: string; // the smallest sample this detector speaks from
   summary: string | null; // one plain sentence with the numbers
   evidence: string[]; // up to 20 event ids, so the app can show the proof
@@ -1099,9 +1204,14 @@ Before any detector runs, the events become one line of attention (`patterns/tim
 rules live there and nowhere else:
 
 - **Sources used:** `app_usage` from `macos_usage` and `iphone_usage` (needs `bundle_id` and an
-  end; `device: "watch"` is left out), `web_visit`, `search`, `screen`, `notification`, `sleep`, `recovery`, `calendar_event`,
-  `ai_session`. `app_usage` from `ios_shortcuts` and `focus_session` are not used, so the same
-  minute is not counted from two sources.
+  end; `device: "watch"` is left out), and from `activitywatch` (Mac) and `ios_shortcuts` (iPhone),
+  which name the app instead (`data.app` or the title: a well known name reads as its bundle id,
+  any other name stays as it is with category `other`); `web_visit`, `search`, `screen`,
+  `notification`, `sleep`, `recovery`, `calendar_event`, `ai_session`. `focus_session` is not used.
+- **App usage precedence:** Apple's own logs are the record. Per device, for every clock hour in
+  which `macos_usage` (Mac) or `iphone_usage` (iPhone, the Biome backfill that lands up to a day
+  late) has an interval, `activitywatch` or `ios_shortcuts` intervals that start in that hour are
+  ignored (`inputs.app_usage_superseded`); any overlap left at an hour's edge goes to the record.
 - **Mac:** one thing in front at a time. If two intervals overlap, the one that started later wins.
   Time with the screen off (`screen` events with state `off` and an end) is removed.
 - **Web visits** refine the browser: while a browser is in front, the visit's host and category
@@ -1178,7 +1288,7 @@ goal block the goal has a say: see Goals, "Categories that count as a goal's wor
   search term is never copied into the report. **Speaks from:** Any web visits and one focus stretch
   or work block. Zero minutes is a valid answer.
 - `late_screens`: Device use after the cut off, per night. Cut off: 23:00, or one hour before the
-  usual bedtime (median start of recorded sleeps of 3 hours or more) when sleep data exists. A night
+  usual bedtime (median start of recorded nights, naps left out) when sleep data exists. A night
   runs 6 hours from the cut off and belongs to the day of its evening. A night is late from 5
   minutes of use. `next_recovery_pct` and `next_sleep_minutes` come from the following morning.
   **Speaks from:** 3 nights inside the range on days with device data. Usual bedtime: 3 sleeps.
@@ -1205,17 +1315,36 @@ travel site" or "an uncategorised site". Structured `data` carries the host for 
 
 ### Chat
 
-| Method | Path                | Body                                  | Response                                                                                                                                                                                                                                                                   | Status |
-| ------ | ------------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| GET    | `/v1/chat?limit=50` |                                       | `200 { messages: ChatMessage[], actions: Recommendation[] }` (oldest first, limit 1..100; `actions` are the ones named in `action_ids`, as they stand now)                                                                                                                 | live   |
-| POST   | `/v1/chat`          | `{ message: string }` (1..2000 chars) | `201 ChatResponse` `{ message, reply, actions: Recommendation[] }`; `503 unavailable` without `ANTHROPIC_API_KEY`; `502 upstream_error` if Claude fails                                                                                                                    | live   |
-| POST   | `/v1/chat/stream`   | `{ message: string }` (1..2000 chars) | `200 text/event-stream`: `event: delta` `{ text }` per piece, `event: action` `Recommendation` per thing done or undone, then `event: done` `ChatResponse`, or `event: error` `ApiError`. Validation and `503 unavailable` come back as plain JSON before the stream opens | live   |
+| Method | Path                                           | Body                                                                               | Response                                                                                                                                                                                                                                                                                       | Status |
+| ------ | ---------------------------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| GET    | `/v1/chat?thread_id=&limit=50`                 |                                                                                    | `200 { messages: ChatMessage[], actions: Recommendation[], thread: ChatThread \| null }` (one thread's lines, oldest first, limit 1..100; without `thread_id` the latest thread; `actions` are the ones named in `action_ids`, as they stand now); `404` for a thread that is not the caller's | live   |
+| POST   | `/v1/chat`                                     | `{ message: string, spoken?: boolean, thread_id?: uuid \| "new" }` (1..2000 chars) | `201 ChatResponse` `{ message, reply, actions: Recommendation[], thread: ChatThread }`; `404` unknown thread; `503 unavailable` without `ANTHROPIC_API_KEY`; `502 upstream_error` if Claude fails                                                                                              | live   |
+| POST   | `/v1/chat/stream`                              | same as `POST /v1/chat`                                                            | `200 text/event-stream`: `event: delta` `{ text }` per piece, `event: action` `Recommendation` per thing done or undone, then `event: done` `ChatResponse`, or `event: error` `ApiError`. Validation, `404` and `503 unavailable` come back as plain JSON before the stream opens              | live   |
+| GET    | `/v1/chat/threads?archived=false&q=&limit=100` |                                                                                    | `200 ChatThreadList` `{ threads: ChatThread[] }`, pinned first, then latest line first. `q` (1..100 chars) matches titles and line text                                                                                                                                                        | live   |
+| POST   | `/v1/chat/threads`                             | `{ title? }` (or no body)                                                          | `201 ChatThread`, empty, titled "New chat" unless named                                                                                                                                                                                                                                        | live   |
+| PATCH  | `/v1/chat/threads/:id`                         | `{ title?, pinned?, archived? }` (at least one)                                    | `200 ChatThread`; `404` when not the caller's                                                                                                                                                                                                                                                  | live   |
+| DELETE | `/v1/chat/threads/:id`                         |                                                                                    | `200 { id, messages }`: the thread and every line in it, really deleted; `404` when not the caller's                                                                                                                                                                                           | live   |
+
+`spoken: true` means the answer will be read aloud (the app's conversation mode): Michael keeps it
+to one or two short sentences with no lists or markdown, and says numbers as a person would.
 
 `/v1/chat` stays for callers that want the whole answer (MCP, voice); `/v1/chat/stream` gives the
 first words fast and stores the same pair when it finishes. The stored answer keeps the ids of what
 it did (`action_ids`), so a client can show the same Undo chips under it after a reload.
 
-The API keeps the history per user (`chat_messages`); the client sends only the new line. Michael
+**Threads (#308).** Conversations are separate, as in Messages: `ChatThread { id, title, pinned,
+archived, preview, last_message_at, created_at, updated_at }` (`preview` is the last line, cut to
+140 characters). `thread_id` omitted writes in the latest thread (a new one when there is none);
+`"new"` starts one, made only once the answer is stored, so a failed call leaves no empty thread.
+The first line names a thread: the model writes 2 to 5 words in Michael's voice in parallel with
+the answer (only the user's own line is sent), and the first words of the line are the fallback;
+a name the user gave is never overwritten. Michael sees the lines of the current thread only; he
+knows the others through memories, check ins and the titles of the 5 latest other threads
+("Other conversations (titles only)"), never their lines. Lines from before threads sit in one
+"Earlier" thread per user (and per demo visitor). Demo visitors get threads of their own, like
+their lines. `DELETE /v1/me/data` counts `chat_threads` too.
+
+The API keeps the history per user and thread (`chat_threads`, `chat_messages`); the client sends only the new line. Michael
 answers with Claude (`ANTHROPIC_MODEL`, default `claude-opus-5-5`) from a summary built in the API:
 the week's score with the same figures as `GET /v1/score` (built in process by `scoreFor`, not over
 HTTP: score, spent of elapsed, lost, ahead, time won back, and per goal spent of budget and what is
@@ -1257,6 +1386,12 @@ record of who changed the goal (chat) and why (`rationale`).
 ("What you told me", quoted, never invented) and today's open questions with their ids, and a tool
 `answer_check_in { check_in_id, value }` keeps an answer the user types in the chat (same rules as
 `POST /v1/check-in/:id/answer`; the result gives the follow up to ask, word for word).
+
+**Daily ritual in chat (#318).** The context lists "Today's outcomes" with their ids and which half
+is due. `set_day_outcomes { outcomes: [{ text, goal_id?, estimate_minutes? }] }` keeps "my goals
+today are X, Y" and `log_day { results: [{ item_id, result, carry?, minutes? }] }` logs "I finished
+X, did 30 min of Y" (same rules as `POST /v1/ritual/morning` and `/evening`); Michael repeats the
+evening line the tool returns, word for word.
 
 ### Check in (#187)
 
@@ -1400,10 +1535,10 @@ the facts; otherwise `phrased_by` is `template`. Lines are cached per user, kind
 
 ### Voice
 
-| Method | Path              | Body                               | Response                                                                                                   | Status |
-| ------ | ----------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------- | ------ |
-| GET    | `/v1/voice`       |                                    | `200 { elevenlabs: boolean }`: whether the API can speak with ElevenLabs                                   | live   |
-| POST   | `/v1/voice/speak` | `{ text: string }` (1..1000 chars) | `200 audio/mpeg`; `503 unavailable` without `ELEVENLABS_API_KEY`; `502 upstream_error` if ElevenLabs fails | live   |
+| Method | Path              | Body                               | Response                                                                                                       | Status |
+| ------ | ----------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------- | ------ |
+| GET    | `/v1/voice`       |                                    | `200 VoiceStatus` `{ elevenlabs: boolean, voice: "chosen" \| "fallback" \| "device", reason: string \| null }` | live   |
+| POST   | `/v1/voice/speak` | `{ text: string }` (1..1000 chars) | `200 audio/mpeg`; `503 unavailable` without `ELEVENLABS_API_KEY`; `502 upstream_error` if ElevenLabs fails     | live   |
 
 Push to talk in the app: the browser turns speech into text (Web Speech API, en-GB), the text goes
 to `POST /v1/chat`, and the reply is read aloud. `POST /v1/voice/speak` proxies ElevenLabs text to
@@ -1411,6 +1546,13 @@ speech (`ELEVENLABS_VOICE_ID`, default "George", a calm British male; `ELEVENLAB
 `eleven_flash_v2_5`) so the key stays on the server. Without a key, or when it fails, the app uses
 the browser's own speech synthesis, preferring a low en-GB male voice. Audio is never stored:
 only text goes in, and the mp3 is streamed straight back and played once.
+
+If ElevenLabs refuses the chosen voice with `401` or `402` (a Voice Library voice on the free plan
+answers `402 paid_plan_required`), the API retries once with the built-in fallback voice
+(`ELEVENLABS_FALLBACK_VOICE_ID`, default "George") and keeps using it for an hour before trying the
+chosen voice again. `GET /v1/voice` then reports `voice: "fallback"` with the reason ("paid plan
+required"). If both are refused the route answers `502` and the app speaks with the device voice;
+the words are always on screen as captions. Logs carry the status only, never the key or the text.
 
 ### Recommendations
 
@@ -1540,6 +1682,37 @@ through the store's `createRecommendation`, so the instruction guard has the las
   `One more session for <goal>, Fri 13 Nov`. Checked on `GET /v1/score` for the current week.
 - **Once a day:** an offer whose title is already stored, whatever its status, is not made again.
 
+### Calendar blocks (edit the day on the Timeline, #271)
+
+The user adds, moves, resizes, renames, gives a goal to, or removes blocks on their own time. Each
+write is stored as a recommendation with `source: "user"` and carried out at once by the same
+executor as Michael's actions, so the same rules hold: never an event with other people (`409`),
+nothing that has started (`409`), and only blocks made in Michael can be removed (the user's own
+events are never deleted). With Google Calendar connected the change is made there and mirrored;
+without it, the block lives on the timeline (`source: "agent"`, `data.michael: true`). Standing
+instructions bind Michael, not the user, so they do not refuse these. `source: "user"`
+recommendations are left out of `GET /v1/recommendations` and the MCP `list_recommendations`.
+
+| Method | Path             | Body                                                   | Response                          |
+| ------ | ---------------- | ------------------------------------------------------ | --------------------------------- |
+| POST   | `/v1/blocks`     | `BlockCreate { start_at, end_at, title?, goal_id? }`   | `201 BlockChange`                 |
+| PATCH  | `/v1/blocks/:id` | `BlockUpdate { start_at?, end_at?, title?, goal_id? }` | `200 BlockChange`                 |
+| DELETE | `/v1/blocks/:id` |                                                        | `200 BlockChange` (`event: null`) |
+
+```ts
+type BlockChange = {
+  event: Event | null; // the block as it is now
+  recommendation_id: string; // POST /v1/recommendations/:id/undo takes the change back
+  undo_until: string; // until the block starts
+};
+```
+
+- A block is 5 minutes to 12 hours; a new start without an end keeps the length. `goal_id: null`
+  clears the goal. The goal is saved as `data.goal_id` (and `extendedProperties.private.goal_id` in
+  Google, read back by the sync), so the score counts the block for it.
+- `404` unknown block or goal, `409` refused (with Michael's reason), `400` invalid body.
+- Demo visitors may use these routes on the demo week, like acting on a recommendation.
+
 ### Focus guards (block Mac apps, #41)
 
 ```ts
@@ -1655,14 +1828,17 @@ when they have under a minute left; a revoked grant sets `status: "error"`.
 characters, otherwise `400`. It is signed into `state`, and the callback then redirects to
 `${WEB_URL}<return_to>` with the same `connected` or `integration_error` parameters added. Without
 it, or when the state is unreadable, the callback goes to `/you`. The web app passes it as
-`/integrations/google/connect?return_to=...`.
+`/integrations/google/connect?return_to=...`. A `return_to` under `/onboarding` skips the first sync
+and adds `sync=pending`: onboarding then calls `POST .../sync?past_days=28` itself, behind a
+"Reading your calendar" status line, so nobody waits on Google's page.
 
 **Sync.** Pulls the primary calendar, now minus 7 days to now plus 7 days, recurring events expanded,
 into `calendar_event` events with `source: "google_calendar"` and `external_id` = Google's event id.
 Idempotent: unchanged events are left alone, changed ones (title, time) are updated in place, and
 mirrored events that were deleted or cancelled in Google within the window are removed from the
 timeline (the calendar itself is never touched). Cancelled and declined events are skipped. Runs
-after connecting, on `POST .../sync`, and every `CALENDAR_SYNC_MINUTES` (default 15) for every
+after connecting, on `POST .../sync` (optional `?past_days=1..28` reads further back; `400` outside
+that), and every `CALENDAR_SYNC_MINUTES` (default 15) for every
 connected user. Off the record, or with the `google_calendar` source switched off, sync reads nothing
 and answers zero counts.
 
@@ -2070,7 +2246,7 @@ type AgentQuery = {
   the payload. A call outside the agent's scopes, or by an agent that is not `approved`, returns a
   tool result with `isError: true` ("Not allowed. ...") and is logged with `allowed: false`.
 - Scope per tool: `get_timeline`, `get_patterns` = `timeline`; `get_goals`, `add_goal`,
-  `update_goal`, `propose_goals`, `get_checklist`, `add_checklist_item` = `goals`; `list_recommendations`, `update_recommendation`, `get_nudges`,
+  `update_goal`, `propose_goals`, `get_checklist`, `add_checklist_item`, `set_day_outcomes`, `log_day` = `goals`; `list_recommendations`, `update_recommendation`, `get_nudges`,
   `list_drafts`, `draft_follow_up` = `recommendations`; `get_score`, `get_records`, `get_moments` = `score`; `add_event`, `execute_recommendation`,
   `undo_recommendation`, `create_focus_block`, `block_mac_app`, `plan_travel` = `write_events`;
   `suggest_app_mute` = `recommendations`; `get_memories` = `timeline`; `remember` = `write_events`.
@@ -2123,7 +2299,7 @@ most urgent candidate of these rules (in this order):
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
 | `focus_drift`    | inside a work goal block, 3+ of the last 10 min on distractor apps or sites                                                  | "6 min on Instagram in your focus block. Back to it until 12:00."     |
 | `block_soon`     | a goal block starts in 2 to 15 min                                                                                           | "Gym at 18:00. Wrap up in 12 min."                                    |
-| `morning`        | after the night's sleep (3h+) ends today, else from 08:00; until 12:00                                                       | the Morning moment's headline, e.g. "Today holds 2h 00 of goal time." |
+| `morning`        | after the night's sleep (never a nap) ends today, else from 08:00; until 12:00                                               | the Morning moment's headline, e.g. "Today holds 2h 00 of goal time." |
 | `evening`        | an hour before the usual bedtime (median of 3+ of the last 8 nights), else 21:00; never later than 45 min before quiet hours | the Evening moment's headline                                         |
 | `wind_down`      | 30 min before the night, 3+ of the last 10 min on screens, a rest goal exists                                                | "Screens off by 22:00. Sleep is on the plan."                         |
 | `goal_behind`    | before 19:00, a weekly budget behind its linear pace by 60+ min and 15%+                                                     | "Gym 2h 34m behind this week. Book 90 min today."                     |
@@ -2277,6 +2453,10 @@ type Score = ScoreTotals & {
   records: PersonalRecord[]; // set in this week (achieved_on inside it), baselines included
   // Waking time left this week outside fixed calendar commitments and sleep (see below).
   free_minutes_left: number;
+  // What took the week's lost time, most first: every lost stretch of the week's blocks summed by
+  // app or site, in whole minutes, entries under a minute left out. Rounded one by one, so the
+  // entries can add up to a few minutes off `lost_minutes`.
+  lost_by: { what: string; kind: "app" | "site"; category: AppCategory; minutes: number }[];
   // Null until there is a sleep goal and sleep data this week. Sleep stays outside the score.
   sleep: { goal_minutes: number; nightly: (number | null)[] } | null; // 7 nights, Monday first
 };
@@ -2461,7 +2641,9 @@ Stated here and at the top of `apps/api/src/score/count.ts`; the two change toge
   17." maths. The per day numbers for the Goals tab are `goals[].daily`.
 - **`sleep.nightly`:** minutes slept in the night that ended on each day (`data.duration_min` when
   the source gives it), null for a night with no data and nights to come; `goal_minutes` is
-  `sleep_hours x 60` (else the weekly budget over 7).
+  `sleep_hours x 60` (else the weekly budget over 7). Naps never count: a sleep under 3 hours that
+  starts between 09:00 and 20:00 local time (`isNap` in `packages/shared/src/sleep.ts`, the same
+  rule the web's Timeline uses).
 
 ### Targets
 
@@ -2609,7 +2791,9 @@ touched; days that leave the window are removed. The API refreshes the week on d
 most every 5 minutes (the first refresh after a deploy resets the goals to the Build Hub plan,
 later ones keep edits; `DEMO_WEEK=off` turns it off). `POST /v1/demo/reseed` also resets the goals.
 Any other account gets `403 forbidden`. The reseed (and the first refresh after a deploy) also
-deletes all demo visitor chat and turns off the record off; every refresh deletes visitor chat
+deletes all demo visitor chat, turns off the record off, removes goals that are not in the plan
+and replaces the standing instructions with the plan's (`demoInstructions`: only "Nothing between
+23:00 and 07:00", so a Saturday or Sunday evening stays bookable for the live demo); every refresh deletes visitor chat
 older than a day. Off the record, nothing changes. Per source switches are
 not applied: on the demo account they keep real collectors out (#114). From a terminal:
 `pnpm --filter @michael/api seed:demo` (or `--dry` to print the week without a database).
@@ -2654,10 +2838,10 @@ hours, refresh tokens 90 days; both are stored hashed. Loopback redirects match 
 
 The consent page (signed in user, normal auth) uses:
 
-| Method | Path                       | Body                 | Response                                                 |
-| ------ | -------------------------- | -------------------- | -------------------------------------------------------- |
-| GET    | `/v1/connect/requests/:id` |                      | `200 ConnectRequest`, `404` when expired or answered     |
-| POST   | `/v1/connect/requests/:id` | `{ allow: boolean }` | `200 { redirect_to }` (back to the client), `404`, `409` |
+| Method | Path                       | Body                 | Response                                                        |
+| ------ | -------------------------- | -------------------- | --------------------------------------------------------------- |
+| GET    | `/v1/connect/requests/:id` |                      | `200 ConnectRequest`, `404` when expired or answered            |
+| POST   | `/v1/connect/requests/:id` | `{ allow: boolean }` | `200 { redirect_to }` (back to the client), `401`, `404`, `409` |
 
 ```ts
 type ConnectRequest = {
@@ -2671,6 +2855,11 @@ type ConnectRequest = {
 
 On allow, `redirect_to` carries a one time `code` (5 minutes), `state` and `iss`; on refusal,
 `error=access_denied`. The token then acts for the user who allowed it.
+
+A request stays answerable for 30 minutes, long enough for a first Google sign in on the way. A
+`401` on allow means the caller's sign in outlived its account (a deleted account's token still
+verifies locally until it expires): the request stays pending, and the web app signs out and sends
+the person to sign in again, back to the same consent page.
 
 ### Tools
 
@@ -2701,6 +2890,8 @@ offset. A refused or failed call returns `isError: true` with one plain sentence
 | `update_goal`            | `goals`           | `{ id, category?, title?, description?, weekly_budget_minutes?, target?, active? }`     | `{ goal: Goal }`, error when not found                                                     |
 | `get_checklist`          | `goals`           | `{ date?: LocalDay }` (default today)                                                   | `ChecklistResponse` (as `GET /v1/checklist`)                                               |
 | `add_checklist_item`     | `goals`           | `{ goal_id, text, date?: LocalDay }` (default today)                                    | `{ item: ChecklistItem }`; refused past three open items                                   |
+| `set_day_outcomes`       | `goals`           | `{ outcomes: [{ text, goal_id?, estimate_minutes? }] }` (1..3)                          | `RitualToday` (as `POST /v1/ritual/morning`)                                               |
+| `log_day`                | `goals`           | `{ results: [{ item_id, result: "done" \| "partly" \| "not", carry?, minutes? }] }`     | `RitualEveningResponse`; text is the evening line                                          |
 | `update_recommendation`  | `recommendations` | `{ id, status: "accepted" \| "dismissed" }`                                             | `{ recommendation }`; a `done` one is refused (undo it)                                    |
 | `execute_recommendation` | `write_events`    | `{ id }`                                                                                | `{ recommendation, undo_until }`                                                           |
 | `undo_recommendation`    | `write_events`    | `{ id }`                                                                                | `{ recommendation }`                                                                       |

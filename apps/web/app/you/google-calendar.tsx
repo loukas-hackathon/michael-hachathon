@@ -55,7 +55,7 @@ export async function GoogleCalendarRow() {
           action={disconnectCalendar}
           label="Disconnect"
           pendingLabel="Disconnecting"
-          className="hit press h-9 text-left text-subhead font-semibold text-label"
+          className="hit press h-9 text-left text-subhead font-semibold text-danger"
         />
       </span>
       {suggestions.length > 0 ? <CalendarGoals initial={suggestions} className="pb-2" /> : null}

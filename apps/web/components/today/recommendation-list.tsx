@@ -2,7 +2,9 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { ActionError } from "@/components/action-feedback";
 import { FlipList } from "@/components/flip-list";
+import { haptic } from "@/components/haptics";
 import { useArrival, useDeparting } from "@/components/motion";
 import { NudgePrimer } from "@/components/nudge-primer";
 import { formatTime } from "@/lib/format";
@@ -22,6 +24,8 @@ type Local = {
   status?: RecCard["status"];
   busy?: Op;
   error?: string;
+  /** The tap that failed, for Try again. */
+  failed?: Op;
   note?: string;
   hidden?: boolean;
   removed?: boolean;
@@ -120,11 +124,11 @@ function Card({
       {card.maths ? <p className="text-subhead font-semibold text-label tnum">{card.maths}</p> : null}
       {card.drives?.length ? <Drives drives={card.drives} /> : null}
 
-      {local.error ? (
-        <p role="alert" className="text-subhead text-danger">
-          {local.error}
-        </p>
-      ) : null}
+      <ActionError
+        error={local.error ?? null}
+        onRetry={local.failed && !local.hidden ? () => act(local.failed as Op) : undefined}
+        className="text-subhead"
+      />
 
       <div className="mt-1 flex flex-wrap items-center gap-2">
         {done ? (
@@ -216,8 +220,10 @@ export function RecommendationList({ cards, variant }: { cards: RecCard[]; varia
       setPin(keep ? { id: keep.id, displaced: null } : NO_PIN);
     }
     const before = local[card.id] ?? {};
+    // A second tap while the first is still with the server does nothing.
+    if (before.busy) return;
     const note = op === "undo" ? { note: card.undoneNote } : {};
-    patch(card.id, { ...before, ...OPTIMISTIC[op], ...note, error: undefined, busy: op });
+    patch(card.id, { ...before, ...OPTIMISTIC[op], ...note, error: undefined, failed: undefined, busy: op });
     const r = await ACTIONS[op](card.id).catch(
       (): RecActionResult => ({
         ok: false,
@@ -226,13 +232,21 @@ export function RecommendationList({ cards, variant }: { cards: RecCard[]; varia
       }),
     );
     if (r.ok) {
+      haptic();
       if (op === "do") setPrimed(true);
       patch(card.id, { ...OPTIMISTIC[op], ...note, status: r.rec.status, hidden: op === "dismiss" });
       router.refresh();
     } else {
       // Roll back to what the card showed before, with the reason in Michael's words, and read the
       // list again in case it changed elsewhere (another device, Claude).
-      patch(card.id, { ...before, busy: undefined, note: undefined, error: r.error, hidden: r.gone });
+      patch(card.id, {
+        ...before,
+        busy: undefined,
+        note: undefined,
+        error: r.error,
+        failed: op,
+        hidden: r.gone,
+      });
       router.refresh();
     }
   }

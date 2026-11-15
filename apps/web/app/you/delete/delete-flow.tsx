@@ -122,7 +122,7 @@ export function DeleteFlow() {
         <button
           type="button"
           onClick={() => setConfirming(true)}
-          className="press mt-6 flex h-11 w-full items-center justify-center rounded-group bg-fill text-body font-semibold text-label"
+          className="press mt-6 flex h-11 w-full items-center justify-center rounded-group bg-fill text-body font-semibold text-danger"
         >
           Delete my data
         </button>

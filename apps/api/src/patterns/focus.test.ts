@@ -105,7 +105,7 @@ test("recovery cost refuses to speak from fewer than 5 disruptions", () => {
   assert.equal(r.recovery_cost.data, null);
   assert.equal(
     r.recovery_cost.reason,
-    "not enough data: needs at least 5 disruptions with a return to the app that was left, found 4",
+    "Not enough data yet: needs at least 5 disruptions with a return to the app that was left, found 4",
   );
 });
 
@@ -159,7 +159,7 @@ test("repeat offenders: the same app on several days", () => {
   assert.equal(oneDay.data, null);
   assert.equal(
     oneDay.reason,
-    "not enough data: no app or site disrupted focus on 2 or more days (1 disruption found)",
+    "Not enough data yet: no app or site disrupted focus on 2 or more days (1 disruption found)",
   );
 });
 
@@ -215,7 +215,7 @@ test("an idle gap or a dark screen ends a stretch", () => {
   assert.equal(apart.data, null);
   assert.equal(
     apart.reason,
-    "not enough data: no focus stretch of at least 15 minutes and no planned goal block in 1 day of usage",
+    "Not enough data yet: no focus stretch of at least 15 minutes and no planned goal block in 1 day of usage",
   );
 
   // One minute apart: one stretch of 21 minutes.
@@ -441,7 +441,7 @@ test("drift: work browsing is not drift, and no browsing data means no answer", 
   ];
   const none = report(base, "2026-11-10 00:00", "2026-11-11 00:00").drift;
   assert.equal(none.data, null);
-  assert.equal(none.reason, "not enough data: no browsing data in this range");
+  assert.equal(none.reason, "Not enough data yet: no browsing data in this range");
 
   const work = report(
     [...base, web("github.com", T("2026-11-10 09:30"), T("2026-11-10 09:38"))],

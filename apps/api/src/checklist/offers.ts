@@ -62,7 +62,7 @@ export const sessionTitle = (goal: Goal, day: string) =>
   `One more session for ${goal.title}, ${dayLabel(day)}`;
 
 /** Calendar entries that hold time (not all day markers), merged. */
-function busySpans(events: Event[]): Span[] {
+export function busySpans(events: Event[]): Span[] {
   const spans: Span[] = [];
   for (const e of events) {
     if (e.type !== "calendar_event" || !e.end_at || e.data?.all_day === true) continue;

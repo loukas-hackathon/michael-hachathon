@@ -17,6 +17,8 @@ import {
   type PersonalRecord,
   type Recommendation,
   RecommendationStatus,
+  RitualEveningInput,
+  RitualMorningInput,
   type Score,
   Source,
   TravelPlanInput,
@@ -48,6 +50,8 @@ import {
 } from "./mcp-format";
 import { guardTools } from "./mcp-guard";
 import { listMemories, remember } from "./memory";
+import { NO_HEADLINES } from "./patterns";
+import { logEvening, planMorning } from "./ritual/ritual";
 import { momentFor } from "./routes/moments";
 import { patternReportFor } from "./routes/patterns";
 import { travelPlanFor } from "./routes/places";
@@ -402,7 +406,7 @@ export function createMcpServer(): McpServer {
       });
       const text = report.headlines.length
         ? ["Headlines:", ...report.headlines.map((h) => `- ${h}`)].join("\n")
-        : "Not enough data for patterns in that range.";
+        : `${NO_HEADLINES} for patterns in that range: no finding is big enough to lead with.`;
       return reply(`${text}\n\nFull report:\n${JSON.stringify(report)}`, report as Record<string, unknown>);
     }),
   );
@@ -417,7 +421,9 @@ export function createMcpServer(): McpServer {
       annotations: { readOnlyHint: true },
     },
     safe(async ({ status }) => {
-      const [recommendations, goals] = await Promise.all([store.listRecommendations({ status }), goalMap()]);
+      const [all, goals] = await Promise.all([store.listRecommendations({ status }), goalMap()]);
+      // The user's own Timeline edits (#271) are kept for Undo only; they are not advice.
+      const recommendations = all.filter((r) => r.source !== "user");
       const text = recommendations.length
         ? [
             `${recommendations.length} recommendations:`,
@@ -617,6 +623,64 @@ export function createMcpServer(): McpServer {
       return reply(`Added "${item.text}" to ${dayLabel(zone.startOfDay(item.date))} (id ${item.id}).`, {
         item,
       });
+    }),
+  );
+
+  // The daily ritual (#318): the morning plan and the evening log, as from the app and the chat.
+  server.registerTool(
+    "set_day_outcomes",
+    {
+      title: "Set today's outcomes (morning plan)",
+      description:
+        "The morning plan: keep the one to three outcomes the user wants to get done today, in their own words, only when they told you. goal_id links an outcome to one of their goals (any kind; ids from get_goals) when it clearly serves it; estimate_minutes only if they said how long. No checklist goal is needed: one is made when missing. Outcomes already on today stay; three is the most.",
+      inputSchema: {
+        outcomes: z
+          .array(
+            z.object({
+              text: z.string().min(1).max(200).describe("The outcome in the user's words"),
+              goal_id: Id.optional().describe("A goal's id from get_goals"),
+              estimate_minutes: z.number().int().min(5).max(720).optional(),
+            }),
+          )
+          .min(1)
+          .max(3),
+      },
+    },
+    safe(async (input) => {
+      const day = await planMorning(parse(RitualMorningInput, input));
+      return reply(
+        [
+          `Today's outcomes, ${day.items.length} of 3:`,
+          ...day.items.map((i) => `- ${i.text} (id ${i.id})`),
+        ].join("\n"),
+        day,
+      );
+    }),
+  );
+
+  server.registerTool(
+    "log_day",
+    {
+      title: "Log what got done today (evening log)",
+      description:
+        "The evening log: record what the user says they got done of today's outcomes (ids from get_checklist), only what they told you. result: done, partly or not. carry: true continues an unfinished one tomorrow. minutes: time they did on it, which counts toward the outcome's goal. Returns Michael's one line summary with the maths. Never tick an outcome for the user.",
+      inputSchema: {
+        results: z
+          .array(
+            z.object({
+              item_id: Id.describe("An outcome's id from get_checklist"),
+              result: z.enum(["done", "partly", "not"]),
+              carry: z.boolean().optional(),
+              minutes: z.number().int().min(5).max(720).optional(),
+            }),
+          )
+          .min(1)
+          .max(6),
+      },
+    },
+    safe(async (input) => {
+      const out = await logEvening(parse(RitualEveningInput, input));
+      return reply(out.summary, out);
     }),
   );
 

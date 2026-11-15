@@ -119,7 +119,7 @@ test("morning: today against each budget, the stretch at risk and two moves", ()
   assert.equal(m.suggestions[1]?.action_kind, "create_focus_block");
   assert.equal(
     m.suggestions[1]?.rationale,
-    "400 of 600 minutes for Deep work left this week and 120 planned, so 280 are not booked.",
+    "6h 40 of 10h 00 for Deep work left this week and 2h 00 planned, so 4h 40 is not booked.",
   );
   assert.equal(m.lesson, null);
   assert.equal(m.first_move, null);

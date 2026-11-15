@@ -185,7 +185,7 @@ export function AgentRow({
                   <button
                     type="button"
                     onClick={revoke}
-                    className="hit press min-h-9 rounded-full bg-bg px-4 text-subhead font-semibold text-label"
+                    className="hit press min-h-9 rounded-full bg-bg px-4 text-subhead font-semibold text-danger"
                   >
                     Revoke {name}
                   </button>
@@ -202,7 +202,7 @@ export function AgentRow({
               <button
                 type="button"
                 onClick={() => setConfirming(true)}
-                className="press mt-6 min-h-11 w-full rounded-group bg-fill px-4 text-left text-body font-semibold text-label"
+                className="press mt-6 min-h-11 w-full rounded-group bg-fill px-4 text-left text-body font-semibold text-danger"
               >
                 Revoke {name}
               </button>

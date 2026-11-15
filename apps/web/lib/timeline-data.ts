@@ -43,6 +43,8 @@ const HEAVY = new Set<string>(["app_usage", "web_visit", "ai_prompt", "biometric
 const LIGHT_TYPES = EventType.options.filter((t) => !HEAVY.has(t));
 
 const iso = (ms: number) => new Date(ms).toISOString();
+// How far into the next day to look for the night that closes this one.
+const NEXT_MORNING = 16 * 3_600_000;
 
 /** Athens days that have at least one event starting in them. */
 export function daysWithEvents(events: Pick<Event, "start_at">[]): Set<string> {
@@ -64,16 +66,23 @@ export async function loadTimeline(asked?: string, demo?: string): Promise<Timel
   const weekStart = dayBounds(week[0] as string).start;
   const weekEnd = dayBounds(week[6] as string).end;
 
-  const [timeline, patterns, light, goals] = await Promise.all([
+  const [timeline, patterns, light, goals, nextMorning] = await Promise.all([
     get<TimelineResponse>(`/v1/timeline?${new URLSearchParams({ from: iso(start), to: iso(end) })}`),
     get<Patterns>(`/v1/patterns?${new URLSearchParams({ from: iso(start), to: iso(end) })}`).catch(
       () => ({}) as Patterns,
     ),
     lightScan(weekStart, weekEnd),
     get<{ goals: Goal[] }>("/v1/goals").catch(() => ({ goals: [] as Goal[] })),
+    // The night that starts after midnight still closes this day (the night rule, lib/health.ts):
+    // its sleep and the heart readings around it are in the next morning.
+    get<TimelineResponse>(
+      `/v1/timeline?${new URLSearchParams({ from: iso(end), to: iso(end + NEXT_MORNING), type: "sleep,biometric" })}`,
+    ).catch(() => ({ events: [] as Event[] })),
   ]);
 
   const events = timeline.events;
+  const ids = new Set(events.map((e) => e.id));
+  const withNight = [...events, ...nextMorning.events.filter((e) => !ids.has(e.id))];
   const seen = daysWithEvents(light.events);
   if (events.length > 0) seen.add(date);
   const available = week.filter((d) => seen.has(d));
@@ -95,7 +104,7 @@ export async function loadTimeline(asked?: string, demo?: string): Promise<Timel
     date,
     today,
     source: "live",
-    day: events.length > 0 ? buildTimeline(date, events, start, end, Date.now()) : null,
+    day: events.length > 0 ? buildTimeline(date, withNight, start, end, Date.now()) : null,
     longestUninterrupted: longestFrom(patterns),
     available,
     latest,

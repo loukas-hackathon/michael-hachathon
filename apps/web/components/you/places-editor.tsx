@@ -4,6 +4,7 @@ import type { AddressMatch, Place, PlaceInput, PlaceSuggestion } from "@michael/
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { findAddress, savePlaceList } from "@/app/you/places/actions";
+import { PendingButton } from "@/components/action-feedback";
 import { saveSource } from "@/lib/privacy-actions";
 
 const SLOTS = [
@@ -13,6 +14,8 @@ const SLOTS = [
   { key: "university", label: "University", placeholder: "Search your campus" },
 ] as const;
 type SlotKey = (typeof SLOTS)[number]["key"];
+/** The save in flight, so the right button says what it is doing. */
+type Pending = { key: SlotKey; op: "save" | "remove" } | null;
 
 const toInput = (p: Place): PlaceInput => ({
   key: p.key,
@@ -85,6 +88,7 @@ function SlotRow({
   onOpen,
   onSave,
   busy,
+  pending,
 }: {
   slot: (typeof SLOTS)[number];
   place: Place | undefined;
@@ -93,6 +97,8 @@ function SlotRow({
   onOpen: (open: boolean) => void;
   onSave: (p: PlaceInput | null) => void;
   busy: boolean;
+  /** What this row is saving right now, if anything. */
+  pending: "save" | "remove" | null;
 }) {
   const id = useId();
   const [q, setQ] = useState(place?.address ?? "");
@@ -138,7 +144,7 @@ function SlotRow({
             placeholder={slot.placeholder}
             autoComplete="street-address"
             maxLength={300}
-            className="min-h-11 rounded-[10px] bg-bg px-3 text-body outline-none placeholder:text-label-2"
+            className="min-h-11 rounded-control bg-bg px-3 text-body outline-none placeholder:text-label-2"
           />
           {mapsAvailable ? (
             <ul aria-live="polite" className="flex flex-col">
@@ -178,24 +184,26 @@ function SlotRow({
           <HereButton slot={slot} busy={busy} onSave={onSave} />
           <div className="flex flex-wrap items-center gap-2">
             {(!mapsAvailable || state === "error" || state === "none") && q.trim().length >= 3 ? (
-              <button
-                type="button"
+              <PendingButton
                 disabled={busy}
+                pending={pending === "save"}
+                pendingLabel="Saving"
                 onClick={() => onSave({ key: slot.key, label: slot.label, address: q.trim() })}
                 className="press min-h-9 rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint disabled:opacity-60"
               >
                 Save as typed
-              </button>
+              </PendingButton>
             ) : null}
             {place ? (
-              <button
-                type="button"
+              <PendingButton
                 disabled={busy}
+                pending={pending === "remove"}
+                pendingLabel="Removing"
                 onClick={() => onSave(null)}
                 className="press min-h-9 rounded-full px-3 text-subhead font-semibold text-tint-text disabled:opacity-60"
               >
                 Remove
-              </button>
+              </PendingButton>
             ) : null}
             <button
               type="button"
@@ -243,7 +251,8 @@ export function PlacesEditor({
   const [hidden, setHidden] = useState<string[]>([]);
   const [list, setList] = useState(places);
   const [open, setOpen] = useState<SlotKey | null>(places.some((p) => p.key === "home") ? null : "home");
-  const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<Pending>(null);
+  const busy = pending !== null;
   const [error, setError] = useState<string | null>(null);
   const [travel, setTravel] = useState(travelEnabled);
   const [travelError, setTravelError] = useState(false);
@@ -255,10 +264,10 @@ export function PlacesEditor({
     const before = list;
     const rest = list.filter((p) => p.key !== key).map(toInput);
     const inputs = next ? [...rest, next] : rest;
-    setBusy(true);
+    setPending({ key, op: next ? "save" : "remove" });
     setError(null);
     const r = await savePlaceList(inputs).catch(() => ({ ok: false as const, message: "" }));
-    setBusy(false);
+    setPending(null);
     if (!r.ok) {
       setList(before);
       setError(r.message || "I could not save that. Nothing changed.");
@@ -295,6 +304,7 @@ export function PlacesEditor({
               onOpen={(o) => setOpen(o ? s.key : null)}
               onSave={(p) => save(s.key, p)}
               busy={busy}
+              pending={pending?.key === s.key ? pending.op : null}
             />
           ))}
         </ul>
@@ -334,9 +344,10 @@ export function PlacesEditor({
                         You looked it up {x.count} times in Maps.
                       </span>
                     </span>
-                    <button
-                      type="button"
+                    <PendingButton
                       disabled={busy}
+                      pending={pending?.key === slot.key && pending.op === "save"}
+                      pendingLabel="Saving"
                       onClick={() =>
                         save(slot.key, {
                           key: slot.key,
@@ -348,7 +359,7 @@ export function PlacesEditor({
                       className="press min-h-9 rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-3.5 text-subhead font-semibold text-tint-text disabled:opacity-60"
                     >
                       Save
-                    </button>
+                    </PendingButton>
                     <button
                       type="button"
                       onClick={() => setHidden((h) => [...h, x.label])}

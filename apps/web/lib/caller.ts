@@ -1,5 +1,6 @@
 import "server-only";
 import { cookies } from "next/headers";
+import { cache } from "react";
 import {
   AUTH_MISSING_MESSAGE,
   DEMO_COOKIE,
@@ -28,7 +29,11 @@ export type Caller =
   | { kind: "demo"; visitor: string }
   | { kind: "local" };
 
-export async function currentCaller(): Promise<Caller> {
+/**
+ * Resolved once per server render (React cache), however many loaders ask, so Supabase getSession
+ * runs once instead of once per API call. Outside a render (actions, route handlers) it is a no-op.
+ */
+export const currentCaller = cache(async (): Promise<Caller> => {
   // End-to-end tests only (see e2eTestUser): a fresh user without Supabase.
   const testUser = e2eTestUser((await cookies()).get(E2E_COOKIE)?.value);
   if (testUser) return { kind: "session", token: `e2e_${testUser}` };
@@ -41,7 +46,7 @@ export async function currentCaller(): Promise<Caller> {
   const visitor = demoVisitorId((await cookies()).get(DEMO_COOKIE)?.value);
   if (visitor) return { kind: "demo", visitor };
   throw new Error("Not signed in");
-}
+});
 
 /** The headers every API call carries. Throws when nobody is signed in. */
 export async function authHeaders(): Promise<Record<string, string>> {

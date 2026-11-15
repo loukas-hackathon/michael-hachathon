@@ -3,7 +3,15 @@
 import { type ReactNode, useState } from "react";
 import { Sheet } from "@/components/sheet";
 import { formatTime, hm, minutesPhrase, spokenDuration } from "@/lib/format";
-import { type HeartPoint, type Night, sleepAgainstGoal, workoutParts } from "@/lib/health";
+import {
+  type HeartPoint,
+  type Nap,
+  type Night,
+  type SleepStages,
+  sleepAgainstGoal,
+  stageParts,
+  workoutParts,
+} from "@/lib/health";
 import {
   type Block,
   blockTitle,
@@ -21,7 +29,11 @@ const HOUR = 3_600_000;
 const iso = (ms: number) => new Date(ms).toISOString();
 const span = (from: number, to: number) => `${formatTime(iso(from))} to ${formatTime(iso(to))}`;
 
-type Picked = { kind: "block"; block: Block } | { kind: "plan"; plan: Plan };
+type Picked =
+  | { kind: "block"; block: Block }
+  | { kind: "plan"; plan: Plan }
+  | { kind: "night"; night: Night; tonight: boolean }
+  | { kind: "nap"; nap: Nap };
 
 function blockMeta(b: Block) {
   const parts = [hm(b.minutes)];
@@ -113,19 +125,28 @@ export function DayTimelineList({ day }: { day: TimelineDay }) {
  *
  * Every label sits on a solid chip of its block's colour, so hatching never runs through text, and
  * the hour labels step aside for the now pill. Tap a block for its detail sheet.
+ *
+ * The watch's nights frame the day (the night rule, lib/health.ts): the night you woke up from
+ * above it, the night you went to bed from below it, faint. Tap either for the stages.
  */
 export function DayTimeline({
   day,
   heartHidden = false,
+  sleepGoal = null,
 }: {
   day: TimelineDay;
   /** The heart rate lane starts hidden (the viewer turned it off). */
   heartHidden?: boolean;
+  /** Minutes a night the Sleep goal asks for; null without one. */
+  sleepGoal?: number | null;
 }) {
   const y = makeY(day.segments, PER_HOUR, QUIET);
   const health = day.health;
   const nights = [health?.lastNight, health?.tonight].filter((n): n is Night => Boolean(n));
   const workouts = health?.workouts ?? [];
+  const naps = health?.naps ?? [];
+  const lastNight = health?.lastNight ?? null;
+  const tonight = health?.tonight ?? null;
   const heart = health?.heart ?? [];
   const [picked, setPicked] = useState<Picked | null>(null);
   const height = y(day.dayEnd);
@@ -155,6 +176,13 @@ export function DayTimeline({
 
   return (
     <>
+      {lastNight ? (
+        <SleepBand
+          night={lastNight}
+          goal={sleepGoal}
+          onOpen={() => setPicked({ kind: "night", night: lastNight, tonight: false })}
+        />
+      ) : null}
       <div
         id={TIMELINE_ID}
         data-hr={heart.length > 1 && !heartHidden ? "on" : "off"}
@@ -339,11 +367,31 @@ export function DayTimeline({
           );
         })}
 
+        {/* Naps from the watch: small and quiet, with the sleep dots. Never the night. */}
+        {naps.map((n) => {
+          const top = y(n.start);
+          const h = Math.max(18, y(Math.min(n.end, day.dayEnd)) - top);
+          return (
+            <button
+              type="button"
+              key={`n${n.start}`}
+              onClick={() => setPicked({ kind: "nap", nap: n })}
+              aria-label={`Nap, ${minutesPhrase(n.minutes)}, ${span(n.start, n.end)}`}
+              className="dots absolute right-(--lane-r) left-[50px] overflow-hidden rounded-block bg-fill text-left"
+              style={{ top, height: h }}
+            >
+              <span className="absolute top-1/2 right-5 left-1 flex -translate-y-1/2 text-[12px] leading-4 font-medium text-label-2">
+                <span className="max-w-full truncate rounded-[4px] bg-fill px-1">Nap · {hm(n.minutes)}</span>
+              </span>
+            </button>
+          );
+        })}
+
         {/* Plan titles where nothing happened over their first lines, and Michael's marker always. */}
         {plans.map((p) => {
           const top = y(p.start);
           const h = y(p.end) - top;
-          const covered = [...day.blocks, ...workouts].some(
+          const covered = [...day.blocks, ...workouts, ...naps].some(
             (b) => y(b.start) < top + 18 && y(b.end) > top + 2,
           );
           return (
@@ -438,24 +486,34 @@ export function DayTimeline({
         ) : null}
       </div>
 
-      <Sheet
-        open={picked != null}
-        onClose={() => setPicked(null)}
-        title={
-          picked?.kind === "block"
-            ? span(picked.block.start, picked.block.end)
-            : picked?.kind === "plan"
-              ? span(picked.plan.start, picked.plan.end)
-              : ""
-        }
-      >
+      {tonight ? (
+        <SleepBand
+          night={tonight}
+          goal={sleepGoal}
+          tonight
+          isToday={day.now != null}
+          onOpen={() => setPicked({ kind: "night", night: tonight, tonight: true })}
+        />
+      ) : null}
+
+      <Sheet open={picked != null} onClose={() => setPicked(null)} title={picked ? sheetTitle(picked) : ""}>
         {picked?.kind === "block" ? (
           <BlockDetail block={picked.block} plans={plans} sample={day.sample} />
         ) : null}
         {picked?.kind === "plan" ? <PlanDetail plan={picked.plan} now={day.now} /> : null}
+        {picked?.kind === "night" ? (
+          <NightDetail night={picked.night} goal={sleepGoal} tonight={picked.tonight} />
+        ) : null}
+        {picked?.kind === "nap" ? <NapDetail nap={picked.nap} /> : null}
       </Sheet>
     </>
   );
+}
+
+function sheetTitle(p: Picked) {
+  const { start, end } =
+    p.kind === "block" ? p.block : p.kind === "plan" ? p.plan : p.kind === "night" ? p.night : p.nap;
+  return span(start, end);
 }
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
@@ -553,33 +611,146 @@ export const TIMELINE_ID = "day-timeline";
 
 /**
  * A night from the watch, collapsed to one calm row with the dot texture: when, how long, and the
- * Sleep goal's verdict. Last night sits above the day, tonight below it.
+ * Sleep goal's verdict. The night you woke up from sits above the day; the night you went to bed
+ * from sits below it, faint, because it belongs to the next day. Tap for the stages.
  */
-export function SleepBand({
+function SleepBand({
   night,
   goal,
   tonight = false,
+  isToday = false,
+  onOpen,
 }: {
   night: Night;
   goal: number | null;
   tonight?: boolean;
+  isToday?: boolean;
+  onOpen: () => void;
 }) {
   const verdict = sleepAgainstGoal(night.minutes, goal);
+  const name = tonight ? (isToday ? "Tonight" : "Then sleep") : "Sleep";
   return (
-    <div
-      className={`dots flex items-center justify-between gap-3 rounded-block bg-fill px-2.5 py-1.5 text-footnote text-label-2 tnum ${
-        tonight ? "mt-2" : "mt-3"
+    <button
+      type="button"
+      onClick={onOpen}
+      data-sleep-band={tonight ? "tonight" : "last-night"}
+      className={`press dots flex min-h-9 w-full items-center justify-between gap-3 rounded-block bg-fill px-2.5 py-1.5 text-left text-footnote text-label-2 tnum ${
+        tonight ? "mt-2 opacity-60" : "mt-3"
       }`}
     >
       <span className="min-w-0">
-        <span className="font-semibold text-label">Sleep</span> {formatTime(iso(night.start))} to{" "}
+        <span className="font-semibold text-label">{name}</span> {formatTime(iso(night.start))} to{" "}
         {formatTime(iso(night.end))}
-        <span className="sr-only">, {tonight ? "tonight" : "last night"}</span>
+        <span className="sr-only">
+          , {tonight ? "the night after this day" : "last night"}. Show the stages
+        </span>
       </span>
       <span className="shrink-0 text-right">
         <b className="font-semibold text-label">{hm(night.minutes)}</b>
         {verdict ? `, ${verdict.replace(/ (of )?your goal$/, "")}` : ""}
       </span>
+    </button>
+  );
+}
+
+// Stage fills, deepest darkest and all grey: pink is goal time only. Awake is the bare sleep dots.
+const STAGE_FILL: Record<keyof SleepStages, string> = {
+  deep: "bg-label",
+  core: "bg-label-2",
+  rem: "bg-context",
+  awake: "dots bg-fill shadow-[inset_0_0_0_1px_var(--m-separator)]",
+};
+
+/**
+ * The night's stages as one continuous bar (awake, REM, core, deep) on the same scale as the Sleep
+ * goal. The dashed line sits at awake time plus the goal, so it measures only the asleep stages:
+ * the gap between the bar's end and the line is exactly the time short of the goal.
+ */
+function StageBar({ stages, goal }: { stages: SleepStages; goal: number | null }) {
+  const parts = stageParts(stages);
+  const awake = parts.find((p) => p.key === "awake")?.minutes ?? 0;
+  const total = parts.reduce((n, p) => n + p.minutes, 0);
+  const asleep = total - awake;
+  const line = goal ? awake + goal : 0;
+  const scale = Math.max(total, line) || 1;
+  const pct = (m: number) => `${(m / scale) * 100}%`;
+  return (
+    <div className="mt-4">
+      <div
+        role="img"
+        aria-label={parts.map((p) => `${p.name} ${minutesPhrase(p.minutes)}`).join(", ")}
+        className="relative h-6"
+      >
+        <div className="absolute inset-y-0 left-0 flex gap-px" style={{ width: pct(total) }}>
+          {parts.map((p) => (
+            <span
+              key={p.key}
+              className={`h-full min-w-[3px] first:rounded-l-block last:rounded-r-block ${STAGE_FILL[p.key]}`}
+              style={{ flexGrow: p.minutes, flexBasis: 0 }}
+            />
+          ))}
+        </div>
+        {goal ? (
+          <span
+            aria-hidden="true"
+            className="absolute -top-1 -bottom-1 border-l-[1.5px] border-dashed border-label"
+            style={{ left: `calc(${pct(line)} - 1.5px)` }}
+          />
+        ) : null}
+      </div>
+      {goal ? (
+        <p className="mt-2 text-caption font-medium text-label-2">
+          {hm(asleep)} asleep against a goal of {hm(goal)}, the dashed line. Awake time stays out.
+        </p>
+      ) : null}
+      <ul className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2">
+        {parts.map((p) => (
+          <li key={p.key} className="flex items-center gap-2 text-subhead">
+            <span
+              aria-hidden="true"
+              className={`inline-block size-3 shrink-0 rounded-[3px] ${STAGE_FILL[p.key]}`}
+            />
+            <span className="text-label-2">{p.name}</span>
+            <span className="ml-auto font-semibold">{hm(p.minutes)}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** One night: the stages, bedtime and wake, the Sleep goal, and the heart around it. */
+function NightDetail({ night: n, goal, tonight }: { night: Night; goal: number | null; tonight: boolean }) {
+  const verdict = sleepAgainstGoal(n.minutes, goal);
+  return (
+    <div className="tnum">
+      <p className="text-footnote font-semibold text-label-2">
+        {tonight ? "The night after this day" : "Last night"}, from the watch
+      </p>
+      <h3 className="mt-0.5 text-title3 font-bold">
+        {hm(n.minutes)} asleep{verdict ? `, ${verdict}` : ""}
+      </h3>
+      {n.stages ? <StageBar stages={n.stages} goal={goal} /> : null}
+      <dl className="mt-3">
+        <Row label="Bedtime">{formatTime(iso(n.start))}</Row>
+        <Row label="Woke">{formatTime(iso(n.end))}</Row>
+        <Row label="Sleep goal">{goal ? hm(goal) : "None set"}</Row>
+        {n.restingHr !== undefined ? <Row label="Resting heart rate">{n.restingHr} bpm</Row> : null}
+        {n.hrv !== undefined ? <Row label="HRV">{n.hrv} ms</Row> : null}
+      </dl>
+    </div>
+  );
+}
+
+function NapDetail({ nap }: { nap: Nap }) {
+  return (
+    <div className="tnum">
+      <p className="text-footnote font-semibold text-label-2">Nap, from the watch</p>
+      <h3 className="mt-0.5 text-title3 font-bold">{minutesPhrase(nap.minutes)}</h3>
+      <dl className="mt-3">
+        <Row label="When">{span(nap.start, nap.end)}</Row>
+        <Row label="Sleep goal">Naps stay out of it</Row>
+      </dl>
     </div>
   );
 }

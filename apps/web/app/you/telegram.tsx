@@ -60,7 +60,7 @@ export async function TelegramRow() {
           action={disconnectTelegramChat}
           label="Disconnect"
           pendingLabel="Disconnecting"
-          className="hit press h-9 text-left text-subhead font-semibold text-label"
+          className="hit press h-9 text-left text-subhead font-semibold text-danger"
         />
       </span>
     </div>

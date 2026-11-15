@@ -21,7 +21,7 @@ import { type ChecklistPatch, store } from "../store";
 //   - Items belong to a goal of kind `checklist`; any other goal is a 400.
 //   - At most three open items per goal and day (409). An item takes the lowest free slot
 //     (`position` 0..2) among the open ones.
-//   - Michael never ticks an item. The user settles it (done or dropped, `settled_by: "user"`),
+//   - Michael never ticks an item. The user settles it (done, partly or dropped, `settled_by: "user"`),
 //     or the check in does (`settled_by: "check_in"`). Reopening clears both.
 //   - Carrying moves an open item to the next day: the old one becomes `moved`, a new one
 //     continues it with `carried_from`. `moved` is never set by hand.
@@ -82,7 +82,22 @@ export async function addItem(
   const date = input.date ?? todayOf(now);
   const position = freePosition(await store.listChecklist({ from: date, to: date }), goal.id, date);
   if (position === null) throw conflict(FULL);
-  return store.createChecklistItem({ goal_id: goal.id, date, text: input.text.trim(), position });
+  const linked = input.linked_goal_id ? await linkedGoal(input.linked_goal_id) : null;
+  return store.createChecklistItem({
+    goal_id: goal.id,
+    date,
+    text: input.text.trim(),
+    position,
+    linked_goal_id: linked?.id ?? null,
+    estimate_minutes: input.estimate_minutes ?? null,
+  });
+}
+
+/** The goal an outcome serves (#318): any of the user's goals, of any kind; 404 otherwise. */
+export async function linkedGoal(id: string): Promise<Goal> {
+  const goal = z.uuid().safeParse(id).success ? await store.getGoal(id) : null;
+  if (!goal) throw new HttpError("not_found", "Goal not found");
+  return goal;
 }
 
 /** Text and status. `by` is who settles it: the user (routes, MCP) or the check in. */
@@ -129,6 +144,8 @@ export async function carryItem(id: string, now = Date.now()): Promise<Checklist
     text: item.text,
     position,
     carried_from: item.id,
+    linked_goal_id: item.linked_goal_id,
+    estimate_minutes: item.estimate_minutes,
   });
   const moved = await store.updateChecklistItem(item.id, {
     status: "moved",

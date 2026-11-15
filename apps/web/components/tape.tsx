@@ -1,16 +1,25 @@
 import type { Tick } from "@/lib/day";
 import { Tween } from "./motion-ui";
 
+const RUN: Record<Tick, string> = {
+  spent: "bg-spark",
+  unverified: "bg-[color-mix(in_srgb,var(--m-spark)_38%,var(--m-bg))]",
+  // Lost is hatched grey, outlined top and bottom so the bar's edge runs through it.
+  lost: "hatch bg-bg shadow-[inset_0_1px_0_var(--m-label-2),inset_0_-1px_0_var(--m-label-2)]",
+  ahead: "bg-bg shadow-[inset_0_0_0_1px_var(--m-label-2)]",
+};
+
 /**
- * The tape: Michael's signature (docs/design-guide.md). One tick per 5 minutes of planned goal time.
- * Spent is pink, lost is grey and dropped, still ahead is an outline. Blocks are separated by a wider gap.
- * Drawn in HTML so ticks stay crisp at any width.
+ * The tape: Michael's signature (docs/design-guide.md), drawn as ONE bar (.claude/skills/michael-ui).
+ * Each 5 minute tick of planned goal time is a slice of it: spent pink, unconfirmed light pink, lost
+ * hatched grey, still ahead the outlined bar itself. Runs of one state merge, so the bar reads as a
+ * single strip, and each run's end slides on `transform` when a live refresh moves it.
  */
 export function Tape({
   ticks,
   nowAt,
   nowLabel,
-  height = 30,
+  height = 12,
   label,
   recordAt,
 }: {
@@ -22,72 +31,67 @@ export function Tape({
   /** Tick index of a personal best (#166): a black diamond above it. */
   recordAt?: number | null;
 }) {
-  let index = 0;
-  const showNow = nowAt != null && nowLabel;
-  const total = ticks.reduce((n, b) => n + b.length, 0);
+  const flat = ticks.flat();
+  const total = flat.length;
+  const showNow = nowAt != null && !!nowLabel && total > 0;
   // Early in the day the time label sits right of the line, so it never leaves the screen.
-  const labelRight = showNow && total > 0 && (nowAt ?? 0) / total < 0.25;
+  const labelRight = showNow && (nowAt ?? 0) / total < 0.25;
+  const runs: { kind: Tick; end: number }[] = [];
+  flat.forEach((t, i) => {
+    const last = runs[runs.length - 1];
+    if (last && last.kind === t) last.end = i + 1;
+    else runs.push({ kind: t, end: i + 1 });
+  });
+  const pct = (i: number) => (total > 0 ? (i / total) * 100 : 0);
   return (
     <div
       role="img"
       aria-label={label}
       className="relative w-full"
-      style={{ paddingTop: showNow || recordAt != null ? 16 : 0 }}
+      style={{ paddingTop: showNow || recordAt != null ? 18 : 0 }}
     >
-      <div className="flex w-full gap-[5px]" style={{ height }}>
-        {ticks.map((block, bi) => (
-          <div
-            // biome-ignore lint/suspicious/noArrayIndexKey: blocks are positional within a day
-            key={bi}
-            className="flex min-w-0 gap-[1.5px]"
-            style={{ flexGrow: block.length, flexBasis: 0 }}
-          >
-            {block.map((t) => {
-              const i = index++;
-              const isNow = showNow && i === nowAt;
-              return (
-                // data-live-key: a tick that changes state (ahead to spent) eases in after a live refresh.
-                <span key={i} data-live-key={`t${i}${t}`} className="m-tick relative min-w-0 flex-1">
-                  {i === recordAt ? (
-                    <span
-                      aria-hidden="true"
-                      className="absolute -top-[13px] left-1/2 size-[7px] -translate-x-1/2 rotate-45 rounded-[1px] bg-label"
-                    />
-                  ) : null}
-                  {isNow ? (
-                    <span className="absolute -top-4 -left-[2px] h-[calc(100%+16px)] w-[1.5px] bg-label">
-                      <span
-                        className={`absolute -top-[2px] whitespace-nowrap text-caption font-semibold text-label tnum ${
-                          labelRight ? "left-[5px]" : "right-[5px]"
-                        }`}
-                      >
-                        {nowLabel}
-                      </span>
-                    </span>
-                  ) : null}
-                  {t === "spent" ? (
-                    <span className="absolute inset-0 rounded-[1.5px] bg-spark" />
-                  ) : t === "unverified" ? (
-                    <span className="absolute inset-0 rounded-[1.5px] bg-[color-mix(in_srgb,var(--m-spark)_38%,var(--m-bg))]" />
-                  ) : t === "lost" ? (
-                    <span className="absolute inset-x-0 bottom-0 h-[45%] rounded-[1.5px] bg-label-2 opacity-75" />
-                  ) : (
-                    <span className="absolute inset-0 rounded-[1.5px] shadow-[inset_0_0_0_1px_var(--m-label-2)]" />
-                  )}
-                </span>
-              );
-            })}
-          </div>
-        ))}
+      <div className={`relative isolate overflow-hidden rounded-full ${RUN.ahead}`} style={{ height }}>
+        {/* Each run is a full width layer slid to its end; earlier runs sit on top of later ones. */}
+        {runs.map((r, i) =>
+          r.kind === "ahead" ? null : (
+            <span
+              // biome-ignore lint/suspicious/noArrayIndexKey: runs are positional within a day
+              key={i}
+              className={`m-bar-fill absolute inset-0 ${RUN[r.kind]}`}
+              style={{ transform: `translateX(${pct(r.end) - 100}%)`, zIndex: runs.length - i }}
+            />
+          ),
+        )}
       </div>
+      {recordAt != null && total > 0 ? (
+        <span
+          aria-hidden="true"
+          className="absolute top-1 size-[7px] -translate-x-1/2 rotate-45 rounded-[1px] bg-label"
+          style={{ left: `${pct(recordAt + 0.5)}%` }}
+        />
+      ) : null}
+      {showNow ? (
+        <span
+          aria-hidden="true"
+          className="absolute top-0.5 -bottom-[3px] w-[1.5px] -translate-x-1/2 bg-label"
+          style={{ left: `clamp(1px, ${pct(nowAt ?? 0)}%, calc(100% - 1px))` }}
+        >
+          <span
+            className={`absolute -top-[3px] whitespace-nowrap text-caption font-semibold text-label tnum ${
+              labelRight ? "left-[5px]" : "right-[5px]"
+            }`}
+          >
+            {nowLabel}
+          </span>
+        </span>
+      ) : null}
     </div>
   );
 }
 
 /**
- * The small key under the tape. Given `minutes`, the figure ("1h 20") moves to its new value on a
- * live refresh instead of snapping, followed by `text` ("spent"). `hidden` when the tape's own label
- * already says the same in full words, so VoiceOver does not read the numbers twice.
+ * The small key under the tape: a swatch of the bar for each state. Given `minutes`, the figure
+ * ("1h 20") moves to its new value on a live refresh instead of snapping, followed by `text`.
  */
 export function TapeKey({
   items,
@@ -103,18 +107,7 @@ export function TapeKey({
     >
       {items.map(({ kind, text, minutes }) => (
         <li key={kind} className="inline-flex items-center gap-1.5">
-          <span
-            aria-hidden="true"
-            className={
-              kind === "spent"
-                ? "h-3 w-1 rounded-[1px] bg-spark"
-                : kind === "unverified"
-                  ? "h-3 w-1 rounded-[1px] bg-[color-mix(in_srgb,var(--m-spark)_38%,var(--m-bg))]"
-                  : kind === "lost"
-                    ? "mt-1.5 h-1.5 w-1 rounded-[1px] bg-label-2 opacity-75"
-                    : "h-3 w-1 rounded-[1px] shadow-[inset_0_0_0_1px_var(--m-label-2)]"
-            }
-          />
+          <span aria-hidden="true" className={`h-2 w-3.5 rounded-full ${RUN[kind]}`} />
           {minutes == null ? (
             text
           ) : (

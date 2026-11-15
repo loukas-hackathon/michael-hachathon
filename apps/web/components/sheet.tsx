@@ -43,9 +43,9 @@ export function Sheet({
     if (open && !d.open) {
       opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       d.showModal();
-      // showModal() would focus Cancel, and Safari draws a ring for that even after a tap. Focus the
-      // sheet itself instead: VoiceOver reads its title, Tab still reaches Cancel, and no ring shows.
-      d.focus({ preventScroll: true });
+      // showModal focuses the first control (Cancel), and some browsers ring it even after a tap.
+      // Focus the sheet itself instead: screen readers hear its title, the next Tab reaches Cancel.
+      d.focus({ preventScroll: true, focusVisible: false } as FocusOptions);
     }
     if (!open && d.open) {
       d.close();
@@ -130,7 +130,7 @@ export function Sheet({
             <button
               type="button"
               onClick={onClose}
-              className="press -ml-2 h-11 justify-self-start rounded-full px-2 text-body text-tint-text"
+              className="press -ml-2 h-11 justify-self-start rounded-control px-2 text-body text-tint-text"
             >
               Cancel
             </button>

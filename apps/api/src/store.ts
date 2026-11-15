@@ -2,6 +2,7 @@ import {
   type AnalysisRun,
   type ChatMessage,
   type ChatRole,
+  type ChatThread,
   type CheckIn,
   type CheckInValue,
   type ChecklistItem,
@@ -33,6 +34,7 @@ import {
   type Profile,
   type Recommendation,
   type RecommendationStatus,
+  type RitualKind,
   type Source,
   type SourceSetting,
   type WeeklyTarget,
@@ -118,6 +120,20 @@ export interface DataDeleteScope {
 /** Rows deleted per table. */
 export type DeleteCounts = Record<string, number>;
 
+/** What PATCH /v1/chat/threads/:id may change. */
+export type ChatThreadChange = Partial<Pick<ChatThread, "title" | "pinned" | "archived">>;
+
+/** The thread title before the first line: the model or the template names it after that. */
+export const NEW_THREAD_TITLE = "New chat";
+/** Characters of the last line kept as the thread's preview. */
+export const PREVIEW_CHARS = 140;
+export const previewOf = (content: string) => content.replace(/\s+/g, " ").trim().slice(0, PREVIEW_CHARS);
+
+/** Pinned first, then the latest line (creation while empty), newest first. */
+export const threadOrder = (a: ChatThread, b: ChatThread) =>
+  Number(b.pinned) - Number(a.pinned) ||
+  Date.parse(b.last_message_at ?? b.created_at) - Date.parse(a.last_message_at ?? a.created_at);
+
 /** UTC days a summary row must fall in to match a [from, to) range. */
 export const summaryDayRange = (from?: string, to?: string) => ({
   from: from ? new Date(from).toISOString().slice(0, 10) : undefined,
@@ -151,11 +167,22 @@ export type NewDraft = Omit<Draft, "id" | "status" | "created_at" | "updated_at"
 /** A new checklist item (#238); the rules (kind, three open, position) are checked in checklist/. */
 export type NewChecklistItem = Pick<ChecklistItem, "goal_id" | "date" | "text" | "position"> & {
   carried_from?: string | null;
+  linked_goal_id?: string | null;
+  estimate_minutes?: number | null;
 };
 /** What may change on a checklist item. `status` with `settled_at` and `settled_by` together. */
 export type ChecklistPatch = Partial<
-  Pick<ChecklistItem, "text" | "status" | "settled_at" | "settled_by" | "position">
+  Pick<ChecklistItem, "text" | "status" | "settled_at" | "settled_by" | "position" | "logged_minutes">
 >;
+
+/** One half of the daily ritual (#318) saved or skipped on a local day. */
+export type DayRitual = {
+  day: string;
+  kind: RitualKind;
+  state: "done" | "skipped";
+  summary: string | null;
+  updated_at: string;
+};
 
 /** Items by date, then goal (oldest first), then position. */
 export const checklistOrder = (a: ChecklistItem, b: ChecklistItem) =>
@@ -226,14 +253,29 @@ export interface Store extends PrivacyBackend {
   // Privacy (privacy.ts holds the rules; insertEvents applies them).
   setOffTheRecord(on: boolean): Promise<PrivacyRules>;
   /**
-   * The most recent chat messages, oldest first. Chat is per demo visitor on the demo account
-   * (`currentDemoVisitor()`): a visitor sees only their own lines, everyone else only the
-   * account's own lines (visitor null).
+   * Chat threads, pinned first then latest activity first. Chat is per demo visitor on the demo
+   * account (`currentDemoVisitor()`): a visitor sees only their own threads and lines, everyone
+   * else only the account's own (visitor null). `q` matches titles and line text.
    */
-  listChatMessages(limit: number): Promise<ChatMessage[]>;
-  /** `actionIds`: recommendations done or undone while writing an answer (ChatMessage.action_ids). */
-  addChatMessage(role: ChatRole, content: string, actionIds?: string[]): Promise<ChatMessage>;
-  /** Deletes the current user's demo visitor chat lines written at or before `before`. */
+  listChatThreads(opts?: { archived?: boolean; q?: string; limit?: number }): Promise<ChatThread[]>;
+  getChatThread(id: string): Promise<ChatThread | null>;
+  createChatThread(title?: string): Promise<ChatThread>;
+  updateChatThread(id: string, patch: ChatThreadChange): Promise<ChatThread | null>;
+  /** Deletes the thread and every line in it. The number of lines, or null when not found. */
+  deleteChatThread(id: string): Promise<number | null>;
+  /** The most recent lines of one thread, oldest first. Empty for someone else's thread. */
+  listChatMessages(threadId: string, limit: number): Promise<ChatMessage[]>;
+  /**
+   * Adds a line to one of the caller's threads and moves the thread's preview and time.
+   * `actionIds`: recommendations done or undone while writing an answer (ChatMessage.action_ids).
+   */
+  addChatMessage(
+    threadId: string,
+    role: ChatRole,
+    content: string,
+    actionIds?: string[],
+  ): Promise<ChatMessage>;
+  /** Deletes the current user's demo visitor threads (and lines) last active at or before `before`. */
   clearVisitorChat(before: string): Promise<number>;
   // Follow up drafts (actions/drafts.ts), newest first. Never sent anywhere.
   listDrafts(filter?: { status?: DraftStatus }): Promise<Draft[]>;
@@ -292,6 +334,12 @@ export interface Store extends PrivacyBackend {
    */
   updateChecklistItem(id: string, patch: ChecklistPatch): Promise<ChecklistItem | null>;
   deleteChecklistItem(id: string): Promise<boolean>;
+
+  // ---- the daily ritual (#318): which halves were saved or skipped ----
+  /** Rows with `day` in [from, to] (local days, inclusive). */
+  listRituals(filter: { from: string; to: string }): Promise<DayRitual[]>;
+  /** Insert or replace the row for that day and half. */
+  saveRitual(row: Omit<DayRitual, "updated_at">): Promise<DayRitual>;
 
   // ---- weekly targets (#165), one per Monday ----
   /** Stored targets with `week_start` in [from, to] (local days), oldest first. */
@@ -439,7 +487,8 @@ export class MemoryStore implements Store {
       recommendations: Recommendation[];
       runs: AnalysisRun[];
       privacy: PrivacyRules;
-      chat: (ChatMessage & { visitor: string | null })[];
+      chat: (ChatMessage & { visitor: string | null; thread: string })[];
+      threads: (ChatThread & { visitor: string | null })[];
       drafts: Draft[];
       integrations: IntegrationRecord[];
       nudges: Nudge[];
@@ -454,6 +503,7 @@ export class MemoryStore implements Store {
       records: (PersonalRecord & { key: string })[];
       checkIns: StoredCheckIn[];
       checklist: ChecklistItem[];
+      rituals: DayRitual[];
     }
   >();
   private fresh(sample: boolean) {
@@ -464,7 +514,8 @@ export class MemoryStore implements Store {
       recommendations: sample ? [...structuredClone(mockRecommendations), ...demoRecommendations()] : [],
       runs: sample ? [structuredClone(mockAnalysisRun)] : [],
       privacy: { offTheRecord: false, since: null, sources: {} } as PrivacyRules,
-      chat: [] as (ChatMessage & { visitor: string | null })[],
+      chat: [] as (ChatMessage & { visitor: string | null; thread: string })[],
+      threads: [] as (ChatThread & { visitor: string | null })[],
       drafts: [] as Draft[],
       integrations: [] as IntegrationRecord[],
       nudges: [] as Nudge[],
@@ -479,6 +530,7 @@ export class MemoryStore implements Store {
       records: [] as (PersonalRecord & { key: string })[],
       checkIns: [] as StoredCheckIn[],
       checklist: [] as ChecklistItem[],
+      rituals: [] as DayRitual[],
     };
   }
   private get d() {
@@ -609,6 +661,8 @@ export class MemoryStore implements Store {
     this.goals = this.goals.filter((g) => g.id !== id);
     // As the foreign key's cascade does in Postgres.
     this.d.checklist = this.d.checklist.filter((i) => i.goal_id !== id);
+    // ON DELETE SET NULL on linked_goal_id (#318).
+    for (const i of this.d.checklist) if (i.linked_goal_id === id) i.linked_goal_id = null;
     return this.goals.length < before;
   }
 
@@ -750,15 +804,80 @@ export class MemoryStore implements Store {
     return { run, recommendations };
   }
 
-  async listChatMessages(limit: number) {
+  /** The caller's own threads: the account's, or this demo visitor's. */
+  private ownThreads() {
     const visitor = currentDemoVisitor();
-    return this.d.chat
-      .filter((m) => m.visitor === visitor)
-      .slice(-limit)
-      .map(({ visitor: _v, ...m }): ChatMessage => m);
+    return this.d.threads.filter((t) => t.visitor === visitor);
   }
 
-  async addChatMessage(role: ChatRole, content: string, actionIds: string[] = []) {
+  private ownThread(id: string) {
+    return this.ownThreads().find((t) => t.id === id) ?? null;
+  }
+
+  async listChatThreads(opts: { archived?: boolean; q?: string; limit?: number } = {}) {
+    const q = opts.q?.trim().toLowerCase();
+    const hits = q
+      ? new Set(this.d.chat.filter((m) => m.content.toLowerCase().includes(q)).map((m) => m.thread))
+      : null;
+    return this.ownThreads()
+      .filter((t) => t.archived === (opts.archived ?? false))
+      .filter((t) => !q || t.title.toLowerCase().includes(q) || hits?.has(t.id))
+      .map(({ visitor: _v, ...t }): ChatThread => ({ ...t }))
+      .sort(threadOrder)
+      .slice(0, opts.limit ?? 100);
+  }
+
+  async getChatThread(id: string) {
+    const t = this.ownThread(id);
+    if (!t) return null;
+    const { visitor: _v, ...thread } = t;
+    return { ...thread };
+  }
+
+  async createChatThread(title?: string) {
+    const at = now();
+    const thread: ChatThread = {
+      id: crypto.randomUUID(),
+      title: title ?? NEW_THREAD_TITLE,
+      pinned: false,
+      archived: false,
+      preview: null,
+      last_message_at: null,
+      created_at: at,
+      updated_at: at,
+    };
+    this.d.threads.push({ ...thread, visitor: currentDemoVisitor() });
+    return { ...thread };
+  }
+
+  async updateChatThread(id: string, patch: ChatThreadChange) {
+    const t = this.ownThread(id);
+    if (!t) return null;
+    const changes = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined));
+    Object.assign(t, changes, { updated_at: now() });
+    return this.getChatThread(id);
+  }
+
+  async deleteChatThread(id: string) {
+    const d = this.d;
+    if (!this.ownThread(id)) return null;
+    const before = d.chat.length;
+    d.chat = d.chat.filter((m) => m.thread !== id);
+    d.threads = d.threads.filter((t) => t.id !== id);
+    return before - d.chat.length;
+  }
+
+  async listChatMessages(threadId: string, limit: number) {
+    if (!this.ownThread(threadId)) return [];
+    return this.d.chat
+      .filter((m) => m.thread === threadId)
+      .slice(-limit)
+      .map(({ visitor: _v, thread: _t, ...m }): ChatMessage => m);
+  }
+
+  async addChatMessage(threadId: string, role: ChatRole, content: string, actionIds: string[] = []) {
+    const thread = this.ownThread(threadId);
+    if (!thread) throw new HttpError("not_found", "Chat thread not found");
     const message: ChatMessage = {
       id: crypto.randomUUID(),
       role,
@@ -766,14 +885,25 @@ export class MemoryStore implements Store {
       created_at: now(),
       action_ids: [...actionIds],
     };
-    this.d.chat.push({ ...message, visitor: currentDemoVisitor() });
+    this.d.chat.push({ ...message, visitor: currentDemoVisitor(), thread: threadId });
+    Object.assign(thread, {
+      preview: previewOf(content),
+      last_message_at: message.created_at,
+      updated_at: message.created_at,
+    });
     return message;
   }
 
   async clearVisitorChat(before: string) {
     const d = this.d;
     const cut = Date.parse(before);
-    const kept = d.chat.filter((m) => m.visitor === null || Date.parse(m.created_at) > cut);
+    const gone = new Set(
+      d.threads
+        .filter((t) => t.visitor !== null && Date.parse(t.last_message_at ?? t.created_at) <= cut)
+        .map((t) => t.id),
+    );
+    d.threads = d.threads.filter((t) => !gone.has(t.id));
+    const kept = d.chat.filter((m) => !gone.has(m.thread));
     const removed = d.chat.length - kept.length;
     d.chat = kept;
     return removed;
@@ -999,6 +1129,9 @@ export class MemoryStore implements Store {
       settled_at: null,
       settled_by: null,
       carried_from: input.carried_from ?? null,
+      linked_goal_id: input.linked_goal_id ?? null,
+      estimate_minutes: input.estimate_minutes ?? null,
+      logged_minutes: null,
       created_at: now(),
       updated_at: now(),
     };
@@ -1021,6 +1154,17 @@ export class MemoryStore implements Store {
     // ON DELETE SET NULL on carried_from.
     for (const i of d.checklist) if (i.carried_from === id) i.carried_from = null;
     return d.checklist.length < before;
+  }
+
+  async listRituals(f: { from: string; to: string }) {
+    return structuredClone(this.d.rituals.filter((r) => r.day >= f.from && r.day <= f.to));
+  }
+
+  async saveRitual(row: Omit<DayRitual, "updated_at">) {
+    const d = this.d;
+    const saved: DayRitual = { ...row, updated_at: now() };
+    d.rituals = [...d.rituals.filter((r) => !(r.day === row.day && r.kind === row.kind)), saved];
+    return structuredClone(saved);
   }
 
   async listTargets(from: string, to: string) {
@@ -1137,8 +1281,8 @@ export class MemoryStore implements Store {
         goals: d.goals.length,
         focus_guards: d.guards.length,
         recommendations: d.recommendations.length,
-        analysis_runs: d.runs.length,
         chat_messages: d.chat.length,
+        chat_threads: d.threads.length,
         check_ins: d.checkIns.length,
         drafts: d.drafts.length,
         instructions: d.instructions.length,
@@ -1154,6 +1298,7 @@ export class MemoryStore implements Store {
         weekly_targets: d.targets.length,
         records: d.records.length,
         checklist_items: d.checklist.length,
+        day_rituals: d.rituals.length,
       };
       // An empty account, not the sample day a first visit gets.
       this.data.set(userId, this.fresh(false));

@@ -1,5 +1,6 @@
 import {
   type AppCategory,
+  bundleIdForAppName,
   categoriseApp,
   categoriseVisit,
   type Event,
@@ -21,6 +22,9 @@ import { type Span, subtractSpans, sum, union } from "./util";
 //   2. Web visits: where the extension reported, history is ignored (`preferExtension`). Where
 //      the Mac log is alive, a visit only refines browser time and never adds time of its own.
 //   3. Across devices: when the phone and the Mac overlap, the phone has the attention.
+//   4. App usage: Apple's own logs (macos_usage, iphone_usage from the Biome backfill) are the
+//      record. ActivityWatch (Mac) and iPhone Shortcuts (live opens and closes) fill the hours the
+//      record does not cover yet (`preferRecord`), so the same minute is never counted twice.
 
 export type OpenedFrom = "home_screen" | "app_switcher" | "notification" | "other";
 export type WebOrigin = "history" | "extension";
@@ -36,6 +40,11 @@ export interface Segment extends Span {
   appKey: string;
   eventId: string;
   openedFrom: OpenedFrom | null;
+}
+
+/** An app interval, and whether it comes from a live backup source rather than Apple's own log. */
+export interface AppUse extends Segment {
+  backup: boolean;
 }
 
 export interface WebVisit extends Segment {
@@ -64,6 +73,8 @@ export interface Timeline {
   counts: {
     macAppUsage: number;
     iphoneAppUsage: number;
+    /** Live app intervals (ActivityWatch, Shortcuts) left out because Apple's log covers their hour. */
+    appUsageSuperseded: number;
     webVisits: number;
     webVisitsSuperseded: number;
     webVisitsUnmeasured: number;
@@ -88,35 +99,68 @@ const num = (v: unknown): number | null => (typeof v === "number" && Number.isFi
 /** Whole seconds, so that totals add up exactly. */
 const at = (isoTime: string) => Math.round(Date.parse(isoTime) / SECOND) * SECOND;
 
-/** App usage from the Mac and the iPhone collectors. Anything without a bundle id or an end is skipped. */
-export function parseAppUsage(events: Event[]): Segment[] {
-  const out: Segment[] = [];
+// Where app usage comes from. Apple's logs are the record; the others are live backups.
+const APP_SOURCES: Record<string, { device: PatternDevice; backup: boolean }> = {
+  macos_usage: { device: "mac", backup: false },
+  iphone_usage: { device: "iphone", backup: false },
+  activitywatch: { device: "mac", backup: true },
+  ios_shortcuts: { device: "iphone", backup: true },
+};
+
+/**
+ * App usage from the Mac and the iPhone: Apple's own logs, ActivityWatch and iPhone Shortcuts.
+ * An app is known by its bundle id, else by its name when the name says one well known app, else
+ * by the name itself (key and name). Anything without an app or an end is skipped.
+ */
+export function parseAppUsage(events: Event[]): AppUse[] {
+  const out: AppUse[] = [];
   for (const e of events) {
     if (e.type !== "app_usage" || !e.end_at) continue;
-    if (e.source !== "macos_usage" && e.source !== "iphone_usage") continue;
-    const bundle = str(e.data.bundle_id);
-    if (!bundle) continue;
+    const source = Object.hasOwn(APP_SOURCES, e.source) ? APP_SOURCES[e.source] : undefined;
+    if (!source) continue;
+    const named = str(e.data.app) ?? str(e.title);
+    const bundle = str(e.data.bundle_id) ?? (source.backup && named ? bundleIdForAppName(named) : null);
+    const key = bundle ?? (source.backup ? named : null);
+    if (!key) continue;
     const start = at(e.start_at);
     const end = at(e.end_at);
     if (!(end > start)) continue;
     // The iPhone collector also reads the Apple Watch. A glance at the watch is not phone use.
     if (e.data.device === "watch") continue;
-    const device: PatternDevice = e.source === "iphone_usage" ? "iphone" : "mac";
+    const device = source.device;
     const opened = str(e.data.opened_from);
     out.push({
       start,
       end,
       device,
       kind: "app",
-      key: bundle,
-      name: e.title,
-      category: categoriseApp(bundle),
-      appKey: device === "mac" && isBrowser(bundle) ? BROWSER_APP_KEY : `${device}:${bundle}`,
+      key,
+      name: e.title || named || key,
+      category: bundle ? categoriseApp(bundle) : "other",
+      appKey: device === "mac" && bundle && isBrowser(bundle) ? BROWSER_APP_KEY : `${device}:${key}`,
       eventId: e.id,
       openedFrom: opened && OPENED_FROM.has(opened) ? (opened as OpenedFrom) : null,
+      backup: source.backup,
     });
   }
   return out;
+}
+
+/**
+ * THE rule for two descriptions of the same app use. Apple's own log (the Mac's, and the iPhone's
+ * Biome backfill, which lands up to a day late) is the record; ActivityWatch and Shortcuts are live
+ * backups. Per device, for every clock hour (UTC) in which the record has at least one interval,
+ * backup intervals that start in that hour are ignored. Until the backfill arrives the live
+ * intervals stand in; once it does, they step aside.
+ */
+export function preferRecord(uses: AppUse[]): { kept: AppUse[]; superseded: number } {
+  const covered = new Set<string>();
+  for (const u of uses) {
+    if (u.backup) continue;
+    for (let h = Math.floor(u.start / HOUR); h * HOUR < u.end; h++) covered.add(`${u.device}:${h}`);
+  }
+  const kept = uses.filter((u) => !u.backup || !covered.has(`${u.device}:${Math.floor(u.start / HOUR)}`));
+  return { kept, superseded: uses.length - kept.length };
 }
 
 /** Web visits from Chrome. The end is `end_at`, or the start plus `seconds` when there is none. */
@@ -263,7 +307,8 @@ export function flatten<T extends Span>(items: { seg: T; prio: number }[]): T[] 
 
 /** Everything the detectors need, built once. `from` and `to` are instants in ms. */
 export function buildTimeline(events: Event[], from: number, to: number): Timeline {
-  const usage = clip(parseAppUsage(events), from, to);
+  const parsed = clip(parseAppUsage(events), from, to);
+  const { kept: usage, superseded: appUsageSuperseded } = preferRecord(parsed);
   const off = screenOffSpans(events);
   const macUsage = usage.filter((s) => s.device === "mac");
   const macApps = cut(macUsage, off);
@@ -295,10 +340,11 @@ export function buildTimeline(events: Event[], from: number, to: number): Timeli
   // with history alone the split of browser time between sites is an estimate. The extension
   // makes it exact.
   const mac = flatten<Segment>([
-    ...macApps.map((seg) => ({ seg, prio: seg.appKey === BROWSER_APP_KEY ? 0 : 3 })),
+    ...macApps.map((seg) => ({ seg, prio: seg.appKey === BROWSER_APP_KEY ? 0 : seg.backup ? 2.5 : 3 })),
     ...visits.map((seg) => ({ seg: seg as Segment, prio: seg.origin === "extension" ? 2 : 1 })),
   ]);
-  const iphone = flatten<Segment>(phoneApps.map((seg) => ({ seg, prio: 0 })));
+  // At the edge of an hour a live backup can still overlap the record: the record wins.
+  const iphone = flatten<Segment>(phoneApps.map((seg) => ({ seg, prio: seg.backup ? 0 : 1 })));
   const attention = flatten<Segment>([
     ...mac.map((seg) => ({ seg, prio: 0 })),
     ...iphone.map((seg) => ({ seg, prio: 1 })),
@@ -336,6 +382,7 @@ export function buildTimeline(events: Event[], from: number, to: number): Timeli
     counts: {
       macAppUsage: macUsage.length,
       iphoneAppUsage: phoneApps.length,
+      appUsageSuperseded,
       webVisits: believed.length,
       webVisitsSuperseded: superseded,
       webVisitsUnmeasured: kept.length - believed.length,
