@@ -50,7 +50,7 @@ export default async function YouPage({
         </Link>
       ) : null}
 
-      <ConnectionsList view={connections} flash={flash} />
+      <ConnectionsList view={connections} flash={flash} demo={account === "The demo week"} />
 
       <section className="mt-8">
         <h2 className="mb-2 text-title3 font-bold">Privacy</h2>
@@ -65,7 +65,9 @@ export default async function YouPage({
             <span className="text-body">Agents</span>
             <span className="text-footnote text-label-2">Who asks about you, and what they may see</span>
           </span>
-          <span className="text-label-2">›</span>
+          <span aria-hidden="true" className="text-label-2">
+            ›
+          </span>
         </Link>
         <DeleteDataRow />
       </section>
@@ -88,7 +90,9 @@ export default async function YouPage({
               <span className="text-body">Redo setup</span>
               <span className="text-footnote text-label-2">Goals and connections</span>
             </span>
-            <span className="text-label-2">›</span>
+            <span aria-hidden="true" className="text-label-2">
+              ›
+            </span>
           </Link>
           <p className="relative flex min-h-12 items-center justify-between gap-3 px-4 py-2">
             <span className={separator} />

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Wordmark } from "@/components/brand";
-import { getToday } from "@/lib/api";
+import { getScore, getToday } from "@/lib/api";
 import { type DayView, nowIndex, tape, totals } from "@/lib/day";
 import { formatDay, formatTime, hm, minutesPhrase } from "@/lib/format";
 import { getStageFeed } from "@/lib/stage";
@@ -22,7 +22,14 @@ export default async function StagePage({
   searchParams: Promise<{ demo?: string; theme?: string }>;
 }) {
   const { demo, theme } = await searchParams;
-  const [day, feed] = await Promise.all([getToday(demo).catch(() => null), getStageFeed()]);
+  const [day, feed, score] = await Promise.all([
+    getToday(demo).catch(() => null),
+    getStageFeed(),
+    // The same score Today is built from (deduped per request), for each block's own title.
+    demo ? Promise.resolve(null) : getScore().catch(() => null),
+  ]);
+  // A block is named as the calendar names it ("Rhefuel"), as on Today and Timeline, not by its goal.
+  const titles = new Map((score?.day.blocks ?? []).map((b) => [b.event_id, b.title]));
 
   return (
     <main className="stage" data-theme={theme === "light" ? "light" : "dark"}>
@@ -38,7 +45,7 @@ export default async function StagePage({
           </header>
         }
         hero={<Hero day={day} />}
-        tape={<Band day={day} />}
+        tape={<Band day={day} titles={titles} />}
       />
     </main>
   );
@@ -98,7 +105,7 @@ function Hero({ day }: { day: DayView | null }) {
   );
 }
 
-function Band({ day }: { day: DayView | null }) {
+function Band({ day, titles }: { day: DayView | null; titles: Map<string, string> }) {
   if (!day || day.blocks.length === 0) {
     return (
       <section aria-label="Today" className="stage-empty">
@@ -119,7 +126,7 @@ function Band({ day }: { day: DayView | null }) {
     <section aria-label="Today">
       <StageTape
         ticks={ticks}
-        blocks={day.blocks}
+        blocks={day.blocks.map((b) => ({ ...b, title: titles.get(b.id) || b.title }))}
         nowAt={nowAt}
         nowLabel={formatTime(day.now)}
         label={`${hm(t.spent)} spent, ${hm(t.lost)} lost, ${hm(t.ahead)} still ahead`}

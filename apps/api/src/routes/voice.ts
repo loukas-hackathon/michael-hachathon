@@ -1,7 +1,17 @@
-import { VoiceSpeakRequest, type VoiceStatus } from "@michael/shared";
+import {
+  VOICE_AUDIO_MAX_BYTES,
+  VOICE_AUDIO_MIN_BYTES,
+  VoiceAudioType,
+  VoiceSpeakRequest,
+  type VoiceStatus,
+} from "@michael/shared";
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
+import { currentAuthMethod, currentDemoVisitor, currentUserId } from "../context";
 import { env } from "../env";
 import { HttpError, jsonBody, parse } from "../http";
+import { rateLimiter } from "../rate-limit";
+import { transcribe, transcribeAvailable } from "../transcribe";
 
 // Michael's voice: proxies ElevenLabs text to speech so the key never reaches the browser.
 // Only text goes out and audio comes straight back; nothing is stored on our side.
@@ -28,11 +38,34 @@ function reasonFor(status: number): string {
 }
 
 export function voiceStatus(): VoiceStatus {
-  if (!env.ELEVENLABS_API_KEY) return { elevenlabs: false, voice: "device", reason: "no ElevenLabs key" };
+  const transcribe = transcribeAvailable();
+  if (!env.ELEVENLABS_API_KEY)
+    return { elevenlabs: false, voice: "device", reason: "no ElevenLabs key", transcribe };
   if (usingFallback() && fallback)
-    return { elevenlabs: true, voice: "fallback", reason: reasonFor(fallback.status) };
-  return { elevenlabs: true, voice: "chosen", reason: null };
+    return { elevenlabs: true, voice: "fallback", reason: reasonFor(fallback.status), transcribe };
+  return { elevenlabs: true, voice: "chosen", reason: null, transcribe };
 }
+
+// Voice input: per caller (each demo visitor on their own), a sentence every few seconds is plenty.
+export const transcribeLimit = { perMinute: rateLimiter(12, 60_000), perDay: rateLimiter(300, 86_400_000) };
+
+/** "audio/webm;codecs=opus" becomes "audio/webm"; the aliases browsers use for the same formats. */
+export function audioTypeOf(header: string | undefined): VoiceAudioType | null {
+  const base = (header ?? "").split(";")[0]?.trim().toLowerCase() ?? "";
+  const alias: Record<string, string> = {
+    "audio/x-m4a": "audio/mp4",
+    "audio/m4a": "audio/mp4",
+    "video/mp4": "audio/mp4",
+    "video/webm": "audio/webm",
+    "audio/x-wav": "audio/wav",
+    "audio/wave": "audio/wav",
+    "audio/mp3": "audio/mpeg",
+  };
+  const parsed = VoiceAudioType.safeParse(alias[base] ?? base);
+  return parsed.success ? parsed.data : null;
+}
+
+const TOO_LONG = "That recording is too long. Keep it under a minute.";
 
 async function tts(voiceId: string, text: string, key: string): Promise<Response> {
   try {
@@ -62,6 +95,42 @@ async function logFailure(res: Response, voice: string) {
 export const voice = new Hono()
   // Lets the app decide up front whether to ask for ElevenLabs or use the browser's voice.
   .get("/voice", (c) => c.json(voiceStatus()))
+  .post(
+    "/voice/transcribe",
+    bodyLimit({
+      maxSize: VOICE_AUDIO_MAX_BYTES,
+      onError: () => {
+        throw new HttpError("bad_request", TOO_LONG);
+      },
+    }),
+    async (c) => {
+      // The app's own voice input only: device keys and agents never send audio.
+      const via = currentAuthMethod();
+      if (via === "personal_token" || via === "mcp_oauth") {
+        throw new HttpError("forbidden", "Voice input is for the Michael app");
+      }
+      const type = audioTypeOf(c.req.header("content-type"));
+      if (!type) {
+        throw new HttpError("bad_request", "Send the recording as audio (webm, mp4, mpeg, ogg, wav or aac)");
+      }
+      if (!transcribeAvailable()) {
+        // Checked before reading the audio, so nothing is received that cannot be used.
+        throw new HttpError("unavailable", "Voice input is not set up on the server");
+      }
+      const caller = currentDemoVisitor() ?? currentUserId();
+      if (!transcribeLimit.perMinute.take(caller) || !transcribeLimit.perDay.take(caller)) {
+        throw new HttpError("rate_limited", "That's a lot of talking. Give me a minute, then try again.");
+      }
+
+      const audio = await c.req.arrayBuffer();
+      if (audio.byteLength > VOICE_AUDIO_MAX_BYTES) throw new HttpError("bad_request", TOO_LONG);
+      if (audio.byteLength < VOICE_AUDIO_MIN_BYTES) {
+        throw new HttpError("bad_request", "I didn't catch that. Hold the button and speak.");
+      }
+      // Transcribed and dropped: the buffer goes out of scope when this returns.
+      return c.json(await transcribe(audio, type), 200, { "cache-control": "no-store" });
+    },
+  )
   .post("/voice/speak", async (c) => {
     const { text } = parse(VoiceSpeakRequest, await jsonBody(c));
     const key = env.ELEVENLABS_API_KEY;

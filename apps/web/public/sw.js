@@ -81,6 +81,8 @@ self.addEventListener("fetch", (event) => {
     return;
   }
   if (request.method !== "GET") return; // writes always go straight to the network, never queued
+  // The Michael shortcut is a file to download, never a page: the shell must not stand in for it.
+  if (url.pathname.endsWith(".shortcut")) return;
 
   if (request.mode === "navigate") {
     event.respondWith(navigate(event, url));

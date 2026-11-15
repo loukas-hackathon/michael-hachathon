@@ -1225,7 +1225,8 @@ export function demoRecommendations(now: Date = new Date()): Recommendation[] {
   const syncStart = athensAt(now, 1, "11:00");
   const stamp = now.toISOString();
   const base = {
-    analysis_run_id: mockAnalysisRun.id,
+    // No run wrote these: they must not hang off the sample brief, which the demo week never has.
+    analysis_run_id: null,
     status: "proposed" as const,
     executed_at: null,
     undone_at: null,

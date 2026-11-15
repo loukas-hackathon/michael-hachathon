@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { API_URL, enterDemo, expect, tap, test } from "./fixtures";
+import { API_URL, enterDemo, expect, fillReady, tap, test } from "./fixtures";
 
 // A fresh, non demo user: Today sends them to onboarding, two screens, and Today takes them in.
 // The test sign in (cookie michael_e2e_user) only works with E2E_TEST_AUTH=on on the in-memory API.
@@ -29,7 +29,7 @@ test("onboarding completes for a fresh user", async ({ page, context, baseURL })
   await expect(page.getByRole("button", { name: /^Sleep/ })).toHaveAttribute("aria-pressed", "false");
   // Each starter says its area; one more goal in the user's own words (#190).
   await expect(page.getByRole("button", { name: /^Time for yourself.*Personal$/ })).toBeVisible();
-  await page.getByLabel("Something else, in your own words").fill("Learn Greek");
+  await fillReady(page.getByLabel("Something else, in your own words"), "Learn Greek");
   await tap(page.getByRole("button", { name: "Keep these three" }));
 
   await expect(page.getByRole("heading", { name: "Now, your days." })).toBeVisible();
@@ -51,7 +51,7 @@ test("onboarding completes for a fresh user", async ({ page, context, baseURL })
   await page.goto("/you");
   await tap(page.getByRole("button", { name: "Add: Keep Sundays clear" }));
   await expect(page.getByRole("button", { name: "Add: Keep Sundays clear" })).toHaveCount(0);
-  await expect(page.getByRole("checkbox", { name: "Keep Sundays clear: on" })).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: "Keep Sundays clear" })).toBeChecked();
 });
 
 // Redo setup on the demo week: the visitor walks both screens; nothing is written (#239).
@@ -77,4 +77,26 @@ test("You shows unproven connections as Coming soon, with nothing to tap", async
   await expect(list.getByRole("link", { name: /Apple Watch/ })).toHaveCount(0);
   await page.goto("/you/connections/apple-watch");
   await expect(page.getByText("Coming soon. I will tell you when it is ready.")).toBeVisible();
+});
+
+// The demo week replays recorded sources, so a demo visitor sees them as what they are, and a tap
+// the API refuses says the one demo line next to the control (#330).
+test("You on the demo week: sources read Sample data, a refused tap says why", async ({ page }) => {
+  await enterDemo(page);
+  await page.goto("/you");
+  const list = page.locator("#connections");
+  await expect(
+    list.getByText("The demo week runs on sample data from calendar, Mac, iPhone and watch."),
+  ).toBeVisible();
+  await expect(list.getByText("Sample data", { exact: true })).toHaveCount(4);
+  await expect(list.getByRole("link", { name: /Google Calendar|Apple Watch|Mac|iPhone/ })).toHaveCount(0);
+
+  const privacy = page.locator("section", { has: page.getByRole("heading", { name: "Privacy" }) });
+  await expect(async () => {
+    await page.locator("#off-the-record").click();
+    await expect(
+      privacy.getByText("This is the demo week. Sign in with Google to make it yours."),
+    ).toBeVisible({ timeout: 2000 });
+  }).toPass({ timeout: 15_000 });
+  await expect(page.locator("#off-the-record")).not.toBeChecked();
 });

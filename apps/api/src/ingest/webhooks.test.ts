@@ -88,6 +88,7 @@ test("Shortcuts: users never share a held app; a close without an open is droppe
   const [e] = pairer.handle("a", ShortcutsPayload.parse({ app: "instagram", action: "close" }), t + 60_000);
   assert.equal(e?.data?.seconds, 60);
   assert.throws(() => ShortcutsPayload.parse({ app: "X", action: "launch" }));
+  assert.equal(ShortcutsPayload.parse({ app: "X" }).action, "open");
 });
 
 test("POST /v1/webhooks/ios-shortcuts stores a session on close", async () => {
@@ -101,7 +102,9 @@ test("POST /v1/webhooks/ios-shortcuts stores a session on close", async () => {
   );
   assert.equal(close.inserted, 1);
   assert.equal(close.events[0]?.source, "ios_shortcuts");
-  assert.equal((await post("ios-shortcuts", { app: "Threads" })).status, 400);
+  // No action means open (one "Is Opened" automation is enough); no app is still refused.
+  assert.equal((await post("ios-shortcuts", { app: "Threads" })).status, 200);
+  assert.equal((await post("ios-shortcuts", { action: "open" })).status, 400);
 });
 
 // ---------- ActivityWatch ----------

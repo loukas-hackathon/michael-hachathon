@@ -40,19 +40,31 @@ function sync() {
   if (synced) return;
   synced = true;
   readPrivacy()
-    .then((p) => set({ on: p.off_the_record, since: p.since, failed: false }))
+    .then((p) => {
+      // Usually the local copy was already right: then no listener needs to render again.
+      const now = read();
+      if (now.on === p.off_the_record && now.since === p.since && !now.failed) return;
+      set({ on: p.off_the_record, since: p.since, failed: false });
+    })
     .catch(() => {
       // Offline or signed out: keep the local copy, try again on the next page load.
       synced = false;
     });
 }
 
-/** Flips at once on every tab, then saves. Resolves false (and flips back) if the save failed. */
-export async function setOffTheRecord(on: boolean): Promise<boolean> {
+/**
+ * Flips at once on every tab, then saves. If the save failed it flips back and resolves false, or
+ * Michael's line when the server gave one (the demo week refuses this).
+ */
+export async function setOffTheRecord(on: boolean): Promise<boolean | string> {
   const before = read();
   set({ on, since: on ? new Date().toISOString() : null, failed: false });
   try {
     const p = await saveOffTheRecord(on);
+    if ("refused" in p) {
+      set({ ...before, failed: true });
+      return p.refused;
+    }
     set({ on: p.off_the_record, since: p.since, failed: false });
     return true;
   } catch {

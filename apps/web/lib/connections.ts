@@ -1,4 +1,6 @@
-import { type ConnectorId, isLive, type Source } from "@michael/shared";
+import type { Source } from "@michael/shared";
+// The zod free entry: this map is imported by client components too.
+import { type ConnectorId, isLive } from "@michael/shared/connectors";
 
 // One word for everything the user plugs into Michael: a Connection. Not "sources", "devices" or
 // "integrations" in copy. This file is the single map of connections and their routes, so Today's

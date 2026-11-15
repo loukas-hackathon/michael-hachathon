@@ -9,6 +9,7 @@ import { ScreenHeader } from "@/components/screen";
 import { Bone } from "@/components/skeleton";
 import { TalkButton } from "@/components/voice/conversation-sheet";
 import { PushToTalk } from "@/components/voice/push-to-talk";
+import { speakable } from "@/components/voice/speech";
 import { formatTime } from "@/lib/format";
 import { ActionChips } from "./action-chips";
 import {
@@ -70,12 +71,21 @@ export function Chat({
   const threads = (session.threads ?? serverThreads).filter((t) => !session.deleting.includes(t.id));
   const open = isNewKey(key) ? null : (threads.find((t) => t.id === key) ?? (fromServer ? thread : null));
   const opening = session.opening === key && !current.loaded;
+  // What VoiceOver hears: the whole reply once it is written, never the stream token by token.
+  // Only lines added since the page loaded, so the history is not read out on arrival.
+  const last = current.lines.at(-1);
+  const announce = pending
+    ? "Looking at your day"
+    : last?.role === "assistant" && !streamingId
+      ? `Michael: ${speakable(last.content)}`
+      : "";
 
   const input = useRef<HTMLTextAreaElement>(null);
   // What Michael did while answering, by reply id: shown as "Done. Undo" chips under that reply.
   const stored = useMemo(() => actedFrom(initial, initialActions), [initial, initialActions]);
   const acted = fromServer ? { ...stored, ...current.acted } : current.acted;
   const [listening, setListening] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
   const [listOpen, setListOpen] = useState(false);
   // New bubbles grow from their own corner, as in Messages; the history already there stays still.
   const arriving = useArrival();
@@ -176,7 +186,10 @@ export function Chat({
       />
       {checkIn}
       <div className="flex flex-1 flex-col">
-        <div className="flex-1 pt-4" aria-live="polite" aria-busy={pending || opening}>
+        <p role="status" className="sr-only">
+          {announce}
+        </p>
+        <div className="flex-1 pt-4" aria-busy={pending || opening}>
           {opening ? (
             <div aria-hidden="true" className="m-skeleton flex flex-col gap-2 pt-2">
               <Bone className="h-10 w-2/3 self-end rounded-card" />
@@ -206,7 +219,7 @@ export function Chat({
               </ul>
             </div>
           ) : (
-            <ol className="flex flex-col gap-2">
+            <ol aria-label="Conversation" className="flex flex-col gap-2">
               {lines.map((m, i) => {
                 // "Connect my calendar": the one tap button under the answer, once it has finished (#307).
                 const asked = m.role === "assistant" && m.id !== streamingId ? lines[i - 1] : undefined;
@@ -251,7 +264,7 @@ export function Chat({
               <button
                 type="button"
                 onClick={() => toEnd()}
-                className="press m-pop-in pointer-events-auto min-h-9 rounded-full bg-bg px-3.5 text-footnote font-semibold text-label shadow-[0_0_0_0.5px_var(--m-separator),0_4px_12px_-6px_rgb(0_0_0/0.3)]"
+                className="hit press m-pop-in pointer-events-auto min-h-9 rounded-full bg-bg px-3.5 text-footnote font-semibold text-label shadow-[0_0_0_0.5px_var(--m-separator),0_4px_12px_-6px_rgb(0_0_0/0.3)]"
               >
                 Jump to latest
               </button>
@@ -265,14 +278,15 @@ export function Chat({
                   type="button"
                   onClick={() => send(draft)}
                   disabled={pending}
-                  className="press min-h-9 shrink-0 rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-3.5 text-footnote font-semibold text-tint-text disabled:opacity-40"
+                  className="hit press min-h-9 shrink-0 rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-3.5 text-footnote font-semibold text-tint-text disabled:opacity-40"
                 >
                   Try again
                 </button>
               ) : null}
             </div>
           ) : null}
-          <div className="m-field flex items-end gap-2 rounded-card bg-fill p-1.5 pl-4">
+          {/* At 200% text the field keeps a usable width and the buttons wrap under it. */}
+          <div className="m-field flex flex-wrap items-end justify-end gap-2 rounded-card bg-fill p-1.5 pl-4">
             <label htmlFor="chat-input" className="sr-only">
               Message Michael
             </label>
@@ -283,7 +297,13 @@ export function Chat({
               value={draft}
               maxLength={2000}
               enterKeyHint="send"
-              placeholder={listening ? "Listening. Let go to send" : "Ask Michael"}
+              placeholder={
+                transcribing
+                  ? "Got it. Writing it down"
+                  : listening
+                    ? "Listening. Let go to send"
+                    : "Ask Michael"
+              }
               onChange={(e) => setDraft(key, e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -291,7 +311,7 @@ export function Chat({
                   send(draft);
                 }
               }}
-              className="max-h-32 min-h-9 flex-1 resize-none bg-transparent py-1.5 text-body outline-none [field-sizing:content] placeholder:text-label-2"
+              className="max-h-32 min-h-9 min-w-32 flex-1 resize-none bg-transparent py-1.5 text-body outline-none [field-sizing:content] placeholder:text-label-2"
             />
             <PushToTalk
               disabled={pending}
@@ -299,6 +319,7 @@ export function Chat({
                 setListening(on);
                 if (on) setError(key, null);
               }}
+              onTranscribingChange={setTranscribing}
               onInterim={(text) => setDraft(key, text)}
               onFinal={(text) => send(text, true)}
               onError={(message) => setError(key, message)}
@@ -307,7 +328,7 @@ export function Chat({
             <button
               type="submit"
               disabled={pending || !draft.trim()}
-              className="press h-9 shrink-0 rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint disabled:opacity-40"
+              className="hit press h-9 shrink-0 rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint disabled:opacity-40"
             >
               Send
             </button>

@@ -41,6 +41,17 @@ const config: NextConfig = {
         ],
       },
       {
+        // The signed Michael shortcut (scripts/shortcut/build.mjs). iOS names an imported shortcut
+        // after its file, and the app runs it by the name Michael, so the download keeps that name.
+        // Never cached for long: a rebuilt shortcut must reach the next phone.
+        source: "/Michael.shortcut",
+        headers: [
+          { key: "Content-Type", value: "application/octet-stream" },
+          { key: "Content-Disposition", value: 'attachment; filename="Michael.shortcut"' },
+          { key: "Cache-Control", value: "no-cache" },
+        ],
+      },
+      {
         // The data free app shell the worker paints on a slow network: always revalidated.
         source: "/shell.html",
         headers: [{ key: "Cache-Control", value: "no-cache" }],
