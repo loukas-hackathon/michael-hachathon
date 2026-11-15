@@ -6,6 +6,7 @@ import { CountUp } from "@/components/count-up";
 import { LiveRefresh } from "@/components/live-refresh";
 import { Tween } from "@/components/motion-ui";
 import { ScreenHeader } from "@/components/screen";
+import { MoreFromMichaelSkeleton } from "@/components/skeletons";
 import { Tape, TapeKey } from "@/components/tape";
 import { BriefCard } from "@/components/today/brief-card";
 import { TodayChecklist } from "@/components/today/checklist";
@@ -202,7 +203,7 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
             </section>
           ) : null}
 
-          <Suspense fallback={null}>
+          <Suspense fallback={<MoreFromMichaelSkeleton />}>
             <MoreFromMichael>
               {momentKind ? <MomentCard kind={momentKind} sample={day.sample} /> : null}
               <WatchLine demo={demo} />

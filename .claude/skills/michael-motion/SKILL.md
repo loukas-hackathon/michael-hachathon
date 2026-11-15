@@ -93,7 +93,7 @@ bounce at or under 0.2 for interface; Michael is calm.
 - **Live data:** things that arrived since the last look use `.m-live-enter` (#203); a section
   marked `data-live-pop` pops in instead. Several at once arrive in reading order, 30ms apart,
   capped at six (`stagger(i)`), so a screen that fills for the first time reads top to bottom.
-- **Skeletons:** `components/skeleton.tsx`: blank for 150ms, then a slow opacity breath, final
+- **Skeletons:** `components/skeleton.tsx`: blank for 200ms, then a slow opacity breath, final
   layout, real titles. No shimmer gradients, no spinners. Loading, pending, success and error
   states follow the `michael-feedback` skill.
 

@@ -10,6 +10,7 @@ import {
 } from "@michael/shared";
 import { get } from "./api";
 import { CONNECTIONS, type Connection, type ConnectionId } from "./connections";
+import { devLatency } from "./dev-latency";
 import { formatTime } from "./format";
 
 // Real status for every connection on You. Always asks the API (also with USE_MOCKS): a status we
@@ -222,6 +223,7 @@ export function statusFor(c: Connection, x: Inputs, now = Date.now()): Connectio
 }
 
 export async function getConnections(): Promise<ConnectionsView> {
+  await devLatency();
   const [sources, integrations, push, agents, places, telegram] = await Promise.all([
     safe("/v1/sources/status", SourcesStatusResponse),
     safe("/v1/integrations", IntegrationsResponse),

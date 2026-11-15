@@ -254,7 +254,7 @@ rules, the springs' derivation and a checklist are in the agent skill
 | Sheets                     | 500ms in on `--m-ease-sheet`, 360ms out; a short drag settles back on `--m-spring`                        |
 | Score count up             | Once per session, 700ms, no bounce, after the splash. The real number is always in the DOM                |
 | Live refresh               | New blocks rise 6px and fade in, 30ms apart in reading order; a filled tick grows; numbers move, 450ms    |
-| Loading                    | Skeleton in the final layout (`loading.tsx` per route): blank for 150ms, then a slow 1.6s breath          |
+| Loading                    | Skeleton in the final layout (`loading.tsx` per route): blank for 200ms, then a slow 1.6s breath          |
 | Reduced motion             | Instant, opacity only: no transforms, no count up, skeletons still                                        |
 
 Animate `transform` and `opacity` only. Content is visible by default; motion never gates it.

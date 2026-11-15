@@ -13,7 +13,7 @@ import { Collapse } from "@/components/motion-ui";
  */
 export function MoreFromMichael({ children }: { children: ReactNode }) {
   return (
-    <section aria-label="More from Michael" className="mt-8 has-[>div:empty]:hidden">
+    <section aria-label="More from Michael" className="m-reveal mt-8 has-[>div:empty]:hidden">
       <h2 className="mb-2 text-title3 font-bold">More from Michael</h2>
       <div className="overflow-hidden rounded-group bg-fill">{children}</div>
     </section>
