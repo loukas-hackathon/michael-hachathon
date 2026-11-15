@@ -117,6 +117,9 @@ export const ActionKind = z.enum([
   "settle_block",
   // The user removed one of Michael's blocks on the Timeline (#271). Undo puts it back.
   "remove_calendar_block",
+  // Do Not Disturb, asked then done (#447): on until `end_at`, by the Michael Focus shortcut on the
+  // user's Mac or iPhone. It ends by itself; undo ends it now.
+  "do_not_disturb",
 ]);
 export type ActionKind = z.infer<typeof ActionKind>;
 
@@ -673,6 +676,9 @@ export const FocusGuardsResponse = z.object({
   off_the_record: z.boolean(),
   // Running now, or starting within the next 10 minutes (the collector checks the times itself).
   guards: z.array(FocusGuard),
+  // Do Not Disturb the user asked for and that has not ended or been undone (#447): the Mac
+  // collector switches it on until `until` with the Michael Focus shortcut, and off when it is gone.
+  dnd: z.object({ id: z.uuid(), until: IsoDateTime }).nullable().optional(),
 });
 export type FocusGuardsResponse = z.infer<typeof FocusGuardsResponse>;
 
@@ -1568,7 +1574,11 @@ export type NudgeKind = z.infer<typeof NudgeKind>;
 //   mute_app  close `app` on the user's Mac for 30 minutes (focus_drift, Mac reporting, allowlisted app)
 //   do_it     carry out the nudge's recommendation (recovery_block), undoable in the app
 //   focus     start a Focus now session on the block's goal, from now to the block's end (block_soon, #397)
-export const NudgeActionId = z.enum(["open", "snooze", "mute_app", "do_it", "focus"]);
+//   dnd       Do Not Disturb until the block ends, or until the night's quiet hours end (focus_drift
+//             and the phone before sleep, #447). Done at once on a Mac that has the Michael Focus
+//             shortcut; otherwise the answer's `url` is the page that hands over to the shortcut
+//             on the iPhone, or offers to add it.
+export const NudgeActionId = z.enum(["open", "snooze", "mute_app", "do_it", "focus", "dnd"]);
 export type NudgeActionId = z.infer<typeof NudgeActionId>;
 
 export const NudgeAction = z.object({
@@ -1585,14 +1595,44 @@ export const NUDGE_SNOOZE_MINUTES = 10;
 export const NUDGE_MUTE_MINUTES = 30;
 
 /**
+ * The phone inside a block (#438) is a `focus_drift` whose key ends with this: the block's own
+ * drift key plus the trigger, so the trigger is known without reading the line.
+ */
+export const PHONE_DRIFT_SUFFIX = ":phone";
+/** The phone before sleep (#438) is a `wind_down` whose key starts with this, then the night's day. */
+export const LATE_PHONE_KEY = "late_phone:";
+
+/** A nudge's key as the engine made it: a test nudge carries it after `test:<press>:`. */
+export const nudgeRuleKey = (key: string): string => key.replace(/^test:[^:]*:/, "");
+
+/** The calendar block a `block_soon` or `focus_drift` nudge is about (its event id), or "". */
+export function nudgeBlockId(n: Pick<Nudge, "kind" | "key">): string {
+  const key = nudgeRuleKey(n.key);
+  if (!key.startsWith(`${n.kind}:`)) return "";
+  const rest = key.slice(n.kind.length + 1);
+  return rest.endsWith(PHONE_DRIFT_SUFFIX) ? rest.slice(0, -PHONE_DRIFT_SUFFIX.length) : rest;
+}
+
+/** Which of the two real time triggers a nudge is, read from its key; null for every other nudge. */
+export function nudgeTrigger(n: Pick<Nudge, "kind" | "key">): "phone_block" | "late_phone" | null {
+  const key = nudgeRuleKey(n.key);
+  if (n.kind === "focus_drift" && key.endsWith(PHONE_DRIFT_SUFFIX)) return "phone_block";
+  if (n.kind === "wind_down" && key.startsWith(LATE_PHONE_KEY)) return "late_phone";
+  return null;
+}
+
+/** True for the nudges that offer Do Not Disturb (#447): any drift out of a block, and the phone before sleep. */
+export const nudgeOffersDnd = (n: Pick<Nudge, "kind" | "key">): boolean =>
+  n.kind === "focus_drift" || nudgeTrigger(n) === "late_phone";
+
+/**
  * Where tapping a nudge goes: the exact card. A block nudge opens that block on the Timeline, a
  * recovery offer its card on Today, anything else Today.
  */
 export function nudgeUrl(n: Pick<Nudge, "kind" | "key" | "day" | "recommendation_id">): string {
-  // block_soon:<event id> and focus_drift:<event id>; a test nudge carries the real key after
-  // `test:<press>:` (routes/nudges.ts).
-  const key = n.key.replace(/^test:[^:]*:/, "");
-  const eventId = key.startsWith(`${n.kind}:`) ? key.slice(n.kind.length + 1) : "";
+  // block_soon:<event id> and focus_drift:<event id>, the latter with `:phone` after it for the
+  // phone inside a block; a test nudge carries the real key after `test:<press>:` (routes/nudges.ts).
+  const eventId = nudgeBlockId(n);
   if ((n.kind === "block_soon" || n.kind === "focus_drift") && eventId) {
     return `/timeline?day=${n.day}&block=${encodeURIComponent(eventId)}`;
   }
@@ -1634,8 +1674,10 @@ export type NudgeActInput = z.infer<typeof NudgeActInput>;
 export const NudgeActResult = z.object({
   action: NudgeActionId,
   // The follow up line, under 15 words: "Done. Undo in the app until 15:00."
+  // dnd: "Do Not Disturb is on until 14:00. Tap to end it." when the Mac did it; otherwise what
+  // one more tap does ("Tap to switch on Do Not Disturb until 14:00.").
   text: z.string().min(1),
-  // Until when it can be undone in the app (do_it, mute_app); null for a snooze.
+  // Until when it can be undone in the app (do_it, mute_app, a dnd that is on); null for a snooze.
   undo_until: IsoDateTime.nullable(),
   // Where tapping the follow up goes.
   url: z.string(),
@@ -1684,6 +1726,52 @@ export const NudgeTestResult = z.object({
   nudge: Nudge,
 });
 export type NudgeTestResult = z.infer<typeof NudgeTestResult>;
+
+// ---------- Do Not Disturb, asked then done (#447) ----------
+
+// A Do Not Disturb the user asked for. `id` is its recommendation (kind do_not_disturb), so it
+// shows on Today and POST /v1/recommendations/:id/undo ends it.
+export const Dnd = z.object({
+  id: z.uuid(),
+  until: IsoDateTime,
+  // "14:00", Europe/Athens.
+  until_label: z.string(),
+  // What the Michael Focus shortcut is run with.
+  shortcut_input: z.string(),
+  // True when the user's Mac has the shortcut and is switching it on (it reports in within 20 s).
+  mac: z.boolean(),
+  // Michael's line: "Do Not Disturb is on until 14:00. Tap to end it."
+  text: z.string(),
+});
+export type Dnd = z.infer<typeof Dnd>;
+
+// GET /v1/dnd?nudge=<id>: what the hand over page shows before the tap.
+export const DndOffer = z.object({
+  // The one running now, if any.
+  active: Dnd.nullable(),
+  // What a tap would switch on: until the nudge's block ends, or until the night's quiet hours
+  // end. Null when the nudge offers none (unknown, another kind, the block is over).
+  offer: z
+    .object({
+      nudge_id: z.uuid(),
+      until: IsoDateTime,
+      until_label: z.string(),
+      shortcut_input: z.string(),
+      // The nudge's own line.
+      text: z.string(),
+    })
+    .nullable(),
+  // The Mac: `ready` it reports in and has the shortcut, `no_shortcut` it reports in without it,
+  // `away` no Mac has reported in the last two minutes.
+  mac: z.enum(["ready", "no_shortcut", "away"]),
+});
+export type DndOffer = z.infer<typeof DndOffer>;
+
+// POST /v1/dnd: the tap. From a nudge (until its block or the night ends), or until a given time.
+export const DndStartInput = z
+  .object({ nudge_id: z.uuid().optional(), until: IsoDateTime.optional() })
+  .refine((v) => Boolean(v.nudge_id) !== Boolean(v.until), "Give nudge_id or until, not both");
+export type DndStartInput = z.infer<typeof DndStartInput>;
 
 // ---------- web push (iPhone, Apple Watch mirror, desktop browsers) ----------
 

@@ -14,6 +14,17 @@ the automation reporting opens only, of the chosen apps only: an app that was no
 seen, and the minutes of the app in front are counted up to now (at most 45) because nothing says
 when the phone was put down.
 
+## The second shortcut: Michael Focus (#447)
+
+`pnpm shortcut:focus` writes and signs `apps/web/public/MichaelFocus.shortcut` (the name of the
+file is the name iOS and macOS give it, and the app and the Mac collector run it by that name).
+It receives Text and has one job, Set Focus on Do Not Disturb: a date and time (`2026-11-17 14:00`)
+switches it on until then, `off` switches it off, `check` does nothing. It sends nothing anywhere
+and reads no file. The app runs it with
+`shortcuts://run-shortcut?name=Michael%20Focus&input=text&text=...` after the person's tap; the Mac
+collector with `shortcuts run "Michael Focus" --input-path <file>`. The set up and the phone test:
+`docs/setup-manual.md` section 8c.
+
 ## With only an iPhone (no Mac)
 
 This is the whole iPhone connection for someone without a Mac, and it needs nothing else. Screen

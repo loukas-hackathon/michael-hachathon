@@ -18,6 +18,7 @@ import { chatThreads } from "./routes/chat-threads";
 import { checkIn } from "./routes/check-in";
 import { checklist } from "./routes/checklist";
 import { demo } from "./routes/demo";
+import { dnd } from "./routes/dnd";
 import { drafts } from "./routes/drafts";
 import { events } from "./routes/events";
 import { focus } from "./routes/focus";
@@ -102,6 +103,7 @@ export const v1Routes = new Hono()
   .route("/", actions)
   .route("/", blocks)
   .route("/", focusGuards)
+  .route("/", dnd)
   .route("/", focus)
   .route("/", drafts)
   .route("/", profile)

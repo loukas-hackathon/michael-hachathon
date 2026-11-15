@@ -3,6 +3,7 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { parseArgs } from "node:util";
 import type { EventInput } from "@michael/shared";
+import { startDndKeeper } from "./dnd";
 import { startFocusGuardian } from "./focus-guard";
 import { readers } from "./readers/index";
 
@@ -23,6 +24,7 @@ const { values } = parseArgs({
     list: { type: "boolean", default: false },
     reset: { type: "boolean", default: false },
     "no-guard": { type: "boolean", default: false },
+    "no-dnd": { type: "boolean", default: false },
     help: { type: "boolean", default: false },
   },
 });
@@ -119,6 +121,7 @@ async function main() {
   --dry-run            read and count, post nothing, keep cursors unchanged
   --reset              forget saved positions, so the next run backfills again
   --no-guard           do not close muted apps during focus guards (on by default while watching)
+  --no-dnd             never switch on Do Not Disturb, even when you ask for it in a nudge
 
   MICHAEL_API_URL      where to post (default http://localhost:8787)
   MICHAEL_API_KEY      bearer key for the API (default dev-key)`);
@@ -149,6 +152,12 @@ async function main() {
   if (process.platform === "darwin" && !values["no-guard"]) {
     console.log("Focus guards on: muted apps close when they come to the front.");
     startFocusGuardian({ apiUrl: API_URL, apiKey: API_KEY });
+  }
+  if (process.platform === "darwin" && !values["no-dnd"]) {
+    console.log(
+      "Do Not Disturb on request: switched on when you tap it in a nudge (Michael Focus shortcut).",
+    );
+    startDndKeeper({ apiUrl: API_URL, apiKey: API_KEY });
   }
   setInterval(() => void runOnce(selected, false, backfillDays), seconds * 1000);
 }

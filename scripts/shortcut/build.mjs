@@ -238,6 +238,69 @@ export function michaelShortcut({ api = DEFAULT_API, uuid = newUuid } = {}) {
   };
 }
 
+// ---------- the Michael Focus shortcut (#438) ----------
+//
+// Do Not Disturb, asked then done. Michael may not set a Focus himself (no app or server can), but
+// a shortcut can, so the app hands over to this one with the time it should end:
+//
+//   Receives Text.
+//   If the input begins with "check": stop (the set up step proves the shortcut is there).
+//   If the input begins with "off":   Set Focus: turn Do Not Disturb off.
+//   Otherwise (a date and time, "2026-11-17 14:00"): Set Focus: turn Do Not Disturb on until then.
+//
+// On the iPhone it runs from shortcuts://run-shortcut?name=Michael%20Focus&input=text&text=...
+// (apps/web/lib/dnd.ts); on the Mac the collector runs `shortcuts run "Michael Focus"` with the
+// same text. Focus is shared across the person's devices by default, so either one is enough.
+
+export const FOCUS_SHORTCUT_NAME = "Michael Focus";
+/** The signed file in apps/web/public. Its download is named after the shortcut (next.config.ts). */
+export const FOCUS_SIGNED_FILE = "MichaelFocus.shortcut";
+export const FOCUS_OFF = "off";
+export const FOCUS_CHECK = "check";
+/** Apple's own identifier for the Do Not Disturb Focus, the one every device has. */
+export const DND_MODE = {
+  Identifier: "com.apple.donotdisturb.mode.default",
+  DisplayString: "Do Not Disturb",
+};
+
+const setFocus = (parameters) =>
+  action("dnd.set", { Operation: "Turn", FocusModes: DND_MODE, ...parameters });
+
+export function focusShortcut({ uuid = newUuid } = {}) {
+  const isCheck = uuid();
+  const isOff = uuid();
+  const actions = [
+    ifStart(isCheck, shortcutInput(asText), CONDITION.beginsWith, FOCUS_CHECK),
+    stop(),
+    ifEnd(isCheck, uuid()),
+    ifStart(isOff, shortcutInput(asText), CONDITION.beginsWith, FOCUS_OFF),
+    setFocus({ Enabled: false, UUID: uuid() }),
+    ifOtherwise(isOff),
+    // "Until": a time. The text is read as a date when the action runs.
+    setFocus({
+      Enabled: true,
+      AssertionType: "Time",
+      Time: text(OBJ, shortcutInput(asText)),
+      UUID: uuid(),
+    }),
+    ifEnd(isOff, uuid()),
+  ];
+  return {
+    WFWorkflowMinimumClientVersionString: "900",
+    WFWorkflowMinimumClientVersion: 900,
+    WFWorkflowIcon: { WFWorkflowIconStartColor: 3980825855, WFWorkflowIconGlyphNumber: 61440 },
+    WFWorkflowClientVersion: "4018.0.4",
+    WFWorkflowHasOutputFallback: false,
+    WFWorkflowOutputContentItemClasses: [],
+    WFWorkflowInputContentItemClasses: ["WFStringContentItem"],
+    WFWorkflowImportQuestions: [],
+    WFWorkflowTypes: [],
+    WFQuickActionSurfaces: [],
+    WFWorkflowHasShortcutInputVariables: true,
+    WFWorkflowActions: actions,
+  };
+}
+
 // ---------- command line ----------
 
 function option(name) {
@@ -266,9 +329,20 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, toPlist(michaelShortcut({ api })));
   console.log(`Wrote ${out} (posts to ${api.replace(/\/+$/, "")}${WEBHOOK_PATH}).`);
+  // Michael Focus sits next to it, under its own name (the name of the file is the shortcut's name).
+  const focusOut = resolve(dirname(out), `${FOCUS_SHORTCUT_NAME}.shortcut`);
+  writeFileSync(focusOut, toPlist(focusShortcut()));
+  console.log(`Wrote ${focusOut}.`);
   if (process.argv.includes("--sign")) {
     const signed = resolve(option("signed") ?? `${here}/../../apps/web/public/${SHORTCUT_NAME}.shortcut`);
-    sign(out, signed);
-    console.log(`Signed ${signed}. Commit it: the web app serves it at /${SHORTCUT_NAME}.shortcut.`);
+    // --only-focus: sign Michael Focus and leave the Michael shortcut's signed file as it is.
+    if (!process.argv.includes("--only-focus")) {
+      sign(out, signed);
+      console.log(`Signed ${signed}. Commit it: the web app serves it at /${SHORTCUT_NAME}.shortcut.`);
+    }
+    // No space in the served file's name; the web app sends it as "Michael Focus.shortcut".
+    const focusSigned = resolve(dirname(signed), FOCUS_SIGNED_FILE);
+    sign(focusOut, focusSigned);
+    console.log(`Signed ${focusSigned}. Commit it: the web app serves it at /${FOCUS_SIGNED_FILE}.`);
   }
 }

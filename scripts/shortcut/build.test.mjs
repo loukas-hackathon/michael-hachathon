@@ -8,7 +8,12 @@ import {
   CONDITION,
   CONNECTED,
   DEFAULT_API,
+  DND_MODE,
   FLOW,
+  FOCUS_CHECK,
+  FOCUS_OFF,
+  FOCUS_SHORTCUT_NAME,
+  focusShortcut,
   KEY_PATH,
   michaelShortcut,
   NOT_CONNECTED,
@@ -200,4 +205,69 @@ test("the API base is an argument, and no key is ever in the file", () => {
   assert.throws(() => build({ api: "not a url" }));
   // The only mk_ in the file is the prefix the shortcut tests for.
   assert.deepEqual(toPlist(build()).match(/mk_\w*/g), ["mk_"]);
+});
+
+// ---------- Michael Focus (#447) ----------
+
+const buildFocus = () => {
+  n = 0;
+  return focusShortcut({ uuid });
+};
+
+test("Michael Focus: the file parses back, plutil accepts it, and it receives Text", () => {
+  const shortcut = buildFocus();
+  const xml = toPlist(shortcut);
+  assert.deepEqual(parsePlist(xml), shortcut);
+  assert.equal(toPlist(buildFocus()), xml);
+  assert.deepEqual(shortcut.WFWorkflowInputContentItemClasses, ["WFStringContentItem"]);
+  assert.equal(shortcut.WFWorkflowHasShortcutInputVariables, true);
+  // The web app and the collector run it by this name; iOS names an import after its file.
+  assert.equal(FOCUS_SHORTCUT_NAME, "Michael Focus");
+  if (process.platform === "darwin") {
+    const file = join(mkdtempSync(join(tmpdir(), "michael-shortcut-")), "Michael Focus.shortcut");
+    writeFileSync(file, xml);
+    assert.match(execFileSync("/usr/bin/plutil", ["-lint", file], { encoding: "utf8" }), /OK/);
+  }
+});
+
+test("Michael Focus: check stops, off turns Do Not Disturb off, anything else turns it on until that time", () => {
+  const actions = buildFocus().WFWorkflowActions;
+  assert.deepEqual(actions.map(id), [
+    "conditional", // If the input begins with check
+    "exit",
+    "conditional", // End If
+    "conditional", // If the input begins with off
+    "dnd.set",
+    "conditional", // Otherwise
+    "dnd.set",
+    "conditional", // End If
+  ]);
+  const [ifCheck, , , ifOff, off, , on] = actions;
+  assert.equal(params(ifCheck).WFCondition, CONDITION.beginsWith);
+  assert.equal(params(ifCheck).WFConditionalActionString, FOCUS_CHECK);
+  assert.equal(params(ifOff).WFConditionalActionString, FOCUS_OFF);
+  assert.equal(params(ifOff).WFInput.Variable.Value.Type, "ExtensionInput");
+
+  // Only ever Do Not Disturb, the Focus every device has, and only ever "Turn" (never "Toggle").
+  for (const a of [off, on]) {
+    assert.equal(params(a).Operation, "Turn");
+    assert.deepEqual(params(a).FocusModes, DND_MODE);
+  }
+  assert.equal(DND_MODE.Identifier, "com.apple.donotdisturb.mode.default");
+  assert.equal(params(off).Enabled, false);
+  assert.equal(params(off).AssertionType, undefined);
+
+  // On, until a time: the input itself, read as text. Never "until turned off".
+  assert.equal(params(on).Enabled, true);
+  assert.equal(params(on).AssertionType, "Time");
+  assert.equal(params(on).Time.WFSerializationType, "WFTextTokenString");
+  assert.equal(params(on).Time.Value.string, OBJ);
+  assert.equal(params(on).Time.Value.attachmentsByRange["{0, 1}"].Type, "ExtensionInput");
+});
+
+test("Michael Focus: it sends nothing anywhere and reads no file", () => {
+  const ids = buildFocus().WFWorkflowActions.map(id);
+  for (const forbidden of ["downloadurl", "documentpicker.open", "documentpicker.save", "notification"]) {
+    assert.ok(!ids.includes(forbidden), forbidden);
+  }
 });

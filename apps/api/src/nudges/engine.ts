@@ -27,6 +27,7 @@ import type { Span } from "../patterns/util";
 import { isBusinessGoal, purposeFor } from "../score/purpose";
 import { buildScore } from "../score/score";
 import {
+  dedupeKey,
   isLatePhone,
   isPhoneBlock,
   keepApart,
@@ -601,10 +602,11 @@ export function decide(input: EngineInput): Decision {
   if (input.offTheRecord) return { action: "skip", skipped: "off_the_record" };
   // Test nudges (the stage moment) never block, delay or count against a real one.
   const real = input.today.filter((n) => n.status !== "test");
-  const seen = new Set(real.map((n) => n.key));
+  // Both drifts of a block count as one key (the Mac's and the phone's, nudges/realtime.ts).
+  const seen = new Set(real.map((n) => dedupeKey(n.key)));
   const now = Date.parse(input.now);
   let fresh = keepApart(
-    candidates(input).filter((c) => !seen.has(c.key)),
+    candidates(input).filter((c) => !seen.has(dedupeKey(c.key))),
     real,
     now,
   );

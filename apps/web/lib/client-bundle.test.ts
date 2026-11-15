@@ -5,7 +5,7 @@ import { test } from "node:test";
 
 // The "@michael/shared" index re-exports every schema, so one value import from it in client code
 // ships zod and the whole schema file (about 43 kB gzipped) to that route. Client code uses the
-// zod free entries instead (@michael/shared/categories, /connectors, /goal-areas, /sleep, /voice, /voice-limits) and
+// zod free entries instead (@michael/shared/categories, /connectors, /focus-shortcut, /goal-areas, /sleep, /voice, /voice-limits) and
 // imports only types from the index. This walks every "use client" file and what it imports.
 
 const WEB = resolve(import.meta.dirname, "..");

@@ -30,6 +30,7 @@ import { DEFAULT_TIMEZONE } from "../patterns/context";
 import { Zone } from "../patterns/time";
 import { goalBlockTitle } from "../score/match";
 import { store } from "../store";
+import { switchOffDnd, switchOnDnd } from "./dnd";
 import { draftFromRecommendation } from "./drafts";
 import { startFocusGuard, stopFocusGuard } from "./focus-guard";
 import { executeLog, revertLog } from "./log";
@@ -113,6 +114,8 @@ const Execution = z.discriminatedUnion("kind", [
   // #317: the manual entry a logged time or a settled block wrote; undo removes only that entry.
   z.object({ kind: z.literal("log_time"), timeline_event_id: z.string(), undo_until: z.string() }),
   z.object({ kind: z.literal("settle_block"), timeline_event_id: z.string(), undo_until: z.string() }),
+  // #447: Do Not Disturb until `until`. Undo ends it now.
+  z.object({ kind: z.literal("do_not_disturb"), until: z.string(), undo_until: z.string() }),
 ]);
 type Execution = z.infer<typeof Execution>;
 
@@ -499,6 +502,7 @@ async function execute(id: string, opts: { byUser?: boolean; live?: boolean } = 
   else if (action.kind === "log_time" || action.kind === "settle_block")
     execution = await executeLog(rec, action);
   else if (action.kind === "remove_calendar_block") execution = await removeCalendarBlock(action);
+  else if (action.kind === "do_not_disturb") execution = await switchOnDnd(rec, action);
   else throw new HttpError("not_implemented", `${action.kind} cannot be carried out yet`);
 
   const saved = await store.recordRecommendationAction(id, {
@@ -528,7 +532,9 @@ export async function undoRecommendation(id: string): Promise<Recommendation> {
           ? "Too late to undo: change the goal on the Goals screen"
           : ex.kind === "log_time" || ex.kind === "settle_block"
             ? "Too late to undo: a logged entry can be taken back for 24 hours"
-            : "Too late to undo: the block has started",
+            : ex.kind === "do_not_disturb"
+              ? "Nothing to undo: Do Not Disturb has already ended"
+              : "Too late to undo: the block has started",
     );
   }
 
@@ -548,6 +554,8 @@ async function revert(ex: Execution): Promise<void> {
     await revertLog(ex);
   } else if (ex.kind === "block_mac_app") {
     await stopFocusGuard(ex);
+  } else if (ex.kind === "do_not_disturb") {
+    switchOffDnd(ex);
   } else if (ex.kind === "change_goal") {
     await revertGoalChange(ex);
   } else if (ex.kind === "plan_change") {
