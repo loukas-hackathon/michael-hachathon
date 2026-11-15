@@ -6,7 +6,7 @@ permission, keep building with parallel agents, close every issue we can, phone 
 developed), keep colours and branding exactly as they are (pink `#E6007A`, red `#FF3B30`), and pace
 the usage limit by slowing down at about 60% of the window.
 
-## State (updated 14:02 UTC / 16:02 Athens)
+## State (updated 14:20 UTC / 16:20 Athens)
 - This session (loukas-hackathon) is the lead orchestrator. Production healthy (API f6c86ec).
 - Since 13:00: #528 iCloud shortcut links as defaults (Michael c0c2a08d..., Focus 76e297e8...),
   #530 off the record never set by focus/DND words, Michael always states it; #531 automation opens
@@ -22,8 +22,13 @@ the usage limit by slowing down at about 60% of the window.
   Chat clear of the composer, "min kept", finish moment), #541 one shared iPhone state rule.
 - Loukas has TWO accounts: email 7259e4cf (iPhone key, opens) and a Google one 6e2cc87b created 13:15
   (calendar, no iPhone). The 13:38 chat was in the Google one. He must pick one; offered to delete the other.
-- Open: #542 "My automation is for" picker (due 14:15 UTC), #543 onboarding follow ups (Manolis' side).
-- Running: final stage rehearsal QA on production (read only), CSS/copy fixes before 15:00 UTC.
+- Merged 14:13 to 14:15: #542 "My automation is for" picker (user_profiles.default_app, renames today's
+  unnamed opens), #544 hide chat plan notes on Today, #545 "Sign in" not "Sign in with Google".
+- FINAL REHEARSAL PASSED (14:16 UTC, production read only): all screens pass, numbers agree, no
+  overlaps, copy clean. Notes: demo onboarding shows Calendar "Not connected"; Today planned bar draws
+  unconfirmed before spent (cosmetic); Mac collector and watch buzz untested (Manolis #28).
+- Nothing running. Loukas to pick Instagram in the picker (email account) and choose which account to
+  keep (offered to delete the other).
 - Known gaps for after the pitch: #514 (brief/check-ins ignore shortcut opens), app names need the
   re-signed shortcut or the user editing the shortcut to send "Shortcut Input" not its Name,
   Screen Time needs the Mac app (Apple gives it only to native apps).
