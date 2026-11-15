@@ -602,6 +602,8 @@ export interface FocusBlockRequest {
   goal_id?: string | null;
   /** Who asked, for the rationale the user reads ("Claude"). */
   requested_by: string;
+  /** One more sentence for the rationale, such as why the block is shorter than asked for. */
+  note?: string;
 }
 
 /**
@@ -641,7 +643,7 @@ export async function bookFocusBlock(req: FocusBlockRequest): Promise<Recommenda
   const rec = await store.createRecommendation({
     goal_id: req.goal_id ?? null,
     title,
-    rationale: `Booked at your request through ${req.requested_by}. Undo in Michael until it starts.`,
+    rationale: `Booked at your request through ${req.requested_by}.${req.note ? ` ${req.note}` : ""} Undo in Michael until it starts.`,
     action: {
       kind: "create_focus_block",
       payload: { ...payload, title },

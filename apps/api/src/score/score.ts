@@ -31,7 +31,7 @@ import { calendarTitles, goalForEvent, titleMatchesAny } from "./match";
 import { isTrainingGoal, purposeFor } from "./purpose";
 import type { BlockRun, RecordWeek } from "./records";
 import { type TargetWeek, withTarget } from "./targets";
-import { commitments, committedMinutes, freeMinutesLeft, sleepWeek, wakingDay } from "./week";
+import { commitments, committedMinutes, freeMinutesLeft, protectedSpans, sleepWeek, wakingDay } from "./week";
 
 export { isSleepGoal };
 
@@ -97,8 +97,9 @@ export { isSleepGoal };
 //   Areas: the same totals per category, for the week and for the day, so a strong business week
 //   with no personal time does not read as a win. They add up to the week and to the day.
 //
-//   Standing instructions ("keep Sundays clear") never change a minute of the score. Each block
-//   only carries `instructions_broken`: the active instructions its time falls under
+//   Standing instructions ("keep Sundays clear") never change a minute of the score; the one
+//   number they touch is `free_minutes_left`, which leaves out the time they protect (week.ts).
+//   Each block carries `instructions_broken`: the active instructions its time falls under
 //   (instructions/protected.ts), so the app can flag a block planned on a clear day. A block named
 //   in an instruction's `exceptions` ("Rhefuel" on a clear Sunday) does not break it.
 //
@@ -834,7 +835,14 @@ export function scoreWithHistory(
       target: null,
       on_target: null,
       records: [],
-      free_minutes_left: freeMinutesLeft(zone, range.days, now, waking, committed),
+      free_minutes_left: freeMinutesLeft(
+        zone,
+        range.days,
+        now,
+        waking,
+        committed,
+        protectedSpans(instructions, zone, range.days, blocks),
+      ),
       lost_by: lostBy(weekPieces.flatMap((piece) => piece.stretches)),
       sleep: sleepWeek(events, active, zone, range.days, now),
     },

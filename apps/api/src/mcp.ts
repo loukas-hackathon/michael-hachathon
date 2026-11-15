@@ -136,7 +136,7 @@ function scoreText(s: Score): string {
           `${a.area} ${pct(a.score_pct)} (floor ${a.floor_pct}%${a.target_pct == null ? "" : `, target ${a.target_pct}%`}${a.meets_floor == null ? "" : a.meets_floor ? ", met" : ", not met"})`,
       )
       .join("; ")}.`,
-    `Free time left this week, outside fixed commitments and sleep: ${dur(s.free_minutes_left)}.`,
+    `Free time left this week, outside fixed commitments, sleep and the time your standing instructions protect: ${dur(s.free_minutes_left)}.`,
     "Goals this week:",
     ...s.goals.map((g) =>
       g.scored
