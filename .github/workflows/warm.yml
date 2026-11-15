@@ -1,0 +1,22 @@
+# Keeps the Vercel functions and the API warm (#421). After a few idle minutes the first open of
+# the app took 3.2 s instead of 1.3 s: Vercel woke up, not the API. A ping every 5 minutes keeps
+# them awake. Never pings /auth/demo, which creates a demo visitor on every call. A failed ping
+# never fails the run, so a blip cannot open an incident (incident.yml only watches deploys anyway).
+name: Warm
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+permissions: {}
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - run: |
+          for url in \
+            https://michael-zeta-sand.vercel.app/login \
+            https://michael-zeta-sand.vercel.app/ \
+            https://api-production-16521a26.up.railway.app/health; do
+            curl -sS -o /dev/null --max-time 20 -w "%{http_code} %{time_total}s $url\n" "$url" || echo "failed $url"
+          done
