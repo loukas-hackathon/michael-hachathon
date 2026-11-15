@@ -47,6 +47,8 @@ export const TYPES: EventType[] = [
   "screen",
   "focus_session",
   "note",
+  // Place visits: the gym backs training goals, work or university business ones (#267).
+  "location",
 ];
 export interface Week {
   score: Score;
@@ -88,12 +90,13 @@ export async function loadWeek(query: { date?: string; now?: string }): Promise<
   // answers. Extras, like the flags.
   const monday = range.days[0] ?? date;
   const sunday = range.days[6] ?? date;
-  const [goals, instructions, checklist, checkIns, ...pages] = await Promise.all([
+  const [goals, instructions, checklist, checkIns, places, ...pages] = await Promise.all([
     store.listGoals(),
     // The flags on the blocks are an extra: a failed read here must never take the score down.
     store.listInstructions().catch(() => []),
     store.listChecklist({ from: monday, to: sunday }).catch(() => []),
     store.listCheckIns({ fromDay: monday, toDay: sunday }).catch(() => []),
+    store.listPlaces().catch(() => []),
     ...chunks,
   ]);
   const byId = new Map<string, Event>();
@@ -103,6 +106,7 @@ export async function loadWeek(query: { date?: string; now?: string }): Promise<
     date,
     now,
     instructions,
+    places,
     checklist,
     countCheckIns: countCheckInsFrom(checkIns),
   });

@@ -55,6 +55,7 @@ import { guardTools } from "./mcp-guard";
 import { listMemories, remember } from "./memory";
 import { NO_HEADLINES } from "./patterns";
 import { logEvening, planMorning } from "./ritual/ritual";
+import { plannedVisitLines } from "./routes/location";
 import { momentFor } from "./routes/moments";
 import { patternReportFor } from "./routes/patterns";
 import { travelPlanFor } from "./routes/places";
@@ -282,6 +283,11 @@ export function createMcpServer(): McpServer {
       if (listed.length > MAX_LINES)
         lines.push(`... and ${listed.length - MAX_LINES} more. Narrow the range.`);
       if (device) lines.push(`Plus ${device} screen activity events (ask for those types to list them).`);
+      // Calendar events at a saved place with no location signal over them (#267).
+      if (!source && !type) {
+        const planned = await plannedVisitLines(start, end, (ms) => zone.clock(ms)).catch(() => []);
+        if (planned.length) lines.push("Places from the calendar:", ...planned.map((l) => `- ${l}`));
+      }
       if (!events.length) lines.push("Nothing recorded in that range.");
       return reply(lines.join("\n"), {
         from: start,

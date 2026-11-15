@@ -602,6 +602,62 @@ const overlapsAny = (e: EventRow, spans: { from: number; to: number }[]) => {
   return spans.some((x) => s < x.to && end > x.from);
 };
 
+// ---------- where he was (location, #267) ----------
+
+type VisitPlan = { key: string; label: string; from: string; to: string };
+const WORK = { key: "work", label: "Work" };
+const UNI = { key: "university", label: "University" };
+const GYM = { key: "gym", label: "Gym" };
+const VENUE = { key: "venue", label: "Hackathon venue" };
+
+// Place visits matching the calendar and the workouts, a little late as people are, from the
+// phone when he opened Michael.
+const VISITS: Record<number, VisitPlan[]> = {
+  1: [
+    { ...WORK, from: "10:05", to: "16:20" },
+    { ...UNI, from: "16:52", to: "19:08" },
+    { ...GYM, from: "20:35", to: "22:18" },
+  ],
+  2: [
+    { ...WORK, from: "09:50", to: "13:35" },
+    { ...UNI, from: "13:52", to: "16:10" },
+    { ...GYM, from: "19:58", to: "21:30" },
+  ],
+  3: [
+    { ...WORK, from: "10:10", to: "18:30" },
+    { ...GYM, from: "18:55", to: "20:05" },
+  ],
+  4: [
+    { ...WORK, from: "10:00", to: "16:25" },
+    { ...UNI, from: "16:55", to: "19:05" },
+    { ...GYM, from: "20:32", to: "22:22" },
+  ],
+  5: [
+    { ...GYM, from: "08:35", to: "09:40" },
+    { ...WORK, from: "10:15", to: "12:10" },
+    { ...UNI, from: "12:25", to: "14:05" },
+    { ...WORK, from: "14:40", to: "17:00" },
+  ],
+  6: [{ ...VENUE, from: "11:40", to: "23:50" }],
+  0: [{ ...VENUE, from: "11:30", to: "23:30" }],
+};
+
+/** Visits in the shape routes/location.ts stores (VisitData in docs/api.md). */
+function visits(date: string): EventRow[] {
+  return (VISITS[weekday(date)] ?? []).map((v) => ({
+    source: "location",
+    type: "location",
+    start_at: iso(at(date, v.from)),
+    end_at: iso(at(date, v.to)),
+    title: v.label,
+    data: {
+      place_key: v.key,
+      evidence: ["phone"],
+    },
+    external_id: `${DEMO_PREFIX}${date}:visit:${v.key}:${v.from}`,
+  }));
+}
+
 /**
  * The demo week: the seven Athens days ending with today, filled up to `now`, with the calendar
  * planned to the end of this Monday to Sunday week.
@@ -649,7 +705,7 @@ export function buildDemoWeek(now: Date = new Date()): DemoWeek {
     if (train) events.push(train);
     events.push(...nightEvents(date, night.bed, night.wake, night.rnd));
     events.push(...dayBiometrics(date, night.wake, nextBed, train, nowMs));
-    events.push(...conversations(date), ...meals(date));
+    events.push(...conversations(date), ...meals(date), ...visits(date));
   });
   // Done time he logged himself (#317): studying on paper leaves no trace on a screen, so he told
   // Michael. It counts as confirmed University time. The Φροντιστήριο blocks with no Mac data stay

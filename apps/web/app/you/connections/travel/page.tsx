@@ -1,21 +1,30 @@
+import { WhereYouAre } from "@/components/location/where-you-are";
 import { ConnectionPage, SetupSection } from "@/components/you/connection-page";
 import { PlacesEditor } from "@/components/you/places-editor";
-import { getPlaceSuggestions, getPlaces } from "@/lib/api";
+import { getLocation, getPlaceSuggestions, getPlaces } from "@/lib/api";
 import { getConnection } from "@/lib/connections-status";
 
 export const metadata = { title: "Location · Michael" };
 
-// Location: home, work and gym, typed or taken from the phone in one tap, and the travel switch.
-// Michael plans drives between these and the places in your calendar.
+// Location: where you are on the timeline (this phone when you open Michael, and calendar events
+// at your places), home, work and gym typed or taken from the phone in one tap, and the travel
+// switch (#267).
 export default async function LocationPage({ searchParams }: { searchParams: Promise<{ from?: string }> }) {
   const { from } = await searchParams;
-  const [{ row }, places, suggestions] = await Promise.all([
+  const [{ row }, places, suggestions, location] = await Promise.all([
     getConnection("travel"),
     getPlaces().catch(() => null),
     getPlaceSuggestions().catch(() => null),
+    getLocation().catch(() => null),
   ]);
   return (
     <ConnectionPage row={row} from={from}>
+      <SetupSection
+        title="Where you are"
+        note="Only near your saved places is a place named. Elsewhere I keep about a kilometre, never a trail."
+      >
+        <WhereYouAre status={location} />
+      </SetupSection>
       <SetupSection title="Your places">
         {places ? (
           <PlacesEditor

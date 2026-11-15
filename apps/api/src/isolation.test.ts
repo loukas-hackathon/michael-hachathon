@@ -76,6 +76,7 @@ const READS = [
   () => "/v1/recommendations",
   () => "/v1/profile",
   () => "/v1/places",
+  () => "/v1/location",
   () => "/v1/privacy",
   () => "/v1/push",
   () => "/v1/chat?limit=200",
@@ -195,6 +196,13 @@ test("A writes through every write route", async () => {
       places: [{ key: "home", label: `${MARK} home`, lat: 37.98, lng: 23.72 }],
     }),
     "PUT /v1/places",
+  );
+  // Where A was: a visit from A's phone position.
+  await ok(
+    await request(asA, "POST", "/v1/location/signals", {
+      signals: [{ kind: "point", at: new Date(Date.now() - 600_000).toISOString(), lat: 37.98, lng: 23.72 }],
+    }),
+    "POST /v1/location/signals",
   );
   // Meetings mode (#400): A's session must not show for, or open conversations of, anyone else.
   await ok(await request(asA, "POST", "/v1/meetings/start", { consent: true }), "POST /v1/meetings/start");

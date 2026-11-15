@@ -76,8 +76,13 @@ export type TimelineDrive = {
   trafficMinutes: number;
 };
 
+/** Where the user was (#267): place visits from phone positions. */
+export type TimelinePlace = { start: number; end: number; label: string };
+
 export type TimelineDay = {
   date: string;
+  /** Place visits (source location, type location), for a quiet caption per visit. */
+  places?: TimelinePlace[];
   /** Planned drives (source maps, type travel): the traffic part reads as lost time. */
   drives?: TimelineDrive[];
   /** Set when the day is today: draws the now pill and leaves the rest of the plan as outline. */
@@ -316,6 +321,16 @@ export function buildTimeline(
     })
     .filter((d) => d.end > d.start);
 
+  // 5b. Where the user was: place visits, 10 minutes or longer, one caption each.
+  const places: TimelinePlace[] = events
+    .filter((e) => e.source === "location" && e.type === "location")
+    .map((e) => {
+      const [s, en] = clip(t(e.start_at), t(e.end_at ?? e.start_at));
+      return { start: s, end: en, label: e.title };
+    })
+    .filter((p) => p.end - p.start >= 10 * MIN)
+    .sort((a, b) => a.start - b.start);
+
   // 6. Quiet stretches of 90 minutes or more (no Mac block, no phone session, nothing planned, no
   // workout, no nap, no drive) collapse to one row.
   const busy = [
@@ -369,6 +384,7 @@ export function buildTimeline(
   return {
     date,
     drives,
+    places,
     now: nowIn,
     dayStart,
     dayEnd,

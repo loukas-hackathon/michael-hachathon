@@ -90,7 +90,10 @@ export async function deleteAuthUser(userId: string): Promise<boolean> {
 // needs to enforce focus guards (#41). A leaked key can neither read the day nor change anything.
 export const deviceKeyMayCall = (method: string, path: string) =>
   (method === "POST" &&
-    (path === "/v1/events" || path === "/v1/events/batch" || path.startsWith("/v1/webhooks/"))) ||
+    (path === "/v1/events" ||
+      path === "/v1/events/batch" ||
+      path === "/v1/location/signals" ||
+      path.startsWith("/v1/webhooks/"))) ||
   (method === "GET" && path === "/v1/focus-guards/active");
 
 export const requireUser =

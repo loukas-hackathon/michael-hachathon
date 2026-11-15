@@ -7,6 +7,7 @@ import {
   goalKind,
   type Instruction,
   isSleepGoal,
+  type Place,
   type Score,
   type ScoreArea,
   type ScoreBlock,
@@ -18,6 +19,7 @@ import {
   type TimeWonBack,
 } from "@michael/shared";
 import { forbiddenBy } from "../instructions/protected";
+import { placeProof } from "../location/visits";
 import { DEFAULT_TIMEZONE } from "../patterns/context";
 import { type GoalBlock, goalBlocks } from "../patterns/focus";
 import { label } from "../patterns/format";
@@ -28,7 +30,7 @@ import type { CountCheckIn } from "./check-in";
 import { COUNT_RULES, checklistRow, countRow, type Occurrence } from "./count";
 import { type LoggedDone, loggedFrom } from "./logged";
 import { calendarTitles, goalForEvent, titleMatchesAny } from "./match";
-import { isTrainingGoal, purposeFor } from "./purpose";
+import { isBusinessGoal, isTrainingGoal, purposeFor } from "./purpose";
 import type { BlockRun, RecordWeek } from "./records";
 import { type TargetWeek, withTarget } from "./targets";
 import { commitments, committedMinutes, freeMinutesLeft, protectedSpans, sleepWeek, wakingDay } from "./week";
@@ -145,6 +147,9 @@ export interface ScoreOptions {
   checklist?: ChecklistItem[];
   /** Check in answers "yes" (score/check-in.ts), for the `count` rows. Default none. */
   countCheckIns?: CountCheckIn[];
+  /** The user's saved places, so location visits at a gym or the office count as proof. Default none
+   * (a visit's own place key and label still say what it is). */
+  places?: Place[];
 }
 
 export interface ScoreRange {
@@ -305,7 +310,7 @@ function evaluate(
   block: GoalBlock,
   part: { day: string; start: number; end: number },
   attention: Segment[],
-  workouts: Span[],
+  proof: { training: Span[]; business: Span[] },
   now: number,
   word: UserWord = NO_WORD,
 ): Piece {
@@ -328,9 +333,15 @@ function evaluate(
     }
   }
   let lost = union(distractors.map((s) => ({ start: s.start, end: s.end })));
-  if (isTrainingGoal(block.goal) && elapsedEnd > start) {
-    // A recorded workout proves training time, except the minutes that went to a distractor.
-    for (const w of workouts) {
+  // A recorded workout or a visit to the gym proves training time; being at work or university
+  // proves business time (location/visits.ts placeRole). Minus the minutes that went to a distractor.
+  const shown = isTrainingGoal(block.goal)
+    ? proof.training
+    : isBusinessGoal(block.goal)
+      ? proof.business
+      : [];
+  if (elapsedEnd > start) {
+    for (const w of shown) {
       const piece = { start: Math.max(w.start, start), end: Math.min(w.end, elapsedEnd) };
       if (piece.end > piece.start) verified.push(...subtractSpans(piece, lost));
     }
@@ -413,7 +424,7 @@ function countOccurrences(
   checkIns: CountCheckIn[],
   span: Span,
   attention: Segment[],
-  workouts: Span[],
+  proof: { training: Span[]; business: Span[] },
   now: number,
   zone: Zone,
 ): Map<string, Occurrence[]> {
@@ -442,7 +453,7 @@ function countOccurrences(
       title: e.title,
       rule: match.rule,
     };
-    const p = evaluate(block, { day: zone.dayOf(start), start, end }, attention, workouts, now);
+    const p = evaluate(block, { day: zone.dayOf(start), start, end }, attention, proof, now);
     if (p.planned > 0 && p.elapsed - p.lost >= p.planned * COUNT_RULES.minSpentShare) {
       out.get(match.goal.id)?.push({ source: "block", start, end });
     }
@@ -624,11 +635,18 @@ export function scoreWithHistory(
   const blocks = goalBlocks(events, active, range.from, range.to);
   const instructions = (options.instructions ?? []).filter((i) => i.active);
   const tl = buildTimeline(events, range.from, range.to);
-  const workouts = union(
-    events.flatMap((e) =>
-      e.type === "workout" && e.end_at ? [{ start: Date.parse(e.start_at), end: Date.parse(e.end_at) }] : [],
-    ),
-  );
+  const atPlaces = placeProof(events, options.places ?? []);
+  const proof = {
+    training: union([
+      ...events.flatMap((e) =>
+        e.type === "workout" && e.end_at
+          ? [{ start: Date.parse(e.start_at), end: Date.parse(e.end_at) }]
+          : [],
+      ),
+      ...atPlaces.training,
+    ]),
+    business: union(atPlaces.business),
+  };
 
   // The user's word (#317): logged done time by goal, and the blocks they settled.
   const logged = loggedFrom(events);
@@ -650,7 +668,7 @@ export function scoreWithHistory(
   for (const block of blocks) {
     const word = wordFor(block);
     for (const part of zone.splitByDay(block.start, block.end)) {
-      pieces.push(evaluate(block, part, tl.attention, workouts, now, word));
+      pieces.push(evaluate(block, part, tl.attention, proof, now, word));
     }
   }
   // Logged time outside every block of its goal is budget time, not planned time (#372): minutes
@@ -706,7 +724,7 @@ export function scoreWithHistory(
     ],
     weekSpan,
     tl.attention,
-    workouts,
+    proof,
     now,
     zone,
   );

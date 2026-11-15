@@ -6,6 +6,7 @@ import { DeepLinkFocus } from "@/components/deep-link-focus";
 import { Desktop } from "@/components/desktop";
 import { FocusHost } from "@/components/focus/focus-host";
 import { Haptics } from "@/components/haptics";
+import { LocationPing } from "@/components/location/location-ping";
 import { MeetingPill } from "@/components/meetings";
 import { NudgeOpened } from "@/components/nudge-opened";
 import { ServiceWorker } from "@/components/service-worker";
@@ -42,6 +43,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <Splash />
         <MotionScript />
         <Haptics />
+        <LocationPing />
         <div className="min-h-dvh lg:pl-64">
           <div className="m-content mx-auto w-full max-w-[560px] lg:max-w-none">{children}</div>
         </div>

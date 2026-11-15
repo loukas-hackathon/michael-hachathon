@@ -20,6 +20,9 @@ import {
   type GoalSuggestion,
   type GoalSuggestionAccept,
   type GoalUpdate,
+  type LocationSignal,
+  type LocationSignalsResponse,
+  type LocationStatus,
   type LogTimeInput,
   type LogTimeResponse,
   mockEvents,
@@ -876,6 +879,22 @@ export async function putPlaces(update: PlacesUpdate): Promise<WriteResult> {
   } catch {
     return { ok: false, message: "Michael's server can't be reached." };
   }
+}
+
+// ---------- location (#267) ----------
+
+/** Where the user is now and the last signal, for the Location page. */
+export async function getLocation(): Promise<LocationStatus> {
+  if (USE_MOCKS) return { last_signal_at: null, now: null, collecting: false };
+  return get<LocationStatus>("/v1/location");
+}
+
+/** Phone positions from the browser. Demo visitors get a 403: they cannot write, and that is fine. */
+export async function sendLocationSignals(
+  signals: LocationSignal[],
+): Promise<LocationSignalsResponse | null> {
+  if (USE_MOCKS) return null;
+  return send<LocationSignalsResponse>("POST", "/v1/location/signals", { signals });
 }
 
 // ---------- weekly targets (#165) ----------

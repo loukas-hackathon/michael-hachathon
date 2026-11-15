@@ -2604,6 +2604,48 @@ type PlaceSuggestionsResponse = { enabled: boolean; suggestions: PlaceSuggestion
   `whole_day`, `day.note` says maps need setting up); without the opt in it is `travel_off`. Code: `apps/api/src/integrations/maps.ts` (Geocoding, Routes
   `computeRoutes` with `TRAFFIC_AWARE` and `departureTime`) and `integrations/travel.ts`.
 
+### Location (#267)
+
+Where the user was, with no setup: the phone's position when the user opens Michael (after a one
+tap ask on the Location page, never on launch) and calendar events at saved places. The API turns
+signals into place visits on the timeline and keeps no raw trail. Code: `apps/api/src/location/visits.ts`
+(pure model) and `routes/location.ts`. More in `docs/location.md`.
+
+```ts
+type LocationSignal = { kind: "point"; at: string; lat: number; lng: number; accuracy_m?: number | null };
+type LocationSignalsInput = { signals: LocationSignal[] }; // 1 to 500
+type LocationSignalsResponse = { recorded: number; ignored: number; at: string | null }; // at: where the last signal put the user
+// `data` of a visit event { source: "location", type: "location" }; the event spans the visit.
+type VisitData = {
+  place_key: string | null; // null: "Out" (or the overlapping calendar location)
+  evidence: "phone"[];
+  lat?: number | null; // only away from saved places, rounded to 2 decimals (about 1 km)
+  lng?: number | null;
+};
+type LocationStatus = {
+  last_signal_at: string | null;
+  now: { label: string; since: string } | null; // a signal in the last 30 minutes
+  collecting: boolean;
+};
+```
+
+| Method | Path                   | Body                   | Response                      | Status |
+| ------ | ---------------------- | ---------------------- | ----------------------------- | ------ |
+| POST   | `/v1/location/signals` | `LocationSignalsInput` | `200 LocationSignalsResponse` | live   |
+| GET    | `/v1/location`         |                        | `200 LocationStatus`          | live   |
+
+- A point within 150 m of a saved place (plus its accuracy, up to 100 m) is a visit there.
+  Anything else is "Out" (points within a kilometre of each other are one), or the location of the
+  calendar event at that time. The same place again within 3 hours extends the visit
+  (`external_id` `visit:<place_key|out>:<start>`), so opening Michael again makes no new event.
+- Privacy: source `location`. The first signal is the opt in; the privacy switch and off the
+  record drop signals (`recorded: 0`, `ignored: n`). Device keys may post signals. Demo visitors
+  cannot.
+- Calendar events whose location names a saved place count as planned visits where no signal
+  covers them: chat and MCP `get_timeline` list them as "planned in the calendar, not confirmed".
+- Score: visits at a training place (gym, pool, yoga ...) count as workouts for training goals;
+  visits at work or university back business blocks.
+
 ### Michael for agents
 
 ```ts

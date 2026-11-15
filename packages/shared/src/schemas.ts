@@ -27,6 +27,8 @@ export const Source = z.enum([
   "claude_code",
   // Travel times from Google Maps, computed by the API between the user's places (opt in).
   "maps",
+  // Where the user was: place visits made by the API from the phone's position (opt in).
+  "location",
 ]);
 export type Source = z.infer<typeof Source>;
 
@@ -1265,6 +1267,56 @@ export const PlacesResponse = z.object({
   travel_enabled: z.boolean(),
 });
 export type PlacesResponse = z.infer<typeof PlacesResponse>;
+
+// ---------- location (POST /v1/location/signals, GET /v1/location) ----------
+
+// One sign of where the user is. The API turns signals into place visits (events of type
+// `location`, source `location`) and keeps no raw trail: a point near no saved place is rounded.
+//   point: a phone position, sent when the user opens Michael (throttled) or taps on the Location page.
+// A union on `kind` so other signals can join later without breaking clients.
+export const LocationSignal = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("point"),
+    at: IsoDateTime,
+    lat: z.number().min(-90).max(90),
+    lng: z.number().min(-180).max(180),
+    accuracy_m: z.number().nonnegative().max(100_000).nullish(),
+  }),
+]);
+export type LocationSignal = z.infer<typeof LocationSignal>;
+
+export const LocationSignalsInput = z.object({ signals: z.array(LocationSignal).min(1).max(500) });
+export type LocationSignalsInput = z.input<typeof LocationSignalsInput>;
+
+export const LocationSignalsResponse = z.object({
+  // Signals turned into visits (new or extended); the rest were dropped by privacy.
+  recorded: z.number().int().nonnegative(),
+  ignored: z.number().int().nonnegative(),
+  // Where the last signal put the user: a place label, a calendar location, or "Out".
+  at: z.string().nullable(),
+});
+export type LocationSignalsResponse = z.infer<typeof LocationSignalsResponse>;
+
+// What a visit event (type `location`, source `location`) carries in `data`.
+export const VisitData = z.object({
+  // The saved place, or null when the user was somewhere else ("Out").
+  place_key: PlaceKey.nullable(),
+  // How we know: a phone position. Planned visits from the calendar are not stored as events.
+  evidence: z.array(z.enum(["phone"])),
+  // Only for visits away from saved places: rounded to about a kilometre, never a trail.
+  lat: z.number().nullish(),
+  lng: z.number().nullish(),
+});
+export type VisitData = z.infer<typeof VisitData>;
+
+export const LocationStatus = z.object({
+  // The newest location signal, from any source; null when none has arrived yet.
+  last_signal_at: IsoDateTime.nullable(),
+  // The visit going on now (a signal in the last 30 minutes), else null.
+  now: z.object({ label: z.string(), since: IsoDateTime }).nullable(),
+  collecting: z.boolean(),
+});
+export type LocationStatus = z.infer<typeof LocationStatus>;
 
 // GET /v1/places/search?q=: address matches for the Places screen, geocoded on the server.
 export const AddressMatch = z.object({

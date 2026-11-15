@@ -78,9 +78,9 @@ const LIST: Omit<Connection, "live">[] = [
   {
     id: "travel",
     name: "Location",
-    what: "Home, work and gym, so you leave at the right time.",
+    what: "Where you are on the timeline, and when to leave.",
     href: "/you/connections/travel",
-    sources: ["maps"],
+    sources: ["maps", "location"],
   },
 ];
 
