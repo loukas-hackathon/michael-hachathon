@@ -104,7 +104,12 @@ export function Desktop() {
   return (
     <>
       <Tooltip />
-      <Sheet open={shortcuts} onClose={() => setShortcuts(false)} title="Keyboard shortcuts">
+      <Sheet
+        open={shortcuts}
+        onClose={() => setShortcuts(false)}
+        title="Keyboard shortcuts"
+        closeLabel="Done"
+      >
         <ul className="overflow-hidden rounded-group bg-fill">
           {SHORTCUTS.map((s, i) => (
             <li key={s.what} className="relative flex min-h-11 items-center justify-between gap-3 px-4 py-2">

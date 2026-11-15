@@ -37,7 +37,8 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
       <header className="flex min-h-11 items-center pt-2">
         <Link
           href="/you"
-          className="press -ml-2 flex h-11 items-center gap-1 px-2 text-body font-semibold text-tint-text"
+          // Laptop: Agents has its own place in the sidebar, so the way back to You hides.
+          className="press -ml-2 flex h-11 items-center gap-1 px-2 text-body font-semibold text-tint-text lg:invisible"
         >
           <svg viewBox="0 0 24 24" aria-hidden="true" className="size-5">
             <path
