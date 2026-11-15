@@ -163,7 +163,7 @@ Where configuration lives (values are never committed):
 
 The production API key and access notes for the team are on the Build Hub (link in `CLAUDE.local.md`).
 
-Seed the demo goals and recommendations (idempotent, never events): `pnpm --filter @michael/api seed`.
+Put the demo account's "Do it, then Undo" suggestion back to proposed (idempotent, writes nothing else): `pnpm --filter @michael/api seed`.
 
 ## Deploy (from scratch)
 

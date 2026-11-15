@@ -69,7 +69,7 @@ export interface DraftText {
 const CHATTY = /\b(sync|stand ?up|check ?in|planning|catch ?up|1:1|team)\b/i;
 const lowerFirst = (s: string) => (/^[A-Z][a-z]/.test(s) ? s[0]?.toLowerCase() + s.slice(1) : s);
 const stripStop = (s: string) => s.replace(/[.!?\s]+$/, "");
-// Omi writes the user's commitments about the others ("the steps they skipped"); the draft speaks to them.
+// Omi writes the user's commitments about the others ("send them the pricing"); the draft speaks to them.
 const toYou = (s: string) =>
   s
     .replace(/\btheir\b/gi, "your")
@@ -90,16 +90,20 @@ function whenWord(iso: string, now: number): string {
   return `on ${weekday}`;
 }
 
-/** The draft without a model: plain, short, built from the summary and the user's commitments. */
+/**
+ * The draft without a model: plain and short. A note to the user's own team quotes the summary
+ * (what "we" agreed). An email to people outside it never does: the summary is written about them
+ * ("the pilot team finds setup too long") and a template cannot turn that into "you", so the email
+ * thanks them and says what the user does next, every line speaking to its reader.
+ */
 export function templateDraft(e: Event, now: number): DraftText {
   const base = e.title.split(":")[0]?.trim() || e.title;
   const summary = str(e.data.summary);
   const items = commitmentsOf(e).map((c) => toYou(stripStop(c)));
   const when = whenWord(e.start_at, now);
-  const chat = CHATTY.test(e.title);
-  const recap = summary ? `Quick recap from my side: ${lowerFirst(summary)}` : null;
 
-  if (chat) {
+  if (CHATTY.test(e.title)) {
+    const recap = summary ? `Quick recap from my side: ${lowerFirst(summary)}` : null;
     const next = items.length
       ? `Next from me: I will ${joinAnd(items.map(lowerFirst))}.`
       : "Shout if I missed anything.";
@@ -110,14 +114,13 @@ export function templateDraft(e: Event, now: number): DraftText {
     };
   }
   const next = items.length
-    ? `What I am doing next:\n${items.map((x, i) => `${i + 1}. ${x}`).join("\n")}`
-    : "Let me know if I missed anything.";
+    ? `Next from me:\n${items.map((x, i) => `${i + 1}. ${x}`).join("\n")}`
+    : "Tell me if anything is still open on your side.";
   return {
     channel: "email",
     subject: `Following up: ${base}`,
-    body: ["Hi,", [`Thanks for your time ${when}.`, recap].filter(Boolean).join(" "), next, "Best,"].join(
-      "\n\n",
-    ),
+    // "Hello," stands without a name; the notes rarely carry one.
+    body: ["Hello,", `Thanks for your time ${when}.`, next, "Best,"].join("\n\n"),
   };
 }
 
@@ -125,7 +128,8 @@ export const DRAFT_INSTRUCTIONS = `You write one short follow up message that th
 
 Write as the user, in the first person, to the other people who were there.
 - British spelling, 24-hour time. No emoji. Do not use dashes of any kind as punctuation.
-- Use only the facts in the notes. Never invent names, dates, prices or promises. If no names are given, open with "Hi," (or "Hi all," for a group).
+- Use only the facts in the notes. Never invent names, dates, prices or promises. If no names are given, open with "Hello," (or "Hello all," for a group).
+- Speak to the readers as "you". The notes describe them in the third person ("the pilot team finds setup too long"); never repeat that to them: write "you find setup too long", or leave the line out.
 - Thank them in one line, recap what was agreed in one or two lines, then list the user's own commitments with any deadline the notes give.
 - Body under 90 words. No placeholders in brackets. End with a short sign off and no name.
 - channel: "email" for people outside the user's team (customers, investors, mentors); "chat" for a quick note to their own team. subject: a short email subject, or null for chat.
@@ -265,6 +269,11 @@ const DEMO_DRAFTS = 2;
  * The demo week's follow ups: template drafts for its two most recent conversations or meetings
  * with others, so Today shows them without a model call. Idempotent (one draft per event), and a
  * draft the presenter dismissed stays dismissed. Returns how many were added.
+ *
+ * A waiting template draft whose event is gone is removed first: a reseed replaces a conversation
+ * whose words changed (demo/week.ts puts them in its id) and drops days that left the window, and
+ * the old words must not stay on Today. Drafts that were sent or dismissed, and drafts Claude or
+ * the analysis wrote, are never touched.
  */
 export async function seedDemoDrafts(db: Store, now: number, days: number): Promise<number> {
   const events = await db.listEvents({
@@ -272,6 +281,14 @@ export async function seedDemoDrafts(db: Store, now: number, days: number): Prom
     to: new Date(now).toISOString(),
     type: ["conversation", "calendar_event"],
   });
+  const listed = new Set(events.map((e) => e.id));
+  const orphans: string[] = [];
+  for (const d of await db.listDrafts({ status: "proposed" })) {
+    if (d.written_by !== "template" || !d.event_id || listed.has(d.event_id)) continue;
+    if (!(await db.getEvent(d.event_id))) orphans.push(d.id);
+  }
+  if (orphans.length) await db.deleteDrafts(orphans);
+
   let added = 0;
   // Conversations first: their summary makes the better draft on stage.
   const picks = candidates(events, now).sort(
