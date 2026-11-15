@@ -1505,7 +1505,8 @@ type CheckIn = {
 | GET    | `/v1/moments/morning?at=<iso>` | `200 Moment` | live   |
 | GET    | `/v1/moments/evening?at=<iso>` | `200 Moment` | live   |
 
-`at` is optional (default now) and shows the moment as of another instant. `400` for another kind
+`at` is optional (default now) and shows the moment as of another instant. `phrase=cached` never
+waits for the model (Today's cold open): see `phrase_pending` below. `400` for another kind
 or a bad `at`. Days, weeks (Monday first) and hours are Europe/Athens.
 
 ```ts
@@ -1554,6 +1555,7 @@ type Moment = {
   generated_at: string;
   headline: string;
   phrased_by: "template" | "model";
+  phrase_pending?: true; // only with ?phrase=cached: the model is writing a line, ask again without it
   goals: MomentGoal[];
   totals: {
     // The score's day: held + lost is what has elapsed, never more than planned.
@@ -1601,8 +1603,12 @@ Only `headline` may be phrased by Claude (`ANTHROPIC_MODEL`, when `ANTHROPIC_API
 facts only, and its line is used only if the reply finished by itself (`stop_reason` is `end_turn`:
 a reply cut by the token cap is never used), ends with a full stop or a question mark, holds no
 semicolon, keeps the voice rules and every number in it appears in the facts; otherwise
-`phrased_by` is `template`. Lines are cached in memory per user, kind, day and facts, and checked
-again when read.
+`phrased_by` is `template`. Lines are cached in memory per user, kind, day and a hash of the facts,
+and checked again when read; one call per set of facts runs at a time. With `?phrase=cached` the
+answer never waits: the cached line for these facts, else the day's last model line while it still
+passes the checks against the new facts, else the template, plus `phrase_pending: true` while the
+model call runs in the background (not after a recent failure). The scheduler phrases the current
+moment ahead for recently active users and the demo account, and a minute after a user's writes.
 
 ### Your week (#376)
 

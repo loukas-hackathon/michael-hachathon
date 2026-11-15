@@ -2704,6 +2704,8 @@ export const Moment = z.object({
   generated_at: IsoDateTime,
   headline: z.string(),
   phrased_by: z.enum(["template", "model"]),
+  // Only with ?phrase=cached: the model is writing a line for these numbers; ask again without it.
+  phrase_pending: z.literal(true).optional(),
   goals: z.array(MomentGoal),
   totals: z.object({
     // The score's day (GET /v1/score, `day`): goal blocks today, the time held in them so far and
