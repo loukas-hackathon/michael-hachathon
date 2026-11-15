@@ -169,6 +169,8 @@
   font-size: calc(var(--u) * 26);
   line-height: calc(var(--u) * 34);
   color: var(--m-label-2);
+  /* The maths line never leaves "24." alone on the projector ("the pace by now is 5h / 24."). */
+  text-wrap: pretty;
 }
 .stage-nudge-empty .stage-nudge-text {
   color: var(--m-label-2);
