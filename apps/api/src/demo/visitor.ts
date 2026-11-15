@@ -2,7 +2,8 @@ import { z } from "zod";
 
 // Demo visitors: people browsing the demo week in the web app without signing in. They all share
 // the demo account, so they may look at everything but only change what is undoable or their own:
-// their own chat (stored per visitor), doing, undoing or dismissing a recommendation, the daily
+// their own chat (stored per visitor), doing, undoing or dismissing a recommendation, Book on
+// Goals (undoable like Do it), the daily
 // ritual, logging done time (all reset by the demo reseed), asking for a
 // brief, and turning nudges on for their device. Everything that changes the account itself
 // (privacy, goals, instructions, places, profile, integrations, agents, keys, data deletion) is
@@ -33,6 +34,9 @@ const ALLOWED: [string, RegExp][] = [
   ["DELETE", /^\/v1\/chat\/threads\/[^/]+$/],
   ["POST", /^\/v1\/recommendations\/[^/]+\/(execute|undo)$/],
   ["PATCH", /^\/v1\/recommendations\/[^/]+$/],
+  // Book on Goals (#309): one undoable block on the user's own calendar, the same as Do it, and a
+  // beat of the stage demo (docs/demo-runbook.md). Undo goes through the recommendation route.
+  ["POST", /^\/v1\/goals\/[^/]+\/book$/],
   // The demo day can be edited on the Timeline (#271), like acting on a recommendation.
   ["POST", /^\/v1\/blocks$/],
   ["PATCH", /^\/v1\/blocks\/[^/]+$/],
