@@ -324,6 +324,10 @@ test("every chat tool has its own plain step label; unknown tools get the fallba
 test("step labels name the user's own goal when the call points at it, and fall back otherwise", () => {
   assert.equal(stepLabel("log_done", { minutes: 40, goal_id: "g" }, "70.3"), "Logging 40 min to 70.3");
   assert.equal(stepLabel("create_focus_block", { goal_id: "g" }, "Deep work"), "Booking time for Deep work");
+  assert.equal(
+    stepLabel("focus_now", { goal_id: "g", minutes: 45 }, "University"),
+    "Starting 45 min on University",
+  );
   assert.equal(stepLabel("focus_now", { goal_id: "g" }, "University"), "Starting focus on University");
   // One named app still says more than the goal.
   assert.equal(stepLabel("block_mac_app", { apps: ["Slack"], goal_id: "g" }, "Deep work"), "Blocking Slack");

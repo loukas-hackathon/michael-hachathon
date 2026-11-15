@@ -34,7 +34,7 @@ const LABELS: Record<string, string> = {
   update_instruction: "Updating your rule",
   save_place: "Saving the place",
   update_profile: "Updating your profile",
-  focus_now: "Starting focus now",
+  focus_now: "Starting your focus",
 };
 
 const obj = (v: unknown): Record<string, unknown> =>
@@ -54,7 +54,10 @@ const WITH_GOAL: Record<string, (goal: string, args: Record<string, unknown>) =>
   update_goal: (g) => `Updating ${g}`,
   propose_goal_change: (g) => `Weighing a change to ${g}`,
   add_checklist_item: (g) => `Adding it to ${g}`,
-  focus_now: (g) => `Starting focus on ${g}`,
+  focus_now: (g, a) => {
+    const m = minutesOf(a.minutes);
+    return m ? `Starting ${m} min on ${g}` : `Starting focus on ${g}`;
+  },
 };
 
 /** The goal id a call points at, for the tools whose label can name it. */
