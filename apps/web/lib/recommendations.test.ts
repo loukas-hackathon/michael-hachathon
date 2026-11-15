@@ -1,7 +1,27 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Recommendation } from "@michael/shared";
-import { bookedAhead, bookedRationale, openRecommendations, previewTitle } from "./recommendations";
+import {
+  bookedAhead,
+  bookedRationale,
+  chatRationale,
+  openRecommendations,
+  previewTitle,
+} from "./recommendations";
+
+test("a plan proposed in chat shows no machine summary and no third person note", () => {
+  assert.equal(
+    chatRationale(
+      "User asked to plan Monday's training. Proposed in chat: new Easy run 2026-11-16 07:00 to 08:00.",
+    ),
+    "",
+  );
+  assert.equal(
+    chatRationale("Your swim fits after the ride. Proposed in chat: new Swim 2026-11-16 19:00 to 20:00."),
+    "Your swim fits after the ride.",
+  );
+  assert.equal(chatRationale("Instagram took 2h 32."), "Instagram took 2h 32.");
+});
 
 // Sunday 15 November 2026, 12:00 in Athens.
 const now = new Date("2026-11-15T10:00:00.000Z");

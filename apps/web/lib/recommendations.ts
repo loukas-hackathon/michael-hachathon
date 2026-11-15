@@ -171,6 +171,19 @@ export function bookedRationale(rec: Recommendation): string {
   return [m[1] ? `Booked by ${m[1]}.` : "", (m[2] ?? "").trim()].filter(Boolean).join(" ");
 }
 
+/**
+ * A plan Claude proposed in chat carries the model's note and a machine summary with ISO dates
+ * ("User asked to plan Monday. Proposed in chat: new Yoga 2026-11-16 21:30 to 22:00."). The title,
+ * the time line and the maths already say it, so the summary goes, and so does a note written
+ * about the user in the third person. Any other rationale is left as it is.
+ */
+export function chatRationale(rationale: string): string {
+  const cut = rationale.indexOf(" Proposed in chat: ");
+  if (cut < 0 && !rationale.startsWith("Proposed in chat: ")) return rationale;
+  const reason = cut < 0 ? "" : rationale.slice(0, cut).trim();
+  return /^(the )?user\b/i.test(reason) ? "" : reason;
+}
+
 export function toCard(rec: Recommendation, goals: Goal[], now: Date): RecCard {
   const goal = goalName(goals.find((g) => g.id === rec.goal_id));
   const { start, end } = actionTimes(rec);
@@ -184,7 +197,7 @@ export function toCard(rec: Recommendation, goals: Goal[], now: Date): RecCard {
   return {
     id: rec.id,
     title: rec.title,
-    rationale: rec.status === "done" ? bookedRationale(rec) : rec.rationale,
+    rationale: chatRationale(rec.status === "done" ? bookedRationale(rec) : rec.rationale),
     goal,
     maths,
     // The title often says the times already ("Block 09:30 to 11:00 for ..."): then only the day.
