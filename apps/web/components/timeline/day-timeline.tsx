@@ -1,6 +1,7 @@
 "use client";
 
 import { type ReactNode, useState } from "react";
+import { SettleBlock } from "@/components/log-time";
 import { Sheet } from "@/components/sheet";
 import { formatTime, hm, minutesPhrase } from "@/lib/format";
 import {
@@ -267,6 +268,32 @@ export function DayTimeline({
           );
         })}
 
+        {/* Done time the user logged (#317): goal time in their own word, so pink like a workout. */}
+        {(day.logged ?? []).map((l) => {
+          const top = y(l.start);
+          const h = Math.max(3, y(l.end) - top);
+          return (
+            <div
+              key={`log${l.start}`}
+              data-live-key={`log${l.start}-${l.end}`}
+              className="absolute right-(--lane-r) left-[50px] overflow-hidden rounded-block bg-spark"
+              style={{ top, height: h }}
+              title={`${l.title}, logged, ${span(l.start, l.end)}`}
+            >
+              {h >= 17 ? (
+                <p className="absolute top-1 right-2 left-2 truncate text-footnote leading-4 font-semibold text-[#000]">
+                  {l.title}
+                </p>
+              ) : null}
+              {h >= 36 ? (
+                <p className="absolute top-[21px] right-2 left-2 truncate text-[12px] leading-4 font-medium text-[#000] opacity-80">
+                  Logged · {hm((l.end - l.start) / 60_000)}
+                </p>
+              ) : null}
+            </div>
+          );
+        })}
+
         {/* Workouts from the watch: goal time, so pink, with what it was and how hard. */}
         {workouts.map((w) => {
           const top = y(Math.max(w.start, day.dayStart));
@@ -524,6 +551,25 @@ function PlanDetail({ plan: p, now }: { plan: Plan; now?: number }) {
       </dl>
       {p.michael && (now == null || now < p.start) ? (
         <p className="mt-3 text-footnote text-label-2">I booked this. Undo it in Today until it starts.</p>
+      ) : null}
+      {p.goal ? (
+        <dl className="mt-1">
+          <Row label="Goal">{p.goal.title}</Row>
+          {p.goal.settled ? (
+            <Row label="You said">{p.goal.settled === "did" ? "Did it" : "Didn't"}</Row>
+          ) : null}
+        </dl>
+      ) : null}
+      {/* Did it / Didn't (#317): a started goal block no data proves yet. */}
+      {p.id &&
+      p.goal &&
+      !p.goal.settled &&
+      p.goal.unverified >= 1 &&
+      !p.withOthers &&
+      (now ?? Date.now()) > p.start ? (
+        <div className="mt-4">
+          <SettleBlock eventId={p.id} minutes={Math.round((p.end - p.start) / 60_000)} />
+        </div>
       ) : null}
     </div>
   );

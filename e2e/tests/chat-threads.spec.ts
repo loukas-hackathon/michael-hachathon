@@ -58,11 +58,24 @@ test("chat: start a new conversation and switch between them", async ({ page }) 
   await name.fill("Exam week plan");
   await name.press("Enter");
   await expect(sheet.getByRole("button", { name: /^Exam week plan/ })).toBeVisible();
+  // The rename shows at once (optimistic) while the save is still in flight: reloading before it
+  // lands read the old name, the flake. Wait until the API has it, then reload once.
   await expect
-    .poll(async () => {
-      await page.reload();
-      await tap(page.getByRole("button", { name: /Show all conversations$/ }));
-      return sheet.getByRole("button", { name: /^Exam week plan/ }).count();
-    })
-    .toBe(1);
+    .poll(async () => (await threadsAs(page)).map((t) => t.title), { timeout: 10_000 })
+    .toContain("Exam week plan");
+  await page.reload();
+  await expect(page.getByRole("heading", { level: 1, name: "Chat" })).toBeVisible();
+  await tap(page.getByRole("button", { name: /Show all conversations$/ }));
+  await expect(sheet.getByRole("button", { name: /^Exam week plan/ })).toBeVisible();
 });
+
+/** The browser's own demo visitor's threads, as GET /v1/chat/threads gives them. */
+async function threadsAs(page: Page): Promise<{ id: string; title: string | null }[]> {
+  const visitor = (await page.context().cookies()).find((c) => c.name === "michael_demo")?.value ?? "";
+  const res = await fetch(`${API_URL}/v1/chat/threads`, {
+    headers: { authorization: `Bearer ${API_KEY}`, "x-michael-demo-visitor": visitor },
+  });
+  if (!res.ok) return [];
+  const body = (await res.json()) as { threads?: { id: string; title: string | null }[] };
+  return body.threads ?? [];
+}

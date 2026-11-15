@@ -1619,6 +1619,19 @@ export class SupabaseStore implements Store {
     return toDayRitual(saved);
   }
 
+  async clearRituals(f: { from: string; to: string }) {
+    const rows = check(
+      await this.db
+        .from("day_rituals")
+        .delete()
+        .eq("user_id", currentUserId())
+        .gte("day", f.from)
+        .lte("day", f.to)
+        .select("day"),
+    );
+    return (rows ?? []).length;
+  }
+
   async listTargets(from: string, to: string) {
     const rows = check(
       await this.db

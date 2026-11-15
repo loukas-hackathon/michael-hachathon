@@ -5,6 +5,7 @@ import { currentUserId } from "../context";
 import { env } from "../env";
 import { HttpError, parse } from "../http";
 import { Zone } from "../patterns/time";
+import { isLogEntry } from "../score/logged";
 import { goalForEvent } from "../score/match";
 import type { Store } from "../store";
 import { seedDemoRitual } from "./ritual";
@@ -44,7 +45,7 @@ export async function seedDemoWeek(
   );
   if (resetState) {
     await store.setOffTheRecord(false);
-    await resetToPlan(store);
+    await resetToPlan(store, week.days);
   }
 
   // Off the record stops the demo week too (it is the switch people try on stage). Per source
@@ -69,12 +70,32 @@ export async function seedDemoWeek(
   return { days: week.days, events, goals_written: goals };
 }
 
-/** Goals not in the plan go; the standing instructions become the plan's. */
-async function resetToPlan(store: Store): Promise<void> {
+/**
+ * Goals not in the plan go; the standing instructions become the plan's. Visitors may save the
+ * daily ritual and log done time on stage (demo/visitor.ts), so those go back to the plan too: the
+ * ritual rows of the week (and tomorrow, for a carried outcome) are cleared, the outcomes goal is
+ * not in the plan so it goes with its outcomes, and every logged entry that is not the demo week's
+ * own is removed. seedDemoRitual then writes the plan's ritual again.
+ */
+async function resetToPlan(store: Store, days: string[]): Promise<void> {
   const plan = new Set(demoGoals.map((g) => g.id));
   for (const g of await store.listGoals()) if (!plan.has(g.id)) await store.deleteGoal(g.id);
   for (const i of await store.listInstructions()) await store.deleteInstruction(i.id);
   for (const i of demoInstructions) await store.createInstruction(parse(InstructionCreate, i));
+
+  const first = days[0];
+  const last = days.at(-1);
+  if (!first || !last) return;
+  const zone = new Zone(DEMO_TZ);
+  const tomorrow = zone.nextDay(last);
+  await store.clearRituals({ from: first, to: tomorrow });
+  const manual = await store.listEvents({
+    from: new Date(zone.startOfDay(first)).toISOString(),
+    to: new Date(zone.startOfDay(zone.nextDay(tomorrow))).toISOString(),
+    source: ["manual"],
+  });
+  const logged = manual.filter((e) => isLogEntry(e) && !e.external_id?.startsWith(DEMO_PREFIX));
+  if (logged.length) await store.deleteEvents(logged.map((e) => e.id));
 }
 
 /**
