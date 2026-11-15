@@ -116,7 +116,7 @@ export function IPhoneShortcutSetup({
         <Step n={1} done={added}>
           <p>Add the {SHORTCUT_NAME} shortcut, then come back here.</p>
           <a
-            href={links ? links.add : shortcutUrl}
+            href={standalone && links ? links.add : shortcutUrl}
             // Installed app: a new context (Safari, or Shortcuts for iCloud), so this page stays put.
             {...(standalone ? { target: "_blank", rel: "noopener" } : {})}
             onClick={() => {
