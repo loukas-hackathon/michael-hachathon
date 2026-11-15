@@ -2,7 +2,7 @@
 
 import { GoalBook } from "@michael/shared";
 import { revalidatePath } from "next/cache";
-import { bookGoal } from "@/lib/api";
+import { bookGoal, planWeek } from "@/lib/api";
 import { demoRefusal } from "@/lib/demo-refusal";
 
 // Book time from the Goals tab (#309). The id and length come from the browser, so both are
@@ -14,13 +14,14 @@ export type BookResult =
 
 const ID = /^[0-9a-f-]{36}$/i;
 
-export async function bookGoalAction(goalId: string, minutes: number): Promise<BookResult> {
+/** `nextWeek`: Plan next week on Your week (#376), the first free slot from next Monday. */
+export async function bookGoalAction(goalId: string, minutes: number, nextWeek = false): Promise<BookResult> {
   const parsed = GoalBook.safeParse({ minutes });
   if (typeof goalId !== "string" || !ID.test(goalId) || !parsed.success)
     return { ok: false, error: "I could not book that. Nothing changed." };
   let r: Awaited<ReturnType<typeof bookGoal>>;
   try {
-    r = await bookGoal(goalId, parsed.data.minutes);
+    r = await (nextWeek ? planWeek : bookGoal)(goalId, parsed.data.minutes);
   } catch {
     r = { ok: false, status: 0, message: "" };
   }
@@ -35,6 +36,7 @@ export async function bookGoalAction(goalId: string, minutes: number): Promise<B
   const p = r.rec.action?.payload ?? {};
   revalidatePath("/");
   revalidatePath("/timeline");
+  // Not /week (#376): a fresh review would read the move as already booked and take Undo away.
   return {
     ok: true,
     id: r.rec.id,
