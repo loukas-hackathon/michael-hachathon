@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { sortInsights } from "@/lib/insights";
+import { type Insight, sortInsights } from "@/lib/insights";
 import { getInsights, isInsightsPreview } from "@/lib/insights-data";
 import { firstSentence, type NumberStat, numberStats, patternsFor, unitOf } from "@/lib/numbers";
 import { Spark } from "./spark";
@@ -29,22 +29,55 @@ export async function TodayNumbers({ demo, className = "" }: { demo?: string; cl
       {/* A phone: one grouped list. A laptop: a band of tiles across the dashboard. */}
       <ul className="overflow-hidden rounded-group bg-fill xl:grid xl:grid-cols-3 xl:gap-3 xl:overflow-visible xl:rounded-none xl:bg-transparent">
         {stats.map((s) => (
-          <NumberRow key={s.def.key} stat={s} fix={patternsFor(s.def.key, patterns)[0]?.fix.text} q={q} />
+          <NumberRow key={s.def.key} stat={s} pattern={patternsFor(s.def.key, patterns)[0]} q={q} />
         ))}
       </ul>
     </section>
   );
 }
 
-const LEAD: Record<NumberStat["tone"], string> = {
-  worse: "Fix:",
-  usual: "To do better:",
-  better: "Keep it up:",
-};
+const LEAD = { worse: "Fix:", usual: "To do better:" } as const;
 
-function NumberRow({ stat, fix, q }: { stat: NumberStat; fix?: string; q: string }) {
+/**
+ * The line under a figure. Worse or usual: one fix, from the pattern when Michael found one.
+ * Better than usual: a pattern's fix is about the bad days ("on mornings like that"), so it would
+ * read wrong after "Keep it up"; the pattern shows as the reason to keep it, and advice is left out.
+ */
+function FixLine({
+  tone,
+  pattern,
+  fallback,
+}: {
+  tone: NumberStat["tone"];
+  pattern?: Insight;
+  fallback: string;
+}) {
+  if (tone === "better") {
+    return (
+      <>
+        <b className="font-semibold">Keep it up.</b>
+        {pattern ? (
+          <span className="text-label-2">
+            {" "}
+            Found in your data: {pattern.title.charAt(0).toLowerCase()}
+            {pattern.title.slice(1)}.
+          </span>
+        ) : null}
+      </>
+    );
+  }
+  return (
+    <>
+      <b className="font-semibold">{LEAD[tone]}</b> {firstSentence(pattern?.fix.text ?? fallback)}
+      <span className="text-label-2">
+        {pattern ? " Found in your data." : " General advice, not yet seen in your data."}
+      </span>
+    </>
+  );
+}
+
+function NumberRow({ stat, pattern, q }: { stat: NumberStat; pattern?: Insight; q: string }) {
   const { def, series, last, usual, tone, compare, when } = stat;
-  const text = firstSentence(fix ?? def.fallback);
   return (
     <li className="border-separator border-b last:border-b-0 xl:rounded-card xl:border-b-0 xl:bg-fill">
       <Link
@@ -70,10 +103,7 @@ function NumberRow({ stat, fix, q }: { stat: NumberStat; fix?: string; q: string
           ›
         </span>
         <span className="col-span-3 mt-1.5 block text-footnote">
-          <b className="font-semibold">{LEAD[tone]}</b> {text}
-          <span className="text-label-2">
-            {fix ? " Found in your data." : " General advice, not yet seen in your data."}
-          </span>
+          <FixLine tone={tone} pattern={pattern} fallback={def.fallback} />
         </span>
       </Link>
     </li>
