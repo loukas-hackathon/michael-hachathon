@@ -47,7 +47,9 @@ function line(
     unit,
     points: DAYS.map((day, i) => ({
       day,
-      value: gaps.includes(i) ? null : Math.round(base + walk[i] * spread + (lateSet.has(i) ? late : 0)),
+      value: gaps.includes(i)
+        ? null
+        : Math.round(base + (walk[i] ?? 0) * spread + (lateSet.has(i) ? late : 0)),
     })),
   };
 }
