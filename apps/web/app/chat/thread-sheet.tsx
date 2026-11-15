@@ -1,6 +1,7 @@
 "use client";
 
 import type { ChatThread } from "@michael/shared";
+import { plainText } from "@michael/shared/plain-text";
 import { type PointerEvent, useEffect, useRef, useState } from "react";
 import { motionMs, reducedMotion } from "@/components/motion";
 import { Sheet } from "@/components/sheet";
@@ -347,7 +348,7 @@ function ThreadRow({
             <span className="shrink-0 text-footnote text-label-2 tnum">{formatWhen(when)}</span>
           </span>
           <span className="mt-0.5 line-clamp-2 min-h-[2lh] text-subhead text-label-2">
-            {thread.preview ?? "No lines yet."}
+            {thread.preview ? plainText(thread.preview) : "No lines yet."}
           </span>
         </button>
         <button
