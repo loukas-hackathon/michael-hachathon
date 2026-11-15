@@ -134,7 +134,7 @@ export function LiveCheckIn({ initial }: { initial: CheckIn[] }) {
             <button
               type="submit"
               disabled={!text.trim() || pending}
-              className="press h-9 shrink-0 rounded-full px-3 text-subhead font-semibold text-tint-text disabled:opacity-40"
+              className="hit press h-9 shrink-0 rounded-full px-3 text-subhead font-semibold text-tint-text disabled:opacity-40"
             >
               Answer
             </button>

@@ -37,8 +37,8 @@ export function InstallSteps() {
 }
 
 const filled =
-  "press min-h-9 rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint disabled:opacity-60";
-const plain = "press min-h-9 rounded-full px-3 text-subhead font-semibold text-label-2";
+  "hit press min-h-9 rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint disabled:opacity-60";
+const plain = "hit press min-h-9 rounded-full px-3 text-subhead font-semibold text-label-2";
 
 /**
  * "Want a buzz when the block starts?" under the suggestion that was just done. Renders nothing when

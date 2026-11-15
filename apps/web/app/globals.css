@@ -530,7 +530,8 @@ body::before {
   .m-speak-breath,
   .m-think,
   .m-think-soft,
-  .m-mi .m-mi-dot {
+  /* [data-mi] matches the state rules above, or the idle blink outranks this and keeps going. */
+  .m-mi[data-mi] .m-mi-dot {
     animation: none;
     transition: none;
   }

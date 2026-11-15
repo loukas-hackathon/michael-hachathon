@@ -140,7 +140,7 @@ function ThreadList({
                   <button
                     type="button"
                     onClick={() => undoDelete(t.id)}
-                    className="press min-h-9 shrink-0 px-1 text-subhead font-semibold text-tint-text"
+                    className="hit press min-h-9 shrink-0 px-1 text-subhead font-semibold text-tint-text"
                   >
                     Undo
                   </button>
@@ -456,7 +456,10 @@ function RenameRow({ thread, onDone }: { thread: ChatThread; onDone: (title: str
         onBlur={() => finish(value.trim().slice(0, 80) || null)}
         className="min-w-0 flex-1 bg-transparent text-body font-semibold outline-none"
       />
-      <button type="submit" className="press min-h-9 shrink-0 px-1 text-subhead font-semibold text-tint-text">
+      <button
+        type="submit"
+        className="hit press min-h-9 shrink-0 px-1 text-subhead font-semibold text-tint-text"
+      >
         Save
       </button>
     </form>

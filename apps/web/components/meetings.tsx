@@ -117,7 +117,7 @@ export function MeetingsRow({ first = false }: { first?: boolean }) {
             else if (meetings?.consented) void start.run(false);
             else setConsent(true);
           }}
-          className="press min-h-9 shrink-0 rounded-full bg-bg px-4 text-subhead font-semibold text-tint-text disabled:opacity-40"
+          className="hit press min-h-9 shrink-0 rounded-full bg-bg px-4 text-subhead font-semibold text-tint-text disabled:opacity-40"
         >
           {active ? "End" : "Start"}
         </PendingButton>

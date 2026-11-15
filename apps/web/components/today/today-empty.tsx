@@ -2,7 +2,7 @@ import { EmptyState } from "@/components/empty-state";
 import { getSetup, getStartedDismissed, SETUP_LINKS } from "@/lib/first-run";
 
 const action =
-  "press inline-flex min-h-9 items-center rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-3.5 text-subhead font-semibold text-tint-text";
+  "hit press inline-flex min-h-9 items-center rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-3.5 text-subhead font-semibold text-tint-text";
 
 /**
  * Today with no goal time planned: one sentence from Michael and the one thing that fills it.
