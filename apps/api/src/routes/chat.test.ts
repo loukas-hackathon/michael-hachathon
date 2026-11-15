@@ -185,11 +185,14 @@ test("POST /v1/chat/stream sends deltas, then the stored reply", async () => {
   try {
     const res = await app.request("/v1/chat/stream", {
       method: "POST",
-      headers: auth,
+      // The browser asks for gzip; the stream must still arrive piece by piece, never compressed
+      // (and so buffered) by the API's compression (#298).
+      headers: { ...auth, "accept-encoding": "gzip" },
       body: JSON.stringify({ message: "What is left today?" }),
     });
     assert.equal(res.status, 200);
     assert.match(res.headers.get("content-type") ?? "", /text\/event-stream/);
+    assert.equal(res.headers.get("content-encoding"), null);
     const events = (await res.text())
       .trim()
       .split("\n\n")
@@ -205,6 +208,10 @@ test("POST /v1/chat/stream sends deltas, then the stored reply", async () => {
     assert.equal(done?.event, "done");
     assert.equal(ChatResponse.parse(done?.data).reply.content, "Two hours of focus left today.");
     // Stored for this user: the history now ends with the pair.
+    // JSON is compressed for a client that accepts gzip.
+    const zipped = await app.request("/v1/chat", { headers: { ...auth, "accept-encoding": "gzip" } });
+    assert.equal(zipped.headers.get("content-encoding"), "gzip");
+    await zipped.arrayBuffer();
     const history = ChatHistory.parse(await (await app.request("/v1/chat", { headers: auth })).json());
     assert.deepEqual(
       history.messages.slice(-2).map((m) => m.content),
