@@ -14,18 +14,18 @@ import {
   useDevice,
 } from "./parts";
 
-// Live iPhone app opens through the published Michael shortcut (#120, docs/sources/ios-shortcuts.md).
-// 1. Add the shortcut from its iCloud link (one tap, Add Shortcut).
+// Live iPhone app opens through the Michael shortcut (#120, #303, docs/sources/ios-shortcuts.md).
+// 1. Add the shortcut: the signed file this app serves, or its iCloud link (Add Shortcut).
 // 2. Connect: a shortcuts:// link runs it once with the device key as input; it saves the key.
 // 3. The app automation: Apple lets no app or link create one, so that part stays a few taps.
-// Without a published shortcut (MICHAEL_SHORTCUT_URL unset) it shows `fallback` instead.
+// Without a shortcut link it shows `fallback` instead (the pages always pass one since #303).
 
 export function IPhoneShortcutSetup({
   shortcutUrl,
   setupToken,
   fallback,
 }: {
-  /** The iCloud link of the published shortcut, from MICHAEL_SHORTCUT_URL on the server. */
+  /** Where the shortcut is added from: `shortcutUrl()` in lib/one-tap.ts, read on the server. */
   shortcutUrl: string | null;
   setupToken?: string;
   fallback?: ReactNode;

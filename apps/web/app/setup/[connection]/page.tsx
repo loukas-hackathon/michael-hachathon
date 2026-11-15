@@ -1,6 +1,7 @@
 import { isLive, SetupConnection } from "@michael/shared";
 import { notFound } from "next/navigation";
 import { Wordmark } from "@/components/brand";
+import { shortcutUrl } from "@/lib/one-tap";
 import { SetupFromLink } from "./setup-from-link";
 
 export const metadata = { title: "Set up · Michael", robots: { index: false } };
@@ -36,12 +37,7 @@ export default async function SetupPage({ params }: { params: Promise<{ connecti
     <main className="screen flex min-h-dvh flex-col">
       <Wordmark className="mt-10 h-8 w-auto shrink-0 text-label" />
       <h1 className="mt-6 text-insight font-bold tracking-[-0.01em]">{copy.title}</h1>
-      <SetupFromLink
-        connection={parsed.data}
-        live={live}
-        body={copy.body}
-        shortcutUrl={process.env.MICHAEL_SHORTCUT_URL || null}
-      />
+      <SetupFromLink connection={parsed.data} live={live} body={copy.body} shortcutUrl={shortcutUrl()} />
     </main>
   );
 }
