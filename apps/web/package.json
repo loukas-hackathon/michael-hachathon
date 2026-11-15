@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "next typegen && tsc -p tsconfig.json",
-    "test": "tsx --test \"components/**/*.test.ts\""
+    "test": "tsx --test \"components/**/*.test.ts\" \"lib/**/*.test.ts\""
   },
   "dependencies": {
     "@michael/shared": "workspace:*",

@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { DEMO_COOKIE, demoVisitorId } from "@/lib/auth-mode";
-import { safeNext } from "@/lib/next-path";
+import { NEXT_COOKIE, safeNext } from "@/lib/next-path";
 import { authEnabled, supabaseServer } from "@/lib/supabase/server";
 
 // "See the demo week": browse the demo account without signing in. Each visitor gets an anonymous
@@ -25,5 +25,7 @@ export async function GET(request: NextRequest) {
     path: "/",
     maxAge: 60 * 60 * 24,
   });
+  // The way back was used (the Claude consent page, from the login page's link): spent.
+  response.cookies.delete(NEXT_COOKIE);
   return response;
 }

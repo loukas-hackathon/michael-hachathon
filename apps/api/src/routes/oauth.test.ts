@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { createHash, randomBytes } from "node:crypto";
 import { test } from "node:test";
 import { ConnectDecisionResponse, ConnectRequest } from "@michael/shared";
+import { agentsStore } from "../agents-store";
 import { app } from "../app";
+import { dbError } from "../http";
 
 // The whole claude.ai connector flow against the in-memory store: 401 with discovery pointer,
 // metadata, registration, authorise, consent, token, MCP call, refresh.
@@ -228,4 +230,73 @@ test("the API key still works on /mcp, also as ?key=", async () => {
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
   });
   assert.equal(res.status, 200);
+});
+
+// Production, 14 Nov 22:52: a browser still held the session of an account deleted minutes before.
+// Its token verified locally, the consent page showed, and Allow hit the auth.users foreign key:
+// a 502 and a raw error page, three times. Now it is a 401, which the web app turns into a fresh
+// sign in that comes back to the same consent page; the request stays answerable.
+test("consent for an account that no longer exists is a 401 and leaves the request pending", async () => {
+  const reg = await app.request("/oauth/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ client_name: "Claude", redirect_uris: [CALLBACK] }),
+  });
+  const { client_id } = await reg.json();
+  const qs = new URLSearchParams({
+    response_type: "code",
+    client_id,
+    redirect_uri: CALLBACK,
+    code_challenge: createHash("sha256").update("v".repeat(43)).digest("base64url"),
+    code_challenge_method: "S256",
+  });
+  const auth = await app.request(`/oauth/authorize?${qs}`);
+  const requestId = new URL(auth.headers.get("location") ?? "").searchParams.get("request") ?? "";
+
+  // Long enough for a first Google sign in on a phone, calendar consent screen included.
+  const info = ConnectRequest.parse(
+    await (await app.request(`/v1/connect/requests/${requestId}`, { headers: apiKey })).json(),
+  );
+  const minutesLeft = (Date.parse(info.expires_at) - Date.now()) / 60_000;
+  assert.ok(minutesLeft > 29 && minutesLeft <= 30, `request lives 30 minutes, got ${minutesLeft}`);
+
+  const original = agentsStore.approveAgent.bind(agentsStore);
+  agentsStore.approveAgent = async () => {
+    throw dbError({
+      code: "23503",
+      message:
+        'insert or update on table "agent_clients" violates foreign key constraint "agent_clients_user_id_fkey"',
+    });
+  };
+  try {
+    const dead = await app.request(`/v1/connect/requests/${requestId}`, {
+      method: "POST",
+      headers: { ...apiKey, "content-type": "application/json" },
+      body: JSON.stringify({ allow: true }),
+    });
+    assert.equal(dead.status, 401);
+  } finally {
+    agentsStore.approveAgent = original;
+  }
+
+  // Signed in again, the same request still answers.
+  const decided = await app.request(`/v1/connect/requests/${requestId}`, {
+    method: "POST",
+    headers: { ...apiKey, "content-type": "application/json" },
+    body: JSON.stringify({ allow: true }),
+  });
+  assert.equal(decided.status, 200);
+});
+
+test("dbError: only a missing user is a 401; every other database error stays a 502", () => {
+  assert.equal(
+    dbError({ code: "23503", message: 'violates foreign key constraint "oauth_grants_user_id_fkey"' }).code,
+    "unauthorized",
+  );
+  assert.equal(
+    dbError({ code: "23503", message: 'violates foreign key constraint "oauth_grants_client_id_fkey"' }).code,
+    "upstream_error",
+  );
+  assert.equal(dbError({ code: "23505", message: "duplicate key value" }).code, "upstream_error");
+  assert.equal(dbError({ message: "fetch failed" }).code, "upstream_error");
 });
