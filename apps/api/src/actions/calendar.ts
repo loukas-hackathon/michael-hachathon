@@ -10,6 +10,7 @@ import {
   type Recommendation,
   type RecommendationAction,
   RemoveCalendarBlockPayload,
+  Source,
   voiceDuration,
 } from "@michael/shared";
 import { z } from "zod";
@@ -35,8 +36,8 @@ import { executeLog, revertLog } from "./log";
 
 // Michael acts on the user's own time only. Rules (Build Hub, docs/api.md):
 // - never an event with other people (refused with 409, checked again against Google itself);
-// - never deletes the user's events: undo deletes only a block Michael created, and moves a moved
-//   block back;
+// - removes only the user's own events (a block made in Michael, or a solo calendar event), with
+//   undo until it starts: undo puts the event back with the same time and title;
 // - nothing in the past, and undo only until the affected block starts.
 // With Google Calendar connected the change happens in the calendar and the timeline mirrors it;
 // without it, it happens on the timeline only (Michael's own blocks, source "agent").
@@ -72,6 +73,11 @@ const RemoveExecution = z.object({
     start_at: z.string(),
     end_at: z.string().nullable(),
     data: z.record(z.string(), z.unknown()),
+    // #457: the user's own events can be removed too. Absent on older rows (Michael's blocks only).
+    michael: z.boolean().optional(),
+    source: z.string().optional(),
+    description: z.string().optional(),
+    location: z.string().optional(),
   }),
   undo_until: z.string(),
 });
@@ -325,8 +331,9 @@ function withGoal(data: Record<string, unknown>, goalId: string | null): Record<
 }
 
 /**
- * #271: removes one of Michael's own blocks (never the user's events, never one with other people),
- * keeping what it was so undo can put it back until it starts.
+ * Removes one of the user's own blocks (#271, #457): a block made in Michael, or a calendar event of
+ * their own with nobody else on it. Never an event with other people, never one that has started.
+ * Keeps what it was so undo can put it back, same time and title, until it starts.
  */
 async function removeCalendarBlock(action: RecommendationAction): Promise<RemoveExecution> {
   const p = parse(RemoveCalendarBlockPayload, action.payload);
@@ -334,18 +341,21 @@ async function removeCalendarBlock(action: RecommendationAction): Promise<Remove
   if (!event) throw new HttpError("not_found", "That block is no longer on the timeline");
   if (event.type !== "calendar_event") throw conflict("Only calendar blocks can be removed");
   if (isOthers(event)) throw conflict("That event has other people in it. I only advise on those.");
-  if (!isMichaels(event)) throw conflict("I only remove blocks made in Michael. Delete it in your calendar.");
   if (Date.parse(event.start_at) <= Date.now()) throw conflict("That block has already started");
-  const block = { title: event.title, start_at: event.start_at, end_at: event.end_at, data: event.data };
   const undoUntil = earliest(action.undo_until, event.start_at);
+  let michael = isMichaels(event);
+  let description: string | undefined;
+  let location: string | undefined;
 
   let googleId: string | null = null;
   if (event.source === "google_calendar" && event.external_id) {
     try {
       const g = await getCalendarEvent(event.external_id);
-      if (!createdByMichael(g))
-        throw conflict("I only remove blocks made in Michael. Delete it in your calendar.");
-      if (withOthers(g)) throw conflict("Someone else is on that block now. Remove it in your calendar.");
+      // Check Google itself: someone may have been invited since the last sync.
+      if (withOthers(g)) throw conflict("That event has other people in it. I only advise on those.");
+      michael = createdByMichael(g);
+      description = g.description;
+      location = g.location;
       await deleteCalendarEvent(g.id);
       googleId = g.id;
     } catch (err) {
@@ -353,30 +363,51 @@ async function removeCalendarBlock(action: RecommendationAction): Promise<Remove
       if (!(err instanceof HttpError && err.code === "not_found")) throw err;
     }
   }
+  const block = {
+    title: event.title,
+    start_at: event.start_at,
+    end_at: event.end_at,
+    data: event.data,
+    michael,
+    source: event.source,
+    ...(description ? { description } : {}),
+    ...(location ? { location } : {}),
+  };
   await store.deleteEvents([event.id]);
   return { kind: "remove_calendar_block", google_event_id: googleId, block, undo_until: undoUntil };
 }
 
-/** Puts a removed block back: in Google Calendar when it came from there, else on the timeline. */
+/** Puts a removed block back, same time and title: in Google Calendar when it came from there, else on the timeline. */
 async function restoreRemoved(ex: RemoveExecution): Promise<void> {
   const b = ex.block;
   const goalId = typeof b.data.goal_id === "string" ? b.data.goal_id : null;
+  // Older rows only ever held Michael's own blocks.
+  const michael = b.michael ?? true;
   if (ex.google_event_id) {
+    const tags = { ...(michael ? { michael: "1" } : {}), ...(goalId ? { goal_id: goalId } : {}) };
     const created = await insertCalendarEvent({
       summary: b.title,
-      description: "Planned in Michael. Undo in Michael until it starts.",
+      ...(michael
+        ? { description: "Planned in Michael. Undo in Michael until it starts." }
+        : b.description
+          ? { description: b.description }
+          : {}),
+      ...(b.location ? { location: b.location } : {}),
       start: { dateTime: b.start_at },
       end: { dateTime: b.end_at ?? b.start_at },
       transparency: "opaque",
       reminders: { useDefault: true },
-      extendedProperties: { private: { michael: "1", ...(goalId ? { goal_id: goalId } : {}) } },
+      ...(Object.keys(tags).length ? { extendedProperties: { private: tags } } : {}),
     });
     await mirror(created);
     return;
   }
+  // The user's own timeline entry comes back as theirs; anything else as Michael's block.
+  const parsed = Source.safeParse(b.source);
+  const own = !michael && parsed.success && parsed.data !== "google_calendar" && parsed.data !== "agent";
   await store.insertEvents([
     {
-      source: "agent",
+      source: own ? parsed.data : "agent",
       type: "calendar_event",
       start_at: b.start_at,
       end_at: b.end_at,
@@ -724,6 +755,39 @@ export async function bookFocusBlock(req: FocusBlockRequest): Promise<Recommenda
 }
 
 /** Until when a done recommendation can still be undone, or null when there is no record. */
+/**
+ * #457: removes one of the user's own blocks when they ask Michael (chat, voice) or an agent (MCP)
+ * to. Events with other people are refused in one line before anything is stored. The result is a
+ * done recommendation; undo puts the block back with the same time and title until it starts.
+ */
+export async function removeOwnBlock(eventId: string, requestedBy?: string): Promise<Recommendation> {
+  const event = await store.getEvent(eventId);
+  if (!event) throw new HttpError("not_found", "That block is not on the timeline");
+  if (isOthers(event)) throw conflict("That event has other people in it. I only advise on those.");
+  const span = `${athens.clock(Date.parse(event.start_at))}${
+    event.end_at ? ` to ${athens.clock(Date.parse(event.end_at))}` : ""
+  }`;
+  const rec = await store.createRecommendation({
+    goal_id: typeof event.data.goal_id === "string" ? event.data.goal_id : null,
+    title: `Removed ${event.title}, ${span}`,
+    rationale: requestedBy ? `Removed at the request of ${requestedBy}.` : "Asked for in chat.",
+    action: {
+      kind: "remove_calendar_block",
+      payload: { event_id: event.id },
+      involves_others: false,
+      undo_until: event.start_at,
+    },
+    source: "chat",
+  });
+  try {
+    return await executeRecommendation(rec.id);
+  } catch (err) {
+    // Nothing was removed: do not leave a half made record behind.
+    await store.updateRecommendationStatus(rec.id, "dismissed").catch(() => null);
+    throw err;
+  }
+}
+
 export async function undoDeadline(id: string): Promise<string | null> {
   const parsed = Execution.safeParse(await store.getRecommendationExecution(id));
   return parsed.success ? parsed.data.undo_until : null;

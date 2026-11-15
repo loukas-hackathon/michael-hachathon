@@ -68,8 +68,8 @@ ArtifactData at session start (a SessionStart hook prints the GitHub side for yo
   for a non technical user. No keys, URLs, JSON or terminals in the user's path.
 - **Claude first:** the claude.ai connector (read and write the day) is the headline demo moment.
 - **Autonomy:** acts on the user's own time (own calendar blocks, Mac apps, drafts), advises on the
-  rest. Never touches events with other people, never deletes, never sends in the user's name;
-  every action can be undone until the event starts.
+  rest. Never touches events with other people, removes only the user's own events, with undo until
+  the event starts, never sends in the user's name; every action can be undone until the event starts.
 - Goals have weekly time budgets. Headline score: share of planned goal time actually spent, with
   "time won back" beneath. Morning and Evening moments. At most 5 nudges a day (watch, push,
   Telegram). Off the record stops all collection. Other agents need one tap approval; every query

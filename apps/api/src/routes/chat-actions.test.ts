@@ -432,3 +432,152 @@ test("POST /v1/chat/stream opens with Reading your day, then a running and done 
     },
   );
 });
+
+// #457: Michael removes the user's own blocks, with undo until they start.
+test('"delete my Boatspace block" removes it, says until when, and undo_action puts it back', () =>
+  asNewUser(async () => {
+    const start = Date.now() + 5 * HOUR;
+    const { inserted } = await store.insertEvents([
+      {
+        source: "manual",
+        type: "calendar_event",
+        start_at: iso(start),
+        end_at: iso(start + HOUR),
+        title: "Boatspace",
+        data: {},
+      },
+    ]);
+    const boat = inserted[0];
+    assert.ok(boat);
+
+    const steps: ChatStep[] = [];
+    const removed = await withClaude(
+      [{ tool: { name: "remove_calendar_block", input: { event_id: boat.id } } }],
+      () =>
+        askMichael(turns("delete my Boatspace block"), "context", {
+          onText: async () => {},
+          onStep: async (s) => {
+            steps.push(s);
+          },
+        }),
+    );
+    assert.equal(steps[0]?.label, "Removing Boatspace");
+    const rec = Recommendation.parse(removed.actions[0]);
+    assert.equal(rec.status, "done");
+    assert.equal(rec.action?.kind, "remove_calendar_block");
+    // A plain statement: the tool's own line is the answer, with what and until when.
+    assert.equal(
+      removed.answer,
+      `Removed Boatspace, ${clock(start)} to ${clock(start + HOUR)}. Undo until ${clock(start)}.`,
+    );
+    assert.equal(await store.getEvent(boat.id), null);
+
+    const undone = await withClaude(
+      [{ tool: { name: "undo_action", input: { recommendation_id: rec.id } } }, { text: "It is back." }],
+      () => askMichael(turns("Undo that"), "context"),
+    );
+    assert.equal(undone.actions[0]?.status, "undone");
+    const back = (await store.listEvents({ from: iso(start - HOUR), to: iso(start + 2 * HOUR) })).filter(
+      (e) => e.title === "Boatspace",
+    );
+    assert.equal(back.length, 1, "the block is back");
+    assert.equal(Date.parse(back[0]?.start_at ?? ""), start);
+    assert.equal(Date.parse(back[0]?.end_at ?? ""), start + HOUR);
+    assert.equal(back[0]?.source, "manual", "it comes back as the user's own");
+  }));
+
+test("removing an event with other people is refused in one line, and nothing is left behind", () =>
+  asNewUser(async () => {
+    const start = Date.now() + 5 * HOUR;
+    const { inserted } = await store.insertEvents([
+      {
+        source: "manual",
+        type: "calendar_event",
+        start_at: iso(start),
+        end_at: iso(start + HOUR),
+        title: "Board meeting",
+        data: { with_others: true, attendees: 4 },
+      },
+    ]);
+    const board = inserted[0];
+    assert.ok(board);
+    const steps: ChatStep[] = [];
+    await withClaude(
+      [
+        { tool: { name: "remove_calendar_block", input: { event_id: board.id } } },
+        { text: "That one has other people in it, so I only advise." },
+      ],
+      async (requests) => {
+        const { actions } = await askMichael(turns("Delete the board meeting"), "context", {
+          onText: async () => {},
+          onStep: async (s) => {
+            steps.push(s);
+          },
+        });
+        assert.deepEqual(actions, []);
+        const [result] = toolResults(requests[1]);
+        assert.equal(result?.is_error, true);
+        assert.match(String(result?.content), /conflict.*other people/);
+      },
+    );
+    // Another person's title never reaches the step line.
+    assert.equal(steps[0]?.label, "Removing your block");
+    assert.ok(await store.getEvent(board.id), "still there");
+    assert.deepEqual(await store.listRecommendations({ status: "done" }), []);
+  }));
+
+test("a block that has started is not removed", () =>
+  asNewUser(async () => {
+    const { inserted } = await store.insertEvents([
+      {
+        source: "manual",
+        type: "calendar_event",
+        start_at: iso(Date.now() - HOUR),
+        end_at: iso(Date.now() + HOUR),
+        title: "Deep work",
+        data: {},
+      },
+    ]);
+    const live = inserted[0];
+    assert.ok(live);
+    await withClaude(
+      [{ tool: { name: "remove_calendar_block", input: { event_id: live.id } } }, { text: "Too late." }],
+      async (requests) => {
+        const { actions } = await askMichael(turns("delete deep work?"), "context");
+        assert.deepEqual(actions, []);
+        assert.match(String(toolResults(requests[1])[0]?.content), /already started/);
+      },
+    );
+    assert.ok(await store.getEvent(live.id));
+  }));
+
+test("remove_calendar_block only reaches the caller's own blocks", async () => {
+  const start = Date.now() + 5 * HOUR;
+  const owner = randomUUID();
+  const theirs = await runAsUser(owner, async () => {
+    const { inserted } = await store.insertEvents([
+      {
+        source: "manual",
+        type: "calendar_event",
+        start_at: iso(start),
+        end_at: iso(start + HOUR),
+        title: "Private",
+        data: {},
+      },
+    ]);
+    return inserted[0]?.id ?? "";
+  });
+  await asNewUser(() =>
+    withClaude(
+      [{ tool: { name: "remove_calendar_block", input: { event_id: theirs } } }, { text: "Not found." }],
+      async (requests) => {
+        const { actions } = await askMichael(turns("delete it"), "context");
+        assert.deepEqual(actions, []);
+        assert.match(String(toolResults(requests[1])[0]?.content), /not_found/);
+      },
+    ),
+  );
+  await runAsUser(owner, async () =>
+    assert.ok(await store.getEvent(theirs), "the owner's block is untouched"),
+  );
+});

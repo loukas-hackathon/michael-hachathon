@@ -6,10 +6,10 @@ import { HttpError, jsonBody, parse } from "../http";
 import { store } from "../store";
 
 // #271: the user edits their own day on the Timeline: add a block, move or resize it, rename it,
-// give it a goal, or remove one made in Michael. Each change is stored as a recommendation with
+// give it a goal, or remove one of their own (#457: made in Michael or a solo calendar event). Each change is stored as a recommendation with
 // source "user" and carried out at once by the same executor as Michael's own actions
 // (actions/calendar.ts), so every guard rail holds (never events with other people, never the past,
-// never deleting the user's own events) and POST /v1/recommendations/:id/undo takes it back until
+// removing only the user's own events, with undo) and POST /v1/recommendations/:id/undo takes it back until
 // the block starts. Google Calendar gets the change when it is connected; otherwise the timeline.
 
 const Id = z.uuid();
