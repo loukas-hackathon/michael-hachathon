@@ -1,7 +1,10 @@
 "use client";
 
-import { type ReactNode, useEffect, useState } from "react";
-import { SHORTCUT_NAME, shortcutConnectLink, shortcutTestLink } from "@/lib/one-tap";
+import { useRouter } from "next/navigation";
+import { type ReactNode, startTransition, useEffect, useRef, useState } from "react";
+import { Sheet } from "@/components/sheet";
+import { useStandalone } from "@/components/standalone";
+import { SHORTCUT_NAME, shortcutAddLink, shortcutConnectLink, shortcutTestLink } from "@/lib/one-tap";
 import { connectHere, exchangeSetupToken } from "@/lib/setup-actions";
 import {
   Card,
@@ -19,6 +22,9 @@ import {
 // 2. Connect: a shortcuts:// link runs it once with the device key as input; it saves the key.
 // 3. The app automation: Apple lets no app or link create one, so that part stays a few taps.
 // Without a shortcut link it shows `fallback` instead (the pages always pass one since #303).
+// In the installed app (no browser chrome) Add never loads the file in the app's own window, which
+// left Loukas on a page with no way back: it opens the Shortcuts import screen in a new context,
+// with a sheet of steps (and Done) if Shortcuts does not open.
 
 export function IPhoneShortcutSetup({
   shortcutUrl,
@@ -35,6 +41,35 @@ export function IPhoneShortcutSetup({
   const [connected, setConnected] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [help, setHelp] = useState(false);
+  const standalone = useStandalone();
+  const router = useRouter();
+  const connectRef = useRef<HTMLDivElement>(null);
+  // Absolute links need the page's origin, so they are made once mounted.
+  const [links, setLinks] = useState<{ add: string; file: string } | null>(null);
+  useEffect(() => {
+    if (!shortcutUrl) return;
+    const origin = window.location.origin;
+    setLinks({ add: shortcutAddLink(shortcutUrl, origin), file: new URL(shortcutUrl, origin).href });
+  }, [shortcutUrl]);
+
+  // Back from Shortcuts: after Add, the next step is Connect, so bring it into view; after
+  // Connect, read the connection again so its state shows without a reload.
+  const state = useRef({ added, connected });
+  state.current = { added, connected };
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      const { added: a, connected: c } = state.current;
+      if (c) startTransition(() => router.refresh());
+      else if (a) {
+        connectRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+        connectRef.current?.querySelector("button")?.focus({ preventScroll: true });
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [router]);
 
   // Back from Shortcuts after iOS reloaded the tab: pick up where it was.
   useEffect(() => {
@@ -78,7 +113,9 @@ export function IPhoneShortcutSetup({
         <Step n={1} done={added}>
           <p>Add the {SHORTCUT_NAME} shortcut, then come back here.</p>
           <a
-            href={shortcutUrl}
+            href={standalone && links ? links.add : shortcutUrl}
+            // Installed app: a new context (Shortcuts or Safari), so this page stays where it is.
+            {...(standalone ? { target: "_blank", rel: "noopener" } : {})}
             onClick={() => {
               setAdded(true);
               if (setupToken) tabMemory.set("iphone-added", "1");
@@ -87,16 +124,27 @@ export function IPhoneShortcutSetup({
           >
             Add the shortcut
           </a>
+          {standalone ? (
+            <button
+              type="button"
+              onClick={() => setHelp(true)}
+              className="press mx-auto mt-1 flex h-11 items-center px-2 text-subhead font-semibold text-tint-text"
+            >
+              Shortcuts did not open?
+            </button>
+          ) : null}
         </Step>
         <Step n={2} done={Boolean(connected)}>
-          <p>Connect it to you. Shortcuts opens for a second and says Connected.</p>
-          {connected ? (
-            <SecondaryButton onClick={connect}>Connect again</SecondaryButton>
-          ) : (
-            <PrimaryButton busy={busy} onClick={connect}>
-              {busy ? "Connecting" : "Connect the shortcut"}
-            </PrimaryButton>
-          )}
+          <div ref={connectRef}>
+            <p>Connect it to you. Shortcuts opens for a second and says Connected.</p>
+            {connected ? (
+              <SecondaryButton onClick={connect}>Connect again</SecondaryButton>
+            ) : (
+              <PrimaryButton busy={busy} onClick={connect}>
+                {busy ? "Connecting" : "Connect the shortcut"}
+              </PrimaryButton>
+            )}
+          </div>
         </Step>
         {/* The test (#466): a hand run posts with the key and no app, and the row turns Connected. */}
         <Step n={3}>
@@ -116,6 +164,28 @@ export function IPhoneShortcutSetup({
         </Step>
       </ol>
       <ErrorLine text={error} />
+      <Sheet open={help} onClose={() => setHelp(false)} title="Add the shortcut" closeLabel="Done">
+        <ol className="flex list-decimal flex-col gap-2 pl-5 text-body">
+          <li>Tap Open in Safari.</li>
+          <li>
+            {links && /(^|\.)icloud\.com$/.test(new URL(links.file).hostname)
+              ? "Tap Get Shortcut, then Add Shortcut."
+              : `Tap Download, then the download arrow, then ${SHORTCUT_NAME}. Tap Add Shortcut.`}
+          </li>
+          <li>Come back to Michael and tap Connect the shortcut.</li>
+        </ol>
+        {links ? (
+          <a
+            href={links.file}
+            target="_blank"
+            rel="noopener"
+            onClick={() => setHelp(false)}
+            className="press mt-6 flex h-11 w-full items-center justify-center rounded-full bg-tint text-body font-semibold text-on-tint"
+          >
+            Open in Safari
+          </a>
+        ) : null}
+      </Sheet>
     </Card>
   );
 }
