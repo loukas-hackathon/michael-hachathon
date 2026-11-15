@@ -1479,25 +1479,29 @@ type MomentGoal = {
   kind?: "time" | "target" | "count" | "checklist"; // goalKind(goal)
   sleep?: boolean; // the sleep goal: hide it from time lines
   budget_minutes: number | null;
+  // The score's numbers for the goal (GET /v1/score, `goals`), so Today and Goals agree.
   spent_week_minutes: number; // Monday 00:00 until now
-  planned_today_minutes: number; // goal blocks today; rest: a seventh of the weekly budget
+  planned_today_minutes: number; // goal blocks today; sleep: the nightly goal
   spent_today_minutes: number;
-  lost_today_minutes: number; // interruptions inside this goal's blocks
+  lost_today_minutes: number; // lost inside this goal's blocks today
   planned_ahead_minutes: number; // from now to the end of the week
-  unplanned_minutes: number | null; // budget - spent - planned ahead; null without a budget and for rest
+  unplanned_minutes: number | null; // budget - spent - planned ahead; null without a budget, for sleep and for a goal not measured in minutes
 };
 type MomentStretch = {
   start_at: string;
   end_at: string;
-  title: string; // the block's calendar title, or "Unbooked time"
+  title: string; // the block's calendar title
   goal_id: string | null;
   block_event_id: string | null;
-  expected_lost_minutes: number;
-  history_days: number;
-  usual_trigger: string | null; // app name or site label
+  expected_lost_minutes: number; // average over the history days that had a goal block in these hours
+  history_days: number; // how many of the last 7 days had one
+  usual_trigger: string | null; // an app, a site by its product name ("Gmail") or a site label
+  // The last time this same block ran (same title, or same goal at the same hour) in the last 7
+  // days, when it lost 10 minutes or more. Michael quotes it in place of the average.
+  last_time?: { day: string; lost_minutes: number; trigger: string | null } | null;
 };
 type MomentMove = {
-  title: string; // "Book 60 minutes of deep work at 08:00"
+  title: string; // "Book 60 minutes for University at 08:15"
   rationale: string; // the maths
   action_kind: ActionKind | null;
   start_at: string | null;
@@ -1513,11 +1517,12 @@ type Moment = {
   phrased_by: "template" | "model";
   goals: MomentGoal[];
   totals: {
-    planned_minutes: number; // goal blocks today, rest excluded
+    // The score's day: held + lost is what has elapsed, never more than planned.
+    planned_minutes: number; // goal blocks today, sleep excluded
     spent_minutes: number;
-    lost_minutes: number; // interruptions in focus time today
-    baseline_lost_minutes: number | null; // daily average on the last 7 days with device data
-    won_back_minutes: number; // evening: baseline - lost, at least 0; morning: 0
+    lost_minutes: number; // lost inside goal blocks today, so far
+    baseline_lost_minutes: number | null; // the score's usual loss rate over today's blocks (morning: all planned; evening: elapsed); null without enough history
+    won_back_minutes: number; // evening: the score's time won back today; morning: 0
   };
   at_risk: MomentStretch | null; // morning only
   suggestions: MomentMove[]; // morning: at most 2; evening: []
@@ -1528,24 +1533,37 @@ type Moment = {
 
 How the numbers are made (`apps/api/src/moments/compute.ts`, pure, with tests):
 
-- **Planned** is goal blocks (the same matching as Patterns: `data.goal_id`, `data.goal_category`,
-  or a category word or "deep work"/"focus" in the title; meetings with any other attendee never count).
-- **Spent**: the sleep goal (`isSleepGoal`) is sleep, counted on the day it ends; a health goal of
-  kind `time` is workouts when the watch reported any; everything else is elapsed block time less
-  the minutes lost inside it (the same rule as the score, so the two agree).
-- **Lost** comes from the focus analysis behind `focus_disruptions`. **Won back** (evening) is the
-  daily average lost on the last 7 days with device data less what was lost today.
-- **At risk** (morning): for each block still ahead today, the minutes usually lost in those hours
-  (per hour of day, averaged over the history days) scaled to the block; the largest wins. With no
-  block, the costliest remaining hour between 08:00 and 21:00. Null without history.
-- **Moves**: silence the usual trigger during the stretch at risk (a phone trigger becomes "phone in
-  another room"), and book the goal with the most unplanned budget in the first free slot from 08:00
-  to 21:00 (its length is the gap spread over the days left, 30 to 90 minutes in quarters).
-  Evening: tomorrow's first goal block, or that booking for tomorrow.
+One source: every minute is the score's (`scoreWithHistory`, the function behind `GET /v1/score`), read
+over the same events. The moment never counts a second time, so Today and Goals cannot disagree.
+
+- **Goal lines** are the score's goal rows: spent this week, planned and spent today, planned ahead.
+  A training goal counts its blocks less the time lost in them, like every other goal (a workout the
+  watch saw proves a block, it is not a second total). The sleep goal (`isSleepGoal`) reads the
+  score's `sleep`: nights slept, counted on the day they end.
+- **Today's totals** are the score's day. **Lost** is time off purpose inside goal blocks only, so
+  held plus lost is what has elapsed and never exceeds planned. **Won back** (evening) is the
+  score's time won back today, against the usual loss rate of the previous 28 days.
+- **At risk** (morning): of today's goal blocks still ahead, the one with the most at stake. Blocks
+  of a training goal are left out, and so is any block with under 10 minutes at stake; with nothing
+  left `at_risk` is null and there is no move for it. The stake is the average loss over the days of
+  the last 7 that had a goal block in those hours (a day with no block there is not in the average),
+  or what the same block lost the last time it ran when that was 10 minutes or more (`last_time`:
+  "Yesterday this block lost 24 minutes to Instagram."). Unbooked time is never at risk: nothing is
+  lost outside a goal block.
+- **Moves**: for the block at risk, by what takes the time: a phone app becomes "Phone in another
+  room" (`reminder`), a Mac app "Silence Instagram" (`block_mac_app`), a site on the Mac "Keep Gmail
+  closed" (`reminder`; sites go by their product name). Then book the goal with the most unplanned
+  budget, by its own name ("Book 90 minutes for University at 10:30"), in the first free slot from
+  08:00 to 21:00 that starts at least 15 minutes from now, on a quarter hour (its length is the gap
+  spread over the days left, 30 to 90 minutes in quarters). Evening: tomorrow's first goal block, or
+  that booking for tomorrow. Durations are written with `voiceDuration` ("6h", "2h 15").
 
 Only `headline` may be phrased by Claude (`ANTHROPIC_MODEL`, when `ANTHROPIC_API_KEY` is set). The model sees the computed
-facts only, and its line is used only if it keeps the voice rules and every number in it appears in
-the facts; otherwise `phrased_by` is `template`. Lines are cached per user, kind, day and facts.
+facts only, and its line is used only if the reply finished by itself (`stop_reason` is `end_turn`:
+a reply cut by the token cap is never used), ends with a full stop or a question mark, holds no
+semicolon, keeps the voice rules and every number in it appears in the facts; otherwise
+`phrased_by` is `template`. Lines are cached in memory per user, kind, day and facts, and checked
+again when read.
 
 ### Voice
 
