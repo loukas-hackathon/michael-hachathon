@@ -15,16 +15,26 @@ import { KeepWeekStrip, keepLine, streakLine } from "@/components/today/keep-wee
 import { MichaelCard } from "@/components/today/michael-card";
 import { MomentCard } from "@/components/today/moment-card";
 import { RecommendationsPanel, todaySuggestions } from "@/components/today/recommendations";
+import { RitualCard } from "@/components/today/ritual-card";
 import { TodayEmpty } from "@/components/today/today-empty";
 import { TravelCard } from "@/components/today/travel-card";
 import { WatchLine } from "@/components/today/watch-line";
-import { getChecklist, getGoals, getKeepWeek, getLostWeek, getToday, needsOnboarding } from "@/lib/api";
+import {
+  getChecklist,
+  getGoals,
+  getKeepWeek,
+  getLostWeek,
+  getRitual,
+  getToday,
+  needsOnboarding,
+} from "@/lib/api";
 import type { ChecklistDay } from "@/lib/checklist";
 import { type DayView, nowIndex, tape, totals } from "@/lib/day";
 import { formatDay, formatTime, hm } from "@/lib/format";
 import { verdict } from "@/lib/gamification";
 import type { LostWeek } from "@/lib/lost-week";
 import { momentKindFor } from "@/lib/moments";
+import { ritualPreview, ritualShows } from "@/lib/ritual";
 import { preloadTodaySections } from "@/lib/today-preload";
 
 const TITLE: Record<DayView["moment"], string> = { morning: "Morning", today: "Today", evening: "Evening" };
@@ -34,8 +44,12 @@ const TITLE: Record<DayView["moment"], string> = { morning: "Morning", today: "T
 // and the latest nudge). Everything else folds into "More from Michael" as quiet rows. A new user
 // with nothing on the tape gets the empty state (Get started, #181) as the hero instead of the score.
 
-export default async function TodayPage({ searchParams }: { searchParams: Promise<{ demo?: string }> }) {
-  const { demo } = await searchParams;
+export default async function TodayPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ demo?: string; ritual?: string }>;
+}) {
+  const { demo, ritual: preview } = await searchParams;
   // Today loads in one wave (#221): the day, the suggestions and the rows under "More from Michael"
   // all start while the onboarding check runs (a redirect simply drops them). Identical reads are
   // deduped per render, so the sections pick up these answers instead of asking again. "More from
@@ -47,12 +61,15 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
     getGoals().catch(() => []),
     getLostWeek(undefined, demo),
     getKeepWeek(demo),
+    demo === "sample" ? null : getRitual(ritualPreview(preview)),
   ]);
   loads.catch(() => {});
   preloadTodaySections(demo);
   if (await needsOnboarding()) redirect("/onboarding");
-  const [day, checklist, goals, lostWeek, keepWeek] = await loads;
-  const lists = checklistsFor(checklist, goals);
+  const [day, checklist, goals, lostWeek, keepWeek, ritual] = await loads;
+  // The daily ritual (#318): while its card shows, the outcomes live in it, not in the list.
+  const ritualCard = ritualShows(ritual) ? <RitualCard ritual={ritual} /> : null;
+  const lists = checklistsFor(checklist, goals).filter((l) => !ritualCard || l.goalId !== ritual?.goal_id);
   const ticks = tape(day);
   const t = totals(day);
   const firstBlock = day.blocks[0];
@@ -75,6 +92,7 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
         <>
           <GetStarted demo={demo} />
           <TodayEmpty demo={demo} />
+          {ritualCard}
           {lists.map((l) => (
             <TodayChecklist key={l.goalId} {...l} />
           ))}
@@ -180,6 +198,8 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
               won back today.
             </p>
           ) : null}
+
+          {ritualCard}
 
           <RecommendationsPanel slot="primary" />
 

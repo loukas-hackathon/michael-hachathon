@@ -25,6 +25,10 @@ const ALLOWED: [string, RegExp][] = [
   ["DELETE", /^\/v1\/chat\/threads\/[^/]+$/],
   ["POST", /^\/v1\/recommendations\/[^/]+\/(execute|undo)$/],
   ["PATCH", /^\/v1\/recommendations\/[^/]+$/],
+  // The demo day can be edited on the Timeline (#271), like acting on a recommendation.
+  ["POST", /^\/v1\/blocks$/],
+  ["PATCH", /^\/v1\/blocks\/[^/]+$/],
+  ["DELETE", /^\/v1\/blocks\/[^/]+$/],
   ["POST", /^\/v1\/analysis\/run$/],
   ["POST", /^\/v1\/travel\/plan$/],
   ["POST", /^\/v1\/focus-guards\/suggest$/],
