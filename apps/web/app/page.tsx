@@ -35,6 +35,7 @@ import { verdict } from "@/lib/gamification";
 import type { LostWeek } from "@/lib/lost-week";
 import { momentKindFor } from "@/lib/moments";
 import { ritualPreview, ritualShows } from "@/lib/ritual";
+import { preloadTodaySections } from "@/lib/today-preload";
 
 const TITLE: Record<DayView["moment"], string> = { morning: "Morning", today: "Today", evening: "Evening" };
 
@@ -49,11 +50,12 @@ export default async function TodayPage({
   searchParams: Promise<{ demo?: string; ritual?: string }>;
 }) {
   const { demo, ritual: preview } = await searchParams;
-  if (await needsOnboarding()) redirect("/onboarding");
-  // The day and the suggestions load side by side; "More from Michael" streams in behind
-  // Suspense, so the score never waits on the brief, the moment or the watch.
+  // Today loads in one wave (#221): the day, the suggestions and the rows under "More from Michael"
+  // all start while the onboarding check runs (a redirect simply drops them). Identical reads are
+  // deduped per render, so the sections pick up these answers instead of asking again. "More from
+  // Michael" streams in behind Suspense, so the score never waits on the brief, moment or watch.
   const suggestions = todaySuggestions();
-  const [day, checklist, goals, lostWeek, keepWeek, ritual] = await Promise.all([
+  const loads = Promise.all([
     getToday(demo),
     getChecklist().catch(() => null),
     getGoals().catch(() => []),
@@ -61,6 +63,10 @@ export default async function TodayPage({
     getKeepWeek(demo),
     demo === "sample" ? null : getRitual(ritualPreview(preview)),
   ]);
+  loads.catch(() => {});
+  preloadTodaySections(demo);
+  if (await needsOnboarding()) redirect("/onboarding");
+  const [day, checklist, goals, lostWeek, keepWeek, ritual] = await loads;
   // The daily ritual (#318): while its card shows, the outcomes live in it, not in the list.
   const ritualCard = ritualShows(ritual) ? <RitualCard ritual={ritual} /> : null;
   const lists = checklistsFor(checklist, goals).filter((l) => !ritualCard || l.goalId !== ritual?.goal_id);

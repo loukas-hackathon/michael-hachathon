@@ -515,12 +515,15 @@ export async function getToday(variant?: string): Promise<DayView> {
   if (variant === "error") throw new Error("Preview of the error state");
   if (variant && variant in SAMPLE_DAYS) return SAMPLE_DAYS[variant] as DayView;
   if (USE_MOCKS || variant === "sample") return sampleDay;
-  const score = await getScore();
   const to = new Date().toISOString();
   const from = new Date(Date.now() - 7 * 86_400_000).toISOString();
-  const patterns = await get<{ phone_cadence?: { status: string; data: unknown } }>(
-    `/v1/patterns?${new URLSearchParams({ from, to })}`,
-  ).catch(() => ({}));
+  // Side by side: the lead never waits for the score, nor the score for the lead.
+  const [score, patterns] = await Promise.all([
+    getScore(),
+    get<{ phone_cadence?: { status: string; data: unknown } }>(
+      `/v1/patterns?${new URLSearchParams({ from, to })}`,
+    ).catch(() => ({})),
+  ]);
   return dayFromScore(score, leadFromPatterns(patterns, score.day.now));
 }
 
