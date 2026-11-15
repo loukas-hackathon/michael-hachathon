@@ -3,6 +3,8 @@ import type {
   ChecklistItem,
   Event,
   Goal,
+  InsightSeries,
+  InsightsResponse,
   Instruction,
   Integration,
   Recommendation,
@@ -1348,3 +1350,240 @@ export function demoRecommendations(now: Date = new Date()): Recommendation[] {
     },
   ];
 }
+
+// ---------- insights (GET /v1/insights) ----------
+// An example of what Michael has learnt after 12 weeks: one chain, one link, one relation the
+// model proposed and the server verified, and one still being watched. The shape only: the API
+// computes every figure from the user's own events (apps/api/src/insights).
+
+const INSIGHT_DAYS = 84;
+const INSIGHT_LAST_DAY = Date.UTC(2026, 10, 14);
+const insightDay = (i: number) =>
+  new Date(INSIGHT_LAST_DAY - (INSIGHT_DAYS - 1 - i) * 86_400_000).toISOString().slice(0, 10);
+// The nights the example chain's trigger was seen (index into the 84 days), and whether it held.
+const LATE_NIGHTS: [number, boolean][] = [
+  [5, true],
+  [12, true],
+  [19, false],
+  [26, true],
+  [33, true],
+  [41, true],
+  [48, true],
+  [55, false],
+  [62, true],
+  [70, true],
+  [81, true],
+];
+const lateNight = new Set(LATE_NIGHTS.map(([i]) => i));
+// A repeatable wobble between -1 and 1, so the lines look like days and not like a ruler.
+const wobble = (i: number, salt: number) => Math.sin(i * 12.9898 + salt * 78.233) * 0.9;
+
+function insightSeries(
+  key: InsightSeries["key"],
+  label: string,
+  unit: InsightSeries["unit"],
+  value: (i: number) => number | null,
+): InsightSeries {
+  return {
+    key,
+    label,
+    unit,
+    points: Array.from({ length: INSIGHT_DAYS }, (_, i) => ({ day: insightDay(i), value: value(i) })),
+  };
+}
+
+export const mockInsights: InsightsResponse = {
+  generated_at: "2026-11-14T15:20:00+02:00",
+  studied: {
+    days: INSIGHT_DAYS,
+    data_points: 1596,
+    sources: ["apple-watch", "iphone", "mac", "google-calendar"],
+    nights: 81,
+    needed_days: 14,
+  },
+  insights: [
+    {
+      id: "chain:late_phone_min>sleep_score>first_block_lost_min",
+      kind: "chain",
+      status: "pattern",
+      title: "Late phone, worse night, slower morning",
+      line: "9 of 11 nights with 30 minutes or more on your phone after 23:00 gave a worse night and a slower first block.",
+      steps: [
+        {
+          label: "Phone after 23:00",
+          value: "41 min against 4 min",
+          value_num: 41,
+          usual_num: 4,
+          unit: "min",
+        },
+        { label: "Sleep score", value: "64 against 83", value_num: 64, usual_num: 83, unit: "score" },
+        {
+          label: "Lost in the first block next day",
+          value: "27 min against 8 min",
+          value_num: 27,
+          usual_num: 8,
+          unit: "min",
+        },
+      ],
+      evidence: {
+        times_held: 9,
+        times_seen: 11,
+        needed: 4,
+        history: LATE_NIGHTS.map(([, held]) => held),
+        days: LATE_NIGHTS.map(([i]) => insightDay(i)),
+      },
+      fix: {
+        text: "Phone down at 22:30. I can hold that line for you every night.",
+        action: { kind: "instruction", label: "Phone down at 22:30", done_label: "Set. Undo" },
+        applied_at: null,
+      },
+      found_by: "rule",
+      last_seen: insightDay(81),
+      strength: 0.86,
+      sources: ["iphone", "apple-watch", "mac", "google-calendar"],
+    },
+    {
+      id: "link:workout_min>deep_min",
+      kind: "link",
+      status: "pattern",
+      title: "Training days buy deep sleep",
+      line: "74 minutes of deep sleep after a training day against 52 after a day without. Held 14 of 18 times.",
+      steps: [
+        { label: "Training", value: "58 min against 0 min", value_num: 58, usual_num: 0, unit: "min" },
+        {
+          label: "Deep sleep that night",
+          value: "74 min against 52 min",
+          value_num: 74,
+          usual_num: 52,
+          unit: "min",
+        },
+      ],
+      evidence: {
+        times_held: 14,
+        times_seen: 18,
+        needed: 4,
+        history: [
+          true,
+          true,
+          false,
+          true,
+          true,
+          true,
+          false,
+          true,
+          true,
+          true,
+          true,
+          false,
+          true,
+          true,
+          false,
+          true,
+          true,
+          true,
+        ],
+        days: [3, 6, 10, 13, 17, 20, 24, 27, 31, 34, 38, 45, 52, 59, 66, 73, 77, 80].map(insightDay),
+      },
+      fix: {
+        text: "Keep three sessions a week. I can book the next one now.",
+        action: { kind: "focus_block", label: "Book the next session", done_label: "Booked. Undo" },
+        applied_at: null,
+      },
+      found_by: "rule",
+      last_seen: insightDay(80),
+      strength: 0.71,
+      sources: ["apple-watch"],
+    },
+    {
+      id: "discovered:meeting_count>=3>hrv_next",
+      kind: "discovered",
+      status: "pattern",
+      title: "The third meeting shows up in your body",
+      line: "46 ms of heart rate variability the morning after 3 or more meetings against 58 ms after fewer. Held 7 of 9 times.",
+      steps: [
+        {
+          label: "Meetings in the day",
+          value: "3.4 against 1.2",
+          value_num: 3.4,
+          usual_num: 1.2,
+          unit: "count",
+        },
+        {
+          label: "Heart rate variability next morning",
+          value: "46 ms against 58 ms",
+          value_num: 46,
+          usual_num: 58,
+          unit: "ms",
+        },
+      ],
+      evidence: {
+        times_held: 7,
+        times_seen: 9,
+        needed: 4,
+        history: [true, true, false, true, true, true, false, true, true],
+        days: [8, 15, 22, 29, 36, 43, 57, 64, 78].map(insightDay),
+      },
+      fix: {
+        text: "Cap the day before a hard session at two meetings.",
+        applied_at: null,
+      },
+      found_by: "model",
+      last_seen: insightDay(78),
+      strength: 0.58,
+      sources: ["google-calendar", "apple-watch"],
+    },
+    {
+      id: "link:late_streak>recovery_next",
+      kind: "link",
+      status: "watching",
+      title: "Two late nights in a row",
+      line: "2 of the 4 I need. Recovery was 38% after a second late night in a row against 61% on the other mornings.",
+      steps: [
+        { label: "Second late night in a row", value: "2 times so far" },
+        {
+          label: "Recovery next morning",
+          value: "38% against 61%",
+          value_num: 38,
+          usual_num: 61,
+          unit: "pct",
+        },
+      ],
+      evidence: {
+        times_held: 2,
+        times_seen: 2,
+        needed: 4,
+        history: [true, true],
+        days: [41, 48].map(insightDay),
+      },
+      fix: {
+        text: "After one late night, make the next one an early one.",
+        applied_at: null,
+      },
+      found_by: "rule",
+      last_seen: insightDay(48),
+      strength: 0.31,
+      sources: ["iphone", "apple-watch"],
+    },
+  ],
+  series: [
+    insightSeries("sleep_score", "Sleep score", "score", (i) =>
+      i % 29 === 17 ? null : Math.round((lateNight.has(i - 1) ? 64 : 83) + wobble(i, 1) * 6),
+    ),
+    insightSeries("hrv", "Heart rate variability", "ms", (i) =>
+      i % 29 === 17 ? null : Math.round((lateNight.has(i - 1) ? 47 : 58) + wobble(i, 2) * 5),
+    ),
+    insightSeries("resting_hr", "Resting heart rate", "bpm", (i) =>
+      i % 29 === 17 ? null : Math.round((lateNight.has(i - 1) ? 58 : 53) + wobble(i, 3) * 2),
+    ),
+    insightSeries("recovery", "Recovery", "pct", (i) =>
+      i % 29 === 17 ? null : Math.round((lateNight.has(i - 1) ? 44 : 66) + wobble(i, 4) * 9),
+    ),
+    insightSeries("late_phone_min", "Phone after 23:00", "min", (i) =>
+      Math.max(0, Math.round((lateNight.has(i) ? 41 : 4) + wobble(i, 5) * (lateNight.has(i) ? 9 : 4))),
+    ),
+    insightSeries("lost_min", "Lost in goal blocks", "min", (i) =>
+      // Weekends carry no blocks in this example.
+      i % 7 >= 5 ? null : Math.max(0, Math.round((lateNight.has(i - 1) ? 34 : 13) + wobble(i, 6) * 6)),
+    ),
+  ],
+};

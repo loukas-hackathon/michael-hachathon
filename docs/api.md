@@ -1348,6 +1348,94 @@ Summaries follow the voice basics (numbers first, British spelling, 24 hour time
 name apps; a site is named only if its host is on the shared public list, otherwise it is "a
 travel site" or "an uncategorised site". Structured `data` carries the host for the user's own view.
 
+### Insights
+
+What Michael has learnt by studying the user: relations between one day's behaviour and the same
+or the next day's outcome, across sources that do not look related ("30 minutes on the phone after
+23:00, then a worse night, then a slower first block"). Every number comes from the user's own
+events. Engine: `apps/api/src/insights`.
+
+| Method | Path                   | Body | Response               | Status  |
+| ------ | ---------------------- | ---- | ---------------------- | ------- |
+| GET    | `/v1/insights`         |      | `200 InsightsResponse` | mock    |
+| POST   | `/v1/insights/:id/fix` |      | `200 Insight`, `404`   | planned |
+| DELETE | `/v1/insights/:id/fix` |      | `200 Insight`, `404`   | planned |
+| POST   | `/v1/insights/run`     |      | `202 { status }`       | planned |
+
+```ts
+type InsightsResponse = {
+  generated_at: string;
+  studied: {
+    days: number; // local days with any data
+    data_points: number; // daily figures read from them
+    sources: InsightSource[];
+    nights: number; // nights with sleep data
+    needed_days: number; // the fewest days of data before anything can become a pattern
+  };
+  insights: Insight[]; // patterns before watching, strongest first within each
+  series: InsightSeries[]; // the daily figures behind the study
+};
+type Insight = {
+  id: string; // stable: made from what is compared, never from the numbers
+  kind: "chain" | "link" | "discovered"; // three steps, two steps, or proposed by the model
+  status: "pattern" | "watching";
+  title: string;
+  line: string; // one line, number first
+  steps: InsightStep[]; // 2 for a link, 3 for a chain, in the order they happen
+  evidence: {
+    times_held: number; // the trigger was seen and the outcome followed
+    times_seen: number; // the trigger was seen
+    needed: number; // times the trigger (and its absence) must be seen before `pattern`
+    history: boolean[]; // one per time seen, oldest first, true when it held; the last 30
+    days: string[]; // YYYY-MM-DD of each entry of `history`, same length and order
+  };
+  fix: {
+    text: string; // exactly one fix
+    action?: { kind: "instruction" | "focus_block"; label: string; done_label: string };
+    applied_at: string | null;
+  };
+  found_by: "rule" | "model";
+  last_seen: string; // YYYY-MM-DD, the local day the trigger was last seen
+  strength: number; // 0..1
+  sources: InsightSource[];
+};
+type InsightStep = {
+  label: string;
+  value: string; // number first; a step that compares always reads "X against Y"
+  value_num?: number; // on the days the trigger was there
+  usual_num?: number; // on the other days
+  unit?: "score" | "min" | "pct" | "bpm" | "ms" | "count";
+};
+type InsightSeries = {
+  key: "sleep_score" | "hrv" | "resting_hr" | "recovery" | "late_phone_min" | "lost_min";
+  label: string;
+  unit: InsightStep["unit"];
+  points: { day: string; value: number | null }[]; // one per local day, oldest first
+};
+// Connector ids (packages/shared/src/connectors.ts).
+type InsightSource =
+  | "google-calendar"
+  | "apple-watch"
+  | "mac"
+  | "iphone"
+  | "claude"
+  | "nudges"
+  | "telegram"
+  | "travel";
+```
+
+- `status`: `pattern` once the trigger and its absence have each been seen `evidence.needed` times
+  and the difference clears the bar; `watching` below that, with its progress in `evidence`.
+  Before `studied.needed_days` days of data nothing is a pattern, so the screen can say
+  "Studying. 3 of 14 nights so far." from `studied.nights` and `studied.needed_days`.
+- `found_by: "model"` (kind `discovered`): the model proposed the comparison, the server computed
+  every number with the same statistics as its own. The model never supplies a figure.
+- `fix.action` is one tap the app already supports. `POST /v1/insights/:id/fix` applies it and
+  answers the insight with `fix.applied_at` set; `DELETE` undoes an `instruction` (a `focus_block`
+  is undone like any block Michael made). A demo visitor gets the usual `403`.
+- `series` is the same daily table the insights are mined from; `null` is a day with no reading.
+- `mockInsights` in `packages/shared/src/mocks.ts` is a full example.
+
 ### Chat
 
 | Method | Path                                           | Body                                                                               | Response                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Status |

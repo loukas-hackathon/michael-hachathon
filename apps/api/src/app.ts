@@ -23,6 +23,7 @@ import { events } from "./routes/events";
 import { focus } from "./routes/focus";
 import { focusGuards } from "./routes/focus-guards";
 import { goals } from "./routes/goals";
+import { insights } from "./routes/insights";
 import { instructions } from "./routes/instructions";
 import { integrations, oauth } from "./routes/integrations";
 import { knowledge } from "./routes/knowledge";
@@ -82,6 +83,7 @@ export const v1Routes = new Hono()
   .route("/", recommendations)
   .route("/", analysis)
   .route("/", patterns)
+  .route("/", insights)
   .route("/", score)
   .route("/", log)
   .route("/", targets)
