@@ -272,6 +272,9 @@ export function checkAction(
     case "remove_calendar_block":
       // Only the user removes a block, on the Timeline (#271). Michael never deletes.
       return "Michael does not remove blocks";
+    case "do_not_disturb":
+      // Asked in a nudge and switched on by the user's own tap (#447), never by an analysis run.
+      return "Do Not Disturb is switched on by the person's own tap";
   }
 }
 

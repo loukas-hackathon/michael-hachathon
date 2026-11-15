@@ -182,6 +182,48 @@ version. To change the shortcut: edit `scripts/shortcut/build.mjs`, run `pnpm sh
 signed in to iCloud, commit `apps/web/public/Michael.shortcut`. On the phone, delete the old
 Michael shortcut before adding the new one, or iOS names it Michael 2 and Connect runs the old one.
 
+## 8c. Do Not Disturb, asked then done: the Michael Focus shortcut (Manolis, 10 min)
+
+Michael asks in a nudge ("Your phone opened 5 times in University."), one tap, and Do Not Disturb
+is on until the block ends, or until morning at night (#447). No app may set a Focus, so a second
+signed shortcut does it: **Michael Focus** (`pnpm shortcut:focus` writes and signs it, the app
+serves it at `/Michael%20Focus.shortcut`). It is added once per device. Focus is shared across your
+devices by default (Settings, Focus, Share Across Devices), so the Mac alone also quiets the iPhone.
+
+**On the Mac** (with Michael for Mac running, section 8):
+
+1. Open `https://michael-zeta-sand.vercel.app/you/connections/iphone` in Safari on the Mac, find
+   **Do Not Disturb, when you say yes**, click **Add the shortcut**. Open the downloaded
+   `Michael Focus.shortcut`: Shortcuts shows it, click **Add Shortcut**. It must be named exactly
+   **Michael Focus** (delete an older one first, or macOS names it Michael Focus 2).
+2. In Terminal: `shortcuts list | grep "Michael Focus"` prints the name. Within 15 seconds Michael
+   for Mac tells the API it is there; restart it if it was started before this change
+   (`[dnd]` lines appear in its log when it switches something on or off).
+3. The first time it runs, macOS may ask whether Shortcuts may change your Focus: **Allow**.
+
+**The phone test (five steps, on the stage iPhone, signed in to Michael, the home screen app):**
+
+1. In Safari open `https://michael-zeta-sand.vercel.app/you/connections/iphone`, scroll to **Do Not
+   Disturb, when you say yes**, tap **Add the shortcut**, **Download**, open it from Downloads, tap
+   **Add Shortcut**. Pass: Shortcuts lists **Michael Focus** (exactly that name).
+2. Back on the page tap **Try it**, then **Open** if Safari asks. Pass: Shortcuts opens for a
+   second, the moon shows in the status bar, and it is gone again within two minutes. If iOS asks
+   whether the shortcut may change your Focus, tap **Allow** and tap **Try it** once more.
+3. Open one of the apps your Michael automation watches (section 8b) for a minute, come back to
+   the page and tap **Send me the nudge**. Pass: the page shows **Sent:** and the line, and the
+   iPhone (and the watch) shows "... minutes on your phone since ... Stop here." If the line is
+   about something else, there was no phone use in the last hour to count: repeat this step.
+4. Tap the notification. Pass: Michael opens on **Do Not Disturb until 07:00?** with the nudge's
+   line above it. Tap **Switch it on**: Shortcuts opens for a second, the moon shows, and back in
+   Michael the page reads **Do Not Disturb is on until 07:00.** Today lists it with Undo.
+5. Tap **End it now**. Pass: Shortcuts opens for a second and the moon is gone; the page reads
+   **Do Not Disturb is off.**
+
+If a step fails, write on #447 which step, what the phone showed and the iOS version. What only
+this test can tell: whether iOS adds the file without a question, whether "Set Focus" reads the
+time the link passes (`2026-11-17 14:00`), whether running it from the home screen app needs the
+**Open** confirmation, and whether the notification tap lands on the page inside the app.
+
 ## 9. Team access (Loukas, 2 min)
 
 - Supabase: https://supabase.com/dashboard/org/fxrcbmgqabpcwttidoxw/team > **Invite** > Manolis' email.

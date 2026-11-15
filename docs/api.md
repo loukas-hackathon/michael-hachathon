@@ -77,7 +77,7 @@ Enums:
 - `GoalKind`: `time | target | count | checklist` (in `goal.target.kind`; `time` when absent)
 - `InstructionKind`: `clear_day | home_by | quiet_hours | custom`
 - `RecommendationStatus`: `proposed | accepted | dismissed | done | undone` (`done` = action executed)
-- `ActionKind`: `move_calendar_block | move_calendar_blocks | create_focus_block | block_mac_app | draft_follow_up | reminder | change_goal | plan_change | remove_calendar_block | log_time | settle_block`
+- `ActionKind`: `move_calendar_block | move_calendar_blocks | create_focus_block | block_mac_app | draft_follow_up | reminder | change_goal | plan_change | remove_calendar_block | log_time | settle_block | do_not_disturb`
 - `AnalysisStatus`: `queued | running | succeeded | failed`
 - `AnalysisTrigger`: `manual | scheduled | mcp | morning | evening`
 - `AgentScope`: `timeline | goals | recommendations | score | write_events`
@@ -2197,7 +2197,12 @@ type FocusGuard = {
   back_to: string | null; // "Back to The company."
   created_at: string;
 };
-type FocusGuardsResponse = { now: string; off_the_record: boolean; guards: FocusGuard[] };
+type FocusGuardsResponse = {
+  now: string;
+  off_the_record: boolean;
+  guards: FocusGuard[];
+  dnd?: { id: string; until: string } | null; // Do Not Disturb the user asked for (below)
+};
 ```
 
 | Method | Path                       | Response                                                         | Status |
@@ -2222,6 +2227,75 @@ type FocusGuardsResponse = { now: string; off_the_record: boolean; guards: Focus
   no block: "Mute WhatsApp 14:00 to 16:00", rationale "... took 47 min.". It is a `proposed`
   recommendation (`source: "analysis"`); nothing happens until Do it. Not repeated while an open one
   for the same app has not ended.
+
+### Do Not Disturb, asked then done (#447)
+
+Michael asks in a nudge, one tap switches it on, it ends by itself (when the block ends, or when
+the night's quiet hours end), and the user can end it sooner. Nothing is switched on without that
+tap. No server or app may set a Focus, so a signed shortcut does it: **Michael Focus**
+(`scripts/shortcut/build.mjs`, `pnpm shortcut:focus`, served at `/Michael%20Focus.shortcut`), one
+Set Focus action on Do Not Disturb. Its text input is a date and time (`"2026-11-17 14:00"`: on
+until then), `off` (off) or `check` (nothing).
+
+```ts
+type Dnd = {
+  id: string; // the recommendation (kind do_not_disturb): on Today, ended by its undo
+  until: string;
+  until_label: string; // "14:00", Europe/Athens
+  shortcut_input: string; // "2026-11-17 14:00", what Michael Focus is run with
+  mac: boolean; // a Mac with the shortcut is switching it on
+  text: string; // "Do Not Disturb is on until 14:00. Tap to end it."
+};
+type DndOffer = {
+  active: Dnd | null; // the one on now
+  offer: {
+    nudge_id: string;
+    until: string;
+    until_label: string;
+    shortcut_input: string;
+    text: string;
+  } | null;
+  mac: "ready" | "no_shortcut" | "away";
+};
+type DndStartInput = { nudge_id: string } | { until: string };
+```
+
+| Method | Path                           | Body            | Response                                               | Status |
+| ------ | ------------------------------ | --------------- | ------------------------------------------------------ | ------ |
+| GET    | `/v1/dnd?nudge=<id>`           |                 | `200 DndOffer`                                         | live   |
+| POST   | `/v1/dnd`                      | `DndStartInput` | `201 Dnd`; `400`; `403` on the demo week; `404`; `409` | live   |
+| POST   | `/v1/recommendations/:id/undo` |                 | ends it now (the recommendation's own undo, see above) | live   |
+
+- Which nudges offer it (`nudgeOffersDnd` in `@michael/shared`): every `focus_drift` (until the
+  block's end) and the phone before sleep (until the night's quiet hours end, the profile's
+  `quiet_hours.end`, default 07:00). The button is `dnd`, label "Do Not Disturb"; a drift that
+  names a Mac app shows "Mute <app> 30 min" first, then it.
+- The tap is a `do_not_disturb` recommendation (`source: "chat"`, payload `{ end_at }`) carried
+  out at once: title "Do Not Disturb until 14:00", done, `undo_until` the time it ends. So it is
+  logged like every other action, shows on Today, and its undo ends it. At least a minute, at most
+  12 hours. One at a time: a newer one replaces the one before.
+- The Mac: Michael for Mac (`apps/collector/src/dnd.ts`) looks at
+  `GET /v1/focus-guards/active?dnd=ready|missing` every 15 seconds (`ready`: `shortcuts list`
+  names Michael Focus), reads `dnd`, and runs `shortcuts run "Michael Focus"` with the time in the
+  Mac's own zone. It runs once per `id`, switches off only what it switched on (when `dnd` is gone
+  before its time), and does nothing once the time has passed. Focus is shared across the person's
+  devices by default, so the iPhone follows. `mac` in the answers: `ready` when a Mac looked in the
+  last two minutes with the shortcut, `no_shortcut` without it, `away` otherwise (kept in the API
+  process). `dnd` is answered whatever the privacy switch says: the user asked for it.
+- The iPhone: Safari shows no notification buttons, so the tap on either real time line opens
+  `/dnd?nudge=<id>` (the push's `url`). The page asks once more, the tap posts `{ nudge_id }` and
+  then opens `shortcuts://run-shortcut?name=Michael%20Focus&input=text&text=<shortcut_input>`.
+  End it there: the undo, then the shortcut with `off`. A device that has not added the shortcut
+  (remembered in the browser, never on the server) is offered "Add the shortcut" first.
+- `POST /v1/nudges/:id/act` with `dnd`: with a Mac that is `ready` it is switched on and the
+  answer is `"Do Not Disturb is on until 14:00. Tap to end it."`, `undo_until` set, `url`
+  `/dnd?id=<id>`. Otherwise nothing is switched on: `"Tap to switch on Do Not Disturb until
+  14:00."`, `undo_until: null`, `url` `/dnd?nudge=<id>`, and the button can be tapped again. In
+  Telegram that line carries a "Switch it on" link to the page and the buttons stay.
+- The demo week: a button on a demo nudge and a demo visitor's `POST /v1/dnd` are refused with
+  `403 "This is the demo week. Sign in with Google to make it yours."`. The API key itself may.
+- What is on is kept in the API process and read back once from the done recommendations after a
+  restart.
 
 ### Focus now (#397)
 
@@ -3042,10 +3116,10 @@ Two kinds have a second trigger that speaks at the moment something happens
 (`apps/api/src/nudges/realtime.ts`, thresholds in `REALTIME`, #438). They keep the kind, so the
 voice, the cap of 5 and the 20 minute gap are the same:
 
-| Kind          | Second trigger                                                                                                                                                                   | Example                                                                  |
-| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `focus_drift` | the phone inside a block: 5+ phone opens inside a running goal block (any goal but training). Key `focus_drift:<event id>`, shared with the Mac drift: one drift nudge per block | "5 phone opens in Ship the pitch. Put it down until 14:00."              |
-| `wind_down`   | the phone before sleep: 40+ minutes of phone after the late cut off (23:00, or one hour before the usual bedtime), the phone in use in the last 10 min. Key `late_phone:<night>` | "40 minutes on your phone since 23:10. Stop here. First block at 09:00." |
+| Kind          | Second trigger                                                                                                                                                                                                                              | Example                                                                  |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `focus_drift` | the phone inside a block: 5+ phone opens inside a running goal block (any goal but training). Key `focus_drift:<event id>:phone`; the engine counts it and the Mac drift's `focus_drift:<event id>` as one, so a block gets one drift nudge | "Your phone opened 5 times in University. Put it down until 14:00."      |
+| `wind_down`   | the phone before sleep: 40+ minutes of phone after the late cut off (23:00, or one hour before the usual bedtime), the phone in use in the last 10 min. Key `late_phone:<night>`                                                            | "40 minutes on your phone since 23:10. Stop here. First block at 09:00." |
 
 - An open: where Apple's own log covers the hour (`iphone_usage`, about a day behind) it is a pick
   up, the rule of the phone cadence. Otherwise it is one run of the iPhone shortcut (an app the
@@ -3155,9 +3229,9 @@ stored (no database change before the pitch): a tap works them out again from th
 (`offeredActions`, the Mac app read back from the line).
 
 ```ts
-type NudgeActionId = "open" | "snooze" | "mute_app" | "do_it" | "focus";
+type NudgeActionId = "open" | "snooze" | "mute_app" | "do_it" | "focus" | "dnd"; // dnd: Do Not Disturb, see above (#447)
 type NudgeAction = { id: NudgeActionId; label: string; app?: string }; // app: mute_app only
-type NudgeActInput = { action: "snooze" | "mute_app" | "do_it" | "focus"; token: string };
+type NudgeActInput = { action: "snooze" | "mute_app" | "do_it" | "focus" | "dnd"; token: string };
 type NudgeActResult = {
   action: NudgeActionId;
   text: string; // "Done. Undo in the app until 15:00." / "Instagram is off until 14:30. Undo in the app." / "Snoozed. Back at 17:58."
@@ -3187,7 +3261,8 @@ type NudgeActResult = {
   { action, title }[], act_url?, token? }`. `url` is the exact card (`nudgeUrl` in
   `@michael/shared`): `/timeline?day=<day>&block=<event id>` for `block_soon` and `focus_drift`,
   `/?card=<recommendation id>` for a nudge with a recommendation, else `/`. The web app scrolls to
-  that block or card and rings it briefly (`components/deep-link-focus.tsx`).
+  that block or card and rings it briefly (`components/deep-link-focus.tsx`). The two real time
+  lines (the phone inside a block, the phone before sleep) open `/dnd?nudge=<id>` instead (#447).
 - The worker (`apps/web/public/sw.js`) shows the buttons as notification actions. A button posts
   `{ action, token }` to `act_url` and shows the result as a second notification (`tag:
   nudge-done`); a refusal shows its message, no connection says "No connection. Open Michael to do

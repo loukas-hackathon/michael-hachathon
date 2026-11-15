@@ -58,6 +58,21 @@ closed whenever it comes to the front during that window, and you see why: "What
   Michael are never touched. No admin rights are needed.
 - `--no-guard` turns it off.
 
+## Do Not Disturb, when you say yes
+
+When a nudge offers Do Not Disturb and you tap it, the collector switches it on until the block
+ends (or until morning at night), and off again if you end it in Michael. It never switches
+anything on by itself.
+
+- No app may set a Focus, so it runs a shortcut: add **Michael Focus** once (You, Connections,
+  iPhone, "Do Not Disturb, when you say yes", or `docs/setup-manual.md` section 8c). Without it the
+  collector does nothing and tells the API, which then offers the shortcut instead.
+- It looks at `GET /v1/focus-guards/active?dnd=ready|missing` every 15 seconds and runs
+  `shortcuts run "Michael Focus"` with the time to end, once. It switches off only what it switched
+  on, and nothing once the time has passed (macOS ends it by itself).
+- Focus is shared across your devices by default, so your iPhone follows the Mac.
+- `--no-dnd` turns it off.
+
 Try it: run `pnpm collect`, open WhatsApp, then in Michael's chat say "mute WhatsApp for 10
 minutes" (or ask Claude, which uses the `block_mac_app` tool). Bring WhatsApp to the front: it
 quits and the notification appears.

@@ -73,12 +73,12 @@ test("five phone opens inside a running block nudge once, in the deep work that 
   assert.equal(d.action, "send");
   if (d.action !== "send") return;
   assert.equal(d.candidate.kind, "focus_drift");
-  assert.equal(d.candidate.key, `focus_drift:${block.id}`);
+  assert.equal(d.candidate.key, `focus_drift:${block.id}:phone`);
   assert.equal(d.candidate.goal_id, WORK.id);
-  assert.equal(d.candidate.text, "5 phone opens in Ship the pitch. Put it down until 14:00.");
+  assert.equal(d.candidate.text, "Your phone opened 5 times in Ship the pitch. Put it down until 14:00.");
   assert.equal(
     d.candidate.reason,
-    "5 phone opens since 13:00, the last at 13:30; the block runs 13:00 to 14:00 for Ship the pitch.",
+    "Your phone opened 5 times since 13:00, the last at 13:30; the block runs 13:00 to 14:00 for Ship the pitch.",
   );
   clean(d.candidate.text);
   assert.ok(isPhoneBlock(d.candidate));
@@ -97,7 +97,7 @@ test("the same app opened five times counts five times, though the pairer stores
   const live = ["13:02", "13:09", "13:15", "13:22", "13:28"].map((t) => open(t));
   const d = decide(input(at("13:29"), [block], [WORK], { live }));
   assert.equal(d.action, "send");
-  if (d.action === "send") assert.match(d.candidate.text, /^5 phone opens in /);
+  if (d.action === "send") assert.match(d.candidate.text, /^Your phone opened 5 times in /);
 });
 
 test("opens less than 30 seconds apart are one, and opens before the block do not count", () => {
@@ -152,7 +152,7 @@ test("a block of a personal goal counts too, and names the goal", () => {
   const d = decide(input(at("16:41"), [study], [PERSONAL], { live }));
   assert.equal(d.action, "send");
   if (d.action !== "send") return;
-  assert.equal(d.candidate.text, "6 phone opens in University. Put it down until 17:30.");
+  assert.equal(d.candidate.text, "Your phone opened 6 times in University. Put it down until 17:30.");
   clean(d.candidate.text);
 });
 
@@ -162,6 +162,15 @@ test("one nudge a block: a drift already sent for it, from the Mac or the phone,
   // The candidate is still there; the block's key has been used, so nothing goes out.
   assert.ok(candidates(input(at("13:29"), [block], [WORK], { live })).some(isPhoneBlock));
   assert.equal(decide(input(at("13:29"), [block], [WORK], { live }, today)).action, "skip");
+  // And the other way round: the phone spoke first, so the Mac's drift for the block stays silent.
+  const drifting = [
+    block,
+    mac(APPS.editor, at("13:00"), at("13:30")),
+    mac(APPS.social, at("13:30"), at("13:36")),
+  ];
+  const phoneFirst = [sent(at("13:10"), `focus_drift:${block.id}:phone`, "focus_drift")];
+  assert.equal(decide(input(at("13:37"), drifting, [WORK])).action, "send");
+  assert.equal(decide(input(at("13:37"), drifting, [WORK], {}, phoneFirst)).action, "skip");
 });
 
 test("it counts towards the five a day: the sixth is kept back, not sent", () => {
@@ -173,11 +182,11 @@ test("it counts towards the five a day: the sixth is kept back, not sent", () =>
   assert.equal(d.action, "suppress");
 });
 
-test("a long goal title is cut so the line stays under 15 words", () => {
+test("a goal title of more than three words gives way to the block by its start, under 15 words", () => {
   const long = { ...WORK, title: "Close the first ten customers for the listing platform" };
   const live = ["13:02", "13:09", "13:15", "13:22", "13:28"].map((t) => open(t));
   const c = candidates(input(at("13:29"), [block], [long], { live })).find(isPhoneBlock);
-  assert.equal(c?.text, "5 phone opens in Close the first ten customers. Put it down until 14:00.");
+  assert.equal(c?.text, "Your phone opened 5 times in the 13:00 block. Put it down until 14:00.");
   clean(c?.text ?? "");
 });
 
@@ -321,7 +330,7 @@ test("the test nudge sends either line by name at any hour, from real numbers", 
   assert.equal(plain.find(isPhoneBlock) ?? plain.find(isLatePhone), undefined);
 
   const inBlock = testCandidate(input(at("15:10"), events, [WORK], { live, test: "phone_block" }));
-  assert.equal(inBlock?.text, "1 phone open in Ship the pitch. Put it down until 16:00.");
+  assert.equal(inBlock?.text, "Your phone opened 1 time in Ship the pitch. Put it down until 16:00.");
   const late = testCandidate(input(at("15:10"), events, [WORK], { live, test: "late_phone" }));
   assert.equal(late?.text, "17 minutes on your phone since 14:40. Stop here.");
   assert.equal(late?.key, `late_phone:${DAY}`);

@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import Link from "next/link";
+import { FocusShortcutSetup } from "@/components/setup/focus-shortcut-setup";
 import { IPhoneShortcutSetup } from "@/components/setup/iphone-shortcut-setup";
 import { ConnectionPage, SetupSection } from "@/components/you/connection-page";
 import { KeySetup } from "@/components/you/key-setup";
@@ -81,9 +82,20 @@ export default async function IPhonePage({
     </SetupSection>
   );
 
+  // Do Not Disturb, asked then done (#447): a second shortcut, next to the first.
+  const doNotDisturb = (
+    <SetupSection
+      key="dnd"
+      title="Do Not Disturb, when you say yes"
+      note="I ask in a nudge. One tap and it is on until your block ends, or until morning at night."
+    >
+      <FocusShortcutSetup />
+    </SetupSection>
+  );
+
   return (
     <ConnectionPage row={row} from={from}>
-      {leadIPhone ? [live, screenTime] : [screenTime, live]}
+      {leadIPhone ? [live, doNotDisturb, screenTime] : [screenTime, live, doNotDisturb]}
       <SourcePrivacy sources={c.sources} />
     </ConnectionPage>
   );
