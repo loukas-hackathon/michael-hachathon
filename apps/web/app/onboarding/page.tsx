@@ -11,6 +11,7 @@ import { FirstInsightCard } from "./first-insight";
 import { OnboardingFrame, primaryButton, Separator } from "./frame";
 import { GoalsStep } from "./goals-step";
 import { Talk } from "./talk";
+import { StepLink } from "./wait";
 
 export const metadata = { title: "Getting started · Michael" };
 
@@ -135,12 +136,13 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
             : "All optional, one tap each. The more I see, the better I coach."
       }
       left={
-        <Link
+        <StepLink
           href={GOALS_PATH}
+          kind="goals"
           className="press -ml-2 flex h-11 items-center px-2 text-body font-semibold text-tint-text"
         >
           Goals
-        </Link>
+        </StepLink>
       }
       footer={
         <Link href="/" className={primaryButton}>
