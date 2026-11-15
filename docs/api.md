@@ -26,7 +26,7 @@ returns `501 not_implemented`, `planned` = not routed yet. Update the status whe
     account's own), and only these writes are allowed: `POST /v1/chat`, `/v1/chat/stream`,
     `POST /v1/chat/threads`, `PATCH|DELETE /v1/chat/threads/:id` (their own threads),
     `/v1/recommendations/:id/execute|undo`, `PATCH /v1/recommendations/:id`, `POST /v1/analysis/run`,
-    `/v1/travel/plan`, `/v1/focus-guards/suggest`, `/v1/voice/speak`, `/v1/records/:id/announced`, `POST|DELETE /v1/push/subscriptions` and `POST /v1/nudges/test`.
+    `/v1/travel/plan`, `/v1/focus-guards/suggest`, `/v1/voice/speak`, `/v1/records/:id/announced`, `POST|DELETE /v1/push/subscriptions`, `POST /v1/nudges/test`, the daily ritual (`POST /v1/ritual/morning|evening`, `/v1/ritual/:kind/skip`) and done time (`POST /v1/log`, `/v1/log/block`, `DELETE /v1/log/:id`), which the reseed puts back to the plan.
     Anything else that writes (privacy, goals, instructions, places, profile, integrations,
     Telegram, agents, connecting an agent, keys, data deletion, ingest, `/mcp`) answers
     `403 forbidden` with the message "This is the demo week. Sign in with Google to make it yours."
@@ -2859,7 +2859,7 @@ most every 5 minutes (the first refresh after a deploy resets the goals to the B
 later ones keep edits; `DEMO_WEEK=off` turns it off). `POST /v1/demo/reseed` also resets the goals.
 Any other account gets `403 forbidden`. The reseed (and the first refresh after a deploy) also
 deletes all demo visitor chat, turns off the record off, removes goals that are not in the plan
-and replaces the standing instructions with the plan's (`demoInstructions`: only "Nothing between
+clears the week's ritual and every logged entry that is not the demo week's own (the plan's ritual is written again), and replaces the standing instructions with the plan's (`demoInstructions`: only "Nothing between
 23:00 and 07:00", so a Saturday or Sunday evening stays bookable for the live demo); every refresh deletes visitor chat
 older than a day. Off the record, nothing changes. Per source switches are
 not applied: on the demo account they keep real collectors out (#114). From a terminal:
