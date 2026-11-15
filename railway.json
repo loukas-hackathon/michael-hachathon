@@ -3,13 +3,7 @@
   "build": {
     "builder": "RAILPACK",
     "buildCommand": "pnpm --filter @michael/api build",
-    "watchPatterns": [
-      "apps/api/**",
-      "packages/shared/**",
-      "pnpm-lock.yaml",
-      "package.json",
-      "railway.json"
-    ]
+    "watchPatterns": ["apps/api/**", "packages/shared/**", "pnpm-lock.yaml", "package.json", "railway.json"]
   },
   "deploy": {
     "startCommand": "pnpm --filter @michael/api start",
