@@ -62,11 +62,29 @@ export async function streamChat(
       }),
     });
   } catch {
-    return { ok: false, error: copyFor("network"), code: "network" };
+    // No network at all (venue wifi down): "Failed to fetch". The line goes back in the box.
+    return failed("offline");
   }
+  try {
+    return await readReply(res, onText, onStep);
+  } catch {
+    // The connection dropped mid answer: reading the body throws ("network error", "Failed to
+    // fetch"). Caught here so it is one line under the box, never an uncaught page error.
+    return failed(isOffline() ? "offline" : "network");
+  }
+}
+
+const failed = (code: string): SendResult => ({ ok: false, error: copyFor(code), code });
+const isOffline = () => typeof navigator !== "undefined" && navigator.onLine === false;
+
+/** Reads the server-sent events of one answer to the end. Throws only when the network does. */
+async function readReply(
+  res: Response,
+  onText: (text: string) => void,
+  onStep?: (step: ChatStep) => void,
+): Promise<SendResult> {
   if (!res.ok || !res.body) {
-    const code = errorCode(await res.json().catch(() => null));
-    return { ok: false, error: copyFor(code), code };
+    return failed(errorCode(await res.json().catch(() => null)));
   }
 
   const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
@@ -86,7 +104,12 @@ export async function streamChat(
         .map((l) => l.slice(5).replace(/^ /, ""))
         .join("\n");
       if (!event || !data) continue;
-      const json: unknown = JSON.parse(data);
+      let json: unknown;
+      try {
+        json = JSON.parse(data);
+      } catch {
+        continue;
+      }
       if (event === "delta") onText((json as { text: string }).text);
       if (event === "step" && onStep) {
         const step = json as Partial<ChatStep> | null;
@@ -99,11 +122,10 @@ export async function streamChat(
         if (body) return { ok: true, data: body };
       }
       if (event === "error") {
-        const code = errorCode(json);
-        return { ok: false, error: copyFor(code), code };
+        return failed(errorCode(json));
       }
     }
   }
   // The stream ended without a reply (connection dropped mid answer).
-  return { ok: false, error: copyFor("network"), code: "network" };
+  return failed(isOffline() ? "offline" : "network");
 }

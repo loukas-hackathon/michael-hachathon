@@ -10,6 +10,7 @@ import {
   deleteThread,
   editThread,
   openThread,
+  reach,
   refreshThreads,
   undoDelete,
   useChatSession,
@@ -103,7 +104,7 @@ function ThreadList({
     setFound(null);
     if (!q) return;
     const t = setTimeout(async () => {
-      const res = await listThreads(q);
+      const res = await reach(() => listThreads(q), "");
       if (res.ok) setFound(res.data);
     }, 300);
     return () => clearTimeout(t);
