@@ -1,6 +1,7 @@
 import { Wordmark } from "@/components/brand";
 import { InstallApp } from "@/components/install-app";
 import { safeNext } from "@/lib/next-path";
+import { EmailForm } from "./email-form";
 import { ForgetDevice } from "./forget-device";
 import { GoogleButton } from "./google-button";
 
@@ -43,6 +44,8 @@ export default async function LoginPage({
         <div className="flex flex-col">
           <ForgetDevice />
           <GoogleButton initialError={message} />
+          {/* No Google needed, and it never leaves the installed app (#475). */}
+          <EmailForm next={back} />
           <a
             href={demoHref}
             className="press mx-auto flex h-11 items-center px-4 text-body font-semibold text-tint-text"
@@ -51,8 +54,7 @@ export default async function LoginPage({
           </a>
           <InstallApp />
           <p className="mt-6 text-balance text-center text-footnote text-label-2">
-            Next, Google asks to share your calendar: that's how I see your week. I work for you and nobody
-            else.
+            Next, I ask for your Google Calendar: that's how I see your week. I work for you and nobody else.
           </p>
         </div>
       </div>
