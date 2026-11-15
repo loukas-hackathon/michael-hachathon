@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { API_URL, enterDemo, expect, tap, test } from "./fixtures";
+import { API_URL, enterDemo, expect, fillReady, tap, test } from "./fixtures";
 
 // A fresh, non demo user: Today sends them to onboarding, two screens, and Today takes them in.
 // The test sign in (cookie michael_e2e_user) only works with E2E_TEST_AUTH=on on the in-memory API.
@@ -29,7 +29,7 @@ test("onboarding completes for a fresh user", async ({ page, context, baseURL })
   await expect(page.getByRole("button", { name: /^Sleep/ })).toHaveAttribute("aria-pressed", "false");
   // Each starter says its area; one more goal in the user's own words (#190).
   await expect(page.getByRole("button", { name: /^Time for yourself.*Personal$/ })).toBeVisible();
-  await page.getByLabel("Something else, in your own words").fill("Learn Greek");
+  await fillReady(page.getByLabel("Something else, in your own words"), "Learn Greek");
   await tap(page.getByRole("button", { name: "Keep these three" }));
 
   await expect(page.getByRole("heading", { name: "Now, your days." })).toBeVisible();
