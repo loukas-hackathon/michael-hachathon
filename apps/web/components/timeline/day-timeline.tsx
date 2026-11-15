@@ -28,9 +28,12 @@ import {
 } from "@/lib/health";
 import { say as confirm } from "@/lib/say";
 import {
+  type Band,
   type Block,
   badgeOnTitle,
   blockTitle,
+  columns,
+  edgeLabels,
   loggedTitle,
   lostMinutesOf,
   makeTime,
@@ -39,7 +42,7 @@ import {
   openSegments,
   type Plan,
   planFor,
-  sideBySide,
+  type Spot,
   type TimelineDay,
 } from "@/lib/timeline";
 import { BlockEditor, type GoalChip } from "./block-editor";
@@ -49,11 +52,18 @@ const PER_HOUR = 56;
 const QUIET = 32;
 const HOUR = 3_600_000;
 const iso = (ms: number) => new Date(ms).toISOString();
-// Two things at once share the lane (#393): the generated drive on the right, what really happened on
-// the left. The lane runs from 50px to the right lane; each half keeps 2px from the middle.
-const LEFT_HALF = { right: "calc(50% + var(--lane-r) / 2 - 23px)" };
-const RIGHT_HALF = { left: "calc(50% + 27px - var(--lane-r) / 2)" };
-const PLAN_TITLE_LEFT = { right: "calc(50% + var(--lane-r) / 2 - 21px)" };
+// Things at the same time share the lane side by side (#393, #463), as in Calendar: the lane runs
+// from 50px to the right lane, each column keeps 2px from the next. `inset` moves both edges in
+// (a title inside its column).
+const LANE = "(100% - 50px - var(--lane-r))";
+function colStyle(s: Spot | undefined, inset = 0, rightExtra = 0) {
+  if (!s || s.cols < 2) return undefined;
+  const gap = s.col < s.cols - 1 ? 2 : 0;
+  return {
+    left: `calc(50px + ${LANE} * ${s.col} / ${s.cols} + ${inset}px)`,
+    right: `calc(var(--lane-r) + ${LANE} * ${s.cols - 1 - s.col} / ${s.cols} + ${gap + inset + rightExtra}px)`,
+  };
+}
 const span = (from: number, to: number) => `${formatTime(iso(from))} to ${formatTime(iso(to))}`;
 const MIN = 60_000;
 /** Moves and resizes snap to a quarter hour; a tap on a free slot to the half hour. */
@@ -77,7 +87,8 @@ type Picked =
   | { kind: "plan"; plan: Plan }
   | { kind: "new"; plan: Plan }
   | { kind: "night"; night: Night; tonight: boolean }
-  | { kind: "nap"; nap: Nap };
+  | { kind: "nap"; nap: Nap }
+  | { kind: "more"; plans: Plan[] };
 
 /** A block as the viewer sees it right now: the server's, or an edit still landing. */
 type Shown = Plan & { removed?: boolean; pending?: boolean };
@@ -551,59 +562,89 @@ export function DayTimeline({
     editable && sheetPlan && (picked?.kind === "new" || (pickedPlan?.editable && pickedPlan.id)),
   );
 
-  // Drives step aside for real activity (#393): both halves of the lane, never one over the other.
+  // Things at the same time go side by side (#393, #463): what happened in up to three columns, the
+  // generated drive on the right; the calendar in up to three columns of its own, "+N more" past them.
   const drawn = (key: string, start: number, end: number, min: number) => {
     const top = y(start);
     return { key, top, bottom: top + Math.max(min, y(end) - top) };
   };
+  const real = [
+    ...day.blocks.filter((b) => b.end > b.start).map((b) => drawn(`b${b.start}`, b.start, b.end, 3)),
+    ...(day.logged ?? []).map((l) => drawn(`log${l.start}`, l.start, l.end, 3)),
+    ...workouts.map((w) =>
+      drawn(`w${w.start}`, Math.max(w.start, day.dayStart), Math.min(w.end, day.dayEnd), 3),
+    ),
+    ...naps.map((n) => drawn(`n${n.start}`, n.start, Math.min(n.end, day.dayEnd), 18)),
+  ];
+  const lane = columns([
+    ...real,
+    ...(day.drives ?? []).map((d) => ({ ...drawn(`d${d.start}`, d.start, d.end, 4), late: true })),
+  ]);
+  const at = (key: string) => lane.spots.get(key);
+  const gone = new Set(lane.more.flatMap((m) => m.hidden));
+  const planKey = (p: Plan) => p.id ?? `cal${p.start}${p.title}`;
+  const cal = columns(plans.map((p) => drawn(planKey(p), p.start, p.end, 4)));
+  const calGone = new Set(cal.more.flatMap((m) => m.hidden));
   const planTitleShown = (p: Plan) => {
     const top = y(p.start);
     // Logged time too (#448): its own title sits there, so the plan's would be drawn on top of it.
-    const covered = [...day.blocks, ...(day.logged ?? []), ...workouts, ...naps].some(
-      (b) => y(b.start) < top + 18 && y(b.end) > top + 2,
+    const covered = [...real, ...(day.drives ?? []).map((d) => drawn(`d${d.start}`, d.start, d.end, 4))].some(
+      (b) => b.top < top + 18 && b.bottom > top + 2,
     );
-    return !covered && y(p.end) - top >= 17;
+    return !covered && !calGone.has(planKey(p)) && y(p.end) - top >= 17;
   };
-  const aside = sideBySide(
-    (day.drives ?? []).map((d) => drawn(`d${d.start}`, d.start, d.end, 4)),
-    [
-      ...day.blocks.filter((b) => b.end > b.start).map((b) => drawn(`b${b.start}`, b.start, b.end, 3)),
-      ...(day.logged ?? []).map((l) => drawn(`log${l.start}`, l.start, l.end, 3)),
-      ...workouts.map((w) =>
-        drawn(`w${w.start}`, Math.max(w.start, day.dayStart), Math.min(w.end, day.dayEnd), 3),
-      ),
-      ...naps.map((n) => drawn(`n${n.start}`, n.start, Math.min(n.end, day.dayEnd), 18)),
-      ...plans
-        .filter(planTitleShown)
-        .map((p) => ({ key: `pt${p.start}${p.title}`, top: y(p.start) + 4, bottom: y(p.start) + 20 })),
-    ],
-  );
-  // Michael's badges, never two on top of each other (#448), and the titles they share a line with
-  // stop short of them.
+  // "+N more" first, then Michael's badges, never two on top of each other (#448), and only on a
+  // block alone at its time (in a column the tinted outline says it); titles on their line stop short.
+  const morePills = cal.more.map((m) => m.top + 3);
   const badges = michaelBadges(
     plans
-      .filter((p) => p.michael)
+      .filter((p) => p.michael && !cal.spots.has(planKey(p)) && !calGone.has(planKey(p)))
       .map((p) => ({ key: `calt${p.start}${p.title}`, top: y(p.start), bottom: y(p.end) })),
+    morePills,
   );
-  const clearOfBadge = (start: number) =>
-    badgeOnTitle(y(start), badges.values()) ? { right: 66 } : undefined;
-  const half = (key: string) => (aside.has(key) ? (key.startsWith("d") ? RIGHT_HALF : LEFT_HALF) : undefined);
+  const rightMarks = [...morePills, ...badges.values()];
+  const clearOfBadge = (start: number) => (badgeOnTitle(y(start), rightMarks) ? { right: 66 } : undefined);
 
-  // Loss labels never collide: each keeps clear of its block's title lines and of the label above.
+  // Every title and subline drawn across the lane, for the quiet labels on the right edge to avoid.
+  const lines: { key: string; band: Band }[] = [];
+  const titled = (key: string, top: number, h: number, sub: boolean) => {
+    if (h >= 17) lines.push({ key, band: [top + 4, top + 20] });
+    if (sub && h >= 36) lines.push({ key, band: [top + 21, top + 37] });
+  };
+  for (const r of real) {
+    if (gone.has(r.key)) continue;
+    const mid = (r.top + r.bottom) / 2;
+    if (r.key.startsWith("n")) lines.push({ key: r.key, band: [mid - 8, mid + 8] });
+    else titled(r.key, r.top, r.bottom - r.top, true);
+  }
+  for (const d of day.drives ?? []) titled(`d${d.start}`, y(d.start), y(d.end) - y(d.start), false);
+  for (const p of plans)
+    if (planTitleShown(p)) lines.push({ key: planKey(p), band: [y(p.start) + 4, y(p.start) + 20] });
+  const bands = (except?: string) => lines.filter((l) => l.key !== except).map((l) => l.band);
+
+  // Loss labels never collide: each keeps clear of its block's title lines, of the label above, and
+  // of every other title, badge and "+N more" on its line.
   const lossLabels: { key: string; top: number; text: string }[] = [];
-  let lastLabel = Number.NEGATIVE_INFINITY;
+  const taken = [...rightMarks];
   for (const b of day.blocks) {
+    const key = `b${b.start}`;
     const top = y(b.start);
     const titleUntil = y(b.end) - top >= 36 ? top + 38 : y(b.end) - top >= 17 ? top + 20 : top;
-    // A block sharing its time with a drive is half width: its loss labels would sit on the drive.
-    if (aside.has(`b${b.start}`)) continue;
+    // A block sharing its time is narrow: its loss labels would sit on its neighbour.
+    if (at(key) || gone.has(key)) continue;
     for (const l of b.lostStretches ?? []) {
       const ly = y(l.start) + (y(l.end) - y(l.start)) / 2 - 7;
-      if (ly < titleUntil || ly - lastLabel < 16) continue;
+      if (ly < titleUntil || edgeLabels([{ key, top: ly }], bands(key), taken).size === 0) continue;
       lossLabels.push({ key: `ll${l.start}`, top: ly, text: `${l.what} ${hm((l.end - l.start) / 60_000)}` });
-      lastLabel = ly;
+      taken.push(ly);
     }
   }
+  // Where you were (#267): one quiet caption per visit, only where it lands on no other text.
+  const placesKept = edgeLabels(
+    (day.places ?? []).map((p) => ({ key: `pl${p.start}`, top: y(p.start) - 8 })),
+    bands(),
+    taken,
+  );
 
   return (
     <>
@@ -695,6 +736,7 @@ export function DayTimeline({
         {/* Planned outlines first, then what happened on top. Michael's own blocks are outlined in tint.
             The user's own blocks ahead can be held and dragged; the one held is filled and solid. */}
         {plans.map((p) => {
+          if (calGone.has(planKey(p))) return null;
           const live = editable && p.editable && p.id;
           const held = drag != null && p.id === drag.id;
           const h = Math.max(4, y(p.end) - y(p.start));
@@ -716,12 +758,13 @@ export function DayTimeline({
               onPointerCancel={live ? onPlanCancel : undefined}
               onContextMenu={live ? (e) => e.preventDefault() : undefined}
               aria-label={`${p.title}, ${span(p.start, p.end)}`}
+              title={`${p.title}, ${span(p.start, p.end)}`}
               className={`group/plan absolute right-(--lane-r) left-[50px] rounded-block border-[1.5px] ${
                 held ? "border-solid bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)]" : "border-dashed"
               } ${p.michael || held ? "border-tint" : "border-label-2"} ${
                 live ? "cursor-grab touch-manipulation select-none [-webkit-touch-callout:none]" : ""
               } ${(p as Shown).pending ? "opacity-70" : ""}`}
-              style={{ top: y(p.start), height: h }}
+              style={{ top: y(p.start), height: h, ...colStyle(cal.spots.get(planKey(p))) }}
             >
               {live && h >= 24 ? (
                 // The bottom edge: drag it to change the end.
@@ -736,6 +779,15 @@ export function DayTimeline({
             </button>
           );
         })}
+        {/* Past three at once: the last column holds the rest, "+N more" opens them (#463). */}
+        {cal.more.map((m) => (
+          <div
+            key={m.key}
+            aria-hidden="true"
+            className="pointer-events-none absolute rounded-block border-[1.5px] border-dashed border-label-2"
+            style={{ top: m.top, height: m.bottom - m.top, ...colStyle({ col: m.col, cols: m.cols }) }}
+          />
+        ))}
         {draft ? (
           <div
             className="pointer-events-none absolute right-(--lane-r) left-[50px] rounded-block border-[1.5px] border-tint bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)]"
@@ -765,7 +817,7 @@ export function DayTimeline({
         )}
 
         {day.blocks.map((b) => {
-          if (b.end <= b.start) return null;
+          if (b.end <= b.start || gone.has(`b${b.start}`)) return null;
           const top = y(b.start);
           const h = Math.max(3, y(b.end) - top);
           const fill =
@@ -787,7 +839,7 @@ export function DayTimeline({
                 aria-label={`${title}, ${span(b.start, b.end)}`}
                 data-live-key={`b${b.kind}${b.start}-${b.end}`}
                 className={`absolute right-(--lane-r) left-[50px] overflow-hidden rounded-block text-left ${fill}`}
-                style={{ top, height: h, ...half(`b${b.start}`) }}
+                style={{ top, height: h, ...colStyle(at(`b${b.start}`)) }}
               >
                 {b.cuts.length > 0 ? (
                   <span className="absolute top-0 right-3 bottom-0 w-[0.5px] bg-[rgb(0_0_0/0.2)]" />
@@ -847,6 +899,7 @@ export function DayTimeline({
         {/* Done time the user logged (#317): goal time in their own word, so pink like a workout. Taps go
             through to the block it covers (its sheet has Did it and the details). */}
         {(day.logged ?? []).map((l) => {
+          if (gone.has(`log${l.start}`)) return null;
           const top = y(l.start);
           const h = Math.max(3, y(l.end) - top);
           return (
@@ -854,7 +907,7 @@ export function DayTimeline({
               key={`log${l.start}`}
               data-live-key={`log${l.start}-${l.end}`}
               className="pointer-events-none absolute right-(--lane-r) left-[50px] overflow-hidden rounded-block bg-spark"
-              style={{ top, height: h, ...half(`log${l.start}`) }}
+              style={{ top, height: h, ...colStyle(at(`log${l.start}`)) }}
               title={`${loggedTitle(l.title)}, logged, ${span(l.start, l.end)}`}
             >
               {h >= 17 ? (
@@ -876,6 +929,7 @@ export function DayTimeline({
 
         {/* Workouts from the watch: goal time, so pink, with what it was and how hard. */}
         {workouts.map((w) => {
+          if (gone.has(`w${w.start}`)) return null;
           const top = y(Math.max(w.start, day.dayStart));
           const h = Math.max(3, y(Math.min(w.end, day.dayEnd)) - top);
           return (
@@ -884,7 +938,7 @@ export function DayTimeline({
               aria-hidden="true"
               data-live-key={`w${w.start}-${w.end}`}
               className="pointer-events-none absolute right-(--lane-r) left-[50px] overflow-hidden rounded-block bg-spark"
-              style={{ top, height: h, ...half(`w${w.start}`) }}
+              style={{ top, height: h, ...colStyle(at(`w${w.start}`)) }}
               title={`${w.name}, ${formatTime(iso(w.start))} to ${formatTime(iso(w.end))}`}
             >
               {h >= 17 ? (
@@ -906,6 +960,7 @@ export function DayTimeline({
 
         {/* Naps from the watch: small and quiet, with the sleep dots. Never the night. */}
         {naps.map((n) => {
+          if (gone.has(`n${n.start}`)) return null;
           const top = y(n.start);
           const h = Math.max(18, y(Math.min(n.end, day.dayEnd)) - top);
           return (
@@ -915,7 +970,7 @@ export function DayTimeline({
               onClick={() => setPicked({ kind: "nap", nap: n })}
               aria-label={`Nap, ${minutesPhrase(n.minutes)}, ${span(n.start, n.end)}`}
               className="dots absolute right-(--lane-r) left-[50px] overflow-hidden rounded-block bg-fill text-left"
-              style={{ top, height: h, ...half(`n${n.start}`) }}
+              style={{ top, height: h, ...colStyle(at(`n${n.start}`)) }}
             >
               <span className="absolute top-1/2 right-5 left-1 flex -translate-y-1/2 text-[12px] leading-4 font-medium text-label-2">
                 <span className="max-w-full truncate rounded-[4px] bg-fill px-1">Nap · {hm(n.minutes)}</span>
@@ -928,12 +983,13 @@ export function DayTimeline({
         {plans.map((p) => {
           const top = y(p.start);
           const badge = badges.get(`calt${p.start}${p.title}`);
+          const spot = cal.spots.get(planKey(p));
           return (
             <div key={`calt${p.start}${p.title}`} aria-hidden="true" className="pointer-events-none">
               {planTitleShown(p) ? (
                 <p
                   className="absolute right-[calc(var(--lane-r)+60px)] left-[58px] truncate text-footnote leading-4 font-semibold text-label-2"
-                  style={{ top: top + 4, ...(aside.has(`pt${p.start}${p.title}`) ? PLAN_TITLE_LEFT : null) }}
+                  style={{ top: top + 4, ...colStyle(spot, 8) }}
                 >
                   {p.title}
                 </p>
@@ -950,8 +1006,25 @@ export function DayTimeline({
           );
         })}
 
+        {cal.more.map((m) => (
+          <button
+            type="button"
+            key={`${m.key}pill`}
+            onClick={() => open({ kind: "more", plans: plans.filter((p) => m.hidden.includes(planKey(p))) })}
+            aria-label={`${m.hidden.length} more at the same time, ${span(
+              Math.min(...plans.filter((p) => m.hidden.includes(planKey(p))).map((p) => p.start)),
+              Math.max(...plans.filter((p) => m.hidden.includes(planKey(p))).map((p) => p.end)),
+            )}`}
+            className="press absolute right-[calc(var(--lane-r)+6px)] rounded-[4px] bg-bg px-1 text-caption font-semibold text-label"
+            style={{ top: m.top + 3 }}
+          >
+            +{m.hidden.length} more
+          </button>
+        ))}
+
         {/* Drives: the empty road in grey, the traffic on top hatched, as time lost. */}
         {(day.drives ?? []).map((d) => {
+          if (gone.has(`d${d.start}`)) return null;
           const top = y(d.start);
           const h = Math.max(4, y(d.end) - top);
           const trafficH = (d.trafficMinutes / Math.max(1, d.minutes)) * h;
@@ -960,7 +1033,7 @@ export function DayTimeline({
               key={`d${d.start}`}
               aria-hidden="true"
               className="absolute right-(--lane-r) left-[50px] overflow-hidden rounded-block bg-fill"
-              style={{ top, height: h, ...half(`d${d.start}`) }}
+              style={{ top, height: h, ...colStyle(at(`d${d.start}`)) }}
               title={`Drive to ${d.to}, ${d.minutes} minutes, ${d.trafficMinutes} in traffic`}
             >
               {trafficH > 0 ? (
@@ -974,7 +1047,8 @@ export function DayTimeline({
                   <span className="truncate">
                     Drive to {d.to} · {d.minutes}&nbsp;min
                   </span>
-                  {d.trafficMinutes > 0 ? (
+                  {/* Beside something else the column is narrow: the hatching says the traffic. */}
+                  {d.trafficMinutes > 0 && !at(`d${d.start}`) ? (
                     <span className="shrink-0 rounded-[4px] bg-bg px-1 text-caption">
                       Traffic {d.trafficMinutes}&nbsp;min
                     </span>
@@ -986,16 +1060,18 @@ export function DayTimeline({
         })}
 
         {/* Where you were (#267): a quiet caption at the start of each place visit. */}
-        {(day.places ?? []).map((p) => (
-          <span
-            key={`pl${p.start}`}
-            className="pointer-events-none absolute right-[calc(var(--lane-r)+6px)] max-w-[45%] truncate rounded-[4px] bg-bg px-1 text-caption text-label-2 tnum"
-            style={{ top: y(p.start) - 8 }}
-            title={`${p.label} ${formatTime(iso(p.start))} to ${formatTime(iso(p.end))}`}
-          >
-            {p.label} {formatTime(iso(p.start))} to {formatTime(iso(p.end))}
-          </span>
-        ))}
+        {(day.places ?? [])
+          .filter((p) => placesKept.has(`pl${p.start}`))
+          .map((p) => (
+            <span
+              key={`pl${p.start}`}
+              className="pointer-events-none absolute right-[calc(var(--lane-r)+6px)] max-w-[45%] truncate rounded-[4px] bg-bg px-1 text-caption text-label-2 tnum"
+              style={{ top: y(p.start) - 8 }}
+              title={`${p.label} ${formatTime(iso(p.start))} to ${formatTime(iso(p.end))}`}
+            >
+              {p.label} {formatTime(iso(p.start))} to {formatTime(iso(p.end))}
+            </span>
+          ))}
 
         {lossLabels.map((l) => (
           <span
@@ -1122,6 +1198,22 @@ export function DayTimeline({
           <NightDetail night={picked.night} goal={sleepGoal} tonight={picked.tonight} />
         ) : null}
         {picked?.kind === "nap" ? <NapDetail nap={picked.nap} /> : null}
+        {picked?.kind === "more" ? (
+          <ul className="tnum">
+            {picked.plans.map((p) => (
+              <li key={planKey(p)} className="border-b-[0.5px] border-separator last:border-b-0">
+                <button
+                  type="button"
+                  onClick={() => open({ kind: "plan", plan: p })}
+                  className="press flex min-h-11 w-full items-baseline justify-between gap-4 py-2.5 text-left"
+                >
+                  <span className="min-w-0 text-subhead font-semibold">{p.title}</span>
+                  <span className="shrink-0 text-subhead text-label-2">{span(p.start, p.end)}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </Sheet>
     </>
   );
@@ -1129,6 +1221,7 @@ export function DayTimeline({
 
 function sheetTitle(p: Picked) {
   if (p.kind === "new") return "New block";
+  if (p.kind === "more") return "At the same time";
   const { start, end } =
     p.kind === "block" ? p.block : p.kind === "plan" ? p.plan : p.kind === "night" ? p.night : p.nap;
   return span(start, end);
