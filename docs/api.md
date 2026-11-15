@@ -476,9 +476,17 @@ holds time and of time an active standing instruction protects for the goal's bl
 block is titled with the goal's first `calendar_titles` entry (else its title), so the score counts
 it, and is booked at once as a `create_focus_block` recommendation (`status: "done"`, rationale
 "Booked at your request through Goals."), the same path as the MCP `create_focus_block` tool.
-Undo with `POST /v1/recommendations/:id/undo` until it starts. `404` for an unknown or paused goal,
-`409` "No free 90 minutes left this week" when nothing fits. Pure slot logic: `goalSlot` in
-`apps/api/src/goals/book.ts`.
+Undo with `POST /v1/recommendations/:id/undo` until it starts. `404` for an unknown or paused goal.
+
+When that length no longer fits (#330), Michael takes the longest shorter one that does, in quarter
+hours and never under 30 minutes (asked for 90 with 45 free: 45), and the rationale says so: "Booked
+at your request through Goals. No free 90 minutes left this week, so I took 45 minutes." The
+answer is still `201`; read the booked times from `action.payload`. `409` when nothing fits, with
+the reason as the message, in Michael's words: "Sundays are kept clear, so no 90 minutes are left
+this week." when a standing instruction keeps the time that would have fitted ("You're home by
+21:00, so ...", "Your quiet hours cover the rest, so ..."), else "No free 90 minutes left this
+week." The same protected time is left out of `free_minutes_left`, so "The maths" and Book agree.
+Pure slot logic: `goalSlot`, `goalBooking` and `noSlotLine` in `apps/api/src/goals/book.ts`.
 
 #### Goals from the calendar (#134)
 
@@ -777,7 +785,7 @@ guard" below).
 | Method | Path                   | Body                | Response                              | Status |
 | ------ | ---------------------- | ------------------- | ------------------------------------- | ------ |
 | GET    | `/v1/instructions`     |                     | `200 { instructions: Instruction[] }` | live   |
-| POST   | `/v1/instructions`     | `InstructionCreate` | `201 Instruction`, `400`              | live   |
+| POST   | `/v1/instructions`     | `InstructionCreate` | `201 Instruction`, `400`, `409`       | live   |
 | PATCH  | `/v1/instructions/:id` | `InstructionUpdate` | `200 Instruction`, `400`, `404`       | live   |
 | DELETE | `/v1/instructions/:id` |                     | `204`, `404`                          | live   |
 
@@ -796,6 +804,12 @@ about planning, not about nudges.
 
 - `text` is always the user's own words and is never rewritten. `kind` defaults to `custom`, so a
   client may send only the words.
+- The same rule is kept once (#330). `POST` answers `409 conflict` "You already have that one."
+  when an active instruction is the same rule: the same `kind` on the same `days` with the same
+  `time` and `end_time` (a `home_by` or `quiet_hours` without `days` is every day), or the same
+  words (case, spacing and a closing full stop aside), which is all a `custom` one is. A paused
+  instruction does not count. Michael's `add_instruction` in chat goes through the same check
+  (`createInstruction` in `apps/api/src/routes/instructions.ts`).
 - `days`: 0 = Sunday to 6 = Saturday. `time` and `end_time`: `"HH:MM"`, 24 hour clock.
 - When `end_time` is not after `time`, quiet hours run past midnight (22:00 to 07:00) and belong to
   the day they start on. `home_by` runs on until 05:00: a block at 00:30 counts as after 21:00 of
@@ -2275,6 +2289,7 @@ type AgentQuery = {
   created_at: string;
   recommendation_id?: string | null; // a change the agent made, carried by this recommendation
   undo_until?: string | null; // until when POST /v1/recommendations/:id/undo still works
+  changed?: boolean | null; // true: it changed something; false: tried, nothing changed; null: a read
 };
 ```
 
@@ -2294,6 +2309,20 @@ type AgentQuery = {
   plain line ("Read your day from Sat 09:00 to Sat 17:00", `Added "Ran 5 km" to your day`), never
   the payload. A call outside the agent's scopes, or by an agent that is not `approved`, returns a
   tool result with `isError: true` ("Not allowed. ...") and is logged with `allowed: false`.
+- The line is written from what happened, once the call has finished (#330), not from what was
+  asked. A call that went through reads as done (`Booked "Sales focus" for Wed 15:00`). A call that
+  was allowed and still did not do what it asked reads as tried, with the reason in a few words and
+  no names in it: `Tried to book "Past" for Sun 00:30. Refused: already started.` (one of
+  Michael's rules said no: the time has started, it overlaps an event with other people, a
+  standing instruction protects it), `Tried to add "Ran 5 km" to your day. Nothing changed: already
+  on your timeline.` (there was nothing to do), or `... Failed: an error on my side.` Every such
+  line starts with "Tried to". This holds for every tool, reads included.
+- `changed` says what the call did: `true` when it changed something, `false` when a change was
+  tried and nothing changed (not shared, refused, nothing to do, failed), `null` for a tool that
+  only reads and for lines logged before the field. A change is a line with `changed: true`; for
+  an older line (`null` on a tool that writes) fall back to `allowed`. `recommendation_id` and
+  `undo_until` are only ever set on a line that changed something. `apps/api/src/mcp-guard.ts`:
+  `outcomeOf` and `logLine`.
 - Scope per tool: `get_timeline`, `get_patterns` = `timeline`; `get_goals`, `add_goal`,
   `update_goal`, `propose_goals`, `get_checklist`, `add_checklist_item`, `set_day_outcomes`, `log_day` = `goals`; `list_recommendations`, `update_recommendation`, `get_nudges`,
   `list_drafts`, `draft_follow_up` = `recommendations`; `get_score`, `get_records`, `get_moments` = `score`; `add_event`, `execute_recommendation`,
@@ -2323,7 +2352,7 @@ type Nudge = {
   day: string; // local day, "YYYY-MM-DD"
   channel: NudgeChannel;
   text: string; // under 15 words
-  reason: string; // the maths, e.g. "70.3 training: 1h of 10h done; the pace by now is 3h 34m."
+  reason: string; // the maths, e.g. "University: 1h 11 of 6h done; the pace by now is 5h 13."
   status: NudgeStatus;
   created_at: string;
   sent_at: string | null;
@@ -2352,7 +2381,7 @@ most urgent candidate of these rules (in this order):
 | `morning`        | after the night's sleep (never a nap) ends today, else from 08:00; until 12:00                                               | the Morning moment's headline, e.g. "Today holds 2h 00 of goal time." |
 | `evening`        | an hour before the usual bedtime (median of 3+ of the last 8 nights), else 21:00; never later than 45 min before quiet hours | the Evening moment's headline                                         |
 | `wind_down`      | 30 min before the night, 3+ of the last 10 min on screens, a rest goal exists                                                | "Screens off by 22:00. Sleep is on the plan."                         |
-| `goal_behind`    | before 19:00, a weekly budget behind its linear pace by 60+ min and 15%+                                                     | "Gym 2h 34m behind this week. Book 90 min today."                     |
+| `goal_behind`    | before 19:00, a time goal behind its weekly pace by 60+ min and 15%+ of its budget, named by its own title                   | "University 4h 02 behind pace. Book 90 minutes today."                |
 | `recovery_block` | a recovery offer (see Recommendations, Recovery offers) not yet nudged, while its slot is ahead; ranked after `block_soon`   | "Meetings ate the block. Take 25 minutes at 16:00. Still counts."     |
 
 `morning` and `evening` carry the Morning and Evening moments (`GET /v1/moments/:kind`, template
@@ -2361,8 +2390,19 @@ line from the same numbers; `reason` holds the maths and when it was sent. Their
 each goes out at most once a day, and they count toward the 5. The push opens Today (`url: "/"`).
 The night's quiet hours come from the profile (`quiet_hours`, default 22:00 to 07:00).
 
-Goal time spent this week = the goal's calendar blocks so far plus its own events (`work`:
-`focus_session`, `gym`: `workout`, `rest`: `sleep`, `food`: `meal`), counted once. Rules: at most 5
+Goal time spent this week is the score's: the engine runs `buildScore` on the week so far and reads
+each goal's row (`spent_minutes`, `budget_minutes`, `minutes_left`), so a nudge and its reason
+quote exactly what `GET /v1/score` and the Goals screen show at that minute (#330). Planned time
+that was not spent is not in it, and only goals in the time score can be behind. The pace is one
+rule for the app and the server, `packages/shared/src/pace.ts`: the share of the week gone by
+(`paceShare(week_start, day.now)`), on pace = budget x share in whole minutes (`paceMinutes`),
+behind by = on pace minus spent (`behindPaceMinutes`), behind when the goal is more than 2 points of
+its budget under the share (`isBehindPace`), and the block to book = what is left over the days to
+go, 30 to 90 minutes in quarter hours (`bookMinutes(minutes_left, paceDaysToGo(share))`). The goal
+furthest behind is the one Goals names as "needs you most" (the largest share behind). The nudge
+names the goal by its title (its first five words; a dash or an exclamation mark in it is left
+out), never by a category word; with a block of the goal still ahead today it ends "Keep the 18:00
+block." instead of "Book ...". Rules: at most 5
 per day; none in quiet hours (the user's `Profile.quiet_hours`, default 22:00 to 07:00, which also
 sets when `wind_down` speaks; dinner 20:00 to 21:00; work goal blocks except
 `focus_drift`); one key once per local day (`goal_behind` once per day in all); at least 20 min
@@ -2738,8 +2778,13 @@ Stated here and at the top of `apps/api/src/score/count.ts`; the two change toge
   sleep goal with hours, 07:00 to 23:00.
 - **Fixed commitments:** calendar events that are not goal blocks (anything with other people,
   and the user's own entries with no goal), inside the waking day. All day entries are left out.
-- **`free_minutes_left`:** the waking day from `now` to Sunday night, minus the fixed commitments.
-  Goal blocks count as free: they are where goal time goes. 0 for a week that has ended. With
+- **`free_minutes_left`:** the waking day from `now` to Sunday night, minus the fixed commitments
+  and minus the time the active standing instructions protect (a clear day, the evening after
+  "home by", quiet hours: `protectedSpans` in `apps/api/src/score/week.ts`), because Michael books
+  nothing there (#330). It is the one number of the score an instruction changes. A goal block an
+  instruction's `exceptions` name stays free; so do all other goal blocks: they are where goal time
+  goes. On a clear Sunday it is 0, and Book answers "Sundays are kept clear, so no 90 minutes are
+  left this week." 0 for a week that has ended. With
   `goals[].minutes_left` this is the "The 70.3 and the degree need 23 hours this week. You have
   17." maths. The per day numbers for the Goals tab are `goals[].daily`.
 - **`sleep.nightly`:** minutes slept in the night that ended on each day (`data.duration_min` when

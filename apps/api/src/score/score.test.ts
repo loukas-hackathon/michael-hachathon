@@ -892,6 +892,42 @@ test("free minutes left: the waking day from now to Sunday, minus fixed commitme
   assert.equal(score([], "2026-11-23", "2026-11-14 12:00").free_minutes_left, 7 * 990);
 });
 
+test("free minutes left leave out the time a standing instruction protects (#330)", () => {
+  const rule = (n: number, i: Partial<Instruction> & Pick<Instruction, "kind" | "text">): Instruction => ({
+    id: `50000000-0000-4000-8000-00000000001${n}`,
+    active: true,
+    created_at: "2026-11-01T00:00:00.000Z",
+    updated_at: "2026-11-01T00:00:00.000Z",
+    ...i,
+  });
+  const free = (instructions: Instruction[], now = "2026-11-14 12:00", events: Event[] = []) =>
+    buildScore(events, GOALS, { date: now.slice(0, 10), now: T(now), instructions }).free_minutes_left;
+  const sundays = rule(1, { text: "Keep Sundays clear", kind: "clear_day", days: [0] });
+
+  // Saturday 12:00, waking 06:30 to 23:00: 660 on Saturday and 990 on Sunday without rules.
+  assert.equal(free([]), 660 + 990);
+  // A clear Sunday is not free, and on that Sunday nothing is: what Book answers too.
+  assert.equal(free([sundays]), 660);
+  assert.equal(free([sundays], "2026-11-15 02:19"), 0);
+  // Home by 21:00 takes the last two hours of each evening.
+  assert.equal(free([rule(2, { text: "Home by 21:00", kind: "home_by", time: "21:00" })]), 660 + 990 - 240);
+  // Quiet hours past midnight: only their waking part counts (06:30 to 07:00 and 22:00 to 23:00).
+  const quiet = rule(3, { text: "Quiet", kind: "quiet_hours", time: "22:00", end_time: "07:00" });
+  assert.equal(free([quiet]), 660 - 60 + 990 - 90);
+  // Overlapping rules and commitments take the time once.
+  const dentist = [calendar("Dentist", T("2026-11-15 10:00"), T("2026-11-15 11:00"))];
+  assert.equal(free([sundays, quiet], "2026-11-14 12:00", dentist), 660 - 60);
+  // Paused and custom ones protect nothing.
+  assert.equal(
+    free([{ ...sundays, active: false }, rule(4, { text: "Never two calls back to back", kind: "custom" })]),
+    660 + 990,
+  );
+  // A goal block the rule's exceptions name is allowed on the clear day, so it stays free.
+  const gym = [calendar("Gym", T("2026-11-15 10:00"), T("2026-11-15 11:30"))];
+  assert.equal(free([{ ...sundays, exceptions: ["Gym"] }], "2026-11-14 12:00", gym), 660 + 90);
+  assert.equal(free([sundays], "2026-11-14 12:00", gym), 660);
+});
+
 test("sleep: minutes per night against the goal, null until there is data", () => {
   const nights = [
     sleep(T("2026-11-08 23:30"), T("2026-11-09 07:00")),

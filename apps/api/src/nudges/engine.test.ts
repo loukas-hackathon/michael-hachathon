@@ -1,8 +1,22 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { Event, Goal, Nudge } from "@michael/shared";
-import { APPS, calendar, goal, mac, T } from "../patterns/testkit";
 import {
+  behindPaceMinutes,
+  bookMinutes,
+  type Event,
+  type Goal,
+  isBehindPace,
+  type Nudge,
+  paceDaysToGo,
+  paceMinutes,
+  paceShare,
+  voiceProblems,
+  voiceShortDuration,
+} from "@michael/shared";
+import { APPS, calendar, goal, mac, T } from "../patterns/testkit";
+import { buildScore } from "../score";
+import {
+  behindGoals,
   candidates,
   DEFAULT_QUIET,
   decide,
@@ -96,14 +110,14 @@ test("half an hour before the night, screens on, the rest goal speaks", () => {
   assert.deepEqual(decide(input("21:40", [], [REST])), { action: "skip", skipped: "nothing_to_say" });
 });
 
-test("behind on a weekly budget shows the maths", () => {
-  // Wednesday 12:00 is 2.5 of 7 days: the pace for 10h is 3h 34. One 60 minute run on Monday.
-  const events = [workout(T("2026-11-09 07:00"), T("2026-11-09 08:00"))];
+test("behind on a weekly budget shows the maths, and names the goal by its title", () => {
+  // Wednesday 12:00 is 2.5 of 7 days: the pace for 10h is 3h 34. One 60 minute block on Monday.
+  const events = [calendar("Gym", T("2026-11-09 07:00"), T("2026-11-09 08:00"))];
   const d = decide(input("12:00", events, [GYM]));
   assert.equal(d.action, "send");
   if (d.action !== "send") return;
   assert.equal(d.candidate.kind, "goal_behind");
-  assert.equal(d.candidate.text, "Gym 2h 34 behind this week. Book 90 min today.");
+  assert.equal(d.candidate.text, "70.3 training 2h 34 behind pace. Book 90 minutes today.");
   assert.equal(d.candidate.reason, "70.3 training: 1h of 10h done; the pace by now is 3h 34.");
 });
 
@@ -112,12 +126,92 @@ test("behind with a block later today: keep it", () => {
   const d = decide(input("12:00", events, [GYM]));
   assert.equal(d.action, "send");
   if (d.action !== "send") return;
-  assert.equal(d.candidate.text, "Gym 3h 34 behind this week. Keep the 18:00 block.");
+  assert.equal(d.candidate.text, "70.3 training 3h 34 behind pace. Keep the 18:00 block.");
 });
 
 test("on pace: nothing to say", () => {
-  const events = [workout(T("2026-11-09 07:00"), T("2026-11-09 10:30"))];
+  const events = [calendar("Gym", T("2026-11-09 07:00"), T("2026-11-09 10:30"))];
   assert.deepEqual(decide(input("12:00", events, [GYM])), { action: "skip", skipped: "nothing_to_say" });
+});
+
+test("the behind nudge quotes the score's spent minutes, not the planned ones (#330)", () => {
+  // Four hours planned on Monday, three of them on Instagram: the score counts one hour spent.
+  const events = [
+    calendar("Deep work", T("2026-11-09 10:00"), T("2026-11-09 14:00")),
+    mac(APPS.social, T("2026-11-09 10:00"), T("2026-11-09 13:00")),
+    mac(APPS.editor, T("2026-11-09 13:00"), T("2026-11-09 14:00")),
+  ];
+  const now = at("12:00");
+  const score = buildScore(events, [WORK], { date: DAY, now });
+  const row = score.goals.find((g) => g.goal_id === WORK.id);
+  assert.ok(row);
+  assert.equal(row.planned_minutes, 240);
+  assert.equal(row.spent_minutes, 60);
+
+  // What the Goals screen shows from the same score: spent of budget, on pace by now, behind pace.
+  const share = paceShare(score.week_start, score.day.now);
+  const due = paceMinutes(row.budget_minutes, share);
+  const gap = behindPaceMinutes(row.budget_minutes, row.spent_minutes, share);
+  assert.ok(isBehindPace(row.budget_minutes, row.spent_minutes, share));
+  const hm = voiceShortDuration;
+  const book = bookMinutes(row.minutes_left, paceDaysToGo(share));
+
+  const [c] = candidates({ now, goals: [WORK], events, today: [] }).filter((x) => x.kind === "goal_behind");
+  assert.ok(c);
+  assert.equal(c.text, `Ship the pitch ${hm(gap)} behind pace. Book ${book} minutes today.`);
+  assert.equal(c.text, "Ship the pitch 2h 34 behind pace. Book 90 minutes today.");
+  assert.equal(
+    c.reason,
+    `Ship the pitch: ${hm(row.spent_minutes)} of ${hm(row.budget_minutes)} done; the pace by now is ${hm(due)}.`,
+  );
+  assert.equal(c.reason, "Ship the pitch: 1h of 10h done; the pace by now is 3h 34.");
+  assert.deepEqual(behindGoals({ now, goals: [WORK], events, today: [] }), [
+    { goal: WORK, spent: 60, pace: due, gap },
+  ]);
+});
+
+test("a workout outside every block is not goal time, as in the score", () => {
+  const events = [workout(T("2026-11-09 07:00"), T("2026-11-09 08:00"))];
+  const [c] = candidates(input("12:00", events, [GYM]));
+  assert.equal(c?.reason, "70.3 training: 0 min of 10h done; the pace by now is 3h 34.");
+});
+
+test("the goal furthest behind as Goals ranks it goes first, and only goals in the time score", () => {
+  // The small goal has spent none of its 2h; the big one a third of its pace. Sleep is a target.
+  const small = {
+    ...goal("personal", "00000000-0000-4000-8000-0000000000b1", "Guitar"),
+    weekly_budget_minutes: 240,
+  };
+  const sleep = {
+    ...goal("health", "00000000-0000-4000-8000-0000000000b2", "Sleep"),
+    target: { kind: "target", sleep_hours: 8 },
+    weekly_budget_minutes: 3360,
+  };
+  const events = [calendar("Gym", T("2026-11-09 07:00"), T("2026-11-09 08:00"))];
+  const behind = behindGoals(input("12:00", events, [GYM, small, sleep]));
+  assert.deepEqual(
+    behind.map((b) => [b.goal.title, b.gap]),
+    [
+      ["Guitar", 86],
+      ["70.3 training", 154],
+    ],
+  );
+});
+
+test("a long or dashed goal title still makes a nudge that passes the voice rules", () => {
+  const long = goal(
+    "business",
+    "00000000-0000-4000-8000-0000000000b3",
+    "Deep work - the investor deck for the Monday pitch in Athens!",
+  );
+  const [c] = candidates(input("12:00", [], [long]));
+  assert.ok(c);
+  assert.equal(c.text, "Deep work the investor deck 3h 34 behind pace. Book 90 minutes today.");
+  assert.ok(isValidCopy(c.text));
+  assert.deepEqual(voiceProblems(c.text), []);
+  assert.ok(wordCount(c.text) < 15);
+  // The reason keeps the title as the user wrote it.
+  assert.match(c.reason, /^Deep work - the investor deck for the Monday pitch in Athens!: 0 min of 10h done/);
 });
 
 test("never in the night or at dinner", () => {

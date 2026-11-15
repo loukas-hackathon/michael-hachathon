@@ -1,4 +1,6 @@
 import {
+  behindPaceMinutes,
+  bookMinutes,
   countsTowardsCap,
   type Event,
   type Goal,
@@ -7,6 +9,12 @@ import {
   type Nudge,
   type NudgeKind,
   type NudgeSkip,
+  paceDaysToGo,
+  paceMinutes,
+  paceShare,
+  paceShortfall,
+  type ScoreGoal,
+  voiceDuration,
   voiceShortDuration,
 } from "@michael/shared";
 import { DEFAULT_TIMEZONE } from "../patterns/context";
@@ -14,8 +22,9 @@ import { goalBlocks } from "../patterns/focus";
 import { napIn } from "../patterns/sleep";
 import { DAY, MINUTE, Zone } from "../patterns/time";
 import { buildTimeline, type Segment } from "../patterns/timeline";
-import { type Span, union, unionLength } from "../patterns/util";
+import type { Span } from "../patterns/util";
 import { isBusinessGoal, purposeFor } from "../score/purpose";
+import { buildScore } from "../score/score";
 
 // The nudge engine. Pure: the clock, the events, the goals and today's nudges are passed in, so
 // the same input always gives the same decision. The route (routes/nudges.ts) does the I/O.
@@ -158,27 +167,7 @@ const LABEL: Record<GoalCategory, string> = {
   rest: "Rest",
   food: "Meal",
 };
-const SHORT: Record<GoalCategory, string> = {
-  business: "Work",
-  health: "Training",
-  personal: "Your own time",
-  work: "Work",
-  gym: "Gym",
-  rest: "Rest",
-  food: "Food",
-};
 
-// Events that are real time spent on a goal, besides its calendar blocks. A personal goal has none.
-const SPENT_TYPES: Partial<Record<GoalCategory, Event["type"]>> = {
-  business: "focus_session",
-  health: "workout",
-  work: "focus_session",
-  gym: "workout",
-  rest: "sleep",
-  food: "meal",
-};
-
-/** "45 min", "2h", "2h 10m". */
 /** Compact durations the voice sheet way: "47 min", "2h 10", "6h". */
 export const shortDuration = voiceShortDuration;
 
@@ -202,6 +191,8 @@ interface World {
   quiet: QuietHours;
   moment: EngineInput["moment"];
   recovery: EngineInput["recovery"];
+  /** The score's goal rows for this week as of now, by goal id. Built once, on first use. */
+  rows: () => Map<string, ScoreGoal>;
 }
 
 function world(input: EngineInput): World {
@@ -211,6 +202,8 @@ function world(input: EngineInput): World {
   // Weeks start on Monday, local time.
   const weekday = new Date(`${day}T00:00:00Z`).getUTCDay();
   const monday = zone.nextDay(day, -((weekday + 6) % 7));
+  const goals = input.goals.filter((g) => g.active);
+  let rows: Map<string, ScoreGoal> | null = null;
   return {
     now,
     zone,
@@ -219,33 +212,34 @@ function world(input: EngineInput): World {
     dayEnd: zone.startOfDay(zone.nextDay(day)),
     weekStart: zone.startOfDay(monday),
     minute: zone.minuteOfDay(now),
-    goals: input.goals.filter((g) => g.active),
+    goals,
     events: input.events,
     quiet: input.quiet ?? DEFAULT_QUIET,
     moment: input.moment,
     recovery: input.recovery,
+    rows: () => {
+      // The same function GET /v1/score runs, so a nudge never quotes a number Goals does not show.
+      rows ??= new Map(
+        buildScore(input.events, goals, {
+          date: day,
+          now: new Date(now).toISOString(),
+          timezone: zone.name,
+        }).goals.map((g) => [g.goal_id, g]),
+      );
+      return rows;
+    },
   };
 }
 
 const inRange = (minute: number, [start, end]: [number, number]) =>
   start <= end ? minute >= start && minute < end : minute >= start || minute < end;
 
-/** Minutes of goal time spent this week up to now: its calendar blocks and its own events. */
-export function spentThisWeek(w: World, goal: Goal): number {
-  const spans: Span[] = goalBlocks(w.events, w.goals, w.weekStart, w.now)
-    .filter((b) => b.goal.id === goal.id)
-    .map((b) => ({ start: b.start, end: b.end }));
-  // Sleep is a health goal measured by nights, not by workouts.
-  const spentType = isSleepGoal(goal) ? "sleep" : SPENT_TYPES[goal.category];
-  for (const e of w.events) {
-    if (e.type !== spentType || !e.end_at) continue;
-    if (e.type === "sleep" && napIn(w.zone, Date.parse(e.start_at), Date.parse(e.end_at))) continue;
-    const start = Math.max(Date.parse(e.start_at), w.weekStart);
-    const end = Math.min(Date.parse(e.end_at), w.now);
-    if (end > start) spans.push({ start, end });
-  }
-  return unionLength(union(spans)) / MINUTE;
-}
+/**
+ * Minutes of goal time spent this week up to now, as the score counts them (`spent_minutes` of the
+ * goal's row): elapsed block time minus what was lost, plus what the user logged. Planned time
+ * that was not spent is not in it. 0 for a goal outside the time score (sleep, a count, a checklist).
+ */
+const spentThisWeek = (w: World, goal: Goal): number => w.rows().get(goal.id)?.spent_minutes ?? 0;
 
 function recentAttention(w: World, from: number): Segment[] {
   return buildTimeline(w.events, from, w.now).attention;
@@ -334,43 +328,75 @@ export interface BehindGoal {
   gap: number;
 }
 
-/** Goals behind their linear weekly pace by 60+ minutes and 15%+, the furthest behind first. */
+/**
+ * Goals behind their weekly pace by 60+ minutes and 15%+ of the budget, the furthest behind first.
+ * Spent, pace and gap are the numbers Goals shows (packages/shared/src/pace.ts over the score's
+ * rows), in whole minutes, and the order is Goals' own: the first is its "needs you most". Only
+ * goals in the time score take part.
+ */
 function behindList(w: World): BehindGoal[] {
-  const elapsed = Math.min(1, (w.now - w.weekStart) / (7 * DAY));
-  const out: BehindGoal[] = [];
+  const share = paceShare(w.weekStart, w.now);
+  const out: (BehindGoal & { shortfall: number })[] = [];
   for (const goal of w.goals) {
-    const budget = goal.weekly_budget_minutes;
-    if (!budget) continue;
-    const spent = spentThisWeek(w, goal);
-    const pace = budget * elapsed;
-    const gap = pace - spent;
+    const row = w.rows().get(goal.id);
+    if (!row?.scored || row.budget_minutes <= 0) continue;
+    const budget = row.budget_minutes;
+    const spent = row.spent_minutes;
+    const gap = behindPaceMinutes(budget, spent, share);
     if (gap < Math.max(LIMITS.goalBehindMinMinutes, budget * LIMITS.goalBehindMinShare)) continue;
-    out.push({ goal, spent, pace, gap });
+    out.push({
+      goal,
+      spent,
+      pace: paceMinutes(budget, share),
+      gap,
+      shortfall: paceShortfall(budget, spent, share),
+    });
   }
-  return out.sort((a, b) => b.gap - a.gap);
+  return out
+    .sort((a, b) => b.shortfall - a.shortfall || b.gap - a.gap)
+    .map(({ shortfall: _, ...behind }) => behind);
 }
 
 /** The goal_behind rule at any hour, every goal it finds: the morning's suggestions (#318). */
 export const behindGoals = (input: EngineInput): BehindGoal[] => behindList(world(input));
+
+/** Most words of a goal's title a nudge carries, so the line stays under 15 words. */
+const TITLE_WORDS = 5;
+
+/**
+ * The goal as every screen names it: its own title, never a category word. Dashes and exclamation
+ * marks cannot go in a nudge and a long title is cut to its first words.
+ */
+const nameOf = (goal: Goal): string =>
+  goal.title
+    .replace(/[-–—!]+/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, TITLE_WORDS)
+    .join(" ") || "This goal";
 
 function goalBehind(w: World): Candidate | null {
   if (w.minute >= LIMITS.goalBehindLatest) return null;
   const worst = behindList(w)[0];
   if (!worst) return null;
   const { goal, spent, pace, gap } = worst;
+  const row = w.rows().get(goal.id);
+  const budget = row?.budget_minutes ?? goal.weekly_budget_minutes ?? 0;
   const next = goalBlocks(w.events, w.goals, w.now, w.dayEnd).find((b) => b.goal.id === goal.id);
-  const behind = shortDuration(gap);
-  const book = Math.min(90, Math.max(30, Math.round(gap / 15) * 15));
+  // The same length Goals offers on its Book button.
+  const left = row?.minutes_left ?? Math.max(0, budget - spent);
+  const book = bookMinutes(left, paceDaysToGo(paceShare(w.weekStart, w.now)));
+  const behind = `${nameOf(goal)} ${shortDuration(gap)} behind pace.`;
   const text = next
-    ? `${SHORT[goal.category]} ${behind} behind this week. Keep the ${w.zone.clock(next.start)} block.`
-    : `${SHORT[goal.category]} ${behind} behind this week. Book ${book} min today.`;
+    ? `${behind} Keep the ${w.zone.clock(next.start)} block.`
+    : `${behind} Book ${voiceDuration(book)} today.`;
   return {
     kind: "goal_behind",
     // One weekly gap a day is enough: the key is per day, not per goal.
     key: "goal_behind",
     goal_id: goal.id,
     text,
-    reason: `${goal.title}: ${shortDuration(spent)} of ${shortDuration(goal.weekly_budget_minutes ?? 0)} done; the pace by now is ${shortDuration(pace)}.`,
+    reason: `${goal.title}: ${shortDuration(spent)} of ${shortDuration(budget)} done; the pace by now is ${shortDuration(pace)}.`,
   };
 }
 

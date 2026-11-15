@@ -95,6 +95,11 @@ test("the consent tap creates an approved agent; scopes gate tools; every call i
     ],
   );
   assert.equal(mine[0]?.summary, 'Added "Ran 5 km" to your day');
+  // Not shared: nothing changed. A read changes nothing either way.
+  assert.deepEqual(
+    mine.map((q) => q.changed),
+    [false, null],
+  );
   assert.ok((await listAgents()).find((a) => a.id === agent.id)?.last_seen_at);
 
   // The user switches writing on: the same token may now add to the day.
@@ -138,6 +143,24 @@ test("a block an agent books carries its recommendation and can be undone from t
   const line = (await listQueries()).find((q) => q.agent_id === agent?.id && q.tool === "create_focus_block");
   assert.equal(line?.recommendation_id, recId);
   assert.ok(line?.undo_until && Date.parse(line.undo_until) > Date.now());
+  assert.equal(line?.changed, true);
+
+  // The same call for a time that has passed is refused: the log says so, and it is no change.
+  const late = await callTool(token, "create_focus_block", {
+    start: new Date(Date.now() - 3_600_000).toISOString(),
+    end: new Date(Date.now() + 3_600_000).toISOString(),
+    title: "Past",
+  });
+  assert.equal(late.body.result.isError, true);
+  const tried = (await listQueries()).find((q) => q.agent_id === agent?.id && q.summary.includes('"Past"'));
+  assert.match(
+    tried?.summary ?? "",
+    /^Tried to book "Past" for \w{3} \d\d:\d\d\. Refused: already started\.$/,
+  );
+  assert.deepEqual(
+    [tried?.allowed, tried?.changed, tried?.recommendation_id, tried?.undo_until],
+    [true, false, null, null],
+  );
 
   const undo = await app.request(`/v1/recommendations/${recId}/undo`, { method: "POST", headers: apiKey });
   assert.equal(undo.status, 200);

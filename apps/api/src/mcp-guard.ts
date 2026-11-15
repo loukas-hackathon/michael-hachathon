@@ -77,7 +77,11 @@ function instant(value: string): string | null {
   }
 }
 
-/** One plain line for the Agents screen, in Michael's voice. Never the full payload. */
+/**
+ * One plain line for the Agents screen, in Michael's voice. Never the full payload. Written from
+ * the input alone, so it says what the call does when it goes through; `logLine` turns it into
+ * what happened once the call has finished.
+ */
 export function summarise(name: string, title: string | undefined, input: unknown): string {
   const a = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
   const from = hhmm(a.from);
@@ -168,6 +172,132 @@ export function summarise(name: string, title: string | undefined, input: unknow
   }
 }
 
+// ---------- what happened: the line is written from the outcome, not from the input ----------
+
+/** What a finished call did. `changed` is null for a tool that only reads. */
+export interface Outcome {
+  changed: boolean | null;
+  /** Set when the call did not do what it asked: why, in a few words, with no names in it. */
+  failed: { how: "Refused" | "Nothing changed" | "Failed"; reason: string } | null;
+}
+
+type ToolResult = {
+  isError?: boolean;
+  content?: { type?: string; text?: unknown }[];
+  structuredContent?: Record<string, unknown>;
+};
+
+// The refusals an agent meets most, in a few words. Anything else falls back to the first
+// sentence of the tool's own answer, cut before a title or a list (the line is never the payload).
+const REASONS: [RegExp, string][] = [
+  [/already started/i, "already started"],
+  [/already ended/i, "already ended"],
+  [/has not (happened|started) yet/i, "not started yet"],
+  [/overlaps .*other people/i, "it overlaps an event with other people"],
+  [/other people|someone else/i, "other people are in it"],
+  [/^validation failed|^use yyyy/i, "the request was not valid"],
+  [/^no goal called/i, "no goal by that name"],
+  [/^not allowed/i, "not shared"],
+];
+
+/** A tool's refusal in a few words: "already started", "Sundays are kept clear". */
+export function shortReason(text: string): string {
+  const said = text.trim();
+  for (const [pattern, reason] of REASONS) if (pattern.test(said)) return reason;
+  // The first sentence, cut before a quoted title or a list ("Your goals: ..."), never inside 21:00.
+  const first = (said.split(/(?<=[.?])\s|\n/)[0] ?? "").split(/["“]|:\s/)[0] ?? "";
+  const words = first
+    .replace(/[.,;:\s]+$/, "")
+    .replace(/[\u2010-\u2015!]|\s-\s/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 10)
+    .join(" ");
+  if (!words) return "it did not go through";
+  // Michael's own "I" and a weekday keep their capital; a plain sentence start does not.
+  return /^(I\b|I'|[A-Z][a-z]+days\b)/.test(words) ? words : words.charAt(0).toLowerCase() + words.slice(1);
+}
+
+/** A result that is no error and still changed nothing, by tool: why, or null when it did its job. */
+function nothingChanged(name: string, s: Record<string, unknown>): string | null {
+  switch (name) {
+    case "add_event":
+      if (s.inserted !== 0) return null;
+      return s.ignored ? "that source is off, or you are off the record" : "already on your timeline";
+    case "remember":
+      return s.memory === null ? "you are off the record" : null;
+    case "suggest_app_mute":
+      return s.recommendation ? null : "no app stands out";
+    case "draft_follow_up":
+      if (!Array.isArray(s.drafts) || s.drafts.length > 0) return null;
+      return s.skipped ? "those already have drafts" : "nothing to follow up";
+    case "plan_travel":
+      return s.status === "maps_unavailable"
+        ? "maps could not be reached"
+        : s.status === "travel_off"
+          ? "travel is switched off"
+          : null;
+    default:
+      return null;
+  }
+}
+
+/**
+ * What the call did, read from its result (`threw`: the tool crashed instead of answering). A read
+ * changes nothing either way; a write counts as a change only when it went through.
+ */
+export function outcomeOf(name: string, readOnly: boolean, result: unknown, threw = false): Outcome {
+  const r = (result && typeof result === "object" ? result : {}) as ToolResult;
+  let failed: Outcome["failed"] = null;
+  if (threw || result === undefined) failed = { how: "Failed", reason: "an error on my side" };
+  else if (r.isError) {
+    const said = (r.content ?? []).map((c) => (typeof c.text === "string" ? c.text : "")).join(" ");
+    failed = { how: "Refused", reason: shortReason(said) };
+  } else if (!readOnly) {
+    const why = nothingChanged(name, r.structuredContent ?? {});
+    if (why) failed = { how: "Nothing changed", reason: why };
+  }
+  return { changed: readOnly ? null : failed === null, failed };
+}
+
+// The first word of every summary above, and how it reads after "Tried to".
+const INFINITIVE: Record<string, string> = {
+  Read: "read",
+  Kept: "keep",
+  Logged: "log",
+  Marked: "mark",
+  Confirmed: "confirm",
+  Drafted: "draft",
+  Added: "add",
+  Set: "set",
+  Paused: "pause",
+  Changed: "change",
+  Dismissed: "dismiss",
+  Accepted: "accept",
+  Carried: "carry",
+  Undid: "undo",
+  Planned: "plan",
+  Booked: "book",
+  Muted: "mute",
+  Suggested: "suggest",
+  Remembered: "remember",
+};
+
+/** Every line that tells of a call that did not go through starts with this. */
+export const TRIED = "Tried to ";
+
+/**
+ * The line that is logged: the summary when the call did what it says, else what was tried and
+ * why it did not happen. `Tried to book "Past" for Sun 00:30. Refused: already started.`
+ */
+export function logLine(summary: string, outcome: Outcome): string {
+  if (!outcome.failed) return summary;
+  const verb = /^[A-Za-z]+/.exec(summary)?.[0] ?? "";
+  const to = INFINITIVE[verb];
+  const tried = to ? `${to}${summary.slice(verb.length)}` : `use ${summary}`;
+  return `${TRIED}${tried}. ${outcome.failed.how}: ${outcome.failed.reason}.`;
+}
+
 const SCOPE_WORDS: Record<AgentScope, string> = {
   timeline: "their day",
   goals: "their goals",
@@ -209,13 +339,16 @@ export function guardTools(server: McpServer): void {
       const scope = scopeFor(name, config);
       const allowed = agent.status === "approved" && agent.scopes.includes(scope);
       const input = config.inputSchema ? args[0] : undefined;
-      const log = async (recommendation_id: string | null) => {
+      const readOnly = config.annotations?.readOnlyHint === true;
+      const summary = summarise(name, config.title, input);
+      const log = async (line: string, changed: boolean | null, recommendation_id: string | null) => {
         try {
           await agentsStore.logQuery({
             agent_id: agent.id,
             tool: name,
-            summary: summarise(name, config.title, input),
+            summary: line,
             allowed,
+            changed,
             recommendation_id,
           });
         } catch (err) {
@@ -223,7 +356,8 @@ export function guardTools(server: McpServer): void {
         }
       };
       if (!allowed) {
-        await log(null);
+        // Not shared: the line stays what was asked for, and nothing changed.
+        await log(summary, readOnly ? null : false, null);
         const why =
           agent.status === "approved"
             ? `The user has not shared ${SCOPE_WORDS[scope]} with ${agent.name}.`
@@ -238,14 +372,24 @@ export function guardTools(server: McpServer): void {
           ],
         };
       }
-      // Allowed calls are logged once they finish, so a change carries the recommendation that
-      // holds it and the Agents screen can offer Undo next to the line.
+      // Allowed calls are logged once they finish, from what happened: a booking Michael refused
+      // reads as tried and refused, and only a call that changed something counts as a change. A
+      // change carries the recommendation that holds it, so the Agents screen can offer Undo.
       let result: unknown;
+      let threw = false;
       try {
         result = await cb(...args);
         return result;
+      } catch (err) {
+        threw = true;
+        throw err;
       } finally {
-        await log(changedRecommendation(name, result));
+        const outcome = outcomeOf(name, readOnly, result, threw);
+        await log(
+          logLine(summary, outcome),
+          outcome.changed,
+          outcome.changed ? changedRecommendation(name, result) : null,
+        );
       }
     });
   (server as unknown as { registerTool: typeof guarded }).registerTool = guarded;

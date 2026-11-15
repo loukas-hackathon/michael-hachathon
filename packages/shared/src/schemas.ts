@@ -1314,6 +1314,11 @@ export const AgentQuery = z.object({
   // and until when Undo still works (null once it started, was undone, or is not undoable).
   recommendation_id: z.uuid().nullable().optional(),
   undo_until: IsoDateTime.nullable().optional(),
+  // What the call did. true: it changed something. false: a change was tried and nothing changed
+  // (not shared, refused by one of Michael's rules, or nothing to do); `summary` then says what
+  // was tried and why. null or absent: a read, or a line from before this field. Count a change
+  // only when it is true.
+  changed: z.boolean().nullable().optional(),
 });
 export type AgentQuery = z.infer<typeof AgentQuery>;
 
@@ -1373,7 +1378,7 @@ export const Nudge = z.object({
   day: LocalDay,
   channel: NudgeChannel,
   text: z.string().min(1),
-  // The maths behind it, one line, e.g. "3h 10m of 9h done; the pace by now is 5h 20m."
+  // The maths behind it, one line, e.g. "University: 1h 11 of 6h done; the pace by now is 5h 13."
   reason: z.string(),
   status: NudgeStatus,
   created_at: IsoDateTime,

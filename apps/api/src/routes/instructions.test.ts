@@ -209,3 +209,60 @@ test("GET /v1/score flags a block planned on a clear Sunday", async () => {
   assert.equal(paused.day.spent_minutes, score.day.spent_minutes);
   await call("PATCH", `/v1/instructions/${id}`, { active: true });
 });
+
+test("POST /v1/instructions refuses a rule the user already has (#330)", async () => {
+  const post = (body: unknown) => call("POST", "/v1/instructions", body);
+  const refused = async (body: unknown) => {
+    const res = await post(body);
+    assert.equal(res.status, 409, JSON.stringify(body));
+    assert.deepEqual(await res.json(), {
+      error: { code: "conflict", message: "You already have that one." },
+    });
+  };
+  const before = (await list()).length;
+
+  // The mock "Keep Sundays clear": the same kind and days, typed again in words, or as a custom line.
+  await refused({ text: "Sundays stay free", kind: "clear_day", days: [0] });
+  await refused({ text: "keep sundays  clear." });
+  await refused({ text: "Keep Sundays clear", kind: "clear_day", days: [0], exceptions: ["Rhefuel"] });
+  assert.equal((await list()).length, before);
+
+  // Another day is another rule; so is another time.
+  const sat = await create({ text: "Keep Saturdays clear", kind: "clear_day", days: [6] });
+  await refused({ text: "Saturdays off", kind: "clear_day", days: [6] });
+  const home = await create({ text: "Home by 20:15", kind: "home_by", time: "20:15" });
+  await refused({
+    text: "Back by quarter past eight",
+    kind: "home_by",
+    time: "20:15",
+    days: [0, 1, 2, 3, 4, 5, 6],
+  });
+  const earlier = await create({
+    text: "Home by 19:45 on weekdays",
+    kind: "home_by",
+    time: "19:45",
+    days: [1, 2, 3, 4, 5],
+  });
+  const quiet = await create({
+    text: "Quiet from 13:00 to 14:00",
+    kind: "quiet_hours",
+    time: "13:00",
+    end_time: "14:00",
+  });
+  await refused({ text: "Lunch is mine", kind: "quiet_hours", time: "13:00", end_time: "14:00" });
+  const longer = await create({
+    text: "Quiet from 13:00 to 15:00",
+    kind: "quiet_hours",
+    time: "13:00",
+    end_time: "15:00",
+  });
+
+  // A paused rule does not block adding it again; a copy of the new one is refused.
+  await call("PATCH", `/v1/instructions/${sat.id}`, { active: false });
+  const again = await create({ text: "Keep Saturdays clear", kind: "clear_day", days: [6] });
+  await refused({ text: "Keep Saturdays clear", kind: "clear_day", days: [6] });
+
+  for (const i of [sat, home, earlier, quiet, longer, again])
+    await call("DELETE", `/v1/instructions/${i.id}`);
+  assert.equal((await list()).length, before);
+});
