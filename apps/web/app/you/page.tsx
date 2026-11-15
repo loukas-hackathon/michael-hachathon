@@ -56,10 +56,13 @@ export default async function YouPage({
 
       {/* The Mi button is on every tab, so the two things people look for in it come first. */}
       <div className="mt-4 overflow-hidden rounded-group bg-fill">
+        {/* Meetings mode (#422): the quick toggle sits first, one tap before a meeting starts. */}
+        <MeetingsRow first />
         <Link
           href="/chat?talk=1"
           className="press relative flex min-h-14 items-center justify-between gap-3 px-4 py-2"
         >
+          <span className={separator} />
           <span className="flex flex-col">
             <span className="text-body">Talk to Michael</span>
             <span className="text-footnote text-label-2">Out loud, hands free</span>
@@ -89,7 +92,6 @@ export default async function YouPage({
         <h2 className="mb-2 text-title3 font-bold">Privacy</h2>
         <div className="overflow-hidden rounded-group bg-fill">
           <OffTheRecordSwitch />
-          <MeetingsRow />
         </div>
         <Link
           href="/you/knowledge"

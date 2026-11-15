@@ -19,6 +19,7 @@ import { Fold, FoldLink, MoreFromMichael } from "@/components/today/fold";
 import { GetStarted } from "@/components/today/get-started";
 import { KeepWeekStrip, keepLine, streakLine } from "@/components/today/keep-week";
 import { LastWeekLine } from "@/components/today/last-week-line";
+import { MeetingRecapCard } from "@/components/today/meeting-recap";
 import { MichaelCard } from "@/components/today/michael-card";
 import { MomentCard } from "@/components/today/moment-card";
 import { NextBlocks } from "@/components/today/next-blocks";
@@ -130,6 +131,7 @@ export default async function TodayPage({
       {empty ? (
         <>
           <GetStarted demo={demo} />
+          {day.sample ? null : <MeetingRecapCard />}
           <Suspense fallback={null}>
             <CalendarCard demo={demo} emptyDay />
           </Suspense>
@@ -237,6 +239,9 @@ export default async function TodayPage({
                 won back today.
               </p>
             ) : null}
+
+            {/* After a meeting (#422): its commitments, lesson and follow up, while they are fresh. */}
+            {day.sample ? null : <MeetingRecapCard className="max-xl:order-6" />}
 
             <div className="max-xl:order-7">
               {/* Focus now (#397): a goal block running now, or a free stretch, as one tap. */}
