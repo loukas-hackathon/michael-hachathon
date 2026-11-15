@@ -1,7 +1,7 @@
 import { median } from "../patterns/util";
-import { FEATURES, type FeatureDef, featureDef } from "./dictionary";
+import { FEATURES, type FeatureDef, featureDef, orderOf } from "./dictionary";
 import type { FeatureKey, FeatureTable } from "./features";
-import { benjaminiHochberg, clamp01, hash, mean, permutationP, pooledSd, sd, spearman } from "./stats";
+import { clamp01, hash, mean, passFalseDiscovery, permutationP, pooledSd, sd, spearman } from "./stats";
 
 // The miner: every sensible ordered pair of columns, same day and next day, split into the days
 // the trigger was there and the days it was not, compared, and kept only when it clears a strict
@@ -29,10 +29,18 @@ export const MINER_RULES = {
   watchEffect: 0.8,
   watchEffectRare: 1.5,
   watchHeld: 0.75,
+  /**
+   * A derived trigger (a streak, a stricter threshold, another cut of the same thing) that tells
+   * the same story as its plain one is shown beside it only when it moves the outcome at least
+   * this many times as far (in standard deviations). Otherwise the plain one tells it alone.
+   */
+  variantMargin: 1.5,
   /** Two triggers on at least this share of the same days tell one story. */
   sameStory: 0.6,
   historyCap: 30,
   maxPatterns: 8,
+  /** Relations the model proposed and the server verified, shown at most. */
+  maxDiscovered: 4,
   maxWatching: 3,
 } as const;
 
@@ -105,6 +113,8 @@ export interface Link {
   xMeans: { trigger: number; other: number } | null;
   p: number;
   strength: number;
+  /** Set on a derived trigger shown beside its plain one: it moved the outcome clearly further. */
+  harder?: { plain: Link };
 }
 
 export interface Chain {
@@ -120,6 +130,8 @@ export interface Chain {
   occurrences: Occurrence[];
   held: number;
   strength: number;
+  /** Set on a derived trigger's chain shown beside its plain one's. */
+  harder?: { plain: Chain };
 }
 
 export interface Mined {
@@ -128,6 +140,8 @@ export interface Mined {
   watching: Link[];
   /** How many pairs had enough days on both sides to be tested. */
   tested: number;
+  /** The chance value of every pair tested: the family any later hypothesis is judged within. */
+  ps: number[];
 }
 
 const present = (v: number | null | undefined): v is number => v !== null && v !== undefined;
@@ -299,8 +313,16 @@ function strongestPer<T extends { strength: number }>(list: T[], sameAs: (item: 
 
 const familyOf = (key: FeatureKey) => featureDef(key).family;
 
+/** Whether a derived trigger moves the outcome clearly further than its plain one. */
+export const clearlyFurther = (variantEffect: number, plainEffect: number): boolean =>
+  Math.abs(variantEffect) >= MINER_RULES.variantMargin * Math.abs(plainEffect);
+
+/** A harder variant never outranks the plain relation it is built on. */
+export const below = (strength: number, plainStrength: number): number =>
+  Math.max(0, Math.min(strength, Math.round((plainStrength - 0.01) * 100) / 100));
+
 /** How much two triggers fall on the same days, 0 to 1, allowing one day's shift either way. */
-function sameDays(a: (boolean | null)[], b: (boolean | null)[]): number {
+export function sameDays(a: (boolean | null)[], b: (boolean | null)[]): number {
   let best = 0;
   for (const shift of [-1, 0, 1]) {
     let both = 0;
@@ -333,6 +355,7 @@ export function mine(table: FeatureTable): Mined {
   interface Tested {
     link: Link;
     rho: number;
+    sides: { a: number[]; b: number[]; seed: number };
   }
   const tested: Tested[] = [];
   const rare: Link[] = [];
@@ -344,8 +367,12 @@ export function mine(table: FeatureTable): Mined {
         const { cmp, a, b } = built;
         if (cmp.seen >= R.needed && cmp.other >= R.needed) {
           if (sd([...a, ...b]) === 0) continue;
-          const p = permutationP(a, b, pairSeed(trigger, y.key, lag));
-          tested.push({ link: toLink(trigger, y.key, lag, built, p), rho: spearman(built.px, built.py) });
+          const seed = pairSeed(trigger, y.key, lag);
+          tested.push({
+            link: toLink(trigger, y.key, lag, built, permutationP(a, b, seed)),
+            rho: spearman(built.px, built.py),
+            sides: { a, b, seed },
+          });
         }
         // Too rare to test, or too early to call: a candidate is watched when the outcome moved
         // far, and every time while it has been seen fewer times than a pattern needs.
@@ -363,10 +390,12 @@ export function mine(table: FeatureTable): Mined {
   }
 
   // The bar. The more pairs were tested, the smaller a pair's chance value must be.
-  const passes = benjaminiHochberg(
-    tested.map((t) => t.link.p),
-    R.falseDiscoveryRate,
-  );
+  const family = tested.map((t) => ({ p: t.link.p, sides: t.sides }));
+  const passes = passFalseDiscovery(family, R.falseDiscoveryRate);
+  // A pair that was looked at deeper keeps the value that decided it.
+  tested.forEach((t, i) => {
+    t.link.p = family[i]?.p ?? t.link.p;
+  });
   const found = (studied < R.minDays ? [] : tested)
     .filter((t, i) => {
       const { link, rho } = t;
@@ -430,19 +459,47 @@ export function mine(table: FeatureTable): Mined {
       });
     }
   }
-  // One chain per kind of trigger. The strongest; between equals, the one that crosses the most
-  // sources, then the one whose middle step comes soonest after the trigger.
+  // The plain trigger leads. A chain from a derived trigger (a second late night in a row) that
+  // ends in the same kind of outcome as a chain from its plain trigger (a late night) is the
+  // same story: it is dropped, unless it moves the outcome clearly further, and then it is shown
+  // after the plain one and says so.
+  const plainOf = (key: FeatureKey) => featureDef(key).variantOf ?? null;
+  const leads: Chain[] = [];
+  const harderChains: Chain[] = [];
+  for (const c of chains) {
+    const root = plainOf(c.x.key);
+    const plain = chains
+      .filter((k) => k.x.key === root && familyOf(k.z) === familyOf(c.z))
+      .sort((a, b) => Math.abs(b.direct.cmp.effect) - Math.abs(a.direct.cmp.effect))[0];
+    if (!plain) leads.push(c);
+    else if (clearlyFurther(c.direct.cmp.effect, plain.direct.cmp.effect)) {
+      harderChains.push({ ...c, harder: { plain }, strength: below(c.strength, plain.strength) });
+    }
+  }
+
+  // One chain per kind of trigger. A chain that ends in the user's goal time is told before one
+  // that ends elsewhere (the time lost from the goals is what Michael is for); then the strongest;
+  // between equals, the one that crosses the most sources, then the one whose middle step comes
+  // soonest after the trigger, then the dictionary's order (the phone before every screen, the
+  // sleep score before the minutes).
   const reach = (c: Chain) => new Set([c.x.key, c.y, c.z].flatMap((k) => featureDef(k).sources)).size;
-  const ranked = [...chains].sort(
-    (a, b) =>
-      b.strength - a.strength ||
-      reach(b) - reach(a) ||
-      featureDef(a.y).phase - featureDef(b.y).phase ||
-      (`${a.x.key}>${a.y}>${a.z}` < `${b.x.key}>${b.y}>${b.z}` ? -1 : 1),
-  );
+  const goalTime = (c: Chain) => Number(familyOf(c.z) === "focus");
+  const byRank = (a: Chain, b: Chain) =>
+    goalTime(b) - goalTime(a) ||
+    b.strength - a.strength ||
+    reach(b) - reach(a) ||
+    featureDef(a.y).phase - featureDef(b.y).phase ||
+    orderOf(a.x.key) - orderOf(b.x.key) ||
+    orderOf(a.y) - orderOf(b.y) ||
+    orderOf(a.z) - orderOf(b.z);
   const keptChains: Chain[] = [];
-  for (const c of ranked) {
+  for (const c of [...leads].sort(byRank)) {
     if (!keptChains.some((k) => familyOf(k.x.key) === familyOf(c.x.key))) keptChains.push(c);
+  }
+  // A harder variant is told once, beside the chain it is harder than.
+  for (const h of [...harderChains].sort(byRank)) {
+    const shown = keptChains.some((k) => k === h.harder?.plain);
+    if (shown && !keptChains.some((k) => k.x.key === h.x.key)) keptChains.push(h);
   }
 
   // A link a chain already tells is not told twice.
@@ -454,7 +511,25 @@ export function mine(table: FeatureTable): Mined {
     ]),
   );
   const pairKey = (l: Link) => `${familyOf(l.x.key)}>${familyOf(l.y)}`;
-  const freeLinks = strongestPer(found, pairKey).filter((l) => !told.has(pairKey(l)));
+  // The same rule for links: a derived trigger's link is dropped beside its plain one's, or kept
+  // as the harder one.
+  const plainLinks: Link[] = [];
+  const harderLinks: Link[] = [];
+  for (const l of found) {
+    const root = plainOf(l.x.key);
+    const plain = found
+      .filter((k) => k.x.key === root && familyOf(k.y) === familyOf(l.y))
+      .sort((a, b) => Math.abs(b.cmp.effect) - Math.abs(a.cmp.effect))[0];
+    if (!plain) plainLinks.push(l);
+    else if (clearlyFurther(l.cmp.effect, plain.cmp.effect)) {
+      harderLinks.push({ ...l, harder: { plain }, strength: below(l.strength, plain.strength) });
+    }
+  }
+  const freeLinks = strongestPer(plainLinks, pairKey).filter((l) => !told.has(pairKey(l)));
+  // Shown only beside its plain link, and once per trigger and kind of outcome.
+  const besideLinks = strongestPer(harderLinks, (l) => `${l.x.key}>${familyOf(l.y)}`).filter((l) =>
+    freeLinks.some((k) => k === l.harder?.plain),
+  );
 
   // The same story told from another column is told once: two triggers that fall on the same
   // days (or the day after, like a short night after a late one) and end in the same kind of
@@ -470,12 +545,18 @@ export function mine(table: FeatureTable): Mined {
     ...keptChains.map(
       (c): Story => ({ on: c.x.on, ends: [familyOf(c.y), familyOf(c.z)], strength: c.strength, chain: c }),
     ),
-    ...freeLinks.map((l): Story => ({ on: l.x.on, ends: [familyOf(l.y)], strength: l.strength, link: l })),
+    ...[...freeLinks, ...besideLinks].map(
+      (l): Story => ({ on: l.x.on, ends: [familyOf(l.y)], strength: l.strength, link: l }),
+    ),
   ].sort((a, b) => b.strength - a.strength || Number(Boolean(b.chain)) - Number(Boolean(a.chain)));
   const kept: Story[] = [];
   const retold = (s: Story) =>
     kept.some((k) => k.ends.some((e) => s.ends.includes(e)) && sameDays(k.on, s.on) >= R.sameStory);
-  for (const s of stories) if (!retold(s)) kept.push(s);
+  for (const s of stories) {
+    // A harder variant goes with its plain one: shown when that is, never on its own.
+    const plain = s.chain?.harder?.plain ?? s.link?.harder?.plain;
+    if (plain ? kept.some((k) => k.chain === plain || k.link === plain) : !retold(s)) kept.push(s);
+  }
   const finalChains = kept.flatMap((s) => (s.chain ? [s.chain] : []));
   const links = kept.flatMap((s) => (s.link ? [s.link] : []));
   const shownPairs = new Set([...told, ...links.map(pairKey)]);
@@ -486,5 +567,5 @@ export function mine(table: FeatureTable): Mined {
     watching.push(l);
   }
 
-  return { links, chains: finalChains, watching, tested: tested.length };
+  return { links, chains: finalChains, watching, tested: tested.length, ps: tested.map((t) => t.link.p) };
 }

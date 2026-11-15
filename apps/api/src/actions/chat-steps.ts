@@ -12,6 +12,7 @@ const LABELS: Record<string, string> = {
   find_calendar_blocks: "Reading your calendar",
   create_focus_block: "Booking the block",
   move_calendar_block: "Moving your block",
+  remove_calendar_block: "Removing your block",
   block_mac_app: "Blocking distracting apps",
   draft_follow_up: "Drafting a follow up",
   undo_action: "Undoing that",
@@ -36,6 +37,10 @@ const LABELS: Record<string, string> = {
   save_place: "Saving the place",
   update_profile: "Updating your profile",
   focus_now: "Starting your focus",
+  change_calendar_block: "Changing your block",
+  change_focus: "Changing your focus",
+  meetings_mode: "Switching meetings mode",
+  go_off_the_record: "Going off the record",
 };
 
 const obj = (v: unknown): Record<string, unknown> =>
@@ -61,6 +66,19 @@ const WITH_GOAL: Record<string, (goal: string, args: Record<string, unknown>) =>
   },
 };
 
+/** Labels that name the user's own block, for tools whose input points at one by event_id. */
+const WITH_BLOCK: Record<string, (block: string) => string> = {
+  remove_calendar_block: (b) => `Removing ${b}`,
+  change_calendar_block: (b) => `Changing ${b}`,
+};
+
+/** The event id a call points at, for the tools whose label can name the block. */
+export function blockIdOf(name: string, input: unknown): string | null {
+  if (!WITH_BLOCK[name]) return null;
+  const id = obj(input).event_id;
+  return typeof id === "string" ? id : null;
+}
+
 /** The goal id a call points at, for the tools whose label can name it. */
 export function goalIdOf(name: string, input: unknown): string | null {
   if (!WITH_GOAL[name]) return null;
@@ -81,10 +99,14 @@ function plainGoal(title: string | undefined): string | null {
 
 /**
  * A short, safe label for a tool call; unknown tools get a generic line. `goalTitle` is the user's
- * own name for the goal the call points at (goalIdOf), when the caller looked it up.
+ * own name for the goal the call points at (goalIdOf), when the caller looked it up; `blockTitle`
+ * the title of the user's own block (blockIdOf), never one with other people on it.
  */
-export function stepLabel(name: string, input: unknown, goalTitle?: string): string {
+export function stepLabel(name: string, input: unknown, goalTitle?: string, blockTitle?: string): string {
   const args = obj(input);
+  const block = plainGoal(blockTitle);
+  const withBlock = WITH_BLOCK[name];
+  if (block && withBlock) return withBlock(block);
   if (name === "block_mac_app" && Array.isArray(args.apps) && args.apps.length === 1) {
     const app = args.apps[0];
     // One plain app name the user named (WhatsApp, Slack) says more than the goal.

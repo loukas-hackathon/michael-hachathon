@@ -16,7 +16,7 @@ personal), and recommends or makes concrete changes, each tied to a goal.
   land on the iPhone and the Apple Watch; Morning and Evening moments open and close the day.
 
 Private by design: each source is opt in, Off the record stops all collection in one tap, the
-database is in the EU, and Michael never deletes, never sends in your name and never touches an
+database is in the EU, and Michael removes only your own events (with undo), never sends in your name and never touches an
 event with other people.
 
 | Try it                | Link                                                                                                                           |

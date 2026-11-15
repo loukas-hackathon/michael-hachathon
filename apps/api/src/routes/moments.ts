@@ -1,6 +1,7 @@
 import { type Event, IsoDateTime, type Moment, MomentKind } from "@michael/shared";
 import { Hono } from "hono";
 import { currentUserId } from "../context";
+import { isDemoHistory } from "../demo/history";
 import { parse } from "../http";
 import { allowedMove } from "../instructions/guard";
 import { memo } from "../memo";
@@ -32,7 +33,8 @@ export async function momentCoreFor(kind: MomentKind, now: string): Promise<Mome
     ...chunks,
   ]);
   const byId = new Map<string, Event>();
-  for (const page of pages) for (const e of page) byId.set(e.id, e);
+  // As the score (routes/score.ts): the stage account's history stays out of the usual day.
+  for (const page of pages) for (const e of page) if (!isDemoHistory(e)) byId.set(e.id, e);
   const events = [...byId.values()];
   const core = computeMoment({ kind, events, goals, now, timezone: DEFAULT_TIMEZONE });
   // Standing instructions (instructions/guard.ts): a move into protected time is not offered.

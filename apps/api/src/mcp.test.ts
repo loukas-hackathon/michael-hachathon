@@ -55,6 +55,7 @@ const TOOLS = [
   "add_goal",
   "answer_check_in",
   "block_mac_app",
+  "change_calendar_block",
   "confirm_block",
   "create_focus_block",
   "draft_follow_up",
@@ -80,6 +81,7 @@ const TOOLS = [
   "plan_travel",
   "propose_goals",
   "remember",
+  "remove_calendar_block",
   "set_day_outcomes",
   "suggest_app_mute",
   "undo_recommendation",
@@ -562,3 +564,124 @@ test("outcomeOf, shortReason and logLine: every tool's line turns into what was 
     assert.deepEqual(voiceProblems(line), [], name);
   }
 });
+
+// #457: an agent removes one of the user's own blocks; undo puts it back; others' events are refused.
+test("remove_calendar_block removes the user's own block, is undone, and refuses events with other people", () =>
+  asNewUserWithoutRules(async () => {
+    const { call } = await connect();
+    const { inserted } = await store.insertEvents([
+      {
+        source: "manual",
+        type: "calendar_event",
+        start_at: toInstant(tomorrow("15:00")),
+        end_at: toInstant(tomorrow("16:00")),
+        title: "Boatspace",
+        data: {},
+      },
+      {
+        source: "manual",
+        type: "calendar_event",
+        start_at: toInstant(tomorrow("17:00")),
+        end_at: toInstant(tomorrow("18:00")),
+        title: "Investor call",
+        data: { with_others: true, attendees: 3 },
+      },
+    ]);
+    const [boat, investor] = inserted as unknown as [{ id: string }, { id: string }];
+    const removed = await call("remove_calendar_block", { event_id: boat.id });
+    assert.notEqual(removed.isError, true, text(removed));
+    assert.match(
+      text(removed),
+      /Removed Boatspace, 15:00 to 16:00\. Undo with undo_recommendation .* until .*15:00\./,
+    );
+    assert.equal(await store.getEvent(boat.id), null);
+    const rec = removed.structuredContent?.recommendation as Recommendation;
+
+    const undone = await call("undo_recommendation", { id: rec.id });
+    assert.notEqual(undone.isError, true, text(undone));
+    const range = { from: toInstant(tomorrow("14:00")), to: toInstant(tomorrow("16:30")) };
+    const back = (await store.listEvents(range)).filter((e) => e.title === "Boatspace");
+    assert.equal(back.length, 1);
+    assert.equal(back[0]?.start_at, toInstant(tomorrow("15:00")));
+
+    const refused = await call("remove_calendar_block", { event_id: investor.id });
+    assert.equal(refused.isError, true);
+    assert.match(text(refused), /other people/);
+    assert.ok(await store.getEvent(investor.id));
+  }));
+
+test("remove_calendar_block needs write_events and never reaches another user's block", async () => {
+  const owner = randomUUID();
+  const id = await runAsUser(owner, async () => {
+    const { inserted } = await store.insertEvents([
+      {
+        source: "manual",
+        type: "calendar_event",
+        start_at: toInstant(tomorrow("10:00")),
+        end_at: toInstant(tomorrow("11:00")),
+        title: "Mine",
+        data: {},
+      },
+    ]);
+    return inserted[0]?.id ?? "";
+  });
+  assert.equal(TOOL_SCOPE.remove_calendar_block, "write_events");
+  const agent: AgentClient = {
+    id: randomUUID(),
+    name: "Claude",
+    status: "approved",
+    scopes: ["timeline", "goals"],
+    created_at: new Date().toISOString(),
+    last_seen_at: null,
+  };
+  await runAsUser(
+    owner,
+    async () => {
+      const { call } = await connect();
+      const r = await call("remove_calendar_block", { event_id: id });
+      assert.equal(r.isError, true);
+      assert.match(text(r), /Not allowed\. The user has not shared adding to their day with Claude/);
+    },
+    "mcp_oauth",
+    agent,
+  );
+  await asNewUser(async () => {
+    const { call } = await connect();
+    const r = await call("remove_calendar_block", { event_id: id });
+    assert.equal(r.isError, true);
+  });
+  await runAsUser(owner, async () => assert.ok(await store.getEvent(id), "the owner's block is untouched"));
+});
+
+test("change_calendar_block renames and resizes the user's own block over MCP, with undo and the scope guard", () =>
+  asNewUserWithoutRules(async () => {
+    const { call } = await connect();
+    const { inserted } = await store.insertEvents([
+      {
+        source: "manual",
+        type: "calendar_event",
+        start_at: toInstant(tomorrow("15:00")),
+        end_at: toInstant(tomorrow("16:00")),
+        title: "Boatspace",
+        data: {},
+      },
+    ]);
+    const id = inserted[0]?.id ?? "";
+    const r = await call("change_calendar_block", {
+      event_id: id,
+      title: "Deep work",
+      end: tomorrow("16:30"),
+    });
+    assert.notEqual(r.isError, true, text(r));
+    assert.match(
+      text(r),
+      /^Deep work, now 15:00 to 16:30\. Undo with undo_recommendation .* until .*15:00\./,
+    );
+    assert.equal((await store.getEvent(id))?.title, "Deep work");
+    const rec = r.structuredContent?.recommendation as Recommendation;
+    await call("undo_recommendation", { id: rec.id });
+    assert.equal((await store.getEvent(id))?.title, "Boatspace");
+    assert.equal(TOOL_SCOPE.change_calendar_block, "write_events");
+    const empty = await call("change_calendar_block", { event_id: id });
+    assert.equal(empty.isError, true);
+  }));

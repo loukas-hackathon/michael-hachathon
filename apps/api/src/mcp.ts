@@ -26,7 +26,14 @@ import {
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
-import { bookFocusBlock, executeRecommendation, undoDeadline, undoRecommendation } from "./actions/calendar";
+import {
+  bookFocusBlock,
+  changeOwnBlock,
+  executeRecommendation,
+  removeOwnBlock,
+  undoDeadline,
+  undoRecommendation,
+} from "./actions/calendar";
 import { draftText, generateDrafts } from "./actions/drafts";
 import { logTime, settleBlock } from "./actions/log";
 import { guardMacApps, suggestAppGuard } from "./actions/mac-apps";
@@ -68,7 +75,7 @@ import { weekReviewText } from "./week/text";
 
 // The claude.ai connector's tool set. Every tool answers with short text in the user's local time
 // (24 hour, Europe/Athens) plus structured content. Writes follow Michael's autonomy rules: only
-// the user's own time, never an event with other people, never deletes the user's events, never
+// the user's own time, never an event with other people, removes only the user's own events, never
 // sends anything in the user's name, and every calendar change can be undone until it starts.
 
 const TZ_NOTE =
@@ -931,7 +938,7 @@ export function createMcpServer(): McpServer {
     {
       title: "Carry out a recommendation",
       description:
-        "Carry out one of Michael's recommendations on the user's own time: book a focus block, move one of their solo blocks, or mute distracting Mac apps (block_mac_app). Use it once the user says yes. Refused when it involves other people, has already started, or has nothing to carry out. Never deletes the user's events and never sends anything. The change can be undone with undo_recommendation until the block starts.",
+        "Carry out one of Michael's recommendations on the user's own time: book a focus block, move one of their solo blocks, or mute distracting Mac apps (block_mac_app). Use it once the user says yes. Refused when it involves other people, has already started, or has nothing to carry out. Never touches events with other people and never sends anything. The change can be undone with undo_recommendation until the block starts.",
       inputSchema: { id: Id.describe("Recommendation id from list_recommendations") },
     },
     safe(async ({ id }) => {
@@ -945,7 +952,7 @@ export function createMcpServer(): McpServer {
     {
       title: "Undo a recommendation",
       description:
-        "Put back what execute_recommendation, create_focus_block or block_mac_app changed: removes the block Michael booked, moves a moved block back, or lets muted apps open again. Works until the block starts (a mute: until it ends). Only ever removes a block Michael created himself.",
+        "Put back what execute_recommendation, create_focus_block, remove_calendar_block or block_mac_app changed: removes the block Michael booked, moves a moved block back, puts a removed block back with the same time and title, or lets muted apps open again. Works until the block starts (a mute: until it ends).",
       inputSchema: { id: Id.describe("Recommendation id") },
     },
     safe(async ({ id }) => {
@@ -985,6 +992,58 @@ export function createMcpServer(): McpServer {
         recommendation: rec,
         undo_until: await undoDeadline(rec.id),
       });
+    }),
+  );
+
+  server.registerTool(
+    "remove_calendar_block",
+    {
+      title: "Remove one of the user's blocks",
+      description:
+        "Remove one of the user's own calendar blocks when they ask: a block made in Michael, or a calendar event with nobody else on it (event_id from get_timeline). Refused for events with other people and for blocks that have started. It comes back with the same time and title through undo_recommendation until it starts.",
+      inputSchema: { event_id: Id.describe("The block's id from get_timeline") },
+    },
+    safe(async ({ event_id }) => {
+      const rec = await removeOwnBlock(event_id, currentAgent()?.name ?? "an AI tool");
+      const until = await undoDeadline(rec.id);
+      return reply(
+        `${rec.title}. Undo with undo_recommendation (id ${rec.id})${until ? ` until ${when(until)}` : ""}.`,
+        { recommendation: rec, undo_until: until },
+      );
+    }),
+  );
+
+  server.registerTool(
+    "change_calendar_block",
+    {
+      title: "Change one of the user's blocks",
+      description: `Rename, move, resize or give a goal to one of the user's own calendar blocks when they ask (event_id from get_timeline). Give only what changes: title, start (the length is kept unless end is given), end, goal_id. Refused for events with other people and blocks that have started. Undo with undo_recommendation until the block starts. ${TZ_NOTE}`,
+      inputSchema: {
+        event_id: Id.describe("The block's id from get_timeline"),
+        title: z.string().min(1).max(200).optional().describe("New title"),
+        start: TimeInput.optional().describe("New start, e.g. 2026-11-14T15:00"),
+        end: TimeInput.optional().describe("New end, e.g. 2026-11-14T16:30"),
+        goal_id: Id.nullable().optional().describe("The goal it counts for, from get_goals; null clears it"),
+      },
+    },
+    safe(async ({ event_id, title, start, end, goal_id }) => {
+      if (!title && !start && !end && goal_id === undefined)
+        throw new HttpError("bad_request", "Give a title, start, end or goal_id");
+      const rec = await changeOwnBlock(
+        event_id,
+        {
+          ...(title ? { title } : {}),
+          ...(start ? { start_at: toInstant(start) } : {}),
+          ...(end ? { end_at: toInstant(end) } : {}),
+          ...(goal_id !== undefined ? { goal_id } : {}),
+        },
+        currentAgent()?.name ?? "an AI tool",
+      );
+      const until = await undoDeadline(rec.id);
+      return reply(
+        `${rec.title}. Undo with undo_recommendation (id ${rec.id})${until ? ` until ${when(until)}` : ""}.`,
+        { recommendation: rec, undo_until: until },
+      );
     }),
   );
 

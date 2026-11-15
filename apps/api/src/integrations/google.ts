@@ -175,6 +175,7 @@ export const GoogleEvent = z.object({
   id: z.string(),
   status: z.string().optional(),
   summary: z.string().optional(),
+  description: z.string().optional(),
   location: z.string().optional(),
   htmlLink: z.string().optional(),
   updated: z.string().optional(),
@@ -264,7 +265,7 @@ export async function patchCalendarEvent(id: string, body: Record<string, unknow
   return GoogleEvent.parse(await res.json());
 }
 
-/** Only ever called for blocks Michael created himself (checked by the caller). */
+/** Only ever called for the user's own events with nobody else on them (checked by the caller). */
 export async function deleteCalendarEvent(id: string): Promise<void> {
   await calendarRequest(`/${encodeURIComponent(id)}`, { method: "DELETE" });
 }

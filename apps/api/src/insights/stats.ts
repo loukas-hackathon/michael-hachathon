@@ -67,17 +67,17 @@ export function spearman(x: number[], y: number[]): number {
   return cov / (rx.length - 1) / (sx * sy);
 }
 
-export const PERMUTATIONS = { first: 200, second: 2000, third: 10_000, full: 50_000 } as const;
+export const PERMUTATIONS = { first: 200, second: 2000, usual: 10_000, deep: 50_000 } as const;
 
 /**
  * How often a shuffle of the days gives a difference in means at least as large as the one seen
  * (two sided). Stops early once the answer is settled: after 200 or 2,000 shuffles with 20 or
- * more as large, and after 10,000 with 5 or more, the value is known well enough and the
- * remaining shuffles are saved. Only the rarest differences run the full 50,000, so the smallest
- * value it can return is 1 / 50,001: small enough for one true relation to pass the false
- * discovery bar among several hundred pairs.
+ * more as large, the value is known well enough and the remaining shuffles are saved. Up to
+ * 10,000 shuffles as a rule, so the smallest value is 1 / 10,001; `deep` runs 50,000 for a
+ * difference no shuffle has matched yet, when that floor is not small enough to decide
+ * (`passFalseDiscovery`).
  */
-export function permutationP(a: number[], b: number[], seed: number): number {
+export function permutationP(a: number[], b: number[], seed: number, deep = false): number {
   if (a.length === 0 || b.length === 0) return 1;
   const all = [...a, ...b];
   const total = all.reduce((t, x) => t + x, 0);
@@ -105,8 +105,8 @@ export function permutationP(a: number[], b: number[], seed: number): number {
   };
   run(PERMUTATIONS.first);
   if (asLarge < 20) run(PERMUTATIONS.second);
-  if (asLarge < 20) run(PERMUTATIONS.third);
-  if (asLarge < 5) run(PERMUTATIONS.full);
+  if (asLarge < 20) run(PERMUTATIONS.usual);
+  if (deep && asLarge < 5) run(PERMUTATIONS.deep);
   return (asLarge + 1) / (done + 1);
 }
 
@@ -126,3 +126,31 @@ export function benjaminiHochberg(ps: number[], q: number): boolean[] {
 }
 
 export const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
+
+/** One comparison in a family: its chance value, and its two sides when it can be looked at deeper. */
+export interface FamilyTest {
+  p: number;
+  sides?: { a: number[]; b: number[]; seed: number };
+}
+
+/**
+ * Which comparisons of a family pass the false discovery bar. 10,000 shuffles cannot give a value
+ * under 1 / 10,001, and among several hundred pairs a single true relation needs less than that.
+ * So a comparison that no shuffle matched and that still fails is shuffled 50,000 times, and the
+ * bar is applied again. Only those few are: the rest keep their value. Updates `p` in place.
+ */
+export function passFalseDiscovery(tests: FamilyTest[], q: number): boolean[] {
+  const floor = 1 / (PERMUTATIONS.usual + 1);
+  let passes = benjaminiHochberg(
+    tests.map((t) => t.p),
+    q,
+  );
+  const stuck = tests.filter((t, i) => !passes[i] && t.sides && t.p <= floor * 1.0001);
+  if (stuck.length === 0) return passes;
+  for (const t of stuck) if (t.sides) t.p = permutationP(t.sides.a, t.sides.b, t.sides.seed, true);
+  passes = benjaminiHochberg(
+    tests.map((t) => t.p),
+    q,
+  );
+  return passes;
+}

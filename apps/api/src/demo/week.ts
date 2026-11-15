@@ -28,7 +28,7 @@ export const DEMO_DAYS = 7;
 
 // ---------- deterministic randomness ----------
 
-function seeded(key: string) {
+export function seeded(key: string) {
   let a = createHash("sha256").update(key).digest().readUInt32LE(0);
   const next = () => {
     a = (a + 0x6d2b79f5) | 0;
@@ -235,7 +235,7 @@ const CALENDAR: Record<number, Block[]> = {
   ],
 };
 
-const slug = (s: string) =>
+export const slug = (s: string) =>
   s
     .normalize("NFD")
     .replace(/\p{M}/gu, "")
@@ -287,10 +287,10 @@ const WORKOUTS: Record<number, Workout> = {
 
 // Titles and `data` follow src/ingest/health-auto-export.ts exactly, so a demo event and a real
 // one look the same to every screen; only the external id differs ("demo:" instead of "hae:").
-const DEVICE = "Apple Watch";
+export const DEVICE = "Apple Watch";
 
 /** "7h15m", "42m": as formatMinutes in src/ingest/common.ts (not imported: that module needs the store). */
-const formatMinutes = (minutes: number) => {
+export const formatMinutes = (minutes: number) => {
   const m = Math.round(minutes);
   const h = Math.floor(m / 60);
   return h > 0 ? `${h}h${String(m % 60).padStart(2, "0")}m` : `${m}m`;

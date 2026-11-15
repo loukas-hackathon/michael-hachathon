@@ -97,7 +97,7 @@ export const RecommendationStatus = z.enum(["proposed", "accepted", "dismissed",
 export type RecommendationStatus = z.infer<typeof RecommendationStatus>;
 
 // Michael acts on the user's own time: own calendar blocks and Mac only. He never touches events
-// with other people, never deletes, and never sends in the user's name. Undo until the event starts.
+// with other people, removes only the user's own events, and never sends in the user's name. Undo until the event starts.
 export const ActionKind = z.enum([
   "move_calendar_block",
   // Several of the user's own blocks moved together (the whole day planned around traffic): one
@@ -2299,6 +2299,12 @@ export const InsightsResponse = z.object({
   series: z.array(InsightSeries),
 });
 export type InsightsResponse = z.infer<typeof InsightsResponse>;
+
+// POST /v1/insights/run: study again now. started: the discovery pass (the model proposes further
+// relations, the server verifies them) runs behind the answer. running: one already is. skipped:
+// this server has no model key, so only the rules' insights were refreshed.
+export const InsightsRunResponse = z.object({ status: z.enum(["started", "running", "skipped"]) });
+export type InsightsRunResponse = z.infer<typeof InsightsRunResponse>;
 
 // ---------- score (GET /v1/score) ----------
 

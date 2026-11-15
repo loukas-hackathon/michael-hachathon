@@ -1,11 +1,13 @@
 import { Wordmark } from "@/components/brand";
+import { InstallApp } from "@/components/install-app";
 import { safeNext } from "@/lib/next-path";
+import { ForgetDevice } from "./forget-device";
 import { GoogleButton } from "./google-button";
 
 export const metadata = { title: "Sign in · Michael" };
 
-// No install hint here: before sign in it is noise. Michael asks for the Home Screen when nudges
-// need it, after onboarding or the first Do it (#207).
+// One quiet "Get the app" line, only in a browser tab (#460); the full nudge ask still waits for
+// the first Do it (#207).
 
 // Reasons /auth/callback can send back, as one line each.
 const ERRORS: Record<string, string> = {
@@ -39,6 +41,7 @@ export default async function LoginPage({
         </div>
 
         <div className="flex flex-col">
+          <ForgetDevice />
           <GoogleButton initialError={message} />
           <a
             href={demoHref}
@@ -46,6 +49,7 @@ export default async function LoginPage({
           >
             See the demo week
           </a>
+          <InstallApp />
           <p className="mt-6 text-balance text-center text-footnote text-label-2">
             Next, Google asks to share your calendar: that's how I see your week. I work for you and nobody
             else.

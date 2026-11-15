@@ -432,3 +432,310 @@ test("POST /v1/chat/stream opens with Reading your day, then a running and done 
     },
   );
 });
+
+// #457: Michael removes the user's own blocks, with undo until they start.
+test('"delete my Boatspace block" removes it, says until when, and undo_action puts it back', () =>
+  asNewUser(async () => {
+    const start = Date.now() + 5 * HOUR;
+    const { inserted } = await store.insertEvents([
+      {
+        source: "manual",
+        type: "calendar_event",
+        start_at: iso(start),
+        end_at: iso(start + HOUR),
+        title: "Boatspace",
+        data: {},
+      },
+    ]);
+    const boat = inserted[0];
+    assert.ok(boat);
+
+    const steps: ChatStep[] = [];
+    const removed = await withClaude(
+      [{ tool: { name: "remove_calendar_block", input: { event_id: boat.id } } }],
+      () =>
+        askMichael(turns("delete my Boatspace block"), "context", {
+          onText: async () => {},
+          onStep: async (s) => {
+            steps.push(s);
+          },
+        }),
+    );
+    assert.equal(steps[0]?.label, "Removing Boatspace");
+    const rec = Recommendation.parse(removed.actions[0]);
+    assert.equal(rec.status, "done");
+    assert.equal(rec.action?.kind, "remove_calendar_block");
+    // A plain statement: the tool's own line is the answer, with what and until when.
+    assert.equal(
+      removed.answer,
+      `Removed Boatspace, ${clock(start)} to ${clock(start + HOUR)}. Undo until ${clock(start)}.`,
+    );
+    assert.equal(await store.getEvent(boat.id), null);
+
+    const undone = await withClaude(
+      [{ tool: { name: "undo_action", input: { recommendation_id: rec.id } } }, { text: "It is back." }],
+      () => askMichael(turns("Undo that"), "context"),
+    );
+    assert.equal(undone.actions[0]?.status, "undone");
+    const back = (await store.listEvents({ from: iso(start - HOUR), to: iso(start + 2 * HOUR) })).filter(
+      (e) => e.title === "Boatspace",
+    );
+    assert.equal(back.length, 1, "the block is back");
+    assert.equal(Date.parse(back[0]?.start_at ?? ""), start);
+    assert.equal(Date.parse(back[0]?.end_at ?? ""), start + HOUR);
+    assert.equal(back[0]?.source, "manual", "it comes back as the user's own");
+  }));
+
+test("removing an event with other people is refused in one line, and nothing is left behind", () =>
+  asNewUser(async () => {
+    const start = Date.now() + 5 * HOUR;
+    const { inserted } = await store.insertEvents([
+      {
+        source: "manual",
+        type: "calendar_event",
+        start_at: iso(start),
+        end_at: iso(start + HOUR),
+        title: "Board meeting",
+        data: { with_others: true, attendees: 4 },
+      },
+    ]);
+    const board = inserted[0];
+    assert.ok(board);
+    const steps: ChatStep[] = [];
+    await withClaude(
+      [
+        { tool: { name: "remove_calendar_block", input: { event_id: board.id } } },
+        { text: "That one has other people in it, so I only advise." },
+      ],
+      async (requests) => {
+        const { actions } = await askMichael(turns("Delete the board meeting"), "context", {
+          onText: async () => {},
+          onStep: async (s) => {
+            steps.push(s);
+          },
+        });
+        assert.deepEqual(actions, []);
+        const [result] = toolResults(requests[1]);
+        assert.equal(result?.is_error, true);
+        assert.match(String(result?.content), /conflict.*other people/);
+      },
+    );
+    // Another person's title never reaches the step line.
+    assert.equal(steps[0]?.label, "Removing your block");
+    assert.ok(await store.getEvent(board.id), "still there");
+    assert.deepEqual(await store.listRecommendations({ status: "done" }), []);
+  }));
+
+test("a block that has started is not removed", () =>
+  asNewUser(async () => {
+    const { inserted } = await store.insertEvents([
+      {
+        source: "manual",
+        type: "calendar_event",
+        start_at: iso(Date.now() - HOUR),
+        end_at: iso(Date.now() + HOUR),
+        title: "Deep work",
+        data: {},
+      },
+    ]);
+    const live = inserted[0];
+    assert.ok(live);
+    await withClaude(
+      [{ tool: { name: "remove_calendar_block", input: { event_id: live.id } } }, { text: "Too late." }],
+      async (requests) => {
+        const { actions } = await askMichael(turns("delete deep work?"), "context");
+        assert.deepEqual(actions, []);
+        assert.match(String(toolResults(requests[1])[0]?.content), /already started/);
+      },
+    );
+    assert.ok(await store.getEvent(live.id));
+  }));
+
+test("remove_calendar_block only reaches the caller's own blocks", async () => {
+  const start = Date.now() + 5 * HOUR;
+  const owner = randomUUID();
+  const theirs = await runAsUser(owner, async () => {
+    const { inserted } = await store.insertEvents([
+      {
+        source: "manual",
+        type: "calendar_event",
+        start_at: iso(start),
+        end_at: iso(start + HOUR),
+        title: "Private",
+        data: {},
+      },
+    ]);
+    return inserted[0]?.id ?? "";
+  });
+  await asNewUser(() =>
+    withClaude(
+      [{ tool: { name: "remove_calendar_block", input: { event_id: theirs } } }, { text: "Not found." }],
+      async (requests) => {
+        const { actions } = await askMichael(turns("delete it"), "context");
+        assert.deepEqual(actions, []);
+        assert.match(String(toolResults(requests[1])[0]?.content), /not_found/);
+      },
+    ),
+  );
+  await runAsUser(owner, async () =>
+    assert.ok(await store.getEvent(theirs), "the owner's block is untouched"),
+  );
+});
+
+// #457: the rest of what the user can change in the app, by chat and voice.
+test("change_calendar_block renames and resizes the user's own block, and undo puts it back", () =>
+  asNewUser(async () => {
+    const start = Date.now() + 5 * HOUR;
+    const { inserted } = await store.insertEvents([
+      {
+        source: "manual",
+        type: "calendar_event",
+        start_at: iso(start),
+        end_at: iso(start + HOUR),
+        title: "Boatspace",
+        data: {},
+      },
+    ]);
+    const boat = inserted[0];
+    assert.ok(boat);
+    const steps: ChatStep[] = [];
+    const changed = await withClaude(
+      [
+        {
+          tool: {
+            name: "change_calendar_block",
+            input: { event_id: boat.id, title: "Deep work", end_at: iso(start + 1.5 * HOUR) },
+          },
+        },
+      ],
+      () =>
+        askMichael(turns("rename Boatspace to Deep work and make it 90 minutes"), "context", {
+          onText: async () => {},
+          onStep: async (s) => {
+            steps.push(s);
+          },
+        }),
+    );
+    assert.equal(steps[0]?.label, "Changing Boatspace");
+    assert.equal(changed.actions[0]?.status, "done");
+    assert.equal(
+      changed.answer,
+      `Deep work, now ${clock(start)} to ${clock(start + 1.5 * HOUR)}. Undo until ${clock(start)}.`,
+    );
+    const after = await store.getEvent(boat.id);
+    assert.equal(after?.title, "Deep work");
+    assert.equal(Date.parse(after?.end_at ?? ""), start + 1.5 * HOUR);
+
+    await withClaude(
+      [
+        { tool: { name: "undo_action", input: { recommendation_id: changed.actions[0]?.id } } },
+        { text: "Back." },
+      ],
+      () => askMichael(turns("Undo that"), "context"),
+    );
+    const back = await store.getEvent(boat.id);
+    assert.equal(back?.title, "Boatspace");
+    assert.equal(Date.parse(back?.end_at ?? ""), start + HOUR);
+  }));
+
+test("change_calendar_block refuses an event with other people and leaves no record", () =>
+  asNewUser(async () => {
+    const start = Date.now() + 5 * HOUR;
+    const { inserted } = await store.insertEvents([
+      {
+        source: "manual",
+        type: "calendar_event",
+        start_at: iso(start),
+        end_at: iso(start + HOUR),
+        title: "Board meeting",
+        data: { with_others: true, attendees: 4 },
+      },
+    ]);
+    const board = inserted[0];
+    assert.ok(board);
+    await withClaude(
+      [
+        { tool: { name: "change_calendar_block", input: { event_id: board.id, title: "Mine now" } } },
+        { text: "That one has other people in it." },
+      ],
+      async (requests) => {
+        const { actions } = await askMichael(turns("rename the board meeting"), "context");
+        assert.deepEqual(actions, []);
+        assert.match(String(toolResults(requests[1])[0]?.content), /conflict.*other people/);
+      },
+    );
+    assert.equal((await store.getEvent(board.id))?.title, "Board meeting");
+    assert.deepEqual(await store.listRecommendations({ status: "done" }), []);
+  }));
+
+test("change_focus extends and ends the running focus session", () =>
+  asNewUser(async () => {
+    const goal = await store.createGoal({
+      category: "personal",
+      title: "University",
+      weekly_budget_minutes: 240,
+      active: true,
+    });
+    await withClaude([{ tool: { name: "focus_now", input: { goal_id: goal.id, minutes: 25 } } }], () =>
+      askMichael(turns("focus on University for 25 minutes"), "context"),
+    );
+    const extended = await withClaude(
+      [{ tool: { name: "change_focus", input: { action: "extend", minutes: 15 } } }],
+      () => askMichael(turns("15 more minutes"), "context"),
+    );
+    assert.match(extended.answer, /^Focus on University runs until \d\d:\d\d now\.$/);
+    const ended = await withClaude(
+      [{ tool: { name: "change_focus", input: { action: "end", count: false } } }],
+      () => askMichael(turns("stop the focus, it did not count"), "context"),
+    );
+    assert.equal(ended.answer, "Focus ended. Nothing counted to University.");
+    const none = await withClaude(
+      [{ tool: { name: "change_focus", input: { action: "end" } } }, { text: "Nothing is running." }],
+      async (requests) => {
+        await askMichael(turns("end the focus"), "context");
+        return toolResults(requests[1])[0];
+      },
+    );
+    assert.equal(none?.is_error, true);
+  }));
+
+test("meetings_mode needs the user's consent from the app the first time, then starts and ends", () =>
+  asNewUser(async () => {
+    const first = await withClaude(
+      [{ tool: { name: "meetings_mode", input: { on: true } } }, { text: "Start it once in the app." }],
+      async (requests) => {
+        await askMichael(turns("start meetings mode"), "context");
+        return toolResults(requests[1])[0];
+      },
+    );
+    assert.equal(first?.is_error, true);
+    assert.match(String(first?.content), /notice/);
+    // The user started it once in the app (consent), and ended it.
+    const { startMeeting, endMeeting } = await import("../meetings/meetings");
+    await startMeeting(true);
+    await endMeeting();
+    const on = await withClaude([{ tool: { name: "meetings_mode", input: { on: true } } }], () =>
+      askMichael(turns("start meetings mode"), "context"),
+    );
+    assert.match(on.answer, /^Meetings mode is on until \d\d:\d\d\./);
+    const off = await withClaude([{ tool: { name: "meetings_mode", input: { on: false } } }], () =>
+      askMichael(turns("end meetings mode"), "context"),
+    );
+    assert.equal(off.answer, "Meetings mode is off. Nothing more is kept.");
+  }));
+
+test("go_off_the_record turns it on; no tool turns it off", () =>
+  asNewUser(async () => {
+    const r = await withClaude([{ tool: { name: "go_off_the_record", input: {} } }], () =>
+      askMichael(turns("go off the record"), "context"),
+    );
+    assert.match(r.answer, /^You are off the record\./);
+    assert.equal((await store.privacyRules()).offTheRecord, true);
+    // The switch back is the user's own: no chat tool can turn it off.
+    for (const t of CHAT_TOOLS) {
+      const props = JSON.stringify(t.input_schema);
+      if (t.name === "go_off_the_record")
+        assert.equal(props, JSON.stringify({ type: "object", properties: {} }));
+      assert.doesNotMatch(props, /off_the_record/, t.name);
+    }
+  }));

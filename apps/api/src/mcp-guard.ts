@@ -41,6 +41,9 @@ export const TOOL_SCOPE: Record<string, AgentScope> = {
   undo_recommendation: "write_events",
   create_focus_block: "write_events",
   block_mac_app: "write_events",
+  // #457: removing one of the user's own blocks changes the day, with undo.
+  remove_calendar_block: "write_events",
+  change_calendar_block: "write_events",
   suggest_app_mute: "recommendations",
   plan_travel: "write_events",
   get_check_in: "timeline",
@@ -157,6 +160,10 @@ export function summarise(name: string, title: string | undefined, input: unknow
       return "Carried out my advice on your calendar";
     case "undo_recommendation":
       return "Undid a change on your calendar";
+    case "remove_calendar_block":
+      return "Removed one of your blocks";
+    case "change_calendar_block":
+      return "Changed one of your blocks";
     case "plan_travel":
       return `Planned your drives${range}`;
     case "create_focus_block": {
@@ -298,6 +305,7 @@ const INFINITIVE: Record<string, string> = {
   Muted: "mute",
   Suggested: "suggest",
   Remembered: "remember",
+  Removed: "remove",
   Started: "start",
 };
 
@@ -331,6 +339,8 @@ export const UNDOABLE_TOOLS = new Set([
   "execute_recommendation",
   "create_focus_block",
   "block_mac_app",
+  "remove_calendar_block",
+  "change_calendar_block",
   "log_done",
   "confirm_block",
 ]);
