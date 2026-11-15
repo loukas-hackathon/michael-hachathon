@@ -1,6 +1,8 @@
 # Demo runbook
 
-The checklist before Michael goes on stage. The script is `docs/pitch.md`. The API key is on the
+The checklist before Michael goes on stage. The script is `docs/pitch.md`. With the real iPhone,
+watch and laptop in hand, run the 15 minute pass in `docs/demo-dry-run.md` first (it also lists
+what is not wired for the real devices, Omi in particular). The API key is on the
 Build Hub; put it in your shell first and never paste it into a chat:
 
 ```bash

@@ -110,9 +110,8 @@ simply starts with the goals and a Connect pill.
 
 ## 6. Watch buzz on stage (whoever wears the watch, 1 min)
 
-1. On the iPhone paired with the watch, App Store: install **ntfy** (free).
-2. When #44 ships, the app shows a **Subscribe** button with your private topic; tap it once.
-3. iPhone **Settings > Notifications > ntfy**: allow, **Time Sensitive** on. Watch app: mirror on.
+The buzz is web push from the Home Screen app plus Telegram (ntfy was never built). Click by
+click: `docs/demo-dry-run.md`, Part 1, iPhone and Apple Watch.
 
 ## 7. Apple Watch data: prove it, then switch it on (Manolis, 5 min, on the stage iPhone)
 
