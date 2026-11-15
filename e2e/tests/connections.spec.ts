@@ -59,12 +59,15 @@ test("iPhone: the shortcut steps show for everyone, the signed file is public", 
   // Signed out (the QR setup page on a phone): the file itself, signed, named Michael.
   const file = await request.get("/Michael.shortcut", { maxRedirects: 0 });
   expect(file.status()).toBe(200);
-  expect(file.headers()["content-disposition"]).toContain('filename="Michael.shortcut"');
+  // Inline as Apple's shortcut type, so iOS previews it with Open in Shortcuts, never saves it to Files.
+  expect(file.headers()["content-type"]).toBe("application/x-apple-shortcut");
+  expect(file.headers()["content-disposition"]).toBe('inline; filename="Michael.shortcut"');
   expect((await file.body()).subarray(0, 4).toString("latin1")).toBe("AEA1");
   // Michael Focus the same way: iOS names it after the download, and Michael runs it by that name.
   const focus = await request.get("/MichaelFocus.shortcut", { maxRedirects: 0 });
   expect(focus.status()).toBe(200);
-  expect(focus.headers()["content-disposition"]).toContain('filename="Michael Focus.shortcut"');
+  expect(focus.headers()["content-type"]).toBe("application/x-apple-shortcut");
+  expect(focus.headers()["content-disposition"]).toBe('inline; filename="Michael Focus.shortcut"');
   expect((await focus.body()).subarray(0, 4).toString("latin1")).toBe("AEA1");
 });
 
@@ -84,10 +87,13 @@ test("Do Not Disturb: the hand over page opens and offers nothing without a nudg
   await context.close();
 });
 
-// The installed app has no browser chrome (Loukas, 15 Nov): Add the shortcut opened the file in the
-// app's own window and left him on a page with no way back. In standalone mode it opens a new page
-// and this one stays put; the QR setup page has its own Close.
-test("installed app: Add the shortcut opens a new page, /setup has Close", async ({ browser, baseURL }) => {
+// The installed app (Loukas, 15 Nov): our own file opens in the app's own window, where iOS shows
+// its preview with Open in Shortcuts and the import works. A new context (#497, #508) did not: the
+// in-app sheet stayed blank. Coming back, the steps read as they were; /setup has its own Close.
+test("installed app: Add opens the file in this window and the steps survive the trip", async ({
+  browser,
+  baseURL,
+}) => {
   const context = await browser.newContext({ userAgent: IPHONE_UA, viewport: { width: 390, height: 844 } });
   await context.addInitScript(() => {
     Object.defineProperty(Navigator.prototype, "standalone", { get: () => true, configurable: true });
@@ -96,29 +102,26 @@ test("installed app: Add the shortcut opens a new page, /setup has Close", async
   const page = await context.newPage();
 
   await page.goto(`${baseURL}/you/connections/iphone`);
+  await expect(page.getByText("Add the shortcut first, then connect it here.")).toBeVisible();
   const add = page.getByRole("link", { name: "Add the shortcut" });
-  await expect(add).toHaveAttribute("target", "_blank");
-  // The signed file opens as itself in Safari: never shortcuts://import-shortcut, which Shortcuts
-  // refuses for a file URL ("Import Failed", Loukas' iPhone, 15 Nov).
-  await expect(add).toHaveAttribute("href", /^https?:\/\/[^/]+\/Michael\.shortcut$/);
-  const addHref = await add.getAttribute("href");
-  const here = page.url();
-  const opened = context.waitForEvent("page");
-  await add.click();
-  await (await opened).close();
-  expect(page.url()).toBe(here);
-  await expect(page.getByRole("button", { name: "Connect the shortcut" })).toBeVisible();
-  // Michael Focus, on the same page, opens in a new page too (QA walk, 15 Nov).
+  await expect(add).toHaveAttribute("href", "/Michael.shortcut");
+  await expect(add).not.toHaveAttribute("target", /.+/);
+  await expect(page.getByRole("button", { name: "Safari did not open?" })).toHaveCount(0);
   const focus = page.getByRole("link", { name: "Add Michael Focus" });
-  await expect(focus).toHaveAttribute("target", "_blank");
-  await expect(focus).toHaveAttribute("href", /^https?:\/\/[^/]+\/MichaelFocus\.shortcut$/);
+  await expect(focus).toHaveAttribute("href", "/MichaelFocus.shortcut");
+  await expect(focus).not.toHaveAttribute("target", /.+/);
 
-  // If Safari does not open (our own file opens there): steps in a sheet, Safari again, and Done.
-  await page.getByRole("button", { name: "Safari did not open?" }).click();
-  await expect(page.getByRole("link", { name: "Open in Safari" })).toHaveAttribute("target", "_blank");
-  await expect(page.getByRole("link", { name: "Open in Safari" })).toHaveAttribute("href", addHref ?? "");
-  await page.getByRole("button", { name: "Done" }).click();
-  await expect(page.getByRole("link", { name: "Open in Safari" })).toHaveCount(0);
+  // The tap marks the step; the file itself is iOS' business. Back in Michael, nothing is lost.
+  await add.evaluate((a) => a.addEventListener("click", (e) => e.preventDefault()));
+  await add.click();
+  await expect(
+    page.getByText("Connect it to you. Shortcuts opens for a second and says Connected."),
+  ).toBeVisible();
+  await page.reload();
+  await expect(
+    page.getByText("Connect it to you. Shortcuts opens for a second and says Connected."),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Connect the shortcut" })).toBeVisible();
 
   await page.goto(`${baseURL}/setup/iphone`);
   await page.getByRole("button", { name: "Close" }).click();

@@ -3,7 +3,6 @@
 import { FOCUS_SHORTCUT_NAME, focusShortcutInput } from "@michael/shared/focus-shortcut";
 import { useEffect, useState } from "react";
 import { tryDndNudgeAction } from "@/app/dnd/actions";
-import { useStandalone } from "@/components/standalone";
 import { FOCUS_SHORTCUT_FILE, focusShortcutAdded, focusShortcutLink } from "@/lib/dnd";
 import { Card, ErrorLine, SecondaryButton, Step, useDevice } from "./parts";
 
@@ -19,12 +18,19 @@ export function FocusShortcutSetup() {
   const [added, setAdded] = useState(false);
   const [sent, setSent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Installed app: the file must not load in the app's own window, which has no way back (as in
-  // iphone-shortcut-setup.tsx). The absolute link opens in a new context, Safari, with Add Shortcut.
-  const standalone = useStandalone();
-  const [fileUrl, setFileUrl] = useState(FOCUS_SHORTCUT_FILE);
-  useEffect(() => setAdded(focusShortcutAdded.get()), []);
-  useEffect(() => setFileUrl(new URL(FOCUS_SHORTCUT_FILE, window.location.origin).href), []);
+  // The file opens in this window, in the installed app too: iOS previews it with Open in
+  // Shortcuts, which a new context did not (as in iphone-shortcut-setup.tsx). Coming back to
+  // Michael, Step 1 reads as done.
+  useEffect(() => {
+    const read = () => setAdded(focusShortcutAdded.get());
+    read();
+    window.addEventListener("pageshow", read);
+    document.addEventListener("visibilitychange", read);
+    return () => {
+      window.removeEventListener("pageshow", read);
+      document.removeEventListener("visibilitychange", read);
+    };
+  }, []);
   if (device === null) return null;
 
   // The whole path once: the nudge arrives, its tap opens the page that asks and hands over.
@@ -37,8 +43,7 @@ export function FocusShortcutSetup() {
 
   const add = (
     <a
-      href={standalone ? fileUrl : FOCUS_SHORTCUT_FILE}
-      {...(standalone ? { target: "_blank", rel: "noopener" } : {})}
+      href={FOCUS_SHORTCUT_FILE}
       onClick={() => {
         focusShortcutAdded.set();
         setAdded(true);
@@ -78,7 +83,11 @@ export function FocusShortcutSetup() {
           {add}
         </Step>
         <Step n={2}>
-          <p>Try it. Do Not Disturb comes on for two minutes at most, then ends by itself.</p>
+          <p>
+            {added
+              ? "Try it. Do Not Disturb comes on for two minutes at most, then ends by itself."
+              : `Add ${FOCUS_SHORTCUT_NAME} first, then try it here.`}
+          </p>
           <SecondaryButton onClick={tryIt}>Try it</SecondaryButton>
         </Step>
         <Step n={3}>
