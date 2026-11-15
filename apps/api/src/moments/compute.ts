@@ -13,6 +13,7 @@ import {
 import { buildContext, DEFAULT_TIMEZONE } from "../patterns/context";
 import { analyseFocus, type GoalBlock, goalBlocks, type RawDisruption } from "../patterns/focus";
 import { duration, label } from "../patterns/format";
+import { napIn } from "../patterns/sleep";
 import { DAY, HOUR, MINUTE, Zone } from "../patterns/time";
 import { subjectOf } from "../patterns/timeline";
 import { iso, type Span, sum, union, unionLength } from "../patterns/util";
@@ -133,7 +134,7 @@ export function computeMoment(input: MomentInput): MomentCore {
   const sleeps: Span[] = events
     .filter((e) => e.type === "sleep" && e.end_at)
     .map((e) => ({ start: Date.parse(e.start_at), end: Date.parse(e.end_at as string) }))
-    .filter((s) => s.end > s.start && s.end - s.start <= DAY);
+    .filter((s) => s.end > s.start && s.end - s.start <= DAY && !napIn(zone, s.start, s.end));
 
   const goalLines: MomentGoal[] = [];
   for (const g of goals) {
