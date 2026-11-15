@@ -35,6 +35,7 @@ On the Build Hub: notes `decision-onboarding-talk`, `decision-personal-not-gener
 | 518 | `POST /v1/onboarding/turn`: Michael's next line on the quick model (`ANTHROPIC_FAST_MODEL`, default the Haiku model), opener from calendar facts, script fallback |
 | 521 | Word lists understand twice, weekdays, an hour and a half, a couple of hours |
 | 522 | Today: every line from the user's own data |
+| 543 | Follow ups: review line counts the whole list after Add it, Goals back link hands over to Michael thinking, unused voice CSS removed |
 | 540 | Every onboarding tap answers (Michael thinks, thinking loading screens, one transition per screen), iOS style footer with no black band, dark mode bars readable |
 | 537 | Siri like living voice: audio reactive pink light around Michael, onboarding and chat |
 | 529 | Hands free voice agent onboarding: intro voice, calendar first, live words, pause ends turn, laptop column; review fixes (You said ... Fix, startup and deep work one goal) |
@@ -45,13 +46,9 @@ apps/web/lib/onboarding-script.ts, apps/api/src/onboarding/turn.ts,
 apps/api/src/goals/from-words.ts, apps/api/src/focus/session.ts (autoStartFocus),
 apps/web/lib/today-lines.ts. Tests: e2e/tests/onboarding.spec.ts, onboarding-iphone.spec.ts.
 
-## In flight when this was written (check GitHub for its state)
+## In flight
 
-- PR 543, branch `claude/onboarding-followups` (no `wip`, auto-merges when CI is green): after
-  Add it the review line counts the whole list ("Added Reading. That makes three."), the Goals back
-  link on the connect step hands over to Michael thinking (`StepLink` in
-  apps/web/app/onboarding/wait.tsx), unused `.m-speak-breath` and `.m-think-soft` removed.
-  Checks passed locally: pnpm check, web unit tests, 21 e2e. If CI is red, fix it on that branch.
+Nothing. Every PR from this session is merged (16:08 Athens, Sun 15 Nov).
 
 ## How to review a held PR, then release it
 
@@ -66,7 +63,7 @@ apps/web/lib/today-lines.ts. Tests: e2e/tests/onboarding.spec.ts, onboarding-iph
 5. After merge: production API `https://api-production-16521a26.up.railway.app/health` reports
    the deployed commit; web is https://michael-zeta-sand.vercel.app. Update the Build Hub.
 
-## Next, once PR 543 is merged
+## Next
 
 - Lucas to test on a real iPhone and laptop: Michael's voice plays, words appear, follow ups react
   to what was said (if every line sounds scripted, "Got it." each time, the model is not reaching
