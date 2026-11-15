@@ -12,6 +12,7 @@ import {
   SettleBlockPayload,
   voiceShortDuration,
 } from "@michael/shared";
+import { confirm } from "../confirm";
 import { HttpError, parse } from "../http";
 import { DEFAULT_TIMEZONE } from "../patterns";
 import { Zone } from "../patterns/time";
@@ -341,7 +342,7 @@ export async function logTime(raw: unknown, via: LogVia, execute: Execute): Prom
     entry,
     recommendation: rec,
     goal: week,
-    message: lineFor(goal, week, `Logged ${voiceShortDuration(minutes)}.`),
+    message: lineFor(goal, week, confirm("logged", { x: voiceShortDuration(minutes) }, now)),
   };
 }
 
@@ -409,6 +410,6 @@ export async function settleBlock(raw: unknown, via: LogVia, execute: Execute): 
     entry,
     recommendation: rec,
     goal: week,
-    message: lineFor(goal, week, input.did ? "Confirmed." : "Noted, counted as lost."),
+    message: lineFor(goal, week, input.did ? "Confirmed." : "Noted. I've counted it as lost."),
   };
 }

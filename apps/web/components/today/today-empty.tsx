@@ -13,7 +13,7 @@ export async function TodayEmpty({ demo }: { demo?: string }) {
   if (demo)
     return (
       <EmptyState title="Nothing yet.">
-        Wear the watch tonight and your first brief arrives in the morning.
+        Wear the watch tonight. I'll have your first brief ready by breakfast.
       </EmptyState>
     );
 
@@ -37,8 +37,8 @@ export async function TodayEmpty({ demo }: { demo?: string }) {
           SETUP_LINKS.calendar,
         ]
       : [
-          "No goal time planned today.",
-          "Ask me to find a block for your goals and I'll put it in your calendar.",
+          "Nothing for your goals today yet.",
+          "Say the word and I'll find a block and put it in your calendar.",
           "Plan today with Michael",
           "/chat",
         ];

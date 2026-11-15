@@ -460,3 +460,25 @@ export function lostMinutesOf(b: Block): number {
     (b.lostStretches ?? []).reduce((n, l) => n + (l.end - l.start) / MIN, 0)
   );
 }
+
+/** A drawn stretch of the day in pixels, for working out what would sit on top of what. */
+export type DrawnSpan = { key: string; top: number; bottom: number };
+
+/**
+ * Generated drives step aside for real activity (#393): a drive that overlaps anything that really
+ * happened moves to the right half of the day, and everything it overlaps takes the left half, as
+ * Calendar does with two events at once. Neither ever covers the other's title. Returns the keys of
+ * the drives and of the real stretches that share their time.
+ */
+export function sideBySide(drives: DrawnSpan[], real: DrawnSpan[]): Set<string> {
+  const keys = new Set<string>();
+  for (const d of drives) {
+    for (const r of real) {
+      if (r.top < d.bottom && r.bottom > d.top) {
+        keys.add(d.key);
+        keys.add(r.key);
+      }
+    }
+  }
+  return keys;
+}

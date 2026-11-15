@@ -273,20 +273,17 @@ test("lesson: the thief first, then the goal furthest short, then the plain line
   const r = computeReview(input());
   assert.equal(
     r.lesson,
-    "Instagram took 2h 28 of your goal blocks, 63% of all you lost. Keep it out of next week's blocks.",
+    "Instagram took 2h 28 of your goal blocks, 63% of all you lost. That's the one to beat next week.",
   );
   const base = { ...r, thief: null, complete: true };
   assert.equal(
     lessonFor(base),
-    "4h of deep work per day ended 13h 54 short. Book it before anything else next week.",
+    "4h of deep work per day ended 13h 54 short. Next week it goes in the calendar first.",
   );
-  assert.equal(
-    lessonFor({ ...base, goals: [] }),
-    "Nothing lost from your goal blocks. Book next week the same way.",
-  );
+  assert.equal(lessonFor({ ...base, goals: [] }), "Nothing lost from your goal blocks. Do that again.");
   assert.equal(
     lessonFor({ ...base, goals: [], score: { ...base.score, planned_minutes: 0 } }),
-    "No goal time was booked this week. Book next week before Monday starts.",
+    "No goal time booked this week. A clean week starts Monday: book it tonight.",
   );
   for (const line of [r.lesson, lessonFor(base), r.next_move?.title ?? "", r.next_move?.rationale ?? ""]) {
     assert.deepEqual(voiceProblems(line), [], line);

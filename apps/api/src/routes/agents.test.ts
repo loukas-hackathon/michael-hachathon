@@ -187,7 +187,8 @@ test("log_done and confirm_block need write_events; a logged entry can be undone
   assert.notEqual(logged.body.result.isError, true, logged.body.result.content?.[0]?.text);
   assert.match(
     logged.body.result.content[0].text,
-    /^Logged \d+ min\. Evening bath: \d+ of 60 min this week\./,
+    // Any of the day's phrasings of Logged (#398): the minutes and the maths are what count.
+    /^[^.]*\b\d+ min\b[^.]*\. Evening bath: \d+ of 60 min this week\./,
   );
   const recId = logged.body.result.structuredContent.recommendation.id;
   const agent = (await listAgents()).find((a) => a.name === "Mistral");

@@ -15,6 +15,7 @@ export type NavRow = { id: ConnectionId; name: string; href: string; state: stri
 
 const SECTIONS = [
   { href: "/you#privacy", label: "Privacy" },
+  { href: "/you/knowledge", label: "What I know about you" },
   { href: "/you#michael", label: "Standing instructions" },
   { href: "/you#account", label: "Account" },
 ];
@@ -75,7 +76,11 @@ export function YouNav({ rows }: { rows: NavRow[] }) {
         {SECTIONS.map((s, i) => (
           <li key={s.href} className="relative">
             {i > 0 ? <Separator /> : null}
-            <Link href={s.href} className={`${row} justify-between`}>
+            <Link
+              href={s.href}
+              aria-current={pathname === s.href ? "page" : undefined}
+              className={`${row} justify-between ${pathname === s.href ? current : ""}`}
+            >
               <span className="text-body">{s.label}</span>
               <span aria-hidden="true" className="text-label-2">
                 ›

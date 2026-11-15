@@ -1,5 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { API_URL, apiGet, enterDemo, expect, fillReady, PRESENTER_KEY, tap, test } from "./fixtures";
+import {
+  API_URL,
+  apiGet,
+  enterDemo,
+  expect,
+  fillReady,
+  onTheRecord,
+  PRESENTER_KEY,
+  tap,
+  test,
+} from "./fixtures";
 
 // A fresh, non demo user: Today sends them to onboarding, two screens, and Today takes them in.
 // The test sign in (cookie michael_e2e_user) only works with E2E_TEST_AUTH=on on the in-memory API.
@@ -145,11 +155,18 @@ test("the presenter: no sign in lines on the projector, Off the record switches 
   const offTheRecord = async () => (await apiGet<{ off_the_record: boolean }>("/v1/privacy")).off_the_record;
   // One tap each way, each waiting for the server: a double tap would leave the shared demo
   // account off the record and refuse every later write.
-  await tap(record);
-  await expect(page.getByText(/^Nothing is being collected/)).toBeVisible();
-  await expect.poll(offTheRecord).toBe(true);
-  await tap(record);
-  await expect(page.getByText("Collecting from your connections.")).toBeVisible();
-  await expect.poll(offTheRecord).toBe(false);
-  await expect(record).not.toBeChecked();
+  // The switch is disabled while a save is in flight, so the second tap waits for the first save.
+  try {
+    await tap(record);
+    await expect(page.getByText(/^Nothing is being collected/)).toBeVisible();
+    await expect.poll(offTheRecord).toBe(true);
+    await expect(record).toBeEnabled();
+    await tap(record);
+    await expect(page.getByText("Collecting from your connections.")).toBeVisible();
+    await expect.poll(offTheRecord).toBe(false);
+    await expect(record).not.toBeChecked();
+  } finally {
+    // Whatever happened above, the next test gets the demo account on the record (#402).
+    await onTheRecord();
+  }
 });

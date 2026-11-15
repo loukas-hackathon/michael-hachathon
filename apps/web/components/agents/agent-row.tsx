@@ -67,7 +67,7 @@ export function AgentRow({
   }
 
   const subline = failed
-    ? "I could not save that. Try again."
+    ? "I couldn't save that. Try again."
     : revoked
       ? "Revoked. Sees nothing."
       : shared.length
@@ -164,7 +164,7 @@ export function AgentRow({
             </ul>
             <p className="mt-2 px-4 text-footnote text-label-2">
               {failed ? (
-                <span className="text-danger">I could not save that. Try again.</span>
+                <span className="text-danger">I couldn't save that. Try again.</span>
               ) : (
                 "Changes apply at once, even mid conversation."
               )}

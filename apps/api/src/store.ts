@@ -317,6 +317,8 @@ export interface Store extends PrivacyBackend {
   /** Null when this key was already used on that day (the dedupe guard). */
   createNudge(input: NudgeCreate): Promise<Nudge | null>;
   updateNudgeStatus(id: string, status: NudgeStatus): Promise<Nudge | null>;
+  /** One nudge of the current user, or null (a button on it was tapped, #399). */
+  getNudge(id: string): Promise<Nudge | null>;
   // Web Push devices of the current user.
   listPushDevices(): Promise<PushDevice[]>;
   /** Saves the device for the current user (a device belongs to whoever subscribed it last). */
@@ -1067,6 +1069,10 @@ export class MemoryStore implements Store {
     nudge.status = status;
     if (status === "sent") nudge.sent_at = now();
     return nudge;
+  }
+
+  async getNudge(id: string) {
+    return this.d.nudges.find((n) => n.id === id) ?? null;
   }
 
   async listPushDevices() {

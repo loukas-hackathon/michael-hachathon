@@ -101,7 +101,7 @@ const iphoneSends = (src: SourcesStatusResponse | null) =>
 const unknown = (c: Connection): ConnectionStatus => ({
   ...c,
   state: "unknown",
-  line: "I could not check this right now.",
+  line: "I couldn't check this right now.",
   action: { kind: "link", label: "Manage", href: c.href },
 });
 

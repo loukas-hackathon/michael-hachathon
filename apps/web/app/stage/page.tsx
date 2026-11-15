@@ -56,7 +56,7 @@ function Hero({ day }: { day: DayView | null }) {
     return (
       <section className="stage-score">
         <p className="stage-score-first">Today is not in yet.</p>
-        <p className="stage-won">I could not reach your day. The nudges still land here.</p>
+        <p className="stage-won">I couldn't reach your day. The nudges still land here.</p>
       </section>
     );
   }

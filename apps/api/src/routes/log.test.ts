@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 import type Anthropic from "@anthropic-ai/sdk";
-import { LogTimeResponse, Recommendation } from "@michael/shared";
+import { CONFIRMATIONS, LogTimeResponse, Recommendation } from "@michael/shared";
 import { matchGoal, weekMaths } from "../actions/log";
 import { app } from "../app";
 import { runAsUser } from "../context";
@@ -18,6 +18,11 @@ import { askMichael, setChatClientForTests } from "./chat";
 
 const MIN = 60_000;
 const iso = (ms: number) => new Date(ms).toISOString();
+// Any of Michael's phrasings of "Logged 40 min." (one per user per day, #398).
+const LOGGED = `(?:${CONFIRMATIONS.logged
+  .map((l) => l.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace("\\{x\\}", "\\d+ min"))
+  .join("|")})`;
+
 const zone = new Zone(DEFAULT_TIMEZONE);
 
 /** A fresh user with one goal, "Everything bath", 60 minutes a week, and nothing else. */
@@ -147,7 +152,7 @@ test("logTime and settleBlock through the store: the entry, the maths, undo", ()
     assert.equal(out.recommendation.status, "done");
     assert.equal(out.recommendation.action?.kind, "log_time");
     // The maths, as the score has it (the bath may straddle midnight on a test run near it).
-    assert.match(out.message, /^Logged \d+ min\. Everything bath: \d+ of 60 min this week\.$/);
+    assert.match(out.message, new RegExp(`^${LOGGED} Everything bath: \\d+ of 60 min this week\\.$`));
 
     // The future is refused.
     await assert.rejects(
@@ -193,7 +198,7 @@ test("logTime and settleBlock through the store: the entry, the maths, undo", ()
     );
     assert.equal(settled.entry.data.log, "didnt");
     assert.equal(settled.entry.data.goal_id, gym.id);
-    assert.match(settled.message, /^Noted, counted as lost\. Gym/);
+    assert.match(settled.message, /^Noted\. I've counted it as lost\. Gym/);
     await assert.rejects(
       settleBlock({ event_id: block.id, did: true }, "app", executeRecommendation),
       /already settled/,
@@ -259,7 +264,7 @@ test("the bath: 'I took a bath for 40 minutes at 13:00' is logged, with the math
       assert.match(system, /You can always log time against a goal/);
       // A plain statement: the tool's own line is the answer, without a second model call (#364).
       assert.equal(requests.length, 1);
-      assert.match(answer, /^Logged \d+ min\. Everything bath: \d+ of 60 min this week\. Undo$/);
+      assert.match(answer, new RegExp(`^${LOGGED} Everything bath: \\d+ of 60 min this week\\. Undo$`));
       const rec = Recommendation.parse(actions[0]);
       assert.equal(rec.action?.kind, "log_time");
       assert.equal(rec.status, "done");
@@ -290,7 +295,10 @@ test("a log with a question still gets the model's answer after the tool (#364)"
       const result = (Array.isArray(last?.content) ? last.content : []).find(
         (b) => b.type === "tool_result",
       ) as Anthropic.ToolResultBlockParam | undefined;
-      assert.match(String(result?.content), /Logged \d+ min\. Everything bath: \d+ of 60 min this week\./);
+      assert.match(
+        String(result?.content),
+        new RegExp(`${LOGGED} Everything bath: \\d+ of 60 min this week\\.`),
+      );
       assert.match(answer, /You are on track/);
     } finally {
       setChatClientForTests(null);

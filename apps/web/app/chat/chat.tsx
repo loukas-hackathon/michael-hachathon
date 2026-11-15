@@ -13,6 +13,7 @@ import { useWide } from "@/components/use-wide";
 import { TALK_HINT, TalkButton, useTalk } from "@/components/voice/conversation-sheet";
 import { PushToTalk } from "@/components/voice/push-to-talk";
 import { speakable } from "@/components/voice/speech";
+import { withoutUndoLine } from "@/lib/chat-undo";
 import { formatTime } from "@/lib/format";
 import { ActionChips } from "./action-chips";
 import {
@@ -271,7 +272,11 @@ export function Chat({
                     <MessageBubble
                       key={m.key ?? m.id}
                       role={m.role}
-                      content={m.content}
+                      content={
+                        acted[m.id]?.some((a) => a.status !== "proposed")
+                          ? withoutUndoLine(m.content)
+                          : m.content
+                      }
                       streaming={m.id === streamingId}
                       arriving={arriving(m.key ?? m.id)}
                     >

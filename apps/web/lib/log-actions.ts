@@ -71,7 +71,7 @@ export async function undoLogAction(recommendationId: string): Promise<{ ok: boo
   if (typeof recommendationId !== "string" || !ID.test(recommendationId))
     return { ok: false, error: "Nothing to undo." };
   const r = await undoRecommendation(recommendationId).catch(() => null);
-  if (!r?.ok) return { ok: false, error: r?.message ?? "I could not reach the server. It is still logged." };
+  if (!r?.ok) return { ok: false, error: r?.message ?? "I lost the line. It's still logged." };
   revalidatePath("/");
   revalidatePath("/goals");
   revalidatePath("/timeline");

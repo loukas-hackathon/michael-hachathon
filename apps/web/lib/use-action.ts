@@ -23,7 +23,7 @@ import { haptic } from "@/components/haptics";
 export const MIN_PENDING_MS = 300;
 /** How long `done` stays true after a success, for a settled label or status line. */
 export const DONE_MS = 2400;
-export const NETWORK_ERROR = "I could not reach the server. Nothing changed.";
+export const NETWORK_ERROR = "I lost the line. Nothing changed.";
 
 export type ActionOptions<A extends unknown[], R> = {
   /** Show the result before the server answers. Return a function that puts it back. */

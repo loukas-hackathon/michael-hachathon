@@ -8,6 +8,7 @@ import { Zone } from "../patterns/time";
 import { isLogEntry } from "../score/logged";
 import { goalForEvent } from "../score/match";
 import type { Store } from "../store";
+import { seedDemoKnowledge } from "./knowledge";
 import { removeRetiredSamples } from "./retired";
 import { seedDemoRitual } from "./ritual";
 import { DEMO_TZ, localDate } from "./time";
@@ -67,6 +68,12 @@ export async function seedDemoWeek(
   // The daily ritual (#318): today's plan and two logged evenings. Best effort too.
   if (!rules.offTheRecord) {
     await seedDemoRitual(store, week.days).catch((err) => console.error("Demo ritual failed", err));
+  }
+  // What Michael knows (#379): a few memories and answered check ins, so the page is not empty on stage.
+  if (!rules.offTheRecord) {
+    await seedDemoKnowledge(store, week.days, { reset: resetState }).catch((err) =>
+      console.error("Demo knowledge failed", err),
+    );
   }
   // The sample brief, the sample suggestions and the retired goal never stay on the stage (#330).
   await removeRetiredSamples(store);
