@@ -10,7 +10,9 @@ import { demoGoals } from "../demo/week";
 import type { BehindGoal } from "../nudges/engine";
 import type { GoalBlock } from "../patterns/focus";
 import { askMichael, setChatClientForTests } from "../routes/chat";
+import { loadWeek } from "../routes/score";
 import { store } from "../store";
+import { logDoneTime } from "./log";
 import { ritualNudgeText } from "./nudge";
 import {
   eveningSummary,
@@ -495,4 +497,35 @@ test("chat: 'my goals today are X, Y' sets the outcomes; 'I finished X, did 30 m
     }
     assert.equal((await store.getChecklistItem(chapter.id))?.logged_minutes, 30);
     assert.equal((await ritualFor()).evening, "done");
+  }));
+
+test("the evening log moves the goal's score: logged minutes count as confirmed time (#317)", () =>
+  asNewUser(async () => {
+    const uni = await university();
+    const now = Date.now();
+    const goalRow = async () => (await loadWeek({})).score.goals.find((g) => g.goal_id === uni.id);
+    const before = (await goalRow())?.spent_minutes ?? 0;
+
+    const planned = await planMorning({ outcomes: [{ text: "Past paper", goal_id: uni.id }] }, now);
+    const [paper] = planned.items as [ChecklistItem];
+    const out = await logEvening({ results: [{ item_id: paper.id, result: "partly", minutes: 25 }] }, now);
+    assert.deepEqual(out.logged, [{ goal_id: uni.id, minutes: 25 }]);
+    const after = await goalRow();
+    // 25 more confirmed minutes (a run just after midnight may put some in yesterday: skip then).
+    const athens = (ms: number) => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Athens" }).format(ms);
+    const justAfterMidnight = athens(now - 25 * 60_000) !== athens(now);
+    if (!justAfterMidnight) {
+      assert.equal((after?.spent_minutes ?? 0) - before, 25);
+      assert.equal(after?.unverified_minutes, 0);
+    }
+
+    // A goal that takes no minutes (the outcomes checklist itself), or one that is gone: not counted.
+    const day = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Athens" }).format(now);
+    const checklistGoal = planned.goal_id as string;
+    assert.deepEqual(await logDoneTime({ goal_id: checklistGoal, minutes: 10, day, note: "x" }, now), {
+      counted: false,
+    });
+    assert.deepEqual(await logDoneTime({ goal_id: randomUUID(), minutes: 10, day, note: "x" }, now), {
+      counted: false,
+    });
   }));
