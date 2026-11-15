@@ -1,7 +1,7 @@
 "use client";
 
 import type { ChatMessage, ChatThread, Recommendation } from "@michael/shared";
-import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { ConnectChip, KnowledgeChip } from "@/components/chat/connect-chip";
 import { connectIntent } from "@/components/chat/connect-intent";
 import { knowledgeIntent } from "@/components/chat/knowledge-intent";
@@ -15,7 +15,7 @@ import { TALK_HINT, TalkButton, useTalk } from "@/components/voice/conversation-
 import { PushToTalk } from "@/components/voice/push-to-talk";
 import { speakable } from "@/components/voice/speech";
 import { withoutUndoLine } from "@/lib/chat-undo";
-import { formatTime } from "@/lib/format";
+import { formatDayLabel, formatStamp, sameAthensDay } from "@/lib/format";
 import { ActionChips } from "./action-chips";
 import {
   actedFrom,
@@ -274,35 +274,44 @@ export function Chat({
                   const asked = m.role === "assistant" && m.id !== streamingId ? lines[i - 1] : undefined;
                   const connect = asked?.role === "user" ? connectIntent(asked.content) : null;
                   const knows = asked?.role === "user" && knowledgeIntent(asked.content);
+                  // A thread picked up on another day gets a quiet day line between the two (#483).
+                  const prev = lines[i - 1]?.created_at;
+                  const newDay = prev && m.created_at && !sameAthensDay(prev, m.created_at);
                   return (
-                    <MessageBubble
-                      key={m.key ?? m.id}
-                      role={m.role}
-                      content={
-                        acted[m.id]?.some((a) => a.status !== "proposed")
-                          ? withoutUndoLine(m.content)
-                          : m.content
-                      }
-                      streaming={m.id === streamingId}
-                      arriving={arriving(m.key ?? m.id)}
-                    >
-                      {m.id === streamingId && current.steps.some((s) => s.status === "running") ? (
-                        <span className="mt-0.5 px-1">
-                          <LiveStep steps={current.steps} />
-                        </span>
+                    <Fragment key={m.key ?? m.id}>
+                      {newDay ? (
+                        <li className="pt-3 pb-1 text-center text-caption font-semibold text-label-2">
+                          {formatDayLabel(m.created_at as string)}
+                        </li>
                       ) : null}
-                      {m.role === "assistant" && m.id !== streamingId ? (
-                        <WorkedSteps replyId={m.id} steps={current.worked[m.id]} />
-                      ) : null}
-                      {acted[m.id] ? <ActionChips actions={acted[m.id] ?? []} /> : null}
-                      {connect ? <ConnectChip id={connect} /> : null}
-                      {knows ? <KnowledgeChip /> : null}
-                      {m.role === "assistant" && m.created_at ? (
-                        <span className="mt-0.5 px-1 text-caption text-label-2 tnum">
-                          {formatTime(m.created_at)}
-                        </span>
-                      ) : null}
-                    </MessageBubble>
+                      <MessageBubble
+                        role={m.role}
+                        content={
+                          acted[m.id]?.some((a) => a.status !== "proposed")
+                            ? withoutUndoLine(m.content)
+                            : m.content
+                        }
+                        streaming={m.id === streamingId}
+                        arriving={arriving(m.key ?? m.id)}
+                      >
+                        {m.id === streamingId && current.steps.some((s) => s.status === "running") ? (
+                          <span className="mt-0.5 px-1">
+                            <LiveStep steps={current.steps} />
+                          </span>
+                        ) : null}
+                        {m.role === "assistant" && m.id !== streamingId ? (
+                          <WorkedSteps replyId={m.id} steps={current.worked[m.id]} />
+                        ) : null}
+                        {acted[m.id] ? <ActionChips actions={acted[m.id] ?? []} /> : null}
+                        {connect ? <ConnectChip id={connect} /> : null}
+                        {knows ? <KnowledgeChip /> : null}
+                        {m.role === "assistant" && m.created_at ? (
+                          <span className="mt-0.5 px-1 text-caption text-label-2 tnum">
+                            {formatStamp(m.created_at)}
+                          </span>
+                        ) : null}
+                      </MessageBubble>
+                    </Fragment>
                   );
                 })}
                 {pending && lines.at(-1)?.role === "user" ? (
