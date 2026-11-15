@@ -152,6 +152,9 @@ test("the score goes into the chat context with its own figures", () => {
     text,
     /4h of deep work per day \[business\]: 6h 06 spent of budget 20h \(13h 54 left to reach it\)/,
   );
+  // A goal's score is its planned time kept, named so the model never quotes it as a share of the
+  // budget (production: "University at 42% (2h 01 of 6h)").
+  assert.match(text, /\d+% of its planned time already passed was spent \(not a share of the budget\)/);
 });
 
 test("POST /v1/chat/stream sends deltas, then the stored reply", async () => {

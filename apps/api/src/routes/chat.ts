@@ -238,7 +238,9 @@ export function scoreLines(s: Score): string {
       `- ${g.title} [${g.area}]: ${hm(g.spent_minutes)} spent of ${budget}` +
       (g.budget_minutes ? ` (${hm(left)} left to reach it)` : "") +
       `; ${hm(g.planned_minutes)} planned in the calendar, ${hm(g.lost_minutes)} lost, ` +
-      `${hm(g.ahead_minutes)} planned still ahead; ${pct(g.score_pct)}`
+      `${hm(g.ahead_minutes)} planned still ahead; ` +
+      // Named, so it is never read as a share of the budget ("42% (2h 01 of 6h)" was wrong maths).
+      `${pct(g.score_pct)} of its planned time already passed was spent (not a share of the budget)`
     );
   });
   if (goals.length) lines.push(`Goals this week:\n${goals.join("\n")}`);

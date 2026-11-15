@@ -140,7 +140,7 @@ function scoreText(s: Score): string {
     "Goals this week:",
     ...s.goals.map((g) =>
       g.scored
-        ? `- ${g.area} "${g.title}": budget ${dur(g.budget_minutes)}, planned ${dur(g.planned_minutes)}, spent ${dur(g.spent_minutes)}, lost ${dur(g.lost_minutes)}, ${pct(g.score_pct)}; ${dur(g.minutes_left)} left, ${g.open_blocks} ${g.open_blocks === 1 ? "block" : "blocks"} still open`
+        ? `- ${g.area} "${g.title}": budget ${dur(g.budget_minutes)}, planned ${dur(g.planned_minutes)}, spent ${dur(g.spent_minutes)}, lost ${dur(g.lost_minutes)}, ${pct(g.score_pct)} of planned time spent (not of the budget); ${dur(g.minutes_left)} left, ${g.open_blocks} ${g.open_blocks === 1 ? "block" : "blocks"} still open`
         : g.count
           ? `- ${g.area} "${g.title}": ${g.count.done} of ${g.count.target} this week, ${g.count.days_left} ${g.count.days_left === 1 ? "day" : "days"} left (outside the time score)`
           : g.checklist
