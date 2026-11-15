@@ -1,4 +1,4 @@
-# Orchestrator handoff (Sun 15 Nov, 07:30 UTC / 09:30 Athens)
+# Orchestrator handoff (Sun 15 Nov, updated as work lands)
 
 For a new Claude Code session, possibly on another account, that takes over orchestrating the agents
 building Michael. Read AGENTS.md first, then this. Loukas' standing orders: never ask him for
@@ -6,31 +6,27 @@ permission, keep building with parallel agents, close every issue we can, phone 
 developed), keep colours and branding exactly as they are (pink `#E6007A`, red `#FF3B30`), and pace
 the usage limit by slowing down at about 60% of the window.
 
-## State
-- Production: API https://api-production-16521a26.up.railway.app/health (commit 11d8a5c at handoff),
-  web https://michael-zeta-sand.vercel.app. Supabase project `kpcoadbgevifyvvlhdbt`.
-- **Bottleneck:** CI e2e is red on main (incident #402). The fix is PR #407 (`e2e-on-record-402`):
-  the presenter's off the record test left the demo account off the record and broke the booking
-  tests. Get #407 green and merged first, then update the branches of the other PRs so they re-run.
+## State (updated 07:45 UTC)
+- Production: API https://api-production-16521a26.up.railway.app/health, web
+  https://michael-zeta-sand.vercel.app. Supabase project `kpcoadbgevifyvvlhdbt`.
+- CI is green again: #407 fixed incident #402 (the Off the record switch dropped a second tap).
+- Merged this morning: #407 CI fix, #408 polish (#385, #393), #403 warmer voice (#398),
+  #391, #394, #396 API speed (#298). Today's first open went from 5.5 s to 2.4 s.
 - Loukas' deadline: everything that can land is merged by 08:45 UTC. After that he works on UI and UX.
 
-## Open PRs (land in this order)
-1. #407: CI fix (#402)
-2. #394 (memo) and #396 (phone cadence): API speed (#298). Update branches after #407.
-3. #392: chat pane on a laptop (#285)
-4. #403: warmer voice (#398)
-5. #408: polish (#385, #393)
-6. Drafts: #404 Focus now (#397) and #406 nudge actions (#399). Land them if green by the
-   deadline, else leave them as drafts.
-7. Hold until after the pitch: #389 (DB function, #298). Loukas must mark #280 and #336 Ready
-   himself; the permission check refused agents doing it.
-
-## In flight without a PR at handoff
-- Branch `nudge-open-fast`: tapping a nudge notification takes over 10 s to load (HIGH PRIORITY).
-  The fix: on notificationclick, focus or navigate an existing window, render the nudge card from
-  the push payload, skip the blocking session refresh, and lower the service worker shell timeout.
-- Meetings mode: consent sheet, start and end with the indicator pill, Omi ingest only during a
-  session, off the record wins. Check for a branch or PR; restart it small if there is none.
+## Still in flight (check each PR; restart small if it has stalled)
+- #392 laptop chat (#285): main merged into the branch, waiting for CI.
+- Thinking steps (branch `thinking-steps`): a new SSE `step` event per tool call, a live step line in
+  chat and voice, and "How I worked it out" collapsed under each reply. Loukas asked for this.
+- #389 events_window (#298): Loukas approved landing it if it is safe. It merges only when the
+  migration is purely additive, has a fallback when the RPC fails, and the results are proven
+  equivalent. Deadline 14:00 UTC. Check /health and the Migrate database run afterwards.
+- Slow notification tap (branch `nudge-open-fast`): HIGH PRIORITY, more than 10 s. On
+  notificationclick, focus or navigate an existing window, render the card from the payload, skip
+  the blocking session refresh, lower the service worker shell timeout.
+- #404 Focus now (#397) and #406 nudge actions (#399): drafts. Land them if green, else leave them.
+- Meetings mode: consent sheet, start and end with the pill, Omi ingest only during a session.
+- Loukas must mark #280 and #336 Ready himself (the permission check refused agents doing it).
 
 ## Rules learned the hard way
 - Never write to the production demo account (test locally). Never push test notifications to
