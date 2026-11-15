@@ -4,6 +4,7 @@
 export * from "./ai-prompts";
 export * from "./categories";
 export * from "./connectors";
+export * from "./goal-areas";
 export * from "./mac-apps";
 export * from "./mocks";
 export * from "./schemas";

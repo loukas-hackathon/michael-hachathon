@@ -1,12 +1,12 @@
+import type { AppCategory, Event } from "@michael/shared";
+// The zod free entry: day-timeline.tsx renders this on the client.
 import {
-  type AppCategory,
   bundleIdForAppName,
   type CategoryRole,
   categoriseEvent,
   categoryRole,
-  type Event,
   isBrowser,
-} from "@michael/shared";
+} from "@michael/shared/categories";
 import { type DayHealth, healthOf } from "./health";
 import { driveFromEvent } from "./travel";
 

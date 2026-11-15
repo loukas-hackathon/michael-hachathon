@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { goalArea } from "./goal-areas";
 
 // ---------- primitives ----------
 
@@ -62,18 +63,7 @@ export type GoalCategory = z.infer<typeof GoalCategory>;
 export const GoalArea = z.enum(["business", "health", "personal"]);
 export type GoalArea = z.infer<typeof GoalArea>;
 
-const GOAL_AREA: Record<GoalCategory, GoalArea> = {
-  business: "business",
-  health: "health",
-  personal: "personal",
-  work: "business",
-  gym: "health",
-  rest: "health",
-  food: "health",
-};
-
-/** The one of the three categories a goal category belongs to, for any of the seven values. */
-export const goalArea = (category: GoalCategory): GoalArea => GOAL_AREA[category];
+// goalArea (goal-areas.ts, zod free) maps any of the seven values to one of the three.
 
 // What a goal measures. `time`: weekly minutes in planned blocks (the default). `target`: a value
 // per day (sleep 7.5 hours, screens off at 23:00). `count`: times a week. `checklist`: the day's
