@@ -9,7 +9,7 @@ import { store } from "../store";
 import { discoveredInsights, discoveryBrief, InsightRun, runDiscovery } from "./discover";
 import { FEATURE_KEYS, type FeatureKey, type FeatureTable } from "./features";
 import { canonical, evaluate, type Hypothesis, readCondition, transformed, verify } from "./hypothesis";
-import { buildInsights } from "./index";
+import { buildInsights, storiesOf } from "./index";
 import { mine } from "./miner";
 import { forgetStudy, runInsights, studyAhead, studyFor } from "./service";
 import { seeded } from "./stats";
@@ -236,6 +236,58 @@ test("a story the rules already tell is not told again; a relation that stops ho
   );
 });
 
+// ---------- the plain relation leads over a discovered variant of it ----------
+
+function lateTable(costOfSecond: number) {
+  const rnd = seeded(21);
+  const n = 70;
+  const late = Array.from({ length: n }, () => (rnd() < 0.45 ? 35 + rnd() * 30 : rnd() * 8));
+  const second = (i: number) => (late[i] ?? 0) >= 30 && (late[i - 1] ?? 0) >= 30;
+  const score = Array.from({ length: n }, (_, i) =>
+    i === 0 ? null : (second(i - 1) ? costOfSecond : (late[i - 1] ?? 0) >= 30 ? 74 : 84) + (rnd() - 0.5) * 6,
+  );
+  const t = table(n, { late_phone_min: late, sleep_score: score });
+  return { t, mined: mine(t) };
+}
+const STREAK = hyp({
+  when: cond("late_phone_min", 30, { transform: "streak2" }),
+  outcome: "sleep_score",
+  lag: 1,
+});
+
+test("a discovered variant of a plain relation is dropped when it tells the same story", () => {
+  // A second late evening costs what a first one does.
+  const { t, mined: m } = lateTable(74);
+  assert.deepEqual(
+    m.links.map((l) => `${l.x.key}>${l.y}`),
+    ["late_phone_min>sleep_score"],
+  );
+  assert.equal(verify(t, m.ps, [STREAK]).length, 1, "the streak passes the bar on its own");
+  assert.deepEqual(
+    discoveredInsights(t, m.ps, storiesOf(m), [{ hypothesis: STREAK, words: null }], { table: t, goals: [] }),
+    [],
+  );
+});
+
+test("a discovered variant that hits clearly harder is shown after the plain relation, and says so", () => {
+  const { t, mined: m } = lateTable(40);
+  const plain = m.links[0];
+  assert.equal(plain?.x.key, "late_phone_min");
+  const words = { title: "Streaks are the real problem", line: "9 of 9 times it was worse.", fix: "Stop." };
+  const out = discoveredInsights(t, m.ps, storiesOf(m), [{ hypothesis: STREAK, words }], {
+    table: t,
+    goals: [],
+  });
+  assert.equal(out.length, 1);
+  const shown = out[0]?.phrased.insight;
+  assert.equal(shown?.kind, "discovered");
+  assert.equal(shown?.title, "Late phone, 2 days running hit harder");
+  assert.match(shown?.line ?? "", /^\d+ of \d+ .* That is more than late phone alone\.$/);
+  // Never in front of the relation it is built on.
+  assert.ok((shown?.strength ?? 1) < (plain?.strength ?? 0));
+  assert.deepEqual(voiceProblems(`${shown?.title}. ${shown?.line}`), []);
+});
+
 test("the brief carries summaries and goals, never an event", () => {
   const month = plantedMonth({ firstDay: "2026-10-15", days: 30, seed: 7 });
   const study = buildInsights({
@@ -361,6 +413,31 @@ test("POST /v1/insights/run: the pass is stored, shown with found_by model, and 
     await runAsUser(randomUUID(), async () => {
       assert.equal(await store.getInsightRun(), null);
       assert.ok((await get()).insights.every((i) => i.kind !== "discovered"));
+    });
+  } finally {
+    useModelClient(null);
+  }
+});
+
+test("a failed model call never loses the stored tests", async () => {
+  try {
+    await runAsUser(randomUUID(), async () => {
+      await seedPlain();
+      useModelClient(await script());
+      await (await runInsights()).done;
+      const before = InsightRun.parse(await store.getInsightRun());
+      assert.equal(before.discoveries.length, 1);
+
+      // The next pass meets a model that fails, then one that answers nonsense.
+      for (const broken of [new ModelError("api", "the model API timed out"), "not json"]) {
+        useModelClient(new FakeModelClient([broken]));
+        const { status, done } = await runInsights();
+        assert.equal(status, "started");
+        await done;
+        const after = InsightRun.parse(await store.getInsightRun());
+        assert.deepEqual(after.discoveries, before.discoveries);
+        assert.ok((await get()).insights.some((i) => i.kind === "discovered"));
+      }
     });
   } finally {
     useModelClient(null);

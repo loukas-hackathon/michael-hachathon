@@ -2,7 +2,7 @@ import { type Insight, type InsightSeries, InsightSource, type InsightsResponse 
 import { FEATURES, featureDef, unitOf } from "./dictionary";
 import { discoveredInsights, type StoredDiscovery, type Story } from "./discover";
 import { buildFeatures, type FeatureInput, type FeatureKey, type FeatureTable } from "./features";
-import { MINER_RULES, mine, studiedDays } from "./miner";
+import { MINER_RULES, type Mined, mine, studiedDays } from "./miner";
 import { type FixPlan, type Phrased, phraseChain, phraseLink } from "./phrase";
 
 export type { FeatureInput, FeatureKey, FeatureTable } from "./features";
@@ -90,6 +90,24 @@ export function studiedOf(table: FeatureTable): InsightsResponse["studied"] {
 
 const familyOf = (key: FeatureKey) => featureDef(key).family;
 
+/** What the rules show, as the discovery pass reads it: who triggers, how strongly, how far. */
+export const storiesOf = (mined: Pick<Mined, "chains" | "links">): Story[] => [
+  ...mined.chains.map((c) => ({
+    on: c.x.on,
+    ends: [familyOf(c.y), familyOf(c.z)],
+    key: c.x.key,
+    strength: c.strength,
+    effects: { [familyOf(c.y)]: c.first.cmp.effect, [familyOf(c.z)]: c.direct.cmp.effect },
+  })),
+  ...mined.links.map((l) => ({
+    on: l.x.on,
+    ends: [familyOf(l.y)],
+    key: l.x.key,
+    strength: l.strength,
+    effects: { [familyOf(l.y)]: l.cmp.effect },
+  })),
+];
+
 /** The study with the stored tests of the discovery pass run again on its table. */
 export function withDiscoveries(study: Study, stored: StoredDiscovery[]): Study {
   const ctx = { table: study.table, goals: study.goals };
@@ -124,10 +142,7 @@ export function buildInsights(input: FeatureInput, discoveries: StoredDiscovery[
   const study: Study = {
     table,
     minerPs: mined.ps,
-    stories: [
-      ...mined.chains.map((c) => ({ on: c.x.on, ends: [familyOf(c.y), familyOf(c.z)] })),
-      ...mined.links.map((l) => ({ on: l.x.on, ends: [familyOf(l.y)] })),
-    ],
+    stories: storiesOf(mined),
     rules,
     goals: input.goals,
     response: {

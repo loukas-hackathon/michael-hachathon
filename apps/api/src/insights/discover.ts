@@ -2,8 +2,8 @@ import { type Goal, goalKind, type Insight, MICHAEL_VOICE } from "@michael/share
 import { z } from "zod";
 import type { ModelClient } from "../analysis/model";
 import { quantile } from "../patterns/util";
-import { FEATURES, unitOf } from "./dictionary";
-import type { FeatureTable } from "./features";
+import { FEATURES, featureDef, unitOf } from "./dictionary";
+import type { FeatureKey, FeatureTable } from "./features";
 import {
   canonical,
   HYPOTHESES_JSON_SCHEMA,
@@ -12,7 +12,7 @@ import {
   type Verified,
   verify,
 } from "./hypothesis";
-import { MINER_RULES, sameDays } from "./miner";
+import { clearlyFurther, MINER_RULES, sameDays } from "./miner";
 import { numbersIn, type PhraseContext, phraseDiscovered, type Words, wordsProblems } from "./phrase";
 import { mean } from "./stats";
 
@@ -65,6 +65,10 @@ export interface Story {
   on: (boolean | null)[];
   /** Families of what it ends in. */
   ends: string[];
+  /** The trigger's column, its strength, and how far it moved each kind of outcome (standard deviations). */
+  key?: FeatureKey;
+  strength?: number;
+  effects?: Record<string, number>;
 }
 
 const familyOf = (key: string) => FEATURES.find((f) => f.key === key)?.family ?? key;
@@ -90,18 +94,43 @@ export function discoveredInsights(
     const key = canonical(d.hypothesis);
     if (!words.has(key)) words.set(key, d.words);
   }
-  const kept: Verified[] = [];
+  // The plain relation leads here too. A hypothesis built on a column the rules already found a
+  // relation from (a streak of it, a rolling mean, another threshold, a second condition), ending
+  // in the same kind of outcome, is that relation again: dropped, unless it moves the outcome
+  // clearly further, and then it is shown after the plain one and says so.
+  const plainFor = (v: Verified): Story | null => {
+    const feature = v.hypothesis.when?.feature;
+    if (!feature) return null;
+    const root = featureDef(feature).variantOf ?? feature;
+    const end = familyOf(v.hypothesis.outcome);
+    return (
+      stories.find((s) => (s.key === feature || s.key === root) && s.effects?.[end] !== undefined) ?? null
+    );
+  };
+  const kept: { verified: Verified; harderThan?: { key: FeatureKey; strength: number } }[] = [];
   const told: Story[] = [...stories];
   for (const v of verified) {
-    const story = { on: v.on, ends: [familyOf(v.hypothesis.outcome)] };
+    if (kept.length >= MINER_RULES.maxDiscovered) break;
+    const end = familyOf(v.hypothesis.outcome);
+    const story = { on: v.on, ends: [end] };
+    const plain = plainFor(v);
+    if (plain?.key) {
+      if (!clearlyFurther(v.cmp.effect, plain.effects?.[end] ?? Number.POSITIVE_INFINITY)) continue;
+      kept.push({ verified: v, harderThan: { key: plain.key, strength: plain.strength ?? 0 } });
+      told.push(story);
+      continue;
+    }
     const retold = told.some(
       (s) => s.ends.some((e) => story.ends.includes(e)) && sameDays(s.on, story.on) >= MINER_RULES.sameStory,
     );
-    if (retold || kept.length >= MINER_RULES.maxDiscovered) continue;
-    kept.push(v);
+    if (retold) continue;
+    kept.push({ verified: v });
     told.push(story);
   }
-  return kept.map((v) => ({ verified: v, phrased: phraseDiscovered(v, words.get(v.key) ?? null, ctx) }));
+  return kept.map(({ verified: v, harderThan }) => ({
+    verified: v,
+    phrased: phraseDiscovered(v, words.get(v.key) ?? null, ctx, harderThan),
+  }));
 }
 
 // ---------- the brief ----------

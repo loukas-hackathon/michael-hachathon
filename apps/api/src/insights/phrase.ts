@@ -24,7 +24,7 @@ import {
 } from "./dictionary";
 import type { FeatureKey, FeatureTable } from "./features";
 import type { Condition, ReadCondition, Verified } from "./hypothesis";
-import { type Chain, type Link, MINER_RULES, type Occurrence, type Trigger } from "./miner";
+import { below, type Chain, type Link, MINER_RULES, type Occurrence, type Trigger } from "./miner";
 import { mean } from "./stats";
 
 // From what the miner found to what the user reads: a title, one line with the number first, the
@@ -238,6 +238,31 @@ function fixFor(
   );
 }
 
+/** Whether the outcome moved the way that is bad for the user. */
+const isWorse = (outcome: FeatureKey, diff: number): boolean => {
+  const better = featureDef(outcome).outcome?.better ?? "high";
+  return diff >= 0 ? better === "low" : better === "high";
+};
+
+/**
+ * A derived trigger shown beside its plain one says so: in the title, and in a closing sentence
+ * that names the plain one (with its own figure when both are read in the same column).
+ */
+function harderWords(
+  mine: string,
+  plain: FeatureDef,
+  outcome: FeatureKey,
+  diff: number,
+  plainFigure: string | null,
+  t: Terms,
+) {
+  const theirs = lowerFirst(plain.cause?.title ?? plain.label(t));
+  return {
+    title: `${mine} ${isWorse(outcome, diff) ? "hit harder" : "helped more"}`,
+    tail: ` That is more than ${theirs} alone${plainFigure ? ` (${plainFigure})` : ""}.`,
+  };
+}
+
 // ---------- insights ----------
 
 export function phraseLink(link: Link, status: Insight["status"], ctx: PhraseContext): Phrased {
@@ -255,13 +280,24 @@ export function phraseLink(link: Link, status: Insight["status"], ctx: PhraseCon
       ? `${link.cmp.held} of ${link.cmp.seen} ${occasion} gave ${words.phrase}${when}: ${a} against ${b}.`
       : `${a} against ${b}: ${words.phrase}${when} after ${occasion}.`;
   const { fix, plan } = fixFor(link.x, link.y, link.cmp.diff, ctx);
+  const plain = link.harder?.plain;
+  const harder = plain
+    ? harderWords(
+        x.cause?.title ?? x.label(t),
+        featureDef(plain.x.key),
+        link.y,
+        link.cmp.diff,
+        plain.y === link.y ? shown(y.format, plain.cmp.triggerMean) : null,
+        t,
+      )
+    : null;
   return {
     insight: {
       id: `link:${link.x.key}>${link.y}`,
       kind: "link",
       status,
-      title: `${x.cause?.title ?? x.label(t)}, ${words.title}`,
-      line,
+      title: harder?.title ?? `${x.cause?.title ?? x.label(t)}, ${words.title}`,
+      line: `${line}${harder?.tail ?? ""}`,
       steps: [triggerStep(link.x, link, t), outcomeStep(x, link, link.lag, t)],
       evidence: evidenceOf(link.cmp.occurrences, link.cmp.held, link.cmp.seen),
       fix,
@@ -290,13 +326,24 @@ export function phraseChain(chain: Chain, ctx: PhraseContext): Phrased {
   // Said once when both follow at the same time.
   const line = `${chain.held} of ${seen} ${occasionOf(chain.x, t)} gave ${yWords.phrase}${whenY === whenZ ? "" : whenY} and ${zWords.phrase}${whenZ}.`;
   const { fix, plan } = fixFor(chain.x, chain.z, chain.direct.cmp.diff, ctx);
+  const plain = chain.harder?.plain;
+  const harder = plain
+    ? harderWords(
+        x.cause?.title ?? x.label(t),
+        featureDef(plain.x.key),
+        chain.z,
+        chain.direct.cmp.diff,
+        plain.z === chain.z ? shown(z.format, plain.direct.cmp.triggerMean) : null,
+        t,
+      )
+    : null;
   return {
     insight: {
       id: `chain:${chain.x.key}>${chain.y}>${chain.z}`,
       kind: "chain",
       status: "pattern",
-      title: `${x.cause?.title ?? x.label(t)}, ${yWords.title}, ${zWords.title}`,
-      line,
+      title: harder?.title ?? `${x.cause?.title ?? x.label(t)}, ${yWords.title}, ${zWords.title}`,
+      line: `${line}${harder?.tail ?? ""}`,
       steps: [
         triggerStep(chain.x, chain.first, t),
         outcomeStep(x, chain.first, chain.lagXY, t),
@@ -437,7 +484,13 @@ export function wordsProblems(words: Words, allowed: ReadonlySet<string>): strin
  * the title and the line (and the fix, when it has no one tap action to agree with) only while
  * every figure in them is one the server verified.
  */
-export function phraseDiscovered(v: Verified, words: Words | null, ctx: PhraseContext): Phrased {
+export function phraseDiscovered(
+  v: Verified,
+  words: Words | null,
+  ctx: PhraseContext,
+  /** The plain relation this one is a harder version of: its trigger's column, and its strength. */
+  harderThan?: { key: FeatureKey; strength: number },
+): Phrased {
   const t = termsOf(ctx);
   const h = v.hypothesis;
   const y = featureDef(h.outcome);
@@ -513,7 +566,21 @@ export function phraseDiscovered(v: Verified, words: Words | null, ctx: PhraseCo
     strength: v.strength,
     sources: sourcesOf(features),
   };
-  if (words) {
+  if (harderThan) {
+    // Shown beside the plain relation it is built on: it says so, in the template's own words,
+    // and never outranks it.
+    const said = harderWords(
+      `${named ?? (x ? x.label(t) : "That")}${h.when ? TRANSFORM_LABEL[h.when.transform] : ""}`,
+      featureDef(harderThan.key),
+      h.outcome,
+      v.cmp.diff,
+      null,
+      t,
+    );
+    insight.title = said.title;
+    insight.line = `${line}${said.tail}`;
+    insight.strength = below(insight.strength, harderThan.strength);
+  } else if (words) {
     const allowed = new Set(
       [title, line, fix.text, occasion, ...steps.flatMap((s) => [s.label, s.value])].flatMap(numbersIn),
     );

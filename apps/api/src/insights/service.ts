@@ -187,7 +187,10 @@ function discoveryModel(): ModelClient | null {
 /** One pass on a study: propose, verify, write, store, and show it in the kept study. */
 async function discover(study: Study, model: ModelClient): Promise<void> {
   const userId = currentUserId();
-  const before = (await storedRun())?.discoveries ?? [];
+  // Read first, and strictly: when the stored tests cannot be read, nothing is asked and nothing
+  // is written, so a pass can never replace tests it did not see.
+  const kept = InsightRun.safeParse(await store.getInsightRun());
+  const before = kept.success ? kept.data.discoveries : [];
   let found: StoredDiscovery[] = [];
   let by: string | null = model.model;
   try {
@@ -219,7 +222,11 @@ async function discover(study: Study, model: ModelClient): Promise<void> {
     model: by,
     discoveries,
   };
-  await store.saveInsightRun(run);
+  // Shown from the kept study even when the write fails (the table not there yet, the database
+  // away): the next pass stores it.
+  await store
+    .saveInsightRun(run)
+    .catch((err) => console.error("[insights] the run could not be stored", err));
   const entry = studies.get(userId);
   if (entry?.ready) {
     entry.ready = withDiscoveries(entry.ready, discoveries);

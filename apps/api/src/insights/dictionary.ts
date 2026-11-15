@@ -56,6 +56,12 @@ export interface FeatureDef {
   /** Columns that describe the same thing: never compared with each other, and shown once. */
   family: string;
   sources: InsightSource[];
+  /**
+   * A derived version of another column's trigger: a streak of it, a stricter threshold, a wider
+   * or narrower cut of the same thing. When both pass the bar and tell one story the plain one
+   * leads (miner.ts).
+   */
+  variantOf?: FeatureKey;
   cause?: CauseDef;
   outcome?: OutcomeDef;
 }
@@ -94,6 +100,8 @@ export const FEATURES: FeatureDef[] = [
   },
   {
     key: "late_screen_min",
+    // Wider: every screen, not only the phone.
+    variantOf: "late_phone_min",
     label: (t) => `Screens after ${t.cutoff}`,
     format: "min",
     phase: 3,
@@ -109,6 +117,8 @@ export const FEATURES: FeatureDef[] = [
   },
   {
     key: "phone_before_sleep_min",
+    // Another cut of the same evening.
+    variantOf: "late_phone_min",
     label: () => "Phone in the hour before sleep",
     format: "min",
     phase: 3,
@@ -139,6 +149,8 @@ export const FEATURES: FeatureDef[] = [
   },
   {
     key: "late_streak",
+    // A streak of it.
+    variantOf: "late_phone_min",
     label: () => "Second late night in a row",
     format: "flag",
     phase: 3,
@@ -153,21 +165,7 @@ export const FEATURES: FeatureDef[] = [
     },
   },
   // ---------- the night, on the morning it ends ----------
-  {
-    key: "sleep_min",
-    label: () => "Sleep",
-    format: "min",
-    phase: 0,
-    family: "sleep",
-    sources: WATCH,
-    cause: {
-      side: "low",
-      title: "Short sleep",
-      occasion: (a) => `nights with ${a} of sleep`,
-      avoid: MORNING_AFTER,
-    },
-    outcome: outcome("high", "more sleep", "less sleep"),
-  },
+  // The score first: it is the night in one number, and it leads when two columns tie.
   {
     key: "sleep_score",
     label: () => "Sleep score",
@@ -182,6 +180,21 @@ export const FEATURES: FeatureDef[] = [
       avoid: MORNING_AFTER,
     },
     outcome: outcome("high", "a higher sleep score", "a lower sleep score"),
+  },
+  {
+    key: "sleep_min",
+    label: () => "Sleep",
+    format: "min",
+    phase: 0,
+    family: "sleep",
+    sources: WATCH,
+    cause: {
+      side: "low",
+      title: "Short sleep",
+      occasion: (a) => `nights with ${a} of sleep`,
+      avoid: MORNING_AFTER,
+    },
+    outcome: outcome("high", "more sleep", "less sleep"),
   },
   {
     key: "deep_min",
@@ -203,6 +216,8 @@ export const FEATURES: FeatureDef[] = [
   },
   {
     key: "short_night",
+    // A stricter threshold.
+    variantOf: "sleep_min",
     label: () => "Night under 6 hours",
     format: "flag",
     phase: 0,
@@ -311,6 +326,8 @@ export const FEATURES: FeatureDef[] = [
   },
   {
     key: "evening_workout",
+    // Narrower: only the late sessions.
+    variantOf: "trained",
     label: () => "Training after 19:00",
     format: "flag",
     phase: 3,
@@ -326,6 +343,8 @@ export const FEATURES: FeatureDef[] = [
   },
   {
     key: "after_training",
+    // The same days, read a day later.
+    variantOf: "trained",
     label: () => "Day after training",
     format: "flag",
     phase: 0,
@@ -371,6 +390,8 @@ export const FEATURES: FeatureDef[] = [
   },
   {
     key: "heavy_meeting_day",
+    // A stricter threshold.
+    variantOf: "meeting_count",
     label: () => "3 or more meetings",
     format: "flag",
     phase: 2,
@@ -522,6 +543,9 @@ export const FEATURES: FeatureDef[] = [
 ];
 
 const BY_KEY = new Map(FEATURES.map((f) => [f.key, f]));
+const ORDER = new Map(FEATURES.map((f, i) => [f.key, i]));
+/** Where a column stands in the dictionary: the tie break when two findings are equally strong. */
+export const orderOf = (key: FeatureKey): number => ORDER.get(key) ?? FEATURES.length;
 export const featureDef = (key: FeatureKey): FeatureDef => {
   const def = BY_KEY.get(key);
   if (!def) throw new RangeError(`Unknown feature ${key}`);

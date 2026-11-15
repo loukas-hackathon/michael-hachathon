@@ -1474,14 +1474,31 @@ the evening check in's ratings. Conversations, memories, searches and prompts ar
    strongest; the links it is made of are not listed again, and neither is the same story told
    from another column (two triggers on the same days, or the day after, ending in the same kind
    of outcome).
-6. **`watching`**: a short list of named candidates (late phone and the night, a second late night
+6. **The plain trigger leads.** Some columns are derived versions of another column's trigger
+   (`variantOf` in `insights/dictionary.ts`): a streak of it ("second late night in a row" of
+   late phone), a stricter threshold ("night under 6 hours" of sleep, "3 or more meetings" of the
+   meeting count), a wider or narrower cut of the same thing (every screen after the cut off and
+   the phone in the hour before sleep, of late phone; "trained after 19:00" and "day after
+   training", of training). When the plain trigger and a derived one both pass the bar and end in
+   the same kind of outcome, they tell one story and the plain one tells it: it is simpler and it
+   covers more of the person's days. The derived one is shown as well only when it moves the
+   outcome at least 1.5 times as far in standard deviations (`MINER_RULES.variantMargin`); it is
+   then listed after the plain one (its `strength` is held just below), its title says so ("Two
+   late nights in a row hit harder") and its line ends "That is more than late phone alone
+   (17 min)." The same holds for the discovery pass: a hypothesis built on a column the rules
+   already found a relation from (a streak of it, a rolling mean, another threshold, a second
+   condition), ending in the same kind of outcome, is dropped unless it clears the same margin,
+   and is then shown after the plain relation, in the template's words. Between two equally
+   strong findings the dictionary's order decides (the phone before every screen, the sleep score
+   before the minutes).
+7. **`watching`**: a short list of named candidates (late phone and the night, a second late night
    in a row and recovery, a short night and the first block, training and deep sleep, three
    meetings and the day's lost time, late coffee and the night) is shown before it can be tested:
    seen 2 or 3 times with the outcome moving every time by 1.5 standard deviations or more, or
    seen often enough but with fewer than 14 days studied. Only the candidates are named in code;
    whether one shows, which way it points and its numbers come from the data. Its `line` says what
    was seen and never carries the count (`evidence` has it).
-7. **Words** (`insights/phrase.ts`): title, line, steps and the one fix come from templates in
+8. **Words** (`insights/phrase.ts`): title, line, steps and the one fix come from templates in
    Michael's voice, filled with the miner's numbers. `strength` is half the share of times it held
    and half the distance between the two sides (1 standard deviation is 0.49, 2 are 0.74); a
    watched one is halved. At most 8 patterns and 3 watched.
@@ -1552,6 +1569,14 @@ Hypothesise, then verify: the model is free to be creative and can never be wron
    `"skipped"` (this server has no model key: the rules' insights still work). The scheduler's
    five minute beat keeps a study from today for every active user and starts the pass once per
    new day of data. A demo visitor gets the usual `403` on `run`.
+6. What cannot go wrong. One pass per user at a time (a second tap answers `running`; the
+   scheduler skips a user whose pass is in flight). The scheduler asks once per user per new day
+   of data: the day is remembered in the process and stored with the run (`data_day`), also when
+   the model failed, so a failing model is not asked again every beat. For a user with nothing
+   new the beat costs a look at the kept study: no event is read, no row, no model. A failed or
+   unreadable model answer never loses the stored tests: they are read before the model is asked
+   and written back with whatever was newly found; when they cannot be read, nothing is asked
+   and nothing is written. When the write fails the pass still shows from the kept study.
 
 **Other readers.** MCP `get_insights` and the chat tool of the same name give the same findings
 as text. The real time nudges (`nudges/learnt.ts`) cite the kept study's strongest pattern about
