@@ -1364,7 +1364,7 @@ travel site" or "an uncategorised site". Structured `data` carries the host for 
 `spoken: true` means the answer will be read aloud (the app's conversation mode): Michael keeps it
 to one or two short sentences with no lists or markdown, and says numbers as a person would.
 
-**Steps (how Michael is working it out).** The stream opens with `step` `{ id: "open", label: "Reading your day", status: "running" }`, marked `done` at the first word or the first tool step. Each tool call then sends `running` before it runs and `done` after, with the same `id` (`s1`, `s2`, ...) and a plain label in Michael's voice ("Reading your calendar", "Logging 40 min", "Blocking WhatsApp"; unknown tools say "Working it out"). Labels never carry other people's titles or raw ids. Clients that do not know `step` ignore it.
+**Steps (how Michael is working it out).** The stream opens with `step` `{ id: "open", label: "Reading your day", status: "running" }`, marked `done` at the first word or the first tool step. Each tool call then sends `running` before it runs and `done` after, with the same `id` (`s1`, `s2`, ...) and a plain label in Michael's voice ("Reading your calendar", "Logging 40 min", "Blocking WhatsApp"; when the call points at one of the user's goals by id, its name from their own goals: "Logging 40 min to Gym", "Booking time for Deep work"; unknown tools say "Working it out"). Labels never carry other people's titles or raw ids. Clients that do not know `step` ignore it.
 
 `/v1/chat` stays for callers that want the whole answer (MCP, voice); `/v1/chat/stream` gives the
 first words fast and stores the same pair when it finishes. The stored answer keeps the ids of what
