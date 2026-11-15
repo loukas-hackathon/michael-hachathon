@@ -8,6 +8,7 @@ import { type ConnectionStatus, getConnections } from "@/lib/connections-status"
 import { getFirstInsight, SAMPLE_INSIGHT } from "@/lib/first-insight";
 import { getGoogleCalendar, googleConnectUrl, syncGoogleCalendar } from "@/lib/integrations";
 import { arrivedFrom } from "@/lib/live-connections";
+import { signedInWithEmail } from "@/lib/supabase/server";
 import { FirstInsightCard } from "./first-insight";
 import { OnboardingFrame, primaryButton, Separator } from "./frame";
 import { GoalsStep } from "./goals-step";
@@ -79,7 +80,9 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
     !calendarOn &&
     !failed &&
     goals.length === 0 &&
-    !profile?.onboarded_at
+    !profile?.onboarded_at &&
+    // Signed up with email (#475): the calendar is a Connect step on the goals screen instead.
+    !(await signedInWithEmail())
   ) {
     const url = await googleConnectUrl(GOALS_PATH).catch(() => null);
     if (url) redirect(url);
