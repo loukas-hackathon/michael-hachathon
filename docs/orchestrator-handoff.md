@@ -6,7 +6,7 @@ permission, keep building with parallel agents, close every issue we can, phone 
 developed), keep colours and branding exactly as they are (pink `#E6007A`, red `#FF3B30`), and pace
 the usage limit by slowing down at about 60% of the window.
 
-## State (updated 13:45 UTC / 15:45 Athens)
+## State (updated 13:50 UTC / 15:50 Athens)
 - This session (loukas-hackathon) is the lead orchestrator. Production healthy (API f6c86ec).
 - Since 13:00: #528 iCloud shortcut links as defaults (Michael c0c2a08d..., Focus 76e297e8...),
   #530 off the record never set by focus/DND words, Michael always states it; #531 automation opens
@@ -18,6 +18,9 @@ the usage limit by slowing down at about 60% of the window.
 - Loukas' first iPhone open stored 13:38 UTC ("An app"). He edited his Michael shortcut so `app` = plain
   Shortcut Input (not its Name); with a per app automation (Text "Instagram" then Run Shortcut Michael)
   names should now arrive. His goal is literally named "Personal T".
+- Building (hard deadline 14:45 UTC): "My automation is for" picker on the iPhone page. Unnamed
+  shortcut opens get that app name (data.app_assumed); saving renames today's "An app" events; no
+  migration. Loukas asked for it; check it merged and tell him to pick Instagram.
 - Running (due 14:40 UTC): Focus agent fixing End early stuck on "Saving" and the hidden session pill
   covering the chat composer, then "min kept" + finish moment; a chat agent fixing Michael saying the
   iPhone is not connected (connections-state must match GET /live/connections).
