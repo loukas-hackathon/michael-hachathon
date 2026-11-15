@@ -782,7 +782,8 @@ export function DayTimeline({
           );
         })}
 
-        {/* Done time the user logged (#317): goal time in their own word, so pink like a workout. */}
+        {/* Done time the user logged (#317): goal time in their own word, so pink like a workout. Taps go
+            through to the block it covers (its sheet has Did it and the details). */}
         {(day.logged ?? []).map((l) => {
           const top = y(l.start);
           const h = Math.max(3, y(l.end) - top);
@@ -790,7 +791,7 @@ export function DayTimeline({
             <div
               key={`log${l.start}`}
               data-live-key={`log${l.start}-${l.end}`}
-              className="absolute right-(--lane-r) left-[50px] overflow-hidden rounded-block bg-spark"
+              className="pointer-events-none absolute right-(--lane-r) left-[50px] overflow-hidden rounded-block bg-spark"
               style={{ top, height: h }}
               title={`${l.title}, logged, ${span(l.start, l.end)}`}
             >
@@ -817,7 +818,7 @@ export function DayTimeline({
               key={`w${w.start}`}
               aria-hidden="true"
               data-live-key={`w${w.start}-${w.end}`}
-              className="absolute right-(--lane-r) left-[50px] overflow-hidden rounded-block bg-spark"
+              className="pointer-events-none absolute right-(--lane-r) left-[50px] overflow-hidden rounded-block bg-spark"
               style={{ top, height: h }}
               title={`${w.name}, ${formatTime(iso(w.start))} to ${formatTime(iso(w.end))}`}
             >
