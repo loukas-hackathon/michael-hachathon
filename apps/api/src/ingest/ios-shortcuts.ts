@@ -17,7 +17,10 @@ const SOURCE = "ios_shortcuts" as const;
 export const MAX_SESSION_MS = 2 * 3600_000;
 
 export const ShortcutsPayload = z.object({
-  app: z.string().trim().min(1).max(200),
+  // Empty or missing: the shortcut was run by hand in the Shortcuts app (no automation, so no app
+  // as its input). That is the test run (#466): answered, never stored, never a 400. Production,
+  // 15 Nov: a hand run was refused here, so the row stayed Not connected after a working setup.
+  app: z.string().trim().max(200).default(""),
   // Missing means open: one "Is Opened" automation with only the app is enough, since opening the
   // next app closes the one before.
   action: z
