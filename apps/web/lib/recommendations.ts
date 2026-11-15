@@ -251,3 +251,15 @@ export function recError(status: number, message: string): string {
   if (status === 0) return "I could not reach the server. Nothing changed.";
   return "That did not work on my side. Nothing changed. Try again in a minute.";
 }
+
+const DAY_FIRST = /^(Tomorrow|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b/;
+
+/**
+ * One suggestion in a folded list's preview line: its title, led by the day when that is not today
+ * (#385: "Tomorrow: Block 09:30 to 11:00 for cold outreach" in the evening, never a bare time).
+ */
+export function previewTitle(card: Pick<RecCard, "title" | "when">): string {
+  const title = card.title.replace(/[.!?]$/, "");
+  const day = card.when ? DAY_FIRST.exec(card.when)?.[1] : undefined;
+  return day && !title.includes(day) ? `${day}: ${title}` : title;
+}

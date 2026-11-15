@@ -264,7 +264,8 @@ test("an expired or unknown request says to start again from Claude", async ({ p
 test("You > Claude is one link and one line", async ({ page, context, baseURL }) => {
   await context.addCookies([{ name: "michael_e2e_user", value: randomUUID(), url: baseURL ?? "" }]);
   await page.goto("/you/connections/claude");
-  await expect(page.getByText(`${API_URL}/mcp`)).toBeVisible();
+  await expect(page.getByText("Your Michael link")).toBeVisible();
+  await expect(page.getByText(`${API_URL}/mcp`)).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Copy link" })).toHaveCount(1);
   await expect(page.getByText(/add a custom connector, paste it and tap Allow/)).toBeVisible();
 });

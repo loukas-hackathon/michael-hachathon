@@ -14,7 +14,7 @@ import {
   type RecActionResult,
   undoRecommendationAction,
 } from "@/lib/recommendation-actions";
-import type { RecCard, TravelDriveRow } from "@/lib/recommendations";
+import { previewTitle, type RecCard, type TravelDriveRow } from "@/lib/recommendations";
 import { Fold } from "./fold";
 import { DriveBar } from "./travel-card";
 
@@ -333,7 +333,7 @@ export function RecommendationList({
     <Fold
       title={n === 1 ? "One more suggestion" : `${n} more suggestions`}
       label="More suggestions"
-      preview={visible.map((c) => c.title.replace(/[.!?]$/, "")).join(". ")}
+      preview={visible.map(previewTitle).join(". ")}
     >
       <FlipList flipKey={flipKey} className="-mt-1 flex flex-col">
         {items}

@@ -84,7 +84,7 @@ test("the moment goes out once a day, counts toward the 5 and respects quiet hou
   assert.equal(d.candidate.kind, "morning");
   assert.equal(d.candidate.key, "morning");
   assert.equal(d.candidate.text, LINE.text);
-  assert.match(d.candidate.reason, /Sent at 08:00: no sleep recorded this morning\./);
+  assert.match(d.candidate.reason, /Sent at 08:00, the usual morning time\./);
 
   // Already out today: nothing to say.
   assert.deepEqual(decide(input("09:00", [], [sent("08:05", "morning")], { ...g, moment })), {
