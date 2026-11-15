@@ -54,7 +54,7 @@ export default async function YouPage({
         // The presenter may switch Off the record (#343), so the projector shows no sign in card.
         <Link href="/login" className="press mt-4 block rounded-group bg-fill px-4 py-3">
           <span className="block text-body font-semibold">This is the demo week.</span>
-          <span className="block text-subhead text-label-2">Sign in with Google to make it yours.</span>
+          <span className="block text-subhead text-label-2">Sign in to make it yours.</span>
         </Link>
       ) : null}
 

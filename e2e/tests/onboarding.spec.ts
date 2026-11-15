@@ -242,9 +242,9 @@ test("You on the demo week: sources read Sample data, a refused tap says why", a
   const privacy = page.locator("section", { has: page.getByRole("heading", { name: "Privacy" }) });
   await expect(async () => {
     await page.locator("#off-the-record").click();
-    await expect(
-      privacy.getByText("This is the demo week. Sign in with Google to make it yours."),
-    ).toBeVisible({ timeout: 2000 });
+    await expect(privacy.getByText("This is the demo week. Sign in to make it yours.")).toBeVisible({
+      timeout: 2000,
+    });
   }).toPass({ timeout: 15_000 });
   await expect(page.locator("#off-the-record")).not.toBeChecked();
 });
@@ -258,7 +258,7 @@ test("the presenter: no sign in lines on the projector, Off the record switches 
   await expect(page.getByText("Sign in to make it yours.")).toHaveCount(0);
 
   await page.goto("/you");
-  await expect(page.getByText("Sign in with Google to make it yours.")).toHaveCount(0);
+  await expect(page.getByText("Sign in to make it yours.")).toHaveCount(0);
   const record = page.locator("#off-the-record");
   const offTheRecord = async () => (await apiGet<{ off_the_record: boolean }>("/v1/privacy")).off_the_record;
   // One tap each way, each waiting for the server: a double tap would leave the shared demo

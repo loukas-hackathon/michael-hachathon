@@ -7,7 +7,7 @@ import { isDemoVisitor } from "./caller";
 // so a refusal reads the same on every screen and never as a generic error.
 
 /** Must match DEMO_VISITOR_MESSAGE in apps/api/src/demo/visitor.ts. */
-export const DEMO_WEEK_LINE = "This is the demo week. Sign in with Google to make it yours.";
+export const DEMO_WEEK_LINE = "This is the demo week. Sign in to make it yours.";
 
 /** The demo line when the API refused a demo visitor (403), else null: the caller keeps its own words. */
 export async function demoRefusal(status: number | undefined): Promise<string | null> {

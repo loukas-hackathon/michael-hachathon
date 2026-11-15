@@ -9,7 +9,7 @@ export type DeleteOutcome = { result: DataDeleteResult } | { error: string };
 // DELETE /v1/me/data for the signed-in person: every row, Google access and the sign in itself.
 export async function deleteEverything(): Promise<DeleteOutcome> {
   if (await isDemoVisitor()) {
-    return { error: "This is the demo week. Sign in with Google to delete your own data." };
+    return { error: "This is the demo week. Sign in to delete your own data." };
   }
   try {
     const res = await fetch(`${API_URL}/v1/me/data`, {
