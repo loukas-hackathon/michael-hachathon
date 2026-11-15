@@ -436,6 +436,8 @@ test("demo visitors cannot change the shared account", async () => {
     ],
     ["POST", "/v1/nudges/check"],
     ["DELETE", "/v1/me/data"],
+    // Connecting an agent grants full write: never from the shared demo week.
+    ["POST", `/v1/connect/requests/${randomUUID()}`, { allow: true }],
     ["DELETE", `/v1/events/${randomUUID()}`],
     ["POST", `/v1/goals/suggestions/${randomUUID()}/accept`],
     ["PUT", "/v1/targets/2026-11-09", {}],
@@ -502,7 +504,34 @@ test("the demo reseed clears visitor chat and puts off the record back off", asy
   assert.equal(privacy.off_the_record, false);
 });
 
+test("the presenter path: the API key alone may still answer a connect request", async () => {
+  // An unknown request is 404, not 403: the route is open to the key (docs/demo-runbook.md).
+  const res = await request(asDemo, "POST", `/v1/connect/requests/${randomUUID()}`, { allow: true });
+  assert.equal(res.status, 404);
+});
+
+test("the demo reseed puts goals and standing instructions back to the plan", async () => {
+  const { demoGoals, demoInstructions } = await import("./demo/week");
+  const plan = demoGoals[0] as { id: string; title: string };
+  // Rehearsal changes, made the ways that still can: Claude or the API key.
+  await ok(await request(asDemo, "POST", "/v1/goals", { category: "rest", title: "Rehearsal goal" }), "add");
+  await ok(await request(asDemo, "PATCH", `/v1/goals/${plan.id}`, { title: "Renamed" }), "rename");
+  await ok(await request(asDemo, "POST", "/v1/instructions", { text: "Rehearsal rule" }), "rule");
+
+  await runAsUser(DEMO, () => seedDemoWeek(store, { overwriteGoals: true }), "api_key");
+
+  const { goals } = await ok(await request(asDemo, "GET", "/v1/goals"), "goals");
+  assert.deepEqual(goals.map((g: { id: string }) => g.id).sort(), demoGoals.map((g) => g.id).sort());
+  assert.equal(goals.find((g: { id: string }) => g.id === plan.id).title, plan.title);
+  const { instructions } = await ok(await request(asDemo, "GET", "/v1/instructions"), "instructions");
+  assert.deepEqual(
+    instructions.map((i: { text: string }) => i.text),
+    demoInstructions.map((i) => i.text),
+  );
+});
+
 test("the visitor rules fail closed for routes nobody listed", () => {
+  assert.equal(demoVisitorMay("POST", "/v1/connect/requests/x"), false);
   assert.equal(demoVisitorMay("POST", "/v1/something-new"), false);
   assert.equal(demoVisitorMay("DELETE", "/v1/me/data"), false);
   assert.equal(demoVisitorMay("GET", "/v1/goals"), true);

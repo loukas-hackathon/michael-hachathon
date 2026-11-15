@@ -49,6 +49,24 @@ export default async function ConnectPage({
   const who = await signedInAs();
   const name = request.client_name;
 
+  // Connecting an agent grants it full write on the account, so demo visitors cannot: the demo
+  // week is shared. The presenter connects Claude to it with the API key (docs/demo-runbook.md).
+  if (who === "the demo week") {
+    return (
+      <main className="screen flex min-h-dvh flex-col justify-center pb-24">
+        <Wordmark className="h-8 w-auto text-label" />
+        <h1 className="mt-6 text-insight font-bold">This is the demo week.</h1>
+        <p className="mt-2 text-body text-label-2">Sign in with Google to make it yours.</p>
+        <a
+          href="/auth/signout"
+          className="press mt-8 flex h-12 items-center justify-center rounded-group bg-tint text-body font-semibold text-on-tint"
+        >
+          Sign in with Google
+        </a>
+      </main>
+    );
+  }
+
   return (
     <main className="screen flex min-h-dvh flex-col justify-center pb-24">
       <Wordmark className="h-8 w-auto text-label" />

@@ -9,6 +9,7 @@ import { HowICount, ScoreLearning } from "@/components/score/how-i-count";
 import { ScreenHeader } from "@/components/screen";
 import { Tape, TapeKey } from "@/components/tape";
 import { BriefCard } from "@/components/today/brief-card";
+import { CalendarCard } from "@/components/today/calendar-card";
 import { TodayChecklist } from "@/components/today/checklist";
 import { MoreFromMichael } from "@/components/today/fold";
 import { GetStarted } from "@/components/today/get-started";
@@ -94,6 +95,9 @@ export default async function TodayPage({
       {day.blocks.length === 0 && day.week.scorePct == null ? (
         <>
           <GetStarted demo={demo} />
+          <Suspense fallback={null}>
+            <CalendarCard demo={demo} emptyDay />
+          </Suspense>
           <TodayEmpty demo={demo} />
           {ritualCard}
           {lists.map((l) => (
@@ -215,6 +219,12 @@ export default async function TodayPage({
           {ritualCard}
 
           <RecommendationsPanel slot="primary" />
+
+          {day.sample ? null : (
+            <Suspense fallback={null}>
+              <CalendarCard demo={demo} emptyDay={false} />
+            </Suspense>
+          )}
 
           {lists.map((l) => (
             <TodayChecklist key={l.goalId} {...l} />

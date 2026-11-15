@@ -7,10 +7,12 @@ import {
   type ChatResponse,
   type ChatThread,
   type CheckIn,
+  type ConnectorId,
   type Event,
   type Goal,
   goalArea,
   type Instruction,
+  isLive,
   MICHAEL_VOICE,
   type PatternReport,
   type Recommendation,
@@ -61,6 +63,31 @@ const LISTED_TYPES = new Set<Event["type"]>([
 // Types totalled over the week so Michael can talk budgets.
 const WEEK_TYPES = ["workout", "sleep", "focus_session", "meal"] as const;
 
+// "Connect my calendar" (#307): the web puts the one tap button under the answer for live
+// connections (CONNECTOR_STATUS, #295), so Michael points to it instead of giving steps.
+const CONNECT_NAMES: Record<ConnectorId, string> = {
+  "google-calendar": "their calendar",
+  claude: "Claude",
+  telegram: "Telegram",
+  nudges: "nudges",
+  "apple-watch": "their Apple Watch",
+  mac: "their Mac",
+  iphone: "their iPhone apps",
+  travel: "their location",
+};
+const spoken = (items: string[]) =>
+  items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} or ${items.at(-1)}`;
+const connectIds = Object.keys(CONNECT_NAMES) as ConnectorId[];
+export const CONNECT_LINE = [
+  `- When the user asks to connect ${spoken(connectIds.filter(isLive).map((id) => CONNECT_NAMES[id]))}, the app shows a one tap Connect button under your answer: say in one short line what it gives you and that the button below does it.`,
+  connectIds.some((id) => !isLive(id))
+    ? `${spoken(connectIds.filter((id) => !isLive(id)).map((id) => CONNECT_NAMES[id]))}: coming soon, say so in one line.`
+    : "",
+  "Never give steps, links or keys.",
+]
+  .filter(Boolean)
+  .join(" ");
+
 const SYSTEM_PROMPT = `${MICHAEL_VOICE}
 
 In this chat:
@@ -81,6 +108,7 @@ Acting:
 - Never claim you did something unless a tool result says it is done.
 - After acting, say in one or two short sentences what you did, with times, and end with the undo line exactly as the tool gave it, e.g. "Undo until 15:00."
 - Times you pass to tools are ISO 8601 with the user's UTC offset, as in "Now (ISO)" below.
+${CONNECT_LINE}
 
 Proposing:
 - When the user tells you something that changes their week (exams, an injury, travel, a deadline), propose one concrete change tied to a goal: a goal's weekly budget with propose_goal_change (with until for a temporary change), or this week's blocks with propose_plan_change. Show the maths ("University 4h to 8h a week until 22 December; Business 8h to 4h, so the week still adds up").
