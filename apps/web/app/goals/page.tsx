@@ -5,6 +5,7 @@ import { BookTime } from "@/components/goals/book-time";
 import { ExpandRow } from "@/components/goals/expand-row";
 import { GoalBar, SleepBars, SplitBar, WeekBars } from "@/components/goals/goal-charts";
 import { AddGoal, EditGoal, type GoalDraft, NewGoalButton } from "@/components/goals/goal-sheets";
+import { LogTimeButton } from "@/components/log-time";
 import { Tween } from "@/components/motion-ui";
 import { ProgressBar } from "@/components/progress-bar";
 import { HowICount, ScoreLearning } from "@/components/score/how-i-count";
@@ -50,6 +51,8 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
   const personalReady = (GoalCategory.options as readonly string[]).includes("personal");
   const drafts = new Map(all.map((g) => [g.id, draftOf(g)]));
   const paused = all.filter((g) => !g.active);
+  // Logging needs the real goals; the sample preview has made up ids.
+  const canLog = demo !== "sample" && all.length > 0;
   const p = pace(week);
   const today = todayIndex(week);
   const daysLeft = 7 - today - 1;
@@ -109,6 +112,7 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
                 toGo={toGo}
                 drafts={drafts}
                 personalReady={personalReady}
+                canLog={canLog}
               />
             ) : ranked.length > 0 ? (
               <section aria-label="This week" className="mt-3">
@@ -189,6 +193,7 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
                           toGo={toGo}
                           draft={drafts.get(r.goal.id)}
                           personalReady={personalReady}
+                          canLog={canLog}
                         />
                       </li>
                     ))}
@@ -199,6 +204,7 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
                           first={rows.length === 0 && !leadOnly && i === 0}
                           draft={drafts.get(x.id)}
                           personalReady={personalReady}
+                          canLog={canLog}
                         />
                       </li>
                     ))}
@@ -255,6 +261,7 @@ function Hero({
   toGo,
   drafts,
   personalReady,
+  canLog,
 }: {
   status: GoalStatus;
   pace: number;
@@ -262,6 +269,7 @@ function Hero({
   toGo: number;
   drafts: Map<string, GoalDraft>;
   personalReady: boolean;
+  canLog: boolean;
 }) {
   const { goal, behind, leftMinutes } = status;
   const due = paceMinutes(goal.budgetMinutes, p);
@@ -299,11 +307,15 @@ function Hero({
             <b className="font-semibold text-label">{hm(goal.spentMinutes)}</b> of {hm(goal.budgetMinutes)}.
             On pace: {hm(due)} by now.
           </p>
-          {draft ? (
-            <EditGoal draft={draft} personalReady={personalReady} className={`${btnPlain} -my-2 shrink-0`}>
-              Edit
-            </EditGoal>
-          ) : null}
+          <span className="-my-2 flex shrink-0 items-baseline gap-3">
+            {/* "I did 30 min" (#317): time spent off the calendar counts too. */}
+            {canLog ? <LogTimeButton goal={{ id: goal.id, title: goal.title }} className={btnPlain} /> : null}
+            {draft ? (
+              <EditGoal draft={draft} personalReady={personalReady} className={btnPlain}>
+                Edit
+              </EditGoal>
+            ) : null}
+          </span>
         </div>
       </div>
 
@@ -378,6 +390,7 @@ function GoalRow({
   toGo,
   draft,
   personalReady,
+  canLog,
 }: {
   status: GoalStatus;
   first: boolean;
@@ -387,6 +400,7 @@ function GoalRow({
   toGo: number;
   draft: GoalDraft | undefined;
   personalReady: boolean;
+  canLog: boolean;
 }) {
   const { goal, behind, leftMinutes } = status;
   const close = closeState(goal.budgetMinutes, goal.spentMinutes, leftMinutes);
@@ -454,6 +468,7 @@ function GoalRow({
       </p>
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
         {close === "closed" ? null : <BookTime goalId={goal.id} minutes={bookMinutes(leftMinutes, toGo)} />}
+        {canLog ? <LogTimeButton goal={{ id: goal.id, title: goal.title }} className={btnPlain} /> : null}
         {draft ? (
           <EditGoal draft={draft} personalReady={personalReady} className={btnPlain}>
             Edit goal
@@ -470,11 +485,13 @@ function ExtraRow({
   first,
   draft,
   personalReady,
+  canLog,
 }: {
   goal: GoalWeek;
   first: boolean;
   draft: GoalDraft | undefined;
   personalReady: boolean;
+  canLog: boolean;
 }) {
   const c = goal.count;
   const l = goal.checklist;
@@ -528,11 +545,16 @@ function ExtraRow({
           ? "Counted sessions, outside the time score."
           : "The day's outcomes, set on Today. Outside the time score."}
       </p>
-      {draft ? (
-        <div className="mt-2">
-          <EditGoal draft={draft} personalReady={personalReady} className={btnPlain}>
-            Edit goal
-          </EditGoal>
+      {draft || (canLog && c) ? (
+        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
+          {canLog && c ? (
+            <LogTimeButton goal={{ id: goal.id, title: goal.title }} className={btnPlain} />
+          ) : null}
+          {draft ? (
+            <EditGoal draft={draft} personalReady={personalReady} className={btnPlain}>
+              Edit goal
+            </EditGoal>
+          ) : null}
         </div>
       ) : null}
     </ExpandRow>

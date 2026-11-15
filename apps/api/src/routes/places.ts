@@ -39,6 +39,36 @@ async function placesResponse(places?: Place[]): Promise<PlacesResponse> {
   };
 }
 
+/**
+ * Replaces the saved places (PUT /v1/places, and Michael's save_place in chat), geocoding new
+ * addresses when the server has a maps key.
+ */
+export async function savePlaces(body: z.output<typeof PlacesUpdate>): Promise<PlacesResponse> {
+  const existing = new Map((await store.listPlaces()).map((p) => [p.key, p]));
+  const rows: Omit<Place, "updated_at">[] = [];
+  for (const p of body.places) {
+    const address = p.address ?? null;
+    let lat = p.lat ?? null;
+    let lng = p.lng ?? null;
+    const before = existing.get(p.key);
+    if ((lat === null || lng === null) && address) {
+      if (before && before.address === address && before.lat !== null) {
+        ({ lat, lng } = before);
+      } else if (mapsAvailable()) {
+        const hit = await geocode(store, address);
+        lat = hit?.lat ?? null;
+        lng = hit?.lng ?? null;
+      }
+    }
+    rows.push({ key: p.key, label: p.label ?? DEFAULT_LABEL[p.key] ?? p.key, address, lat, lng });
+  }
+  const saved = await store.replacePlaces(rows);
+  // Saving a place is the user's own opt in to travel times; the privacy switch turns it off.
+  const rules = await store.privacyRules();
+  if (saved.length && rules.sources.maps === undefined) await store.setSourceEnabled("maps", true);
+  return placesResponse(saved);
+}
+
 export const places = new Hono()
   .get("/places", async (c) => c.json(await placesResponse()))
   // Places the user often looks up in Google Maps, offered for saving. Only with source maps on;
@@ -73,30 +103,7 @@ export const places = new Hono()
     return c.json(body);
   })
   .put("/places", async (c) => {
-    const body = parse(PlacesUpdate, await jsonBody(c));
-    const existing = new Map((await store.listPlaces()).map((p) => [p.key, p]));
-    const rows: Omit<Place, "updated_at">[] = [];
-    for (const p of body.places) {
-      const address = p.address ?? null;
-      let lat = p.lat ?? null;
-      let lng = p.lng ?? null;
-      const before = existing.get(p.key);
-      if ((lat === null || lng === null) && address) {
-        if (before && before.address === address && before.lat !== null) {
-          ({ lat, lng } = before);
-        } else if (mapsAvailable()) {
-          const hit = await geocode(store, address);
-          lat = hit?.lat ?? null;
-          lng = hit?.lng ?? null;
-        }
-      }
-      rows.push({ key: p.key, label: p.label ?? DEFAULT_LABEL[p.key] ?? p.key, address, lat, lng });
-    }
-    const saved = await store.replacePlaces(rows);
-    // Saving a place is the user's own opt in to travel times; the privacy switch turns it off.
-    const rules = await store.privacyRules();
-    if (saved.length && rules.sources.maps === undefined) await store.setSourceEnabled("maps", true);
-    return c.json(await placesResponse(saved));
+    return c.json(await savePlaces(parse(PlacesUpdate, await jsonBody(c))));
   })
   // Plan the drives between today's calendar events (or a given range) and propose changes.
   .post("/travel/plan", async (c) => {

@@ -7,6 +7,7 @@ import {
   type ChatResponse,
   type ChatThread,
   type CheckIn,
+  type ChecklistItem,
   type ConnectorId,
   type Event,
   type Goal,
@@ -32,6 +33,7 @@ import { listMemories, type Memory, memoryContext } from "../memory";
 import { DEFAULT_TIMEZONE, NO_HEADLINES } from "../patterns";
 import { Zone } from "../patterns/time";
 import { ritualFor } from "../ritual/ritual";
+import { isLogEntry } from "../score/logged";
 import { store } from "../store";
 import { latestThread, titleFor, untitled } from "./chat-threads";
 import { patternReportFor } from "./patterns";
@@ -100,8 +102,16 @@ Facts:
 - For goal progress and budgets, quote the score figures exactly as given; they are the same numbers the app shows.
 - Quote times and ids only from the context or from tool results.
 
+Logging what the user did:
+- When the user says they did something for a goal ("I took a bath for 40 minutes at 13:00", "an hour of reading this morning"), log it at once with log_done. It counts as confirmed goal time straight away; no calendar block is needed. Then reply in one line with the new maths from the tool result and end with "Undo", e.g. "Logged. Everything bath 40 of 60 min this week. Undo".
+- When the user says how one of their past goal blocks went ("skipped the gym", "only did half of deep work"), settle it with confirm_block (did, minutes, reason).
+- You can always log time against a goal. Never say you cannot, and never offer a workaround such as renaming or moving another block instead. If the goal or the time is unclear, ask one short question.
+
 Acting:
-- You act only on the user's own time: you can add a block to their calendar (create_focus_block), move one of their own solo blocks (move_calendar_block), close distracting apps on their Mac for a while (block_mac_app) and take back something you did (undo_action). On everything else you advise.
+- You can write everything the user can write in the app: log time (log_done), settle a past block (confirm_block), add a block to their calendar (create_focus_block), move or rename one of their own solo blocks (move_calendar_block), add a goal (add_goal), change a goal's budget, title or description, or pause and resume it (update_goal), add, tick off or reword an outcome (add_checklist_item, update_checklist_item), keep or pause a standing instruction (add_instruction, update_instruction), save a place (save_place), change quiet hours and the usual week (update_profile), close distracting apps on their Mac for a while (block_mac_app), and take back something you did (undo_action).
+- Deleting data, a goal, an instruction or a place, disconnecting a source and revoking an agent stay in the app: say where ("You, Goals") instead.
+- Prefer acting with undo over explaining why you cannot.
+- You act only on the user's own time. On everything else you advise.
 - You can draft a follow up message after a conversation or a meeting with other people (draft_follow_up). It is saved for the user to copy and send themselves; show them the text.
 - Act when the user asks you to, or clearly agrees to a change you proposed. If the time or the block is unclear, ask first instead of guessing.
 - You never touch events with other people, never delete the user's events, and never send anything in the user's name. If a tool refuses, say why in one line and offer advice instead.
@@ -112,7 +122,8 @@ ${CONNECT_LINE}
 
 Proposing:
 - When the user tells you something that changes their week (exams, an injury, travel, a deadline), propose one concrete change tied to a goal: a goal's weekly budget with propose_goal_change (with until for a temporary change), or this week's blocks with propose_plan_change. Show the maths ("University 4h to 8h a week until 22 December; Business 8h to 4h, so the week still adds up").
-- A proposal changes nothing until the user taps Accept. Never say it is done. Never change goals any other way. One proposal per answer. If a tool says the user declined it this week, do not propose it again.
+- A proposal changes nothing until the user taps Accept. Never say it is done. One proposal per answer. If a tool says the user declined it this week, do not propose it again.
+- Propose when the change is your idea. When the user plainly asks for a change to a goal ("make bath 90 minutes a week", "pause Spanish"), make it with update_goal instead.
 
 Memory:
 - "What the user told you before" below is what you remember from earlier conversations. Use it without being asked; it is why the user does not repeat themselves.
@@ -165,6 +176,8 @@ export interface ChatContextInput {
   score?: Score | null;
   /** Things Michael did that can still be undone (status done, undo deadline ahead). */
   undoable?: Recommendation[];
+  /** Today's outcomes of checklist goals (#238), with ids for update_checklist_item. */
+  checklist?: ChecklistItem[];
   /** Check in answers from the last week, and today's open questions (#187). */
   checkIns?: { answered: CheckIn[]; open: CheckIn[] };
   /** Facts the user asked Michael (or an agent) to keep, newest first. */
@@ -284,11 +297,17 @@ export function buildChatContext(input: ChatContextInput): string {
   if (rules.length > 0) {
     parts.push(
       `Standing instructions (never plan, move or suggest anything inside the time they protect):\n${rules
-        .map((i) => `- ${instructionLine(i)}`)
+        .map((i) => `- ${instructionLine(i)} {instruction_id ${i.id}}`)
         .join("\n")}`,
     );
   }
 
+  // Blocks the user already settled (#317), so Michael does not ask about them again.
+  const settledBlocks = new Map<string, "did" | "didnt">();
+  for (const e of input.events) {
+    if (!isLogEntry(e) || typeof e.data.event_id !== "string") continue;
+    settledBlocks.set(e.data.event_id, e.data.log === "didnt" ? "didnt" : "did");
+  }
   const todayLines = input.events
     .filter((e) => LISTED_TYPES.has(e.type))
     .filter((e) => {
@@ -304,14 +323,22 @@ export function buildChatContext(input: ChatContextInput): string {
       const end = e.end_at ? Date.parse(e.end_at) : null;
       const when = end ? `${zone.clock(start)} to ${zone.clock(end)}` : zone.clock(start);
       const planned = start > now ? " (planned)" : "";
-      // Ids only where Michael may act: the user's own blocks that have not started.
+      // Ids only where Michael may act: the user's own blocks; a past one can be settled.
       const others = e.data.with_others === true || Number(e.data.attendees ?? 0) >= 2;
+      const settled = settledBlocks.get(e.id);
       const tag =
-        e.type !== "calendar_event" || start <= now
+        e.type !== "calendar_event"
           ? ""
           : others
             ? " [with other people, advice only]"
-            : ` {event_id ${e.id}}`;
+            : start > now
+              ? ` {event_id ${e.id}}`
+              : settled
+                ? ` [settled: ${settled}] {event_id ${e.id}}`
+                : ` [past, unconfirmed: confirm_block] {event_id ${e.id}}`;
+      // The user's own word (#317): logged time and settled blocks.
+      if (isLogEntry(e))
+        return e.data.log === "didnt" ? `- ${when} ${e.title}` : `- ${when} logged by the user: ${e.title}`;
       return `- ${when} ${e.type.replace("_", " ")}: ${e.title}${planned}${tag}`;
     });
   parts.push(
@@ -362,6 +389,12 @@ export function buildChatContext(input: ChatContextInput): string {
   );
   if (undoable.length) parts.push(`Things I did that can still be undone:\n${undoable.join("\n")}`);
 
+  const outcomes = (input.checklist ?? []).filter((i) => i.date === day && i.status !== "moved");
+  if (outcomes.length)
+    parts.push(
+      `Today's outcomes (checklist):\n${outcomes.map((i) => `- [${i.status}] ${i.text} {item_id ${i.id}}`).join("\n")}`,
+    );
+
   const told = input.checkIns?.answered ?? [];
   if (told.length)
     parts.push(
@@ -408,27 +441,40 @@ async function contextForNow(threadId: string | null): Promise<string> {
   const nowIso = new Date(now).toISOString();
   // Pattern reports are best effort: a detector failing must not take the chat down.
   const report = (from: string) => patternReportFor({ from, to: nowIso }).catch(() => null);
-  const [goals, instructions, events, today, week, score, undoable, checkIns, memories, threads, ritual] =
-    await Promise.all([
-      store.listGoals(),
-      store.listInstructions().catch(() => []),
-      store.listEvents({
-        from: new Date(now - WEEK_MS).toISOString(),
-        to: new Date(dayEnd).toISOString(),
-        type: [...LISTED_TYPES],
-      }),
-      now - dayStart > 60_000 ? report(new Date(dayStart).toISOString()) : Promise.resolve(null),
-      report(new Date(now - WEEK_MS).toISOString()),
-      scoreFor({ now: nowIso }).catch((err) => {
-        console.error("chat: score failed", err);
-        return null;
-      }),
-      store.listRecommendations({ status: "done" }).catch(() => []),
-      checkInContext(now),
-      listMemories().catch(() => []),
-      store.listChatThreads({ limit: OTHER_THREADS + 1 }).catch(() => []),
-      ritualFor(now).catch(() => null),
-    ]);
+  const [
+    goals,
+    instructions,
+    events,
+    today,
+    week,
+    score,
+    undoable,
+    checkIns,
+    memories,
+    threads,
+    checklist,
+    ritual,
+  ] = await Promise.all([
+    store.listGoals(),
+    store.listInstructions().catch(() => []),
+    store.listEvents({
+      from: new Date(now - WEEK_MS).toISOString(),
+      to: new Date(dayEnd).toISOString(),
+      type: [...LISTED_TYPES],
+    }),
+    now - dayStart > 60_000 ? report(new Date(dayStart).toISOString()) : Promise.resolve(null),
+    report(new Date(now - WEEK_MS).toISOString()),
+    scoreFor({ now: nowIso }).catch((err) => {
+      console.error("chat: score failed", err);
+      return null;
+    }),
+    store.listRecommendations({ status: "done" }).catch(() => []),
+    checkInContext(now),
+    listMemories().catch(() => []),
+    store.listChatThreads({ limit: OTHER_THREADS + 1 }).catch(() => []),
+    store.listChecklist({ from: zone.dayOf(now), to: zone.dayOf(now) }).catch(() => []),
+    ritualFor(now).catch(() => null),
+  ]);
   return buildChatContext({
     now,
     goals,
@@ -446,6 +492,7 @@ async function contextForNow(threadId: string | null): Promise<string> {
         (a, b) =>
           Date.parse(b.last_message_at ?? b.created_at) - Date.parse(a.last_message_at ?? a.created_at),
       ),
+    checklist,
     ritual,
   });
 }
