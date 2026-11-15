@@ -252,7 +252,7 @@ export const WRITE_TOOLS: Anthropic.Tool[] = [
   {
     name: "go_off_the_record",
     description:
-      "Turn off the record ON when the user asks ('go off the record', 'stop tracking me for now'): every collection stops at once. You can only turn it on. Turning it back off is the user's own switch, on You.",
+      "Turn off the record ON, only when the user's own message explicitly asks to stop collection in words like 'go off the record' or 'stop tracking me for now': every collection stops at once. Never for Focus, Do Not Disturb, quiet, 'leave me alone', 'no nudges' or deep work: those are focus_now, a calendar block or quiet hours. When in doubt, do not call it; ask. You can only turn it on. Turning it back off is the user's own switch, on You > Privacy.",
     input_schema: { type: "object", properties: {} },
   },
   {
@@ -502,15 +502,35 @@ async function meetings(input: unknown): Promise<WriteOutcome> {
   return { content: line, isError: false, reply: line };
 }
 
-/** #457: off the record on, never off (the user's own switch). */
-async function offTheRecord(): Promise<WriteOutcome> {
+/**
+ * What counts as an explicit request to stop collection. Focus, Do Not Disturb and "quiet" do not:
+ * off the record stops every source, so it only follows the user's own words for it.
+ */
+const EXPLICIT_OFF_THE_RECORD =
+  /\boff[\s-]the[\s-]record\b|\bstop (tracking|collecting|recording|logging|watching)\b|\b(don['’]?t|do not) (track|collect|record|log)\b|\bpause (tracking|collection|collecting|recording)\b/i;
+
+/** True when the user's message plainly asks to go off the record. */
+export const asksOffTheRecord = (text: string) => EXPLICIT_OFF_THE_RECORD.test(text);
+
+/** #457: off the record on, never off (the user's own switch), and only when asked in words. */
+async function offTheRecord(userText: string | undefined): Promise<WriteOutcome> {
+  if (userText !== undefined && !asksOffTheRecord(userText))
+    return {
+      content:
+        "Not done: off the record stops all collection, so it needs the user's own words ('go off the record'). For Focus or Do Not Disturb use focus_now or a calendar block.",
+      isError: true,
+    };
   await store.setOffTheRecord(true);
   const line = "You are off the record. Nothing is collected until you switch it back on You.";
   return { content: line, isError: false, reply: line };
 }
 
 /** Runs one write tool; HttpError refusals are turned into tool errors by the caller. */
-export async function runWriteTool(name: string, input: unknown): Promise<WriteOutcome | null> {
+export async function runWriteTool(
+  name: string,
+  input: unknown,
+  userText?: string,
+): Promise<WriteOutcome | null> {
   switch (name) {
     case "log_done":
       return logged(await logTime(input, "chat", executeRecommendation));
@@ -541,7 +561,7 @@ export async function runWriteTool(name: string, input: unknown): Promise<WriteO
     case "meetings_mode":
       return meetings(input);
     case "go_off_the_record":
-      return offTheRecord();
+      return offTheRecord(userText);
     default:
       return null;
   }

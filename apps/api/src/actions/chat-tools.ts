@@ -288,6 +288,8 @@ async function drop(input: unknown): Promise<ToolOutcome> {
 /** What one answer has done so far, shared by its tool calls. */
 export interface ChatTurnState {
   proposals: number;
+  /** The user's message this turn: off the record only follows their own words for it. */
+  userText?: string;
 }
 
 const AnswerInput = z.object({ check_in_id: z.uuid(), value: CheckInValue });
@@ -603,7 +605,12 @@ export async function runChatTool(
       case "draft_follow_up":
         return await draftFollowUp(input);
       default:
-        return (await runWriteTool(name, input)) ?? { content: `Unknown tool ${name}`, isError: true };
+        return (
+          (await runWriteTool(name, input, turn.userText)) ?? {
+            content: `Unknown tool ${name}`,
+            isError: true,
+          }
+        );
     }
   } catch (err) {
     if (err instanceof HttpError) {
