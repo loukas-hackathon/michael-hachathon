@@ -33,7 +33,7 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
   const { asked, changes } = headline(view);
 
   return (
-    <main className="screen">
+    <main className="screen screen-mid">
       <header className="flex min-h-11 items-center pt-2">
         <Link
           href="/you"

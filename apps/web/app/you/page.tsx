@@ -72,9 +72,10 @@ export default async function YouPage({
             ›
           </span>
         </Link>
+        {/* Laptop: Agents has its own place in the sidebar, so the row would say it twice. */}
         <Link
           href="/agents"
-          className="press relative flex min-h-14 items-center justify-between gap-3 px-4 py-2"
+          className="press relative flex min-h-14 items-center justify-between gap-3 px-4 py-2 lg:hidden"
         >
           <span className={separator} />
           <span className="flex flex-col">
@@ -87,7 +88,11 @@ export default async function YouPage({
         </Link>
       </div>
 
-      <ConnectionsList view={connections} flash={flash} demo={account === "The demo week"} />
+      {/* 1280 and up the list pane beside this one has every connection (you/layout.tsx), so the
+       * section only shows here to carry a just connected line. */}
+      <div className={flash ? undefined : "xl:hidden"}>
+        <ConnectionsList view={connections} flash={flash} demo={account === "The demo week"} />
+      </div>
 
       <section id="privacy" className="mt-8 scroll-mt-4">
         <h2 className="mb-2 text-title3 font-bold">Privacy</h2>
