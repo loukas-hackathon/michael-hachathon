@@ -31,6 +31,11 @@ import {
   type PushConfig,
   type PushSubscriptionInput,
   type Recommendation,
+  type RitualEveningInput,
+  type RitualEveningResponse,
+  type RitualKind,
+  type RitualMorningInput,
+  type RitualToday,
   type Score,
   Source,
   type SourceSetting,
@@ -513,12 +518,15 @@ export async function getToday(variant?: string): Promise<DayView> {
   if (variant === "error") throw new Error("Preview of the error state");
   if (variant && variant in SAMPLE_DAYS) return SAMPLE_DAYS[variant] as DayView;
   if (USE_MOCKS || variant === "sample") return sampleDay;
-  const score = await getScore();
   const to = new Date().toISOString();
   const from = new Date(Date.now() - 7 * 86_400_000).toISOString();
-  const patterns = await get<{ phone_cadence?: { status: string; data: unknown } }>(
-    `/v1/patterns?${new URLSearchParams({ from, to })}`,
-  ).catch(() => ({}));
+  // Side by side: the lead never waits for the score, nor the score for the lead.
+  const [score, patterns] = await Promise.all([
+    getScore(),
+    get<{ phone_cadence?: { status: string; data: unknown } }>(
+      `/v1/patterns?${new URLSearchParams({ from, to })}`,
+    ).catch(() => ({})),
+  ]);
   return dayFromScore(score, leadFromPatterns(patterns, score.day.now));
 }
 
@@ -813,3 +821,41 @@ export async function carryChecklistItem(id: string): Promise<WriteResult> {
   }
   return write("POST", `/v1/checklist/${id}/carry`);
 }
+
+// ---------- the daily ritual (#318): morning outcomes, evening log ----------
+
+/** GET /v1/ritual. Null with fixtures, on an older API, or when it cannot be read: no card. */
+export async function getRitual(phase?: RitualKind): Promise<RitualToday | null> {
+  if (USE_MOCKS) return null;
+  const qs = phase ? `?phase=${phase}` : "";
+  const res = await fetch(`${API_URL}/v1/ritual${qs}`, {
+    headers: await authHeaders(),
+    cache: "no-store",
+  }).catch(() => null);
+  if (!res?.ok) return null;
+  return (await res.json()) as RitualToday;
+}
+
+export type RitualWrite<T> = { ok: true; data: T } | { ok: false; message: string };
+
+async function ritualWrite<T>(path: string, body?: unknown): Promise<RitualWrite<T>> {
+  try {
+    const res = await fetch(`${API_URL}${path}`, {
+      method: "POST",
+      headers: { ...(await authHeaders()), "content-type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      cache: "no-store",
+    });
+    if (res.ok) return { ok: true, data: (await res.json()) as T };
+    const err = ApiError.safeParse(await res.json().catch(() => null));
+    return { ok: false, message: err.success ? err.data.error.message : "I could not save that. Try again." };
+  } catch {
+    return { ok: false, message: "I could not reach the server. Nothing changed." };
+  }
+}
+
+export const postRitualMorning = (input: RitualMorningInput) =>
+  ritualWrite<RitualToday>("/v1/ritual/morning", input);
+export const postRitualEvening = (input: RitualEveningInput) =>
+  ritualWrite<RitualEveningResponse>("/v1/ritual/evening", input);
+export const postRitualSkip = (kind: RitualKind) => ritualWrite<RitualToday>(`/v1/ritual/${kind}/skip`);
