@@ -2,7 +2,7 @@
 
 import type { FocusSession } from "@michael/shared";
 import { useEffect, useRef, useState } from "react";
-import { endFocusAction, extendFocusAction } from "@/app/focus-actions";
+import { endFocusAction, extendFocusAction, focusActiveAction } from "@/app/focus-actions";
 import { haptic } from "@/components/haptics";
 import { formatTime } from "@/lib/format";
 import { minutesLeft, minutesSoFar, shareLeft } from "./focus-events";
@@ -122,7 +122,13 @@ export function FocusSessionView({
         onDone(r.session);
       } else setError(r.error);
     } catch {
-      setError("I could not reach the server. Nothing changed.");
+      // The answer was lost on the way back, not necessarily the end: ask the server what happened.
+      const state = await focusActiveAction().catch(() => null);
+      const last = state?.last;
+      if (state && !state.session && last?.id === session.id) {
+        haptic();
+        onDone(last);
+      } else setError("I could not reach the server. Nothing changed.");
     } finally {
       ending.current = false;
       setBusy(null);

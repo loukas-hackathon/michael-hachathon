@@ -73,7 +73,7 @@ test("action token: signed for one nudge and one user, and it expires", () => {
 test("actions: each kind offers what Michael may do, at most two, the action first", () => {
   assert.deepEqual(
     actionsFor({ kind: "block_soon" }).map((a) => a.id),
-    ["snooze", "open"],
+    ["focus", "snooze"],
   );
   assert.deepEqual(actionsFor({ kind: "focus_drift" }), []);
   assert.deepEqual(actionsFor({ kind: "focus_drift", mac_app: "Instagram" })[0], {
@@ -162,8 +162,8 @@ test("act over HTTP: no session, the token is the key, and it works once", async
   // The payload the worker gets: buttons, where to post and the signed token.
   const payload = await runAsUser(userId, async () => nudgePayload(n));
   assert.deepEqual(payload.actions, [
+    { action: "focus", title: "Start focus" },
     { action: "snooze", title: "Snooze 10 min" },
-    { action: "open", title: "Open" },
   ]);
   assert.match(payload.act_url ?? "", new RegExp(`/v1/nudges/${n.id}/act$`));
   assert.equal(verifyActionToken(payload.token ?? "", n.id).ok, true);
@@ -291,7 +291,12 @@ test("telegram: buttons on the message, the tap acts once and says what happened
   // Open needs an https web address; without one only the action button shows.
   const keyboard = nudgeKeyboard(n);
   assert.deepEqual(keyboard, {
-    inline_keyboard: [[{ text: "Snooze 10 min", callback_data: callbackData(n.id, "snooze") }]],
+    inline_keyboard: [
+      [
+        { text: "Start focus", callback_data: callbackData(n.id, "focus") },
+        { text: "Snooze 10 min", callback_data: callbackData(n.id, "snooze") },
+      ],
+    ],
   });
   assert.ok(callbackData(n.id, "mute_app").length <= 64);
   assert.deepEqual(parseCallbackData(callbackData(n.id, "do_it")), { nudgeId: n.id, action: "do_it" });
@@ -337,3 +342,50 @@ test("telegram: buttons on the message, the tap acts once and says what happened
   assert.equal(body.text, "Already done.");
   configureTelegram({ config: null });
 });
+
+test("Start focus on the block about to start runs a session on its goal until the block ends (#397)", () =>
+  asNewUser(async () => {
+    for (const g of await store.listGoals()) await store.deleteGoal(g.id);
+    const goal = await store.createGoal({
+      category: "personal",
+      title: "University",
+      description: null,
+      target: null,
+      weekly_budget_minutes: 360,
+      active: true,
+    });
+    const now = Date.now();
+    const start = now + 10 * 60_000;
+    const end = start + 60 * 60_000;
+    const { inserted } = await store.insertEvents([
+      {
+        source: "agent",
+        type: "calendar_event",
+        start_at: new Date(start).toISOString(),
+        end_at: new Date(end).toISOString(),
+        title: "University",
+        data: { goal_id: goal.id, michael: true, attendees: 0 },
+        external_id: `test:${randomUUID()}`,
+      },
+    ]);
+    const block = inserted[0];
+    assert.ok(block);
+    const n = await nudge({ key: `block_soon:${block.id}`, text: "University at 12:00. Wrap up in 10 min." });
+    const r = NudgeActResult.parse(await actOnNudge(n.id, "focus", now));
+    assert.match(r.text, /^Focusing on University until \d\d:\d\d\.$/);
+    const s = await store.getActiveFocusSession();
+    assert.equal(s?.goal_id, goal.id);
+    assert.equal(s?.event_id, block.id);
+    assert.equal(s?.owns_block, false);
+    // From now to the block's end, to the minute.
+    assert.ok(Math.abs(Date.parse(s?.end_at ?? "") - end) < 60_000);
+    // Once: a second tap is refused.
+    await assert.rejects(actOnNudge(n.id, "focus", now), /Already done/);
+  }));
+
+test("Start focus is refused cleanly when the nudge has no block, and can be tried again", () =>
+  asNewUser(async () => {
+    const n = await nudge({ key: "block_soon:" });
+    await assert.rejects(actOnNudge(n.id, "focus"), /No block on this nudge/);
+    await assert.rejects(actOnNudge(n.id, "focus"), /No block on this nudge/);
+  }));

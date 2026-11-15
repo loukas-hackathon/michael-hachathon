@@ -55,7 +55,9 @@ export async function extendFocusAction(id: string): Promise<FocusActionResult> 
 /** End the session: on time, or early with the minutes so far counted (`count`) or not. */
 export async function endFocusAction(id: string, count: boolean): Promise<FocusActionResult> {
   if (typeof id !== "string" || !ID.test(id)) return { ok: false, error: NOTHING };
-  return answer(await focusCall(`/v1/focus/${id}/end`, { count: count === true }), true);
+  // No revalidation here: re-rendering Today inside the action made its answer slow and fragile.
+  // The session screen refreshes the tabs itself once the result is on screen.
+  return answer(await focusCall(`/v1/focus/${id}/end`, { count: count === true }), false);
 }
 
 /** The running session and the one that just stopped, for the screen that reattaches. */

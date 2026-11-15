@@ -3,7 +3,7 @@ import { API_URL, expect, tap, test } from "./fixtures";
 
 // Focus now (#397): a fresh user with one goal starts 45 minutes from the goal's row on Goals, the
 // calm session screen opens, survives a reload (the state is on the server), +15 moves the end,
-// and End early asks "Count 1 min?" after a real minute; one tap counts it as goal time.
+// and End early asks "Count 1 min?" once there is a minute to count; one tap counts it as goal time.
 
 type Session = {
   id: string;
@@ -18,7 +18,7 @@ test("start from Goals, leave and come back, +15, then end early and count it", 
   context,
   baseURL,
 }) => {
-  // One real minute has to pass before there is a minute to count.
+  // Up to a minute and a half: the screen waits until there is a minute to count.
   test.setTimeout(150_000);
   const user = randomUUID();
   await context.addCookies([{ name: "michael_e2e_user", value: user, url: baseURL ?? "" }]);
@@ -64,13 +64,18 @@ test("start from Goals, leave and come back, +15, then end early and count it", 
   ).toBeVisible();
   expect((await asUser<{ session: Session | null }>("/v1/focus/active")).session?.minutes).toBe(60);
 
-  // A minute later End early offers to count it.
-  await page.waitForTimeout(61_000);
+  // End early asks first. Under half a minute in there is nothing to count; the screen's own clock
+  // turns the question into "Count 1 min?" once there is, so the test waits for that, not a timer.
   await tap(page.getByRole("button", { name: "End early" }));
-  const count = page.getByRole("button", { name: /^Count \d+ min$/ });
-  await expect(count).toBeVisible();
-  await expect(page.getByText(/^Count \d+ min\?$/)).toBeVisible();
+  const count = page.getByRole("button", { name: /^Count [1-9]\d* min$/ });
+  await expect(count).toBeVisible({ timeout: 90_000 });
+  await expect(page.getByText(/^Count [1-9]\d* min\?$/)).toBeVisible();
+  // Wait on the server's answer to the tap (the server action POST), never on time.
+  const answered = page.waitForResponse(
+    (r) => r.request().method() === "POST" && r.request().headers()["next-action"] !== undefined,
+  );
   await tap(count);
+  expect((await answered).ok()).toBe(true);
 
   const result = page.getByRole("dialog", { name: /Counted \d+ min for University\./ });
   await expect(result).toBeVisible();
