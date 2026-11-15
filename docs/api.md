@@ -2373,6 +2373,12 @@ type FocusActiveResponse = { now: string; session: FocusSession | null; last: Fo
   Reddit, TikTok, Netflix) are muted for the window through a focus guard (a `block_mac_app`
   recommendation, "Muted distracting apps until 12:45"). Without a Mac this is skipped silently and
   `guarded` is false, so the app never claims a guard that is not there.
+- **Focus turns itself on:** `GET /v1/focus/active` with no session running and the user's own goal
+  block from the synced calendar running now (at least 5 minutes left, nobody else in it) starts the
+  session to the block's end, as if the user had tapped it. Once per block: a session that ran or
+  ended during the block means the user decided, so it never starts again. Never off the record.
+  While it runs its `message` says so: "Your University block started. Focus is on until 12:00."
+  Chat and MCP reads never start one.
 - **+15:** moves `end_at`, the block the session made, and adds a guard for the extra minutes. At
   most 4 hours in all (`409` after). A block the user made is never changed: time past its end is
   logged outside it and counts toward the goal's budget.

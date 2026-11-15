@@ -717,7 +717,9 @@ export const FocusSession = z.object({
   apps: z.array(z.string()),
   // The log_time recommendation that confirmed the time (undo takes it back for 24 hours).
   log_recommendation_id: z.uuid().nullable(),
-  // Michael's line for the result: "Done. 45 min for University."
+  // Michael's line for the result: "Done. 45 min for University." While active, set only when
+  // Michael started the session himself because a synced goal block began ("Your University block
+  // started. Focus is on until 12:00.").
   message: z.string().nullable(),
   created_at: IsoDateTime,
 });

@@ -276,3 +276,47 @@ test("the finisher ends due sessions as their own user", async () => {
   assert.equal(after?.status, "done");
   assert.equal(after?.counted_minutes, 25);
 });
+
+test("a synced goal block running now turns focus on by itself, once per block", () =>
+  freshUser(async (goalId) => {
+    const now = Date.now();
+    const { inserted } = await store.insertEvents([
+      {
+        source: "google_calendar",
+        type: "calendar_event",
+        start_at: iso(now - 5 * MIN),
+        end_at: iso(now + 40 * MIN),
+        title: "University",
+        data: { goal_id: goalId, attendees: 0 },
+        external_id: `test:${randomUUID()}`,
+      },
+    ]);
+    const block = inserted[0] as Event;
+    // Chat and agents only read: nothing starts.
+    assert.equal((await activeFocus()).session, null);
+    const first = FocusActiveResponse.parse(await activeFocus(Date.now(), { autoStart: true }));
+    assert.equal(first.session?.event_id, block.id);
+    assert.match(first.session?.message ?? "", /^Your University block started\. Focus is on until \d\d:\d\d\.$/);
+    // The user ends it early: the same block never starts it again.
+    await endFocus(first.session?.id as string, { count: false }, "app");
+    const again = await activeFocus(Date.now(), { autoStart: true });
+    assert.equal(again.session, null);
+    assert.equal(again.last?.id, first.session?.id);
+  }));
+
+test("a block with other people in it never turns focus on", () =>
+  freshUser(async (goalId) => {
+    const now = Date.now();
+    await store.insertEvents([
+      {
+        source: "google_calendar",
+        type: "calendar_event",
+        start_at: iso(now - 5 * MIN),
+        end_at: iso(now + 40 * MIN),
+        title: "University",
+        data: { goal_id: goalId, attendees: 3 },
+        external_id: `test:${randomUUID()}`,
+      },
+    ]);
+    assert.equal((await activeFocus(Date.now(), { autoStart: true })).session, null);
+  }));

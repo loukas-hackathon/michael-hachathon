@@ -196,13 +196,52 @@ async function toSession(s: StoredFocusSession, goal?: Goal | null): Promise<Foc
   };
 }
 
+/** The line a session Michael started by himself carries while it runs (the result line replaces it). */
+export const autoLine = (title: string, end: number) =>
+  `Your ${shortGoal(title)} block started. Focus is on until ${zone().clock(end)}.`;
+
+/**
+ * Focus turns itself on: when the user's own goal block from the synced calendar is running now and
+ * no session runs, the session starts without a tap, to the block's end. Once per block: a session
+ * that already ran or was ended during this block (by the user, or on time) means the user decided,
+ * so nothing starts again. Never off the record. Best effort: any refusal leaves things as they were.
+ */
+export async function autoStartFocus(
+  now = Date.now(),
+  latest?: StoredFocusSession | null,
+): Promise<StoredFocusSession | null> {
+  try {
+    if ((await store.privacyRules()).offTheRecord) return null;
+    const found = await runningBlock(await store.listGoals(), now);
+    if (!found) return null;
+    const blockStart = Date.parse(found.block.start_at);
+    const last = latest === undefined ? await store.latestFocusSession() : latest;
+    if (last && (last.event_id === found.block.id || Date.parse(last.ended_at ?? last.start_at) >= blockStart))
+      return null;
+    const s = await startFocus({ event_id: found.block.id }, "app");
+    return store.updateFocusSession(s.id, {
+      message: autoLine(found.goal.title, Date.parse(s.end_at)),
+    });
+  } catch (err) {
+    // A session started a moment ago elsewhere (409) or a block that just ended: nothing to do.
+    if (!(err instanceof HttpError)) console.error("[focus] auto start skipped", err);
+    return null;
+  }
+}
+
 /** GET /v1/focus/active: the running session (finished first when its end has passed), and the last one. */
-export async function activeFocus(now = Date.now()): Promise<FocusActiveResponse> {
+export async function activeFocus(
+  now = Date.now(),
+  opts: { autoStart?: boolean } = {},
+): Promise<FocusActiveResponse> {
   let active = await store.getActiveFocusSession();
   if (active && Date.parse(active.end_at) <= now) {
     await endFocus(active.id, {}, "app").catch((err) => console.error("[focus] finish failed", err));
     active = await store.getActiveFocusSession();
   }
+  // Only the app's own check (GET /v1/focus/active) starts one; chat and agents just read.
+  if (!active && opts.autoStart)
+    active = (await autoStartFocus(now)) ?? (await store.getActiveFocusSession());
   const latest = active ? null : await store.latestFocusSession();
   const recent =
     latest &&
