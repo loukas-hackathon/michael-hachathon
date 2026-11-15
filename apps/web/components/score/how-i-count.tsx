@@ -83,11 +83,14 @@ export function ScoreLearning({ explain, className = "" }: { explain: ScoreExpla
     >
       <div className="flex items-baseline justify-between gap-3">
         <p className="text-body font-semibold">I'm still learning your week.</p>
-        <p className="shrink-0 text-footnote text-label-2 tnum">
-          {explain.daysLearnt} of {LEARNING_DAYS} days
-        </p>
+        {/* Before the first day there is nothing to count: no "0 of 3" and no empty bar (#478). */}
+        {explain.daysLearnt > 0 ? (
+          <p className="shrink-0 text-footnote text-label-2 tnum">
+            {explain.daysLearnt} of {LEARNING_DAYS} days
+          </p>
+        ) : null}
       </div>
-      <LearningProgress days={explain.daysLearnt} />
+      {explain.daysLearnt > 0 ? <LearningProgress days={explain.daysLearnt} /> : null}
       <p className="text-subhead text-label-2">{learningLine(explain)}</p>
     </section>
   );

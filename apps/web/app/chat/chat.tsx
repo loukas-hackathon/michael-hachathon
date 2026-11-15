@@ -45,6 +45,7 @@ export function Chat({
   initialActions = [],
   threads: serverThreads = NO_THREADS,
   starters,
+  intro,
   elevenlabs = false,
   checkIn,
   talk: talkOnArrival = false,
@@ -60,6 +61,8 @@ export function Chat({
   threads?: ChatThread[];
   /** Questions from the user's real day, shown on an empty thread. */
   starters: string[];
+  /** Michael's opening line on an empty chat; "Ask me about your day." by default. */
+  intro?: string;
   elevenlabs?: boolean;
   /** Today's check in: its own card above every conversation. */
   checkIn?: ReactNode;
@@ -247,7 +250,7 @@ export function Chat({
                 <p className="text-insight font-semibold">
                   {isNewKey(key) && threads.length > 0
                     ? "New conversation. What is on your mind?"
-                    : "Ask me about your day."}
+                    : (intro ?? "Ask me about your day.")}
                 </p>
                 <ul className="mt-5 flex flex-col items-start gap-2">
                   {starters.map((s) => (

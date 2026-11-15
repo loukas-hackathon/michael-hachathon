@@ -43,6 +43,7 @@ import {
 } from "@/lib/api";
 import type { ChecklistDay } from "@/lib/checklist";
 import { aheadOf, type DayView, nowIndex, tape, totals } from "@/lib/day";
+import { getSetup } from "@/lib/first-run";
 import { formatDay, formatTime, hm, spokenDuration } from "@/lib/format";
 import { verdict } from "@/lib/gamification";
 import type { LostWeek } from "@/lib/lost-week";
@@ -114,6 +115,10 @@ export default async function TodayPage({
   const { primary } = await suggestions;
   // A new user's empty day keeps the reading column on a laptop: one action, nothing to spread out.
   const empty = day.blocks.length === 0 && day.week.scorePct == null;
+  // A brand new account (#478): goals or the calendar still to do. Get started is the whole screen,
+  // with its one action; the ritual, focus, suggestions and study lines wait for the first real day.
+  const setup = empty && !day.sample ? await getSetup(demo) : null;
+  const firstDay = setup?.steps.some((s) => (s.key === "goals" || s.key === "calendar") && !s.done) ?? false;
 
   return (
     <main className={empty ? "screen" : "screen m-dash"}>
@@ -129,7 +134,18 @@ export default async function TodayPage({
       <DemoWeekLine />
       <RecommendationsPanel slot="booked" />
 
-      {empty ? (
+      {empty && firstDay ? (
+        <>
+          <GetStarted demo={demo} />
+          <TodayEmpty demo={demo} />
+          <MeetingRecapCard />
+          {/* The ritual only when asked for by link (?ritual=, the stage and its test). */}
+          {preview ? ritualCard : null}
+          {lists.map((l) => (
+            <TodayChecklist key={l.goalId} {...l} />
+          ))}
+        </>
+      ) : empty ? (
         <>
           <GetStarted demo={demo} />
           {day.sample ? null : <MeetingRecapCard />}
