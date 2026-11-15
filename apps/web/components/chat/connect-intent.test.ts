@@ -27,6 +27,14 @@ test("connect intent: Coming soon connections never get a button", () => {
   }
 });
 
+test("connect intent: every live connection gets its button", () => {
+  const asks = { "apple-watch": "watch", mac: "mac", iphone: "iphone", travel: "location" } as const;
+  for (const [id, words] of Object.entries(asks)) {
+    if (CONNECTOR_STATUS[id as keyof typeof asks] !== "live") continue;
+    assert.equal(connectIntent(`connect my ${words}`), id, id);
+  }
+});
+
 test("connect intent: the calendar button goes straight to Google and back to chat", () => {
   assert.equal(CONNECT_TARGET["google-calendar"].href, "/integrations/google/connect?return_to=%2Fchat");
 });

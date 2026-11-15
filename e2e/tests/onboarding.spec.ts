@@ -33,9 +33,12 @@ test("onboarding completes for a fresh user", async ({ page, context, baseURL })
   await tap(page.getByRole("button", { name: "Keep these three" }));
 
   await expect(page.getByRole("heading", { name: "Now, your days." })).toBeVisible();
-  // Only connections proven on production are offered (#295); Coming soon ones are not here at all.
-  await expect(page.getByText("Google Calendar")).toBeVisible();
-  await expect(page.getByText("Apple Watch")).toHaveCount(0);
+  // Everything that adds to the day is offered, each with Connect; nudges wait for a moment (#207).
+  const offer = page.getByRole("region", { name: "Connections" });
+  for (const name of ["Google Calendar", "Apple Watch", "Mac", "iPhone", "Location", "Claude"])
+    await expect(offer.getByText(name, { exact: true })).toBeVisible();
+  await expect(offer.getByRole("link", { name: "Connect", exact: true })).toHaveCount(6);
+  await expect(page.getByText("Coming soon")).toHaveCount(0);
   await tap(page.getByRole("link", { name: "Go to Today" }));
 
   await expect(page).toHaveURL(/\/$/);
@@ -67,16 +70,41 @@ test("a demo visitor can walk onboarding to the end", async ({ page }) => {
   await expect(page.getByRole("link", { name: "Go to Today" })).toBeVisible();
 });
 
-// Connections not proven on production say Coming soon and offer nothing to tap (#295).
-test("You shows unproven connections as Coming soon, with nothing to tap", async ({ page }) => {
-  await enterDemo(page);
+// Every connection is a row on You with Connect and a real status (Loukas, Sun 15 Nov), and each
+// Connect opens a working setup page.
+test("You shows all eight connections, each with Connect", async ({ page, context, baseURL }) => {
+  const user = randomUUID();
+  await context.addCookies([{ name: "michael_e2e_user", value: user, url: baseURL ?? "" }]);
+  // An empty account: nothing connected yet.
+  await fetch(`${API_URL}/v1/me/data`, {
+    method: "DELETE",
+    headers: { authorization: `Bearer e2e_${user}` },
+  });
   await page.goto("/you");
   const list = page.locator("#connections");
-  await expect(list.getByText("Apple Watch")).toBeVisible();
-  await expect(list.getByText("Coming soon").first()).toBeVisible();
-  await expect(list.getByRole("link", { name: /Apple Watch/ })).toHaveCount(0);
-  await page.goto("/you/connections/apple-watch");
-  await expect(page.getByText("Coming soon. I will tell you when it is ready.")).toBeVisible();
+  const names = [
+    "Google Calendar",
+    "Apple Watch",
+    "Mac",
+    "iPhone",
+    "Claude",
+    "Nudges",
+    "Telegram",
+    "Location",
+  ];
+  for (const name of names)
+    await expect(list.getByRole("link", { name: new RegExp(`^${name} `) })).toBeVisible();
+  await expect(list.getByText("Coming soon")).toHaveCount(0);
+  await expect(list.getByRole("link", { name: "Connect", exact: true })).toHaveCount(
+    await list.getByText("Not connected").count(),
+  );
+  expect(await list.getByRole("link", { name: /^(Connect|Manage)$/ }).count()).toBe(8);
+
+  // The device rows open their real setup steps, never Coming soon.
+  await tap(list.getByRole("link", { name: /Apple Watch/ }));
+  await expect(page).toHaveURL(/\/you\/connections\/apple-watch/);
+  await expect(page.getByText(/Free for 7 days, then Premium/)).toBeVisible();
+  await expect(page.getByText("Coming soon. I will tell you when it is ready.")).toHaveCount(0);
 });
 
 // The demo week replays recorded sources, so a demo visitor sees them as what they are, and a tap
