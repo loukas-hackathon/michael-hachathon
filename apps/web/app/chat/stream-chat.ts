@@ -17,6 +17,27 @@ const chatResponse = (json: unknown): ChatResponse | null => {
   return { ...body, actions: Array.isArray(body.actions) ? body.actions : [] } as ChatResponse;
 };
 
+// When each thread was last warmed, so focusing the box again and again asks once.
+const WARM_EVERY_MS = 30_000;
+const warmedAt = new Map<string, number>();
+
+/**
+ * The chat is open on this thread: the API reads the day now and warms the model with it, so the
+ * first words of the next answer come without that wait (#364). Fire and forget; `force` after an
+ * answer that changed the day.
+ */
+export function warmChat(threadId: string, force = false) {
+  const now = Date.now();
+  if (!force && now - (warmedAt.get(threadId) ?? 0) < WARM_EVERY_MS) return;
+  warmedAt.set(threadId, now);
+  void fetch("/chat/warm", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ thread_id: threadId }),
+    keepalive: true,
+  }).catch(() => {});
+}
+
 /**
  * Sends one line and reads Michael's answer as it is written (server-sent events from
  * /chat/stream). `onText` gets each new piece; the result carries the stored pair, as sendMessage's.

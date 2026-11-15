@@ -7,6 +7,7 @@ import {
   ChatRequest,
   type ChatResponse,
   type ChatThread,
+  ChatWarmRequest,
   type CheckIn,
   type ChecklistItem,
   type ConnectorId,
@@ -27,6 +28,7 @@ import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { CHAT_TOOLS, type ChatTurnState, runChatTool, undoLine } from "../actions/chat-tools";
 import { checkInContext, checkInLine } from "../checkin/service";
+import { currentDemoVisitor, currentUserId } from "../context";
 import { env } from "../env";
 import { HttpError, jsonBody, parse } from "../http";
 import { instructionLine } from "../instructions/protected";
@@ -37,6 +39,7 @@ import { ritualFor } from "../ritual/ritual";
 import { isLogEntry } from "../score/logged";
 import { store } from "../store";
 import { currentTiming } from "../timing";
+import { writeVersion } from "../writes";
 import { latestThread, titleFor, untitled } from "./chat-threads";
 import { patternReportFor } from "./patterns";
 import { scoreFor } from "./score";
@@ -279,19 +282,25 @@ export function scoreLines(s: Score): string {
  * whole; only titles of the user's own calendar, workout, sleep and meal entries, plus totals.
  */
 export function buildChatContext(input: ChatContextInput): string {
+  return `${nowLine(input.now, input.timezone)}\n\n${contextBody(input)}`;
+}
+
+/** "Now: Saturday 14 November, 19:05 (Europe/Athens). Now (ISO): ...": the clock, apart from the rest. */
+export function nowLine(now: number, timezone = DEFAULT_TIMEZONE): string {
+  const zone = new Zone(timezone);
+  return `Now: ${weekdayIn(zone, now)}, ${zone.clock(now)} (${zone.name}). Now (ISO): ${isoIn(zone, now)}.`;
+}
+
+/**
+ * Everything but the clock, as of `input.now`. Kept apart from the clock so the same text can be
+ * reused for a few minutes (contextFor) and read back from the model's prompt cache (#364).
+ */
+function contextBody(input: ChatContextInput): string {
   const zone = new Zone(input.timezone ?? DEFAULT_TIMEZONE);
   const { now } = input;
   const day = zone.dayOf(now);
   const dayStart = zone.startOfDay(day);
-  const weekday = new Intl.DateTimeFormat("en-GB", {
-    timeZone: zone.name,
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-  }).format(now);
-  const parts: string[] = [
-    `Now: ${weekday}, ${zone.clock(now)} (${zone.name}). Now (ISO): ${isoIn(zone, now)}.`,
-  ];
+  const parts: string[] = [];
 
   const active = input.goals.filter((g) => g.active);
   parts.push(
@@ -448,8 +457,15 @@ export function buildChatContext(input: ChatContextInput): string {
   return parts.join("\n\n");
 }
 
-async function contextForNow(threadId: string | null, parts: Record<string, number> = {}): Promise<string> {
+type ContextReads = Omit<ChatContextInput, "otherThreads"> & {
+  /** When each read finished, from the start of the context. */
+  parts: Record<string, number>;
+};
+
+/** Every read the chat context needs but the other threads' titles, in parallel. */
+async function readContext(): Promise<ContextReads> {
   const now = Date.now();
+  const parts: Record<string, number> = {};
   const t0 = performance.now();
   // How long each read took, for chat_timing (#364).
   const timed = <T>(name: string, p: Promise<T>): Promise<T> =>
@@ -462,68 +478,52 @@ async function contextForNow(threadId: string | null, parts: Record<string, numb
   const nowIso = new Date(now).toISOString();
   // Pattern reports are best effort: a detector failing must not take the chat down.
   const report = (from: string) => patternReportFor({ from, to: nowIso }).catch(() => null);
-  const [
-    goals,
-    instructions,
-    events,
-    today,
-    week,
-    score,
-    undoable,
-    checkIns,
-    memories,
-    threads,
-    checklist,
-    ritual,
-  ] = await Promise.all([
-    timed("goals", store.listGoals()),
-    timed(
-      "instructions",
-      store.listInstructions().catch(() => []),
-    ),
-    timed(
-      "events",
-      store.listEvents({
-        from: new Date(now - WEEK_MS).toISOString(),
-        to: new Date(dayEnd).toISOString(),
-        type: [...LISTED_TYPES],
-      }),
-    ),
-    timed(
-      "patterns_today",
-      now - dayStart > 60_000 ? report(new Date(dayStart).toISOString()) : Promise.resolve(null),
-    ),
-    timed("patterns_week", report(new Date(now - WEEK_MS).toISOString())),
-    timed(
-      "score",
-      scoreFor({ now: nowIso }, { readOnly: true }).catch((err) => {
-        console.error("chat: score failed", err);
-        return null;
-      }),
-    ),
-    timed(
-      "undoable",
-      store.listRecommendations({ status: "done" }).catch(() => []),
-    ),
-    timed("check_ins", checkInContext(now)),
-    timed(
-      "memories",
-      listMemories().catch(() => []),
-    ),
-    timed(
-      "threads",
-      store.listChatThreads({ limit: OTHER_THREADS + 1 }).catch(() => []),
-    ),
-    timed(
-      "checklist",
-      store.listChecklist({ from: zone.dayOf(now), to: zone.dayOf(now) }).catch(() => []),
-    ),
-    timed(
-      "ritual",
-      ritualFor(now).catch(() => null),
-    ),
-  ]);
-  return buildChatContext({
+  const [goals, instructions, events, today, week, score, undoable, checkIns, memories, checklist, ritual] =
+    await Promise.all([
+      timed("goals", store.listGoals()),
+      timed(
+        "instructions",
+        store.listInstructions().catch(() => []),
+      ),
+      timed(
+        "events",
+        store.listEvents({
+          from: new Date(now - WEEK_MS).toISOString(),
+          to: new Date(dayEnd).toISOString(),
+          type: [...LISTED_TYPES],
+        }),
+      ),
+      timed(
+        "patterns_today",
+        now - dayStart > 60_000 ? report(new Date(dayStart).toISOString()) : Promise.resolve(null),
+      ),
+      timed("patterns_week", report(new Date(now - WEEK_MS).toISOString())),
+      timed(
+        "score",
+        scoreFor({ now: nowIso }, { readOnly: true }).catch((err) => {
+          console.error("chat: score failed", err);
+          return null;
+        }),
+      ),
+      timed(
+        "undoable",
+        store.listRecommendations({ status: "done" }).catch(() => []),
+      ),
+      timed("check_ins", checkInContext(now)),
+      timed(
+        "memories",
+        listMemories().catch(() => []),
+      ),
+      timed(
+        "checklist",
+        store.listChecklist({ from: zone.dayOf(now), to: zone.dayOf(now) }).catch(() => []),
+      ),
+      timed(
+        "ritual",
+        ritualFor(now).catch(() => null),
+      ),
+    ]);
+  return {
     now,
     goals,
     instructions,
@@ -534,15 +534,84 @@ async function contextForNow(threadId: string | null, parts: Record<string, numb
     undoable,
     checkIns,
     memories,
+    checklist,
+    ritual,
+    parts,
+  };
+}
+
+// The context's reads, kept per user (and demo visitor) for a short while: a question asked soon
+// after another, or after the chat screen warmed it (POST /v1/chat/warm), starts the model at once
+// instead of after 0.4 to 1 s of reads (#364). Any write of the user's through the store (writes.ts)
+// makes it read again, so an answer never misses what the user just did; the age limit covers time
+// passing (blocks starting, the score moving). Other threads' titles are read every time: chat lines
+// and thread names do not count as writes here.
+const CONTEXT_TTL_MS = 2 * 60_000;
+interface CachedContext {
+  version: string;
+  at: number;
+  reads: Promise<ContextReads>;
+}
+const contexts = new Map<string, CachedContext>();
+
+/** Tests only: forget every cached context. */
+export function clearChatContextCache() {
+  contexts.clear();
+}
+
+interface ChatContext {
+  /** Everything but the clock: cached, so the model reads it back from its prompt cache too. */
+  text: string;
+  parts: Record<string, number>;
+}
+
+interface ContextHandle {
+  entry: CachedContext;
+  /** The reads were already there (or under way) before this request. */
+  hit: boolean;
+}
+
+/** The caller's cached context reads, started now when there are none (or they are stale). */
+function ensureContext(): ContextHandle {
+  const userId = currentUserId();
+  const key = `${userId}|${currentDemoVisitor() ?? ""}`;
+  const version = writeVersion(userId);
+  const now = Date.now();
+  const cached = contexts.get(key);
+  if (cached && cached.version === version && now - cached.at < CONTEXT_TTL_MS)
+    return { entry: cached, hit: true };
+  for (const [k, e] of contexts) if (now - e.at >= CONTEXT_TTL_MS) contexts.delete(k);
+  const entry: CachedContext = { version, at: now, reads: readContext() };
+  // A failed read is not kept: the next question reads again.
+  entry.reads.catch(() => {
+    if (contexts.get(key) === entry) contexts.delete(key);
+  });
+  contexts.set(key, entry);
+  return { entry, hit: false };
+}
+
+/** The context text for one thread, once the reads are in. */
+async function contextFor({ entry, hit }: ContextHandle, threadId: string | null): Promise<ChatContext> {
+  const start = performance.now();
+  const [{ parts, ...input }, threads] = await Promise.all([
+    entry.reads,
+    store.listChatThreads({ limit: OTHER_THREADS + 1 }).catch(() => []),
+  ]);
+  const text = contextBody({
+    ...input,
     otherThreads: threads
       .filter((t) => t.id !== threadId && !untitled(t))
       .sort(
         (a, b) =>
           Date.parse(b.last_message_at ?? b.created_at) - Date.parse(a.last_message_at ?? a.created_at),
       ),
-    checklist,
-    ritual,
   });
+  return {
+    text,
+    parts: hit
+      ? { cached: 1, age_ms: Date.now() - entry.at, wait: Math.round(performance.now() - start) }
+      : { ...parts },
+  };
 }
 
 let client: Anthropic | null = null;
@@ -550,6 +619,7 @@ let client: Anthropic | null = null;
 export function setChatClientForTests(fake: Anthropic | null) {
   client = fake;
 }
+const chatConfigured = () => !!client || !!env.ANTHROPIC_API_KEY;
 function anthropic(): Anthropic {
   if (client) return client;
   if (!env.ANTHROPIC_API_KEY) {
@@ -563,11 +633,18 @@ const REFUSAL = "I can't help with that one. Ask me about your day or your goals
 // Model calls per answer: room to look a block up, act, and then say what was done.
 const MAX_ROUNDS = 5;
 
+/** How this answer is asked for, besides the context: read aloud or not, and the clock. */
+interface Style {
+  spoken: boolean;
+  /** The "Now:" line. Left out when the context carries it (older callers and tests). */
+  now?: string;
+}
+
 function request(
   messages: Anthropic.MessageParam[],
   context: string,
   lastRound: boolean,
-  spoken: boolean,
+  { spoken, now }: Style,
   fast: boolean,
 ): Anthropic.MessageCreateParamsNonStreaming {
   return {
@@ -587,6 +664,8 @@ function request(
         text: `What I know about the user right now:\n\n${context}`,
         cache_control: { type: "ephemeral" },
       },
+      // The clock after the cached blocks: it changes every minute, the context above does not.
+      ...(now ? [{ type: "text" as const, text: now }] : []),
       ...(spoken ? [{ type: "text" as const, text: SPOKEN_STYLE }] : []),
     ],
     tools: CHAT_TOOLS,
@@ -630,6 +709,8 @@ interface Hooks {
   onAction?: (action: Recommendation) => Promise<void>;
   /** The answer is read aloud: brief, no lists (SPOKEN_STYLE). */
   spoken?: boolean;
+  /** The "Now:" line, when the context leaves the clock out (contextFor). */
+  now?: string;
 }
 
 /** Where the time of one model call went, for the chat_timing log and the stream's `timing` event. */
@@ -653,7 +734,7 @@ async function callModel(
   context: string,
   lastRound: boolean,
   onText: Hooks["onText"],
-  spoken: boolean,
+  style: Style,
   timing: RoundTiming[],
 ): Promise<Anthropic.Message> {
   const fast = fastWanted();
@@ -668,7 +749,7 @@ async function callModel(
   timing.push(round);
   const since = () => Math.round(performance.now() - start);
   try {
-    const body = request(messages, context, lastRound, spoken, fast);
+    const body = request(messages, context, lastRound, style, fast);
     // A fast request is not retried at fast speed: it falls back to standard at once.
     const options = fast ? { maxRetries: 0 } : undefined;
     let message: Anthropic.Message;
@@ -698,9 +779,39 @@ async function callModel(
       console.warn("chat: fast mode refused, standard speed for a while", (err as Error).message);
       fastOffUntil = Date.now() + FAST_BACKOFF_MS;
       timing.pop();
-      return callModel(messages, context, lastRound, onText, spoken, timing);
+      return callModel(messages, context, lastRound, onText, style, timing);
     }
     throw upstream(err);
+  }
+}
+
+// The context text whose prompt cache was last written, per user (and visitor): a warm up with the
+// same text inside the cache's 5 minutes would only pay for a second write.
+const PROMPT_WARM_MS = 4 * 60_000;
+const warmPrompts = new Map<string, { text: string; at: number }>();
+const promptKey = () => `${currentUserId()}|${currentDemoVisitor() ?? ""}`;
+const notePromptWritten = (context: string) => {
+  const now = Date.now();
+  for (const [k, w] of warmPrompts) if (now - w.at >= PROMPT_WARM_MS) warmPrompts.delete(k);
+  warmPrompts.set(promptKey(), { text: context, at: now });
+};
+
+/**
+ * Writes the prompt cache up to the context (tools, system prompt, context) with a request that
+ * generates nothing (`max_tokens: 0`), so the first question reads it back instead of writing it.
+ * Same model, speed, effort and tools as an answer, or the cache would not match. Best effort.
+ */
+async function warmPrompt(context: string): Promise<void> {
+  const last = warmPrompts.get(promptKey());
+  if (last && last.text === context && Date.now() - last.at < PROMPT_WARM_MS) return;
+  notePromptWritten(context);
+  const fast = fastWanted();
+  const body = request([{ role: "user", content: "Hello" }], context, false, { spoken: false }, fast);
+  try {
+    await anthropic().messages.create({ ...body, max_tokens: 0 }, { maxRetries: 0 });
+  } catch (err) {
+    warmPrompts.delete(promptKey());
+    console.warn("chat: prompt warm up failed", (err as Error).message);
   }
 }
 
@@ -741,7 +852,7 @@ export async function askMichael(
       context,
       round === MAX_ROUNDS - 1,
       onText,
-      hooks.spoken ?? false,
+      { spoken: hooks.spoken ?? false, now: hooks.now },
       timing,
     );
     if (response.stop_reason === "refusal") {
@@ -817,7 +928,10 @@ async function existingThread(id: string | undefined): Promise<ChatThread | null
 interface Prepared {
   message: string;
   turns: Anthropic.MessageParam[];
+  /** Everything Michael knows but the clock (cached for a few minutes, contextFor). */
   context: string;
+  /** The "Now:" line, sent apart from the cached context. */
+  now: string;
   /** The answer is read aloud (conversation mode): brief, no lists. */
   spoken: boolean;
   /** Null when the pair starts a new thread (made in save, so a failed answer leaves nothing). */
@@ -833,24 +947,38 @@ interface Prepared {
 /** Everything both POST routes need before the model is called. */
 async function prepare(body: unknown): Promise<Prepared> {
   const { message, thread_id, spoken = false } = parse(ChatRequest, body);
+  const contextStart = performance.now();
+  const db = currentTiming();
+  const dbBefore = db?.dbCount ?? 0;
+  // The context reads start alongside the thread lookup (or come from the cache).
+  const handle = chatConfigured() ? ensureContext() : null;
   // Someone else's thread is a 404 even before the model is asked.
   const thread = await existingThread(thread_id);
   // Fail before storing anything when chat is not configured.
   anthropic();
-  const contextStart = performance.now();
-  const contextParts: Record<string, number> = {};
-  const db = currentTiming();
-  const dbBefore = db?.dbCount ?? 0;
   const [earlier, context] = await Promise.all([
     thread ? store.listChatMessages(thread.id, HISTORY_TURNS) : Promise.resolve([]),
-    contextForNow(thread?.id ?? null, contextParts),
+    contextFor(handle ?? ensureContext(), thread?.id ?? null),
   ]);
   const turns: Anthropic.MessageParam[] = [...toTurns(earlier), { role: "user", content: message }];
   // Named from the first line, in parallel with the answer, so naming adds no wait.
   const title = !thread || (untitled(thread) && earlier.length === 0) ? titleFor(message) : null;
   const contextMs = Math.round(performance.now() - contextStart);
+  const contextParts = context.parts;
   if (db) contextParts.db_round_trips = db.dbCount - dbBefore;
-  return { message, turns, context, spoken, thread, title, contextMs, contextParts };
+  // The answer writes the prompt cache with this context: a warm up right after it can skip.
+  notePromptWritten(context.text);
+  return {
+    message,
+    turns,
+    context: context.text,
+    now: nowLine(Date.now()),
+    spoken,
+    thread,
+    title,
+    contextMs,
+    contextParts,
+  };
 }
 
 /** Where the time of one answer went: logged as one JSON line, and sent as the stream's `timing`. */
@@ -914,12 +1042,31 @@ export const chat = new Hono()
     const body: ChatHistory = { messages, actions: await actionsOf(messages), thread };
     return c.json(body);
   })
+  // POST /v1/chat/warm { thread_id? }  the chat screen is open: read the context now and warm the
+  // model's prompt cache with it, so the next question starts the model at once (#364). 204, and
+  // nothing is stored.
+  .post("/chat/warm", async (c) => {
+    if (!chatConfigured()) return c.body(null, 204);
+    const { thread_id } = parse(ChatWarmRequest, await c.req.json().catch(() => ({})));
+    const start = performance.now();
+    const handle = ensureContext();
+    const context = await contextFor(handle, thread_id && thread_id !== "new" ? thread_id : null);
+    void warmPrompt(context.text);
+    c.header(
+      "Server-Timing",
+      `context;desc="${handle.hit ? "cached" : "read"}";dur=${Math.round(performance.now() - start)}`,
+      {
+        append: true,
+      },
+    );
+    return c.body(null, 204);
+  })
   // POST /v1/chat { message }  Michael answers from today's timeline, goals and patterns, and acts
   // on the user's own calendar when asked (ChatResponse.actions)
   .post("/chat", async (c) => {
     const start = performance.now();
     const p = await prepare(await jsonBody(c));
-    const answer = await askMichael(p.turns, p.context, { spoken: p.spoken });
+    const answer = await askMichael(p.turns, p.context, { spoken: p.spoken, now: p.now });
     const saveStart = performance.now();
     const body = await save(p, answer);
     const t = timingOf(p, answer, start, Math.round(performance.now() - saveStart));
@@ -940,6 +1087,7 @@ export const chat = new Hono()
       try {
         const answer = await askMichael(p.turns, p.context, {
           spoken: p.spoken,
+          now: p.now,
           onText: (text) => sse.writeSSE({ event: "delta", data: JSON.stringify({ text }) }),
           onAction: (action) => sse.writeSSE({ event: "action", data: JSON.stringify(action) }),
         });

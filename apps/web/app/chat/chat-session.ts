@@ -4,7 +4,7 @@ import type { ChatMessage, ChatThread, Recommendation } from "@michael/shared";
 import { useSyncExternalStore } from "react";
 import { TABS_STALE } from "@/components/tab-bar";
 import { speakReply } from "@/components/voice/speech";
-import { streamChat } from "./stream-chat";
+import { streamChat, warmChat } from "./stream-chat";
 import { changeThread, listThreads, loadThread, removeThread } from "./thread-actions";
 
 // `key` keeps a bubble's identity when its temporary id is swapped for the stored one, so it does
@@ -325,6 +325,8 @@ export async function sendLine(
     if (thread) upsertThread(thread, base);
     // Michael changed the day: cached Today and Timeline must not show the old plan.
     if (done.length) window.dispatchEvent(new Event(TABS_STALE));
+    // ...and Michael reads the changed day again before the next question (#364).
+    if (done.length) warmChat(key, true);
     // Spoken once the whole answer is in: a voice reading half sentences sounds broken.
     if (opts.viaVoice) void speakReply(res.data.reply.content, opts.elevenlabs ?? false);
     return { ok: true, reply: res.data.reply.content };

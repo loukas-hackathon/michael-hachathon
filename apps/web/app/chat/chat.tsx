@@ -26,6 +26,7 @@ import {
   useChatSession,
 } from "./chat-session";
 import { MessageBubble } from "./message-bubble";
+import { warmChat } from "./stream-chat";
 import { ThreadSheet } from "./thread-sheet";
 import { useKeyboardInset, useLatest } from "./use-viewport";
 
@@ -100,6 +101,12 @@ export function Chat({
   useEffect(() => {
     setServerKey(serverKey);
   }, [serverKey]);
+
+  // Michael reads the day while the question is typed, not after it is sent (#364).
+  const warmKey = isNewKey(key) ? "new" : key;
+  useEffect(() => {
+    warmChat(warmKey);
+  }, [warmKey]);
 
   // Open on the latest line, as Messages does, and again on switching threads.
   // biome-ignore lint/correctness/useExhaustiveDependencies: the thread switch is the trigger.
@@ -304,6 +311,7 @@ export function Chat({
                     ? "Listening. Let go to send"
                     : "Ask Michael"
               }
+              onFocus={() => warmChat(warmKey)}
               onChange={(e) => setDraft(key, e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {

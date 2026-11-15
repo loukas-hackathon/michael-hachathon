@@ -23,7 +23,7 @@ returns `501 not_implemented`, `planned` = not routed yet. Update the status whe
   - Demo visitors (the web app's "See the demo week", server to server only): `API_KEY` plus
     `X-Michael-Demo-Visitor: <uuid>`, one random id per visitor. Same demo account, but read
     mostly: chat is stored and read per visitor (a visitor never sees another's, nor the
-    account's own), and only these writes are allowed: `POST /v1/chat`, `/v1/chat/stream`,
+    account's own), and only these writes are allowed: `POST /v1/chat`, `/v1/chat/stream`, `/v1/chat/warm`,
     `POST /v1/chat/threads`, `PATCH|DELETE /v1/chat/threads/:id` (their own threads),
     `/v1/recommendations/:id/execute|undo`, `PATCH /v1/recommendations/:id`, `POST /v1/analysis/run`,
     `/v1/travel/plan`, `/v1/focus-guards/suggest`, `/v1/voice/speak`, `/v1/voice/transcribe`, `/v1/records/:id/announced`, `POST|DELETE /v1/push/subscriptions`, `POST /v1/nudges/test`, the daily ritual (`POST /v1/ritual/morning|evening`, `/v1/ritual/:kind/skip`) and done time (`POST /v1/log`, `/v1/log/block`, `DELETE /v1/log/:id`), which the reseed puts back to the plan.
@@ -1342,6 +1342,7 @@ travel site" or "an uncategorised site". Structured `data` carries the host for 
 | GET    | `/v1/chat?thread_id=&limit=50`                 |                                                                                    | `200 { messages: ChatMessage[], actions: Recommendation[], thread: ChatThread \| null }` (one thread's lines, oldest first, limit 1..100; without `thread_id` the latest thread; `actions` are the ones named in `action_ids`, as they stand now); `404` for a thread that is not the caller's                                        | live   |
 | POST   | `/v1/chat`                                     | `{ message: string, spoken?: boolean, thread_id?: uuid \| "new" }` (1..2000 chars) | `201 ChatResponse` `{ message, reply, actions: Recommendation[], thread: ChatThread }`; `404` unknown thread; `503 unavailable` without `ANTHROPIC_API_KEY`; `502 upstream_error` if Claude fails                                                                                                                                     | live   |
 | POST   | `/v1/chat/stream`                              | same as `POST /v1/chat`                                                            | `200 text/event-stream`: `event: delta` `{ text }` per piece, `event: action` `Recommendation` per thing done or undone, `event: timing` `ChatTiming` (where the time went), then `event: done` `ChatResponse`, or `event: error` `ApiError`. Validation, `404` and `503 unavailable` come back as plain JSON before the stream opens | live   |
+| POST   | `/v1/chat/warm`                                | `{ thread_id?: uuid \| "new" }` (or no body)                                       | `204`: the chat screen is open, so the API reads the context now and warms the model's prompt cache with it; nothing is stored, and without `ANTHROPIC_API_KEY` it does nothing                                                                                                                                                       | live   |
 | GET    | `/v1/chat/threads?archived=false&q=&limit=100` |                                                                                    | `200 ChatThreadList` `{ threads: ChatThread[] }`, pinned first, then latest line first. `q` (1..100 chars) matches titles and line text                                                                                                                                                                                               | live   |
 | POST   | `/v1/chat/threads`                             | `{ title? }` (or no body)                                                          | `201 ChatThread`, empty, titled "New chat" unless named                                                                                                                                                                                                                                                                               | live   |
 | PATCH  | `/v1/chat/threads/:id`                         | `{ title?, pinned?, archived? }` (at least one)                                    | `200 ChatThread`; `404` when not the caller's                                                                                                                                                                                                                                                                                         | live   |
@@ -1363,6 +1364,13 @@ without a second model call. Every answer logs one `chat_timing` JSON line and t
 as `timing`: `ChatTiming { context_ms, context_parts (when each context read finished, and the database round trips), rounds: { first_event_ms, first_text_ms, ms, tools_ms, speed,
 input_tokens?, cache_read_tokens?, cache_write_tokens?, output_tokens? }[], save_ms, total_ms }`;
 `POST /v1/chat` sends `Server-Timing` `context` and `model` instead, and the stream `context`.
+The context's reads (all but other threads' titles) are kept per user and demo visitor for 2
+minutes and read again after any write of the user's through the store (`writes.ts`; chat lines and
+thread names do not count), so `context_parts` is `{ cached: 1, age_ms, wait }` for an answer that
+started from them. The clock (`Now: ...`) goes to the model after the cached context, so the context
+block itself stays the same and is read back from the prompt cache. The web calls
+`POST /v1/chat/warm` when the chat screen opens, when the box gets focus (at most every 30 s per
+thread) and after an answer that changed the day, so the first words wait only for the model.
 
 **Threads (#308).** Conversations are separate, as in Messages: `ChatThread { id, title, pinned,
 archived, preview, last_message_at, created_at, updated_at }` (`preview` is the last line as plain text, no Markdown marks, cut to
