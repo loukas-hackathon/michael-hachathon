@@ -76,3 +76,41 @@ test("Google Calendar: back from Google, the row says Connected at once, with no
   // Said once, and a reload does not replay it.
   await expect(page).not.toHaveURL(/connected=/);
 });
+
+test("iPhone: Shortcut added, then the shortcut's test run turns it Connected while the page waits", async ({
+  page,
+  context,
+  baseURL,
+}) => {
+  const user = randomUUID();
+  await context.addCookies([{ name: "michael_e2e_user", value: user, url: baseURL ?? "" }]);
+  // An empty account: nothing sent from any device yet.
+  await fetch(`${API_URL}/v1/me/data`, {
+    method: "DELETE",
+    headers: { authorization: `Bearer e2e_${user}` },
+  });
+  // The key the Connect step makes and the shortcut saves.
+  const made = await fetch(`${API_URL}/v1/tokens`, {
+    method: "POST",
+    headers: { authorization: `Bearer e2e_${user}`, "content-type": "application/json" },
+    body: JSON.stringify({ name: "iPhone Shortcuts" }),
+  });
+  expect(made.status).toBe(201);
+  const { secret } = (await made.json()) as { secret: string };
+
+  await page.goto("/you");
+  const row = page.locator('#connections [data-connection="iphone"]');
+  await expect(row.getByText("Not connected · Shortcut added")).toBeVisible();
+  await tap(row.getByRole("link", { name: "Connect", exact: true }));
+  await expect(page).toHaveURL(/\/you\/connections\/iphone/);
+  await expect(page.getByText("Waiting for iPhone…")).toBeVisible();
+
+  // The shortcut posts with its key (here an open, held until the next one: nothing is stored).
+  const res = await fetch(`${API_URL}/v1/webhooks/ios-shortcuts`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${secret}`, "content-type": "application/json" },
+    body: JSON.stringify({ app: "Safari", action: "open" }),
+  });
+  expect(res.status).toBe(200);
+  await expect(page.getByText(/^Connected · test received \d\d:\d\d$/)).toBeVisible({ timeout: 3_000 });
+});
