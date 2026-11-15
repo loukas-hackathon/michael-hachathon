@@ -1018,3 +1018,101 @@ test("#483 the cached context reads again after a calendar sync and after midnig
     ]);
     assert.notEqual(contextVersion(user, Date.parse("2026-11-14T23:59:00+02:00")), before);
   }));
+
+// #483 follow up: Michael offered to close Instagram on a Mac that was not connected, and called a
+// connected iPhone (shortcut test received, no opens yet) not connected.
+
+/** The mock day comes with Mac and iPhone data: these tests start from a person with neither. */
+async function withoutMac() {
+  const mac = await store.listEvents({
+    from: iso(Date.now() - 30 * 24 * HOUR),
+    to: iso(Date.now() + 24 * HOUR),
+    source: ["macos_usage", "activitywatch", "iphone_usage", "ios_shortcuts"],
+  });
+  await store.deleteEvents(mac.map((e) => e.id));
+}
+
+const macGuard = (start: number) => ({
+  name: "block_mac_app",
+  input: { apps: ["Instagram"], start_at: iso(start), end_at: iso(start + 3 * HOUR) },
+});
+
+test("#483 block_mac_app refuses cleanly with no live Mac, and nothing is recorded as done", () =>
+  asNewUser(async () => {
+    await withoutMac();
+    const start = Date.now() + HOUR;
+    const doneBefore = (await store.listRecommendations({ status: "done" })).length;
+    return withClaude(
+      [{ tool: macGuard(start) }, { text: "Your Mac isn't connected, so I can't close apps on it." }],
+      async (requests) => {
+        const { answer, actions } = await askMichael(turns("Close Instagram during my audit"), "context");
+        assert.deepEqual(actions, []);
+        const [result] = toolResults(requests[1]);
+        assert.equal(result?.is_error, true);
+        assert.match(String(result?.content), /Mac is not connected/);
+        assert.equal(answer, "Your Mac isn't connected, so I can't close apps on it.");
+        assert.equal((await store.listRecommendations({ status: "done" })).length, doneBefore);
+      },
+    );
+  }));
+
+test("#483 block_mac_app works once the Mac sent data in the last 48 hours", () =>
+  asNewUser(async () => {
+    await store.insertEvents([
+      {
+        source: "macos_usage",
+        type: "app_usage",
+        start_at: iso(Date.now() - HOUR),
+        end_at: iso(Date.now() - HOUR + 60_000),
+        title: "Xcode",
+        data: {},
+        external_id: `mac-${randomUUID()}`,
+      },
+    ]);
+    const start = Date.now() + HOUR;
+    await withClaude(
+      [{ tool: macGuard(start) }, { text: "Instagram is closed on your Mac." }],
+      async (requests) => {
+        const { actions } = await askMichael(turns("Close Instagram during my audit"), "context");
+        assert.equal(actions[0]?.status, "done");
+        assert.equal(toolResults(requests[1])[0]?.is_error, undefined);
+      },
+    );
+  }));
+
+test("#483 the connections in the context: Mac not connected, iPhone connected with the test received", () =>
+  asNewUser(async () => {
+    const { connectionsNow } = await import("../connections-state");
+    const { createPersonalToken, userForPersonalToken } = await import("../tokens");
+    const { SETUP_KEY_NAMES } = await import("@michael/shared");
+    await withoutMac();
+    const before = await connectionsNow();
+    assert.equal(before.macLive, false);
+    assert.ok(before.lines.some((l) => l.startsWith("- iPhone: not connected")));
+    assert.ok(before.lines.some((l) => /^- Mac: not connected.*never offer it/.test(l)));
+    // The shortcut's hand run (#476): the key is used, no opens stored yet.
+    const { secret } = await createPersonalToken(SETUP_KEY_NAMES.iphone);
+    await userForPersonalToken(secret);
+    await new Promise((r) => setImmediate(r));
+    const after = await connectionsNow();
+    const iphone = after.lines.find((l) => l.startsWith("- iPhone:")) ?? "";
+    assert.match(iphone, /^- iPhone: connected \(shortcut test received \d\d:\d\d\), no app opens yet\./);
+    assert.match(iphone, /Your iPhone is connected\. I see opens once the App automation runs\./);
+  }));
+
+test("#483 every chat turn tells Michael the connections, read fresh, and never to promise a button", () =>
+  runAsUser(env.DEMO_USER_ID, () =>
+    withClaude([{ text: "I can't see that yet." }], async (requests) => {
+      const res = await app.request("/v1/chat", {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify({ message: "Did Instagram open?", thread_id: "new" }),
+      });
+      assert.equal(res.status, 201);
+      const system = JSON.stringify(requests[0]?.system);
+      assert.match(system, /Connections right now:\\n- Google Calendar: /);
+      assert.match(system, /- Mac: /);
+      assert.match(system, /- iPhone: /);
+      assert.match(system, /otherwise never mention a button below/);
+    }),
+  ));

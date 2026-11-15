@@ -10,6 +10,7 @@ import {
 } from "@michael/shared";
 import { z } from "zod";
 import { answerCheckIn } from "../checkin/service";
+import { macIsLive } from "../connections-state";
 import { HttpError } from "../http";
 import { insightsFor, insightsText } from "../insights/service";
 import { knowledgeFor, knowledgeText } from "../knowledge";
@@ -494,6 +495,7 @@ async function accept(input: unknown): Promise<ToolOutcome> {
   if (!rec) throw new HttpError("not_found", "Recommendation not found");
   // A Timeline edit is the user's own record, not an offer.
   if (rec.source === "user") throw new HttpError("conflict", "That is not one of my offers");
+  if (rec.action?.kind === "block_mac_app" && !(await macIsLive())) return NO_MAC;
   const done = await executeRecommendation(rec.id);
   const until = undoLine(done);
   return {
@@ -504,9 +506,17 @@ async function accept(input: unknown): Promise<ToolOutcome> {
   };
 }
 
+// #483: no Mac data in the last 48 hours means no guard would ever be applied, so none is promised.
+const NO_MAC: ToolOutcome = {
+  content:
+    "Refused: the Mac is not connected (no Mac data in the last 48 hours), so I cannot close apps on it. Nothing changed. Offer a calendar block for that time instead, or say in one line to connect the Mac on You.",
+  isError: true,
+};
+
 async function guardApps(input: unknown): Promise<ToolOutcome> {
   const p = GuardInput.safeParse(input);
   if (!p.success) return invalid(p.error);
+  if (!(await macIsLive())) return NO_MAC;
   const goalId = p.data.goal_id && z.uuid().safeParse(p.data.goal_id).success ? p.data.goal_id : null;
   const done = await guardMacApps({ ...p.data, goal_id: goalId, requested_by: "chat with Michael" });
   return {

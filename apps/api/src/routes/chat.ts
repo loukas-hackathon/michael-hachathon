@@ -30,6 +30,7 @@ import { z } from "zod";
 import { blockIdOf, goalIdOf, OPENING_STEP, stepLabel } from "../actions/chat-steps";
 import { CHAT_TOOLS, type ChatTurnState, runChatTool, undoLine } from "../actions/chat-tools";
 import { checkInContext, checkInLine } from "../checkin/service";
+import { connectionsNow } from "../connections-state";
 import { currentDemoVisitor, currentUserId } from "../context";
 import { env } from "../env";
 import { HttpError, jsonBody, parse } from "../http";
@@ -96,6 +97,8 @@ export const CONNECT_LINE = [
   connectIds.some((id) => !isLive(id))
     ? `${spoken(connectIds.filter((id) => !isLive(id)).map((id) => CONNECT_NAMES[id]))}: coming soon, say so in one line.`
     : "",
+  'The button shows only when the user\'s own message asks to connect: otherwise never mention a button below; say where instead ("Connect your Mac on You.").',
+  'Offer an action only when its connection is live under "Connections right now"; when it is not, offer what works (a calendar block) or say what to connect, in one line.',
   "Never give steps, links or keys.",
 ]
   .filter(Boolean)
@@ -1067,7 +1070,11 @@ async function prepare(body: unknown): Promise<Prepared> {
   const nowMs = Date.now();
   const turns: Anthropic.MessageParam[] = [...toTurns(earlier, nowMs), { role: "user", content: message }];
   // What became of this thread's earlier actions, read fresh every turn (never from the cache).
-  const earlierActions = await actionsOf(earlier).catch(() => []);
+  // The connections as the You rows have them, fresh too, so only live actions are offered.
+  const [earlierActions, connections] = await Promise.all([
+    actionsOf(earlier).catch(() => []),
+    connectionsNow(nowMs).catch(() => null),
+  ]);
   const actionLines = earlierActions.length ? await threadActionLines(earlierActions, nowMs) : [];
   // Named from the first line, in parallel with the answer, so naming adds no wait.
   const title = !thread || (untitled(thread) && earlier.length === 0) ? titleFor(message) : null;
@@ -1083,6 +1090,7 @@ async function prepare(body: unknown): Promise<Prepared> {
     // The clock, and this thread's actions as they stand: both per turn, after the cached context.
     now: [
       nowLine(nowMs),
+      ...(connections ? [`Connections right now:\n${connections.lines.join("\n")}`] : []),
       ...(actionLines.length
         ? [`What I did earlier in this conversation, as it stands now:\n${actionLines.join("\n")}`]
         : []),
