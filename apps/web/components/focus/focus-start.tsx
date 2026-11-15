@@ -1,6 +1,6 @@
 "use client";
 
-import { voiceShortDuration } from "@michael/shared";
+import { voiceShortDuration } from "@michael/shared/voice";
 import { useRef, useState } from "react";
 import { startFocusAction } from "@/app/focus-actions";
 import { Sheet } from "@/components/sheet";

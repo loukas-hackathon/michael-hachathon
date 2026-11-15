@@ -1,6 +1,7 @@
 "use client";
 
-import { type FocusSession, voiceShortDuration } from "@michael/shared";
+import type { FocusSession } from "@michael/shared";
+import { voiceShortDuration } from "@michael/shared/voice";
 import { useEffect, useRef, useState } from "react";
 import { endFocusAction, extendFocusAction, focusActiveAction } from "@/app/focus-actions";
 import { haptic } from "@/components/haptics";

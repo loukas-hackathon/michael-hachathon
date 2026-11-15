@@ -1,6 +1,6 @@
 "use client";
 
-import { voiceShortDuration } from "@michael/shared";
+import { voiceShortDuration } from "@michael/shared/voice";
 import { useRouter } from "next/navigation";
 import { startTransition, useId, useRef, useState } from "react";
 import { Sheet } from "@/components/sheet";
