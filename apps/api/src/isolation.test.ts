@@ -85,6 +85,7 @@ const READS = [
   () => `/v1/chat?thread_id=${ids.thread}`,
   () => `/v1/score?date=${day}`,
   () => `/v1/patterns?${range()}`,
+  () => "/v1/insights",
   () => "/v1/moments/morning",
   () => "/v1/moments/evening",
   () => "/v1/nudges",

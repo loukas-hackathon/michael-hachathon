@@ -4,7 +4,8 @@ import { type Insight, InsightsResponse, sleepScore, voiceProblems } from "@mich
 import { FEATURES } from "./dictionary";
 import { buildFeatures, FEATURE_KEYS, type FeatureKey, type FeatureTable } from "./features";
 import { buildInsights, pickInsight } from "./index";
-import { MINER_RULES, mine, WATCH_CANDIDATES } from "./miner";
+import { type Link, MINER_RULES, mine, WATCH_CANDIDATES } from "./miner";
+import { phraseLink } from "./phrase";
 import { benjaminiHochberg, permutationP, seeded, spearman } from "./stats";
 import { asEvents, plantedMonth } from "./testkit";
 
@@ -128,6 +129,65 @@ test("noise yields nothing: 34 unrelated columns over 60 days, five times over",
   }
 });
 
+/** Seventy days of late evenings, with the streak flag worked out the way the daily table does. */
+function lateNights(seed: number) {
+  const next = seeded(seed);
+  const n = 70;
+  const late = Array.from({ length: n }, () => (next() < 0.45 ? 35 + next() * 30 : next() * 8));
+  const streak = late.map((v, i) => (i === 0 ? null : v >= 30 && (late[i - 1] ?? 0) >= 30 ? 1 : 0));
+  return { n, late, streak, next };
+}
+
+test("a derived trigger that tells the same story is dropped: the plain one leads", () => {
+  const { n, late, streak, next } = lateNights(21);
+  // The night after is as bad after a second late evening as after a first.
+  const score = Array.from({ length: n }, (_, i) =>
+    i === 0 ? null : ((late[i - 1] ?? 0) >= 30 ? 64 : 83) + (next() - 0.5) * 10,
+  );
+  const mined = mine(table(n, { late_phone_min: late, late_streak: streak, sleep_score: score }));
+  assert.deepEqual(
+    mined.links.map((l) => l.x.key),
+    ["late_phone_min"],
+  );
+  assert.equal(mined.links[0]?.harder, undefined);
+  // The streak would pass on its own: it is left out because the plain trigger already tells it.
+  assert.deepEqual(
+    mine(table(n, { late_streak: streak, sleep_score: score })).links.map((l) => l.x.key),
+    ["late_streak"],
+  );
+});
+
+test("a derived trigger that hits clearly harder is shown after the plain one, and says so", () => {
+  const { n, late, streak, next } = lateNights(21);
+  // One late evening costs a little; the second in a row costs a lot.
+  const score = Array.from({ length: n }, (_, i) =>
+    i === 0 ? null : (streak[i - 1] === 1 ? 40 : (late[i - 1] ?? 0) >= 30 ? 74 : 84) + (next() - 0.5) * 6,
+  );
+  const t = table(n, { late_phone_min: late, late_streak: streak, sleep_score: score });
+  const mined = mine(t);
+  assert.deepEqual(
+    mined.links.map((l) => l.x.key),
+    ["late_phone_min", "late_streak"],
+  );
+  const [plain, harder] = mined.links;
+  assert.equal(harder?.harder?.plain, plain);
+  assert.ok(
+    Math.abs(harder?.cmp.effect ?? 0) >= MINER_RULES.variantMargin * Math.abs(plain?.cmp.effect ?? 0),
+  );
+  assert.ok((harder?.strength ?? 1) < (plain?.strength ?? 0), "the plain one stays in front");
+
+  const said = phraseLink(harder as Link, "pattern", { table: t, goals: [] }).insight;
+  assert.equal(said.title, "Two late nights in a row hit harder");
+  assert.match(
+    said.line,
+    /^\d+ of \d+ second late nights in a row gave a lower sleep score that night: \d+ against \d+\. That is more than late phone alone \(\d+\)\.$/,
+  );
+  assert.deepEqual(voiceProblems(`${said.title}. ${said.line}`), []);
+  const first = phraseLink(plain as Link, "pattern", { table: t, goals: [] }).insight;
+  assert.equal(first.title, "Late phone, lower sleep score");
+  assert.doesNotMatch(first.line, /more than/);
+});
+
 test("too few days: a strong candidate is watched, never called a pattern", () => {
   // Nine days, three late nights, each followed by a clearly worse night.
   const late = [40, 2, 3, 45, 1, 4, 2, 50, 3];
@@ -186,6 +246,7 @@ test("daily table: evenings on their own day, the night on the morning it ends",
   const monday = t.days.indexOf("2026-10-19");
   assert.equal(t.cols.planned_min[monday], 90);
   assert.equal(t.cols.first_block_start_min[monday], 9 * 60);
+  assert.equal(t.cols.first_block_lost_min[monday], t.cols.lost_min[monday]);
   assert.ok((t.cols.lost_min[monday] ?? -1) >= 4);
   assert.equal((t.cols.spent_min[monday] ?? 0) + (t.cols.lost_min[monday] ?? 0), t.cols.planned_min[monday]);
   // The weekend has no block, so no figure, not a zero.
@@ -203,6 +264,31 @@ const ordered = (list: Insight[]) => {
     if (rank(prev) === rank(insight)) assert.ok(prev.strength >= insight.strength, insight.id);
   });
 };
+
+test("the first block is the first one where focus is the point, never a training block", () => {
+  const day = "2026-10-19";
+  const gym = {
+    ...month.goals[0],
+    id: "00000000-0000-4000-8000-00000000a002",
+    category: "health",
+    title: "Gym",
+  } as (typeof month.goals)[number];
+  const session = asEvents([
+    {
+      source: "google_calendar",
+      type: "calendar_event",
+      start_at: `${day}T04:00:00Z`,
+      end_at: `${day}T05:00:00Z`,
+      title: "Gym",
+      data: { goal_id: gym.id, attendees: 0 },
+    },
+  ]).map((e) => ({ ...e, id: "00000000-0000-4000-9000-999999999999" }));
+  const t = buildFeatures({ ...input, events: [...input.events, ...session], goals: [...month.goals, gym] });
+  const i = t.days.indexOf(day);
+  // The 07:00 gym hour is planned time, and the 09:00 block is still the first block.
+  assert.equal(t.cols.planned_min[i], 150);
+  assert.equal(t.cols.first_block_start_min[i], 9 * 60);
+});
 
 test("the founder's chain comes out of a month shaped that way", () => {
   const body = InsightsResponse.parse(study.response);
@@ -224,6 +310,10 @@ test("the founder's chain comes out of a month shaped that way", () => {
   assert.deepEqual(chain?.sources, ["google-calendar", "apple-watch", "mac", "iphone"]);
   assert.equal(study.plans.get(chain?.id ?? "")?.kind, "instruction");
   assert.equal(pickInsight(study, "late_phone_min")?.id, chain?.id);
+  // The plain trigger tells it: no streak, wider cut or other window of the same evening beside it.
+  for (const i of study.response.insights) {
+    assert.doesNotMatch(i.id, /late_streak|late_screen_min|phone_before_sleep_min|short_night/, i.id);
+  }
   assert.equal(pickInsight(study, "meal"), null);
 });
 

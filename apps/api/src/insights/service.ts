@@ -7,6 +7,7 @@ import {
   voiceShortDuration,
 } from "@michael/shared";
 import { undoRecommendation } from "../actions/calendar";
+import { type ModelClient, ModelNotConfiguredError, modelClient } from "../analysis/model";
 import { currentUserId } from "../context";
 import { bookGoalTime } from "../goals/book";
 import { HttpError } from "../http";
@@ -16,7 +17,17 @@ import { createInstruction, sameInstruction } from "../routes/instructions";
 import { eventsByDay } from "../routes/patterns";
 import { store } from "../store";
 import { featureDef } from "./dictionary";
-import { buildInsights, type FixPlan, MINER_RULES, pickInsight, type Study } from "./index";
+import { InsightRun, runDiscovery, type StoredDiscovery } from "./discover";
+import { canonical } from "./hypothesis";
+import {
+  buildInsights,
+  type FeatureTable,
+  type FixPlan,
+  MINER_RULES,
+  pickInsight,
+  type Study,
+  withDiscoveries,
+} from "./index";
 
 // The one place that reads the clock and the store for the insights; everything under it is pure.
 //
@@ -68,21 +79,32 @@ async function compute(): Promise<Study> {
   const zone = new Zone(DEFAULT_TIMEZONE);
   const today = zone.dayOf(nowMs);
   const from = zone.startOfDay(zone.nextDay(today, -STUDY.days));
-  const [events, goals, checkIns] = await Promise.all([
+  const [events, goals, checkIns, run] = await Promise.all([
     eventsByDay(from, nowMs, { type: TYPES }),
     store.listGoals(),
     store
       .listCheckIns({ fromDay: zone.dayOf(from), toDay: today })
       .catch((): Pick<CheckIn, "day" | "kind" | "answer">[] => []),
+    storedRun(),
   ]);
-  return buildInsights({
-    events,
-    goals,
-    checkIns,
-    from: new Date(from).toISOString(),
-    to: new Date(nowMs).toISOString(),
-    now: new Date(nowMs).toISOString(),
-  });
+  return buildInsights(
+    {
+      events,
+      goals,
+      checkIns,
+      from: new Date(from).toISOString(),
+      to: new Date(nowMs).toISOString(),
+      now: new Date(nowMs).toISOString(),
+    },
+    // The tests the discovery pass kept, run again on today's table.
+    run?.discoveries ?? [],
+  );
+}
+
+/** The user's last discovery pass, when it reads as one. A failed read is no pass. */
+async function storedRun(): Promise<InsightRun | null> {
+  const parsed = InsightRun.safeParse(await store.getInsightRun().catch(() => null));
+  return parsed.success ? parsed.data : null;
 }
 
 const freshFor = (study: Study) =>
@@ -124,8 +146,142 @@ export const keptStudy = (): Study | null => studies.get(currentUserId())?.ready
 
 /** Forget the kept study of the current user (or of everyone): tests, and after a forced run. */
 export function forgetStudy(everyone = false): void {
-  if (everyone) studies.clear();
-  else studies.delete(currentUserId());
+  if (everyone) {
+    studies.clear();
+    checkedAhead.clear();
+  } else {
+    studies.delete(currentUserId());
+    checkedAhead.delete(currentUserId());
+  }
+}
+
+// ---------- the discovery pass ----------
+
+/** Tests kept per user at most: every one is run again on every study. */
+const MAX_STORED = 12;
+/** Users with a pass in flight, so a second tap does not start a second one. */
+const discovering = new Set<string>();
+/** The data day each user's study was last checked ahead for, so the scheduler asks the store once. */
+const checkedAhead = new Map<string, string>();
+
+/** The last local day that has any reading. */
+const lastDataDay = (table: FeatureTable): string | null => {
+  for (let i = table.days.length - 1; i >= 0; i--) {
+    if (Object.values(table.cols).some((col) => col[i] !== null && col[i] !== undefined)) {
+      return table.days[i] ?? null;
+    }
+  }
+  return null;
+};
+
+/** The model for the pass, or null when this server has no key: the rules still work without it. */
+function discoveryModel(): ModelClient | null {
+  try {
+    return modelClient();
+  } catch (err) {
+    if (err instanceof ModelNotConfiguredError) return null;
+    throw err;
+  }
+}
+
+/** One pass on a study: propose, verify, write, store, and show it in the kept study. */
+async function discover(study: Study, model: ModelClient): Promise<void> {
+  const userId = currentUserId();
+  // Read first, and strictly: when the stored tests cannot be read, nothing is asked and nothing
+  // is written, so a pass can never replace tests it did not see.
+  const raw = await store.getInsightRun();
+  // Nothing stored yet is a first pass. Stored but unreadable is not: never overwrite what we cannot see.
+  if (raw !== null && !InsightRun.safeParse(raw).success) {
+    console.warn("[insights] the stored run cannot be read; the pass is not run");
+    return;
+  }
+  const before = raw === null ? [] : InsightRun.parse(raw).discoveries;
+  let found: StoredDiscovery[] = [];
+  let by: string | null = model.model;
+  try {
+    const result = await runDiscovery(
+      {
+        table: study.table,
+        minerPs: study.minerPs,
+        found: study.rules.map((p) => p.insight),
+        stories: study.stories,
+        goals: study.goals,
+      },
+      model,
+    );
+    found = result.discoveries;
+    by = result.model;
+    console.log(`[insights] discovery: ${result.proposed} proposed, ${result.verified} verified`);
+  } catch (err) {
+    // The day is still marked as studied, so a failing model is not asked again every tick.
+    console.warn("[insights] discovery pass failed", err instanceof Error ? err.message : err);
+  }
+  // What was found before stays while it still holds: each test is run again on every study.
+  const byKey = new Map<string, StoredDiscovery>();
+  for (const d of [...found, ...before])
+    if (!byKey.has(canonical(d.hypothesis))) byKey.set(canonical(d.hypothesis), d);
+  const discoveries = [...byKey.values()].slice(0, MAX_STORED);
+  const run: InsightRun = {
+    ran_at: new Date().toISOString(),
+    data_day: lastDataDay(study.table),
+    model: by,
+    discoveries,
+  };
+  // Shown from the kept study even when the write fails (the table not there yet, the database
+  // away): the next pass stores it.
+  await store
+    .saveInsightRun(run)
+    .catch((err) => console.error("[insights] the run could not be stored", err));
+  const entry = studies.get(userId);
+  if (entry?.ready) {
+    entry.ready = withDiscoveries(entry.ready, discoveries);
+    entry.value = Promise.resolve(entry.ready);
+  }
+}
+
+export type RunStatus = "started" | "running" | "skipped";
+
+/**
+ * POST /v1/insights/run: study again now, then run the discovery pass behind the answer.
+ * `skipped` when the server has no model key (the rules' insights are still refreshed), `running`
+ * when a pass is already in flight. `done` settles when the pass has: tests wait on it.
+ */
+export async function runInsights(): Promise<{ status: RunStatus; done: Promise<void> }> {
+  const userId = currentUserId();
+  if (discovering.has(userId)) return { status: "running", done: Promise.resolve() };
+  forgetStudy();
+  const study = await studyFor();
+  const model = discoveryModel();
+  if (!model) return { status: "skipped", done: Promise.resolve() };
+  discovering.add(userId);
+  const done = discover(study, model)
+    .catch((err) => console.error("[insights] discovery pass failed", err))
+    .finally(() => discovering.delete(userId));
+  return { status: "started", done };
+}
+
+/**
+ * The scheduler's slow beat, per active user: make sure a study from today is kept (so a nudge
+ * can cite it and the screen opens at once), and run the discovery pass behind it when the user
+ * has a new day of data since the last one. Cheap when there is nothing new: no event is read.
+ */
+export async function studyAhead(now = Date.now()): Promise<void> {
+  const userId = currentUserId();
+  const today = new Zone(DEFAULT_TIMEZONE).dayOf(now);
+  const kept = keptStudy();
+  const keptDay = kept ? new Zone(DEFAULT_TIMEZONE).dayOf(Date.parse(kept.response.generated_at)) : null;
+  const study = kept && keptDay === today ? kept : await studyFor();
+  const dataDay = lastDataDay(study.table);
+  if (!dataDay || checkedAhead.get(userId) === dataDay || discovering.has(userId)) return;
+  checkedAhead.set(userId, dataDay);
+  if (study.response.studied.days < MINER_RULES.minDays) return;
+  if ((await storedRun())?.data_day === dataDay) return;
+  const model = discoveryModel();
+  if (!model) return;
+  discovering.add(userId);
+  void discover(study, model)
+    .catch((err) => console.error("[insights] discovery pass failed", err))
+    .finally(() => discovering.delete(userId));
 }
 
 // ---------- the one tap fix ----------

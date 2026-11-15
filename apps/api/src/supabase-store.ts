@@ -408,6 +408,7 @@ export const USER_TABLES = [
   "source_settings",
   "privacy_state",
   "user_profiles",
+  "insight_runs",
   "weekly_targets",
   "records",
 ] as const;
@@ -917,6 +918,25 @@ export class SupabaseStore implements Store {
       ),
     );
     return profile;
+  }
+
+  // One jsonb document per user; insights/service.ts validates it.
+  async getInsightRun() {
+    const row = check(
+      await this.db.from("insight_runs").select("data").eq("user_id", currentUserId()).maybeSingle(),
+    );
+    return row ? (row.data as Record<string, unknown>) : null;
+  }
+
+  async saveInsightRun(run: Record<string, unknown>) {
+    check(
+      await this.db
+        .from("insight_runs")
+        .upsert(
+          { user_id: currentUserId(), data: run, updated_at: new Date().toISOString() },
+          { onConflict: "user_id" },
+        ),
+    );
   }
 
   async listInstructions() {

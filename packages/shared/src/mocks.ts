@@ -1495,7 +1495,7 @@ export const mockInsights: InsightsResponse = {
       sources: ["apple-watch"],
     },
     {
-      id: "discovered:meeting_count>=3>hrv_next",
+      id: "discovered:meeting_count>=3>hrv+1",
       kind: "discovered",
       status: "pattern",
       title: "The third meeting shows up in your body",
