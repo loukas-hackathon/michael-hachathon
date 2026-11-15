@@ -1,0 +1,68 @@
+/*
+ * /login (#492). Tokens only; transform and opacity only, except the glimpse's height, which moves
+ * through grid rows as <Collapse> does.
+ */
+
+/* A field draws its own focus: a firm hairline in the text colour, on tap and on the keyboard. The
+ * input inside never draws the global pink ring (it would sit inside the rounded field). */
+.m-login-field {
+  transition: box-shadow var(--m-dur-ui) var(--m-ease-out);
+}
+.m-login-field:focus-within {
+  box-shadow: inset 0 0 0 1.5px var(--m-label);
+}
+.m-login-field input:focus-visible {
+  outline: none;
+}
+.m-login-field:has(input[aria-invalid="true"]) {
+  box-shadow: inset 0 0 0 1.5px var(--m-danger);
+}
+
+/* The quiet product glimpse: on a phone it gives its room to the form (and the keyboard) once
+ * "Continue with email" opens it. A laptop has the room, so it stays. */
+.m-login-glimpse {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition:
+    grid-template-rows var(--m-dur-smooth) var(--m-spring-smooth),
+    opacity var(--m-dur-exit) var(--m-ease-out);
+}
+.m-login-glimpse > * {
+  min-height: 0;
+  overflow: hidden;
+}
+@media (max-width: 1023px) {
+  .m-login:has([data-email-open]) .m-login-glimpse {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+}
+
+/* The one moment of motion: the pink run of the sample tape fills once, from the left, after the
+ * launch animation has given way. It explains the product: time going back to the goal. */
+.m-login-spent {
+  transform-origin: 0 50%;
+  animation: m-login-fill var(--m-dur-count) var(--m-ease-out) 200ms both;
+}
+body:has(#m-splash:not([data-done])) .m-login-spent {
+  animation-play-state: paused;
+}
+@keyframes m-login-fill {
+  from {
+    transform: scaleX(0.08);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .m-login-spent {
+    animation: none;
+  }
+  .m-login-glimpse,
+  .m-login-field {
+    transition: opacity var(--m-dur-ui) linear;
+  }
+}

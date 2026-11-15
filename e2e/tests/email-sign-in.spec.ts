@@ -67,8 +67,17 @@ test("sign in, a wrong password, and the switch between modes", async ({ page })
     "autocomplete",
     "current-password",
   );
+  // The calendar line only says what comes next before a new account.
+  await expect(page.locator("[inert]").getByText(/^Next, connect your calendar/)).toHaveCount(1);
   await tap(page.getByRole("button", { name: "Create an account" }));
   await expect(page.getByRole("button", { name: "Create account" })).toBeVisible();
+  await expect(page.locator("[inert]").getByText(/^Next, connect your calendar/)).toHaveCount(0);
+
+  // Show reveals the password and Hide covers it again.
+  await tap(page.getByRole("button", { name: "Show password" }));
+  await expect(page.getByPlaceholder(/^Password/)).toHaveAttribute("type", "text");
+  await tap(page.getByRole("button", { name: "Hide password" }));
+  await expect(page.getByPlaceholder(/^Password/)).toHaveAttribute("type", "password");
 
   // Create again with another password: Michael says it exists and offers Sign in, password kept.
   await fillReady(page.getByPlaceholder("Email"), email);
