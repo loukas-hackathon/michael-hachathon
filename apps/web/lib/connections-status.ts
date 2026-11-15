@@ -1,13 +1,15 @@
 import "server-only";
 import {
   AgentClient,
+  DEVICE_QUIET_MS,
+  deviceState,
   type Integration,
   IntegrationsResponse,
   LocationStatus,
   PersonalToken,
   PlacesResponse,
   PushConfig,
-  SETUP_KEY_NAMES,
+  pickIphoneKey,
   SourcesStatusResponse,
   TelegramStatus,
 } from "@michael/shared";
@@ -118,7 +120,7 @@ const unknown = (c: Connection): ConnectionStatus => ({
 export const SOON_LINE = "Coming soon. I will tell you when it is ready.";
 
 /** A device source that has sent nothing for this long needs attention (#307). */
-export const QUIET_MS = 24 * 60 * 60_000;
+export const QUIET_MS = DEVICE_QUIET_MS;
 
 /** The exact fix when a device source has gone quiet: one line, the one thing to do. */
 export const QUIET_FIX: Record<"apple-watch" | "mac" | "iphone", string> = {
@@ -183,31 +185,33 @@ export function statusFor(c: Connection, x: Inputs, now = Date.now()): Connectio
       if (!src) return unknown(c);
       if (last && switchedOff)
         return { ...c, state: "paused", line: `Switched off. Last data ${ago(last, now)}.`, action: manage };
-      if (last && !otr && now - Date.parse(last) > QUIET_MS)
+      // The same rule Michael's chat context uses (deviceState in @michael/shared).
+      const key = c.id === "iphone" ? x.iphoneKey : null;
+      const d = deviceState(last, key, now);
+      if (d.kind === "quiet" && !otr)
         return {
           ...c,
           state: "attention",
-          line: `Last data ${ago(last, now)}. ${QUIET_FIX[c.id]}`,
+          line: `Last data ${ago(d.at, now)}. ${QUIET_FIX[c.id]}`,
           action: manage,
         };
-      if (last)
+      if (d.kind === "sending" || d.kind === "quiet")
         return {
           ...c,
           state: "on",
-          line: `${otr}Last data ${ago(last, now)}.`,
+          line: `${otr}Last data ${ago(d.at, now)}.`,
           action: manage,
-          fresh: `last data ${formatTime(last)}`,
+          fresh: `last data ${formatTime(d.at)}`,
         };
       // The shortcut reached me with its key (a hand run in Shortcuts is the test, #466): it works,
       // even before the App automation sends the first open.
-      const key = c.id === "iphone" ? x.iphoneKey : null;
-      if (key?.last_used_at)
+      if (d.kind === "tested")
         return {
           ...c,
           state: "on",
-          line: `${otr}Connected. Test received at ${formatTime(key.last_used_at)}. App opens arrive once your automation runs.`,
+          line: `${otr}Connected. Test received at ${formatTime(d.at)}. App opens arrive once your automation runs.`,
           action: manage,
-          fresh: `test received ${formatTime(key.last_used_at)}`,
+          fresh: `test received ${formatTime(d.at)}`,
         };
       if (key)
         return {
@@ -357,15 +361,7 @@ export const getConnections = cache(async (preview?: ConnectionId): Promise<Conn
       parse: (v) => ((v as { tokens?: unknown[] }).tokens ?? []).map((t) => PersonalToken.parse(t)),
     }),
   ]);
-  const iphoneKey =
-    tokens
-      ?.filter((t) => t.name === SETUP_KEY_NAMES.iphone)
-      .sort(
-        (a, b) =>
-          (b.last_used_at ?? "").localeCompare(a.last_used_at ?? "") ||
-          b.created_at.localeCompare(a.created_at),
-      )
-      .at(0) ?? null;
+  const iphoneKey = pickIphoneKey(tokens);
   const inputs: Inputs = {
     sources,
     calendar: integrations
