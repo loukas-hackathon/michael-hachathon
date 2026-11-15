@@ -646,13 +646,13 @@ The day's one to three outcomes of a goal of kind `checklist`, in the user's own
 `checklist_items` (RLS like every table: only the API reads and writes). Rules in
 `apps/api/src/checklist/items.ts`.
 
-| Method | Path                      | Body                       | Response                                 | Status |
-| ------ | ------------------------- | -------------------------- | ---------------------------------------- | ------ |
-| GET    | `/v1/checklist?date=`     |                            | `200 ChecklistResponse`                  | live   |
-| POST   | `/v1/checklist`           | `{ goal_id, date?, text }` | `201 ChecklistItem`, `400`, `404`, `409` | live   |
-| PATCH  | `/v1/checklist/:id`       | `{ text?, status? }`       | `200 ChecklistItem`, `400`, `404`, `409` | live   |
-| DELETE | `/v1/checklist/:id`       |                            | `204`, `404`                             | live   |
-| POST   | `/v1/checklist/:id/carry` |                            | `201 { moved, item }`, `404`, `409`      | live   |
+| Method | Path                      | Body                                                           | Response                                 | Status |
+| ------ | ------------------------- | -------------------------------------------------------------- | ---------------------------------------- | ------ |
+| GET    | `/v1/checklist?date=`     |                                                                | `200 ChecklistResponse`                  | live   |
+| POST   | `/v1/checklist`           | `{ goal_id, date?, text, linked_goal_id?, estimate_minutes? }` | `201 ChecklistItem`, `400`, `404`, `409` | live   |
+| PATCH  | `/v1/checklist/:id`       | `{ text?, status? }`                                           | `200 ChecklistItem`, `400`, `404`, `409` | live   |
+| DELETE | `/v1/checklist/:id`       |                                                                | `204`, `404`                             | live   |
+| POST   | `/v1/checklist/:id/carry` |                                                                | `201 { moved, item }`, `404`, `409`      | live   |
 
 ```ts
 type ChecklistItem = {
@@ -661,10 +661,13 @@ type ChecklistItem = {
   date: string; // local day, YYYY-MM-DD, Europe/Athens
   text: string; // the user's words, 1..200
   position: number; // 0..2, the slot among the day's open items of the goal
-  status: "open" | "done" | "dropped" | "moved";
+  status: "open" | "done" | "partly" | "dropped" | "moved";
   settled_at: string | null;
   settled_by: "user" | "check_in" | null;
   carried_from: string | null; // id of the item of the day before that this one continues
+  linked_goal_id: string | null; // #318: the goal the outcome serves, any kind and area
+  estimate_minutes: number | null; // #318: the user's guess, 5..720
+  logged_minutes: number | null; // #318: time logged for it in the evening
   created_at: string;
   updated_at: string;
 };
@@ -678,7 +681,7 @@ type ChecklistResponse = {
 - `date` defaults to today in Athens; `400` on a day that does not exist. `text` is trimmed.
 - `POST`: `404` for an unknown goal, `400` for a goal that is not of kind `checklist`, `409` when
   the goal already has three open items that day. The item takes the lowest free `position`.
-- `PATCH`: `status` is `open`, `done` or `dropped`. Settling sets `settled_at` and
+- `PATCH`: `status` is `open`, `done`, `partly` or `dropped` (`partly` counts as set, not done). Settling sets `settled_at` and
   `settled_by: "user"`; reopening clears both and takes a free slot (`409` when three are open).
   `moved` is never set by hand (`400`): carry instead. A moved item cannot change status (`409`).
 - `carry`: only an open item (`409` otherwise, or when the next day already has three open). The
@@ -688,6 +691,73 @@ type ChecklistResponse = {
 - Deleting the goal deletes its items. Another user's items are never visible (`404`).
 - The first open item of today gets one offered focus block, at most once a day (see
   Recommendations, Offers for checklist and count goals).
+- `linked_goal_id` (#318) names any of the user's goals (`404` otherwise); deleting that goal sets
+  it to null. A carried item keeps its link and estimate.
+
+### Daily ritual (#318)
+
+Every morning the user writes what they want to get done; every evening they log what they did.
+The outcomes are checklist items of one checklist goal ("Today's outcomes", category personal,
+made silently on the first morning when the user has no checklist goal), each optionally for any
+goal. Table `day_rituals` keeps which half was saved or skipped per day, and the evening's line.
+Rules in `apps/api/src/ritual/ritual.ts`.
+
+| Method | Path                    | Body                                                           | Response                                          | Status |
+| ------ | ----------------------- | -------------------------------------------------------------- | ------------------------------------------------- | ------ |
+| GET    | `/v1/ritual?phase=`     |                                                                | `200 RitualToday`                                 | live   |
+| POST   | `/v1/ritual/morning`    | `{ outcomes: [{ text, goal_id?, estimate_minutes? }] }` (1..3) | `201 RitualToday`, `400`, `404` goal, `409` full  | live   |
+| POST   | `/v1/ritual/evening`    | `{ results: [{ item_id, result, carry?, minutes? }] }`         | `201 RitualEveningResponse`, `404`, `409`         | live   |
+| POST   | `/v1/ritual/:kind/skip` |                                                                | `200 RitualToday` ("Not today"), `400` other kind | live   |
+
+```ts
+type RitualState = "not_yet" | "due" | "done" | "skipped";
+type RitualToday = {
+  day: string; // local YYYY-MM-DD
+  phase: "morning" | "evening" | null; // which half shows now; null before waking
+  morning: RitualState;
+  evening: RitualState; // not_yet on a day without outcomes
+  goal_id: string | null; // the checklist goal holding the outcomes
+  items: ChecklistItem[]; // today's outcomes, moved ones left out
+  suggestions: { text; goal_id; estimate_minutes; reason; source: "calendar" | "behind" }[]; // morning, at most 2
+  goals: { id; title; area }[]; // active goals as quick chips (checklist goals left out)
+  summary: string | null; // the evening line once saved
+  tomorrow: string | null; // evening: "University at 09:00"
+};
+type RitualEveningResponse = {
+  summary: string; // "2 of 3 done. 40 min logged for Training. One carried to tomorrow. Tomorrow starts with University at 09:00."
+  carried: ChecklistItem[]; // the new items on tomorrow
+  logged: { goal_id: string; minutes: number }[];
+  ritual: RitualToday;
+};
+```
+
+- **When:** the morning from waking (end of last night's sleep, else 08:00, the Morning moment's
+  rule) or once the morning nudge went out; the evening from an hour before the usual bedtime
+  (else 21:00, never later than 45 minutes before quiet hours, the Evening moment's rule) or once
+  the evening nudge went out. `?phase=` shows that half now (previews, the stage, e2e). The app
+  shows the half named by `phase` while its state is `due`, and the evening line once `done`.
+- **Morning done** once saved, skipped, or when the user wrote an outcome for today any other way;
+  an outcome carried from yesterday still asks the morning, listed as already set. Saving keeps
+  outcomes already on today, skips duplicates (same words), refuses a fourth (`409`) and checks
+  every `goal_id` before writing anything. The first outcome gets the usual offered hour.
+- **Suggestions** (at most two): time goals behind their weekly pace (the `goal_behind` rule, any
+  hour): "University is 4h behind this week. One block today?", or "Keep the 10:00 block." when
+  today has one; then today's own goal blocks still ahead ("On your calendar at 10:00, for
+  University."). Never a goal an outcome already serves.
+- **Evening:** `result` done, partly or not. `carry: true` (partly or not) makes a new item on
+  tomorrow with `carried_from`; a "not" that is carried becomes `moved`, a "partly" stays
+  `partly`. Room on tomorrow is checked before anything is written (`409`). `minutes` (done or
+  partly) is kept as `logged_minutes` and handed to the done time log (`apps/api/src/ritual/log.ts`,
+  the seam to `POST /v1/log`, #317); until that lands the minutes are named in the line but do not
+  count in the score yet. The line counts every outcome of the day, settled earlier or now.
+- **Calm:** no streaks, no guilt copy; "Not today" hides that half for the day. No new nudge: the
+  Morning and Evening nudges (#169) ask the ritual's question while its half is to do ("What do you
+  want to get done today? Up to three." / "2 outcomes today. What did you get done?") and open
+  Today, inside the 5 a day cap and quiet hours.
+- **Everywhere:** chat tools `set_day_outcomes` and `log_day` (the chat context lists today's
+  outcomes with their ids), MCP tools of the same names (scope `goals`).
+- **Demo week:** today's plan is filled (one carried from yesterday) and the two evenings before
+  are logged, written once per day (`apps/api/src/demo/ritual.ts`).
 
 ### Standing instructions
 
@@ -1316,6 +1386,12 @@ record of who changed the goal (chat) and why (`rationale`).
 ("What you told me", quoted, never invented) and today's open questions with their ids, and a tool
 `answer_check_in { check_in_id, value }` keeps an answer the user types in the chat (same rules as
 `POST /v1/check-in/:id/answer`; the result gives the follow up to ask, word for word).
+
+**Daily ritual in chat (#318).** The context lists "Today's outcomes" with their ids and which half
+is due. `set_day_outcomes { outcomes: [{ text, goal_id?, estimate_minutes? }] }` keeps "my goals
+today are X, Y" and `log_day { results: [{ item_id, result, carry?, minutes? }] }` logs "I finished
+X, did 30 min of Y" (same rules as `POST /v1/ritual/morning` and `/evening`); Michael repeats the
+evening line the tool returns, word for word.
 
 ### Check in (#187)
 
@@ -2132,7 +2208,7 @@ type AgentQuery = {
   the payload. A call outside the agent's scopes, or by an agent that is not `approved`, returns a
   tool result with `isError: true` ("Not allowed. ...") and is logged with `allowed: false`.
 - Scope per tool: `get_timeline`, `get_patterns` = `timeline`; `get_goals`, `add_goal`,
-  `update_goal`, `propose_goals`, `get_checklist`, `add_checklist_item` = `goals`; `list_recommendations`, `update_recommendation`, `get_nudges`,
+  `update_goal`, `propose_goals`, `get_checklist`, `add_checklist_item`, `set_day_outcomes`, `log_day` = `goals`; `list_recommendations`, `update_recommendation`, `get_nudges`,
   `list_drafts`, `draft_follow_up` = `recommendations`; `get_score`, `get_records`, `get_moments` = `score`; `add_event`, `execute_recommendation`,
   `undo_recommendation`, `create_focus_block`, `block_mac_app`, `plan_travel` = `write_events`;
   `suggest_app_mute` = `recommendations`; `get_memories` = `timeline`; `remember` = `write_events`.
@@ -2774,6 +2850,8 @@ offset. A refused or failed call returns `isError: true` with one plain sentence
 | `update_goal`            | `goals`           | `{ id, category?, title?, description?, weekly_budget_minutes?, target?, active? }`     | `{ goal: Goal }`, error when not found                                                     |
 | `get_checklist`          | `goals`           | `{ date?: LocalDay }` (default today)                                                   | `ChecklistResponse` (as `GET /v1/checklist`)                                               |
 | `add_checklist_item`     | `goals`           | `{ goal_id, text, date?: LocalDay }` (default today)                                    | `{ item: ChecklistItem }`; refused past three open items                                   |
+| `set_day_outcomes`       | `goals`           | `{ outcomes: [{ text, goal_id?, estimate_minutes? }] }` (1..3)                          | `RitualToday` (as `POST /v1/ritual/morning`)                                               |
+| `log_day`                | `goals`           | `{ results: [{ item_id, result: "done" \| "partly" \| "not", carry?, minutes? }] }`     | `RitualEveningResponse`; text is the evening line                                          |
 | `update_recommendation`  | `recommendations` | `{ id, status: "accepted" \| "dismissed" }`                                             | `{ recommendation }`; a `done` one is refused (undo it)                                    |
 | `execute_recommendation` | `write_events`    | `{ id }`                                                                                | `{ recommendation, undo_until }`                                                           |
 | `undo_recommendation`    | `write_events`    | `{ id }`                                                                                | `{ recommendation }`                                                                       |

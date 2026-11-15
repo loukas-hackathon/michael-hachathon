@@ -5,6 +5,7 @@ import {
   type Goal,
   goalArea,
   goalKind,
+  isSleepGoal,
   type RitualEveningInput,
   type RitualEveningResponse,
   type RitualKind,
@@ -257,7 +258,9 @@ export async function ritualFor(now = Date.now(), opts: { phase?: RitualKind } =
   let suggestions: RitualSuggestion[] = [];
   if (phase === "morning" && states.morning === "due") {
     const blocks = goalBlocks(events, goals, now, Date.parse(win.dayEnd));
-    suggestions = morningSuggestions({ now, behind: behindGoals(input), blocks, items: today });
+    // Only time goals: a sleep target or a count is not "one block behind".
+    const behind = behindGoals(input).filter((b) => goalKind(b.goal) === "time" && !isSleepGoal(b.goal));
+    suggestions = morningSuggestions({ now, behind, blocks, items: today });
   }
   const evening = rows.find((r) => r.kind === "evening");
   return {
