@@ -47,6 +47,7 @@ segments. Use `components/progress-bar.tsx`:
   not done. `soft` is the lighter fill for unconfirmed time.
 - The number sits beside the bar in text (`tnum`), the bar has `label` and `valueText` for screen
   readers. `sm` (4px) for steps and counts, `md` (10px) for goal rows.
+- Goals has its own `GoalBar` (`components/goals/goal-charts.tsx`, #309), the same rules.
 - The tape (`components/tape.tsx`) is the same idea for a day: one strip whose runs (spent, lost
   hatched, ahead outlined) merge. A chart of separate days or hours (bars per day) is a chart, not
   progress, and keeps its columns.

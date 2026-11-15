@@ -44,7 +44,7 @@ Where the tape appears:
 | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | Today        | One horizontal bar under the score, full content width, 12px tall                                                                              |
 | Timeline     | Vertical: planned blocks are dashed outlines, spent time fills them pink, interruptions cut the block's right edge, lost stretches are hatched |
-| Goals        | One bar per goal for the weekly budget (`ProgressBar`), booked time outlined, with a black pace tick                                           |
+| Goals        | One bar per goal for the weekly budget (`GoalBar`), booked time outlined, with a black pace tick                                               |
 | Watch, stage | The Today strip, small, under the number                                                                                                       |
 
 Never draw goal time as rings, donuts or dials. They read as Apple's Activity rings and hide when the
@@ -161,7 +161,8 @@ Header "November" + Mi, title "Timeline", a week strip (M to S, today in a black
 
 Title "Goals", context "Wednesday. 4 days to go.", sorted furthest behind first.
 
-- One row per goal: name, "1h 20 of 6h", one continuous bar (black pace tick), seven thin day columns (today pink, other days `--m-context`, future days as small outlines),
+- One row per goal: name, "1h 20 of 6h", one continuous bar (black pace tick), seven thin day
+  columns (today pink, other days `--m-context`, future days as small outlines),
   and a meta line: "Behind pace. 4h 40 left."
 - "The maths" group when goals compete: the sentence ("These three need 16h 10 more this week. You
   have 12h free. Which one gives?") and a labelled split bar with a pink free time marker.
