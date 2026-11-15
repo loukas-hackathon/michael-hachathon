@@ -32,10 +32,10 @@ test("chat: the steps fold into one line under the reply and open on a tap", asy
   await field.fill("When am I free?");
   await page.keyboard.press("Enter");
 
-  await expect(page.getByText(REPLY)).toBeVisible();
+  await expect(page.getByText(REPLY, { exact: true })).toBeVisible();
   const fold = page.getByRole("button", { name: "How I worked it out · 2 steps" });
   await expect(fold).toHaveAttribute("aria-expanded", "false");
   await tap(fold);
   await expect(fold).toHaveAttribute("aria-expanded", "true");
-  await expect(page.getByText("Reading your calendar")).toBeVisible();
+  await expect(page.getByText("Reading your calendar", { exact: true })).toBeVisible();
 });
