@@ -121,6 +121,19 @@ switching it on for everyone:
 In Michael: **You > Connections > Mac > Connect > Copy**, then paste the line into Terminal in
 the repo folder (see `apps/collector` README). Real data then goes to your own account.
 
+## 8b. Publish the Michael shortcut (Manolis, 10 min, once, on an iPhone)
+
+This makes the iPhone connection one tap for everyone, Mac or not. Until it is done, You >
+Connections > iPhone shows three by hand steps with a Copy button instead.
+
+1. On the iPhone, build the shortcut exactly as `docs/sources/ios-shortcuts.md`, "One tap set up",
+   says. Name it **Michael** (the app runs it by that name).
+2. Share, **Copy iCloud Link**. Open the link on a second phone and check it adds without questions.
+3. Vercel, project **michael**, **Settings > Environment Variables**: `MICHAEL_SHORTCUT_URL` = the
+   link, all environments. **Deployments >** latest **> Redeploy**.
+4. Check: on your iPhone, You > Connections > iPhone shows **Add the shortcut**. Send the link
+   back as an issue comment only if something fails.
+
 ## 9. Team access (Loukas, 2 min)
 
 - Supabase: https://supabase.com/dashboard/org/fxrcbmgqabpcwttidoxw/team > **Invite** > Manolis' email.

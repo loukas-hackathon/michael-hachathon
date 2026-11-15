@@ -1,3 +1,4 @@
+import { SkipMacButton } from "@/components/setup/skip-mac-button";
 import type { ConnectionsView } from "@/lib/connections-status";
 import { ProgressBar } from "../progress-bar";
 import { ConnectionRow } from "./connection-row";
@@ -11,8 +12,11 @@ export function ConnectionsList({
   view: ConnectionsView;
   flash: { ok: boolean; text: string } | null;
 }) {
-  // Coming soon rows (#295) are not counted: "1 of 4 connected" means four the user can connect.
-  const total = view.live;
+  // Coming soon (#295) and optional rows are not counted: "1 of 4 connected" means four to connect.
+  const total = view.total;
+  const mac = view.rows.find((r) => r.id === "mac");
+  // No Mac yet: say plainly that the rest works without one, and let the person say so once.
+  const noMacYet = mac?.state === "none" || mac?.state === "optional";
   const summary =
     view.connected === 0
       ? "Nothing connected yet."
@@ -60,6 +64,12 @@ export function ConnectionsList({
           </div>
         ))}
       </div>
+      {noMacYet ? (
+        <div className="mt-2 px-4">
+          <p className="text-footnote text-label-2">No Mac? Everything else works without one.</p>
+          {mac?.state === "none" ? <SkipMacButton /> : null}
+        </div>
+      ) : null}
       {soon.length > 0 ? (
         <p className="mt-2 px-4 text-footnote text-label-2">Coming soon: {listOf(soon)}.</p>
       ) : null}

@@ -317,7 +317,7 @@ batch (a JSON array) or any other Omi payload answers `200` with nothing inserte
 ```ts
 type ShortcutsPayload = {
   app: string; // the Shortcuts "App" value, e.g. "Instagram"
-  action: "open" | "close"; // "opened", "closed", any case also accepted
+  action?: "open" | "close"; // "opened", "closed", any case also accepted; missing = "open"
   at?: string; // ISO 8601; missing or unreadable = time of arrival
   bundle_id?: string; // optional, e.g. "com.burbn.instagram"
 };
