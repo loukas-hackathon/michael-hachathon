@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import type { Tick } from "@/lib/day";
 import { Tween } from "./motion-ui";
 
@@ -20,6 +21,7 @@ export function Tape({
   nowAt,
   nowLabel,
   height = 12,
+  wideHeight,
   label,
   recordAt,
 }: {
@@ -27,6 +29,8 @@ export function Tape({
   nowAt?: number | null;
   nowLabel?: string;
   height?: number;
+  /** Height on a laptop 1280 px and up, where the tape leads Today's centre column. */
+  wideHeight?: number;
   label: string;
   /** Tick index of a personal best (#166): a black diamond above it. */
   recordAt?: number | null;
@@ -50,7 +54,14 @@ export function Tape({
       className="relative w-full"
       style={{ paddingTop: showNow || recordAt != null ? 18 : 0 }}
     >
-      <div className={`relative isolate overflow-hidden rounded-full ${RUN.ahead}`} style={{ height }}>
+      <div
+        className={`relative isolate overflow-hidden rounded-full ${RUN.ahead} ${wideHeight ? "h-(--m-tape-h) xl:h-(--m-tape-h-wide)" : ""}`}
+        style={
+          wideHeight
+            ? ({ "--m-tape-h": `${height}px`, "--m-tape-h-wide": `${wideHeight}px` } as CSSProperties)
+            : { height }
+        }
+      >
         {/* Each run is a full width layer slid to its end; earlier runs sit on top of later ones. */}
         {runs.map((r, i) =>
           r.kind === "ahead" ? null : (

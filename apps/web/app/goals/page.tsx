@@ -1,4 +1,5 @@
 import { type Goal, GoalCategory, type GoalSuggestion, type Recommendation } from "@michael/shared";
+import { FocusNowButton } from "@/components/focus/focus-start";
 import { BalanceBars } from "@/components/gamification/balance";
 import { TargetCard } from "@/components/gamification/target-card";
 import { BookTime } from "@/components/goals/book-time";
@@ -66,7 +67,9 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
   const daysLeft = 7 - today - 1;
   const ranked = rank(week);
   const top = needsMost(ranked);
-  const need = ranked.reduce((n, r) => n + r.leftMinutes, 0);
+  // The maths names only goals that still need time: a closed goal is no "0 min" row (QA round 3).
+  const open = ranked.filter((r) => r.leftMinutes > 0);
+  const need = open.reduce((n, r) => n + r.leftMinutes, 0);
   const cap = Math.max(60, ...week.goals.flatMap((g) => g.daily.map((m) => m ?? 0)));
   const context = `${formatWeekday(week.now)}. ${daysLeft === 0 ? "Last day" : `${daysLeft} ${daysLeft === 1 ? "day" : "days"} to go`}.`;
   const extras = week.extras ?? [];
@@ -149,14 +152,14 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
                 <h2 className="mb-2 text-title3 font-bold">The maths</h2>
                 <div className="rounded-group bg-fill px-4 pt-3 pb-3.5">
                   <p className="text-subhead">
-                    {ranked.length === 1
-                      ? "This goal needs"
-                      : `${["", "", "These two", "These three", "These four"][ranked.length] ?? `These ${ranked.length}`} need`}{" "}
+                    {open.length === 1
+                      ? `${open[0]?.goal.title} needs`
+                      : `${["", "", "These two", "These three", "These four"][open.length] ?? `These ${open.length}`} need`}{" "}
                     <b className="font-semibold tnum">{hm(need)}</b> more this week. You have{" "}
                     <b className="font-semibold tnum">{hm(week.freeMinutesLeft)}</b> free. Which one gives?
                   </p>
                   <SplitBar
-                    parts={[...ranked]
+                    parts={[...open]
                       .sort((a, b) => b.leftMinutes - a.leftMinutes)
                       .map((r) => ({ title: r.goal.title, minutes: r.leftMinutes }))}
                     freeMinutes={week.freeMinutesLeft}
@@ -320,9 +323,13 @@ function Hero({
           <p>
             <b className="font-semibold text-label">{hm(goal.spentMinutes)}</b> of {hm(goal.budgetMinutes)}.
             On pace: {hm(due)} by now.
+            {goal.loggedMinutes ? ` ${loggedLine(goal.loggedMinutes)}` : ""}
           </p>
           <span className="-my-2 flex shrink-0 items-baseline gap-3">
             {/* "I did 30 min" (#317): time spent off the calendar counts too. */}
+            {canLog ? (
+              <FocusNowButton goal={{ id: goal.id, title: goal.title }} className={btnPlain} />
+            ) : null}
             {canLog ? <LogTimeButton goal={{ id: goal.id, title: goal.title }} className={btnPlain} /> : null}
             {draft ? (
               <EditGoal draft={draft} personalReady={personalReady} className={btnPlain}>
@@ -363,6 +370,9 @@ function Hero({
   );
 }
 
+/** #372: the part of a goal's week logged outside its blocks; it is in the budget, not the score. */
+const loggedLine = (minutes: number) => `${hm(minutes)} of it you logged outside your blocks.`;
+
 /** The week's target, balance and records (#165, #166), quietly under the answer. */
 function TheWeek({ week }: { week: Awaited<ReturnType<typeof getGoalsWeek>> }) {
   const explain = week.explain ?? null;
@@ -379,6 +389,7 @@ function TheWeek({ week }: { week: Awaited<ReturnType<typeof getGoalsWeek>> }) {
       ) : explain?.scorePct != null ? (
         <HowICount explain={explain}>
           <span className="block text-body">
+            {/* The same words as Today's headline (#372). */}
             <b className="font-num text-title3 font-bold tnum">{explain.scorePct}%</b> of your goal time this
             week.
           </span>
@@ -485,6 +496,9 @@ function GoalRow({
           </>
         )}
       </p>
+      {goal.loggedMinutes ? (
+        <p className="mt-0.5 text-footnote text-label-2 tnum">{loggedLine(goal.loggedMinutes)}</p>
+      ) : null}
     </>
   );
   return (
@@ -502,6 +516,7 @@ function GoalRow({
       </p>
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
         {split.open > 0 ? <BookTime goalId={goal.id} minutes={bookMinutes(split.open, toGo)} /> : null}
+        {canLog ? <FocusNowButton goal={{ id: goal.id, title: goal.title }} className={btnPlain} /> : null}
         {canLog ? <LogTimeButton goal={{ id: goal.id, title: goal.title }} className={btnPlain} /> : null}
         {draft ? (
           <EditGoal draft={draft} personalReady={personalReady} className={btnPlain}>

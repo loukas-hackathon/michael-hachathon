@@ -289,9 +289,9 @@ export function GoalsStep({
       title={found ? "Here's what your week is for." : "What are we playing for?"}
       line={
         found
-          ? "I read it in your calendar. Keep what's right; the hours are a start."
+          ? "I read it off your calendar. Keep what's right; we'll tune the hours together."
           : // The voice sheet's opening (Manolis, #190), then what to do.
-            "I'm Michael. I learn how your days really go, then give you time back for what you want. Tick two or three."
+            "I'm Michael. I learn how your days really go, then win time back for what matters to you. Pick two or three."
       }
       right={
         <button
@@ -307,7 +307,7 @@ export function GoalsStep({
         <>
           {failed ? (
             <p role="alert" className="mb-3 text-center text-footnote text-danger">
-              I could not save that. Nothing changed. Try again.
+              I couldn't save that. Nothing changed. Try again.
             </p>
           ) : null}
           <button
@@ -322,7 +322,7 @@ export function GoalsStep({
               : n === 0
                 ? already
                   ? "Next"
-                  : "Tick at least one"
+                  : "Pick at least one"
                 : `Keep ${count(n)}`}
           </button>
         </>
@@ -336,7 +336,7 @@ export function GoalsStep({
               <span className="text-body">Google Calendar</span>
               <span className={`text-footnote ${calendar === "failed" ? "text-danger" : "text-label-2"}`}>
                 {calendar === "failed"
-                  ? "Did not connect. Try once more."
+                  ? "That didn't connect. One more go."
                   : "I find your goals in your week."}
               </span>
             </span>

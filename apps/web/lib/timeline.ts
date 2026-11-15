@@ -48,8 +48,15 @@ export type Plan = {
   title: string;
   michael: boolean;
   withOthers: boolean;
-  /** The calendar event id (live days). */
+  /** The timeline event id (#271): set on live days, so the block can be edited. */
   id?: string;
+  goalId?: string | null;
+  /** The user may move, resize, rename it or change its goal: solo and not started yet. */
+  editable?: boolean;
+  /** Made in Michael, so it may be removed (the user's own calendar events never are). */
+  removable?: boolean;
+  /** Where the event lives in Google Calendar, for the read only "Open in Google Calendar". */
+  htmlLink?: string;
   /**
    * The goal block this plan is in the score (#317), when it is one: its goal, the minutes no data
    * proves yet, and the user's word on it. A past one with unconfirmed minutes offers Did it / Didn't.
@@ -139,19 +146,30 @@ function topApps(apps: Map<string, number>, n = 2) {
 /** Michael's own block: tagged by the executor (data.michael) or written by him (source agent). */
 export const isMichaelBlock = (e: Event) => e.source === "agent" || e.data.michael === true;
 
-/** Calendar events on the day, all day events left out, as planned outlines. */
-export function plansOf(events: Event[], dayStart: number, dayEnd: number): Plan[] {
+/**
+ * Calendar events on the day, all day events left out, as planned outlines. `now` decides which are
+ * still editable (#271): a block that has started is history.
+ */
+export function plansOf(events: Event[], dayStart: number, dayEnd: number, now = Date.now()): Plan[] {
   return events
     .filter((e) => e.type === "calendar_event" && e.end_at && e.data.all_day !== true)
     .map((e) => {
       const attendees = typeof e.data.attendees === "number" ? e.data.attendees : 0;
+      const withOthers = e.data.with_others === true || attendees >= 2;
+      const start = t(e.start_at);
+      const end = t(e.end_at as string);
       return {
-        start: Math.max(t(e.start_at), dayStart),
-        end: Math.min(t(e.end_at as string), dayEnd),
+        start: Math.max(start, dayStart),
+        end: Math.min(end, dayEnd),
         title: e.title,
-        id: e.id,
         michael: isMichaelBlock(e),
-        withOthers: e.data.with_others === true || attendees >= 2,
+        withOthers,
+        id: e.id,
+        goalId: typeof e.data.goal_id === "string" ? e.data.goal_id : null,
+        // Blocks that cross midnight stay read only: the day shows only part of them.
+        editable: !withOthers && start > now && start >= dayStart && end <= dayEnd,
+        removable: isMichaelBlock(e),
+        htmlLink: typeof e.data.html_link === "string" ? e.data.html_link : undefined,
       };
     })
     .filter((p) => p.end > p.start)
@@ -278,7 +296,7 @@ export function buildTimeline(
   const ai = marks((e) => e.type === "ai_session");
   // Done time the user logged (#317): goal time, drawn pink like a workout.
   const logged = marks((e) => e.source === "manual" && e.type === "focus_session" && e.data.log === "done");
-  const plans = plansOf(events, dayStart, dayEnd);
+  const plans = plansOf(events, dayStart, dayEnd, now);
   const health = healthOf(events, dayStart, dayEnd);
 
   // 5. Planned drives (source maps, type travel; TravelData in docs/api.md).
@@ -383,6 +401,31 @@ export function makeY(segments: Segment[], perHour: number, quiet: number) {
   };
 }
 
+/** The inverse of makeY: the time at a y offset. Inside a quiet row it spreads across the row. */
+export function makeTime(segments: Segment[], perHour: number, quiet: number) {
+  return (y: number) => {
+    let top = 0;
+    for (const s of segments) {
+      const h = s.kind === "quiet" ? quiet : ((s.to - s.from) / (60 * MIN)) * perHour;
+      if (y < top + h) return s.from + (Math.max(0, y - top) / h) * (s.to - s.from);
+      top += h;
+    }
+    return segments.at(-1)?.to ?? 0;
+  };
+}
+
+/** Quiet rows the viewer opened become hours again, merged with the hours around them. */
+export function openSegments(segments: Segment[], open: (s: Segment) => boolean): Segment[] {
+  const out: Segment[] = [];
+  for (const s of segments) {
+    const next: Segment = s.kind === "quiet" && open(s) ? { kind: "hours", from: s.from, to: s.to } : s;
+    const last = out.at(-1);
+    if (last && last.kind === "hours" && next.kind === "hours" && last.to === next.from) last.to = next.to;
+    else out.push({ ...next });
+  }
+  return out;
+}
+
 /** The plan a block mostly belongs to: the calendar block covering at least half of it. */
 export function planFor(b: Block, plans: Plan[]): Plan | undefined {
   let best: Plan | undefined;
@@ -416,4 +459,26 @@ export function lostMinutesOf(b: Block): number {
     b.cuts.reduce((n, c) => n + c.minutes, 0) +
     (b.lostStretches ?? []).reduce((n, l) => n + (l.end - l.start) / MIN, 0)
   );
+}
+
+/** A drawn stretch of the day in pixels, for working out what would sit on top of what. */
+export type DrawnSpan = { key: string; top: number; bottom: number };
+
+/**
+ * Generated drives step aside for real activity (#393): a drive that overlaps anything that really
+ * happened moves to the right half of the day, and everything it overlaps takes the left half, as
+ * Calendar does with two events at once. Neither ever covers the other's title. Returns the keys of
+ * the drives and of the real stretches that share their time.
+ */
+export function sideBySide(drives: DrawnSpan[], real: DrawnSpan[]): Set<string> {
+  const keys = new Set<string>();
+  for (const d of drives) {
+    for (const r of real) {
+      if (r.top < d.bottom && r.bottom > d.top) {
+        keys.add(d.key);
+        keys.add(r.key);
+      }
+    }
+  }
+  return keys;
 }

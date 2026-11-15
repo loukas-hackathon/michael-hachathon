@@ -8,8 +8,10 @@ import {
   SourcesStatusResponse,
   TelegramStatus,
 } from "@michael/shared";
+import { cache } from "react";
 import { get } from "./api";
 import { CONNECTIONS, type Connection, type ConnectionId } from "./connections";
+import { devLatency } from "./dev-latency";
 import { formatTime } from "./format";
 import { saidNoMac } from "./no-mac";
 
@@ -99,7 +101,7 @@ const iphoneSends = (src: SourcesStatusResponse | null) =>
 const unknown = (c: Connection): ConnectionStatus => ({
   ...c,
   state: "unknown",
-  line: "I could not check this right now.",
+  line: "I couldn't check this right now.",
   action: { kind: "link", label: "Manage", href: c.href },
 });
 
@@ -267,8 +269,10 @@ export function statusFor(c: Connection, x: Inputs, now = Date.now()): Connectio
 /**
  * `preview`: one Coming soon connection shown as if live, for its setup page with ?preview=1, so a
  * person can prove it end to end on production before CONNECTOR_STATUS switches it on (#306).
+ * Read once per request: the You layout (#285) and the page share it.
  */
-export async function getConnections(preview?: ConnectionId): Promise<ConnectionsView> {
+export const getConnections = cache(async (preview?: ConnectionId): Promise<ConnectionsView> => {
+  await devLatency();
   const [sources, integrations, push, agents, places, telegram, noMac] = await Promise.all([
     safe("/v1/sources/status", SourcesStatusResponse),
     safe("/v1/integrations", IntegrationsResponse),
@@ -300,7 +304,7 @@ export async function getConnections(preview?: ConnectionId): Promise<Connection
     next: rows.find((r) => r.state === "none") ?? null,
     sources,
   };
-}
+});
 
 /** One connection's status, for its setup page. */
 export async function getConnection(

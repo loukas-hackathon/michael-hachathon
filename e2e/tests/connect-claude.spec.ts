@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { BrowserContext, Page } from "@playwright/test";
-import { API_KEY, API_URL, expect, test } from "./fixtures";
+import { API_KEY, API_URL, expect, PRESENTER_KEY, test } from "./fixtures";
 
 // The claude.ai custom connector, step by step as claude.ai runs it against production (#121, #321):
 // an unauthenticated MCP call answers 401 with the resource metadata pointer; claude.ai reads the
@@ -8,8 +8,8 @@ import { API_KEY, API_URL, expect, test } from "./fixtures";
 // and opens /oauth/authorize with PKCE; signed out, Michael asks the person to sign in and keeps
 // the way back to the consent page; one tap on Allow returns a code to claude.ai, which swaps it
 // for a token and calls initialize and tools/list. Google is not reachable here, so the test user
-// cookie stands in for the Google round trip. Demo visitors cannot connect (#197): the presenter
-// answers the demo week's consent with the API key.
+// cookie stands in for the Google round trip. Demo visitors cannot connect (#197); the presenter,
+// who opened the presenter link once in this browser, taps Allow like anyone else (#343).
 
 const CLAUDE_CALLBACK = "https://claude.ai/api/mcp/auth_callback";
 const MCP_HEADERS = { "content-type": "application/json", accept: "application/json, text/event-stream" };
@@ -188,10 +188,7 @@ test("connect Claude as claude.ai does: discovery, sign in round trip, Allow, to
   await expect(page.getByText("Claude").first()).toBeVisible();
 });
 
-test("a demo visitor cannot connect; the presenter answers the consent with the API key", async ({
-  page,
-  context,
-}) => {
+test("a demo visitor cannot connect; the presenter link makes it one tap", async ({ page, context }) => {
   await stubClaudeCallback(page);
   const flow = await claudeStarts();
   await signedOutToLogin(page, context, flow);
@@ -200,24 +197,50 @@ test("a demo visitor cannot connect; the presenter answers the consent with the 
   // give the agent full write on the shared demo account (#197).
   await page.getByRole("link", { name: "See the demo week" }).click();
   await expect(page).toHaveURL(/\/connect\?request=/);
+  const consent = new URL(page.url());
+  const consentPath = `${consent.pathname}${consent.search}`;
   await expect(page.getByRole("heading", { name: "This is the demo week." })).toBeVisible();
   await expect(page.getByRole("button", { name: "Allow" })).toHaveCount(0);
+  await expect(page.getByText(/Presenting\? Open your presenter link/)).toBeVisible();
 
-  // The presenter path (docs/demo-runbook.md): the request id from the address bar, answered with
-  // the API key from a terminal, then the redirect it returns opened in the browser.
-  const id = new URL(page.url()).searchParams.get("request") ?? "";
-  const auth = { authorization: `Bearer ${API_KEY}`, "content-type": "application/json" };
-  const answer = await fetch(`${API_URL}/v1/connect/requests/${id}`, {
-    method: "POST",
-    headers: auth,
-    body: JSON.stringify({ allow: true }),
+  // A wrong key is just a visitor: still no Allow, and no presenter cookie.
+  await page.goto(`/auth/presenter?key=not-the-key&next=${encodeURIComponent(consentPath)}`);
+  await expect(page).toHaveURL(/\/connect\?request=/);
+  await expect(page.getByRole("heading", { name: "This is the demo week." })).toBeVisible();
+  expect((await context.cookies()).some((c) => c.name === "michael_presenter")).toBe(false);
+  // Nor can a visitor post the form by hand: back to the page that says why.
+  const forged = await page.request.post("/connect/decide", {
+    form: { request: consent.searchParams.get("request") ?? "", allow: "yes" },
+    maxRedirects: 0,
   });
-  expect(answer.status).toBe(200);
-  const { redirect_to } = (await answer.json()) as { redirect_to: string };
-  await claudeFinishes(redirect_to, flow);
+  expect(forged.status()).toBe(303);
+  expect(forged.headers().location).toContain("/connect?request=");
+  // Nor fake the presenter cookie: it is signed with the key.
+  await context.addCookies([
+    {
+      name: "michael_presenter",
+      value: `${Math.floor(Date.now() / 1000) + 3600}.forged`,
+      url: consent.origin,
+    },
+  ]);
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Allow" })).toHaveCount(0);
 
-  // The demo account is shared by the whole suite: switch Claude off again, so the other tests
-  // still see Agents with nothing connected.
+  // The presenter link, opened once on the presenting laptop, then the one tap.
+  await page.goto(`/auth/presenter?key=${PRESENTER_KEY}&next=${encodeURIComponent(consentPath)}`);
+  await expect(page).toHaveURL(/\/connect\?request=/);
+  await expect(
+    page.getByRole("heading", { name: "Allow Claude to read and change your day?" }),
+  ).toBeVisible();
+  await expect(page.getByText("Signed in as the demo week (presenter).")).toBeVisible();
+  const presenter = (await context.cookies()).find((c) => c.name === "michael_presenter");
+  expect(presenter?.httpOnly).toBe(true);
+  await allowAndFinish(page, flow);
+
+  // The demo account is shared by the whole suite: switch Claude off again (and drop the presenter
+  // cookie), so the other tests still see Agents with nothing connected.
+  await context.clearCookies({ name: "michael_presenter" });
+  const auth = { authorization: `Bearer ${API_KEY}`, "content-type": "application/json" };
   const { agents } = (await (await fetch(`${API_URL}/v1/agents`, { headers: auth })).json()) as {
     agents: { id: string; name: string; status: string }[];
   };
@@ -241,7 +264,8 @@ test("an expired or unknown request says to start again from Claude", async ({ p
 test("You > Claude is one link and one line", async ({ page, context, baseURL }) => {
   await context.addCookies([{ name: "michael_e2e_user", value: randomUUID(), url: baseURL ?? "" }]);
   await page.goto("/you/connections/claude");
-  await expect(page.getByText(`${API_URL}/mcp`)).toBeVisible();
+  await expect(page.getByText("Your Michael link")).toBeVisible();
+  await expect(page.getByText(`${API_URL}/mcp`)).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Copy link" })).toHaveCount(1);
   await expect(page.getByText(/add a custom connector, paste it and tap Allow/)).toBeVisible();
 });

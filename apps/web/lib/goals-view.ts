@@ -14,7 +14,10 @@ export type GoalWeek = {
   title: string;
   category: Category;
   budgetMinutes: number;
+  /** Done this week against the budget: spent in its blocks plus logged outside them (#372). */
   spentMinutes: number;
+  /** The part of spentMinutes the user logged outside every block (#372): not in the score. */
+  loggedMinutes?: number;
   /** The part of spentMinutes no data proves yet (drawn pale pink). */
   unverifiedMinutes: number;
   /** Minutes planned in calendar blocks this week, and how many of those blocks are still to come. */

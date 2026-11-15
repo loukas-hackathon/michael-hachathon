@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Goal } from "@michael/shared";
 import { APPS as apps, calendar, dataOf, goal, mac, report, T } from "../patterns/testkit";
-import { goalForEvent, isOwnBlock } from "./match";
+import { goalBlockTitle, goalForEvent, isOwnBlock } from "./match";
 
 // Synthetic goals and titles only. The shape is the real problem: nobody names a calendar event
 // after the goal it serves.
@@ -112,4 +112,18 @@ test("the patterns' calendar mode reads the same matcher", () => {
   assert.equal(d.mode, "calendar");
   assert.equal(d.items[0]?.goal_id, COMPANY.id);
   assert.equal(d.items[0]?.minutes_lost, 5);
+});
+
+test("a block booked for a goal is named after the goal, and counts towards it", () => {
+  assert.equal(goalBlockTitle(UNI), "University");
+  assert.equal(goalBlockTitle(TRI), "Triathlon");
+  assert.equal(goalBlockTitle(COMPANY), "The company");
+  // A name someone gave is kept, unless it is one of the goal's bare calendar titles.
+  assert.equal(goalBlockTitle(UNI, "Revise chapter 3"), "Revise chapter 3");
+  assert.equal(goalBlockTitle(UNI, "study"), "University");
+  // Booked blocks carry the goal's id: the score attributes them by it, and by title as well.
+  for (const g of GOALS) {
+    assert.equal(goalForEvent(event(goalBlockTitle(g), { goal_id: g.id }), GOALS)?.goal.id, g.id);
+    assert.equal(goalForEvent(event(goalBlockTitle(g)), GOALS)?.goal.id, g.id);
+  }
 });

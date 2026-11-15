@@ -7,7 +7,7 @@ import { ConnectionRow } from "./connection-row";
 // the one next step. The summary line counts only what is really connected.
 // The demo week replays a recorded week from these four. A demo visitor sees them as what they
 // are, sample data, instead of "Not connected" and "Coming soon" under numbers that quote them.
-const DEMO_SAMPLE: ReadonlySet<string> = new Set(["google-calendar", "apple-watch", "mac", "iphone"]);
+export const DEMO_SAMPLE: ReadonlySet<string> = new Set(["google-calendar", "apple-watch", "mac", "iphone"]);
 
 export function ConnectionsList({
   view,
@@ -26,15 +26,15 @@ export function ConnectionsList({
   const noMacYet = !demo && (mac?.state === "none" || mac?.state === "optional");
   const sample = (id: string) => demo && DEMO_SAMPLE.has(id);
   const summary = demo
-    ? "The demo week runs on sample data from calendar, Mac, iPhone and watch."
+    ? "The demo week replays calendar, Mac, iPhone and watch data. Your own connections start off."
     : view.connected === 0
       ? "Nothing connected yet."
       : view.connected === total
         ? `All ${total} connected.`
         : `${view.connected} of ${total} connected.`;
-  const live = view.rows.filter((r) => r.live || sample(r.id));
-  // Coming soon is one line under the list, not a row each: nothing there can be tapped yet.
-  const soon = view.rows.filter((r) => !r.live && !sample(r.id)).map((r) => r.name);
+  // Every connection is a row with Connect or Manage (Loukas, Sun 15 Nov). One switched back to
+  // Coming soon in CONNECTOR_STATUS keeps its row, quieter and with nothing to tap.
+  const rows = view.rows;
 
   return (
     <section id="connections" className="mt-6 scroll-mt-4">
@@ -65,8 +65,9 @@ export function ConnectionsList({
           {flash.text}
         </p>
       ) : null}
-      <div className="overflow-hidden rounded-group bg-fill">
-        {live.map((row, i) => (
+      {/* On a laptop the rows live in the list on the left (YouNav, #285): one link per connection. */}
+      <div className="overflow-hidden rounded-group bg-fill xl:hidden">
+        {rows.map((row, i) => (
           <div key={row.id} className="relative">
             {i > 0 ? <span className="absolute inset-x-0 top-0 ml-[52px] h-[0.5px] bg-separator" /> : null}
             <ConnectionRow row={row} sample={sample(row.id)} />
@@ -79,13 +80,6 @@ export function ConnectionsList({
           {mac?.state === "none" ? <SkipMacButton /> : null}
         </div>
       ) : null}
-      {soon.length > 0 ? (
-        <p className="mt-2 px-4 text-footnote text-label-2">Coming soon: {listOf(soon)}.</p>
-      ) : null}
     </section>
   );
 }
-
-/** "Apple Watch, Mac and iPhone". */
-const listOf = (names: string[]) =>
-  names.length < 2 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;

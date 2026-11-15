@@ -228,6 +228,8 @@ export function checkAction(
         start_at: iso(start),
         end_at: iso(end),
         ...(title ? { title } : {}),
+        // The goal's id rides along, so the block counts towards it whatever its title says.
+        ...(goalId ? { goal_id: goalId } : {}),
       });
       if (!payload.success) return "the block cannot be created as asked";
       return done(payload.data, start);

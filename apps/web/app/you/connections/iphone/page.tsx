@@ -14,8 +14,8 @@ export const metadata = { title: "iPhone · Michael" };
 // Screen Time history needs a Mac (Apple keeps it on the devices; the Mac collector reads the
 // synced copy, a day behind). Without a Mac, or on the iPhone itself, the iPhone path leads and the
 // Mac is a footnote; with a Mac, opened from the Mac, Screen Time leads.
-// ?preview=1 shows the steps while CONNECTOR_STATUS still says Coming soon, so the shortcut can be
-// proven on a real iPhone on production before it is switched on (#306, #303).
+// ?preview=1 is kept harmless: it only matters if CONNECTOR_STATUS switches the iPhone back to
+// Coming soon, when it still shows the steps for proving on a real iPhone (#306, #303).
 export default async function IPhonePage({
   searchParams,
 }: {

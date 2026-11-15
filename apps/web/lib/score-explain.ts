@@ -17,6 +17,11 @@ export type ScoreExplain = {
   unverified: number;
   lost: number;
   ahead: number;
+  /**
+   * Minutes logged outside every goal block this week (#372): they count toward the goals' weekly
+   * time, never toward this score, so the sheet shows them on a line of their own.
+   */
+  logged: number;
   /** What took the lost time, most first (at most two). */
   causes: { what: string; minutes: number }[];
   wonBack: number;
@@ -39,6 +44,7 @@ export function explainFromScore(score: Score): ScoreExplain {
     unverified: score.unverified_minutes,
     lost: score.lost_minutes,
     ahead: score.ahead_minutes,
+    logged: score.logged_minutes ?? 0,
     causes: (score.lost_by ?? []).slice(0, 2).map((c) => ({ what: c.what, minutes: c.minutes })),
     wonBack: score.time_won_back_minutes,
     usualLossRate: score.day.time_won_back.usual_loss_rate,
@@ -85,6 +91,7 @@ export const sampleExplainNew: ScoreExplain = {
   unverified: 0,
   lost: 0,
   ahead: 0,
+  logged: 0,
   causes: [],
   wonBack: 0,
   usualLossRate: null,
@@ -102,6 +109,7 @@ export const sampleExplainLearning: ScoreExplain = {
   unverified: 60,
   lost: 99,
   ahead: 50,
+  logged: 0,
   causes: [
     { what: "WhatsApp", minutes: 52 },
     { what: "Instagram", minutes: 31 },

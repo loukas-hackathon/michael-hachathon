@@ -41,7 +41,7 @@ export const sampleMorningMoment: Moment = {
   day: "2026-11-11",
   timezone: "Europe/Athens",
   generated_at: d("07:24"),
-  headline: "Today holds 5h 10 of goal time. Guard 11:00 to 13:00: it usually costs 34 minutes.",
+  headline: "Today holds 5h 10 of goal time. Yesterday the 11:00 block lost 41 minutes to WhatsApp.",
   phrased_by: "template",
   goals: goals([{}, {}]),
   totals: {
@@ -60,11 +60,12 @@ export const sampleMorningMoment: Moment = {
     expected_lost_minutes: 34,
     history_days: 7,
     usual_trigger: "WhatsApp",
+    last_time: { day: "2026-11-10", lost_minutes: 41, trigger: "WhatsApp" },
   },
   suggestions: [
     {
       title: "Phone in another room from 11:00 to 13:00",
-      rationale: "On a usual day you lose 34 minutes in these hours, mostly to WhatsApp (last 7 days).",
+      rationale: "Yesterday this block lost 41 minutes to WhatsApp.",
       action_kind: "reminder",
       start_at: d("11:00"),
       end_at: d("13:00"),
@@ -88,7 +89,7 @@ export const sampleEveningMoment: Moment = {
   ...sampleMorningMoment,
   kind: "evening",
   generated_at: d("21:30"),
-  headline: "4h 23 of 5h 10 planned goal time held, 47 minutes lost.",
+  headline: "You held 4h 23 of 5h 10 planned goal time. 47 minutes got away.",
   goals: goals([
     { spent_week_minutes: 643, spent_today_minutes: 233, lost_today_minutes: 37 },
     { spent_week_minutes: 190, spent_today_minutes: 40 },

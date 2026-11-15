@@ -84,7 +84,7 @@ test("the moment goes out once a day, counts toward the 5 and respects quiet hou
   assert.equal(d.candidate.kind, "morning");
   assert.equal(d.candidate.key, "morning");
   assert.equal(d.candidate.text, LINE.text);
-  assert.match(d.candidate.reason, /Sent at 08:00: no sleep recorded this morning\./);
+  assert.match(d.candidate.reason, /Sent at 08:00, the usual morning time\./);
 
   // Already out today: nothing to say.
   assert.deepEqual(decide(input("09:00", [], [sent("08:05", "morning")], { ...g, moment })), {
@@ -132,5 +132,5 @@ test("the moment's nudge line is under 15 words with no dashes", () => {
   const morning = momentNudge(computeMoment({ kind: "morning", events, goals, now: at("07:30") }));
   assert.equal(morning.text, "Today holds 2h of goal time.");
   const empty = momentNudge(computeMoment({ kind: "evening", events: [], goals: [], now: at("21:00") }));
-  assert.equal(empty.text, "No goal time booked today. Book tomorrow before you sleep.");
+  assert.equal(empty.text, "No goal time today. Put tomorrow's in before bed.");
 });

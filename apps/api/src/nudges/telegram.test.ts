@@ -170,7 +170,7 @@ test("telegram: setWebhook points at the API with the secret, https only", async
     body: {
       url: "https://api.example.com/v1/webhooks/telegram",
       secret_token: SECRET,
-      allowed_updates: ["message"],
+      allowed_updates: ["message", "callback_query"],
     },
   });
   configureTelegram({ config: null });

@@ -250,7 +250,7 @@ export function StandingInstructions({
   const [adding, setAdding] = useState<number | null>(null);
 
   return (
-    <section className="mt-8">
+    <section id="michael" className="mt-8 scroll-mt-4">
       <h2 className="mb-2 text-title3 font-bold">Standing instructions</h2>
       <ul className="overflow-hidden rounded-group bg-fill">
         {quiet ? (
@@ -288,9 +288,9 @@ export function StandingInstructions({
                   setOptimistic({ id: i.id, active });
                   try {
                     const res = await toggleInstruction(i.id, active);
-                    if (!res.ok) setError(res.message ?? "I could not save that. Nothing changed.");
+                    if (!res.ok) setError(res.message ?? "I couldn't save that. Nothing changed.");
                   } catch {
-                    setError("I could not reach the server. Nothing changed.");
+                    setError("I lost the line. Nothing changed.");
                   }
                 });
               }}
@@ -311,9 +311,9 @@ export function StandingInstructions({
                 setError(null);
                 try {
                   const res = await addHouseRule(r.index);
-                  if (!res.ok) setError(res.message ?? "I could not add it. Nothing changed.");
+                  if (!res.ok) setError(res.message ?? "I couldn't add it. Nothing changed.");
                 } catch {
-                  setError("I could not reach the server. Nothing changed.");
+                  setError("I lost the line. Nothing changed.");
                 } finally {
                   setAdding(null);
                 }
@@ -393,9 +393,9 @@ export function StandingInstructions({
                   try {
                     const r = await removeInstruction(editing.id);
                     if (r.ok) close();
-                    else setError(r.message ?? "I could not delete it. Nothing changed.");
+                    else setError(r.message ?? "I couldn't delete it. Nothing changed.");
                   } catch {
-                    setError("I could not reach the server. Nothing changed.");
+                    setError("I lost the line. Nothing changed.");
                   }
                 });
               }}

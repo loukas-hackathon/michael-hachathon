@@ -6,6 +6,9 @@ import { lastTimeLine, type MomentCore, riskBlockName, templateHeadline } from "
 // The Morning or Evening moment as one nudge: the headline when it fits the nudge rules (under 15
 // words, no dashes), else its first sentence, else a shorter line from the same numbers. Pure.
 
+const MORNING_READY = "Morning. Your plan is ready when you are.";
+const EVENING_READY = "Day's done. Two minutes for your evening review.";
+
 const firstSentence = (text: string) => (text.match(/^.*?[.:](?=\s|$)/)?.[0] ?? text).replace(/:$/, ".");
 
 export function momentNudge(m: MomentCore): { text: string; reason: string } {
@@ -34,7 +37,7 @@ export function momentNudge(m: MomentCore): { text: string; reason: string } {
       reasons.push(book.rationale);
     }
     reasons.unshift(`Today holds ${t.planned_minutes} minutes of goal time.`);
-    options.push("Your morning plan is ready.");
+    options.push(MORNING_READY);
   } else {
     if (m.first_move) {
       options.push(`Tomorrow: ${m.first_move.title}.`);
@@ -47,11 +50,14 @@ export function momentNudge(m: MomentCore): { text: string; reason: string } {
     options.push(
       t.planned_minutes > 0
         ? `${voiceDuration(t.spent_minutes)} of ${voiceDuration(t.planned_minutes)} held today.`
-        : "Your evening review is ready.",
+        : EVENING_READY,
     );
   }
-  const text =
-    options.find(isValidCopy) ??
-    (m.kind === "morning" ? "Your morning plan is ready." : "Your evening review is ready.");
-  return { text, reason: reasons.join(" ") };
+  const text = options.find(isValidCopy) ?? (m.kind === "morning" ? MORNING_READY : EVENING_READY);
+  // The reason sits under the line on the stage and the watch: it never says the line again.
+  const reason = reasons
+    .map((r) => (r !== text && r.startsWith(text) ? r.slice(text.length).trim() : r))
+    .filter((r) => r && r !== text)
+    .join(" ");
+  return { text, reason };
 }

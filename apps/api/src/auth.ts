@@ -2,8 +2,14 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import type { MiddlewareHandler } from "hono";
 import { agentsStore } from "./agents-store";
 import { type AuthMethod, runAsUser } from "./context";
-import { demoWeekSeeded, keepDemoWeekFresh } from "./demo/sync";
-import { DEMO_VISITOR_HEADER, DEMO_VISITOR_MESSAGE, DemoVisitorId, demoVisitorMay } from "./demo/visitor";
+import { demoRefreshGate, keepDemoWeekFresh } from "./demo/sync";
+import {
+  DEMO_PRESENTER_HEADER,
+  DEMO_VISITOR_HEADER,
+  DEMO_VISITOR_MESSAGE,
+  DemoVisitorId,
+  demoVisitorMay,
+} from "./demo/visitor";
 import { env } from "./env";
 import { errorResponse } from "./http";
 import { mcpResource, resourceMetadataUrl } from "./public-url";
@@ -17,6 +23,11 @@ const expected = digest(env.API_KEY);
 
 // Constant-time comparison (hashing first equalises lengths).
 const isApiKey = (token: string) => timingSafeEqual(digest(token), expected);
+
+// The presenter key (demo/visitor.ts), only when configured. Constant time as well.
+const presenterKey = env.DEMO_PRESENTER_KEY?.trim() ? digest(env.DEMO_PRESENTER_KEY.trim()) : null;
+const isPresenterKey = (value: string | undefined) =>
+  Boolean(presenterKey && value && timingSafeEqual(digest(value.trim()), presenterKey));
 
 // `e2e_<uuid>`: a test user, accepted only with E2E_TEST_AUTH=on (see env.ts).
 const E2E_TOKEN = /^e2e_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -67,7 +78,8 @@ export async function deleteAuthUser(userId: string): Promise<boolean> {
  * - a signed-in user's Supabase access token (`Authorization: Bearer <jwt>`) -> that user
  * - the shared API key -> the demo account (collectors, webhooks, our own tools)
  * - the API key with X-Michael-Demo-Visitor -> the demo account for one anonymous web visitor:
- *   read mostly, chat of their own (demo/visitor.ts)
+ *   read mostly, chat of their own (demo/visitor.ts); with X-Michael-Demo-Presenter holding
+ *   DEMO_PRESENTER_KEY, the presenter, who may also answer the claude.ai consent
  * - with `mcp`, an OAuth access token issued by routes/oauth.ts for this MCP resource -> the user
  *   who allowed it (the claude.ai connector). A 401 then carries the WWW-Authenticate pointer to
  *   the protected resource metadata, which is how claude.ai starts sign in.
@@ -116,7 +128,9 @@ export const requireUser =
         if (!id.success) return deny("Invalid demo visitor");
         visitor = id.data;
         via = "demo_visitor";
-        if (!demoVisitorMay(c.req.method, c.req.path)) {
+        // The presenter (one laptop, #343) may also answer the claude.ai consent.
+        const presenter = isPresenterKey(c.req.header(DEMO_PRESENTER_HEADER));
+        if (!demoVisitorMay(c.req.method, c.req.path, presenter)) {
           return errorResponse(c, "forbidden", DEMO_VISITOR_MESSAGE, { demo: true });
         }
       }
@@ -142,12 +156,13 @@ export const requireUser =
     }
 
     // The demo account's generated week follows the clock (at most one refresh per 5 minutes).
-    // Only the first refresh after a start holds the request (there is no week yet); later ones
-    // run in the background, so a demo request never waits for about 20 round trips of seeding.
+    // Refreshes run in the background, so a demo request never waits for about 20 round trips of
+    // seeding. The first one starts with the process (index.ts); until it has finished a request
+    // waits for it, but at most FIRST_REFRESH_WAIT_MS (#364): the week from before is still there.
     if (userId === env.DEMO_USER_ID) {
       const uid = userId;
       const refresh = untimed(() => runAsUser(uid, () => keepDemoWeekFresh(store), via));
-      if (!demoWeekSeeded()) await refresh;
+      await demoRefreshGate(refresh);
     }
 
     if (agentId) {

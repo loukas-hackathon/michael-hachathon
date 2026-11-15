@@ -1,9 +1,10 @@
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { EmptyState } from "@/components/empty-state";
+import { Hint } from "@/components/hint";
 import { LiveRefresh } from "@/components/live-refresh";
 import { ScreenHeader } from "@/components/screen";
-import { DayTimeline, DayTimelineList, HeartRow } from "@/components/timeline/day-timeline";
+import { DayTimeline, DayTimelineList, HeartRow, TIMELINE_HINT } from "@/components/timeline/day-timeline";
 import { LostWeekChart } from "@/components/timeline/lost-week";
 import { WeekStrip } from "@/components/timeline/week-strip";
 import { getLostWeek } from "@/lib/api";
@@ -81,6 +82,20 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
                 <b className="font-semibold text-label">{hm(day.totals.workMinutes)}</b> of goal time so far,{" "}
                 <b className="font-semibold text-label">{minutesPhrase(day.totals.lostMinutes)}</b> lost.
               </>
+            ) : date > today && day.blocks.length === 0 ? (
+              <>
+                {plans.length > 0 ? (
+                  <>
+                    <b className="font-semibold text-label">
+                      {plans.length} {plans.length === 1 ? "block" : "blocks"}
+                    </b>{" "}
+                    planned.
+                  </>
+                ) : (
+                  "Nothing planned yet."
+                )}
+                {screen.editable ? " Tap a free time to add a block." : null}
+              </>
             ) : day.blocks.length === 0 && day.phone.length === 0 ? (
               <>
                 No screens recorded{plans.length > 0 ? ", " : "."}
@@ -108,9 +123,28 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
               </>
             )}
           </p>
+          {/* Not over a day you can already add blocks to: tapping a free time is the action there. */}
+          {screen.calendarConnected === false && !(screen.editable && date >= today) ? (
+            <Link href="/integrations/google/connect" className={`${tinted} mt-3`}>
+              Connect your calendar
+            </Link>
+          ) : null}
           <HeartRow day={day} heartHidden={heartHidden} />
           <DayTimelineList day={day} />
-          <DayTimeline day={day} heartHidden={heartHidden} sleepGoal={screen.sleepGoal} />
+          {/* Editing is a Calendar gesture nobody can see: said once, gone once used. */}
+          {screen.editable && date >= today && !(date > today && day.blocks.length === 0) ? (
+            <Hint id={TIMELINE_HINT} className="mt-2 mb-2">
+              Tap a free time to add a block. Hold a block to move it.
+            </Hint>
+          ) : null}
+          <DayTimeline
+            key={date}
+            day={day}
+            heartHidden={heartHidden}
+            sleepGoal={screen.sleepGoal}
+            editable={screen.editable && date >= today}
+            goals={screen.goals}
+          />
         </>
       ) : (
         <EmptyState

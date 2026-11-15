@@ -1,4 +1,5 @@
 import {
+  budgetMinutesDone,
   type Event,
   type Goal,
   goalKind,
@@ -11,6 +12,7 @@ import {
   SettleBlockPayload,
   voiceShortDuration,
 } from "@michael/shared";
+import { confirm } from "../confirm";
 import { HttpError, parse } from "../http";
 import { DEFAULT_TIMEZONE } from "../patterns";
 import { Zone } from "../patterns/time";
@@ -20,8 +22,9 @@ import { goalForEvent, normaliseTitle } from "../score/match";
 import { store } from "../store";
 
 // Done time the user reports (#317), and past goal blocks they settle. "I took a bath for 40
-// minutes at 13:00" becomes the user's own manual entry (shape in score/logged.ts) that the score
-// counts as confirmed goal time. Every entry is held by a recommendation (log_time or
+// minutes at 13:00" becomes the user's own manual entry (shape in score/logged.ts): inside a block
+// of its goal it confirms that block, outside every block it counts toward the goal's weekly budget
+// but not the score (#372, score/score.ts). Every entry is held by a recommendation (log_time or
 // settle_block) carried out at once, so it shows like any other action and can be undone: undo
 // removes the entry, nothing else. The REST routes (routes/log.ts), the chat tools and the MCP
 // tools all come through here, so the rules live in one place:
@@ -64,7 +67,6 @@ export function matchGoal(goals: Goal[], ref: { goal_id?: string; goal?: string 
   const said = normaliseTitle(ref.goal ?? "");
   const names = open.map((g) => g.title).join(", ") || "none yet";
   if (!said) throw new HttpError("bad_request", "Name the goal");
-  const words = said.split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 3);
   const titlesOf = (g: Goal) => {
     const t = g.target?.calendar_titles;
     return Array.isArray(t) ? t.filter((x): x is string => typeof x === "string").map(normaliseTitle) : [];
@@ -73,21 +75,101 @@ export function matchGoal(goals: Goal[], ref: { goal_id?: string; goal?: string 
     (g) => normaliseTitle(g.title) === said,
     (g) => normaliseTitle(g.title).includes(said) || said.includes(normaliseTitle(g.title)),
     (g) => titlesOf(g).some((t) => t === said || t.includes(said) || said.includes(t)),
-    (g) => {
-      const title = [normaliseTitle(g.title), ...titlesOf(g)].join(" ");
-      return words.some((w) => title.includes(w));
-    },
   ];
+  const ask = (hits: Goal[]) =>
+    new HttpError(
+      "bad_request",
+      `"${ref.goal}" could be ${hits.map((g) => g.title).join(" or ")}. Which one?`,
+    );
   for (const tier of tiers) {
     const hits = open.filter(tier);
     if (hits.length === 1) return hits[0] as Goal;
-    if (hits.length > 1)
-      throw new HttpError(
-        "bad_request",
-        `"${ref.goal}" could be ${hits.map((g) => g.title).join(" or ")}. Which one?`,
-      );
+    if (hits.length > 1) throw ask(hits);
   }
+  // Last step: the user's words against each goal's title, calendar titles and description.
+  const best = bestByWords(open, said, titlesOf);
+  if (best.length === 1) return best[0] as Goal;
+  if (best.length > 1) throw ask(best);
   throw new HttpError("not_found", `No goal called "${ref.goal}". Your goals: ${names}`);
+}
+
+// Words that say nothing about which goal: "I took a bath for 40 minutes this morning".
+const FILLER = new Set(
+  "the and for with this that then from after before about some just had did took went got was were have done made into onto our their my your his her its a an of at in on to by minutes minute mins min hours hour hrs half quarter morning afternoon evening night today yesterday tonight earlier again bit little long quick session".split(
+    " ",
+  ),
+);
+
+// What an activity is usually part of, so "a bath" finds a goal about recovery and "a bike ride"
+// one with "ride" in it. Small on purpose: titles and descriptions do most of the work.
+const RELATED: Record<string, string[]> = {
+  bath: ["recovery", "rest"],
+  ice: ["recovery"],
+  sauna: ["recovery", "rest"],
+  massage: ["recovery", "rest"],
+  stretch: ["recovery", "yoga", "mobility"],
+  stretching: ["recovery", "yoga", "mobility"],
+  plunge: ["recovery"],
+  foam: ["recovery", "mobility"],
+  nap: ["rest", "sleep"],
+  meditation: ["rest", "mindfulness"],
+  meditate: ["rest", "mindfulness"],
+  bike: ["ride", "cycling"],
+  cycling: ["ride", "bike"],
+  cycle: ["ride", "bike"],
+  jog: ["run", "running"],
+  jogging: ["run", "running"],
+  workout: ["gym", "training"],
+  weights: ["gym", "training"],
+  lifting: ["gym", "training"],
+  pool: ["swim", "swimming"],
+  revision: ["study", "exam"],
+  revising: ["study", "exam"],
+  homework: ["study"],
+  lecture: ["study", "university"],
+  exam: ["study", "university"],
+  studying: ["study"],
+  outreach: ["company", "sales"],
+  sales: ["company", "outreach"],
+};
+
+const tokens = (text: string) =>
+  normaliseTitle(text)
+    .split(/[^\p{L}\p{N}.]+/u)
+    .map((t) => t.replace(/^\.+|\.+$/g, ""))
+    .filter(Boolean);
+
+/** One word of the user's against one word of a goal: equal, or one a stem of the other ("swim", "swimming"). */
+const sameWord = (a: string, b: string) =>
+  a === b || (Math.min(a.length, b.length) >= 4 && (a.startsWith(b) || b.startsWith(a)));
+
+/**
+ * The goals the words point to most: a word in the title counts 3, in a calendar title 2, in the
+ * description 1; a related word (RELATED) half that. The single best wins; a tie at the top is
+ * every goal in it (the caller asks), and no score at all is none.
+ */
+export function bestByWords(goals: Goal[], said: string, titlesOf: (g: Goal) => string[]): Goal[] {
+  const words = tokens(said).filter((w) => !FILLER.has(w) && (w.length >= 3 || /\d/.test(w)));
+  if (!words.length) return [];
+  const related = [...new Set(words.flatMap((w) => RELATED[w] ?? []))].filter((r) => !words.includes(r));
+  const scored = goals.map((g) => {
+    const fields: [string[], number][] = [
+      [tokens(g.title), 3],
+      [titlesOf(g).flatMap(tokens), 2],
+      [tokens(g.description ?? ""), 1],
+    ];
+    const score = (list: string[], weight: number) =>
+      list.reduce((sum, w) => {
+        const hit = fields.reduce(
+          (top, [field, f]) => (field.some((t) => sameWord(w, t)) ? Math.max(top, f) : top),
+          0,
+        );
+        return sum + hit * weight;
+      }, 0);
+    return { g, score: score(words, 1) + score(related, 0.5) };
+  });
+  const top = Math.max(0, ...scored.map((s) => s.score));
+  return top > 0 ? scored.filter((s) => s.score === top).map((s) => s.g) : [];
 }
 
 /** The span the user meant: start and end, minutes from a start, or minutes ending just now. */
@@ -124,7 +206,10 @@ async function goalWeek(goal: Goal, at: number): Promise<LogTimeResponse["goal"]
   const week = await loadWeek({ date: zone().dayOf(at) }).catch(() => null);
   const row = week?.score.goals.find((g) => g.goal_id === goal.id);
   const spent =
-    goalKind(goal) === "count" ? (row?.count?.done ?? 0) : Math.max(0, Math.round(row?.spent_minutes ?? 0));
+    goalKind(goal) === "count"
+      ? (row?.count?.done ?? 0)
+      : // Spent in its blocks plus logged outside them (#372): the goal's week against its budget.
+        Math.max(0, Math.round(row ? budgetMinutesDone(row) : 0));
   const budget =
     goalKind(goal) === "count"
       ? Number(goal.target?.per_week ?? 0) || 0
@@ -135,9 +220,10 @@ async function goalWeek(goal: Goal, at: number): Promise<LogTimeResponse["goal"]
 function lineFor(goal: Goal, week: LogTimeResponse["goal"], lead: string): string {
   if (goalKind(goal) === "count") {
     const target = week.budget_minutes ? ` of ${week.budget_minutes}` : "";
-    return `${lead} ${goal.title} ${week.spent_minutes}${target} this week.`;
+    return `${lead} ${goal.title}: ${week.spent_minutes}${target} this week.`;
   }
-  return `${lead} ${goal.title} ${weekMaths(week.spent_minutes, week.budget_minutes)}.`;
+  // The colon keeps a goal named with a number ("70.3") apart from the maths after it.
+  return `${lead} ${goal.title}: ${weekMaths(week.spent_minutes, week.budget_minutes)}.`;
 }
 
 // ---------- carrying out (called by actions/calendar.ts for log_time and settle_block) ----------
@@ -252,7 +338,12 @@ export async function logTime(raw: unknown, via: LogVia, execute: Execute): Prom
     source: "chat",
   });
   const week = await goalWeek(goal, start);
-  return { entry, recommendation: rec, goal: week, message: lineFor(goal, week, "Logged.") };
+  return {
+    entry,
+    recommendation: rec,
+    goal: week,
+    message: lineFor(goal, week, confirm("logged", { x: voiceShortDuration(minutes) }, now)),
+  };
 }
 
 /** The log entries that settle a block already, if any. */
@@ -319,6 +410,6 @@ export async function settleBlock(raw: unknown, via: LogVia, execute: Execute): 
     entry,
     recommendation: rec,
     goal: week,
-    message: lineFor(goal, week, input.did ? "Confirmed." : "Noted, counted as lost."),
+    message: lineFor(goal, week, input.did ? "Confirmed." : "Noted. I've counted it as lost."),
   };
 }

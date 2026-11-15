@@ -328,12 +328,35 @@ body::before {
 /* A screen with two columns on a laptop (Goals): wider than the reading column, still centred in
  * the space beside the sidebar. Phone and narrow laptops keep the one column. */
 @media (min-width: 1280px) {
-  .m-wide {
+  .m-wide,
+  .m-dash {
     --m-wide: min(1040px, calc(100vw - 16rem - 48px));
     position: relative;
     left: 50%;
     width: var(--m-wide);
     margin-left: calc(var(--m-wide) / -2);
+  }
+  /* A dashboard (Today in three columns, You and Chat in two panes): wider still. */
+  .m-dash {
+    --m-wide: min(1280px, calc(100vw - 16rem - 48px));
+    max-width: none;
+  }
+  /* Two panes (You, Chat): the list and a reading column beside it, never stretched wider. */
+  .m-dash.m-panes {
+    --m-wide: min(1040px, calc(100vw - 16rem - 48px));
+  }
+  /* "More from Michael" rows start open on a laptop (components/today/fold.tsx), from the first
+   * paint, so hydration never moves anything. */
+  [data-wide-open] > .m-fold-body {
+    grid-template-rows: 1fr;
+    opacity: 1;
+  }
+  [data-wide-open] .m-fold-preview {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+  [data-wide-open] .m-fold-chevron {
+    rotate: 90deg;
   }
 }
 
@@ -378,13 +401,30 @@ body::before {
   animation: m-speak 2.4s ease-in-out infinite;
 }
 
+/* Michael is thinking (components/thinking.tsx, #378): the Mi mark breathes, slower and quieter. */
+@keyframes m-think {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(0.92);
+    opacity: 0.45;
+  }
+}
+.m-think {
+  animation: m-think 2.4s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .m-listen-ring {
     animation: none;
     transform: scale(1.3);
     opacity: 0.25;
   }
-  .m-speak-breath {
+  .m-speak-breath,
+  .m-think {
     animation: none;
   }
   .press,
@@ -441,6 +481,13 @@ body::before {
   from {
     opacity: 0;
   }
+}
+
+/* The block or card a nudge's tap opened (components/deep-link-focus.tsx, #399): a brief ring. */
+.m-deep-link {
+  outline: 2px solid var(--m-tint);
+  outline-offset: 2px;
+  transition: outline-color var(--m-dur-enter) var(--m-ease-out);
 }
 
 /* Score count up (components/count-up.tsx): once per session, 700ms, no bounce, after the splash. */
@@ -500,17 +547,39 @@ body::before {
   }
 }
 
-/* Skeletons (components/skeleton.tsx): nothing for 150ms, then a slow breath. No gradients. */
+/*
+ * Skeletons (components/skeleton.tsx): nothing for 200ms, so a fast load never flashes, then a
+ * slow breath. Bones are the fill on the page and a little darker inside a grey group or card.
+ * No gradients, no shimmer.
+ */
 .m-skeleton {
-  animation: m-fade-in var(--m-dur-ui) var(--m-ease-out) 150ms both;
+  animation: m-fade-in var(--m-dur-ui) var(--m-ease-out) 200ms both;
 }
 .m-bone {
   background: var(--m-fill);
-  animation: m-breathe 1.6s ease-in-out 350ms infinite;
+  animation: m-breathe 1.6s ease-in-out 400ms infinite;
+}
+.bg-fill .m-bone {
+  background: color-mix(in srgb, var(--m-label-2) 16%, transparent);
 }
 @keyframes m-breathe {
   50% {
     opacity: 0.55;
+  }
+}
+/*
+ * Content that replaces a skeleton the user saw cross-fades in, opacity only. <html data-reveal>
+ * is set for one moment by the leaving skeleton (components/skeleton-client.tsx), and
+ * @starting-style only applies to newly inserted elements, so nothing already on screen blinks.
+ */
+.screen,
+.m-reveal {
+  transition: opacity var(--m-dur-ui) var(--m-ease-out);
+}
+@starting-style {
+  html[data-reveal] .screen:not(.m-skeleton),
+  html[data-reveal] .m-reveal {
+    opacity: 0;
   }
 }
 
@@ -537,6 +606,10 @@ body::before {
   .m-skeleton {
     animation-name: m-fade-in;
     animation-duration: 1ms;
+  }
+  .screen,
+  .m-reveal {
+    transition-timing-function: linear;
   }
 }
 

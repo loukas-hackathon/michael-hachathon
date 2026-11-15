@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 import type Anthropic from "@anthropic-ai/sdk";
-import { ChatHistory, ChatResponse, Recommendation } from "@michael/shared";
+import { ChatHistory, ChatResponse, ChatStep, Recommendation } from "@michael/shared";
+import { FALLBACK_STEP, goalIdOf, stepLabel } from "../actions/chat-steps";
+import { CHAT_TOOLS } from "../actions/chat-tools";
 import { app } from "../app";
 import { runAsUser } from "../context";
 import { env } from "../env";
@@ -298,3 +300,105 @@ test("a spoken answer asks Claude to be brief and listless; a typed one does not
       assert.doesNotMatch(system(requests[1]), /spoken aloud/);
     },
   ));
+
+test("every chat tool has its own plain step label; unknown tools get the fallback", () => {
+  for (const tool of CHAT_TOOLS) {
+    const label = stepLabel(tool.name, {});
+    assert.notEqual(label, FALLBACK_STEP, tool.name);
+    assert.ok(label.split(" ").length <= 6, label);
+    assert.doesNotMatch(label, /[\u2013\u2014_]|-/, label);
+  }
+  assert.equal(stepLabel("something_new", { title: "Dinner with Anna" }), FALLBACK_STEP);
+  assert.equal(stepLabel("log_day", { results: [{ minutes: 30 }, { minutes: 10 }] }), "Logging 40 min");
+  assert.equal(stepLabel("log_done", { minutes: 40, goal: "Gym" }), "Logging 40 min");
+  assert.equal(stepLabel("block_mac_app", { apps: ["WhatsApp"] }), "Blocking WhatsApp");
+  assert.equal(stepLabel("block_mac_app", { apps: ["WhatsApp", "Slack"] }), "Blocking distracting apps");
+  assert.equal(stepLabel("block_mac_app", { apps: ["<script>"] }), "Blocking distracting apps");
+  // Titles and ids in the input never reach the label.
+  assert.equal(
+    stepLabel("move_calendar_block", { event_id: "abc123", new_title: "Call with Anna" }),
+    "Moving your block",
+  );
+});
+
+test("step labels name the user's own goal when the call points at it, and fall back otherwise", () => {
+  assert.equal(stepLabel("log_done", { minutes: 40, goal_id: "g" }, "70.3"), "Logging 40 min to 70.3");
+  assert.equal(stepLabel("create_focus_block", { goal_id: "g" }, "Deep work"), "Booking time for Deep work");
+  assert.equal(
+    stepLabel("focus_now", { goal_id: "g", minutes: 45 }, "University"),
+    "Starting 45 min on University",
+  );
+  assert.equal(stepLabel("focus_now", { goal_id: "g" }, "University"), "Starting focus on University");
+  // One named app still says more than the goal.
+  assert.equal(stepLabel("block_mac_app", { apps: ["Slack"], goal_id: "g" }, "Deep work"), "Blocking Slack");
+  // An odd or long goal name, or none, falls back to the plain label.
+  assert.equal(stepLabel("create_focus_block", { goal_id: "g" }, "<b>x</b>"), "Booking the block");
+  assert.equal(stepLabel("create_focus_block", { goal_id: "g" }, "x".repeat(40)), "Booking the block");
+  assert.equal(stepLabel("log_done", { minutes: 40, goal: "Gym with Anna" }), "Logging 40 min");
+  // Tools that do not point at a goal never look one up.
+  assert.equal(goalIdOf("move_calendar_block", { goal_id: "g" }), null);
+  assert.equal(goalIdOf("log_done", { goal_id: "g" }), "g");
+});
+
+test("a streamed answer looks the goal up in the user's own goals for its step label", () =>
+  asNewUser(async () => {
+    const goal = await store.createGoal({
+      category: "health",
+      title: "Gym",
+      weekly_budget_minutes: 180,
+      active: true,
+    });
+    await withClaude(
+      [{ tool: { name: "log_done", input: { goal_id: goal.id, minutes: 40 } } }, { text: "Logged." }],
+      async () => {
+        const steps: ChatStep[] = [];
+        await askMichael(turns("Gym for 40 minutes"), "context", {
+          onText: async () => {},
+          onStep: async (s) => {
+            steps.push(s);
+          },
+        });
+        assert.deepEqual(
+          steps.map((s) => `${s.label}:${s.status}`),
+          ["Logging 40 min to Gym:running", "Logging 40 min to Gym:done"],
+        );
+      },
+    );
+  }));
+
+test("POST /v1/chat/stream opens with Reading your day, then a running and done step per tool, in order", async () => {
+  await runAsUser(env.DEMO_USER_ID, () => withoutInstructions(store));
+  await withClaude(
+    [{ tool: { name: "what_you_know", input: {} } }, { text: "Here is what I know." }],
+    async () => {
+      const res = await app.request("/v1/chat/stream", {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify({ message: "What do you know about me?" }),
+      });
+      assert.equal(res.status, 200);
+      const events = (await res.text())
+        .trim()
+        .split("\n\n")
+        .map((block) => ({
+          event: /^event: (.*)$/m.exec(block)?.[1],
+          data: JSON.parse(/^data: (.*)$/m.exec(block)?.[1] ?? "null"),
+        }));
+      assert.equal(events[0]?.event, "step");
+      const steps = events.filter((e) => e.event === "step").map((e) => ChatStep.parse(e.data));
+      assert.deepEqual(
+        steps.map((s) => `${s.label}:${s.status}`),
+        [
+          "Reading your day:running",
+          "Reading your day:done",
+          "Checking what I know:running",
+          "Checking what I know:done",
+        ],
+      );
+      assert.equal(steps[2]?.id, steps[3]?.id);
+      const kinds = events.map((e) => e.event);
+      assert.ok(kinds.lastIndexOf("step") < kinds.indexOf("delta"));
+      assert.equal(kinds.at(-1), "done");
+    },
+  );
+});

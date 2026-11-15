@@ -19,6 +19,8 @@ import {
   releaseMic,
   startRecording,
   subscribeInputMode,
+  TAP_MS,
+  TAPPED_COPY,
   transcribeErrorCopy,
   transcribeRecording,
 } from "./recorder";
@@ -78,6 +80,10 @@ export function PushToTalk({
   const heard = useRef("");
   const held = useRef(false);
   const alive = useRef(true);
+  // When the press began, and whether it was a quick tap: a tap is someone looking for Talk.
+  const pressedAt = useRef(0);
+  const tapped = useRef(false);
+  const erred = useRef(false);
 
   useEffect(() => {
     alive.current = true;
@@ -122,6 +128,9 @@ export function PushToTalk({
 
   function start() {
     if (disabled || held.current || transcribing) return;
+    pressedAt.current = Date.now();
+    tapped.current = false;
+    erred.current = false;
     const now = currentInputMode();
     if (now === "recorder") return startRecorder();
     if (now !== "recognition") return;
@@ -150,7 +159,11 @@ export function PushToTalk({
         return;
       }
       const copy = recognitionErrorCopy(e.error);
-      if (copy) onError(copy);
+      if (copy) {
+        onError(copy);
+        tapped.current = false;
+        erred.current = true;
+      }
       heard.current = e.error === "no-speech" ? "" : heard.current;
     };
     r.onend = () => {
@@ -160,6 +173,7 @@ export function PushToTalk({
       const text = heard.current.trim();
       heard.current = "";
       if (text) onFinal(text);
+      else if (tapped.current && !erred.current) onError(TAPPED_COPY);
     };
     rec.current = r;
     try {
@@ -204,7 +218,7 @@ export function PushToTalk({
     const blob = await r.stop();
     releaseMic();
     if (!alive.current) return;
-    if (!blob) return onError(NOTHING_HEARD_COPY);
+    if (!blob) return onError(tapped.current ? TAPPED_COPY : NOTHING_HEARD_COPY);
     setBusy(true);
     const res = await transcribeRecording(blob);
     if (!alive.current) return;
@@ -219,6 +233,7 @@ export function PushToTalk({
   function stop() {
     if (!held.current) return;
     held.current = false;
+    tapped.current = Date.now() - pressedAt.current < TAP_MS;
     if (rec.current) {
       // onend fires after the last words are in, and sends them.
       rec.current.stop();
@@ -258,7 +273,7 @@ export function PushToTalk({
       ? "Got it. Writing it down"
       : listening
         ? "Listening. Let go to send"
-        : "Hold to talk to Michael";
+        : "Hold to dictate";
 
   return (
     <button

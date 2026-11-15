@@ -1,4 +1,5 @@
 import {
+  budgetMinutesDone,
   type Event,
   type Goal,
   goalArea,
@@ -191,7 +192,8 @@ export function computeMoment(input: MomentInput): MomentCore {
     goalLines.push({
       ...base,
       sleep: false,
-      spent_week_minutes: row.spent_minutes,
+      // Against the budget: spent in blocks plus logged outside them (#372).
+      spent_week_minutes: budgetMinutesDone(row),
       planned_today_minutes: todayRow?.planned_minutes ?? 0,
       spent_today_minutes: todayRow?.spent_minutes ?? 0,
       lost_today_minutes: sum(day.blocks.filter((b) => b.goal_id === g.id).map((b) => b.lost_minutes)),
@@ -200,7 +202,7 @@ export function computeMoment(input: MomentInput): MomentCore {
       unplanned_minutes:
         g.weekly_budget_minutes === null || !row.scored
           ? null
-          : Math.max(0, g.weekly_budget_minutes - row.spent_minutes - row.ahead_minutes),
+          : Math.max(0, g.weekly_budget_minutes - budgetMinutesDone(row) - row.ahead_minutes),
     });
   }
 
@@ -467,13 +469,19 @@ export function templateHeadline(m: MomentCore): string {
     return `Nothing booked for your goals today.${move ? ` ${move.title}.` : guard}`;
   }
   // Evening. Held plus lost is what has elapsed; with what is still ahead they make the plan.
-  if (t.planned_minutes === 0) return "No goal time booked today. Book tomorrow before you sleep.";
+  if (t.planned_minutes === 0) return "No goal time today. Put tomorrow's in before bed.";
   const ahead = Math.max(0, t.planned_minutes - t.spent_minutes - t.lost_minutes);
   if (ahead === t.planned_minutes)
     return `${voiceDuration(t.planned_minutes)} of goal time still ahead today.`;
-  const lost = t.lost_minutes > 0 ? `${voiceDuration(t.lost_minutes)} lost` : "nothing lost";
-  const rest = ahead > 0 ? `, ${voiceDuration(ahead)} still ahead` : "";
   const won =
     t.won_back_minutes > 0 ? ` ${voiceDuration(t.won_back_minutes)} won back against your usual day.` : "";
-  return `${voiceDuration(t.spent_minutes)} of ${voiceDuration(t.planned_minutes)} planned goal time held, ${lost}${rest}.${won}`;
+  // A clean day is a real win: say it once, with the number.
+  if (t.lost_minutes === 0 && ahead === 0)
+    return `All ${voiceDuration(t.planned_minutes)} of planned goal time held, nothing lost.${won}`;
+  const lost = t.lost_minutes > 0 ? `${voiceDuration(t.lost_minutes)} got away` : "nothing lost";
+  const rest = ahead > 0 ? `, ${voiceDuration(ahead)} still ahead` : "";
+  // Nothing held is a fact and a plan, never a telling off.
+  if (t.spent_minutes === 0)
+    return `We didn't get to the ${voiceDuration(t.planned_minutes)} of goal time today${rest}.`;
+  return `You held ${voiceDuration(t.spent_minutes)} of ${voiceDuration(t.planned_minutes)} planned goal time. ${lost.charAt(0).toUpperCase()}${lost.slice(1)}${rest}.${won}`;
 }

@@ -3,7 +3,9 @@
 import { useRouter } from "next/navigation";
 import { startTransition, useId, useRef, useState } from "react";
 import { Sheet } from "@/components/sheet";
+import { TimeField } from "@/components/time-field";
 import { type LogActionResult, logTimeAction, settleBlockAction, undoLogAction } from "@/lib/log-actions";
+import { undoneLine } from "@/lib/say";
 
 // Saying "I did x" in one or two taps (#317). The result only the server knows (the week's maths)
 // shows in place where the button was, with Undo; Undo itself is optimistic and rolls back with one
@@ -17,7 +19,7 @@ const CHIP =
   "press min-h-9 rounded-full px-3 text-subhead font-semibold tnum aria-pressed:bg-label aria-pressed:text-bg bg-bg text-label";
 const MINUTES = [15, 30, 45, 60] as const;
 
-/** The line after a log, with Undo; "Taken back." once undone. */
+/** The line after a log, with Undo; "Taken back. Off the books." (today's phrasing) once undone. */
 function Logged({ message, recommendationId }: { message: string; recommendationId: string }) {
   const router = useRouter();
   const [undone, setUndone] = useState(false);
@@ -30,19 +32,21 @@ function Logged({ message, recommendationId }: { message: string; recommendation
     setError(null);
     const r = await undoLogAction(recommendationId).catch(() => ({
       ok: false,
-      error: "I could not reach the server. It is still logged.",
+      error: "I lost the line. It's still logged.",
     }));
     busy.current = false;
     if (r.ok) startTransition(() => router.refresh());
     else {
       setUndone(false);
-      setError(r.error ?? "I could not undo it.");
+      setError(r.error ?? "I couldn't undo that. It's still logged.");
     }
   }
   return (
     <div className="flex flex-col gap-1.5">
       <p className="m-swap flex min-h-9 flex-wrap items-center gap-x-3 text-subhead" role="status">
-        <span className={undone ? "text-label-2" : ""}>{undone ? "Taken back." : message}</span>
+        <span className={undone ? "text-label-2" : ""}>
+          {undone ? undoneLine("Off the books.") : message}
+        </span>
         {undone ? null : (
           <button type="button" onClick={undo} className="press font-semibold text-tint-text">
             Undo
@@ -95,7 +99,7 @@ export function LogTimeForm({
         startTransition(() => router.refresh());
       }
     } catch {
-      setResult({ ok: false, error: "I could not reach the server. Nothing was logged." });
+      setResult({ ok: false, error: "I lost the line. Nothing was logged." });
     } finally {
       setPending(false);
     }
@@ -146,20 +150,17 @@ export function LogTimeForm({
           />
         </label>
       </fieldset>
-      <label className="flex items-center justify-between gap-3 text-subhead" htmlFor={`${ids}-at`}>
-        <span className="text-label-2">Started at</span>
-        <input
-          id={`${ids}-at`}
-          type="time"
-          value={at}
-          onChange={(e) => setAt(e.target.value)}
-          aria-describedby={`${ids}-at-hint`}
-          className="min-h-9 rounded-[9px] bg-bg px-2 text-subhead font-semibold tnum"
-        />
-      </label>
-      <p id={`${ids}-at-hint`} className="-mt-2 text-footnote text-label-2">
-        {at ? `From ${at}, ${minutes} min.` : "Leave it empty for just now."}
-      </p>
+      <div className="flex items-center justify-between gap-3 text-subhead">
+        <label className="text-label-2" htmlFor={`${ids}-at`}>
+          Started
+        </label>
+        <TimeField id={`${ids}-at`} label="Started" value={at} onChange={setAt} step={5} emptyLabel="Now" />
+      </div>
+      {at ? (
+        <p className="-mt-2 text-footnote text-label-2">
+          From {at}, {minutes} min.
+        </p>
+      ) : null}
       {result && !result.ok ? (
         <p role="alert" className="text-footnote text-danger">
           {result.error}
@@ -185,12 +186,15 @@ export function LogTimeButton({ goal, className }: { goal: LoggableGoal; classNa
   const [open, setOpen] = useState(false);
   // A fresh form each time the sheet opens, so the last result does not linger.
   const [round, setRound] = useState(0);
+  // Once logged there is nothing left to cancel: the sheet closes with Done.
+  const [logged, setLogged] = useState(false);
   return (
     <>
       <button
         type="button"
         onClick={() => {
           setRound((r) => r + 1);
+          setLogged(false);
           setOpen(true);
         }}
         aria-label={`Log time for ${goal.title}`}
@@ -198,9 +202,14 @@ export function LogTimeButton({ goal, className }: { goal: LoggableGoal; classNa
       >
         Log time
       </button>
-      <Sheet open={open} onClose={() => setOpen(false)} title={`Log time: ${goal.title}`}>
+      <Sheet
+        open={open}
+        onClose={() => setOpen(false)}
+        title={`Log time: ${goal.title}`}
+        closeLabel={logged ? "Done" : "Cancel"}
+      >
         <div className="px-1 pb-2">
-          <LogTimeForm key={round} goals={[goal]} goalId={goal.id} />
+          <LogTimeForm key={round} goals={[goal]} goalId={goal.id} onLogged={() => setLogged(true)} />
         </div>
       </Sheet>
     </>
@@ -229,7 +238,7 @@ export function SettleBlock({ eventId, minutes }: { eventId: string; minutes: nu
       setResult(r);
       if (r.ok) startTransition(() => router.refresh());
     } catch {
-      setResult({ ok: false, error: "I could not reach the server. Nothing changed." });
+      setResult({ ok: false, error: "I lost the line. Nothing changed." });
     } finally {
       setPending(null);
     }

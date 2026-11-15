@@ -8,6 +8,10 @@ const Env = z.object({
   DEMO_USER_ID: z.uuid().default("2ee12960-e594-456d-85cb-a672d0ff3ac3"),
   // "on": the demo account carries the generated demo week (src/demo), kept up to now. "off": not.
   DEMO_WEEK: z.enum(["on", "off"]).default("on"),
+  // The presenter link's secret (#343), the same value on the web app. With it, the web app's
+  // presenter (one laptop) may answer the claude.ai consent for the demo account; demo visitors
+  // never can. Empty = no presenter.
+  DEMO_PRESENTER_KEY: z.string().optional(),
   // End-to-end tests only (e2e/): "on" accepts `Bearer e2e_<uuid>` as that user, so the suite can
   // sign in a fresh, non demo user without Supabase. Ignored unless the store is in memory.
   E2E_TEST_AUTH: z.enum(["on", "off"]).default("off"),
@@ -36,6 +40,9 @@ const Env = z.object({
   // answer 503 unavailable; nothing crashes at start-up.
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_MODEL: z.string().default("claude-opus-5-5"),
+  // Chat answers in fast mode (same model, faster output, premium price) when the account has it;
+  // a refused or rate limited fast request falls back to standard speed (#364). "standard" turns it off.
+  CHAT_SPEED: z.enum(["fast", "standard"]).default("fast"),
   // Google Calendar OAuth (web application client). Redirect URI: ${PUBLIC_API_URL}/oauth/google/callback
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
@@ -54,6 +61,9 @@ const Env = z.object({
     .optional()
     .transform((v) => (v ? v === "true" : process.env.NODE_ENV === "production")),
   SCHEDULER_INTERVAL_MINUTES: z.coerce.number().positive().default(5),
+  // With the scheduler: opens the web app's Today as a demo visitor on every tick (read only), so
+  // the first open after hours meets warm functions and a phrased moment line (#378).
+  WEB_WARM: z.enum(["on", "off"]).default("on"),
   // Telegram bot for nudges (backup to Web Push). Token from BotFather; without it the channel is off.
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   // The bot's @username without the @. Empty: asked from Telegram (getMe) once.

@@ -5,7 +5,6 @@ import {
   type Goal,
   GoalCreate,
   goalKind,
-  InstructionCreate,
   type LogTimeResponse,
   PlaceInput,
   type Recommendation,
@@ -13,8 +12,10 @@ import {
 } from "@michael/shared";
 import { z } from "zod";
 import { addItem, updateItem } from "../checklist/items";
+import { startFocus } from "../focus/session";
 import { HttpError, parse } from "../http";
-import { updateInstruction } from "../routes/instructions";
+import { Zone } from "../patterns/time";
+import { createInstruction, updateInstruction } from "../routes/instructions";
 import { savePlaces } from "../routes/places";
 import { updateProfile } from "../routes/profile";
 import { store } from "../store";
@@ -31,6 +32,8 @@ export interface WriteOutcome {
   content: string;
   isError: boolean;
   action?: Recommendation;
+  /** A finished line for the user, so chat can answer without asking the model again. */
+  reply?: string;
 }
 
 const GOAL_UNDO_MS = 7 * 24 * 3600_000;
@@ -39,7 +42,7 @@ export const WRITE_TOOLS: Anthropic.Tool[] = [
   {
     name: "log_done",
     description:
-      "Log time the user says they already spent on a goal: 'I took a bath for 40 minutes at 13:00', 'did 30 min of reading', 'gym this morning, an hour'. It counts as confirmed goal time at once and can be undone. Name the goal by goal_id from the goals list, or by the words the user used (goal). Give minutes, and start_at when the user said when; without a start it ends just now. Past only, the last 14 days. Never ask the user to add a calendar block for this.",
+      "Log time the user says they already spent on a goal: 'I took a bath for 40 minutes at 13:00', 'did 30 min of reading', 'gym this morning, an hour'. It counts toward the goal's weekly budget at once (inside one of its blocks it confirms that block; outside, it is not in the score, which is planned time only) and can be undone. Name the goal by goal_id from the goals list, or by the words the user used (goal). Give minutes, and start_at when the user said when; without a start it ends just now. Past only, the last 14 days. Never ask the user to add a calendar block for this.",
     input_schema: {
       type: "object",
       properties: {
@@ -196,6 +199,19 @@ export const WRITE_TOOLS: Anthropic.Tool[] = [
       },
     },
   },
+  {
+    name: "focus_now",
+    description:
+      "Start a Focus now session when the user wants to focus on a goal right now: 'let's focus on University for 45 minutes', 'deep work now'. It protects the time from this minute in the user's own block (the goal block running now, or a new one), mutes distracting apps on their Mac when it is connected, and shows a countdown on the phone. At the end the watch buzzes and the time counts as confirmed goal time. Name the goal by goal_id or by the user's words (goal). minutes: 25, 45, 60 or 90 (default 45, or the rest of the goal block running now). One session at a time.",
+    input_schema: {
+      type: "object",
+      properties: {
+        goal_id: { type: "string", description: "The goal's id from the goals list" },
+        goal: { type: "string", description: "The goal in the user's words, when you have no id" },
+        minutes: { type: "integer", description: "How long, in minutes (5 to 180)" },
+      },
+    },
+  },
 ];
 
 export const WRITE_TOOL_NAMES = new Set(WRITE_TOOLS.map((t) => t.name));
@@ -204,6 +220,7 @@ const logged = (r: LogTimeResponse): WriteOutcome => ({
   content: `${r.message} Entry ${r.entry.id}, recommendation id ${r.recommendation.id}. Say it in one line with these numbers and end with "Undo".`,
   isError: false,
   action: r.recommendation,
+  reply: `${r.message} Undo`,
 });
 
 const GoalPatch = z.object({
@@ -316,7 +333,7 @@ async function updateChecklist(input: unknown): Promise<WriteOutcome> {
 }
 
 async function addInstruction(input: unknown): Promise<WriteOutcome> {
-  const i = await store.createInstruction(parse(InstructionCreate, input));
+  const i = await createInstruction(input);
   return { content: `Kept: ${i.text} {instruction_id ${i.id}}.`, isError: false };
 }
 
@@ -354,6 +371,15 @@ async function changeProfile(input: unknown): Promise<WriteOutcome> {
   };
 }
 
+/** Focus now from chat (#397): the session starts at once; the phone shows the countdown on Today. */
+async function focusNow(input: unknown): Promise<WriteOutcome> {
+  const s = await startFocus(input, "chat");
+  const until = new Zone("Europe/Athens").clock(Date.parse(s.end_at));
+  const mac = s.guarded ? " Distracting apps on your Mac are muted." : "";
+  const line = `Focusing on ${s.goal_title} until ${until}, ${s.minutes} min.${mac} End early on Today.`;
+  return { content: `${line} {focus_session_id ${s.id}}`, isError: false, reply: line };
+}
+
 /** Runs one write tool; HttpError refusals are turned into tool errors by the caller. */
 export async function runWriteTool(name: string, input: unknown): Promise<WriteOutcome | null> {
   switch (name) {
@@ -377,6 +403,8 @@ export async function runWriteTool(name: string, input: unknown): Promise<WriteO
       return savePlace(input);
     case "update_profile":
       return changeProfile(input);
+    case "focus_now":
+      return focusNow(input);
     default:
       return null;
   }

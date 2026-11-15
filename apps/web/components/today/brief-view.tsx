@@ -2,9 +2,10 @@
 
 import type { AnalysisRun } from "@michael/shared";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
+import { Thinking } from "@/components/thinking";
 import { askForBrief } from "@/lib/analysis-actions";
-import { formatTime } from "@/lib/format";
+import { briefRow } from "./brief-row";
 import { Fold } from "./fold";
 
 const tinted =
@@ -29,6 +30,16 @@ export function BriefView({
   // True once a brief written on this visit lands, so it eases in instead of snapping.
   const [fresh, setFresh] = useState(false);
   const [, startTransition] = useTransition();
+  // Long work tells its steps (michael-feedback): reading first, then writing.
+  const [writing, setWriting] = useState(false);
+  useEffect(() => {
+    if (!busy) {
+      setWriting(false);
+      return;
+    }
+    const t = setTimeout(() => setWriting(true), 4000);
+    return () => clearTimeout(t);
+  }, [busy]);
 
   async function ask() {
     setBusy(true);
@@ -37,7 +48,7 @@ export function BriefView({
     try {
       r = await askForBrief();
     } catch {
-      setError("I could not reach the server. Try again in a minute.");
+      setError("I lost the line. Try again in a minute.");
       return;
     } finally {
       setBusy(false);
@@ -53,13 +64,14 @@ export function BriefView({
     startTransition(() => router.refresh());
   }
 
-  const firstLine = run?.summary?.split("\n").find((l) => l.trim()) ?? null;
+  const row = briefRow(run);
   return (
     <Fold
+      wideOpen
       title="Michael's brief"
       label="Michael's brief"
-      meta={run?.finished_at ? <time dateTime={run.finished_at}>{formatTime(run.finished_at)}</time> : null}
-      preview={firstLine ?? "I read your day and tell you what matters now."}
+      meta={run?.finished_at ? <time dateTime={run.finished_at}>{row.when}</time> : null}
+      preview={row.preview}
     >
       <div aria-busy={busy} className="flex flex-col gap-2.5">
         {run?.summary ? (
@@ -69,16 +81,13 @@ export function BriefView({
           >
             {run.summary}
           </p>
-        ) : (
-          <p className="text-subhead text-label-2">I read your day and tell you what matters now.</p>
-        )}
+        ) : null}
         {run?.question ? <p className="text-subhead font-semibold">{run.question}</p> : null}
         {run && suggestions > 0 ? (
           <p className="text-footnote text-label-2">
             {suggestions === 1 ? "One suggestion" : `${suggestions} suggestions`} on Today.
           </p>
         ) : null}
-        {run ? <p className="text-caption text-label-2">Written by {run.model}.</p> : null}
 
         {error ? (
           <p role="alert" className="text-subhead text-danger">
@@ -87,7 +96,14 @@ export function BriefView({
         ) : null}
 
         <button type="button" className={tinted} disabled={busy} onClick={ask}>
-          {busy ? "Reading your day" : run ? "Ask for a fresh brief" : "Ask Michael for a brief"}
+          {busy ? (
+            // Michael is thinking (#378): the Mi mark breathes in the button while the brief is written.
+            <Thinking text={writing ? "Writing the brief" : "Reading your day"} className="" />
+          ) : run ? (
+            "Ask for a fresh brief"
+          ) : (
+            "Ask Michael for a brief"
+          )}
         </button>
       </div>
     </Fold>

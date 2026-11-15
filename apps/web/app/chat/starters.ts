@@ -1,4 +1,4 @@
-import type { Score } from "@michael/shared";
+import { budgetMinutesDone, type Score } from "@michael/shared";
 import { formatTime, hm } from "@/lib/format";
 
 // Asked when the day gives nothing more specific. Short, in the user's words, about goals.
@@ -27,7 +27,7 @@ export function startersFrom(score: Score | null): string[] {
     // Unplanned budget: what is neither spent nor in the calendar yet.
     const behind = timed
       .filter((g) => !(g.area === "health" && TRAINING.test(g.title)))
-      .map((g) => ({ g, open: g.budget_minutes - g.spent_minutes - g.ahead_minutes }))
+      .map((g) => ({ g, open: g.budget_minutes - budgetMinutesDone(g) - g.ahead_minutes }))
       .filter((x) => x.open >= 60)
       .sort((a, b) => b.open - a.open)[0];
     if (behind) out.push(`Book an hour for ${behind.g.title}`);

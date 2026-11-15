@@ -14,6 +14,7 @@ export function Sheet({
   title,
   trailing,
   panel = false,
+  closeLabel = "Cancel",
   children,
 }: {
   open: boolean;
@@ -22,6 +23,8 @@ export function Sheet({
   trailing?: ReactNode;
   /** Laptop only: slide in from the right edge instead of a centred dialog (detail next to a list). */
   panel?: boolean;
+  /** "Done" for a sheet that only shows things (nothing to cancel), as iOS does. */
+  closeLabel?: "Cancel" | "Done";
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -138,7 +141,7 @@ export function Sheet({
               onClick={onClose}
               className="press -ml-2 h-11 justify-self-start rounded-control px-2 text-body text-tint-text"
             >
-              Cancel
+              {closeLabel}
             </button>
             <h2 id={titleId} className="text-body font-semibold">
               {title}

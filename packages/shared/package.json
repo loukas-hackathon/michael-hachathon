@@ -8,7 +8,9 @@
     "./categories": "./src/categories.ts",
     "./connectors": "./src/connectors.ts",
     "./goal-areas": "./src/goal-areas.ts",
+    "./plain-text": "./src/plain-text.ts",
     "./sleep": "./src/sleep.ts",
+    "./voice": "./src/voice.ts",
     "./voice-limits": "./src/voice-limits.ts"
   },
   "scripts": {

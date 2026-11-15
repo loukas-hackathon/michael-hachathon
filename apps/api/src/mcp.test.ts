@@ -1,14 +1,15 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
-import { type AgentClient, mockRecommendations, type Recommendation } from "@michael/shared";
+import { type AgentClient, mockRecommendations, type Recommendation, voiceProblems } from "@michael/shared";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { agentsStore } from "./agents-store";
 import { runAsUser } from "./context";
 import { withoutInstructions } from "./instructions/testkit";
 import { createMcpServer } from "./mcp";
 import { toInstant, zone } from "./mcp-format";
-import { summarise } from "./mcp-guard";
+import { logLine, outcomeOf, shortReason, summarise, TOOL_SCOPE } from "./mcp-guard";
 import { store } from "./store";
 
 // Every tool is called through the real MCP server, in process, as a fresh user each test.
@@ -58,6 +59,7 @@ const TOOLS = [
   "create_focus_block",
   "draft_follow_up",
   "execute_recommendation",
+  "focus_now",
   "get_check_in",
   "get_checklist",
   "get_goals",
@@ -69,6 +71,7 @@ const TOOLS = [
   "get_records",
   "get_score",
   "get_timeline",
+  "get_week_review",
   "list_drafts",
   "list_recommendations",
   "log_day",
@@ -81,6 +84,7 @@ const TOOLS = [
   "undo_recommendation",
   "update_goal",
   "update_recommendation",
+  "what_you_know",
 ];
 
 test("the tool set is complete and every tool explains itself", () =>
@@ -126,6 +130,10 @@ test("reads answer with short text and structured content", () =>
     const moment = await call("get_moments", { kind: "evening" });
     assert.notEqual(moment.isError, true, text(moment));
     assert.match(text(moment), /^Evening/);
+    const review = await call("get_week_review");
+    assert.notEqual(review.isError, true, text(review));
+    assert.match(text(review), /^Your week, \d{4}-\d{2}-\d{2} to /);
+    assert.match(text(review), /- Lesson: /);
     const score = await call("get_score");
     const day = score.structuredContent?.day as { blocks: Record<string, unknown>[] };
     assert.ok(
@@ -378,3 +386,178 @@ test("set_day_outcomes and log_day run the daily ritual without a checklist goal
     );
     assert.equal(summarise("log_day", undefined, {}), "Logged what you got done today");
   }));
+
+// ---------- the log says what happened (#330) ----------
+
+const claude = (): AgentClient => ({
+  id: randomUUID(),
+  name: "Claude",
+  status: "approved",
+  scopes: ["timeline", "goals", "write_events"],
+  created_at: new Date().toISOString(),
+  last_seen_at: null,
+});
+const logOf = async (agent: AgentClient) =>
+  (
+    await agentsStore.listQueries({
+      from: new Date(Date.now() - 60_000).toISOString(),
+      to: new Date(Date.now() + 60_000).toISOString(),
+    })
+  ).filter((q) => q.agent_id === agent.id);
+
+test("a refused booking is logged as tried and refused, and only a real change counts as one", () => {
+  const agent = claude();
+  return asNewUser(async () => {
+    await withoutInstructions(store);
+    const { call } = await connect();
+    const lineFor = async (title: string) =>
+      (await logOf(agent)).find((q) => q.summary.includes(`"${title}"`));
+
+    const past = await call("create_focus_block", {
+      start: new Date(Date.now() - 3600_000).toISOString(),
+      end: new Date(Date.now() + 3600_000).toISOString(),
+      title: "Past",
+    });
+    assert.equal(past.isError, true);
+    const refused = await lineFor("Past");
+    assert.match(
+      refused?.summary ?? "",
+      /^Tried to book "Past" for \w{3} \d\d:\d\d\. Refused: already started\.$/,
+    );
+    assert.equal(refused?.allowed, true);
+    assert.equal(refused?.changed, false);
+    assert.equal(refused?.recommendation_id, null);
+
+    await store.insertEvents([
+      {
+        source: "google_calendar",
+        type: "calendar_event",
+        start_at: toInstant(tomorrow("14:00")),
+        end_at: toInstant(tomorrow("15:00")),
+        title: "Investor call",
+        data: { with_others: true, attendees: 3 },
+        external_id: `g-${randomUUID()}`,
+      },
+    ]);
+    const clash = await call("create_focus_block", {
+      start: tomorrow("14:30"),
+      end: tomorrow("16:00"),
+      title: "Clash",
+    });
+    assert.equal(clash.isError, true);
+    const clashed = await lineFor("Clash");
+    assert.match(
+      clashed?.summary ?? "",
+      /^Tried to book "Clash" for \w{3} 14:30\. Refused: it overlaps an event with other people\.$/,
+    );
+    assert.doesNotMatch(clashed?.summary ?? "", /Investor/, "the line never names someone else's event");
+    assert.equal(clashed?.changed, false);
+
+    // A standing instruction says no: the reason is Michael's own line.
+    const weekday = new Date(`${tomorrow("12:00")}:00Z`).getUTCDay();
+    await store.createInstruction({
+      text: "Keep it clear",
+      kind: "clear_day",
+      days: [weekday],
+      active: true,
+    });
+    const kept = await call("create_focus_block", {
+      start: tomorrow("09:00"),
+      end: tomorrow("10:00"),
+      title: "Rule",
+    });
+    assert.equal(kept.isError, true);
+    assert.match(
+      (await lineFor("Rule"))?.summary ?? "",
+      /^Tried to book "Rule" for \w{3} 09:00\. Refused: \w+days are kept clear\.$/,
+    );
+    await withoutInstructions(store);
+
+    const booked = await call("create_focus_block", {
+      start: tomorrow("09:00"),
+      end: tomorrow("10:00"),
+      title: "Real",
+    });
+    assert.notEqual(booked.isError, true, text(booked));
+    const done = await lineFor("Real");
+    assert.match(done?.summary ?? "", /^Booked "Real" for \w{3} 09:00$/);
+    assert.equal(done?.changed, true);
+    const rec = booked.structuredContent?.recommendation as Recommendation | undefined;
+    assert.equal(done?.recommendation_id, rec?.id);
+    assert.ok(rec?.id);
+
+    await call("get_goals");
+    const read = (await logOf(agent)).find((q) => q.tool === "get_goals");
+    assert.equal(read?.summary, "Read your goals");
+    assert.equal(read?.changed, null);
+
+    // What the Agents screen counts: the changes, not the attempts.
+    const log = await logOf(agent);
+    assert.equal(log.length, 5);
+    assert.equal(log.filter((q) => q.changed).length, 1);
+  }, agent);
+});
+
+test("a write with nothing to do is logged as nothing changed; a scope refusal changes nothing", () => {
+  const agent = { ...claude(), scopes: ["timeline", "write_events"] as AgentClient["scopes"] };
+  return asNewUser(async () => {
+    const { call } = await connect();
+    const note = { source: "agent", type: "note", start_at: new Date().toISOString(), title: "Ran 5 km" };
+    assert.notEqual((await call("add_event", { ...note, external_id: "run-1" })).isError, true);
+    assert.notEqual((await call("add_event", { ...note, external_id: "run-1" })).isError, true);
+    await call("add_goal", { category: "health", title: "Run" });
+    const log = await logOf(agent);
+    assert.deepEqual(log.map((q) => [q.summary, q.allowed, q.changed]).sort(), [
+      ['Added "Ran 5 km" to your day', true, true],
+      ['Added the goal "Run"', false, false],
+      ['Tried to add "Ran 5 km" to your day. Nothing changed: already on your timeline.', true, false],
+    ]);
+  }, agent);
+});
+
+test("outcomeOf, shortReason and logLine: every tool's line turns into what was tried", () => {
+  const refusal = (said: string) => ({ isError: true, content: [{ type: "text", text: said }] });
+  assert.deepEqual(outcomeOf("get_timeline", true, { content: [] }), { changed: null, failed: null });
+  assert.deepEqual(outcomeOf("add_goal", false, { structuredContent: { goal: {} } }), {
+    changed: true,
+    failed: null,
+  });
+  assert.deepEqual(outcomeOf("create_focus_block", false, refusal("That time has already started")), {
+    changed: false,
+    failed: { how: "Refused", reason: "already started" },
+  });
+  assert.deepEqual(outcomeOf("get_timeline", true, refusal("Validation failed: from: bad")), {
+    changed: null,
+    failed: { how: "Refused", reason: "the request was not valid" },
+  });
+  assert.deepEqual(outcomeOf("remember", false, { structuredContent: { memory: null } }).failed, {
+    how: "Nothing changed",
+    reason: "you are off the record",
+  });
+  assert.deepEqual(outcomeOf("create_focus_block", false, undefined, true), {
+    changed: false,
+    failed: { how: "Failed", reason: "an error on my side" },
+  });
+
+  assert.equal(shortReason("You're home by 21:00."), "you're home by 21:00");
+  assert.equal(shortReason("Sundays are kept clear."), "Sundays are kept clear");
+  assert.equal(shortReason("That one is done. Undo it with undo_recommendation first."), "that one is done");
+  assert.equal(shortReason('No goal called "bath". Your goals: Sales, Gym'), "no goal by that name");
+  assert.equal(shortReason("I log the last 14 days only"), "I log the last 14 days only");
+  assert.equal(shortReason("A block is at most 6 hours"), "a block is at most 6 hours");
+  assert.equal(shortReason(""), "it did not go through");
+
+  const failed = { changed: false, failed: { how: "Refused" as const, reason: "already started" } };
+  assert.equal(
+    logLine("Carried out my advice on your calendar", failed),
+    "Tried to carry out my advice on your calendar. Refused: already started.",
+  );
+  assert.equal(logLine("Read your goals", { changed: null, failed: null }), "Read your goals");
+  // Every tool has a summary that reads after "Tried to": none falls back to its title.
+  for (const name of new Set([...TOOLS, ...Object.keys(TOOL_SCOPE)])) {
+    const line = logLine(summarise(name, undefined, {}), failed);
+    assert.match(line, /^Tried to [a-z]/, name);
+    assert.doesNotMatch(line, /^Tried to use /, name);
+    assert.deepEqual(voiceProblems(line), [], name);
+  }
+});

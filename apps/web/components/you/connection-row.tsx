@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { syncCalendar } from "@/app/you/google-calendar-actions";
 import { ActionButton } from "@/components/action-button";
+import { STATE_WORDS } from "@/lib/connection-words";
 import type { ConnectionAction, ConnectionStatus } from "@/lib/connections-status";
 import { ConnectionIcon } from "./connection-icon";
 
@@ -37,19 +38,6 @@ function Action({ action, style }: { action: ConnectionAction; style: string }) 
   );
 }
 
-// The list says the state in the same words on every row; the detail ("Last data 3 min ago",
-// "Connected as ...") is on the connection's own page.
-const STATE_WORDS: Record<ConnectionStatus["state"], string> = {
-  on: "Connected",
-  none: "Not connected",
-  optional: "Optional",
-  paused: "Paused",
-  attention: "Needs attention",
-  unavailable: "Not available yet",
-  unknown: "Could not check",
-  soon: "Coming soon",
-};
-
 export function ConnectionRow({ row, sample = false }: { row: ConnectionStatus; sample?: boolean }) {
   // The demo week: this source is replayed, not connected. Say so, with nothing to tap.
   if (sample) {
@@ -58,7 +46,7 @@ export function ConnectionRow({ row, sample = false }: { row: ConnectionStatus; 
         <ConnectionIcon id={row.id} />
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="text-body">{row.name}</span>
-          <span className="text-footnote text-label-2">Sample data</span>
+          <span className="text-footnote text-label-2">Replayed</span>
         </span>
       </div>
     );

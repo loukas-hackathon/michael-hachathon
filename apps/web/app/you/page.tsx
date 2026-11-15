@@ -1,8 +1,10 @@
 import Link from "next/link";
+import { MeetingsRow } from "@/components/meetings";
 import { ConnectionsList } from "@/components/you/connections-list";
 import { StandingInstructions } from "@/components/you/instructions";
 import { signedInAs } from "@/lib/account";
 import { getInstructions, getProfile } from "@/lib/api";
+import { isPresenter } from "@/lib/caller";
 import { getConnections } from "@/lib/connections-status";
 import { DeleteDataRow } from "./delete-data-row";
 import { OffTheRecordSwitch } from "./off-the-record-switch";
@@ -18,17 +20,18 @@ export default async function YouPage({
 }) {
   const params = await searchParams;
   // Every call fails on its own: if the API is down, the rest of the page still works.
-  const [connections, instructions, profile, account] = await Promise.all([
+  const [connections, instructions, profile, account, presenter] = await Promise.all([
     getConnections(),
     getInstructions().catch(() => ({ available: false as const })),
     getProfile().catch(() => null),
     signedInAs(),
+    isPresenter(),
   ]);
   const flash =
     params.connected === "google_calendar"
       ? { ok: true, text: "Google Calendar connected. Your plans are on the timeline." }
       : params.integration_error === "google_calendar"
-        ? { ok: false, text: "Google Calendar did not connect. Try again." }
+        ? { ok: false, text: "Google Calendar didn't connect. Try again." }
         : null;
 
   return (
@@ -42,28 +45,59 @@ export default async function YouPage({
         </Link>
       </header>
       <h1 className="text-large-title font-bold tracking-[0.01em]">You</h1>
-      {account === "The demo week" ? (
+      {account === "The demo week" && !presenter ? (
         // The API refuses account changes from demo visitors; say so before a switch bounces back.
+        // The presenter may switch Off the record (#343), so the projector shows no sign in card.
         <Link href="/login" className="press mt-4 block rounded-group bg-fill px-4 py-3">
           <span className="block text-body font-semibold">This is the demo week.</span>
           <span className="block text-subhead text-label-2">Sign in with Google to make it yours.</span>
         </Link>
       ) : null}
 
-      <ConnectionsList view={connections} flash={flash} demo={account === "The demo week"} />
-
-      <section className="mt-8">
-        <h2 className="mb-2 text-title3 font-bold">Privacy</h2>
-        <div className="overflow-hidden rounded-group bg-fill">
-          <OffTheRecordSwitch />
-        </div>
+      {/* The Mi button is on every tab, so the two things people look for in it come first. */}
+      <div className="mt-4 overflow-hidden rounded-group bg-fill">
+        <Link
+          href="/chat?talk=1"
+          className="press relative flex min-h-14 items-center justify-between gap-3 px-4 py-2"
+        >
+          <span className="flex flex-col">
+            <span className="text-body">Talk to Michael</span>
+            <span className="text-footnote text-label-2">Out loud, hands free</span>
+          </span>
+          <span aria-hidden="true" className="text-label-2">
+            ›
+          </span>
+        </Link>
         <Link
           href="/agents"
-          className="press mt-5 flex min-h-14 items-center justify-between gap-3 rounded-group bg-fill px-4 py-2"
+          className="press relative flex min-h-14 items-center justify-between gap-3 px-4 py-2"
         >
+          <span className={separator} />
           <span className="flex flex-col">
             <span className="text-body">Agents</span>
             <span className="text-footnote text-label-2">Who asks about you, and what they may see</span>
+          </span>
+          <span aria-hidden="true" className="text-label-2">
+            ›
+          </span>
+        </Link>
+      </div>
+
+      <ConnectionsList view={connections} flash={flash} demo={account === "The demo week"} />
+
+      <section id="privacy" className="mt-8 scroll-mt-4">
+        <h2 className="mb-2 text-title3 font-bold">Privacy</h2>
+        <div className="overflow-hidden rounded-group bg-fill">
+          <OffTheRecordSwitch />
+          <MeetingsRow />
+        </div>
+        <Link
+          href="/you/knowledge"
+          className="press mt-4 flex min-h-14 items-center justify-between gap-3 rounded-group bg-fill px-4 py-2"
+        >
+          <span className="flex flex-col">
+            <span className="text-body">What I know about you</span>
+            <span className="text-footnote text-label-2">In plain words. Forget any of it</span>
           </span>
           <span aria-hidden="true" className="text-label-2">
             ›
@@ -78,7 +112,7 @@ export default async function YouPage({
         quiet={profile?.quiet_hours ?? null}
       />
 
-      <section className="mt-8">
+      <section id="account" className="mt-8 scroll-mt-4">
         <h2 className="mb-2 text-title3 font-bold">Account</h2>
         {/* Redo setup lives here rather than under a heading of its own: one row needs no section. */}
         <div className="overflow-hidden rounded-group bg-fill">

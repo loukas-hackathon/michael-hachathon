@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import { MICHAEL_VOICE, voiceProblems } from "@michael/shared";
 import { env } from "../env";
@@ -74,14 +75,28 @@ export function lineFrom(reply: ModelReply, facts: string): string | null {
 }
 
 // One model call per distinct set of facts: reloading the card does not call the model again.
+// Keyed by user, kind and day plus a hash of the facts, so a new day or a new number asks again.
 // A cached line is checked again on the way out, so a line stored under older rules (a half line
 // from a reply cut by the old cap) is dropped and never served.
 const cache = new Map<string, string>();
 const CACHE_MAX = 500;
+// The last model line per user, kind and day, whatever the facts: Today shows it while a line for
+// newer facts is being written, but only while it still passes the checks against the new facts
+// (so it never states a number that is no longer true).
+const latest = new Map<string, string>();
+// Calls in flight, so a cold open, the scheduler and a second tab share one model call.
+const inFlight = new Map<string, Promise<string | null>>();
+// When the model last failed for a set of facts: without waiting, those facts are not asked again
+// for a while, so a model that is down never makes every open of Today start another call.
+const failed = new Map<string, number>();
+const RETRY_AFTER_MS = 10 * 60_000;
 let client: Anthropic | null = null;
 
-/** Claude, when a key is set. */
-function askClaude(): AskModel | null {
+const keyFor = (cacheKey: string, facts: string) =>
+  `${cacheKey}\n${createHash("sha256").update(facts).digest("base64url")}`;
+
+/** Claude, when a key is set. `system` lets another card (Your week, #376) give its own task. */
+export function askClaude(system = SYSTEM): AskModel | null {
   const apiKey = env.ANTHROPIC_API_KEY;
   if (!apiKey) return null;
   return (facts) => {
@@ -92,7 +107,7 @@ function askClaude(): AskModel | null {
         max_tokens: MAX_TOKENS,
         // A single short line: latency matters more than depth here.
         output_config: { effort: "low" },
-        system: SYSTEM,
+        system,
         messages: [{ role: "user", content: facts }],
       },
       { timeout: TIMEOUT_MS, maxRetries: 0 },
@@ -100,33 +115,86 @@ function askClaude(): AskModel | null {
   };
 }
 
+/** The cached line for exactly these facts, or undefined. */
+function cachedLine(key: string, facts: string): string | undefined {
+  const cached = cache.get(key);
+  if (cached === undefined) return undefined;
+  if (acceptable(cached, facts)) return cached;
+  cache.delete(key);
+  return undefined;
+}
+
+/** One model call for these facts, shared by everyone who asks while it runs. Never throws. */
+function phrase(cacheKey: string, key: string, facts: string, ask: AskModel): Promise<string | null> {
+  const running = inFlight.get(key);
+  if (running) return running;
+  if (failed.size >= CACHE_MAX) failed.clear();
+  const call = (async () => {
+    try {
+      const line = lineFrom(await ask(facts), facts);
+      if (!line) {
+        failed.set(key, Date.now());
+        return null;
+      }
+      failed.delete(key);
+      if (cache.size >= CACHE_MAX) cache.clear();
+      if (latest.size >= CACHE_MAX) latest.clear();
+      cache.set(key, line);
+      latest.set(cacheKey, line);
+      return line;
+    } catch (err) {
+      console.warn("moments: model phrasing failed, using the template", err);
+      failed.set(key, Date.now());
+      return null;
+    } finally {
+      inFlight.delete(key);
+    }
+  })();
+  inFlight.set(key, call);
+  return call;
+}
+
+export interface Phrased {
+  headline: string;
+  phrased_by: "template" | "model";
+  /** Only without waiting: a model line for these facts is being written; ask again with wait. */
+  phrase_pending?: true;
+}
+
+/**
+ * The moment's headline. `wait` (the default) waits for the model, as the MCP tool wants. Without
+ * waiting (Today's cold open, #378) the model is never on the request's path: the answer is the
+ * line for these facts when one is cached, else the day's last line while it still holds, else the
+ * template, and the model call starts in the background (`phrase_pending`).
+ */
 export async function phraseHeadline(
   m: MomentCore,
   cacheKey: string,
   ask: AskModel | null = askClaude(),
-): Promise<{ headline: string; phrased_by: "template" | "model" }> {
+  { wait = true }: { wait?: boolean } = {},
+): Promise<Phrased> {
   const template = { headline: templateHeadline(m), phrased_by: "template" as const };
   if (!ask) return template;
   const facts = factsFor(m);
-  const key = `${cacheKey}\n${facts}`;
-  const cached = cache.get(key);
-  if (cached !== undefined) {
-    if (acceptable(cached, facts)) return { headline: cached, phrased_by: "model" };
-    cache.delete(key);
+  const key = keyFor(cacheKey, facts);
+  const cached = cachedLine(key, facts);
+  if (cached !== undefined) return { headline: cached, phrased_by: "model" };
+  if (wait) {
+    const line = await phrase(cacheKey, key, facts, ask);
+    return line ? { headline: line, phrased_by: "model" } : template;
   }
-  try {
-    const line = lineFrom(await ask(facts), facts);
-    if (!line) return template;
-    if (cache.size >= CACHE_MAX) cache.clear();
-    cache.set(key, line);
-    return { headline: line, phrased_by: "model" };
-  } catch (err) {
-    console.warn("moments: model phrasing failed, using the template", err);
-    return template;
-  }
+  const last = latest.get(cacheKey);
+  const shown =
+    last !== undefined && acceptable(last, facts)
+      ? { headline: last, phrased_by: "model" as const }
+      : template;
+  const failedAt = failed.get(key);
+  if (failedAt !== undefined && Date.now() - failedAt < RETRY_AFTER_MS) return shown;
+  void phrase(cacheKey, key, facts, ask);
+  return { ...shown, phrase_pending: true };
 }
 
 /** For the tests: put a line in the cache as an older deploy could have. */
 export function cacheLineForTest(m: MomentCore, cacheKey: string, line: string): void {
-  cache.set(`${cacheKey}\n${factsFor(m)}`, line);
+  cache.set(keyFor(cacheKey, factsFor(m)), line);
 }

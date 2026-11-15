@@ -707,7 +707,8 @@ export const demoGoals: Goal[] = [
   goal(2, {
     category: "gym",
     title: "70.3",
-    description: "IRONMAN 70.3 in autumn 2027: gym, swim, yoga, run and the long ride.",
+    description:
+      "IRONMAN 70.3 in autumn 2027: gym, swim, yoga, run, the long ride and recovery (ice baths, stretching).",
     target: { calendar_titles: ["Gym", "Swimming", "Yoga", "Run", "Rhefuel"] },
     weekly_budget_minutes: 540,
   }),

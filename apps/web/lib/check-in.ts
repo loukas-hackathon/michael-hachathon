@@ -56,3 +56,27 @@ const subscribe = (l: () => void) => {
 export function useCheckIn(): State {
   return useSyncExternalStore(subscribe, read, () => EMPTY);
 }
+
+// The real check in (#187): whether a question is waiting, as the API last said. Undefined until
+// asked; null when the API has no check in (fixtures), where the sample card's answers in this
+// browser drive the dot instead.
+let live: boolean | null | undefined;
+const readLive = () => live;
+
+export function setLiveWaiting(next: boolean | null) {
+  if (live === next) return;
+  live = next;
+  for (const l of listeners) l();
+}
+
+/** The Chat tab's dot: a question waits. Never shown on a guess (QA round 2, #346). */
+export function chatDot(sampleDone: boolean, liveWaiting: boolean | null | undefined): boolean {
+  if (liveWaiting === undefined) return false;
+  return liveWaiting ?? !sampleDone;
+}
+
+export function useChatDot(): boolean {
+  const { done } = useCheckIn();
+  const waiting = useSyncExternalStore(subscribe, readLive, () => undefined);
+  return chatDot(done, waiting);
+}

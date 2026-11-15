@@ -15,7 +15,7 @@ import { label } from "../patterns/format";
 import { DAY, HOUR, MINUTE, Zone } from "../patterns/time";
 import { buildTimeline, type Segment } from "../patterns/timeline";
 import { overlapWith, round1, round2, type Span, union } from "../patterns/util";
-import { behindPace, buildScore, type CountCheckIn, calendarTitles } from "../score";
+import { behindPace, buildScore, type CountCheckIn, calendarTitles, goalBlockTitle } from "../score";
 import { type PlanEvent, planEvents } from "./plan";
 
 // The analysis brief: everything the model is told about one person for one run.
@@ -253,6 +253,8 @@ function buildPlan(
             lost_minutes: g.lost_minutes,
             unverified_minutes: g.unverified_minutes,
             ahead_minutes: g.ahead_minutes,
+            // Logged outside its blocks (#372): toward the budget, never the score.
+            ...(g.logged_minutes ? { logged_outside_blocks_minutes: g.logged_minutes } : {}),
             // Only a goal with a weekly budget can be short of it.
             ...(budgets.get(g.goal_id) == null
               ? {}
@@ -781,12 +783,9 @@ export function buildBrief(input: BriefInput): { brief: Brief; context: BriefCon
       blocks: built.blocks,
       goalBlocks: plan.filter((p) => p.kind === "goal_block"),
       busy,
+      // A goal's new blocks are named after it ("University"), for goals on the calendar.
       blockTitles: new Map(
-        goals.flatMap((g) =>
-          calendarTitles(g)
-            .slice(0, 1)
-            .map((title) => [g.id, title]),
-        ),
+        goals.filter((g) => calendarTitles(g).length > 0).map((g) => [g.id, goalBlockTitle(g)]),
       ),
       patterns: ok,
       actionsAre: input.actionsAre ?? "offers",

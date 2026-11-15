@@ -1,11 +1,14 @@
 import type { Health } from "@michael/shared";
-import { Hono } from "hono";
+import { Hono, type MiddlewareHandler } from "hono";
+import { compress } from "hono/compress";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { requireUser } from "./auth";
+import { currentUserId } from "./context";
 import { env } from "./env";
 import { errorResponse, HttpError } from "./http";
 import { handleMcpRequest } from "./mcp";
+import { prewarmAfterWrite } from "./moments/prewarm";
 import { actions } from "./routes/actions";
 import { agents } from "./routes/agents";
 import { analysis } from "./routes/analysis";
@@ -17,14 +20,17 @@ import { checklist } from "./routes/checklist";
 import { demo } from "./routes/demo";
 import { drafts } from "./routes/drafts";
 import { events } from "./routes/events";
+import { focus } from "./routes/focus";
 import { focusGuards } from "./routes/focus-guards";
 import { goals } from "./routes/goals";
 import { instructions } from "./routes/instructions";
 import { integrations, oauth } from "./routes/integrations";
+import { knowledge } from "./routes/knowledge";
 import { log } from "./routes/log";
 import { meData } from "./routes/me-data";
+import { meetings } from "./routes/meetings";
 import { moments } from "./routes/moments";
-import { nudges } from "./routes/nudges";
+import { nudgeActPublic, nudges } from "./routes/nudges";
 import { connect, oauthPublic } from "./routes/oauth";
 import { patterns } from "./routes/patterns";
 import { places } from "./routes/places";
@@ -42,14 +48,28 @@ import { telegram, telegramWebhook } from "./routes/telegram";
 import { tokens } from "./routes/tokens";
 import { voice } from "./routes/voice";
 import { webhooks } from "./routes/webhooks";
+import { week } from "./routes/week";
 import { store } from "./store";
 import { runTimed, serverTimingEntries } from "./timing";
 
 export const VERSION = "0.1.0";
 
+/**
+ * After a successful write, the user's moment line is phrased again in the background a minute
+ * later (#378), so the next open of Today finds it ready. Only where the scheduler runs.
+ */
+const afterWrite: MiddlewareHandler = async (c, next) => {
+  await next();
+  if (!env.SCHEDULER_ENABLED || c.req.method === "GET" || c.res.status >= 300) return;
+  prewarmAfterWrite(currentUserId());
+};
+
 // Webhook senders often cannot set headers, so they may pass ?key=. Mounted BEFORE v1 so the
 // header-only middleware below never sees /v1/webhooks/* requests.
-const webhooksApp = new Hono().use(requireUser({ allowQueryKey: true })).route("/", webhooks);
+const webhooksApp = new Hono()
+  .use(requireUser({ allowQueryKey: true }))
+  .use(afterWrite)
+  .route("/", webhooks);
 
 // Every /v1 route, without the auth in front (the isolation test mounts it as several users).
 export const v1Routes = new Hono()
@@ -68,15 +88,18 @@ export const v1Routes = new Hono()
   .route("/", chat)
   .route("/", checkIn)
   .route("/", moments)
+  .route("/", week)
   .route("/", voice)
   .route("/", integrations)
   .route("/", privacy)
+  .route("/", meetings)
   .route("/", sources)
   .route("/", nudges)
   .route("/", push)
   .route("/", actions)
   .route("/", blocks)
   .route("/", focusGuards)
+  .route("/", focus)
   .route("/", drafts)
   .route("/", profile)
   .route("/", product)
@@ -87,9 +110,10 @@ export const v1Routes = new Hono()
   .route("/", agents)
   .route("/", places)
   .route("/", meData)
+  .route("/", knowledge)
   .route("/", demo);
 
-const v1 = new Hono().use(requireUser()).route("/", v1Routes);
+const v1 = new Hono().use(requireUser()).use(afterWrite).route("/", v1Routes);
 
 export const app = new Hono()
   .use(logger())
@@ -104,6 +128,10 @@ export const app = new Hono()
     for (const entry of serverTimingEntries(t)) c.res.headers.append("Server-Timing", entry);
     c.res.headers.append("Server-Timing", `region;desc="${region}"`);
   })
+  // gzip for the REST API's JSON (#298): a week's timeline or score is hundreds of KB. Only
+  // application/json under /v1, so the chat's event stream is never buffered by the compressor,
+  // and MCP (/mcp) and OAuth answer exactly as before.
+  .use("/v1/*", compress({ contentTypeFilter: /^application\/json/i }))
   .use(cors({ origin: env.WEB_ORIGIN.split(",").map((s) => s.trim()) }))
   .get("/health", (c) => {
     const body: Health = {
@@ -124,6 +152,8 @@ export const app = new Hono()
   .route("/v1/webhooks", webhooksApp)
   // One tap setup: the token exchange and the Mac installer carry no user; the setup token is the key.
   .route("/v1", setupPublic)
+  // A notification's button: the signed token in the push is the key (no session in the worker).
+  .route("/v1", nudgeActPublic)
   .route("/v1", v1)
   // claude.ai signs in with OAuth (routes/oauth.ts); the API key and ?key= keep working.
   .all("/mcp", requireUser({ mcp: true }), (c) => handleMcpRequest(c.req.raw))

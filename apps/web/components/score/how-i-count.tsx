@@ -54,7 +54,7 @@ export function HowICount({
           </span>
         ) : null}
       </button>
-      <Sheet open={open} onClose={() => setOpen(false)} title="How I count">
+      <Sheet open={open} onClose={() => setOpen(false)} title="How I count" closeLabel="Done">
         <HowICountBody explain={explain} />
       </Sheet>
     </>
@@ -177,6 +177,16 @@ export function HowICountBody({ explain: e }: { explain: ScoreExplain }) {
           <Row swatch="lost" label="Lost" value={hm(e.lost)} note={causesNote(e.causes) ?? undefined} />
           <Row swatch="ahead" label="Still ahead" value={hm(e.ahead)} />
         </ul>
+      ) : null}
+
+      {/* #372: logged time outside a block was never planned, so it is not in the score above. */}
+      {e.logged > 0 ? (
+        <p className="text-subhead text-label-2 tnum">
+          <b className="font-semibold text-label">
+            Plus {minutesPhrase(e.logged)} you logged outside your blocks.
+          </b>{" "}
+          It counts toward your goals this week, not this score: the score is planned time only.
+        </p>
       ) : null}
 
       <p className="text-subhead">{RULE}</p>

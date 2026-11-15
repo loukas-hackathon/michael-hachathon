@@ -2,6 +2,9 @@ import "server-only";
 import {
   type AddressSearchResponse,
   ApiError,
+  BlockChange,
+  type BlockCreate,
+  type BlockUpdate,
   type ChatHistory,
   type ChatResponse,
   type ChatThread,
@@ -45,12 +48,15 @@ import {
   type TargetResponse,
   type TargetUpdate,
   type TimelineResponse,
+  type WeekReview,
 } from "@michael/shared";
 import { cache } from "react";
+import { addDays } from "./athens";
 import { authHeaders } from "./caller";
 import { categoryOf } from "./categories";
 import type { ChecklistDay, ChecklistItem } from "./checklist";
 import type { DayView } from "./day";
+import { devLatency } from "./dev-latency";
 import type { GoalsView } from "./goals-view";
 import type { Instruction, InstructionInput } from "./instructions";
 import { type KeepWeek, keepWeekFrom, restDaysFrom } from "./keep-day";
@@ -125,6 +131,17 @@ export async function openChatStream(
   });
 }
 
+/** POST /v1/chat/warm (#364): read the day and warm the model before the question. Throws when signed out. */
+export async function warmChat(threadId?: string): Promise<void> {
+  const res = await fetch(`${API_URL}/v1/chat/warm`, {
+    method: "POST",
+    headers: { ...(await authHeaders()), "content-type": "application/json" },
+    body: JSON.stringify(threadId ? { thread_id: threadId } : {}),
+    cache: "no-store",
+  });
+  await res.body?.cancel();
+}
+
 /** GET /v1/check-in (#187): today's questions; the API opens a round when one is due. */
 export async function getCheckIn(): Promise<CheckInToday> {
   return get<CheckInToday>("/v1/check-in");
@@ -137,6 +154,7 @@ export async function answerCheckIn(id: string, value: CheckInValue): Promise<Ch
 
 /** Chat always talks to the API: there is no fixture for a conversation. */
 export async function getChatHistory(threadId?: string): Promise<ChatHistory> {
+  await devLatency();
   const q = threadId ? `&thread_id=${encodeURIComponent(threadId)}` : "";
   const body = await get<ChatHistory>(`/v1/chat?limit=50${q}`);
   // An API from before action_ids (or threads) still answers: no chips come back, the lines do.
@@ -449,14 +467,14 @@ async function logCall(path: string, body: unknown): Promise<LogResult> {
     const err = ApiError.safeParse(json);
     return {
       ok: false,
-      message: err.success ? err.data.error.message : `I could not log it (${res.status}).`,
+      message: err.success ? err.data.error.message : `I couldn't log it (${res.status}).`,
     };
   } catch {
-    return { ok: false, message: "I could not reach the server. Nothing was logged." };
+    return { ok: false, message: "I lost the line. Nothing was logged." };
   }
 }
 
-/** POST /v1/log (#317): done time the user reports, counted as confirmed goal time. */
+/** POST /v1/log (#317): done time the user reports; it confirms a block or counts toward the budget (#372). */
 export const postLog = (input: LogTimeInput) => logCall("/v1/log", input);
 
 /** POST /v1/log/block (#317): Did it or Didn't on a past goal block. */
@@ -480,10 +498,62 @@ export async function bookGoal(goalId: string, minutes: number): Promise<RecResu
   return recCall("POST", `/v1/goals/${encodeURIComponent(goalId)}/book`, { minutes });
 }
 
+/** POST /v1/week/plan (#376): next week's first goal block, through Book. Undo as for Book. */
+export async function planWeek(goalId: string, minutes: number): Promise<RecResult> {
+  if (USE_MOCKS) return { ok: false, status: 501, message: "Booking needs the live API" };
+  return recCall("POST", "/v1/week/plan", { goal_id: goalId, minutes });
+}
+
+/** GET /v1/week/review (#376): the week's review; `week` is any day of it, default this week. */
+export async function getWeekReview(week?: string): Promise<WeekReview | null> {
+  if (USE_MOCKS) return null;
+  return get<WeekReview>(`/v1/week/review${week ? `?week=${encodeURIComponent(week)}` : ""}`);
+}
+
 /** PATCH /v1/recommendations/:id { status: dismissed }: "Not now". */
 export async function dismissRecommendation(id: string): Promise<RecResult> {
   if (USE_MOCKS && isMockRec(id)) return mockRecAction(id, "dismiss");
   return recCall("PATCH", `/v1/recommendations/${encodeURIComponent(id)}`, { status: "dismissed" });
+}
+
+// Calendar blocks the user edits on the Timeline (#271). Undo goes through undoRecommendation.
+export type BlockResult = { ok: true; change: BlockChange } | { ok: false; message: string };
+
+async function blockCall(method: "POST" | "PATCH" | "DELETE", path: string, body?: unknown) {
+  if (USE_MOCKS) return { ok: false, message: "Editing the day needs the live API." } as BlockResult;
+  try {
+    const res = await fetch(`${API_URL}${path}`, {
+      method,
+      headers: { ...(await authHeaders()), "content-type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      cache: "no-store",
+    });
+    const json: unknown = await res.json().catch(() => null);
+    if (res.ok) {
+      const change = BlockChange.safeParse(json);
+      if (change.success) return { ok: true, change: change.data } as BlockResult;
+      return { ok: false, message: "The server answered in a way I did not expect." } as BlockResult;
+    }
+    const err = ApiError.safeParse(json);
+    return { ok: false, message: err.success ? err.data.error.message : `${res.status}` } as BlockResult;
+  } catch {
+    return { ok: false, message: "Michael's server can't be reached." } as BlockResult;
+  }
+}
+
+/** POST /v1/blocks: a new block on the user's own time. */
+export function postBlock(input: BlockCreate): Promise<BlockResult> {
+  return blockCall("POST", "/v1/blocks", input);
+}
+
+/** PATCH /v1/blocks/:id: move, resize, rename or change the goal. */
+export function patchBlock(id: string, input: BlockUpdate): Promise<BlockResult> {
+  return blockCall("PATCH", `/v1/blocks/${encodeURIComponent(id)}`, input);
+}
+
+/** DELETE /v1/blocks/:id: only blocks made in Michael. */
+export function deleteBlock(id: string): Promise<BlockResult> {
+  return blockCall("DELETE", `/v1/blocks/${encodeURIComponent(id)}`);
 }
 
 // Privacy. With mocks, one in-process state so the switches still hold while the server runs.
@@ -577,22 +647,45 @@ export async function getLostWeek(date?: string, variant?: string): Promise<Lost
 }
 
 /**
+ * Last week's lost goal time, for Today on a Monday: the week in GET /v1/score then holds only
+ * Monday, so last week's totals come from `?date=` the Sunday before. Null on other days.
+ * `?demo=monday` previews it with the sample week.
+ */
+export async function getLastLostWeek(variant?: string): Promise<LostWeek | null> {
+  if (variant === "monday") return lostWeekFrom(mockScore, addDays(mockScore.date, 7));
+  if (USE_MOCKS || variant) return null;
+  const today = athensDay();
+  if (new Date(`${today}T12:00:00Z`).getUTCDay() !== 1) return null;
+  try {
+    return lostWeekFrom(await getScore(addDays(today, -1)), today);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Today: planned goal blocks, what happened in them, and Michael's lead.
  * Real: GET /v1/score, with a lead from the week's patterns until the analysis (#17) is live.
  * `variant` previews the sample day's moments and states (?demo=morning|early|evening|empty|error|sample).
  */
 export async function getToday(variant?: string): Promise<DayView> {
+  await devLatency();
   if (variant === "error") throw new Error("Preview of the error state");
   if (variant && variant in SAMPLE_DAYS) return SAMPLE_DAYS[variant] as DayView;
   if (USE_MOCKS || variant === "sample") return sampleDay;
-  const to = new Date().toISOString();
-  const from = new Date(Date.now() - 7 * 86_400_000).toISOString();
-  // Side by side: the lead never waits for the score, nor the score for the lead.
+  type Cadence = { phone_cadence?: { status: string; data: unknown } };
+  // Side by side: the lead never waits for the score, nor the score for the lead. The lead needs
+  // only the phone cadence (#298); the full week's report stands in while an older API is live.
+  const fullWeek = () => {
+    const to = new Date().toISOString();
+    const from = new Date(Date.now() - 7 * 86_400_000).toISOString();
+    return get<Cadence>(`/v1/patterns?${new URLSearchParams({ from, to })}`);
+  };
   const [score, patterns] = await Promise.all([
     getScore(),
-    get<{ phone_cadence?: { status: string; data: unknown } }>(
-      `/v1/patterns?${new URLSearchParams({ from, to })}`,
-    ).catch(() => ({})),
+    get<Cadence>("/v1/patterns/phone-cadence")
+      .catch(fullWeek)
+      .catch(() => ({})),
   ]);
   return dayFromScore(score, leadFromPatterns(patterns, score.day.now));
 }
@@ -602,6 +695,7 @@ export async function getToday(variant?: string): Promise<DayView> {
  * `variant` previews states (?demo=empty|error|sample).
  */
 export async function getGoalsWeek(variant?: string): Promise<GoalsView> {
+  await devLatency();
   if (variant === "error") throw new Error("Preview of the error state");
   if (variant === "empty") return sampleGoalsEmpty;
   if (variant === "monday") return sampleGoalsMonday;
@@ -914,9 +1008,9 @@ async function ritualWrite<T>(path: string, body?: unknown): Promise<RitualWrite
     });
     if (res.ok) return { ok: true, data: (await res.json()) as T };
     const err = ApiError.safeParse(await res.json().catch(() => null));
-    return { ok: false, message: err.success ? err.data.error.message : "I could not save that. Try again." };
+    return { ok: false, message: err.success ? err.data.error.message : "I couldn't save that. Try again." };
   } catch {
-    return { ok: false, message: "I could not reach the server. Nothing changed." };
+    return { ok: false, message: "I lost the line. Nothing changed." };
   }
 }
 

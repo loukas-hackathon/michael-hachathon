@@ -1,9 +1,10 @@
 "use client";
 
 import type { CheckIn, CheckInValue } from "@michael/shared";
-import { type FormEvent, useState, useTransition } from "react";
+import { type FormEvent, useEffect, useState, useTransition } from "react";
 import { answerCheckInAction } from "@/app/chat/check-in-actions";
 import { haptic } from "@/components/haptics";
+import { setLiveWaiting } from "@/lib/check-in";
 import { AFTER, DONE } from "@/lib/check-in-data";
 import { Bubble, label } from "./check-in";
 
@@ -21,6 +22,9 @@ export function LiveCheckIn({ initial }: { initial: CheckIn[] }) {
   const [openedHere] = useState(initial.some((q) => q.answer === null));
   const current = questions.find((q) => q.answer === null);
   const asked = questions.filter((q) => q.answer !== null);
+  // The tab bar's dot follows what is still open here: the last answer clears it at once.
+  const open = Boolean(current);
+  useEffect(() => setLiveWaiting(open), [open]);
 
   // The answer shows as the user's bubble at once (michael-feedback R2). Michael's next line waits
   // for the server, since a follow up may come first; a failure takes the bubble back and keeps the
@@ -36,7 +40,7 @@ export function LiveCheckIn({ initial }: { initial: CheckIn[] }) {
     startTransition(async () => {
       const res = await answerCheckInAction(q.id, value).catch(() => ({
         ok: false as const,
-        error: "I could not reach the server. Nothing changed.",
+        error: "I lost the line. Nothing changed.",
       }));
       if (!res.ok) {
         setAnswer(q.id, null);

@@ -34,7 +34,7 @@ test("Today shows the demo week's real numbers, not the sample day", async ({ pa
   // The same numbers the API computes for the demo account.
   const score = await apiGet<Score>("/v1/score");
   if (score.score_pct != null) {
-    await expect(page.getByText(`${score.score_pct}% optimisation score this week.`)).toBeVisible();
+    await expect(page.getByText(`${score.score_pct}% of your goal time this week.`)).toBeVisible();
   }
   if (score.day.blocks.length > 0 && score.day.score_pct != null) {
     await expect(page.getByText(/of your goal time (today|so far)\./)).toBeVisible();
@@ -150,7 +150,9 @@ test("Agents shows Connect Claude with the MCP link", async ({ page }) => {
   await page.goto("/agents");
   await expect(page.getByRole("heading", { level: 1, name: "Agents" })).toBeVisible();
   await expect(page.getByText("Connect Claude")).toBeVisible();
-  await expect(page.getByText(`${API_URL}/mcp`)).toBeVisible();
+  // No URLs in the user's path (#385): a short name and Copy link, never the address itself.
+  await expect(page.getByText("Your Michael link")).toBeVisible();
+  await expect(page.getByText(`${API_URL}/mcp`)).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Copy" })).toBeVisible();
 });
 
@@ -158,6 +160,10 @@ test("stage: N sends a test nudge and shows it", async ({ page }) => {
   await enterDemo(page);
   await page.goto("/stage");
   await expect(page.getByText(athensToday()).first()).toBeVisible();
+  // Before the first block starts, the headline says when; no row of empty tape boxes beside it.
+  if (await page.getByText(/Your first block starts at/).count()) {
+    await expect(page.locator(".stage-tape")).toHaveCount(0);
+  }
   const status = page.getByText("Shown here. No device has nudges on.");
   // N only works once the page has hydrated; press until the stage answers.
   await expect(async () => {
