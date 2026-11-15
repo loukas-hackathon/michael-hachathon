@@ -1,9 +1,10 @@
 import { redirect } from "next/navigation";
 import { Wordmark } from "@/components/brand";
 import { SCOPE_LABEL } from "@/lib/agents";
-import { isDemoVisitor } from "@/lib/caller";
+import { currentCaller } from "@/lib/caller";
 import { getConnectRequest } from "@/lib/connect";
 import { signInAgainPath } from "@/lib/connect-outcome";
+import { presenterConfigured } from "@/lib/presenter";
 import { authEnabled, supabaseServer } from "@/lib/supabase/server";
 
 export const metadata = { title: "Connect · Michael" };
@@ -50,8 +51,8 @@ export default async function ConnectPage({
   const name = request.client_name;
 
   // Connecting an agent grants it full write on the account, so demo visitors cannot: the demo
-  // week is shared. The presenter connects Claude to it with the API key (docs/demo-runbook.md).
-  if (who === "the demo week") {
+  // week is shared. Only the presenter (the presenter link, lib/presenter.ts) can, in one tap.
+  if (who === DEMO_WEEK) {
     return (
       <main className="screen flex min-h-dvh flex-col justify-center pb-24">
         <Wordmark className="h-8 w-auto text-label" />
@@ -63,6 +64,11 @@ export default async function ConnectPage({
         >
           Sign in with Google
         </a>
+        <p className="mt-6 text-footnote text-label-2">
+          {presenterConfigured()
+            ? "Presenting? Open your presenter link in this browser, then reload this page."
+            : "Presenting? The presenter link is not switched on for this deployment yet. The setup manual says how."}
+        </p>
       </main>
     );
   }
@@ -120,10 +126,18 @@ export default async function ConnectPage({
   );
 }
 
+const DEMO_WEEK = "the demo week";
+
 async function signedInAs(): Promise<string | null> {
   if (!authEnabled) return "the demo account";
   // A session wins over the demo cookie, as in lib/caller.ts.
   const { data } = await (await supabaseServer()).auth.getClaims();
   if (data?.claims?.sub) return data.claims.email ?? null;
-  return (await isDemoVisitor()) ? "the demo week" : null;
+  try {
+    const caller = await currentCaller();
+    if (caller.kind === "demo") return caller.presenter ? `${DEMO_WEEK} (presenter)` : DEMO_WEEK;
+  } catch {
+    // Nobody signed in: the proxy sent them to sign in first.
+  }
+  return null;
 }

@@ -32,6 +32,11 @@ returns `501 not_implemented`, `planned` = not routed yet. Update the status whe
     `403 forbidden` with the message "This is the demo week. Sign in with Google to make it yours."
     and `details: { demo: true }`. A malformed visitor id is `401`. MCP OAuth tokens bound to the
     demo account and the bare `API_KEY` keep full access.
+  - The presenter (#343): a demo visitor whose request also carries
+    `X-Michael-Demo-Presenter: <DEMO_PRESENTER_KEY>` (server to server, from the web app's presenter
+    link). On top of a visitor's writes it may answer `POST /v1/connect/requests/:id`, so the stage
+    laptop connects claude.ai to the demo week in one tap. A wrong key, no key configured, or the
+    header without `API_KEY` grants nothing.
 - **Shared secret details:**
   Send `Authorization: Bearer <API_KEY>`. Applies to everything under `/v1/*` and `/mcp`, except
   `/health` and the OAuth callback redirect (`/oauth/google/callback`). Only `/v1/webhooks/*` and `/mcp` also accept

@@ -54,6 +54,20 @@ No key: Claude signs in to Michael like any built-in connector, and sees only yo
 
 The phone app and voice mode use the same connector automatically. Revoke it any time under Agents.
 
+## 2b. Presenter link for the demo week (Loukas, 3 min, once)
+
+Demo visitors cannot connect Claude to the shared demo week. The presenter can, in one tap, with a
+secret link. Set the same secret in two places (never paste it into a chat or commit it):
+
+1. Make one: `openssl rand -base64 32 | tr -d '/+='` (any long random string works).
+2. Vercel: project `michael` > **Settings > Environment Variables** > add `DEMO_PRESENTER_KEY`,
+   Production, paste the value, **Save**. Then **Deployments > latest > Redeploy**.
+3. Railway: service `api` > **Variables** > add `DEMO_PRESENTER_KEY` with the same value (or the
+   PowerShell line at the top of this page). Railway redeploys by itself.
+4. Put the link `https://michael-zeta-sand.vercel.app/auth/presenter?key=<value>` on the Build Hub
+   for the presenters. Opening it once on the stage laptop is enough for 3 days
+   (`docs/demo-runbook.md`). To revoke it, change the value in both places.
+
 ## 3. Google Calendar (Loukas, 3 min, same Google project as step 1)
 
 1. https://console.cloud.google.com/apis/library/calendar-json.googleapis.com, project `Michael`,

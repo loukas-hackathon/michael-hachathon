@@ -28,4 +28,6 @@ Object.assign(process.env, {
   DEMO_WEEK: "off",
   SCHEDULER_ENABLED: "false",
   CALENDAR_SYNC_MINUTES: "0",
+  // A fixed presenter key, so isolation.test.ts can prove who may and may not use it.
+  DEMO_PRESENTER_KEY: "test-presenter-key",
 });
