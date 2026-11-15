@@ -417,6 +417,77 @@ body::before {
   animation: m-think 2.4s ease-in-out infinite;
 }
 
+/* Michael's character (components/michael.tsx, #319): only the dot of the i moves. Units are the
+ * mark's own (viewBox 346 x 209); the dot sits at about 318, 26 with a radius of 27. States change
+ * with a short ease, so a switch never jumps. */
+.m-mi-dot {
+  transform-box: view-box;
+  transform-origin: 318px 26px;
+  transition:
+    transform var(--m-dur-smooth) var(--m-ease-out),
+    opacity var(--m-dur-ui) var(--m-ease-out);
+}
+/* At rest: one blink every five seconds, nothing else. */
+.m-mi[data-mi="idle"] .m-mi-dot {
+  animation: m-mi-blink 5s ease-in-out infinite;
+}
+@keyframes m-mi-blink {
+  0%,
+  92%,
+  100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.12);
+  }
+}
+/* Listening: the dot leans in and grows a little. */
+.m-mi[data-mi="listening"] .m-mi-dot {
+  transform: translate(-6px, 4px) scale(1.18);
+}
+/* Thinking: the dot drifts aside and back, unhurried. */
+.m-mi[data-mi="thinking"] .m-mi-dot {
+  animation: m-mi-drift 1.8s ease-in-out infinite alternate;
+}
+@keyframes m-mi-drift {
+  from {
+    transform: translateX(-14px);
+  }
+  to {
+    transform: translateX(14px);
+  }
+}
+/* Speaking: it swells with the voice. */
+.m-mi[data-mi="speaking"] .m-mi-dot {
+  animation: m-mi-swell 0.9s ease-in-out infinite alternate;
+}
+@keyframes m-mi-swell {
+  from {
+    transform: scale(0.94);
+  }
+  to {
+    transform: scale(1.22);
+  }
+}
+/* Pleased: one lift, then it settles. */
+.m-mi[data-mi="pleased"] .m-mi-dot {
+  animation: m-mi-lift var(--m-dur-spring) var(--m-ease-out) both;
+}
+@keyframes m-mi-lift {
+  50% {
+    transform: translateY(-18px) scale(1.08);
+  }
+}
+/* Concerned: narrower and tilted towards the body, never slumped. */
+.m-mi[data-mi="concerned"] .m-mi-dot {
+  transform: translate(-8px, 6px) scale(0.86);
+}
+/* Asleep: sunk onto the stem and dimmed. */
+.m-mi[data-mi="asleep"] .m-mi-dot {
+  transform: translateY(14px) scale(0.8);
+  opacity: 0.45;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .m-listen-ring {
     animation: none;
@@ -424,8 +495,10 @@ body::before {
     opacity: 0.25;
   }
   .m-speak-breath,
-  .m-think {
+  .m-think,
+  .m-mi .m-mi-dot {
     animation: none;
+    transition: none;
   }
   .press,
   .press:active:not(:disabled),
