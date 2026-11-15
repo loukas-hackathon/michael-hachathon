@@ -43,7 +43,7 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
   );
 
   return (
-    <main className="screen">
+    <main className="screen screen-mid">
       <ScreenHeader
         context={
           <>

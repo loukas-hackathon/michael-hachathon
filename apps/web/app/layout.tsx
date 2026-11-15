@@ -3,6 +3,7 @@ import { Figtree } from "next/font/google";
 import type { ReactNode } from "react";
 import { MotionScript } from "@/components/count-up";
 import { DeepLinkFocus } from "@/components/deep-link-focus";
+import { Desktop } from "@/components/desktop";
 import { FocusHost } from "@/components/focus/focus-host";
 import { Haptics } from "@/components/haptics";
 import { MeetingPill } from "@/components/meetings";
@@ -42,13 +43,14 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <MotionScript />
         <Haptics />
         <div className="min-h-dvh lg:pl-64">
-          <div className="mx-auto w-full max-w-[560px] lg:max-w-[720px]">{children}</div>
+          <div className="m-content mx-auto w-full max-w-[560px] lg:max-w-none">{children}</div>
         </div>
         <MeetingPill />
         <NudgeOpened />
         <TabBar />
         <FocusHost />
         <ServiceWorker />
+        <Desktop />
         <DeepLinkFocus />
       </body>
     </html>
