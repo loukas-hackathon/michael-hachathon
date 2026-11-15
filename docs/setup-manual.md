@@ -64,7 +64,11 @@ The phone app and voice mode use the same connector automatically. Revoke it any
    `https://api-production-16521a26.up.railway.app/v1/oauth/google_calendar/callback`. **Save**.
 4. Put the same client on Railway: `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (snippet above).
 
-Then each user taps **Connect Google Calendar** in the app once (issues #12, #13).
+Then each user taps **Connect Google Calendar** in the app once (issues #12, #13). A brand new
+account does not even need that tap: right after **Continue with Google** on /login, the app goes
+straight on to Google's calendar consent (#270). It is the same OAuth client and the same scopes as
+above, so there is nothing new to set up in the console. If Google is not configured, onboarding
+simply starts with the goals and a Connect pill.
 
 ## 4. Maps and traffic (Loukas, 5 min; #115 is built, travel is skipped until the key is set)
 
@@ -96,19 +100,86 @@ Then each user taps **Connect Google Calendar** in the app once (issues #12, #13
 2. When #44 ships, the app shows a **Subscribe** button with your private topic; tap it once.
 3. iPhone **Settings > Notifications > ntfy**: allow, **Time Sensitive** on. Watch app: mirror on.
 
-## 7. Apple Watch data (Manolis, 5 min, after #8 ships)
+## 7. Apple Watch data: prove it, then switch it on (Manolis, 5 min, on the stage iPhone)
 
-1. App Store: **Health Auto Export - JSON+CSV** (paid, has a trial). Allow Health access.
-2. In Michael: **You > Connections > Apple Watch > Connect > Copy** (a URL with your own key).
-3. Health Auto Export: **Automations > New > REST API**. URL: paste. Format JSON.
-   Metrics: sleep analysis, workouts, heart rate, HRV, steps. Interval: 5 minutes. **Save**.
+Apple Watch shows Coming soon until a real event reaches production (#295). To prove it without
+switching it on for everyone:
+
+1. On the iPhone, signed in to Michael with Google, open
+   `https://michael-zeta-sand.vercel.app/you/connections/apple-watch?preview=1` (only this link shows the steps; on a
+   laptop it shows a QR code, and the QR keeps the preview).
+2. **Open the App Store**, install **Health Auto Export - JSON+CSV** (free for 7 days, then Premium).
+3. Tap **Add sleep and heart rate**: the app opens with the automation filled in. **Save**,
+   allow Health access, then in the automation tap **Export Now**. Back in Michael, **Add workouts**.
+4. Stay on the Michael page: it says "Connected. Last data just now." within a minute or two, or
+   names the step to recheck.
+5. Once it says Connected: change `"apple-watch": "soon"` to `"live"` in
+   `packages/shared/src/connectors.ts` with the proof in the comment, and note it on the Build Hub.
 
 ## 8. Your Mac (Manolis and Loukas, 2 min)
 
 In Michael: **You > Connections > Mac > Connect > Copy**, then paste the line into Terminal in
 the repo folder (see `apps/collector` README). Real data then goes to your own account.
 
+## 8b. The Michael shortcut: prove it on two iPhones, then switch it on (Manolis, 10 min)
+
+Nobody builds the shortcut by hand any more (#303): `pnpm shortcut` on a Mac writes and signs it,
+and the app serves it at `/Michael.shortcut`. iPhone shows Coming soon until the steps below pass
+on production. Three things stay with a human, because Apple allows no app to do them: tapping
+**Add Shortcut**, tapping **Connect**, and making the App automation.
+
+On the stage iPhone, in **Safari** (latest iOS), signed in to Michael with Google:
+
+1. Open `https://michael-zeta-sand.vercel.app/you/connections/iphone?preview=1` (only this link
+   shows the steps; on a laptop it shows a QR code, and the QR keeps the preview).
+2. Tap **Add the shortcut**. Safari asks to download `Michael.shortcut`: **Download**, then tap
+   the download arrow in the address bar, **Downloads**, **Michael**. Shortcuts opens: tap **Add
+   Shortcut**. Pass: it is added with no question, and it is named exactly **Michael**.
+3. Back in Safari, tap **Connect the shortcut**, then **Open** if Safari asks. Pass: Shortcuts
+   opens for a second and a notification says **Connected to Michael.** (If iOS asks to allow
+   notifications or to save to the Shortcuts folder, allow.)
+4. Open **Shortcuts**, **Automation**, **+**, **App**. **Choose** two or three apps (Instagram,
+   Safari, Mail), tick **Is Opened** only, tick **Run Immediately**, **Next**, then pick
+   **Michael** under My Shortcuts.
+5. Open one of the chosen apps. The first time, iOS asks whether Michael may send to
+   `api-production-16521a26.up.railway.app`: tap **Always Allow**. Stay in the app for a minute,
+   then open a second chosen app (an open closes the app before it).
+6. Back in Safari, reload the Michael page. Pass: the line under the title reads **Last data just
+   now.** (or a few min ago) and no longer **Not connected**; Timeline then shows the first app,
+   from when you opened it until you opened the second. Fail: still **Not connected** after two
+   minutes.
+7. Second iPhone (another Apple ID if you can): scan the QR code from the same page opened on a
+   laptop, or open the link signed in to that person's account, and repeat steps 2 to 6. Pass: the
+   shortcut adds without any question about the first phone, and the opens land on that person's
+   own timeline.
+8. Try it once from the home screen app as well (step 2 only): if the download does not start
+   there, note it on the issue; Safari is the path that must work.
+
+Passed on both: change `iphone: "soon"` to `"live"` in `packages/shared/src/connectors.ts` with the
+proof in the comment, note it on the Build Hub findings, and tick #303.
+
+If step 2 feels like too many taps: on the phone that now has Michael, open **Shortcuts**, hold
+**Michael**, **Share**, **Copy iCloud Link**, and set `MICHAEL_SHORTCUT_URL` to that link in
+Vercel (project **michael**, **Settings > Environment Variables**, all environments, then
+**Redeploy**). An iCloud link opens Shortcuts directly on **Add Shortcut**. The shortcut behind the
+link is the same generated one, so it is still never built by hand.
+
+If it fails: write on #303 which step, what the phone showed (a screenshot helps) and the iOS
+version. To change the shortcut: edit `scripts/shortcut/build.mjs`, run `pnpm shortcut` on a Mac
+signed in to iCloud, commit `apps/web/public/Michael.shortcut`. On the phone, delete the old
+Michael shortcut before adding the new one, or iOS names it Michael 2 and Connect runs the old one.
+
 ## 9. Team access (Loukas, 2 min)
 
 - Supabase: https://supabase.com/dashboard/org/fxrcbmgqabpcwttidoxw/team > **Invite** > Manolis' email.
 - Railway: project `michael` > **Settings > Members** (needs the Pro plan; deploys don't need it).
+
+## 10. Voice input on iPhone (Loukas, 1 min)
+
+The app transcribes speech with ElevenLabs Speech to Text when the browser cannot (the iPhone home
+screen app). Same key as the voice, no new secret.
+
+- https://elevenlabs.io/app/settings/api-keys > key **michael** > **Edit** > Access: turn on
+  **Speech to Text** (keep Text to Speech on) > **Save**.
+- Check: `GET /v1/voice` on the API answers `"transcribe": true`. If it says `false` within ten
+  minutes of a try, the key still lacks the permission.

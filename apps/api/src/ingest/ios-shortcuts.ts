@@ -18,11 +18,15 @@ export const MAX_SESSION_MS = 2 * 3600_000;
 
 export const ShortcutsPayload = z.object({
   app: z.string().trim().min(1).max(200),
+  // Missing means open: one "Is Opened" automation with only the app is enough, since opening the
+  // next app closes the one before.
   action: z
     .string()
-    .trim()
-    .toLowerCase()
-    .transform((a) => (a.startsWith("open") ? "open" : a.startsWith("clos") ? "close" : a))
+    .default("open")
+    .transform((a) => {
+      const v = a.trim().toLowerCase();
+      return v === "" || v.startsWith("open") ? "open" : v.startsWith("clos") ? "close" : v;
+    })
     .pipe(z.enum(["open", "close"])),
   // Lenient: anything Date.parse cannot read falls back to the arrival time.
   at: z.string().optional().catch(undefined),

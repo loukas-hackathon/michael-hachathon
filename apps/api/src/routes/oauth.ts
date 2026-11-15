@@ -20,7 +20,10 @@ import { mcpResource, publicBase, publicWebUrl } from "../public-url";
 // Signing in happens in the web app with the user's own Google session (apps/web/app/connect).
 
 export const SCOPES = AgentScope.options;
-const GRANT_TTL_MS = 10 * 60_000; // time to answer the consent page
+// Time to answer the consent page, signing in on the way: a first Google sign in with the calendar
+// consent screen can take longer than ten minutes on a phone, and an expired request means
+// starting again from Claude.
+export const GRANT_TTL_MS = 30 * 60_000;
 const CODE_TTL_MS = 5 * 60_000;
 const ACCESS_TTL_S = 24 * 3600;
 const REFRESH_TTL_MS = 90 * 24 * 3600_000;

@@ -1,62 +1,122 @@
 # iPhone app opens through Shortcuts
 
-The live iPhone signal: a personal automation tells Michael when a chosen app opens and closes.
-Michael pairs the two into one `app_usage` event with its duration. (History comes from the
-Biome reader in `apps/collector`, which lags about a day.)
+The live iPhone signal: a personal automation tells Michael when a chosen app opens. Michael pairs
+each open with the next one (or a close) into one `app_usage` event with its duration.
 
-## One tap set up: publish the Michael shortcut once (a human, about ten minutes)
+## With only an iPhone (no Mac)
 
-Apple lets no link or app create a personal automation, but a shared shortcut installs in one tap
-and `shortcuts://run-shortcut?name=Michael&input=text&text=<key>` runs it with the device key. So
-the app (You > Connections, iPhone screen time) does: **Add the shortcut** (iCloud link), **Connect the
-shortcut** (mints a key and runs it once), then the person makes the App automation and picks
-Michael (a few taps; no way around it). Until the shortcut is published the page falls back to the
-copy the URL steps below.
+This is the whole iPhone connection for someone without a Mac, and it needs nothing else. Screen
+Time history (every app, by the day) is the part that needs a Mac: Apple keeps it on the devices,
+and the Biome reader in `apps/collector` reads the copy synced to the Mac, about a day behind.
 
-To publish it, on an iPhone with the latest iOS:
+What the app does about it:
 
-1. Shortcuts, **+**, name it exactly **Michael**. Set **Receive** to Text and Apps, so it takes
-   the key from a link and the app from an automation.
-2. **If** Shortcut Input **begins with** `mk_`:
+- **You > Connections > iPhone** leads with "Live, from your iPhone" when no Mac is connected or
+  the page is open on an iPhone; "Have a Mac too?" (Screen Time) sits below it. With a Mac
+  connected and the page open on the Mac, Screen Time leads and Shortcuts is the optional extra.
+- The Mac is optional for iPhone only people: "Skip, I don't use a Mac" (Today's Get started card,
+  the Connections list, the Mac page) sets the `michael_no_mac` cookie, and an iPhone that already
+  sends app opens does the same on its own. The Mac row then reads Optional, is never the next
+  step, and Get started swaps "Connect your Mac" for "Connect your iPhone".
+- Without a Mac everything else still works: Google Calendar, Apple Watch (Health Auto Export runs
+  on the iPhone), iPhone app opens, Location, Claude, chat and nudges.
+
+## One tap set up: the Michael shortcut, made and signed by a script (#303)
+
+Apple lets no link or app create a personal automation, but a signed shortcut installs with Add
+Shortcut and `shortcuts://run-shortcut?name=Michael&input=text&text=<key>` runs it with the device
+key. So the app (You > Connections > iPhone) does: **Add the shortcut** (the signed file this app
+serves at `/Michael.shortcut`, or the iCloud link in `MICHAEL_SHORTCUT_URL` if one is set),
+**Connect the shortcut** (mints a key and runs it once), then the person makes the App automation
+and picks Michael (a few taps; no way around it).
+
+Nobody builds the shortcut by hand. On a Mac signed in to iCloud and online:
+
+```sh
+pnpm shortcut          # writes scripts/shortcut/out/Michael.shortcut and signs it into apps/web/public/Michael.shortcut
+pnpm shortcut:inspect  # optional: how macOS itself reads every action and parameter, in memory
+```
+
+Commit `apps/web/public/Michael.shortcut`; merging deploys it. Another API:
+`node scripts/shortcut/build.mjs --sign --api https://api.example.com`. The file holds no key: the
+shortcut reads the person's key from its own file when it runs. The signing certificate Apple
+issues lasts about a year (the one from 15 Nov 2026 ends 14 Dec 2027): run `pnpm shortcut` again
+before then.
+
+What the shortcut does (`scripts/shortcut/build.mjs` is the source of truth):
+
+1. Named **Michael** (the name is the file's name, `Michael.shortcut`; `apps/web/lib/one-tap.ts`
+   runs it by name). **Receives** Text and Apps, so it takes the key from a link and the app from an
+   automation.
+2. **If** Shortcut Input (as Text) **begins with** `mk_`:
    - **Save File**: Shortcut Input, to `Shortcuts/Michael/key.txt`, "Ask Where to Save" off,
      "Overwrite If File Exists" on.
    - **Show Notification**: `Connected to Michael.`
    - **Stop This Shortcut**.
 3. **Otherwise**:
-   - **Get File** `Shortcuts/Michael/key.txt` ("Error If Not Found" off). If it is empty, **Show
-     Notification** `Open Michael, You, iPhone screen time to connect.` and stop.
+   - **Get File from Folder** `Shortcuts/Michael/key.txt` ("Error If Not Found" off). If it has no
+     value, **Show Notification** `Open Michael, You, iPhone to connect.` and stop.
    - **Get Contents of URL**
      `https://api-production-16521a26.up.railway.app/v1/webhooks/ios-shortcuts`, Method **POST**,
-     Header `Authorization` = `Bearer ` followed by the file, Request Body **JSON**: `app` = Shortcut
-     Input (Name), `action` = `open`.
-4. Share, **Copy iCloud Link**. Check it installs on another phone without asking anything.
-5. Set `MICHAEL_SHORTCUT_URL` to that link in the web app's environment (Vercel, all
-   environments) and redeploy. The name must stay **Michael**: `apps/web/lib/one-tap.ts` runs it by
-   name.
+     Header `Authorization` = `Bearer ` followed by the file (as Text), Request Body **JSON**: `app` =
+     Shortcut Input (Name), `action` = `open`.
 
 Opens alone are enough: opening the next app closes the one before, and a session over two hours is
 dropped. The person's automation: Automation, **+**, **App**, pick the apps, tick **Is Opened** and
 **Run Immediately**, then choose **Michael**.
 
-## Set up by hand (per app, about two minutes each)
+### How the file is made, and what was checked
 
-Do this for the apps that matter (Instagram, TikTok, YouTube, WhatsApp, ...). One automation can
-cover several apps.
+A shortcut file is a property list: a few `WFWorkflow...` keys and `WFWorkflowActions`, a list of
+`{ WFWorkflowActionIdentifier, WFWorkflowActionParameters }`. `shortcuts sign --mode anyone` sends
+it to Apple and gets back a signed container (an Apple Encrypted Archive, magic `AEA1`, signed by
+Apple and not encrypted) that any iPhone may import. Checked on macOS 26.6 on 15 Nov 2026:
 
-1. Shortcuts, Automation, **+**, **App**. Choose the apps, tick **Is Opened**, select **Run
-   Immediately** and turn off "Notify When Run".
-2. New blank automation. Add **Get Contents of URL**:
-   - URL: `https://api-production-16521a26.up.railway.app/v1/webhooks/ios-shortcuts?key=<your key>`
-   - Method **POST**, Request Body **JSON** with three fields:
-     - `app` (Text): the **Shortcut Input** variable, tapped and set to **Name** (if your iOS
-       version leaves it empty, make one automation per app and type the app's name)
-     - `action` (Text): `open`. Simplest: make this automation with **Is Opened** only, then a
-       second one with **Is Closed** and `close`
-     - `at` (Text): **Current Date**, formatted as **ISO 8601** (optional: without it the time of
-       arrival is used)
-3. Done. Open the app once and check Michael's timeline after you close it.
+- **Against real shortcuts on a Mac** (Apple's own in `WorkflowKit.framework/Resources/Gallery.bundle`
+  and the starter shortcuts in the Shortcuts library): the top level keys (`WFWorkflowClientVersion`,
+  `WFWorkflowMinimumClientVersion`, `WFWorkflowIcon`, `WFWorkflowInputContentItemClasses` with
+  `WFAppContentItem` and `WFStringContentItem`, `WFWorkflowTypes`, `WFWorkflowImportQuestions`,
+  `WFWorkflowHasShortcutInputVariables`); If, Otherwise and End If as
+  `is.workflow.actions.conditional` with one `GroupingIdentifier` and `WFControlFlowMode` 0, 1, 2,
+  `WFInput` as `{ Type: Variable, Variable: <attachment> }`; `is.workflow.actions.notification`; Shortcut
+  Input as `{ Type: ExtensionInput }`; magic variables as `ActionOutput` with `OutputUUID`;
+  `WFTextTokenString` with `attachmentsByRange`, `WFTextTokenAttachment`; the "as Text" and
+  property markers (`WFCoercionVariableAggrandizement`, `WFPropertyVariableAggrandizement`); and
+  `WFDictionaryFieldValue` items (from a publicly shared export).
+- **Against macOS' own Shortcuts code** (`pnpm shortcut:inspect` loads the file through
+  WorkflowKit): every action identifier resolves to the right action (If, Save File, Show
+  Notification, Stop This Shortcut, Otherwise, Get File from Folder, Get Contents of URL, End If)
+  and every parameter key in the file is a parameter of its action and reads back with the value
+  set: `WFAskWhereToSave`, `WFFileDestinationPath`, `WFSaveFileOverwrite`, `WFGetFilePath`,
+  `WFFileErrorIfNotFound`, `WFURL`, `WFHTTPMethod` POST, `WFHTTPBodyType` JSON, `WFHTTPHeaders`,
+  `WFJSONValues`, `ShowHeaders`. With no folder set, both file actions default to the Shortcuts
+  folder. An App input has a `Name` property and can be read as text.
+- **Against the signed file**: the signature verifies with the certificate inside it (issued by
+  Apple System Integration CA 4, no personal detail), and the workflow inside is our twelve
+  actions unchanged. Signing drops any name key and sets the client version of the signing Mac.
+- **From documentation only**: the If comparison codes 8 (begins with; the same numbers as
+  Foundation's predicate operators, and 4 and 99 match real shortcuts) and 101 (does not have any
+  value; 100, has any value, matches a real shortcut).
+- **Only a real iPhone can tell**: that Safari offers the file and Shortcuts shows Add Shortcut,
+  that the name arrives as Michael, that the Connect link saves the key, that an App automation
+  hands the app to the shortcut as its input, and what iOS asks the first time it sends to the
+  API. The test is in `docs/setup-manual.md`, 8b.
 
-Use a device key from You > Connections > iPhone screen time (the copy button gives the whole URL).
+## Set up by hand (without the shortcut; about two minutes)
+
+The app no longer shows these steps: since #303 the iPhone page always offers the shortcut. They
+still work, with a link that carries the key (`.../v1/webhooks/ios-shortcuts?key=<key>`). One
+automation can cover every app the person picks.
+
+1. Make a device key for iPhone Shortcuts and put it in the link above.
+2. Shortcuts, Automation, **+**, **App**. Pick the apps, tick **Is Opened** and **Run Immediately**.
+3. Add **Get Contents of URL** and paste the link. Method **POST**, and one field: `app` = the
+   **Shortcut Input** variable (set to **Name**; if your iOS version leaves it empty, make one
+   automation per app and type the app's name).
+
+`action` can be left out: it means `open`, and opening the next app closes the one before. Add
+`action` = `close` in a second **Is Closed** automation only for exact end times. `at` (Current
+Date, ISO 8601) is optional too; without it the time of arrival is used.
 
 ## Body
 
@@ -64,7 +124,7 @@ Use a device key from You > Connections > iPhone screen time (the copy button gi
 { "app": "Instagram", "action": "open", "at": "2026-11-14T12:22:00+02:00" }
 ```
 
-`action` is `open` or `close` (`opened`, `closed`, any case also work). `bundle_id` is optional.
+`action` is `open` or `close` (`opened`, `closed`, any case also work); missing means `open`. `bundle_id` is optional.
 Opening another app closes the one before it. A close without an open, or a session over two
 hours, is dropped. Full rules: `docs/api.md`, "Source webhooks". Sample sequence:
 `apps/api/src/ingest/fixtures/ios-shortcuts.json`.

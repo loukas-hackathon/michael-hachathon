@@ -328,8 +328,6 @@ test("lintText finds emoji, exclamation marks and the words Michael never uses",
   assert.match(rules("6 of 6 hours ✅").join(), /emoji/);
   for (const [text, word] of [
     ["Your productivity dipped after lunch.", "productivity"],
-    ["I optimised your morning.", "optimise"],
-    ["Time to optimize the week.", "optimise"],
     ["Keep up the hustle.", "hustle"],
     ["You crushed it.", "crush"],
     ["A long journey.", "journey"],

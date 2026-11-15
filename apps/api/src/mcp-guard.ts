@@ -20,9 +20,17 @@ export const TOOL_SCOPE: Record<string, AgentScope> = {
   propose_goals: "goals",
   add_goal: "goals",
   update_goal: "goals",
+  get_checklist: "goals",
+  add_checklist_item: "goals",
+  // The daily ritual (#318): the day's outcomes are kept with the goals.
+  set_day_outcomes: "goals",
+  log_day: "goals",
   list_recommendations: "recommendations",
   update_recommendation: "recommendations",
   get_nudges: "recommendations",
+  // Drafts are Michael's advice for the user to send themselves; nothing is sent or booked.
+  list_drafts: "recommendations",
+  draft_follow_up: "recommendations",
   get_score: "score",
   get_records: "score",
   get_moments: "score",
@@ -37,6 +45,9 @@ export const TOOL_SCOPE: Record<string, AgentScope> = {
   get_memories: "timeline",
   remember: "write_events",
   answer_check_in: "timeline",
+  // Done time and settled blocks (#317) change the timeline and the score: the same scope as add_event.
+  log_done: "write_events",
+  confirm_block: "write_events",
 };
 
 type ToolConfig = { title?: string; inputSchema?: unknown; annotations?: { readOnlyHint?: boolean } };
@@ -81,6 +92,12 @@ export function summarise(name: string, title: string | undefined, input: unknow
       return "Read your check in";
     case "answer_check_in":
       return "Kept an answer to your check in";
+    case "log_done": {
+      const what = typeof a.goal === "string" ? a.goal.slice(0, 60) : "a goal";
+      return typeof a.minutes === "number" ? `Logged ${a.minutes} min of ${what}` : `Logged time for ${what}`;
+    }
+    case "confirm_block":
+      return a.did === false ? "Marked a block as not done" : "Confirmed a block you did";
     case "get_goals":
       return "Read your goals";
     case "get_instructions":
@@ -91,10 +108,26 @@ export function summarise(name: string, title: string | undefined, input: unknow
       return "Read my advice";
     case "get_nudges":
       return "Read your nudges";
+    case "list_drafts":
+      return "Read your follow up drafts";
+    case "draft_follow_up":
+      return "Drafted a follow up for you to send";
     case "get_moments":
       return a.kind === "evening" ? "Read your evening moment" : "Read your morning moment";
     case "add_goal":
       return typeof a.title === "string" ? `Added the goal "${a.title.slice(0, 80)}"` : "Added a goal";
+    case "get_checklist":
+      return typeof a.date === "string" ? `Read your outcomes for ${a.date}` : "Read today's outcomes";
+    case "add_checklist_item":
+      return typeof a.text === "string"
+        ? `Added "${a.text.slice(0, 80)}" to your outcomes`
+        : "Added an outcome";
+    case "set_day_outcomes": {
+      const n = Array.isArray(a.outcomes) ? a.outcomes.length : 0;
+      return n === 1 ? "Set one outcome for today" : `Set ${n} outcomes for today`;
+    }
+    case "log_day":
+      return "Logged what you got done today";
     case "update_goal":
       return a.active === false ? "Paused one of your goals" : "Changed one of your goals";
     case "update_recommendation":
@@ -146,7 +179,13 @@ const SCOPE_WORDS: Record<AgentScope, string> = {
 type Callback = (...args: unknown[]) => unknown;
 
 /** Tools whose change the user can undo from the Agents screen. */
-export const UNDOABLE_TOOLS = new Set(["execute_recommendation", "create_focus_block", "block_mac_app"]);
+export const UNDOABLE_TOOLS = new Set([
+  "execute_recommendation",
+  "create_focus_block",
+  "block_mac_app",
+  "log_done",
+  "confirm_block",
+]);
 
 /** The recommendation an undoable tool's successful result carries, if any. */
 export function changedRecommendation(name: string, result: unknown): string | null {

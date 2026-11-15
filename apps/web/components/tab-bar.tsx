@@ -129,7 +129,6 @@ export function TabBar() {
 
 /** Laptop only: Agents and You at the foot of the sidebar, and the shortcuts list (also on ?). */
 function SidebarFoot({ pathname }: { pathname: string }) {
-  const { on } = useOffTheRecord();
   const row = (active: boolean) =>
     `m-tab flex h-11 items-center gap-3 rounded-block px-3 text-body font-semibold ${
       active ? "bg-fill text-tint-text" : "text-label"
@@ -142,22 +141,17 @@ function SidebarFoot({ pathname }: { pathname: string }) {
         <AgentsIcon className="m-tab-icon size-6" />
         <span>Agents</span>
       </Link>
-      <Link
-        href="/you"
-        aria-current={you ? "page" : undefined}
-        aria-label={on ? "You, off the record" : "You"}
-        className={row(you)}
-      >
-        <span
-          className={`m-tab-icon grid size-6 place-items-center rounded-full text-bg ${
-            on ? "bg-label-2" : "bg-label"
-          }`}
-        >
-          <MiMark className="block h-auto w-[14px]" />
-        </span>
-        <span>You</span>
-        {on ? <span className="ml-auto text-footnote font-normal text-label-2">Off the record</span> : null}
-      </Link>
+      {/* Signed out (login) there is no privacy state to read: a plain link. */}
+      {pathname.startsWith("/login") ? (
+        <Link href="/you" className={row(false)}>
+          <span className="m-tab-icon grid size-6 place-items-center rounded-full bg-label text-bg">
+            <MiMark className="block h-auto w-[14px]" />
+          </span>
+          <span>You</span>
+        </Link>
+      ) : (
+        <YouLink active={you} className={row(you)} />
+      )}
       <button
         type="button"
         onClick={() => window.dispatchEvent(new Event(SHOW_SHORTCUTS))}
@@ -169,5 +163,28 @@ function SidebarFoot({ pathname }: { pathname: string }) {
         Keyboard shortcuts
       </button>
     </div>
+  );
+}
+
+/** You at the foot of the sidebar, quietly marked while off the record. */
+function YouLink({ active, className }: { active: boolean; className: string }) {
+  const { on } = useOffTheRecord();
+  return (
+    <Link
+      href="/you"
+      aria-current={active ? "page" : undefined}
+      aria-label={on ? "You, off the record" : "You"}
+      className={className}
+    >
+      <span
+        className={`m-tab-icon grid size-6 place-items-center rounded-full text-bg ${
+          on ? "bg-label-2" : "bg-label"
+        }`}
+      >
+        <MiMark className="block h-auto w-[14px]" />
+      </span>
+      <span>You</span>
+      {on ? <span className="ml-auto text-footnote font-normal text-label-2">Off the record</span> : null}
+    </Link>
   );
 }

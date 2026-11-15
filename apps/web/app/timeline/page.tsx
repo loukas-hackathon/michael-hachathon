@@ -3,8 +3,10 @@ import Link from "next/link";
 import { EmptyState } from "@/components/empty-state";
 import { LiveRefresh } from "@/components/live-refresh";
 import { ScreenHeader } from "@/components/screen";
-import { DayTimeline, HeartRow, SleepBand } from "@/components/timeline/day-timeline";
+import { DayTimeline, DayTimelineList, HeartRow } from "@/components/timeline/day-timeline";
+import { LostWeekChart } from "@/components/timeline/lost-week";
 import { WeekStrip } from "@/components/timeline/week-strip";
+import { getLostWeek } from "@/lib/api";
 import { addDays } from "@/lib/athens";
 import { formatDay, formatMonth, formatWeekday, hm, minutesPhrase } from "@/lib/format";
 import { HEART_COOKIE } from "@/lib/health";
@@ -18,7 +20,10 @@ const tinted =
 export default async function TimelinePage({ searchParams }: { searchParams: Promise<Search> }) {
   const { day: askedDay, date: askedDate, demo } = await searchParams;
   // ?day= is the link format; ?date= still works for links made before.
-  const screen = await loadTimeline(askedDay ?? askedDate, demo);
+  const [screen, lostWeek] = await Promise.all([
+    loadTimeline(askedDay ?? askedDate, demo),
+    getLostWeek(askedDay ?? askedDate, demo),
+  ]);
   const { date, day, today } = screen;
   const noon = `${date}T12:00:00+02:00`;
   const sampleParam = demo === "sample" ? "sample" : undefined;
@@ -26,6 +31,15 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
   const heartHidden = (await cookies()).get(HEART_COOKIE)?.value === "off";
   const isToday = date === today;
   const dayHref = (d: string) => `/timeline?day=${d}${sampleParam ? "&demo=sample" : ""}`;
+  const strip = (
+    <WeekStrip
+      date={date}
+      today={today}
+      available={screen.available}
+      earlier={screen.earlier}
+      demo={sampleParam}
+    />
+  );
 
   return (
     <main className="screen screen-mid">
@@ -38,11 +52,20 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
         }
         title="Timeline"
       />
-      <WeekStrip date={date} today={today} available={screen.available} demo={sampleParam} />
+      {/* Only when something was actually lost: an empty chart of zeros is noise. */}
+      {/* With the chart, the strip sits right under the bars: each bar gets its letter and date. */}
+      {lostWeek && lostWeek.total > 0 ? (
+        <LostWeekChart week={lostWeek} selected={date} hrefFor={dayHref} strip={strip} />
+      ) : (
+        strip
+      )}
 
       <div className="mt-4">
-        {isToday ? <p className="text-footnote font-semibold text-tint-text">Today</p> : null}
-        <h2 className="text-title3 font-bold">{formatDay(noon)}</h2>
+        {/* One "Today": the strip marks it, the heading says it once with the date. */}
+        <h2 className="text-title3 font-bold">
+          {isToday ? "Today, " : ""}
+          {formatDay(noon)}
+        </h2>
         {screen.source === "sample" && day ? (
           <p className="mt-0.5 text-footnote font-semibold text-label-2">
             {day.sample ? "Sample day, not yours." : "Demo account, anonymised. Not your data."}
@@ -86,11 +109,8 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
             )}
           </p>
           <HeartRow day={day} heartHidden={heartHidden} />
-          {day.health?.lastNight ? <SleepBand night={day.health.lastNight} goal={screen.sleepGoal} /> : null}
-          <DayTimeline day={day} heartHidden={heartHidden} />
-          {day.health?.tonight ? (
-            <SleepBand night={day.health.tonight} goal={screen.sleepGoal} tonight />
-          ) : null}
+          <DayTimelineList day={day} />
+          <DayTimeline day={day} heartHidden={heartHidden} sleepGoal={screen.sleepGoal} />
         </>
       ) : (
         <EmptyState

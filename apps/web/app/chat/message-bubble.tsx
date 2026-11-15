@@ -63,6 +63,7 @@ export function MessageBubble({
 
   return (
     <li ref={root} className={`flex flex-col ${mine ? "items-end" : "items-start"}`}>
+      <span className="sr-only">{mine ? "You:" : "Michael:"}</span>
       {/* biome-ignore lint/a11y/noStaticElementInteractions: press and hold is a shortcut; the text stays selectable with a mouse and readable by VoiceOver. */}
       <div
         onContextMenu={(e) => {
@@ -93,7 +94,7 @@ export function MessageBubble({
         <button
           type="button"
           onClick={copy}
-          className={`press m-pop-in mt-1 min-h-9 rounded-full bg-fill px-3.5 text-subhead font-semibold text-label shadow-[0_0_0_0.5px_var(--m-separator)] ${mine ? "[--m-origin:100%_0]" : "[--m-origin:0_0]"}`}
+          className={`hit press m-pop-in mt-1 min-h-9 rounded-full bg-fill px-3.5 text-subhead font-semibold text-label shadow-[0_0_0_0.5px_var(--m-separator)] ${mine ? "[--m-origin:100%_0]" : "[--m-origin:0_0]"}`}
         >
           {copied ? "Copied" : "Copy"}
         </button>

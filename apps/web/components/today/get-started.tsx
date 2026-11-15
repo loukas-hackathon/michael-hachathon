@@ -1,12 +1,15 @@
 import type { ReactNode } from "react";
+import { Tween } from "@/components/motion-ui";
+import { SkipMacButton } from "@/components/setup/skip-mac-button";
 import { getSetup, getStartedDismissed, type SetupStep } from "@/lib/first-run";
 import { dismissGetStarted } from "@/lib/first-run-actions";
+import { ProgressBar } from "../progress-bar";
 import { HideButton } from "./hide-button";
 
 const HIDE_FROM = 3;
 
 /**
- * Get started: the six steps that make Michael useful, at the top of Today until they are done.
+ * Get started: the steps that make Michael useful (only connections proven on production, #295), at the top of Today until they are done.
  * Each step's tick comes from the person's real data. The next step carries the one big action.
  * Nothing for sample data, previews or the shared demo account.
  */
@@ -21,22 +24,16 @@ export async function GetStarted({ demo }: { demo?: string }) {
       <div className="flex items-baseline justify-between gap-3">
         <h2 className="text-title3 font-bold">Get started</h2>
         <p className="text-footnote font-semibold text-label-2 tnum">
-          {setup.done} of {total}
+          <Tween value={setup.done} /> of {total}
         </p>
       </div>
-      <div
-        className="mt-2 grid gap-1"
-        style={{ gridTemplateColumns: `repeat(${total}, minmax(0, 1fr))` }}
-        role="progressbar"
-        aria-valuemin={0}
-        aria-valuemax={total}
-        aria-valuenow={setup.done}
-        aria-label={`${setup.done} of ${total} steps done`}
-      >
-        {setup.steps.map((s) => (
-          <span key={s.key} className={`h-1 rounded-full ${s.done ? "bg-label" : "bg-context"}`} />
-        ))}
-      </div>
+      <ProgressBar
+        value={setup.done / total}
+        size="sm"
+        label="Get started"
+        valueText={`${setup.done} of ${total} steps done`}
+        className="mt-2.5"
+      />
 
       <ol className="mt-1.5">
         {setup.steps.map((s, i) => (
@@ -103,6 +100,16 @@ function Step({ step }: { step: SetupStep }) {
         <span className="sr-only">, done</span>
       </div>
     );
+  if (step.skippable)
+    return (
+      <div className="flex items-center gap-3">
+        <StepLink href={step.href} className={`press ${row} min-w-0 flex-1`}>
+          <Mark done={false} />
+          <span className="min-w-0 flex-1 text-body">{step.title}</span>
+        </StepLink>
+        <SkipMacButton short />
+      </div>
+    );
   return (
     <StepLink href={step.href} className={`press ${row}`}>
       <Mark done={false} />
@@ -121,12 +128,15 @@ function NextStep({ step }: { step: SetupStep }) {
       <div className="min-w-0 flex-1">
         <p className="text-body font-semibold">{step.title}</p>
         <p className="text-subhead text-label-2">{step.why}</p>
-        <StepLink
-          href={step.href}
-          className="press mt-2.5 inline-flex min-h-9 items-center rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint"
-        >
-          {step.cta}
-        </StepLink>
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-4">
+          <StepLink
+            href={step.href}
+            className="press inline-flex min-h-9 items-center rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint"
+          >
+            {step.cta}
+          </StepLink>
+          {step.skippable ? <SkipMacButton /> : null}
+        </div>
       </div>
     </div>
   );

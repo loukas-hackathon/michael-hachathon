@@ -1,4 +1,4 @@
-import { AppCategory, type Goal, goalArea } from "@michael/shared";
+import { AppCategory, type CategoryRole, categoryRole, type Goal, goalArea } from "@michael/shared";
 
 // THE one place that says what a minute of attention means inside a goal's planned block. The
 // score and the patterns' calendar mode both read it, so the two numbers agree.
@@ -23,22 +23,11 @@ import { AppCategory, type Goal, goalArea } from "@michael/shared";
 //                night out is not the night out.
 //   neutral  Neither: music, the system, anything uncategorised. Spent, proving nothing.
 
-export type Role = "work" | "distractor" | "neutral";
+export type Role = CategoryRole;
 export type Purpose = "on" | "off" | "neutral";
 
-const WORK: ReadonlySet<AppCategory> = new Set(["work", "ai"]);
-const DISTRACTOR: ReadonlySet<AppCategory> = new Set([
-  "communication",
-  "social",
-  "video",
-  "news",
-  "shopping",
-  "travel",
-]);
-
 /** Music, the system itself and anything unknown are neutral: they neither make nor break focus. */
-export const roleOf = (category: AppCategory): Role =>
-  WORK.has(category) ? "work" : DISTRACTOR.has(category) ? "distractor" : "neutral";
+export const roleOf = categoryRole;
 
 /** The categories a goal lists in `target.work_categories`. Anything that is not a category is skipped. */
 export function workCategories(goal: Goal): AppCategory[] {

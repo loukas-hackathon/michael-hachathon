@@ -31,6 +31,22 @@ export function formatMonth(iso: string | Date) {
   return monthFmt.format(typeof iso === "string" ? new Date(iso) : iso);
 }
 
+const athensDay = new Intl.DateTimeFormat("en-CA", { timeZone: TZ });
+const shortDateFmt = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: TZ });
+
+/**
+ * When something last happened, as Messages lists it: "14:02" today, "Yesterday", the weekday
+ * within the week, then "9 Nov".
+ */
+export function formatWhen(iso: string | Date, now: Date = new Date()) {
+  const d = typeof iso === "string" ? new Date(iso) : iso;
+  const days = Math.round((Date.parse(athensDay.format(now)) - Date.parse(athensDay.format(d))) / 86_400_000);
+  if (days <= 0) return formatTime(d);
+  if (days === 1) return "Yesterday";
+  if (days < 7) return formatWeekday(d);
+  return shortDateFmt.format(d);
+}
+
 /** In a sentence: "47 minutes", "1 minute", "2h 15", "3h". */
 export function minutesPhrase(minutes: number) {
   const m = Math.round(minutes);
@@ -45,4 +61,15 @@ export function hm(minutes: number) {
   const h = Math.floor(m / 60);
   const r = m % 60;
   return r === 0 ? `${h}h` : `${h}h ${String(r).padStart(2, "0")}`;
+}
+
+/** For screen readers, where "3h 33" reads badly: "3 hours 33 minutes", "47 minutes", "1 hour". */
+export function spokenDuration(minutes: number) {
+  const m = Math.round(minutes);
+  const h = Math.floor(m / 60);
+  const r = m % 60;
+  const mins = `${r} ${r === 1 ? "minute" : "minutes"}`;
+  if (h === 0) return mins;
+  const hours = `${h} ${h === 1 ? "hour" : "hours"}`;
+  return r === 0 ? hours : `${hours} ${mins}`;
 }
