@@ -1,6 +1,6 @@
 "use client";
 
-import type { ChatMessage, ChatThread, Recommendation } from "@michael/shared";
+import type { ChatMessage, ChatStep, ChatThread, Recommendation } from "@michael/shared";
 import { useSyncExternalStore } from "react";
 import { TABS_STALE } from "@/components/tab-bar";
 import { speakReply } from "@/components/voice/speech";
@@ -32,6 +32,10 @@ export type ThreadState = {
   streamingId: string | null;
   /** What Michael did while answering, by reply id: shown as "Done. Undo" chips. */
   acted: Record<string, Recommendation[]>;
+  /** How Michael is working out the answer in progress (`step` events), in order. */
+  steps: ChatStep[];
+  /** The steps behind each answer given on this page, by reply id: "How I worked it out". */
+  worked: Record<string, ChatStep[]>;
 };
 
 type Session = {
@@ -56,6 +60,8 @@ export const EMPTY_THREAD: ThreadState = {
   pending: false,
   streamingId: null,
   acted: {},
+  steps: [],
+  worked: {},
 };
 const EMPTY: Session = { key: null, byKey: {}, threads: null, deleting: [], opening: null, listError: null };
 // Only the browser ever writes this; the server always renders EMPTY so no user's chat leaks.
@@ -124,6 +130,8 @@ export function setServerKey(key: string) {
 
 /** Lines added to the open thread since the page loaded. */
 export const currentLines = (s: Session): Line[] => s.byKey[s.key ?? serverKey]?.lines ?? [];
+/** The steps of the answer in progress in the open thread (the voice conversation shows them). */
+export const currentSteps = (s: Session): ChatStep[] => s.byKey[s.key ?? serverKey]?.steps ?? [];
 /** How many, so a view can show only what comes after now. */
 export const chatLineCount = () => currentLines(session).length;
 
@@ -274,6 +282,7 @@ export async function sendLine(
     error: null,
     draft: "",
     pending: true,
+    steps: [],
     lines: [...t.lines, { id: tempId, role: "user", content: message, created_at: null }],
   }));
 
@@ -294,6 +303,12 @@ export async function sendLine(
       }));
     },
     opts.spoken,
+    (step) =>
+      setThread(key, (t) => ({
+        steps: t.steps.some((s) => s.id === step.id)
+          ? t.steps.map((s) => (s.id === step.id ? step : s))
+          : [...t.steps, step],
+      })),
   );
   const temp = (x: Line) => x.id !== tempId && x.id !== replyId;
   if (res.ok) {
@@ -321,6 +336,8 @@ export async function sendLine(
         { ...res.data.reply, key: replyId },
       ],
       acted: done.length ? { ...t.acted, [res.data.reply.id]: done } : t.acted,
+      steps: [],
+      worked: t.steps.some((s) => s.id !== "open") ? { ...t.worked, [res.data.reply.id]: t.steps } : t.worked,
     }));
     if (thread) upsertThread(thread, base);
     // Michael changed the day: cached Today and Timeline must not show the old plan.
@@ -335,6 +352,7 @@ export async function sendLine(
   setThread(key, (t) => ({
     pending: false,
     streamingId: null,
+    steps: [],
     lines: t.lines.filter(temp),
     draft: t.draft || message,
     error: res.error,

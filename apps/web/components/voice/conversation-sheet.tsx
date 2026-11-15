@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { chatLineCount, currentLines, useChatSession } from "@/app/chat/chat-session";
+import { chatLineCount, currentLines, currentSteps, useChatSession } from "@/app/chat/chat-session";
 import { MiMark } from "@/components/brand";
+import { currentStep } from "@/components/chat/steps";
 import { markHintSeen } from "@/components/hint";
 import { Sheet } from "@/components/sheet";
 import {
@@ -98,7 +99,10 @@ function ConversationSheet({
       ? "Speak or tap to cut in"
       : talk.phase === "off" && lines.length === 0 && !talk.note
         ? "Tap to start"
-        : STATUS[talk.phase];
+        : talk.phase === "thinking"
+          ? // What Michael is doing right now ("Reading your calendar"), from the same stream.
+            (currentStep(currentSteps(session))?.label ?? STATUS.thinking)
+          : STATUS[talk.phase];
   const unavailable =
     hasTouchKeyboard() || isIosHomeScreenApp()
       ? `I can't listen in this app. ${DICTATE_COPY}`
@@ -146,7 +150,9 @@ function ConversationSheet({
               </span>
             </button>
             <p aria-live="polite" className="mt-9 min-h-6 text-subhead font-semibold text-label-2">
-              {status}
+              <span key={status} className="m-swap inline-block">
+                {status}
+              </span>
             </p>
             {talk.note ? <p className="mt-1 text-footnote text-label-2">{talk.note}</p> : null}
           </>
