@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { type ComponentType, useEffect, useRef } from "react";
-import { useCheckIn } from "@/lib/check-in";
+import { checkInWaitingAction } from "@/app/chat/check-in-actions";
+import { setLiveWaiting, useChatDot } from "@/lib/check-in";
 import { Wordmark } from "./brand";
 import { ChatIcon, GoalsIcon, TimelineIcon, TodayIcon } from "./icons";
 
@@ -70,9 +71,21 @@ function useFreshTabs(pathname: string) {
  */
 export function TabBar() {
   const pathname = usePathname();
-  // A quiet dot on Chat while Michael's check in waits: no number, no red.
-  const waiting = !useCheckIn().done;
+  // A quiet dot on Chat while Michael's check in waits: no number, no red. It asks the API,
+  // so the dot is never a guess: in the morning there is nothing to ask, from 20:00 there is.
+  const waiting = useChatDot();
   useFreshTabs(pathname);
+  useEffect(() => {
+    const ask = () => {
+      if (document.visibilityState !== "visible") return;
+      checkInWaitingAction()
+        .then(setLiveWaiting)
+        .catch(() => {});
+    };
+    ask();
+    document.addEventListener("visibilitychange", ask);
+    return () => document.removeEventListener("visibilitychange", ask);
+  }, []);
   if (["/onboarding", "/connect", "/stage", "/setup"].some((p) => pathname.startsWith(p))) return null;
 
   return (

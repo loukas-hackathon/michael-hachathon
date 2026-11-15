@@ -1,7 +1,7 @@
 "use server";
 
 import { type CheckIn, CheckInValue } from "@michael/shared";
-import { answerCheckIn } from "@/lib/api";
+import { answerCheckIn, getCheckIn } from "@/lib/api";
 
 export type CheckInAnswerResult = { ok: true; followUp: CheckIn | null } | { ok: false; error: string };
 
@@ -17,5 +17,15 @@ export async function answerCheckInAction(id: string, value: unknown): Promise<C
   } catch (err) {
     console.error("check in answer:", err);
     return { ok: false, error: "I could not keep that answer. Try again." };
+  }
+}
+
+/** For the Chat tab's dot: true while a question waits; null when there is no live check in. */
+export async function checkInWaitingAction(): Promise<boolean | null> {
+  try {
+    const today = await getCheckIn();
+    return today.questions.some((q) => q.answer === null);
+  } catch {
+    return null;
   }
 }
