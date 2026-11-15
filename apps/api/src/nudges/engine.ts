@@ -26,6 +26,14 @@ import { buildTimeline, type Segment } from "../patterns/timeline";
 import type { Span } from "../patterns/util";
 import { isBusinessGoal, purposeFor } from "../score/purpose";
 import { buildScore } from "../score/score";
+import {
+  isLatePhone,
+  isPhoneBlock,
+  keepApart,
+  latePhone,
+  phoneInBlock,
+  type RealtimeInput,
+} from "./realtime";
 
 // The nudge engine. Pure: the clock, the events, the goals and today's nudges are passed in, so
 // the same input always gives the same decision. The route (routes/nudges.ts) does the I/O.
@@ -127,6 +135,8 @@ export interface EngineInput {
     reason: string;
     start_at: string;
   };
+  /** The live phone signals and what else the real time rules read (nudges/realtime.ts, #438). */
+  realtime?: RealtimeInput;
 }
 
 export type MomentKind = "morning" | "evening";
@@ -172,7 +182,7 @@ export function isValidCopy(text: string): boolean {
   return wordCount(text) < LIMITS.maxWords && !/[-–—!]/.test(text);
 }
 
-interface World {
+export interface World {
   now: number;
   zone: Zone;
   day: string;
@@ -185,6 +195,7 @@ interface World {
   quiet: QuietHours;
   moment: EngineInput["moment"];
   recovery: EngineInput["recovery"];
+  realtime: RealtimeInput;
   /** The score's goal rows for this week as of now, by goal id. Built once, on first use. */
   rows: () => Map<string, ScoreGoal>;
 }
@@ -211,6 +222,7 @@ function world(input: EngineInput): World {
     quiet: input.quiet ?? DEFAULT_QUIET,
     moment: input.moment,
     recovery: input.recovery,
+    realtime: input.realtime ?? {},
     rows: () => {
       // The same function GET /v1/score runs, so a nudge never quotes a number Goals does not show.
       rows ??= new Map(
@@ -527,13 +539,20 @@ const RULES: Record<NudgeKind, (w: World) => Candidate | null> = {
   focus_done: () => null,
 };
 
+// A kind can have a second trigger (nudges/realtime.ts, #438): the phone opened again and again
+// inside a block is a drift, the phone after the late cut off is the wind down that did not happen.
+// Same kind, so one voice and one cap. Each comes right after the first trigger of its kind.
+const ALSO: Partial<Record<NudgeKind, (w: World) => Candidate | null>> = {
+  focus_drift: (w) => phoneInBlock(w),
+  wind_down: (w) => latePhone(w, usualBedtime(w)),
+};
+
 /** Every candidate right now, most urgent first, before quiet hours, the cap and repeats. */
 export function candidates(input: EngineInput): Candidate[] {
   const w = world(input);
-  return PRIORITY.flatMap((kind) => {
-    const c = RULES[kind](w);
-    return c && isValidCopy(c.text) ? [c] : [];
-  });
+  return PRIORITY.flatMap((kind) =>
+    [RULES[kind](w), ALSO[kind]?.(w) ?? null].flatMap((c) => (c && isValidCopy(c.text) ? [c] : [])),
+  );
 }
 
 /**
@@ -543,7 +562,15 @@ export function candidates(input: EngineInput): Candidate[] {
  * goal_behind, which keeps its thresholds. Null when every goal is on pace.
  */
 export function testCandidate(input: EngineInput): Candidate | null {
-  const best = candidates(input)[0];
+  // One real time trigger asked for by name (`realtime.test`): its line first, when it has one.
+  const all = candidates(input);
+  const asked =
+    input.realtime?.test === "late_phone"
+      ? all.find(isLatePhone)
+      : input.realtime?.test === "phone_block"
+        ? all.find(isPhoneBlock)
+        : undefined;
+  const best = asked ?? all[0];
   if (best) return best;
   const c = goalBehind(world(input), true);
   return c && isValidCopy(c.text) ? c : null;
@@ -575,11 +602,18 @@ export function decide(input: EngineInput): Decision {
   // Test nudges (the stage moment) never block, delay or count against a real one.
   const real = input.today.filter((n) => n.status !== "test");
   const seen = new Set(real.map((n) => n.key));
-  let fresh = candidates(input).filter((c) => !seen.has(c.key));
+  const now = Date.parse(input.now);
+  let fresh = keepApart(
+    candidates(input).filter((c) => !seen.has(c.key)),
+    real,
+    now,
+  );
   if (fresh.length === 0) return { action: "skip", skipped: "nothing_to_say" };
 
   const quiet = quietNow(input);
-  if (quiet === "night" || quiet === "dinner") return { action: "skip", skipped: "quiet_hours" };
+  if (quiet === "dinner") return { action: "skip", skipped: "quiet_hours" };
+  // The night is quiet except for the one line about the phone that is keeping the user up (#438).
+  if (quiet === "night") fresh = fresh.filter(isLatePhone);
   // Deep work is quiet unless the user has already left it: then the nudge helps them back.
   if (quiet === "deep_work") fresh = fresh.filter((c) => c.kind === "focus_drift");
   const best = fresh[0];
@@ -588,7 +622,6 @@ export function decide(input: EngineInput): Decision {
   const counted = real.filter((n) => countsTowardsCap(n.status, n.kind));
   if (counted.length >= LIMITS.perDay) return { action: "suppress", candidate: best, skipped: "daily_cap" };
 
-  const now = Date.parse(input.now);
   const last = Math.max(...counted.map((n) => Date.parse(n.created_at)), Number.NEGATIVE_INFINITY);
   if (now - last < LIMITS.minGapMs) return { action: "skip", skipped: "too_soon" };
 

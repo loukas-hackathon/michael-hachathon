@@ -60,7 +60,8 @@ const Env = z.object({
     .enum(["true", "false", ""])
     .optional()
     .transform((v) => (v ? v === "true" : process.env.NODE_ENV === "production")),
-  SCHEDULER_INTERVAL_MINUTES: z.coerce.number().positive().default(5),
+  // Every minute (#438): a nudge about the phone lands while the phone is still in the hand.
+  SCHEDULER_INTERVAL_MINUTES: z.coerce.number().positive().default(1),
   // With the scheduler: opens the web app's Today as a demo visitor on every tick (read only), so
   // the first open after hours meets warm functions and a phrased moment line (#378).
   WEB_WARM: z.enum(["on", "off"]).default("on"),

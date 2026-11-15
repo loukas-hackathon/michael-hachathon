@@ -11,7 +11,7 @@ import { runRetention } from "./retention";
 import { checkNudges } from "./routes/nudges";
 import { store } from "./store";
 
-// "Checks it often": the nudge check for every active user, on an interval, inside the always on
+// "Checks it often": the nudge check for every active user, every minute (#438), inside the always on
 // API process on Railway. Chosen over a Railway cron service because it needs no second service,
 // no secret and no public trigger endpoint. Overlap is safe twice over: the in process lock below
 // skips a tick while the last one runs, and the nudges table's unique (user_id, day, key) index
@@ -27,6 +27,12 @@ export interface UserCheck {
   error?: string;
 }
 
+/**
+ * The slower beat inside the tick (#438): the moment line written ahead and the follow up drafts
+ * are worth a look every 5 minutes, not every minute. The web warm ping keeps this beat too.
+ */
+export const SLOW_EVERY_MS = 5 * 60_000;
+
 /** How often sessions whose end has passed are finished. */
 const FOCUS_TICK_MS = 30_000;
 
@@ -34,11 +40,21 @@ const FOCUS_TICK_MS = 30_000;
 const DRAFT_WINDOW_MS = 2 * HOUR;
 
 let running = false;
+let lastSlowAt = Number.NEGATIVE_INFINITY;
 
-/** One pass: each active user's check runs scoped as that user, one after another. */
+/**
+ * One pass: each active user's check runs scoped as that user, one after another. Null when the
+ * pass before is still running: a tick is skipped, never stacked.
+ */
 export async function runNudgeChecks(now = Date.now()): Promise<UserCheck[] | null> {
-  if (running) return null;
+  if (running) {
+    console.warn("[scheduler] tick skipped: the last one is still running");
+    return null;
+  }
   running = true;
+  // A second of slack, so a timer that fires a few ms early still counts as the fifth minute.
+  const slow = now - lastSlowAt >= SLOW_EVERY_MS - 1000;
+  if (slow) lastSlowAt = now;
   try {
     const since = new Date(now - ACTIVE_WINDOW_MS).toISOString();
     const users = await store.activeUserIds(since);
@@ -55,6 +71,7 @@ export async function runNudgeChecks(now = Date.now()): Promise<UserCheck[] | nu
         console.error(`[scheduler] nudge check failed for ${userId}`, err);
         out.push({ userId, error: err instanceof Error ? err.message : String(err) });
       }
+      if (!slow) continue;
       // Today's moment line, written ahead so a cold open finds it cached (#378). One model call
       // only when the numbers changed since the last tick; not awaited, so no nudge waits on it.
       void runAsUser(userId, () => prewarmMoment(now));
@@ -67,7 +84,10 @@ export async function runNudgeChecks(now = Date.now()): Promise<UserCheck[] | nu
     const sent = out.filter(
       (c) => c.result?.nudge && countsTowardsCap(c.result.nudge.status, c.result.nudge.kind),
     ).length;
-    if (users.length) console.log(`[scheduler] checked ${users.length} users, ${sent} nudges`);
+    // Every minute would drown the log: the line is written on the slow beat, or when one went out.
+    if (users.length && (slow || sent)) {
+      console.log(`[scheduler] checked ${users.length} users, ${sent} nudges`);
+    }
     return out;
   } catch (err) {
     console.error("[scheduler] tick failed", err);
@@ -131,11 +151,13 @@ export function startScheduler(): void {
     () => void finishDueFocusSessions().catch((err) => console.error("[scheduler] focus", err)),
     FOCUS_TICK_MS,
   ).unref();
-  // The web app's Today, kept warm on the same beat (#378).
+  // The web app's Today, kept warm (#378).
   if (env.WEB_WARM === "on") {
-    console.log(`[scheduler] web warm every ${env.SCHEDULER_INTERVAL_MINUTES} min`);
+    // Its own beat: the nudge checks went to every minute (#438), the ping did not.
+    const warmEvery = Math.max(every, SLOW_EVERY_MS);
+    console.log(`[scheduler] web warm every ${warmEvery / 60_000} min`);
     setTimeout(() => void warmWeb(), 60_000).unref();
-    setInterval(() => void warmWeb(), every).unref();
+    setInterval(() => void warmWeb(), warmEvery).unref();
   }
   // Retention (#47): once a day, events older than 90 days become daily summaries. Also shortly
   // after each boot; a second pass the same day finds nothing to do.

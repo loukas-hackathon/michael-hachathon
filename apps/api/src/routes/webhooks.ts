@@ -6,6 +6,7 @@ import { collecting, ignoredResponse, ingest } from "../ingest/common";
 import { HaePayload, mapHealthAutoExport } from "../ingest/health-auto-export";
 import { ShortcutsPairer, ShortcutsPayload } from "../ingest/ios-shortcuts";
 import { mapOmi } from "../ingest/omi";
+import { phoneLive } from "../ingest/phone-live";
 import { claudeCodeHook } from "./claude-code";
 
 const shortcuts = new ShortcutsPairer();
@@ -29,6 +30,8 @@ export const webhooks = new Hono()
     const payload = parse(ShortcutsPayload, await jsonBody(c));
     // Checked first so an open is not even held while off the record or with the source off.
     if (!(await collecting("ios_shortcuts"))) return c.json(ignoredResponse(1));
+    // Kept live as well: the app in front now is not an event until the next open ends it (#438).
+    phoneLive.record(currentUserId(), payload, Date.now());
     return c.json(await ingest(shortcuts.handle(currentUserId(), payload, Date.now())));
   })
   .post("/activitywatch", async (c) => {
