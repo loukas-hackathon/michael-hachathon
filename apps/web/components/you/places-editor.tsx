@@ -36,7 +36,11 @@ function HereButton({
   onSave: (p: PlaceInput) => void;
 }) {
   const [state, setState] = useState<"idle" | "finding" | "denied" | "failed">("idle");
-  if (typeof navigator !== "undefined" && !("geolocation" in navigator)) return null;
+  // Checked once mounted: Node 21+ has a `navigator` without geolocation, so a check during render
+  // left the button out of the server HTML and failed hydration on the Location page (React #418).
+  const [supported, setSupported] = useState(true);
+  useEffect(() => setSupported("geolocation" in navigator), []);
+  if (!supported) return null;
   function locate() {
     setState("finding");
     navigator.geolocation.getCurrentPosition(
