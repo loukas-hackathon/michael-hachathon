@@ -16,6 +16,7 @@ const LABELS: Record<string, string> = {
   block_mac_app: "Blocking distracting apps",
   draft_follow_up: "Drafting a follow up",
   undo_action: "Undoing that",
+  accept_recommendation: "Doing what I offered",
   answer_check_in: "Noting your answer",
   set_day_outcomes: "Setting today's outcomes",
   log_day: "Logging your day",

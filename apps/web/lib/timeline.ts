@@ -173,7 +173,8 @@ export function plansOf(events: Event[], dayStart: number, dayEnd: number, now =
         goalId: typeof e.data.goal_id === "string" ? e.data.goal_id : null,
         // Blocks that cross midnight stay read only: the day shows only part of them.
         editable: !withOthers && start > now && start >= dayStart && end <= dayEnd,
-        removable: isMichaelBlock(e),
+        // #457: the user's own blocks (Michael's or their own solo events) can be removed, with undo.
+        removable: !withOthers && start > now,
         htmlLink: typeof e.data.html_link === "string" ? e.data.html_link : undefined,
       };
     })

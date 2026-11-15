@@ -739,3 +739,78 @@ test("go_off_the_record turns it on; no tool turns it off", () =>
       assert.doesNotMatch(props, /off_the_record/, t.name);
     }
   }));
+
+test('"do it" on a Today card: accept_recommendation carries out the offer, and undo takes it back', () =>
+  asNewUser(async () => {
+    const start = Date.now() + 6 * HOUR;
+    const offer = await store.createRecommendation({
+      goal_id: null,
+      title: "An hour for the pitch",
+      rationale: "Your first outcome has no time yet.",
+      action: {
+        kind: "create_focus_block",
+        payload: { start_at: iso(start), end_at: iso(start + HOUR), title: "Pitch" },
+        involves_others: false,
+        undo_until: iso(start),
+      },
+      source: "analysis",
+    });
+    // The offer is in the context with its id, so "yes, book that" can name it.
+    const { readChatContextForTests } = await import("./chat");
+    assert.match(
+      await readChatContextForTests(),
+      new RegExp(`An hour for the pitch \\{recommendation_id ${offer.id}\\}`),
+    );
+
+    const steps: ChatStep[] = [];
+    const done = await withClaude(
+      [{ tool: { name: "accept_recommendation", input: { recommendation_id: offer.id } } }],
+      () =>
+        askMichael(turns("yes, book that"), "context", {
+          onText: async () => {},
+          onStep: async (s) => {
+            steps.push(s);
+          },
+        }),
+    );
+    assert.equal(steps[0]?.label, "Doing what I offered");
+    assert.equal(done.actions[0]?.status, "done");
+    assert.equal(done.answer, `Done: An hour for the pitch. Undo until ${clock(start)}.`);
+    const range = { from: iso(start - HOUR), to: iso(start + 2 * HOUR), source: ["agent" as const] };
+    assert.equal((await store.listEvents(range)).length, 1);
+
+    await withClaude(
+      [{ tool: { name: "undo_action", input: { recommendation_id: offer.id } } }, { text: "Taken back." }],
+      () => askMichael(turns("undo"), "context"),
+    );
+    assert.equal((await store.listEvents(range)).length, 0);
+  }));
+
+test("accept_recommendation refuses an offer that involves other people", () =>
+  asNewUser(async () => {
+    const start = Date.now() + 6 * HOUR;
+    const offer = await store.createRecommendation({
+      goal_id: null,
+      title: "Ask the team to start later",
+      rationale: "Advice only.",
+      action: {
+        kind: "create_focus_block",
+        payload: { start_at: iso(start), end_at: iso(start + HOUR), title: "Team" },
+        involves_others: true,
+        undo_until: iso(start),
+      },
+      source: "analysis",
+    });
+    await withClaude(
+      [
+        { tool: { name: "accept_recommendation", input: { recommendation_id: offer.id } } },
+        { text: "That one has other people in it." },
+      ],
+      async (requests) => {
+        const { actions } = await askMichael(turns("do it"), "context");
+        assert.deepEqual(actions, []);
+        assert.match(String(toolResults(requests[1])[0]?.content), /conflict.*other people/);
+      },
+    );
+    assert.equal((await store.getRecommendation(offer.id))?.status, "proposed");
+  }));

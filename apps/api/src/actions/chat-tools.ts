@@ -125,6 +125,16 @@ export const CHAT_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "accept_recommendation",
+    description:
+      "Carry out one of Michael's offers waiting on Today when the user says yes ('do it', 'yes, book that'), by its recommendation_id from \"Waiting for the user's yes\". The same as tapping Do it: refused when it involves other people, has started or is in time a standing instruction protects. It can be undone with undo_action until the block starts.",
+    input_schema: {
+      type: "object",
+      properties: { recommendation_id: { type: "string" } },
+      required: ["recommendation_id"],
+    },
+  },
+  {
     name: "undo_action",
     description:
       "Take back something Michael did on the calendar or the Mac (a block he created, moved, changed or removed, or apps he muted), by its recommendation id from the list of things that can still be undone or from an earlier tool result.",
@@ -329,6 +339,7 @@ const MoveInput = z.object({
   new_title: z.string().trim().min(1).max(200).nullish(),
 });
 const RemoveInput = z.object({ event_id: z.uuid() });
+const AcceptInput = z.object({ recommendation_id: z.uuid() });
 const UndoInput = z.object({ recommendation_id: z.uuid() });
 const DraftInput = z.object({ event_id: z.uuid().nullish() });
 const GuardInput = z.object({
@@ -475,6 +486,24 @@ async function removeBlock(input: unknown): Promise<ToolOutcome> {
   };
 }
 
+/** #457: "do it" on a Today card, the same path as MCP execute_recommendation. */
+async function accept(input: unknown): Promise<ToolOutcome> {
+  const p = AcceptInput.safeParse(input);
+  if (!p.success) return invalid(p.error);
+  const rec = await store.getRecommendation(p.data.recommendation_id);
+  if (!rec) throw new HttpError("not_found", "Recommendation not found");
+  // A Timeline edit is the user's own record, not an offer.
+  if (rec.source === "user") throw new HttpError("conflict", "That is not one of my offers");
+  const done = await executeRecommendation(rec.id);
+  const until = undoLine(done);
+  return {
+    content: `Done: ${done.title}. ${until ?? "No undo deadline"}. Recommendation id ${done.id}.`,
+    isError: false,
+    action: done,
+    reply: `Done: ${done.title}.${until ? ` ${until}.` : ""}`,
+  };
+}
+
 async function guardApps(input: unknown): Promise<ToolOutcome> {
   const p = GuardInput.safeParse(input);
   if (!p.success) return invalid(p.error);
@@ -547,6 +576,8 @@ export async function runChatTool(
         return await removeBlock(input);
       case "block_mac_app":
         return await guardApps(input);
+      case "accept_recommendation":
+        return await accept(input);
       case "undo_action":
         return await undo(input);
       case "get_week_review":
