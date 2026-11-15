@@ -11,7 +11,16 @@ import { useStandalone } from "./standalone";
  * and hand it to the Telegram app (tg://), so Michael stays where it was. A plain <a>, so nothing
  * prefetches a fresh token.
  */
-export function TelegramConnectLink({ className, children }: { className: string; children: ReactNode }) {
+export function TelegramConnectLink({
+  className,
+  children,
+  onOpen,
+}: {
+  className: string;
+  children: ReactNode;
+  /** Called on every tap, in a tab or the installed app (e.g. to start waiting for the chat). */
+  onOpen?: () => void;
+}) {
   const standalone = useStandalone();
   const [busy, setBusy] = useState(false);
   return (
@@ -20,6 +29,7 @@ export function TelegramConnectLink({ className, children }: { className: string
       aria-busy={busy || undefined}
       className={`${className} ${busy ? "opacity-60" : ""}`}
       onClick={async (e) => {
+        onOpen?.();
         if (!standalone) return;
         e.preventDefault();
         if (busy) return;
