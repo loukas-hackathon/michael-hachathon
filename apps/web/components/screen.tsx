@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { formatTime } from "@/lib/format";
 import { useOffTheRecord } from "@/lib/off-the-record";
 import { Michael } from "./michael";
@@ -50,16 +50,32 @@ export function ScreenHeader({
   context,
   title,
   actions,
+  pinned = false,
 }: {
   context: ReactNode;
   title: string;
   /** Extra buttons left of the Mi button, as in Apple's navigation bars. */
   actions?: ReactNode;
+  /**
+   * The context line and the buttons stay at the top while the page scrolls (Chat: New chat and the
+   * conversations are always one tap away). The large title scrolls away under them, and a hairline
+   * shows once something is under the bar, as in Apple's navigation bars.
+   */
+  pinned?: boolean;
 }) {
+  const scrolled = useScrolled(pinned);
   return (
-    <header className="pt-2">
-      <div className="flex min-h-11 items-center justify-between gap-3">
-        <p className="text-footnote font-semibold text-label-2 tnum">{context}</p>
+    // Pinned: the header is not a box, so the bar sticks for the whole screen, not only the header.
+    <header className={pinned ? "contents" : "pt-2"}>
+      <div
+        data-scrolled={pinned ? scrolled : undefined}
+        className={
+          pinned
+            ? "sticky top-0 z-20 -mx-4 -mt-[env(safe-area-inset-top)] flex min-h-11 items-center justify-between gap-3 bg-bg px-4 lg:mx-0 lg:px-0 pt-[calc(env(safe-area-inset-top)+8px)] shadow-[0_0.5px_0_transparent] transition-shadow duration-[var(--m-dur-ui)] data-[scrolled=true]:shadow-[0_0.5px_0_var(--m-separator)]"
+            : "flex min-h-11 items-center justify-between gap-3"
+        }
+      >
+        <p className="min-w-0 text-footnote font-semibold text-label-2 tnum">{context}</p>
         <div className="flex items-center gap-3.5">
           {actions}
           {/* Laptop: the Mi sits at the foot of the sidebar instead (components/tab-bar.tsx). */}
@@ -72,4 +88,17 @@ export function ScreenHeader({
       <OffTheRecordLine />
     </header>
   );
+}
+
+/** True once the page has scrolled past its top: a pinned bar's hairline. */
+function useScrolled(on: boolean) {
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    if (!on) return;
+    const update = () => setScrolled(window.scrollY > 4);
+    update();
+    window.addEventListener("scroll", update, { passive: true });
+    return () => window.removeEventListener("scroll", update);
+  }, [on]);
+  return scrolled;
 }

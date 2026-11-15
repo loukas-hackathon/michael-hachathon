@@ -69,6 +69,41 @@ test("chat: start a new conversation and switch between them", async ({ page }) 
   await expect(sheet.getByRole("button", { name: /^Exam week plan/ })).toBeVisible();
 });
 
+test("chat: New chat and the conversations stay one tap away in a long conversation", async ({ page }) => {
+  await enterDemo(page);
+  // No model: a long answer is played back for each line, so the page scrolls well past the title.
+  const reply =
+    "I moved Email triage from 15:00 to 17:30 and booked University 15:00 to 17:00. Gym at 18:30 still fits after that. Undo until 15:00.";
+  let n = 0;
+  await page.route("**/chat/stream", (route) => {
+    n++;
+    const now = new Date().toISOString();
+    const body = [
+      `event: delta\ndata: ${JSON.stringify({ text: reply })}\n\n`,
+      `event: done\ndata: ${JSON.stringify({
+        message: { id: `u-long-${n}`, role: "user", content: "asked", created_at: now },
+        reply: { id: `r-long-${n}`, role: "assistant", content: reply, created_at: now },
+        actions: [],
+      })}\n\n`,
+    ].join("");
+    return route.fulfill({ status: 200, headers: { "content-type": "text/event-stream" }, body });
+  });
+  await page.goto("/chat");
+  const field = page.getByLabel("Message Michael");
+  await tap(field);
+  for (let i = 1; i <= 4; i++) {
+    await field.fill(`Question ${i}`);
+    await page.keyboard.press("Enter");
+    await expect(page.getByText(reply, { exact: true })).toHaveCount(i);
+  }
+  // Scrolled to the newest line: the large title is gone, the bar is not.
+  await expect(page.getByRole("heading", { level: 1, name: "Chat" })).not.toBeInViewport();
+  await expect(page.getByRole("button", { name: "New chat", exact: true })).toBeInViewport();
+  await expect(page.getByRole("button", { name: /Show all conversations$/ })).toBeInViewport();
+  await tap(page.getByRole("button", { name: /Show all conversations$/ }));
+  await expect(page.getByRole("dialog", { name: "Conversations" })).toBeVisible();
+});
+
 /** The browser's own demo visitor's threads, as GET /v1/chat/threads gives them. */
 async function threadsAs(page: Page): Promise<{ id: string; title: string | null }[]> {
   const visitor = (await page.context().cookies()).find((c) => c.name === "michael_demo")?.value ?? "";
