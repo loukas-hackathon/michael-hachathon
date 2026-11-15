@@ -5,6 +5,7 @@ import {
   NudgesQuery,
   type NudgesResponse,
   type NudgeTestResult,
+  NudgeTestTrigger,
 } from "@michael/shared";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -22,6 +23,7 @@ import {
   testCandidate,
 } from "../nudges/engine";
 import { pushToCurrentUser } from "../nudges/push";
+import { realtimeInput } from "../nudges/realtime-io";
 import { telegramToCurrentUser } from "../nudges/telegram";
 import { verifyActionToken } from "../nudges/token";
 import { recoveryOffer } from "../recovery/offer";
@@ -69,6 +71,8 @@ export async function checkNudges(): Promise<NudgeCheckResult> {
     offTheRecord: privacy.offTheRecord,
     quiet: quietFrom(profile),
   };
+  // The phone as it happens (#438): live opens, and at night what the late phone line needs.
+  if (!privacy.offTheRecord) input.realtime = await realtimeInput(now, win, events, goals);
   // A Morning or Evening moment that is due and not yet out today: its line joins the candidates.
   const due = privacy.offTheRecord ? null : momentDue(input);
   if (due && !today.some((n) => n.key === due)) {
@@ -137,7 +141,7 @@ export const SAMPLE_NUDGE = {
  * Ignores the cap, quiet hours and dedupe. Stored with status `test` so GET /v1/nudges (the stage screen) shows the same line
  * at the same moment; `test` never counts towards the 5 a day or blocks a real nudge.
  */
-export async function testNudge(): Promise<NudgeTestResult> {
+export async function testNudge(trigger?: NudgeTestTrigger): Promise<NudgeTestResult> {
   const now = new Date().toISOString();
   const win = engineWindow(now);
   const [events, goals, profile] = await Promise.all([
@@ -145,7 +149,11 @@ export async function testNudge(): Promise<NudgeTestResult> {
     store.listGoals(),
     readProfile().catch(() => null),
   ]);
-  const pick = testCandidate({ now, goals, events, today: [], quiet: quietFrom(profile) }) ?? SAMPLE_NUDGE;
+  // The phone as it happens (#438). `trigger` asks for one of the two real time lines by name,
+  // from the first open or the first minute, so the stage can show it at any hour.
+  const realtime = await realtimeInput(now, win, events, goals, trigger);
+  const pick =
+    testCandidate({ now, goals, events, today: [], quiet: quietFrom(profile), realtime }) ?? SAMPLE_NUDGE;
   // Stored first, so the screen can show it as the watch buzzes. A unique key per press keeps
   // the daily dedupe out of the way.
   const nudge = await store.createNudge({
@@ -188,7 +196,10 @@ export const nudges = new Hono()
   // POST /v1/nudges/check: decide now, store and deliver at most one nudge.
   .post("/nudges/check", async (c) => c.json(await checkNudges()))
   // POST /v1/nudges/test: push one nudge to the caller's own devices now (stage demo).
-  .post("/nudges/test", async (c) => c.json(await testNudge()));
+  // `?trigger=phone_block|late_phone` asks for one real time line by name (#438).
+  .post("/nudges/test", async (c) =>
+    c.json(await testNudge(parse(NudgeTestTrigger.optional(), c.req.query("trigger")))),
+  );
 
 /**
  * POST /v1/nudges/:id/act: a button on a notification (#399). Mounted before the auth: the service

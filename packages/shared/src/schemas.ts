@@ -1665,6 +1665,12 @@ export const NudgeCheckResult = z.object({
 });
 export type NudgeCheckResult = z.infer<typeof NudgeCheckResult>;
 
+// POST /v1/nudges/test?trigger=: asks for one of the two real time lines by name (#438), from the
+// first phone open in the running block or the first minute of phone in the last hour. Without it,
+// or when that trigger has nothing to say, the best current candidate as before.
+export const NudgeTestTrigger = z.enum(["phone_block", "late_phone"]);
+export type NudgeTestTrigger = z.infer<typeof NudgeTestTrigger>;
+
 // POST /v1/nudges/test: one nudge now, for the stage moment. Stored with status `test` (so
 // GET /v1/nudges shows it), ignores the cap and never counts towards it.
 export const NudgeTestResult = z.object({

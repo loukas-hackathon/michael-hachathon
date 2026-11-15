@@ -2843,11 +2843,11 @@ type NudgeCheckResult = {
 };
 ```
 
-| Method | Path                   | Response                                                                | Status |
-| ------ | ---------------------- | ----------------------------------------------------------------------- | ------ |
-| GET    | `/v1/nudges?from=&to=` | `200 { nudges: Nudge[] }` (default: today, Europe/Athens, oldest first) | live   |
-| POST   | `/v1/nudges/check`     | `200 NudgeCheckResult` (runs the engine once, no body)                  | live   |
-| POST   | `/v1/nudges/test`      | `200 NudgeTestResult` (push one nudge to the caller's devices now)      | live   |
+| Method | Path                   | Response                                                                                                            | Status |
+| ------ | ---------------------- | ------------------------------------------------------------------------------------------------------------------- | ------ |
+| GET    | `/v1/nudges?from=&to=` | `200 { nudges: Nudge[] }` (default: today, Europe/Athens, oldest first)                                             | live   |
+| POST   | `/v1/nudges/check`     | `200 NudgeCheckResult` (runs the engine once, no body)                                                              | live   |
+| POST   | `/v1/nudges/test`      | `200 NudgeTestResult` (push one nudge to the caller's devices now; optional `?trigger=phone_block` or `late_phone`) | live   |
 
 Nudge engine (`apps/api/src/nudges/engine.ts`, pure, thresholds in `LIMITS`). Each check picks the
 most urgent candidate of these rules (in this order):
@@ -2861,6 +2861,33 @@ most urgent candidate of these rules (in this order):
 | `wind_down`      | 30 min before the night, 3+ of the last 10 min on screens, a rest goal exists                                                | "Screens off by 22:00. Sleep is on the plan."                         |
 | `goal_behind`    | before 19:00, a time goal behind its weekly pace by 60+ min and 15%+ of its budget, named by its own title                   | "University 4h 02 behind pace. Book 90 minutes today."                |
 | `recovery_block` | a recovery offer (see Recommendations, Recovery offers) not yet nudged, while its slot is ahead; ranked after `block_soon`   | "Meetings ate the block. Take 25 minutes at 16:00. Still counts."     |
+
+Two kinds have a second trigger that speaks at the moment something happens
+(`apps/api/src/nudges/realtime.ts`, thresholds in `REALTIME`, #438). They keep the kind, so the
+voice, the cap of 5 and the 20 minute gap are the same:
+
+| Kind          | Second trigger                                                                                                                                                                   | Example                                                                  |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `focus_drift` | the phone inside a block: 5+ phone opens inside a running goal block (any goal but training). Key `focus_drift:<event id>`, shared with the Mac drift: one drift nudge per block | "5 phone opens in Ship the pitch. Put it down until 14:00."              |
+| `wind_down`   | the phone before sleep: 40+ minutes of phone after the late cut off (23:00, or one hour before the usual bedtime), the phone in use in the last 10 min. Key `late_phone:<night>` | "40 minutes on your phone since 23:10. Stop here. First block at 09:00." |
+
+- An open: where Apple's own log covers the hour (`iphone_usage`, about a day behind) it is a pick
+  up, the rule of the phone cadence. Otherwise it is one run of the iPhone shortcut (an app the
+  user chose came to the front); opens under 30 seconds apart count once. The shortcut's signals
+  are also kept in memory for 12 hours (`apps/api/src/ingest/phone-live.ts`), because the app in
+  front now is not a stored event until the next open ends it, and the same app opened again is
+  not a new event at all. A restart loses those hours; the stored events remain.
+- Minutes before sleep: the stored iPhone intervals after the cut off plus the app in front now,
+  which counts up to now and at most 45 minutes (the shortcut reports opens, not closes). The line
+  ends with what Michael has learnt about it when he has (`nudges/learnt.ts`, the seam to the
+  insights), else the first goal block ahead ("First block at 09:00."), else "Sleep is a goal too."
+  when a sleep goal exists; the first that keeps the line under 15 words.
+- The phone before sleep is the one line that may speak inside the night's quiet hours: that is
+  when it happens. A night belongs to the evening it starts on and is nudged once, on both sides
+  of midnight. It never lands within 30 minutes of the `wind_down` line before the night, and that
+  line never within 30 minutes of it.
+- The phone inside a block may speak inside a work block (it is a drift), never at dinner, at
+  night or Off the record.
 
 `morning` and `evening` carry the Morning and Evening moments (`GET /v1/moments/:kind`, template
 headline, no model): the headline when it is under 15 words, else its first sentence, else a shorter
@@ -2894,8 +2921,22 @@ either they are only logged and stay `queued`. Channels only deliver: the cap, q
 dedupe are the engine's.
 
 Scheduler (`apps/api/src/scheduler.ts`): inside the API process, every `SCHEDULER_INTERVAL_MINUTES`
-(default 5) the check runs once for each user with events received in the last 24 hours, each run
-scoped as that user. On by default when `NODE_ENV=production`, `SCHEDULER_ENABLED` overrides.
+(default 1, #438) the check runs once for each user with events received in the last 24 hours, each
+run scoped as that user. A tick that finds the one before still running is skipped, never stacked.
+The moment line written ahead, the follow up drafts and the web warm ping keep a 5 minute beat. On
+by default when `NODE_ENV=production`, `SCHEDULER_ENABLED` overrides. Cost of one quiet check for
+one user, measured on the store: 9 reads (the events from Monday or 8 days back in one round trip,
+which is the heavy one; goals; today's nudges; the privacy rules; the profile; meeting sessions;
+instructions; recommendations twice, for the goal changes that end and for the recovery offer),
+plus one read of the active users per tick. A check that sends a Morning or Evening moment costs
+about 22. Two more (last evening's nudges, the calendar ahead) only while the phone has been in
+use for 20 minutes of the last 3 hours.
+
+`POST /v1/nudges/test?trigger=phone_block|late_phone` asks for one of the two real time lines by
+name, with real numbers at any hour: `phone_block` from the first phone open in the block running
+now, `late_phone` from the first minute of phone in the last hour (or since the cut off, at night).
+When that trigger has nothing to say (no block running, no phone use), or without `trigger`, the
+rule below applies. Any other value: `400`.
 
 `POST /v1/nudges/test` sends the best current candidate (or a sample line) to the caller's devices
 and Telegram chat (counted as one device in `devices` and `delivered`) at once, ignoring the cap, quiet hours and dedupe. It is for the stage moment: it stores the nudge

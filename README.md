@@ -99,7 +99,7 @@ curl -H "Authorization: Bearer dev-key" "localhost:8787/v1/timeline?from=2026-11
 | `CALENDAR_SYNC_MINUTES`                                         | minutes between background Google Calendar syncs for every connected user (0 = off)                |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`                         | Web Push for nudges (iPhone, Apple Watch mirror); `npx web-push generate-vapid-keys`               |
 | `VAPID_SUBJECT`                                                 | contact for push services, e.g. `mailto:team@michael.app`                                          |
-| `SCHEDULER_ENABLED`, `SCHEDULER_INTERVAL_MINUTES`               | nudge check for every active user (default on in production, every 5 minutes)                      |
+| `SCHEDULER_ENABLED`, `SCHEDULER_INTERVAL_MINUTES`               | nudge check for every active user (default on in production, every minute)                         |
 | `GOOGLE_MAPS_API_KEY`                                           | travel times (Routes and Geocoding APIs); empty = places kept, travel skipped                      |
 | `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL` | Michael's spoken voice (`POST /v1/voice/speak`, free tier); without a key the browser voice speaks |
 

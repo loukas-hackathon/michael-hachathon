@@ -3,6 +3,17 @@
 The live iPhone signal: a personal automation tells Michael when a chosen app opens. Michael pairs
 each open with the next one (or a close) into one `app_usage` event with its duration.
 
+## How fast it arrives, and what the real time nudges read (#438)
+
+One request per app open, a second or two after the app comes to the front; nothing is batched.
+But an open only becomes a stored `app_usage` event when the next open (or a close) ends it, so the
+app in front right now is not in the database, and the same app opened twice in a row is one event.
+The API therefore also keeps every signal in memory for 12 hours (`apps/api/src/ingest/phone-live.ts`)
+and the two real time nudges (`apps/api/src/nudges/realtime.ts`) read both. Two limits follow from
+the automation reporting opens only, of the chosen apps only: an app that was not chosen is never
+seen, and the minutes of the app in front are counted up to now (at most 45) because nothing says
+when the phone was put down.
+
 ## With only an iPhone (no Mac)
 
 This is the whole iPhone connection for someone without a Mac, and it needs nothing else. Screen
