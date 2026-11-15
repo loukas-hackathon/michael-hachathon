@@ -7,7 +7,24 @@ import { announceFocus } from "@/components/focus/focus-events";
 import { TABS_STALE } from "@/components/tab-bar";
 import { speakReply } from "@/components/voice/speech";
 import { streamChat, warmChat } from "./stream-chat";
-import { changeThread, listThreads, loadThread, removeThread } from "./thread-actions";
+import { changeThread, listThreads, loadThread, removeThread, type ThreadResult } from "./thread-actions";
+
+/**
+ * A server action call that rejects instead of answering: with no network the browser throws
+ * "Failed to fetch" before the action runs. Turned into the action's own failure shape, so the
+ * thread list (open beside the chat on a laptop) never throws an uncaught page error offline.
+ */
+export async function reach<T>(
+  call: () => Promise<ThreadResult<T>>,
+  error: string,
+): Promise<ThreadResult<T>> {
+  try {
+    return await call();
+  } catch {
+    return { ok: false, error };
+  }
+}
+const OFFLINE_LIST = "I could not reach the server. Your conversations are as they were.";
 
 // `key` keeps a bubble's identity when its temporary id is swapped for the stored one, so it does
 // not pop in twice.
@@ -151,7 +168,7 @@ export function syncThreads(fresh: ChatThread[]) {
 
 /** Fetches the list again (the sheet opening, a search cleared); what is shown stays meanwhile. */
 export async function refreshThreads() {
-  const res = await listThreads();
+  const res = await reach(() => listThreads(), OFFLINE_LIST);
   if (res.ok) syncThreads(res.data);
 }
 
@@ -180,7 +197,7 @@ export async function openThread(id: string, opts: { fromProps: boolean }) {
   const cached = session.byKey[id]?.loaded;
   if (opts.fromProps || cached) return;
   set({ opening: id });
-  const res = await loadThread(id);
+  const res = await reach(() => loadThread(id), "I couldn't open that conversation. Try again.");
   if (res.ok) {
     const lines = res.data.messages.map((m): Line => ({ ...m }));
     setThread(id, (t) => ({
@@ -204,7 +221,7 @@ export async function editThread(
   if (!before) return;
   upsertThread({ ...before, ...patch }, list);
   set({ listError: null });
-  const res = await changeThread(id, patch);
+  const res = await reach(() => changeThread(id, patch), "I couldn't save that. Nothing changed.");
   if (res.ok) upsertThread(res.data, list);
   else {
     upsertThread(before, list);
@@ -236,7 +253,10 @@ export function deleteThread(id: string, base: ChatThread[], fallback: string) {
     id,
     setTimeout(async () => {
       timers.delete(id);
-      const res = await removeThread(id);
+      const res = await reach(
+        () => removeThread(id),
+        "I couldn't delete that conversation. It's still here.",
+      );
       set((s) => {
         const deleting = s.deleting.filter((x) => x !== id);
         if (!res.ok) return { deleting, listError: res.error };
