@@ -1,4 +1,4 @@
-import { type Nudge, type NudgeChannel, type NudgeStatus, nudgeUrl } from "@michael/shared";
+import { type NudgeChannel, type NudgeStatus, nudgeUrl, type OutgoingNudge } from "@michael/shared";
 import { currentUserId } from "../context";
 import { env } from "../env";
 import { type PushPayload, pushConfig, pushToCurrentUser } from "./push";
@@ -13,7 +13,8 @@ import { signActionToken } from "./token";
  */
 export interface DeliveryChannel {
   readonly name: NudgeChannel;
-  deliver(nudge: Nudge): Promise<NudgeStatus>;
+  /** The nudge with its buttons, when it has any (#399). */
+  deliver(nudge: OutgoingNudge): Promise<NudgeStatus>;
 }
 
 /** Until a real channel is plugged in: log the nudge and leave it queued for the app to show. */
@@ -32,7 +33,7 @@ const apiBase = () => env.PUBLIC_API_URL.replace(/\/$/, "");
  * What the worker shows for a nudge: the line, a tap that opens the exact card, and its buttons
  * with a token signed for this nudge and the current user (#399).
  */
-export function nudgePayload(n: Nudge, now = Date.now()): PushPayload {
+export function nudgePayload(n: OutgoingNudge, now = Date.now()): PushPayload {
   const payload: PushPayload = { title: "Michael", body: n.text, tag: n.kind, url: nudgeUrl(n) };
   if (!n.actions?.length) return payload;
   return {

@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { type Nudge, NudgeActionId, type NudgeStatus, nudgeUrl } from "@michael/shared";
+import { type Nudge, NudgeActionId, type NudgeStatus, nudgeUrl, type OutgoingNudge } from "@michael/shared";
 import { z } from "zod";
 import { currentUserId, runAsUser } from "../context";
 import { env, webUrl } from "../env";
@@ -226,7 +226,7 @@ export function parseCallbackData(
  * only when the web app has an https address (Telegram refuses anything else).
  */
 export function nudgeKeyboard(
-  nudge: Pick<Nudge, "id" | "kind" | "key" | "day" | "recommendation_id" | "actions">,
+  nudge: Pick<OutgoingNudge, "id" | "kind" | "key" | "day" | "recommendation_id" | "actions">,
 ): { inline_keyboard: InlineButton[][] } | null {
   const web = webUrl();
   // Older stored nudges carry no actions.
@@ -260,7 +260,7 @@ export async function telegramToCurrentUser(
 
 export const telegramChannel: DeliveryChannel = {
   name: "telegram",
-  async deliver(nudge: Nudge): Promise<NudgeStatus> {
+  async deliver(nudge: OutgoingNudge): Promise<NudgeStatus> {
     const { chats, delivered } = await telegramToCurrentUser(nudge.text, nudge);
     if (chats === 0) return "queued";
     return delivered > 0 ? "sent" : "failed";

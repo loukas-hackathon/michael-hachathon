@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
-import { type Nudge, type NudgeAction, NudgeActResult, nudgeUrl } from "@michael/shared";
+import { type Nudge, NudgeActResult, nudgeUrl, type OutgoingNudge } from "@michael/shared";
 import { generateVAPIDKeys } from "web-push";
 import { app } from "../app";
 import { runAsUser } from "../context";
 import { withoutInstructions } from "../instructions/testkit";
 import { store } from "../store";
-import { actionsFor, actOnNudge, configureSnooze, refreshText } from "./actions";
+import { actionsFor, actOnNudge, configureSnooze, driftApp, offeredActions, refreshText } from "./actions";
 import { nudgePayload } from "./channels";
 import { configurePush, type PushPayload, type PushSender } from "./push";
 import { callbackData, configureTelegram, nudgeKeyboard, parseCallbackData } from "./telegram";
@@ -25,8 +25,8 @@ const asNewUser = <T>(fn: (userId: string) => Promise<T>) => {
 };
 
 async function nudge(
-  over: Partial<Pick<Nudge, "kind" | "key" | "text" | "recommendation_id">> & { actions: NudgeAction[] },
-) {
+  over: Partial<Pick<Nudge, "kind" | "key" | "text" | "recommendation_id">> = {},
+): Promise<OutgoingNudge> {
   const n = await store.createNudge({
     recommendation_id: over.recommendation_id ?? null,
     goal_id: null,
@@ -37,10 +37,9 @@ async function nudge(
     text: over.text ?? "Gym at 18:00. Wrap up in 12 min.",
     reason: "test",
     status: "sent",
-    actions: over.actions,
   });
   assert.ok(n);
-  return n;
+  return { ...n, actions: offeredActions(n) };
 }
 
 const act = (id: string, body: unknown) =>
@@ -93,6 +92,20 @@ test("actions: each kind offers what Michael may do, at most two, the action fir
   }
 });
 
+test("buttons are worked out again from the stored line", () => {
+  assert.equal(driftApp("6 min on Instagram in your focus block. Back to it until 12:00."), "Instagram");
+  assert.equal(driftApp("6 min on youtube.com in your focus block. Back to it until 12:00."), null);
+  assert.equal(driftApp("6 min on Terminal in your focus block. Back to it until 12:00."), null);
+  assert.deepEqual(
+    offeredActions({
+      kind: "focus_drift",
+      text: "4 min on WhatsApp in your focus block. Back to it until 12:00.",
+      recommendation_id: null,
+    }).map((a) => a.label),
+    ["Mute WhatsApp 30 min", "Open"],
+  );
+});
+
 test("deep links: the block on the Timeline, the card on Today, else Today", () => {
   const base = { day: "2026-11-15", recommendation_id: null };
   assert.equal(
@@ -142,7 +155,7 @@ test("act over HTTP: no session, the token is the key, and it works once", async
       { endpoint: "https://fcm.googleapis.com/fcm/send/t1", keys: { p256dh: "p", auth: "a" } },
       null,
     );
-    return { n: await nudge({ actions: actionsFor({ kind: "block_soon" }) }), userId };
+    return { n: await nudge(), userId };
   });
   const token = signActionToken(n.id, userId);
 
@@ -166,7 +179,7 @@ test("act over HTTP: no session, the token is the key, and it works once", async
   assert.equal(res.status, 200);
   const result = NudgeActResult.parse(await res.json());
   assert.match(result.text, /^Snoozed\. Back at \d\d:\d\d\.$/);
-  assert.equal(result.nudge.acted_action, "snooze");
+  assert.equal(result.nudge_id, n.id);
   // Single use: the same token (or Telegram) cannot act again while it is snoozed.
   res = await act(n.id, { action: "snooze", token });
   assert.equal(res.status, 409);
@@ -178,8 +191,6 @@ test("act over HTTP: no session, the token is the key, and it works once", async
   const again = sent.at(-1);
   assert.equal(again?.body.startsWith("Gym at 18:00."), true);
   assert.ok(again?.token);
-  const back = await runAsUser(userId, () => store.getNudge(n.id));
-  assert.equal(back?.acted_at, null);
   assert.equal((await act(n.id, { action: "snooze", token: again?.token })).status, 200);
   configurePush({ vapid: null });
 });
@@ -204,7 +215,6 @@ test("do it: carries out the recommendation, undoable, and says until when", asy
       key: `recovery_block:${rec.id}`,
       recommendation_id: rec.id,
       text: "Meetings ate the block. Take 25 minutes at 16:00. Still counts.",
-      actions: actionsFor({ kind: "recovery_block", recommendation_id: rec.id }),
     });
     const result = await actOnNudge(n.id, "do_it");
     assert.match(result.text, /^Done\. Undo in the app until \d\d:\d\d\.$/);
@@ -233,10 +243,10 @@ test("do it: a refused action leaves the nudge open to try again", async () => {
       kind: "recovery_block",
       key: `recovery_block:${rec.id}`,
       recommendation_id: rec.id,
-      actions: actionsFor({ kind: "recovery_block", recommendation_id: rec.id }),
     });
     await assert.rejects(actOnNudge(n.id, "do_it"));
-    assert.equal((await store.getNudge(n.id))?.acted_at, null);
+    // Not "Already done": the executor's own reason again.
+    await assert.rejects(actOnNudge(n.id, "do_it"), (err: Error) => err.message !== "Already done.");
   });
 });
 
@@ -246,7 +256,6 @@ test("mute: closes the app on the Mac for 30 minutes through a focus guard", asy
       kind: "focus_drift",
       key: "focus_drift:evt-1",
       text: "6 min on Instagram in your focus block. Back to it until 12:00.",
-      actions: actionsFor({ kind: "focus_drift", mac_app: "Instagram" }),
     });
     const result = await actOnNudge(n.id, "mute_app");
     assert.match(result.text, /^Instagram is off until \d\d:\d\d\. Undo in the app\.$/);
@@ -276,7 +285,7 @@ test("telegram: buttons on the message, the tap acts once and says what happened
 
   const { n, userId } = await asNewUser(async (userId) => {
     await store.bindTelegramChat({ chat_id: "777", username: "manolis" }, `link-${randomUUID()}`);
-    return { n: await nudge({ actions: actionsFor({ kind: "block_soon" }) }), userId };
+    return { n: await nudge(), userId };
   });
 
   // Open needs an https web address; without one only the action button shows.

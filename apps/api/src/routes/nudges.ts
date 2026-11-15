@@ -103,7 +103,6 @@ export async function checkNudges(): Promise<NudgeCheckResult> {
     text: candidate.text,
     reason: candidate.reason,
     status: decision.action === "suppress" ? "suppressed" : "queued",
-    actions: actionsFor(candidate),
   });
   // Another check stored the same key a moment ago: nothing new to say.
   if (!created) return { checked_at: now, nudge: null, skipped: "nothing_to_say", sent_today: counted };
@@ -113,7 +112,8 @@ export async function checkNudges(): Promise<NudgeCheckResult> {
 
   let status: Awaited<ReturnType<typeof channel.deliver>>;
   try {
-    status = await channel.deliver(created);
+    // Its buttons (#399) ride along; they are not stored.
+    status = await channel.deliver({ ...created, actions: actionsFor(candidate) });
   } catch (err) {
     console.error("[nudge] delivery failed", err);
     status = "failed";
@@ -159,14 +159,14 @@ export async function testNudge(): Promise<NudgeTestResult> {
     text: pick.text,
     reason: pick.reason,
     status: "test",
-    // The stage moment shows the buttons too: the same ones a real nudge of this kind offers.
-    actions: "key" in pick ? actionsFor(pick) : [],
   });
   if (!nudge) throw new HttpError("internal", "Could not store the test nudge");
+  // The stage moment shows the buttons too: the same ones a real nudge of this kind offers.
+  const out = { ...nudge, actions: "key" in pick ? actionsFor(pick) : [] };
   // Push devices and the Telegram chat at once: either one buzzing the watch is enough on stage.
   const [push, telegram] = await Promise.all([
-    pushToCurrentUser(nudgePayload(nudge)),
-    telegramToCurrentUser(nudge.text, nudge),
+    pushToCurrentUser(nudgePayload(out)),
+    telegramToCurrentUser(out.text, out),
   ]);
   const devices = push.devices + telegram.chats;
   const delivered = push.delivered + telegram.delivered;

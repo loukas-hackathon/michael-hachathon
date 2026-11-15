@@ -1428,7 +1428,7 @@ export type NudgeKind = z.infer<typeof NudgeKind>;
 
 // What a nudge lets the user do without opening the app (#399): buttons on the notification
 // (Chrome, Android, desktop) and on the Telegram message. `open` only opens the card (no request);
-// the others go to POST /v1/nudges/:id/act. Each nudge can be acted on once.
+// the others go to POST /v1/nudges/:id/act. Each nudge can be acted on once (per API process).
 //   snooze    the same nudge again in 10 minutes (block_soon)
 //   mute_app  close `app` on the user's Mac for 30 minutes (focus_drift, Mac reporting, allowlisted app)
 //   do_it     carry out the nudge's recommendation (recovery_block), undoable in the app
@@ -1481,14 +1481,12 @@ export const Nudge = z.object({
   status: NudgeStatus,
   created_at: IsoDateTime,
   sent_at: IsoDateTime.nullable(),
-  // The buttons it offers (#399); empty for none.
-  actions: z.array(NudgeAction),
-  // The action taken from the notification or Telegram, once. Null until then (and again after a
-  // snooze brings it back).
-  acted_action: NudgeActionId.nullable(),
-  acted_at: IsoDateTime.nullable(),
 });
 export type Nudge = z.infer<typeof Nudge>;
+
+// A nudge on its way out with its buttons (#399). The buttons are worked out again from the stored
+// nudge when one is tapped (no database change before the pitch), so they are not stored.
+export type OutgoingNudge = Nudge & { actions?: NudgeAction[] };
 
 // POST /v1/nudges/:id/act. No session: `token` is the signed, single use token the push carried.
 export const NudgeActInput = z.object({
@@ -1505,7 +1503,7 @@ export const NudgeActResult = z.object({
   undo_until: IsoDateTime.nullable(),
   // Where tapping the follow up goes.
   url: z.string(),
-  nudge: Nudge,
+  nudge_id: z.uuid(),
 });
 export type NudgeActResult = z.infer<typeof NudgeActResult>;
 

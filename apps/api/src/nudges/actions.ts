@@ -1,4 +1,5 @@
 import {
+  findBlockableMacApp,
   NUDGE_MUTE_MINUTES,
   NUDGE_SNOOZE_MINUTES,
   type Nudge,
@@ -70,12 +71,37 @@ export function refreshText(nudge: Pick<Nudge, "kind" | "text" | "day">, now = D
 export async function redeliver(nudgeId: string): Promise<void> {
   const nudge = await store.getNudge(nudgeId);
   if (!nudge) return;
-  await store.releaseNudgeAction(nudge.id);
-  const again: Nudge = { ...nudge, text: refreshText(nudge), acted_action: null, acted_at: null };
+  release(nudge.id);
   await primaryChannel()
-    .deliver(again)
+    .deliver({ ...nudge, text: refreshText(nudge), actions: offeredActions(nudge) })
     .catch((err) => console.error("[nudge] snooze delivery failed", err));
 }
+
+// ---------- once per nudge ----------
+
+// Nudges acted on, by id. In memory on purpose: no database change before the pitch. A restart
+// forgets it, which is safe: Do it on a done recommendation is refused by the executor, a second
+// mute only adds a guard on the user's own Mac, and a snooze only sends the line again.
+const acted = new Set<string>();
+const claim = (id: string) => (acted.has(id) ? false : (acted.add(id), true));
+const release = (id: string) => acted.delete(id);
+
+/** The Mac app a focus_drift line names ("6 min on Instagram in your focus block. ..."). */
+export function driftApp(text: string): string | null {
+  const name = /^\d+ min on (.+?) in your focus block\./.exec(text)?.[1];
+  return name ? (findBlockableMacApp(name)?.name ?? null) : null;
+}
+
+/**
+ * The buttons of a stored nudge, worked out again when one is tapped (they are not stored). The
+ * same rule as at send time, with the Mac app read back from the line.
+ */
+export const offeredActions = (n: Pick<Nudge, "kind" | "text" | "recommendation_id">): NudgeAction[] =>
+  actionsFor({
+    kind: n.kind,
+    ...(n.recommendation_id ? { recommendation_id: n.recommendation_id } : {}),
+    ...(n.kind === "focus_drift" && driftApp(n.text) ? { mac_app: driftApp(n.text) as string } : {}),
+  });
 
 // ---------- the action ----------
 
@@ -92,10 +118,9 @@ export async function actOnNudge(
 ): Promise<NudgeActResult> {
   const nudge = await store.getNudge(nudgeId);
   if (!nudge) throw new HttpError("not_found", "Nudge not found");
-  const offered = nudge.actions.find((a) => a.id === action);
+  const offered = offeredActions(nudge).find((a) => a.id === action);
   if (!offered || action === "open") throw new HttpError("conflict", "That nudge does not offer this.");
-  const claimed = await store.claimNudgeAction(nudge.id, action);
-  if (!claimed) throw new HttpError("conflict", "Already done.");
+  if (!claim(nudge.id)) throw new HttpError("conflict", "Already done.");
   try {
     if (action === "snooze") {
       const userId = currentUserId();
@@ -110,7 +135,7 @@ export async function actOnNudge(
         text: `Snoozed. Back at ${athens.clock(back)}.`,
         undo_until: null,
         url: nudgeUrl(nudge),
-        nudge: claimed,
+        nudge_id: nudge.id,
       };
     }
     if (action === "mute_app") {
@@ -128,7 +153,7 @@ export async function actOnNudge(
         text: `${offered.app} is off until ${plainUntil(end)}. Undo in the app.`,
         undo_until: end,
         url: `/?card=${rec.id}`,
-        nudge: claimed,
+        nudge_id: nudge.id,
       };
     }
     // do_it
@@ -140,11 +165,11 @@ export async function actOnNudge(
       text: until ? `Done. Undo in the app until ${plainUntil(until)}.` : "Done. Undo in the app.",
       undo_until: until,
       url: `/?card=${rec.id}`,
-      nudge: claimed,
+      nudge_id: nudge.id,
     };
   } catch (err) {
     // Nothing happened: the button may be tried again (or done in the app).
-    await store.releaseNudgeAction(nudge.id).catch(() => {});
+    release(nudge.id);
     throw err;
   }
 }
