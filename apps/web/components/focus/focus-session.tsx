@@ -299,6 +299,10 @@ export function FocusSessionView({
         ) : (
           <p className="mt-6 text-body text-label-2 tnum">Until {formatTime(session.end_at)}</p>
         )}
+        {/* What is already won, counting up a minute at a time, in the goal's own pink. */}
+        <p className="mt-1 min-h-5 text-subhead font-semibold text-tint-text tnum">
+          {soFar > 0 ? `${voiceShortDuration(soFar)} kept` : ""}
+        </p>
         {session.guarded ? (
           <p className="mt-2 text-subhead text-label-2">Michael is guarding your Mac.</p>
         ) : null}
@@ -395,7 +399,13 @@ export function FocusResult({ session, onClose }: { session: FocusSession; onClo
       className="fixed inset-0 z-50 flex flex-col bg-bg px-4 pt-[calc(12px+var(--m-safe-top))] pb-[calc(24px+env(safe-area-inset-bottom))]"
     >
       <div className="flex flex-1 flex-col items-center justify-center text-center">
-        <p className="text-footnote font-semibold text-label-2">{session.goal_title}</p>
+        {/* The finish moment: Mi lifts once when time was kept (still under reduced motion). */}
+        <div className="mb-4" aria-hidden="true">
+          <Michael state={counted > 0 ? "pleased" : "idle"} className="h-7 w-auto" title="" />
+        </div>
+        <p className="max-w-[22rem] text-balance text-footnote font-semibold text-label-2">
+          {session.goal_title}
+        </p>
         <div className="relative mt-6">
           <FocusRing share={done ? 1 : counted > 0 ? counted / Math.max(1, session.minutes) : 0} label="" />
           <div className="absolute inset-0 flex flex-col items-center justify-center">

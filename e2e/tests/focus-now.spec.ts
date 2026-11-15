@@ -70,6 +70,8 @@ test("start from Goals, leave and come back, +15, then end early and count it", 
   const count = page.getByRole("button", { name: /^Count [1-9]\d* min$/ });
   await expect(count).toBeVisible({ timeout: 90_000 });
   await expect(page.getByText(/^Count [1-9]\d* min\?$/)).toBeVisible();
+  // The minutes already won count up on the screen (#534).
+  await expect(page.getByText(/^[1-9]\d* min kept$/)).toBeVisible();
   // Wait on the server's answer to the tap (the server action POST), never on time.
   const answered = page.waitForResponse(
     (r) => r.request().method() === "POST" && r.request().headers()["next-action"] !== undefined,
@@ -80,6 +82,8 @@ test("start from Goals, leave and come back, +15, then end early and count it", 
   const result = page.getByRole("dialog", { name: /Counted \d+ min for University\./ });
   await expect(result).toBeVisible();
   await expect(result.getByText("It counts as goal time on Today and Goals.")).toBeVisible();
+  // The finish moment: Mi is pleased, once.
+  await expect(result.locator('svg[data-mi="pleased"]')).toHaveCount(1);
 
   // On the API: the session ended early, counted, and logged as done time for the goal.
   const after = await asUser<{ session: Session | null; last: Session | null }>("/v1/focus/active");
