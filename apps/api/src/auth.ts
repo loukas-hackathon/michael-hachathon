@@ -11,7 +11,7 @@ import {
   demoVisitorMay,
 } from "./demo/visitor";
 import { env } from "./env";
-import { errorResponse } from "./http";
+import { errorResponse, HttpError } from "./http";
 import { mcpResource, resourceMetadataUrl } from "./public-url";
 import { verifyAccessToken } from "./routes/oauth";
 import { store } from "./store";
@@ -71,6 +71,22 @@ export async function deleteAuthUser(userId: string): Promise<boolean> {
   const { error } = await supabase.auth.admin.deleteUser(userId);
   if (error) console.error(`[auth] could not delete auth user ${userId}: ${error.message}`);
   return !error;
+}
+
+/**
+ * Creates an email and password sign in, already confirmed (#475), so the person is signed in at
+ * once with no email to click. "exists" when the address already has an account; "off" when Auth
+ * is not configured (in-memory store).
+ */
+export async function createConfirmedUser(
+  email: string,
+  password: string,
+): Promise<"created" | "exists" | "off"> {
+  if (!supabase) return "off";
+  const { error } = await supabase.auth.admin.createUser({ email, password, email_confirm: true });
+  if (!error) return "created";
+  if (error.code === "email_exists" || /already (been )?registered/i.test(error.message)) return "exists";
+  throw new HttpError("upstream_error", `Could not create the account: ${error.message}`);
 }
 
 /**

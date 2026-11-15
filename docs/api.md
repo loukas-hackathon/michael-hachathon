@@ -2585,6 +2585,17 @@ type MeetingsState = {
   the tab bar on every screen. After it, a card on Today ("Meeting at 14:00: 2 commitments", from
   `last`): Add to today per commitment, the lesson, Draft a follow up, and Dismiss (per device).
 
+### Accounts (#475)
+
+| Method | Path           | Auth                          | Response                                                              | Status |
+| ------ | -------------- | ----------------------------- | --------------------------------------------------------------------- | ------ |
+| POST   | `/v1/accounts` | API key only (the web server) | `201 { created: true }`; `409 conflict` when the email has an account | live   |
+
+Body `AccountCreate`: `{ email, password }`, password 8 to 200 characters. Creates a Supabase Auth
+user already confirmed, so the person is signed in at once with no email to click; the web app then
+signs in with the password itself. Any other caller (a session, a demo visitor, a device key, MCP)
+gets `403`. `503 unavailable` when Auth is not configured (in-memory store).
+
 ### Your data: deletion and retention
 
 ```ts

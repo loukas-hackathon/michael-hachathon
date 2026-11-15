@@ -29,7 +29,7 @@ test("sign out lands on a clean login and Back does not bring the account back",
   await tap(page.getByRole("link", { name: "Sign out" }));
   await expect(page).toHaveURL(/\/login$/);
   await expect(page.getByRole("heading", { name: "On your side." })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Continue with Google" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Continue with email" })).toBeEnabled();
   expect(Date.now() - started, "sign out takes about a second at most").toBeLessThan(3000);
 
   // No error line, no tab bar, nothing of the old account.

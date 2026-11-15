@@ -3443,3 +3443,14 @@ export const DraftGenerateResult = z.object({
   skipped: z.number().int().nonnegative(),
 });
 export type DraftGenerateResult = z.infer<typeof DraftGenerateResult>;
+
+// Email and password accounts (#475): the web app creates them server to server, already confirmed,
+// so no confirmation email and no Supabase setting stand in the way. The web then signs in itself.
+export const AccountCreate = z.object({
+  email: z.email().max(320),
+  password: z.string().min(8).max(200),
+});
+export type AccountCreate = z.infer<typeof AccountCreate>;
+
+export const AccountCreated = z.object({ created: z.literal(true) });
+export type AccountCreated = z.infer<typeof AccountCreated>;

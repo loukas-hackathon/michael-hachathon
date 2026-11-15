@@ -39,41 +39,13 @@ Google Cloud console has renamed menus over time; both names are given.
 
 Done when: you are signed in as yourself. Tick "google-oauth-client" on the board.
 
-## 1b. Email and password sign in (Loukas, 2 min, #475)
+## 1b. Email and password sign in (nothing to do, #475)
 
-"Continue with email" on /login needs the email provider on and confirmation emails off, or a new
-account waits for an email (the app then says "Check your inbox to finish"). Either way:
-
-**Dashboard:** https://supabase.com/dashboard/project/kpcoadbgevifyvvlhdbt/auth/providers, **Email**:
-**Enable Email provider** on, **Confirm email** off, **Save**.
-
-**Or the Management API** (a personal access token from https://supabase.com/dashboard/account/tokens,
-typed into the shell, never pasted into a chat):
-
-```sh
-read -rs SUPABASE_ACCESS_TOKEN && export SUPABASE_ACCESS_TOKEN
-
-# Read the current values
-curl -s https://api.supabase.com/v1/projects/kpcoadbgevifyvvlhdbt/config/auth \
-  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" | jq '{external_email_enabled, mailer_autoconfirm}'
-
-# Email sign in on, no confirmation email
-curl -s -X PATCH https://api.supabase.com/v1/projects/kpcoadbgevifyvvlhdbt/config/auth \
-  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"external_email_enabled": true, "mailer_autoconfirm": true}' | jq '{external_email_enabled, mailer_autoconfirm}'
-```
-
-Both values read `true` afterwards. Test: a private window, **Continue with email**, a new address,
-8 characters or more, **Create account**: you land in Getting started, with Google Calendar as a
-Connect row.
-
-**One person, two ways in.** Supabase links identities by email automatically, but only when the
-email is verified. Google addresses are verified, so someone who signs in with Google first and
-later creates a password with the same address gets one account. With **Confirm email** off, a
-password sign up is not verified: Supabase does not link Google to an unverified identity (that
-would allow account takeover), so Google for that address may not reach the password account. For
-the demo, use one way per person. Nothing more is built.
+Sign in is email and password only; the Google button is gone. The API creates each account already
+confirmed (`POST /v1/accounts`, with the service role), so no Supabase setting and no confirmation
+email are needed. Email sign in is on by default in Supabase. Test: a private window, **Continue
+with email**, a new address, 8 characters or more, **Create account**: you land in Getting started,
+with Google Calendar as a Connect row.
 
 ## 2. Your Claude connector (Loukas and Manolis, 2 min each, after step 1)
 

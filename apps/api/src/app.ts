@@ -9,6 +9,7 @@ import { env } from "./env";
 import { errorResponse, HttpError } from "./http";
 import { handleMcpRequest } from "./mcp";
 import { prewarmAfterWrite } from "./moments/prewarm";
+import { accounts } from "./routes/accounts";
 import { actions } from "./routes/actions";
 import { agents } from "./routes/agents";
 import { analysis } from "./routes/analysis";
@@ -76,6 +77,7 @@ const webhooksApp = new Hono()
 
 // Every /v1 route, without the auth in front (the isolation test mounts it as several users).
 export const v1Routes = new Hono()
+  .route("/", accounts)
   .route("/", events)
   .route("/", goals)
   .route("/", checklist)

@@ -3,7 +3,6 @@ import { InstallApp } from "@/components/install-app";
 import { safeNext } from "@/lib/next-path";
 import { EmailForm } from "./email-form";
 import { ForgetDevice } from "./forget-device";
-import { GoogleButton } from "./google-button";
 
 export const metadata = { title: "Sign in · Michael" };
 
@@ -43,8 +42,12 @@ export default async function LoginPage({
 
         <div className="flex flex-col">
           <ForgetDevice />
-          <GoogleButton initialError={message} />
-          {/* No Google needed, and it never leaves the installed app (#475). */}
+          {message ? (
+            <p role="alert" className="mb-3 text-balance text-center text-footnote text-danger">
+              {message}
+            </p>
+          ) : null}
+          {/* Email and password only (#475): no Google, and it never leaves the installed app. */}
           <EmailForm next={back} />
           <a
             href={demoHref}
@@ -54,7 +57,7 @@ export default async function LoginPage({
           </a>
           <InstallApp />
           <p className="mt-6 text-balance text-center text-footnote text-label-2">
-            Next, I ask for your Google Calendar: that's how I see your week. I work for you and nobody else.
+            Next, connect your calendar: that's how I see your week. I work for you and nobody else.
           </p>
         </div>
       </div>
