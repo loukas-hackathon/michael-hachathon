@@ -78,6 +78,12 @@ export const shortcutUrl = () => process.env.MICHAEL_SHORTCUT_URL || SHORTCUT_FI
 export const shortcutConnectLink = (key: string) =>
   `shortcuts://run-shortcut?name=${encodeURIComponent(SHORTCUT_NAME)}&input=text&text=${encodeURIComponent(key)}`;
 
+/**
+ * Runs the Michael shortcut once with no input, as a hand run in Shortcuts does: the test (#466).
+ * It posts with the saved key and no app, so the iPhone row turns Connected when it lands.
+ */
+export const shortcutTestLink = () => `shortcuts://run-shortcut?name=${encodeURIComponent(SHORTCUT_NAME)}`;
+
 export const isIPhone = (ua: string) => /iPhone|iPod/.test(ua);
 export const isMac = (ua: string) => /Macintosh/.test(ua) && !/iPhone|iPad/.test(ua);
 

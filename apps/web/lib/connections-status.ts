@@ -4,8 +4,10 @@ import {
   type Integration,
   IntegrationsResponse,
   LocationStatus,
+  PersonalToken,
   PlacesResponse,
   PushConfig,
+  SETUP_KEY_NAMES,
   SourcesStatusResponse,
   TelegramStatus,
 } from "@michael/shared";
@@ -42,6 +44,10 @@ export type ConnectionStatus = Connection & {
   state: ConnectionState;
   line: string;
   action: ConnectionAction;
+  /** What has arrived, once connected ("last sync 12:41"): the row says it for the first minute (#466). */
+  fresh?: string;
+  /** Halfway there, not connected yet ("Shortcut added"): the row says it after Not connected. */
+  note?: string;
 };
 
 export type ConnectionsView = {
@@ -94,6 +100,8 @@ type Inputs = {
   location?: LocationStatus | null;
   /** The person said "I don't use a Mac" (lib/no-mac.ts). */
   noMac?: boolean;
+  /** The iPhone shortcut's device key, newest first; null when there is none or it cannot be read. */
+  iphoneKey?: PersonalToken | null;
 };
 
 /** Live iPhone data, from the Shortcuts automation (Screen Time history needs a Mac). */
@@ -151,7 +159,13 @@ export function statusFor(c: Connection, x: Inputs, now = Date.now()): Connectio
               line: `${who}. Last sync failed.`,
               action: manage,
             }
-          : { ...c, state: "on", line: `${otr}${who}${sync}.`, action: manage };
+          : {
+              ...c,
+              state: "on",
+              line: `${otr}${who}${sync}.`,
+              action: manage,
+              fresh: cal.last_sync_at ? `last sync ${formatTime(cal.last_sync_at)}` : undefined,
+            };
       }
       const connect = { kind: "link" as const, label: "Connect", href: GOOGLE_CONNECT, external: true };
       if (cal?.status === "error")
@@ -176,7 +190,33 @@ export function statusFor(c: Connection, x: Inputs, now = Date.now()): Connectio
           line: `Last data ${ago(last, now)}. ${QUIET_FIX[c.id]}`,
           action: manage,
         };
-      if (last) return { ...c, state: "on", line: `${otr}Last data ${ago(last, now)}.`, action: manage };
+      if (last)
+        return {
+          ...c,
+          state: "on",
+          line: `${otr}Last data ${ago(last, now)}.`,
+          action: manage,
+          fresh: `last data ${formatTime(last)}`,
+        };
+      // The shortcut reached me with its key (a hand run in Shortcuts is the test, #466): it works,
+      // even before the App automation sends the first open.
+      const key = c.id === "iphone" ? x.iphoneKey : null;
+      if (key?.last_used_at)
+        return {
+          ...c,
+          state: "on",
+          line: `${otr}Connected. Test received at ${formatTime(key.last_used_at)}. App opens arrive once your automation runs.`,
+          action: manage,
+          fresh: `test received ${formatTime(key.last_used_at)}`,
+        };
+      if (key)
+        return {
+          ...c,
+          state: "none",
+          line: "Shortcut added. Waiting for the first app open. Send a test below.",
+          action: setUp(),
+          note: "Shortcut added",
+        };
       if (c.id === "mac" && (x.noMac || iphoneSends(src)))
         return {
           ...c,
@@ -199,7 +239,13 @@ export function statusFor(c: Connection, x: Inputs, now = Date.now()): Connectio
         const line = approved.last_seen_at
           ? `Connected. Last asked at ${formatTime(approved.last_seen_at)}.`
           : "Connected.";
-        return { ...c, state: "on", line, action: { kind: "link", label: "Manage", href: "/agents" } };
+        return {
+          ...c,
+          state: "on",
+          line,
+          action: { kind: "link", label: "Manage", href: "/agents" },
+          fresh: approved.last_seen_at ? `last asked ${formatTime(approved.last_seen_at)}` : undefined,
+        };
       }
       if (mine.some((a) => a.status === "pending"))
         return {
@@ -221,7 +267,13 @@ export function statusFor(c: Connection, x: Inputs, now = Date.now()): Connectio
           action: manage,
         };
       if (p.devices > 0)
-        return { ...c, state: "on", line: `On for ${plural(p.devices, "device")}.`, action: manage };
+        return {
+          ...c,
+          state: "on",
+          line: `On for ${plural(p.devices, "device")}.`,
+          action: manage,
+          fresh: `on for ${plural(p.devices, "device")}`,
+        };
       return { ...c, state: "none", line: "Not connected", action: setUp() };
     }
     case "telegram": {
@@ -240,6 +292,7 @@ export function statusFor(c: Connection, x: Inputs, now = Date.now()): Connectio
           state: "on",
           line: t.username ? `Connected as @${t.username}.` : "Connected.",
           action: manage,
+          fresh: t.username ? `@${t.username}` : "chat linked",
         };
       return {
         ...c,
@@ -260,6 +313,7 @@ export function statusFor(c: Connection, x: Inputs, now = Date.now()): Connectio
           state: "on",
           line: `${otr}${where || `Last seen ${ago(loc.last_signal_at as string, now)}.`}`,
           action: manage,
+          fresh: loc.now ? `at ${loc.now.label}` : `last seen ${formatTime(loc.last_signal_at as string)}`,
         };
       }
       if (!p) return unknown(c);
@@ -287,7 +341,7 @@ export function statusFor(c: Connection, x: Inputs, now = Date.now()): Connectio
  */
 export const getConnections = cache(async (preview?: ConnectionId): Promise<ConnectionsView> => {
   await devLatency();
-  const [sources, integrations, push, agents, places, telegram, noMac, location] = await Promise.all([
+  const [sources, integrations, push, agents, places, telegram, noMac, location, tokens] = await Promise.all([
     safe("/v1/sources/status", SourcesStatusResponse),
     safe("/v1/integrations", IntegrationsResponse),
     safe("/v1/push", PushConfig),
@@ -298,7 +352,20 @@ export const getConnections = cache(async (preview?: ConnectionId): Promise<Conn
     safe("/v1/telegram", TelegramStatus),
     saidNoMac(),
     safe("/v1/location", LocationStatus),
+    // Device keys: only a signed in person may list them; anyone else reads null, which is fine.
+    safe("/v1/tokens", {
+      parse: (v) => ((v as { tokens?: unknown[] }).tokens ?? []).map((t) => PersonalToken.parse(t)),
+    }),
   ]);
+  const iphoneKey =
+    tokens
+      ?.filter((t) => t.name === SETUP_KEY_NAMES.iphone)
+      .sort(
+        (a, b) =>
+          (b.last_used_at ?? "").localeCompare(a.last_used_at ?? "") ||
+          b.created_at.localeCompare(a.created_at),
+      )
+      .at(0) ?? null;
   const inputs: Inputs = {
     sources,
     calendar: integrations
@@ -310,6 +377,7 @@ export const getConnections = cache(async (preview?: ConnectionId): Promise<Conn
     places,
     noMac,
     location,
+    iphoneKey,
   };
   const rows = CONNECTIONS.map((c) => statusFor(c.id === preview ? { ...c, live: true } : c, inputs));
   return {

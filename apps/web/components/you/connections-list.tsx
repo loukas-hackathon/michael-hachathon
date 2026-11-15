@@ -1,4 +1,5 @@
 import { SkipMacButton } from "@/components/setup/skip-mac-button";
+import type { ConnectionId } from "@/lib/connections";
 import type { ConnectionsView } from "@/lib/connections-status";
 import { ProgressBar } from "../progress-bar";
 import { ConnectionRow } from "./connection-row";
@@ -12,10 +13,13 @@ export const DEMO_SAMPLE: ReadonlySet<string> = new Set(["google-calendar", "app
 export function ConnectionsList({
   view,
   flash,
+  arrived = null,
   demo = false,
 }: {
   view: ConnectionsView;
   flash: { ok: boolean; text: string } | null;
+  /** Just connected and back in the app (?connected=): that row pops on first paint (#466). */
+  arrived?: ConnectionId | null;
   /** A demo visitor (the "This is the demo week" banner on You). A signed in user never sets it. */
   demo?: boolean;
 }) {
@@ -70,7 +74,7 @@ export function ConnectionsList({
         {rows.map((row, i) => (
           <div key={row.id} className="relative">
             {i > 0 ? <span className="absolute inset-x-0 top-0 ml-[52px] h-[0.5px] bg-separator" /> : null}
-            <ConnectionRow row={row} sample={sample(row.id)} />
+            <ConnectionRow row={row} sample={sample(row.id)} arrived={row.id === arrived} />
           </div>
         ))}
       </div>

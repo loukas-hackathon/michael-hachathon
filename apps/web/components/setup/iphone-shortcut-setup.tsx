@@ -1,7 +1,7 @@
 "use client";
 
 import { type ReactNode, useEffect, useState } from "react";
-import { SHORTCUT_NAME, shortcutConnectLink } from "@/lib/one-tap";
+import { SHORTCUT_NAME, shortcutConnectLink, shortcutTestLink } from "@/lib/one-tap";
 import { connectHere, exchangeSetupToken } from "@/lib/setup-actions";
 import {
   Card,
@@ -98,10 +98,20 @@ export function IPhoneShortcutSetup({
             </PrimaryButton>
           )}
         </Step>
+        {/* The test (#466): a hand run posts with the key and no app, and the row turns Connected. */}
         <Step n={3}>
+          <p>Send a test. Shortcuts runs {SHORTCUT_NAME} once and this page says Connected.</p>
+          <a
+            href={shortcutTestLink()}
+            className="press mt-2 flex h-11 w-full items-center justify-center rounded-full bg-tint/14 text-body font-semibold text-tint-text"
+          >
+            Send a test
+          </a>
+        </Step>
+        <Step n={4}>
           <p>
-            In Shortcuts, tap Automation, then +, then App. Pick the apps to watch, tick Is Opened and Run
-            Immediately, then choose {SHORTCUT_NAME}.
+            Then the app opens: in Shortcuts, tap Automation, then +, then App. Pick the apps to watch, tick
+            Is Opened and Run Immediately, then choose {SHORTCUT_NAME}. Apple lets only you add this.
           </p>
         </Step>
       </ol>

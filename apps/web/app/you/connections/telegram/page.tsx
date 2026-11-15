@@ -18,7 +18,7 @@ export default async function TelegramPage() {
       </SetupSection>
       <SetupSection title="How">
         <ol className="list-decimal space-y-2 rounded-group bg-fill py-4 pr-4 pl-9 text-subhead">
-          <li>Tap Connect Telegram. Telegram opens Michael's bot.</li>
+          <li>Tap Connect. Telegram opens Michael's bot.</li>
           <li>Tap Start. That is all: the link works once and only for you.</li>
         </ol>
       </SetupSection>

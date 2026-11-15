@@ -6,6 +6,7 @@ import { signedInAs } from "@/lib/account";
 import { getInstructions, getProfile } from "@/lib/api";
 import { isPresenter } from "@/lib/caller";
 import { getConnections } from "@/lib/connections-status";
+import { arrivedFrom } from "@/lib/live-connections";
 import { DeleteDataRow } from "./delete-data-row";
 import { OffTheRecordSwitch } from "./off-the-record-switch";
 import { SignOutRow } from "./sign-out-row";
@@ -28,12 +29,13 @@ export default async function YouPage({
     signedInAs(),
     isPresenter(),
   ]);
+  // Back from Google: no banner, the Calendar row itself pops to Connected (#466). Only a failure
+  // gets a line.
   const flash =
-    params.connected === "google_calendar"
-      ? { ok: true, text: "Google Calendar connected. Your plans are on the timeline." }
-      : params.integration_error === "google_calendar"
-        ? { ok: false, text: "Google Calendar didn't connect. Try again." }
-        : null;
+    params.integration_error === "google_calendar"
+      ? { ok: false, text: "Google Calendar didn't connect. Try again." }
+      : null;
+  const arrived = arrivedFrom(params.connected);
 
   return (
     <main className="screen">
@@ -92,7 +94,12 @@ export default async function YouPage({
       {/* 1280 and up the list pane beside this one has every connection (you/layout.tsx), so the
        * section only shows here to carry a just connected line. */}
       <div className={flash ? undefined : "xl:hidden"}>
-        <ConnectionsList view={connections} flash={flash} demo={account === "The demo week"} />
+        <ConnectionsList
+          view={connections}
+          flash={flash}
+          arrived={arrived}
+          demo={account === "The demo week"}
+        />
       </div>
 
       <section id="privacy" className="mt-8 scroll-mt-4">
