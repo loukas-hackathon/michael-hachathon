@@ -98,6 +98,10 @@ test("installed app: Add the shortcut opens a new page, /setup has Close", async
   await page.goto(`${baseURL}/you/connections/iphone`);
   const add = page.getByRole("link", { name: "Add the shortcut" });
   await expect(add).toHaveAttribute("target", "_blank");
+  // The signed file opens as itself in Safari: never shortcuts://import-shortcut, which Shortcuts
+  // refuses for a file URL ("Import Failed", Loukas' iPhone, 15 Nov).
+  await expect(add).toHaveAttribute("href", /^https?:\/\/[^/]+\/Michael\.shortcut$/);
+  const addHref = await add.getAttribute("href");
   const here = page.url();
   const opened = context.waitForEvent("page");
   await add.click();
@@ -108,6 +112,7 @@ test("installed app: Add the shortcut opens a new page, /setup has Close", async
   // If Shortcuts does not open: steps in a sheet, Safari in a new page, and Done.
   await page.getByRole("button", { name: "Shortcuts did not open?" }).click();
   await expect(page.getByRole("link", { name: "Open in Safari" })).toHaveAttribute("target", "_blank");
+  await expect(page.getByRole("link", { name: "Open in Safari" })).toHaveAttribute("href", addHref ?? "");
   await page.getByRole("button", { name: "Done" }).click();
   await expect(page.getByRole("link", { name: "Open in Safari" })).toHaveCount(0);
 

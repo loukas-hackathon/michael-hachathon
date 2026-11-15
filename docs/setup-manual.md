@@ -179,7 +179,7 @@ On the stage iPhone, in **Safari** (latest iOS), signed in to Michael with Googl
 Passed on both: change `iphone: "soon"` to `"live"` in `packages/shared/src/connectors.ts` with the
 proof in the comment, note it on the Build Hub findings, and tick #303.
 
-If step 2 feels like too many taps: on the phone that now has Michael, open **Shortcuts**, hold
+Optional, and the most reliable path from the installed app: an iCloud link. On the phone that now has Michael, open **Shortcuts**, hold
 **Michael**, **Share**, **Copy iCloud Link**, and set `MICHAEL_SHORTCUT_URL` to that link in
 Vercel (project **michael**, **Settings > Environment Variables**, all environments, then
 **Redeploy**). An iCloud link opens Shortcuts directly on **Add Shortcut**. The shortcut behind the

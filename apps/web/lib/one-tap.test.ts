@@ -4,15 +4,13 @@ import { shortcutAddLink, telegramAppLink } from "./one-tap";
 
 const APP = "https://michael.example";
 
-test("shortcut: our signed file goes straight to the Shortcuts import screen", () => {
-  assert.equal(
-    shortcutAddLink("/Michael.shortcut", APP),
-    "shortcuts://import-shortcut?url=https%3A%2F%2Fmichael.example%2FMichael.shortcut&name=Michael",
-  );
-  assert.equal(
-    shortcutAddLink("https://files.example/a b/Michael.shortcut", APP),
-    "shortcuts://import-shortcut?url=https%3A%2F%2Ffiles.example%2Fa%2520b%2FMichael.shortcut&name=Michael",
-  );
+test("shortcut: our signed file is opened as its absolute https URL, never shortcuts://import-shortcut", () => {
+  for (const file of ["/Michael.shortcut", "https://files.example/a b/Michael.shortcut"]) {
+    const link = shortcutAddLink(file, APP);
+    assert.ok(!link.startsWith("shortcuts:"), link);
+    assert.ok(link.startsWith("https://"), link);
+  }
+  assert.equal(shortcutAddLink("/Michael.shortcut", APP), "https://michael.example/Michael.shortcut");
 });
 
 test("shortcut: an iCloud link stays as it is, it opens Shortcuts itself", () => {

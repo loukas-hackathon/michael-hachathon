@@ -73,14 +73,14 @@ export const shortcutUrl = () => process.env.MICHAEL_SHORTCUT_URL || SHORTCUT_FI
 
 /**
  * "Add the shortcut" from the installed app, which has no browser chrome: a file opened in its own
- * window leaves the person on a page with no way back (Loukas, 15 Nov). An https file goes straight
- * to the Shortcuts app's import screen; an iCloud link already opens Shortcuts, so it stays as it
- * is; anything else (a local http dev server) is returned absolute, to open in a new page.
+ * window leaves the person on a page with no way back (Loukas, 15 Nov), so the page opens this link
+ * in a new context. It is always the plain absolute URL. An iCloud link opens Shortcuts itself; our
+ * signed https file opens in Safari, which offers Add Shortcut, as Michael Focus does (#451). Never
+ * shortcuts://import-shortcut: Shortcuts takes only iCloud links there and says "The shortcut URL
+ * provided was invalid" for a file URL (Loukas' iPhone, 15 Nov).
  */
 export function shortcutAddLink(url: string, origin: string): string {
-  const abs = new URL(url, origin);
-  if (abs.protocol !== "https:" || /(^|\.)icloud\.com$/.test(abs.hostname)) return abs.href;
-  return `shortcuts://import-shortcut?url=${encodeURIComponent(abs.href)}&name=${encodeURIComponent(SHORTCUT_NAME)}`;
+  return new URL(url, origin).href;
 }
 
 /** The server hop that redirects to the Telegram bot with a one-time start token. */
