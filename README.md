@@ -10,16 +10,20 @@ Built in 36 hours at the Gen AI Summit Hackathon, Athens, 14 and 15 November 202
 
 ## Try it in one minute
 
-**App:** https://michael-zeta-sand.vercel.app (works on a phone or a laptop)
+**App:** https://michael-zeta-sand.vercel.app
+
+**Best on your phone, as an app.** Open the link in Safari on an iPhone (or Chrome on Android), tap
+**Get the app**, and add Michael to your Home Screen. It opens full screen like a native app, with
+nudges on your phone and watch. No App Store needed.
+
+**Just as clean on a laptop.** Open the same link in any browser for the full dashboard: sidebar,
+columns and keyboard shortcuts. Same account, same data, on both.
 
 | What you want to see                       | How                                                                                                                                                                    |
 | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **A full week of real data** (recommended) | Sign in with **`judges@michael.app`** / **`OnYourSide2026`**. Opens Manolis' real week, names removed. Your taps stay in your own copy, so nothing you do breaks it.   |
 | **The whole experience from zero**         | On the login page tap **Continue with email**, then **Create account**. No email confirmation. You land in onboarding and set your goals in under a minute.            |
 | **Michael inside Claude**                  | claude.ai: Settings, Connectors, Add custom connector, paste `https://api-production-16521a26.up.railway.app/mcp`, sign in, tap Allow. Then ask "How is my day going?" |
-
-On an iPhone, open the app in Safari and tap **Get the app** to add it to your Home Screen (needed
-for nudges).
 
 ## What to look at
 
@@ -73,8 +77,9 @@ your name and never touches an event with other people. Deleting your data reall
 
 ## How it is built
 
-Next.js phone first web app (Vercel), Hono API and MCP server (Railway), Supabase Postgres (EU),
-Claude for coaching and analysis. Monorepo: `apps/web`, `apps/api`, `apps/collector`,
+Next.js phone first web app (Vercel), Hono API and MCP server (Railway), Claude for coaching and
+analysis. All data lives in Supabase Postgres in the EU (Frankfurt); only the API reads or writes it,
+and every query is scoped to the signed in person. Monorepo: `apps/web`, `apps/api`, `apps/collector`,
 `apps/extension`, `packages/shared`.
 
 Developers: [`docs/developers.md`](docs/developers.md) (run locally, environment, deploy, API and
