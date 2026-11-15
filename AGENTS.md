@@ -21,7 +21,7 @@ Code agents in parallel. You are trusted: use your judgement; these notes are co
 | `packages/shared` + `docs/api.md`  | The shared contract: change them together, in the same PR                                          |
 | `supabase/migrations`              | Schema. New file per change; applied automatically on merge                                        |
 
-Live URLs, dashboards and where every setting lives: README "Live services". Commands: `pnpm dev`,
+Live URLs, dashboards and where every setting lives: docs/developers.md "Live services". Commands: `pnpm dev`,
 `pnpm check` (typecheck + lint), `pnpm test`, `pnpm e2e` (demo path in a browser), `pnpm format`.
 
 ## How we work
