@@ -76,7 +76,7 @@ test("iPhone home screen app: hold records, let go transcribes on the server, an
   await page.mouse.up();
 
   expect((await sent).postDataJSON()).toMatchObject({ message: "How much deep work have I done today?" });
-  await expect(page.getByText("Forty seven minutes so far.")).toBeVisible();
+  await expect(page.getByText("Forty seven minutes so far.").first()).toBeVisible();
   expect(uploads).toHaveLength(1);
   expect(uploads[0]?.type).toBe("audio/webm");
   expect(uploads[0]?.size).toBeGreaterThan(0);
