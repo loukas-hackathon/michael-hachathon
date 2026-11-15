@@ -2,7 +2,7 @@
 
 import type { FocusSession } from "@michael/shared";
 import { voiceShortDuration } from "@michael/shared/voice";
-import { useEffect, useRef, useState } from "react";
+import { type RefObject, useEffect, useRef, useState } from "react";
 import { endFocusAction, extendFocusAction, focusActiveAction } from "@/app/focus-actions";
 import { haptic } from "@/components/haptics";
 import { formatTime } from "@/lib/format";
@@ -81,6 +81,45 @@ export function FocusRing({ share, label }: { share: number; label: string }) {
   );
 }
 
+/**
+ * Keeps keyboard focus inside a full screen view while it is open (Tab and Shift Tab wrap, as in a
+ * native dialog), and hands focus back to whatever opened it when it closes.
+ */
+function useFocusTrap(ref: RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const root = ref.current;
+    if (!root) return;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Tab") return;
+      const items = Array.from(
+        root.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), a[href], input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => el.getClientRects().length > 0);
+      if (items.length === 0) {
+        e.preventDefault();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey && (active === first || !root.contains(active))) {
+        e.preventDefault();
+        last?.focus();
+      } else if (!e.shiftKey && (active === last || !root.contains(active))) {
+        e.preventDefault();
+        first?.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      if (opener?.isConnected && !opener.closest("dialog:not([open])")) opener.focus({ preventScroll: true });
+    };
+  }, [ref]);
+}
+
 type Ask = null | "count";
 
 export function FocusSessionView({
@@ -102,6 +141,8 @@ export function FocusSessionView({
   const [error, setError] = useState<string | null>(null);
   const ending = useRef(false);
   const heading = useRef<HTMLHeadingElement>(null);
+  const screen = useRef<HTMLDivElement>(null);
+  useFocusTrap(screen);
 
   const left = minutesLeft(session.end_at, now);
   const soFar = minutesSoFar(session.start_at, now);
@@ -160,6 +201,7 @@ export function FocusSessionView({
 
   return (
     <div
+      ref={screen}
       role="dialog"
       aria-modal="true"
       aria-labelledby="focus-goal"
@@ -269,6 +311,8 @@ export function FocusSessionView({
 /** What the session came to: "Done. 45 min for University." and one way out. */
 export function FocusResult({ session, onClose }: { session: FocusSession; onClose: () => void }) {
   const heading = useRef<HTMLHeadingElement>(null);
+  const screen = useRef<HTMLDivElement>(null);
+  useFocusTrap(screen);
   useEffect(() => {
     heading.current?.focus({ preventScroll: true });
   }, []);
@@ -276,6 +320,7 @@ export function FocusResult({ session, onClose }: { session: FocusSession; onClo
   const counted = session.counted_minutes ?? 0;
   return (
     <div
+      ref={screen}
       role="dialog"
       aria-modal="true"
       aria-labelledby="focus-result"
