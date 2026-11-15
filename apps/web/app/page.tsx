@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { CountUp } from "@/components/count-up";
 import { TodayFocusNow } from "@/components/focus/today-focus";
+import { TodayLearnt } from "@/components/learnt/learnt-card";
 import { LiveRefresh } from "@/components/live-refresh";
 import { LogTimeForm } from "@/components/log-time";
 import { Tween } from "@/components/motion-ui";
@@ -363,6 +364,12 @@ export default async function TodayPage({
           </div>
 
           <div className={COLUMN}>
+            {/* What Michael has learnt (#432): after the next move on a phone, top right on a laptop. */}
+            <div className="max-xl:order-7 xl:[&>*]:mt-3">
+              <Suspense fallback={null}>
+                <TodayLearnt demo={demo} />
+              </Suspense>
+            </div>
             {ritualCard ? <div className="max-xl:order-6 xl:[&>*]:mt-3">{ritualCard}</div> : null}
 
             {/* Your week (#376): Sunday evening leads with the review; other days it is a row below. */}

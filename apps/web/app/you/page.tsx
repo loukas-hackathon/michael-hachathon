@@ -100,6 +100,18 @@ export default async function YouPage({
           <OffTheRecordSwitch />
         </div>
         <Link
+          href="/learnt?from=you"
+          className="press mt-4 flex min-h-14 items-center justify-between gap-3 rounded-group bg-fill px-4 py-2"
+        >
+          <span className="flex flex-col">
+            <span className="text-body">What I have learnt</span>
+            <span className="text-footnote text-label-2">Patterns in your days, with the proof</span>
+          </span>
+          <span aria-hidden="true" className="text-label-2">
+            ›
+          </span>
+        </Link>
+        <Link
           href="/you/knowledge"
           className="press mt-4 flex min-h-14 items-center justify-between gap-3 rounded-group bg-fill px-4 py-2"
         >
