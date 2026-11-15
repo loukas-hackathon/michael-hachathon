@@ -2705,10 +2705,10 @@ hours, refresh tokens 90 days; both are stored hashed. Loopback redirects match 
 
 The consent page (signed in user, normal auth) uses:
 
-| Method | Path                       | Body                 | Response                                                 |
-| ------ | -------------------------- | -------------------- | -------------------------------------------------------- |
-| GET    | `/v1/connect/requests/:id` |                      | `200 ConnectRequest`, `404` when expired or answered     |
-| POST   | `/v1/connect/requests/:id` | `{ allow: boolean }` | `200 { redirect_to }` (back to the client), `404`, `409` |
+| Method | Path                       | Body                 | Response                                                        |
+| ------ | -------------------------- | -------------------- | --------------------------------------------------------------- |
+| GET    | `/v1/connect/requests/:id` |                      | `200 ConnectRequest`, `404` when expired or answered            |
+| POST   | `/v1/connect/requests/:id` | `{ allow: boolean }` | `200 { redirect_to }` (back to the client), `401`, `404`, `409` |
 
 ```ts
 type ConnectRequest = {
@@ -2722,6 +2722,11 @@ type ConnectRequest = {
 
 On allow, `redirect_to` carries a one time `code` (5 minutes), `state` and `iss`; on refusal,
 `error=access_denied`. The token then acts for the user who allowed it.
+
+A request stays answerable for 30 minutes, long enough for a first Google sign in on the way. A
+`401` on allow means the caller's sign in outlived its account (a deleted account's token still
+verifies locally until it expires): the request stays pending, and the web app signs out and sends
+the person to sign in again, back to the same consent page.
 
 ### Tools
 

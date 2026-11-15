@@ -1,4 +1,5 @@
 import { Wordmark } from "@/components/brand";
+import { safeNext } from "@/lib/next-path";
 import { GoogleButton } from "./google-button";
 
 export const metadata = { title: "Sign in · Michael" };
@@ -15,10 +16,14 @@ const ERRORS: Record<string, string> = {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string | string[] }>;
+  searchParams: Promise<{ error?: string | string[]; next?: string | string[] }>;
 }) {
-  const { error } = await searchParams;
+  const { error, next } = await searchParams;
   const reason = typeof error === "string" ? error : undefined;
+  // The demo week keeps the way back too: on stage, the Claude consent page opens signed out and
+  // "See the demo week" must land on it, not on Today.
+  const back = safeNext(typeof next === "string" ? next : null);
+  const demoHref = back ? `/auth/demo?next=${encodeURIComponent(back)}` : "/auth/demo";
   const message = reason ? (ERRORS[reason] ?? ERRORS.failed) : null;
 
   return (
@@ -36,7 +41,7 @@ export default async function LoginPage({
         <div className="flex flex-col">
           <GoogleButton initialError={message} />
           <a
-            href="/auth/demo"
+            href={demoHref}
             className="press mx-auto flex h-11 items-center px-4 text-body font-semibold text-tint-text"
           >
             See the demo week
