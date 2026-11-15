@@ -3,6 +3,7 @@
 import { type ReactNode, useState } from "react";
 import { hm, minutesPhrase } from "@/lib/format";
 import { LEARNING_DAYS, learningLine, type ScoreExplain, truerLine } from "@/lib/score-explain";
+import { ProgressBar } from "../progress-bar";
 import { Sheet } from "../sheet";
 
 // The headline score, explained in one tap (#206). The score card wraps its number in
@@ -61,25 +62,15 @@ export function HowICount({
   );
 }
 
-/** Three short segments, one per day of goal blocks Michael has seen. Black, never pink. */
+/** One continuous bar (michael-ui: never segments): days of goal blocks Michael has seen. Black. */
 function LearningProgress({ days }: { days: number }) {
   return (
-    <div
-      role="progressbar"
-      aria-label="Days learnt"
-      aria-valuemin={0}
-      aria-valuemax={LEARNING_DAYS}
-      aria-valuenow={days}
-      className="flex gap-1.5"
-    >
-      {Array.from({ length: LEARNING_DAYS }, (_, i) => (
-        <span
-          // biome-ignore lint/suspicious/noArrayIndexKey: fixed number of segments
-          key={i}
-          className={`h-1.5 flex-1 rounded-full ${i < days ? "bg-label" : "bg-context"}`}
-        />
-      ))}
-    </div>
+    <ProgressBar
+      value={days / LEARNING_DAYS}
+      size="sm"
+      label="Days learnt"
+      valueText={`${days} of ${LEARNING_DAYS} days`}
+    />
   );
 }
 

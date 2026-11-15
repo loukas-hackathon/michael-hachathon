@@ -143,16 +143,18 @@ function RunningPill() {
   const end = useAction(endMeeting, { failure });
   if (!active) return null;
   const minutes = Math.max(0, Math.floor((now - Date.parse(active.started_at)) / 60_000));
+  // "0 min" reads like nothing is happening: the first minute says so in words.
+  const elapsed = minutes < 1 ? "just started" : `${minutes} min`;
 
   return (
     <div
       role="status"
-      aria-label={`Meeting on, ${minutes} min`}
+      aria-label={`Meeting on, ${elapsed}`}
       className="fixed inset-x-0 bottom-[calc(16px+var(--m-tabbar-h)+10px+env(safe-area-inset-bottom))] z-20 flex justify-center px-4 lg:bottom-6 lg:pl-64"
     >
       <div className="flex h-9 items-center gap-2 rounded-full bg-[var(--m-glass)] pr-1 pl-4 text-subhead shadow-[0_0_0_0.5px_var(--m-separator),0_6px_18px_-8px_rgb(0_0_0/0.25)] backdrop-blur-xl">
         <span className="font-semibold">Meeting on</span>
-        <span className="text-label-2 tnum">· {minutes} min ·</span>
+        <span className="text-label-2 tnum">· {elapsed} ·</span>
         <PendingButton
           pending={end.pending}
           pendingLabel="Ending"

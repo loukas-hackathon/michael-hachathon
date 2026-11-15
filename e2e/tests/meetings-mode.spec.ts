@@ -35,6 +35,9 @@ test("meetings mode: consent, start, the pill on every screen, then end", async 
   const pill = page.getByRole("status", { name: /Meeting on/ });
   await expect(pill).toBeVisible();
   await expect(pill).toContainText("Meeting on");
+  // The first minute says it in words, never "0 min".
+  await expect(pill).toContainText("just started");
+  await expect(pill).not.toContainText("0 min");
   await expect.poll(active).toBe(true);
 
   // Every screen shows it.

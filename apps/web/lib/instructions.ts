@@ -49,7 +49,8 @@ export function instructionText(i: Pick<Instruction, "kind" | "days" | "time" | 
     case "home_by":
       return `Home by ${i.time ?? "21:00"} ${daysPhrase(i.days)}`;
     case "quiet_hours":
-      return `Quiet from ${i.time ?? "22:00"} to ${i.end_time ?? "07:00"}`;
+      // About booking, not nudges: quiet hours (the profile) are the no nudges window.
+      return `Never book ${i.time ?? "22:00"} to ${i.end_time ?? "07:00"}`;
     default:
       return i.text;
   }

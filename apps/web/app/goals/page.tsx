@@ -322,14 +322,15 @@ function Hero({
           pace={p}
           label={`${hm(goal.spentMinutes)} of ${hm(goal.budgetMinutes)}. On pace would be ${hm(due)} by now.`}
         />
-        <div className="mt-2.5 flex items-baseline justify-between gap-3 text-footnote text-label-2 tnum xl:flex-col xl:gap-2">
-          {/* Laptop: the hero sits in a narrower column, so the actions go under the sentence. */}
-          <p>
+        <div className="mt-2.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-3 text-footnote text-label-2 tnum xl:flex-col xl:flex-nowrap xl:gap-2">
+          {/* The actions go under the sentence when it would get less than 15rem beside them (a
+              390px phone with the logged line), and always on a laptop's narrower column. */}
+          <p className="min-w-0 flex-[1_1_15rem] xl:flex-none">
             <b className="font-semibold text-label">{hm(goal.spentMinutes)}</b> of {hm(goal.budgetMinutes)}.
             On pace: {hm(due)} by now.
             {goal.loggedMinutes ? ` ${loggedLine(goal.loggedMinutes)}` : ""}
           </p>
-          <span className="-my-2 flex shrink-0 items-baseline gap-3 xl:-mx-1">
+          <span className="-mx-1 -my-2 flex shrink-0 items-baseline gap-3">
             {/* "I did 30 min" (#317): time spent off the calendar counts too. */}
             {canLog ? (
               <FocusNowButton goal={{ id: goal.id, title: goal.title }} className={btnPlain} />

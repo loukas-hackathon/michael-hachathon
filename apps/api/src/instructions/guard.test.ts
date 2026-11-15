@@ -77,11 +77,11 @@ test("guard: each kind of instruction against each kind of action", () => {
   // quiet_hours: blocks and reminders are refused; a draft is not.
   assert.equal(
     verdict(act("create_focus_block", "2026-11-16 22:30", "2026-11-16 23:00"), [QUIET]),
-    "That's in your quiet hours.",
+    "That's in the hours I never book.",
   );
   assert.equal(
     verdict(act("reminder", "2026-11-16 22:30", null, null), [QUIET]),
-    "That's in your quiet hours.",
+    "That's in the hours I never book.",
   );
   assert.equal(verdict(act("draft_follow_up", "2026-11-16 22:30", null, null), [QUIET]), "allowed");
   assert.equal(
@@ -130,11 +130,11 @@ test("guard: quiet hours across midnight and home_by after midnight", () => {
   // 22:00 to 07:00 starts on Monday and holds Tuesday's small hours.
   assert.equal(
     verdict(act("create_focus_block", "2026-11-17 02:00", "2026-11-17 03:00"), [QUIET]),
-    "That's in your quiet hours.",
+    "That's in the hours I never book.",
   );
   assert.equal(
     verdict(act("reminder", "2026-11-17 06:30", null, null), [QUIET]),
-    "That's in your quiet hours.",
+    "That's in the hours I never book.",
   );
   assert.equal(verdict(act("reminder", "2026-11-17 07:00", null, null), [QUIET]), "allowed");
   assert.equal(

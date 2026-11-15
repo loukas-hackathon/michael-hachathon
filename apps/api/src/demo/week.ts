@@ -790,5 +790,5 @@ export const demoGoals: Goal[] = [
 // books time live (Book on Goals, Do it). "Keep Sundays clear" refused both, and "home by 21:00"
 // would mark every gym evening as broken. demo/sunday.test.ts holds this.
 export const demoInstructions: z.input<typeof InstructionCreate>[] = [
-  { text: "Nothing between 23:00 and 07:00", kind: "quiet_hours", time: "23:00", end_time: "07:00" },
+  { text: "Never book 23:00 to 07:00", kind: "quiet_hours", time: "23:00", end_time: "07:00" },
 ];

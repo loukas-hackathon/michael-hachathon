@@ -141,7 +141,7 @@ export function refusalReason(instruction: Instruction): string {
     case "home_by":
       return instruction.time ? `You're home by ${instruction.time}.` : "You're home by then.";
     case "quiet_hours":
-      return "That's in your quiet hours.";
+      return "That's in the hours I never book.";
     default:
       return "That breaks one of your standing instructions.";
   }
