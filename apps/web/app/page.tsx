@@ -41,7 +41,7 @@ import {
   needsOnboarding,
 } from "@/lib/api";
 import type { ChecklistDay } from "@/lib/checklist";
-import { type DayView, nowIndex, tape, totals } from "@/lib/day";
+import { aheadOf, type DayView, nowIndex, tape, totals } from "@/lib/day";
 import { formatDay, formatTime, hm, spokenDuration } from "@/lib/format";
 import { verdict } from "@/lib/gamification";
 import type { LostWeek } from "@/lib/lost-week";
@@ -104,7 +104,7 @@ export default async function TodayPage({
     .map((g) => ({ id: g.id, title: g.title }));
   const ticks = tape(day);
   const t = totals(day);
-  const firstBlock = day.blocks[0];
+  const ahead = aheadOf(day);
   const momentKind = momentKindFor(day);
   // Sunday evening is the review's own moment (#376); a sample day has no review to open.
   const sundayEvening = !day.sample && day.moment === "evening" && isSundayIn(day.now);
@@ -170,10 +170,22 @@ export default async function TodayPage({
               data-live-key="score"
               data-live-pop=""
             >
-              {day.blocks.length > 0 && t.scorePct === null && firstBlock ? (
+              {day.blocks.length > 0 && t.scorePct === null ? (
                 <p className="text-title3 font-semibold">
-                  Your first block starts at <span className="tnum">{formatTime(firstBlock.start)}</span>.
-                  {keepWeek && keepLine(keepWeek) ? ` ${keepLine(keepWeek)}` : ""}
+                  {ahead.kind === "none" ? (
+                    "No more goal blocks today."
+                  ) : ahead.kind === "running" ? (
+                    <>
+                      You're in a goal block until <span className="tnum">{formatTime(ahead.block.end)}</span>
+                      .
+                    </>
+                  ) : (
+                    <>
+                      Your {ahead.kind} block starts at{" "}
+                      <span className="tnum">{formatTime(ahead.block.start)}</span>.
+                    </>
+                  )}
+                  {ahead.kind !== "none" && keepWeek && keepLine(keepWeek) ? ` ${keepLine(keepWeek)}` : ""}
                 </p>
               ) : day.blocks.length > 0 ? (
                 <HowICount explain={day.explain}>

@@ -33,8 +33,8 @@ the stage and Claude will each see a different day.
       `curl -s -H "Authorization: Bearer $MICHAEL_API_KEY" $API/v1/recommendations | grep -c -i "protein\|recovery is"`
       prints `0`. On Today, "Michael's brief" reads "None yet. One tap and I read your day."
       and Follow ups shows no line about seeding a demo week.
-- [ ] **Book works on a Sunday.** The plan's only standing instruction is "Nothing between 23:00
-      and 07:00" (it follows the sleep goal). "Keep Sundays clear" made Book and Do it refuse all
+- [ ] **Book works on a Sunday.** The plan's only standing instruction is "Never book 23:00 to
+      07:00" (it follows the sleep goal). "Keep Sundays clear" made Book and Do it refuse all
       Sunday with "No free 90 minutes left this week"; it must not be back:
       `curl -s -H "Authorization: Bearer $MICHAEL_API_KEY" $API/v1/instructions` lists that one
       rule. Then on **Goals** tap **Book 1h 30** on University: a block lands this evening (after the
@@ -109,8 +109,8 @@ the stage and Claude will each see a different day.
       from rehearsal first, on Today or Timeline: reseed never removes blocks Claude booked, and
       Timeline blocks you added stay until you delete them (tap the block, **Delete this block**).
 - [ ] **Pick the focus block slot.** On Today (or Timeline), find a free 45 minutes later today that
-      does not overlap any event with other people, has not started and ends by 23:00 ("Nothing
-      between 23:00 and 07:00"). Sunday evening: 21:15 (the finalists slot, 20:00 to 21:00, has
+      does not overlap any event with other people, has not started and ends by 23:00 ("Never book
+      23:00 to 07:00"). Sunday evening: 21:15 (the finalists slot, 20:00 to 21:00, has
       other people). Write `HH:MM` on a card for the Claude prompt; the drag beat moves it 30 minutes
       later, so leave room after it.
 - [ ] **Off the record is off** (You: the switch is grey). On, it stops nudges.

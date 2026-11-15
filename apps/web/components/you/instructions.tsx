@@ -215,6 +215,10 @@ function Save({ formId, label, pending }: { formId: string; label: string; pendi
 const separator =
   "before:absolute before:inset-x-0 before:top-0 before:ml-4 before:h-[0.5px] before:bg-separator before:content-['']";
 
+// A stored no booking window reads as booking ("Never book 23:00 to 07:00"), whatever
+// words it was saved with, so it never looks like a second quiet hours beside the row above.
+const ruleText = (i: Instruction) => (i.kind === "quiet_hours" ? instructionText(i) : i.text);
+
 /** Standing instructions under the Mi button: quiet hours first, then the user's own rules. */
 export function StandingInstructions({
   available,
@@ -261,9 +265,9 @@ export function StandingInstructions({
               className="press flex min-h-11 w-full items-center justify-between gap-3 px-4 py-2.5 text-left"
             >
               <span className="text-body tnum">
-                Quiet from {quiet.start} to {quiet.end}
+                No nudges {quiet.start} to {quiet.end}
               </span>
-              <span className="text-footnote text-label-2">No nudges</span>
+              <span className="text-footnote text-label-2">Quiet hours</span>
             </button>
           </li>
         ) : null}
@@ -274,11 +278,11 @@ export function StandingInstructions({
               onClick={() => setSheet({ type: "edit", item: i })}
               className={`press min-h-11 min-w-0 flex-1 self-stretch py-2.5 pl-4 text-left text-body ${i.active ? "" : "text-label-2"}`}
             >
-              {i.text}
+              {ruleText(i)}
             </button>
             <input
               type="checkbox"
-              aria-label={i.text}
+              aria-label={ruleText(i)}
               checked={i.active}
               disabled={pending}
               onChange={(e) => {

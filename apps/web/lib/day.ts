@@ -138,6 +138,33 @@ export function totals(day: DayView): Totals {
   return { planned, spent, unverified: 0, lost, ahead, scorePct };
 }
 
+/** A block this short is what is left of a Focus ended in its first minute (#434): never "ahead". */
+const LEFTOVER_MINUTES = 2;
+
+export type Ahead =
+  | { kind: "first" | "next"; block: GoalBlock }
+  | { kind: "running"; block: GoalBlock }
+  | { kind: "none" };
+
+/**
+ * What Today's headline speaks about while nothing is scored yet (#434). Only a block that has not
+ * started is upcoming; a block running now is said as running; a block that already started, or the
+ * leftover of a Focus ended in its first minute, never reads as one still ahead.
+ */
+export function aheadOf(day: Pick<DayView, "now" | "blocks">): Ahead {
+  const now = ms(day.now);
+  const blocks = [...day.blocks].sort((a, b) => ms(a.start) - ms(b.start));
+  const next = blocks.find((b) => ms(b.start) > now);
+  const started = blocks.some((b) => ms(b.start) <= now);
+  if (next && !started) return { kind: "first", block: next };
+  const running = blocks.find(
+    (b) => ms(b.start) <= now && ms(b.end) > now && ms(b.end) - ms(b.start) >= LEFTOVER_MINUTES * MIN,
+  );
+  if (running) return { kind: "running", block: running };
+  if (next) return { kind: "next", block: next };
+  return { kind: "none" };
+}
+
 /** Index of the first tick that is still ahead, across all blocks (for the "now" marker). */
 export function nowIndex(ticks: Tick[][]) {
   let i = 0;
