@@ -4,6 +4,7 @@ import { PatternCard } from "@/components/learnt/pattern-card";
 import { StudySeries } from "@/components/learnt/study-series";
 import { Studying } from "@/components/learnt/studying";
 import {
+  type Insight,
   type Insights,
   joinNames,
   sortInsights,
@@ -55,8 +56,9 @@ export default async function LearntPage({
   const sorted = view ? sortInsights(view.insights) : { patterns: [], watching: [] };
   const { patterns, watching } = sorted;
   const progress = view ? studyProgress(view.studied) : null;
-  // The chain whose trigger nights the sleep line marks: the strongest one that says which nights.
-  const marked = patterns.find((i) => i.kind === "chain" && i.evidence.days.length);
+  // The nights the sleep line marks: the late phone chain's trigger evenings, when it is a pattern.
+  // A sleep figure marking its own nights says nothing, so no other trigger is marked.
+  const late = lateNights(patterns);
 
   return (
     <main className="screen screen-mid">
@@ -88,15 +90,7 @@ export default async function LearntPage({
         <>
           <StudyCounter studied={view.studied} />
           {view.series?.length ? (
-            <StudySeries
-              series={view.series}
-              triggerDays={marked?.evidence.days}
-              triggerLabel={
-                marked?.steps[0]
-                  ? `${marked.steps[0].label.charAt(0).toLowerCase()}${marked.steps[0].label.slice(1)}`
-                  : undefined
-              }
-            />
+            <StudySeries series={view.series} triggerDays={late?.days} occasion={late?.occasion} />
           ) : null}
 
           {patterns.length ? (
@@ -146,4 +140,19 @@ export default async function LearntPage({
       )}
     </main>
   );
+}
+
+const LATE = ["late_phone_min", "late_screen_min", "phone_before_sleep_min"];
+
+/**
+ * The late phone pattern's trigger evenings and how the line names them ("nights with 30 minutes or
+ * more on your phone after 23:45"), read from "23 of 30 nights with ... gave ...". Chains first.
+ */
+function lateNights(patterns: Insight[]) {
+  const trigger = (i: Insight) => /^(?:chain|link):([^>]+)>/.exec(i.id)?.[1] ?? "";
+  const found = [...patterns]
+    .filter((i) => LATE.includes(trigger(i)) && i.evidence.days.length)
+    .sort((a, b) => (a.kind === "chain" ? 0 : 1) - (b.kind === "chain" ? 0 : 1))[0];
+  const occasion = found ? /^\d+ of \d+ (nights with .+?) gave /.exec(found.line)?.[1] : undefined;
+  return found && occasion ? { days: found.evidence.days, occasion } : null;
 }
