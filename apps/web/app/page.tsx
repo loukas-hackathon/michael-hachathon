@@ -8,6 +8,7 @@ import { TodayLearnt } from "@/components/learnt/learnt-card";
 import { LiveRefresh } from "@/components/live-refresh";
 import { LogTimeForm } from "@/components/log-time";
 import { Tween } from "@/components/motion-ui";
+import { TodayNumbers } from "@/components/numbers/numbers-card";
 import { HowICount, ScoreLearning } from "@/components/score/how-i-count";
 import { ScreenHeader } from "@/components/screen";
 import { MoreFromMichaelSkeleton } from "@/components/skeletons";
@@ -163,6 +164,9 @@ export default async function TodayPage({
           <RecommendationsPanel slot="primary" />
           <Suspense fallback={null}>
             <TodayLearnt demo={demo} />
+          </Suspense>
+          <Suspense fallback={null}>
+            <TodayNumbers demo={demo} />
           </Suspense>
           {/* No moment card or brief on an empty day: both would only say there is nothing yet, which
               Get started already says with one action. */}
@@ -337,7 +341,7 @@ export default async function TodayPage({
             />
 
             {day.sample ? null : (
-              <div className="max-xl:order-8">
+              <div className="max-xl:order-9">
                 <Suspense fallback={null}>
                   <CalendarCard demo={demo} emptyDay={false} />
                 </Suspense>
@@ -345,7 +349,7 @@ export default async function TodayPage({
             )}
 
             {lists.length > 0 ? (
-              <div className="max-xl:order-9">
+              <div className="max-xl:order-10">
                 {lists.map((l) => (
                   <TodayChecklist key={l.goalId} {...l} />
                 ))}
@@ -355,7 +359,7 @@ export default async function TodayPage({
               <section
                 aria-label="What I did"
                 // A flex item keeps its first child's margin inside; the card's own mt-5 would add to mt-6.
-                className="mt-6 max-xl:order-10 [&>article:first-child]:mt-0"
+                className="mt-6 max-xl:order-11 [&>article:first-child]:mt-0"
                 data-live-key="did"
                 data-live-pop=""
               >
@@ -384,7 +388,7 @@ export default async function TodayPage({
 
           <div className={COLUMN}>
             {/* What Michael has learnt (#432): after the next move on a phone, top right on a laptop. */}
-            <div className="max-xl:order-7 xl:[&>*]:mt-3">
+            <div className="max-xl:order-8 xl:[&>*]:mt-3">
               <Suspense fallback={null}>
                 <TodayLearnt demo={demo} />
               </Suspense>
@@ -400,7 +404,7 @@ export default async function TodayPage({
               </div>
             ) : null}
 
-            <div className="max-xl:order-11 xl:[&:first-child>*]:mt-3">
+            <div className="max-xl:order-12 xl:[&:first-child>*]:mt-3">
               <Suspense fallback={<MoreFromMichaelSkeleton />}>
                 <MoreFromMichael wideOpen>
                   {momentKind ? <MomentCard kind={momentKind} sample={day.sample} /> : null}
@@ -429,6 +433,14 @@ export default async function TodayPage({
 
             <Suspense fallback={null}>
               <WeekGlance demo={demo} className="mt-8 hidden xl:block" />
+            </Suspense>
+          </div>
+
+          {/* Your numbers: each figure against the usual, with one fix. On a phone right after the
+              next move; on a laptop a band of tiles under the three columns. */}
+          <div className="max-xl:order-7 xl:col-span-3">
+            <Suspense fallback={null}>
+              <TodayNumbers demo={demo} />
             </Suspense>
           </div>
         </div>
