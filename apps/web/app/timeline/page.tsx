@@ -81,6 +81,20 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
                 <b className="font-semibold text-label">{hm(day.totals.workMinutes)}</b> of goal time so far,{" "}
                 <b className="font-semibold text-label">{minutesPhrase(day.totals.lostMinutes)}</b> lost.
               </>
+            ) : date > today && day.blocks.length === 0 ? (
+              <>
+                {plans.length > 0 ? (
+                  <>
+                    <b className="font-semibold text-label">
+                      {plans.length} {plans.length === 1 ? "block" : "blocks"}
+                    </b>{" "}
+                    planned.
+                  </>
+                ) : (
+                  "Nothing planned yet."
+                )}
+                {screen.editable ? " Tap a free time to add a block." : null}
+              </>
             ) : day.blocks.length === 0 && day.phone.length === 0 ? (
               <>
                 No screens recorded{plans.length > 0 ? ", " : "."}
@@ -108,9 +122,21 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
               </>
             )}
           </p>
+          {screen.calendarConnected === false ? (
+            <Link href="/integrations/google/connect" className={`${tinted} mt-3`}>
+              Connect your calendar
+            </Link>
+          ) : null}
           <HeartRow day={day} heartHidden={heartHidden} />
           <DayTimelineList day={day} />
-          <DayTimeline day={day} heartHidden={heartHidden} sleepGoal={screen.sleepGoal} />
+          <DayTimeline
+            key={date}
+            day={day}
+            heartHidden={heartHidden}
+            sleepGoal={screen.sleepGoal}
+            editable={screen.editable && date >= today}
+            goals={screen.goals}
+          />
         </>
       ) : (
         <EmptyState

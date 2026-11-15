@@ -40,6 +40,10 @@ export type TimelineScreen = {
   calendarConnected: boolean | null;
   /** Minutes a night the Sleep goal asks for, to set the watch's nights against; null without one. */
   sleepGoal: number | null;
+  /** The user's active goals, for the goal chips when they add or edit a block (#271). */
+  goals: { id: string; title: string }[];
+  /** The day can be edited: the user's own live data (the sample day cannot). */
+  editable: boolean;
 };
 
 // The heavy per-second streams (app use, web visits, prompts, heart rate) are left out of the week
@@ -114,7 +118,9 @@ export async function loadTimeline(asked?: string, demo?: string): Promise<Timel
     calendarConnected = calendar ? calendar.status === "connected" : null;
   }
 
-  const day = events.length > 0 ? buildTimeline(date, withNight, start, end, Date.now()) : null;
+  // Today and the days ahead always show, even empty, so a free slot can be tapped to plan it (#271).
+  const day =
+    events.length > 0 || date >= today ? buildTimeline(date, withNight, start, end, Date.now()) : null;
   if (day?.plans && scored) day.plans = withGoals(day.plans, scored);
 
   return {
@@ -128,6 +134,8 @@ export async function loadTimeline(asked?: string, demo?: string): Promise<Timel
     earlier,
     calendarConnected,
     sleepGoal: sleepGoalMinutes(goals.goals),
+    goals: goals.goals.filter((g) => g.active).map((g) => ({ id: g.id, title: g.title })),
+    editable: true,
   };
 }
 
@@ -164,5 +172,7 @@ function loadSample(asked?: string): TimelineScreen {
     earlier: null,
     calendarConnected: null,
     sleepGoal: null,
+    goals: [],
+    editable: false,
   };
 }

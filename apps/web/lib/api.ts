@@ -2,6 +2,9 @@ import "server-only";
 import {
   type AddressSearchResponse,
   ApiError,
+  BlockChange,
+  type BlockCreate,
+  type BlockUpdate,
   type ChatHistory,
   type ChatResponse,
   type ChatThread,
@@ -485,6 +488,46 @@ export async function bookGoal(goalId: string, minutes: number): Promise<RecResu
 export async function dismissRecommendation(id: string): Promise<RecResult> {
   if (USE_MOCKS && isMockRec(id)) return mockRecAction(id, "dismiss");
   return recCall("PATCH", `/v1/recommendations/${encodeURIComponent(id)}`, { status: "dismissed" });
+}
+
+// Calendar blocks the user edits on the Timeline (#271). Undo goes through undoRecommendation.
+export type BlockResult = { ok: true; change: BlockChange } | { ok: false; message: string };
+
+async function blockCall(method: "POST" | "PATCH" | "DELETE", path: string, body?: unknown) {
+  if (USE_MOCKS) return { ok: false, message: "Editing the day needs the live API." } as BlockResult;
+  try {
+    const res = await fetch(`${API_URL}${path}`, {
+      method,
+      headers: { ...(await authHeaders()), "content-type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      cache: "no-store",
+    });
+    const json: unknown = await res.json().catch(() => null);
+    if (res.ok) {
+      const change = BlockChange.safeParse(json);
+      if (change.success) return { ok: true, change: change.data } as BlockResult;
+      return { ok: false, message: "The server answered in a way I did not expect." } as BlockResult;
+    }
+    const err = ApiError.safeParse(json);
+    return { ok: false, message: err.success ? err.data.error.message : `${res.status}` } as BlockResult;
+  } catch {
+    return { ok: false, message: "Michael's server can't be reached." } as BlockResult;
+  }
+}
+
+/** POST /v1/blocks: a new block on the user's own time. */
+export function postBlock(input: BlockCreate): Promise<BlockResult> {
+  return blockCall("POST", "/v1/blocks", input);
+}
+
+/** PATCH /v1/blocks/:id: move, resize, rename or change the goal. */
+export function patchBlock(id: string, input: BlockUpdate): Promise<BlockResult> {
+  return blockCall("PATCH", `/v1/blocks/${encodeURIComponent(id)}`, input);
+}
+
+/** DELETE /v1/blocks/:id: only blocks made in Michael. */
+export function deleteBlock(id: string): Promise<BlockResult> {
+  return blockCall("DELETE", `/v1/blocks/${encodeURIComponent(id)}`);
 }
 
 // Privacy. With mocks, one in-process state so the switches still hold while the server runs.
