@@ -1,5 +1,6 @@
 /*
- * Launch animation (components/splash.tsx). About 1.2s in all, transform and opacity only.
+ * Launch animation (components/splash.tsx). About 1.2s in all, transform and opacity only; the
+ * quick version a resume plays is the same motion in about 650ms.
  * The overlay never takes taps, and it hides itself when the animation ends even without
  * JavaScript, so it can never trap the app behind it.
  */
@@ -77,11 +78,28 @@
   }
 }
 
-/* Hold the hand over while the screen behind is still a skeleton (aria-busy), so the mark gives
- * way to the real day, not to grey bars. The script caps the hold at 3.5s. Only the out and lift
- * animations pause; the mark itself still settles. */
-body:has(main[aria-busy="true"]) #m-splash:not([data-done]),
-body:has(main[aria-busy="true"]) #m-splash:not([data-done]) .m-splash-mark {
+/* Coming back to the installed app: the same motion, compressed to about 650ms, never held. */
+#m-splash[data-quick],
+#m-splash[data-quick] .m-splash-mark {
+  animation-duration: 200ms;
+  animation-delay: 450ms;
+}
+
+#m-splash[data-quick] .m-splash-body {
+  animation-duration: 320ms;
+}
+
+#m-splash[data-quick] .m-splash-dot {
+  animation-duration: 300ms;
+  animation-delay: 150ms;
+}
+
+/* On a cold start, hold the hand over while the screen behind is still a skeleton (aria-busy), so
+ * the mark gives way to the real day, not to grey bars. The script caps the whole splash at 1.5s,
+ * so a slow read never turns it into a login screen; the skeleton takes over from there. Only the
+ * out and lift animations pause; the mark itself still settles. A resume (data-quick) never holds. */
+body:has(main[aria-busy="true"]) #m-splash:not([data-done]):not([data-quick]),
+body:has(main[aria-busy="true"]) #m-splash:not([data-done]):not([data-quick]) .m-splash-mark {
   animation-play-state: paused;
 }
 

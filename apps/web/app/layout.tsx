@@ -11,6 +11,7 @@ import { MeetingPill } from "@/components/meetings";
 import { NudgeOpened } from "@/components/nudge-opened";
 import { SafeTopScript } from "@/components/safe-top";
 import { ServiceWorker } from "@/components/service-worker";
+import { SessionFresh } from "@/components/session-fresh";
 import { Splash } from "@/components/splash";
 import { TabBar } from "@/components/tab-bar";
 import "./globals.css";
@@ -54,6 +55,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <TabBar />
         <FocusHost />
         <ServiceWorker />
+        <SessionFresh />
         <Desktop />
         <DeepLinkFocus />
       </body>
