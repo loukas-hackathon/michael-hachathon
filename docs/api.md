@@ -1587,7 +1587,24 @@ anything is stored; a block that has started is refused. It is a done recommenda
 puts the block back with the same time and title until it starts (in Google with its description
 and location, still the user's own, not tagged as Michael's). Step label `Removing Boatspace` (the
 user's own block title), else `Removing your block`. The reply says what was removed and
-`Undo until HH:MM.` `ChatResponse.actions` lists what was done (`status: "done"`,
+`Undo until HH:MM.`
+
+**Chat changes the rest of the app (#457).** So Michael acts instead of sending the user to a screen:
+
+- `change_calendar_block { event_id, title?, start_at?, end_at?, goal_id? }`: rename, move, resize
+  or give a goal to one of the user's own blocks, as `PATCH /v1/blocks/:id` does (a
+  `move_calendar_block` recommendation, `source: "chat"`, title `Deep work, now 15:00 to 16:30` or
+  `Renamed Boatspace to Deep work`). Same refusals; `undo_action` until it starts. Step `Changing
+  Boatspace`.
+- `change_focus { action: "end" | "extend", minutes?, count? }`: the running Focus now session, as
+  `POST /v1/focus/:id/end` and `/extend`.
+- `meetings_mode { on }`: `POST /v1/meetings/start` and `/end`. Michael never gives consent: the
+  first start is refused with the consent notice until the user has started it once in the app.
+- `go_off_the_record {}`: off the record ON (`PUT /v1/privacy/off-the-record { off_the_record:
+  true }`). No tool turns it off; that switch is the user's own.
+
+Still only in the app: deleting a goal, an instruction, a place, an outcome or data, connecting or
+disconnecting a source, per source switches, revoking an agent, and turning off the record off. `ChatResponse.actions` lists what was done (`status: "done"`,
 deadline in `action.undo_until`) or undone in this answer, and the reply always ends with
 "Undo until HH:MM." for each thing done. The context gives Claude ids only for the user's own blocks
 that have not started, goal ids, and the things that can still be undone.
@@ -2886,7 +2903,7 @@ type AgentQuery = {
 - Scope per tool: `get_timeline`, `get_patterns`, `get_insights` = `timeline`; `get_goals`, `add_goal`,
   `update_goal`, `propose_goals`, `get_checklist`, `add_checklist_item`, `set_day_outcomes`, `log_day` = `goals`; `list_recommendations`, `update_recommendation`, `get_nudges`,
   `list_drafts`, `draft_follow_up` = `recommendations`; `get_score`, `get_records`, `get_moments` = `score`; `add_event`, `execute_recommendation`,
-  `undo_recommendation`, `create_focus_block`, `remove_calendar_block`, `block_mac_app`, `plan_travel`, `log_done`,
+  `undo_recommendation`, `create_focus_block`, `change_calendar_block`, `remove_calendar_block`, `block_mac_app`, `plan_travel`, `log_done`,
   `confirm_block`, `focus_now` = `write_events`;
   `suggest_app_mute` = `recommendations`; `get_memories`, `what_you_know` = `timeline`; `remember` = `write_events`.
   Memories are events of type `memory` (source `manual` from chat, `agent` from MCP); Michael's
@@ -2895,7 +2912,7 @@ type AgentQuery = {
   list needs `timeline` if it is read only, else `write_events` (`apps/api/src/mcp-guard.ts`).
 - `queries`: `from` defaults to local midnight today (Europe/Athens), `to` to now; newest first,
   at most 500.
-- A change an agent made (`execute_recommendation`, `create_focus_block`, `remove_calendar_block`, `block_mac_app`, `log_done`, `confirm_block`) carries
+- A change an agent made (`execute_recommendation`, `create_focus_block`, `change_calendar_block`, `remove_calendar_block`, `block_mac_app`, `log_done`, `confirm_block`) carries
   `recommendation_id`. `undo_until` is set while that change can still be undone (the
   recommendation is `done` and its block has not started; a mute: has not ended), else `null`. The
   Agents screen shows Undo next to the line and calls `POST /v1/recommendations/:id/undo`.
@@ -3784,6 +3801,7 @@ offset. A refused or failed call returns `isError: true` with one plain sentence
 | `execute_recommendation` | `write_events`    | `{ id }`                                                                                | `{ recommendation, undo_until }`                                                                |
 | `undo_recommendation`    | `write_events`    | `{ id }`                                                                                | `{ recommendation }`                                                                            |
 | `create_focus_block`     | `write_events`    | `{ start: TimeInput, end: TimeInput, title?, goal_id? }`                                | `{ recommendation, undo_until }`                                                                |
+| `change_calendar_block`  | `write_events`    | `{ event_id, title?, start?: TimeInput, end?: TimeInput, goal_id? }`                    | `{ recommendation, undo_until }`; other people on it or started: refused                        |
 | `remove_calendar_block`  | `write_events`    | `{ event_id }` (the user's own block, from `get_timeline`)                              | `{ recommendation, undo_until }`; other people on it or started: refused                        |
 | `block_mac_app`          | `write_events`    | `{ apps: string[], start?: TimeInput, end: TimeInput, goal_id? }` (start default now)   | `{ recommendation, undo_until }`                                                                |
 | `log_done`               | `write_events`    | `{ goal_id? \| goal?, minutes?, start?: TimeInput, end?: TimeInput, note? }`            | `LogTimeResponse` (see Done time)                                                               |

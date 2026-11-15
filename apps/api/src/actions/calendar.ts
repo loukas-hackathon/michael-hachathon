@@ -788,6 +788,71 @@ export async function removeOwnBlock(eventId: string, requestedBy?: string): Pro
   }
 }
 
+export interface BlockPatch {
+  title?: string;
+  start_at?: string;
+  end_at?: string;
+  goal_id?: string | null;
+}
+
+/**
+ * #457: renames, moves, resizes or gives a goal to one of the user's own blocks, as the Timeline
+ * does (PATCH /v1/blocks/:id), when they ask Michael or an agent. A new start keeps the length
+ * unless an end is given. Undo puts it back until it starts.
+ */
+export async function changeOwnBlock(
+  eventId: string,
+  patch: BlockPatch,
+  requestedBy?: string,
+): Promise<Recommendation> {
+  const event = await store.getEvent(eventId);
+  if (!event) throw new HttpError("not_found", "That block is not on the timeline");
+  if (isOthers(event)) throw conflict("That event has other people in it. I only advise on those.");
+  if (patch.goal_id && !(await store.getGoal(patch.goal_id)))
+    throw new HttpError("not_found", "Goal not found");
+  const length =
+    (event.end_at ? Date.parse(event.end_at) : Date.parse(event.start_at)) - Date.parse(event.start_at);
+  const start = patch.start_at ?? event.start_at;
+  const end =
+    patch.end_at ??
+    (patch.start_at ? new Date(Date.parse(patch.start_at) + length).toISOString() : event.end_at);
+  if ((patch.start_at || patch.end_at) && end && Date.parse(end) - Date.parse(start) < MIN_BLOCK_MS)
+    throw new HttpError("bad_request", "A block is at least 5 minutes");
+  const newTitle = patch.title && patch.title !== event.title ? patch.title : undefined;
+  const span = `${athens.clock(Date.parse(start))}${end ? ` to ${athens.clock(Date.parse(end))}` : ""}`;
+  const name = newTitle ?? event.title;
+  const title =
+    patch.start_at || patch.end_at
+      ? `${name}, now ${span}`
+      : newTitle
+        ? `Renamed ${event.title} to ${newTitle}`
+        : `Changed ${event.title}`;
+  const rec = await store.createRecommendation({
+    goal_id: patch.goal_id ?? null,
+    title,
+    rationale: requestedBy ? `Changed at the request of ${requestedBy}.` : "Asked for in chat.",
+    action: {
+      kind: "move_calendar_block",
+      payload: parse(MoveCalendarBlockPayload, {
+        event_id: event.id,
+        ...(patch.start_at ? { start_at: patch.start_at } : {}),
+        ...(patch.end_at ? { end_at: patch.end_at } : {}),
+        ...(newTitle ? { new_title: newTitle } : {}),
+        ...(patch.goal_id !== undefined ? { goal_id: patch.goal_id } : {}),
+      }),
+      involves_others: false,
+      undo_until: earliest(event.start_at, start),
+    },
+    source: "chat",
+  });
+  try {
+    return await executeRecommendation(rec.id);
+  } catch (err) {
+    await store.updateRecommendationStatus(rec.id, "dismissed").catch(() => null);
+    throw err;
+  }
+}
+
 export async function undoDeadline(id: string): Promise<string | null> {
   const parsed = Execution.safeParse(await store.getRecommendationExecution(id));
   return parsed.success ? parsed.data.undo_until : null;

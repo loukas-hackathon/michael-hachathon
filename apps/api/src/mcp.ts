@@ -28,6 +28,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { z } from "zod";
 import {
   bookFocusBlock,
+  changeOwnBlock,
   executeRecommendation,
   removeOwnBlock,
   undoDeadline,
@@ -1004,6 +1005,40 @@ export function createMcpServer(): McpServer {
     },
     safe(async ({ event_id }) => {
       const rec = await removeOwnBlock(event_id, currentAgent()?.name ?? "an AI tool");
+      const until = await undoDeadline(rec.id);
+      return reply(
+        `${rec.title}. Undo with undo_recommendation (id ${rec.id})${until ? ` until ${when(until)}` : ""}.`,
+        { recommendation: rec, undo_until: until },
+      );
+    }),
+  );
+
+  server.registerTool(
+    "change_calendar_block",
+    {
+      title: "Change one of the user's blocks",
+      description: `Rename, move, resize or give a goal to one of the user's own calendar blocks when they ask (event_id from get_timeline). Give only what changes: title, start (the length is kept unless end is given), end, goal_id. Refused for events with other people and blocks that have started. Undo with undo_recommendation until the block starts. ${TZ_NOTE}`,
+      inputSchema: {
+        event_id: Id.describe("The block's id from get_timeline"),
+        title: z.string().min(1).max(200).optional().describe("New title"),
+        start: TimeInput.optional().describe("New start, e.g. 2026-11-14T15:00"),
+        end: TimeInput.optional().describe("New end, e.g. 2026-11-14T16:30"),
+        goal_id: Id.nullable().optional().describe("The goal it counts for, from get_goals; null clears it"),
+      },
+    },
+    safe(async ({ event_id, title, start, end, goal_id }) => {
+      if (!title && !start && !end && goal_id === undefined)
+        throw new HttpError("bad_request", "Give a title, start, end or goal_id");
+      const rec = await changeOwnBlock(
+        event_id,
+        {
+          ...(title ? { title } : {}),
+          ...(start ? { start_at: toInstant(start) } : {}),
+          ...(end ? { end_at: toInstant(end) } : {}),
+          ...(goal_id !== undefined ? { goal_id } : {}),
+        },
+        currentAgent()?.name ?? "an AI tool",
+      );
       const until = await undoDeadline(rec.id);
       return reply(
         `${rec.title}. Undo with undo_recommendation (id ${rec.id})${until ? ` until ${when(until)}` : ""}.`,
