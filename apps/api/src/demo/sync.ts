@@ -1,7 +1,7 @@
 import type { DemoSeedResult, Source } from "@michael/shared";
 import { InstructionCreate } from "@michael/shared";
 import { seedDemoDrafts } from "../actions/drafts";
-import { currentUserId } from "../context";
+import { currentUserId, runAsUser } from "../context";
 import { env } from "../env";
 import { HttpError, parse } from "../http";
 import { Zone } from "../patterns/time";
@@ -179,4 +179,30 @@ export async function keepDemoWeekFresh(store: Store): Promise<void> {
       inflight = null;
     });
   return inflight;
+}
+
+/**
+ * Starts the first refresh as the process starts (#364), so the first demo visitor after a deploy
+ * finds the week ready instead of waiting for the reset and about 20 round trips of seeding.
+ */
+export function warmDemoWeek(store: Store): Promise<void> {
+  if (env.DEMO_WEEK !== "on") return Promise.resolve();
+  return runAsUser(env.DEMO_USER_ID, () => keepDemoWeekFresh(store));
+}
+
+// The longest a demo request waits for the first refresh after a start. The week from before the
+// deploy is still in the database, so waiting longer only matters on a brand new database.
+export const FIRST_REFRESH_WAIT_MS = 2000;
+
+/**
+ * What a demo request waits for: nothing once a refresh has finished; before that, the first
+ * refresh, but at most `waitMs`. The refresh carries on in the background either way.
+ */
+export function demoRefreshGate(refresh: Promise<void>, waitMs = FIRST_REFRESH_WAIT_MS): Promise<void> {
+  if (demoWeekSeeded()) return Promise.resolve();
+  let timer: NodeJS.Timeout | undefined;
+  const cap = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, waitMs);
+  });
+  return Promise.race([refresh, cap]).finally(() => clearTimeout(timer));
 }

@@ -1336,15 +1336,15 @@ travel site" or "an uncategorised site". Structured `data` carries the host for 
 
 ### Chat
 
-| Method | Path                                           | Body                                                                               | Response                                                                                                                                                                                                                                                                                       | Status |
-| ------ | ---------------------------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| GET    | `/v1/chat?thread_id=&limit=50`                 |                                                                                    | `200 { messages: ChatMessage[], actions: Recommendation[], thread: ChatThread \| null }` (one thread's lines, oldest first, limit 1..100; without `thread_id` the latest thread; `actions` are the ones named in `action_ids`, as they stand now); `404` for a thread that is not the caller's | live   |
-| POST   | `/v1/chat`                                     | `{ message: string, spoken?: boolean, thread_id?: uuid \| "new" }` (1..2000 chars) | `201 ChatResponse` `{ message, reply, actions: Recommendation[], thread: ChatThread }`; `404` unknown thread; `503 unavailable` without `ANTHROPIC_API_KEY`; `502 upstream_error` if Claude fails                                                                                              | live   |
-| POST   | `/v1/chat/stream`                              | same as `POST /v1/chat`                                                            | `200 text/event-stream`: `event: delta` `{ text }` per piece, `event: action` `Recommendation` per thing done or undone, then `event: done` `ChatResponse`, or `event: error` `ApiError`. Validation, `404` and `503 unavailable` come back as plain JSON before the stream opens              | live   |
-| GET    | `/v1/chat/threads?archived=false&q=&limit=100` |                                                                                    | `200 ChatThreadList` `{ threads: ChatThread[] }`, pinned first, then latest line first. `q` (1..100 chars) matches titles and line text                                                                                                                                                        | live   |
-| POST   | `/v1/chat/threads`                             | `{ title? }` (or no body)                                                          | `201 ChatThread`, empty, titled "New chat" unless named                                                                                                                                                                                                                                        | live   |
-| PATCH  | `/v1/chat/threads/:id`                         | `{ title?, pinned?, archived? }` (at least one)                                    | `200 ChatThread`; `404` when not the caller's                                                                                                                                                                                                                                                  | live   |
-| DELETE | `/v1/chat/threads/:id`                         |                                                                                    | `200 { id, messages }`: the thread and every line in it, really deleted; `404` when not the caller's                                                                                                                                                                                           | live   |
+| Method | Path                                           | Body                                                                               | Response                                                                                                                                                                                                                                                                                                                              | Status |
+| ------ | ---------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| GET    | `/v1/chat?thread_id=&limit=50`                 |                                                                                    | `200 { messages: ChatMessage[], actions: Recommendation[], thread: ChatThread \| null }` (one thread's lines, oldest first, limit 1..100; without `thread_id` the latest thread; `actions` are the ones named in `action_ids`, as they stand now); `404` for a thread that is not the caller's                                        | live   |
+| POST   | `/v1/chat`                                     | `{ message: string, spoken?: boolean, thread_id?: uuid \| "new" }` (1..2000 chars) | `201 ChatResponse` `{ message, reply, actions: Recommendation[], thread: ChatThread }`; `404` unknown thread; `503 unavailable` without `ANTHROPIC_API_KEY`; `502 upstream_error` if Claude fails                                                                                                                                     | live   |
+| POST   | `/v1/chat/stream`                              | same as `POST /v1/chat`                                                            | `200 text/event-stream`: `event: delta` `{ text }` per piece, `event: action` `Recommendation` per thing done or undone, `event: timing` `ChatTiming` (where the time went), then `event: done` `ChatResponse`, or `event: error` `ApiError`. Validation, `404` and `503 unavailable` come back as plain JSON before the stream opens | live   |
+| GET    | `/v1/chat/threads?archived=false&q=&limit=100` |                                                                                    | `200 ChatThreadList` `{ threads: ChatThread[] }`, pinned first, then latest line first. `q` (1..100 chars) matches titles and line text                                                                                                                                                                                               | live   |
+| POST   | `/v1/chat/threads`                             | `{ title? }` (or no body)                                                          | `201 ChatThread`, empty, titled "New chat" unless named                                                                                                                                                                                                                                                                               | live   |
+| PATCH  | `/v1/chat/threads/:id`                         | `{ title?, pinned?, archived? }` (at least one)                                    | `200 ChatThread`; `404` when not the caller's                                                                                                                                                                                                                                                                                         | live   |
+| DELETE | `/v1/chat/threads/:id`                         |                                                                                    | `200 { id, messages }`: the thread and every line in it, really deleted; `404` when not the caller's                                                                                                                                                                                                                                  | live   |
 
 `spoken: true` means the answer will be read aloud (the app's conversation mode): Michael keeps it
 to one or two short sentences with no lists or markdown, and says numbers as a person would.
@@ -1352,6 +1352,16 @@ to one or two short sentences with no lists or markdown, and says numbers as a p
 `/v1/chat` stays for callers that want the whole answer (MCP, voice); `/v1/chat/stream` gives the
 first words fast and stores the same pair when it finishes. The stored answer keeps the ids of what
 it did (`action_ids`), so a client can show the same Undo chips under it after a reload.
+
+**Speed (#364).** Chat runs `ANTHROPIC_MODEL` at effort `low`, in fast mode when the account has it
+(`CHAT_SPEED=fast`, the default; a refused or rate limited fast request runs again at standard speed
+and fast mode rests for 10 minutes). The stable prompt, the context and the conversation so far are
+cached, so the second round of a tool loop reads them back. A plain statement (no question mark)
+whose tools all return a finished line (`log_done`, `confirm_block`) is answered with that line,
+without a second model call. Every answer logs one `chat_timing` JSON line and the stream sends it
+as `timing`: `ChatTiming { context_ms, rounds: { first_event_ms, first_text_ms, ms, tools_ms, speed,
+input_tokens?, cache_read_tokens?, cache_write_tokens?, output_tokens? }[], save_ms, total_ms }`;
+`POST /v1/chat` sends `Server-Timing` `context` and `model` instead, and the stream `context`.
 
 **Threads (#308).** Conversations are separate, as in Messages: `ChatThread { id, title, pinned,
 archived, preview, last_message_at, created_at, updated_at }` (`preview` is the last line as plain text, no Markdown marks, cut to
@@ -2511,8 +2521,13 @@ type LogTimeResponse = {
 
 - **The goal** by `goal_id`, or by `goal`, the user's words, matched on the server among active time
   and count goals: the same title, then a title holding the words (or held by them), then calendar
-  titles, then any word of three letters or more. Two candidates at the same step are a `400` that
-  names both ("could be Reading or Reading club"); none is a `404` that lists the goals.
+  titles, then the words themselves (#364): each word of the user's counts 3 in a title, 2 in a
+  calendar title and 1 in the description, a related word (a bath is recovery, a bike ride a ride)
+  half that, and the single best goal wins. Two candidates at the same step, or a tie at the top,
+  are a `400` that names both ("could be Reading or Reading club"); none is a `404` that lists the
+  goals. In the demo plan "I took a bath for 40 minutes" lands on 70.3 ("recovery (ice baths,
+  stretching)" is in its description). Chat calls `log_done` with the user's words whenever no goal
+  title plainly fits, and asks only when the tool says it could be two or none.
 - **The time:** `start_at` and `end_at`; or `minutes` from `start_at`; or `minutes` up to `end_at`;
   or `minutes` alone, ending now. Past only: an end after now is a `409` ("That has not happened
   yet"); a start more than 14 days back is a `409`.
@@ -2940,8 +2955,10 @@ ending now, plus its calendar planned to Sunday. The Mac, iPhone, Chrome and Cla
 replay Manolis' anonymised real days (`apps/web/lib/sample/real`); Apple Watch, Google Calendar,
 Omi conversations and meals are generated around them. Every generated event has an `external_id`
 starting `demo:`; only those rows are ever added or removed, so nothing else in the account is
-touched; days that leave the window are removed. The API refreshes the week on demo requests at
-most every 5 minutes (the first refresh after a deploy resets the goals to the Build Hub plan,
+touched; days that leave the window are removed. The API refreshes the week as it starts and on
+demo requests at most every 5 minutes, in the background (#364: until the first refresh after a
+start has finished, a demo request waits for it at most 2 s, since the week from before is still in
+the database) (the first refresh after a deploy resets the goals to the Build Hub plan,
 later ones keep edits; `DEMO_WEEK=off` turns it off). `POST /v1/demo/reseed` also resets the goals.
 Any other account gets `403 forbidden`. The reseed (and the first refresh after a deploy) also
 deletes all demo visitor chat, turns off the record off, removes goals that are not in the plan

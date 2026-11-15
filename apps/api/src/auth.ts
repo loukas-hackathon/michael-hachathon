@@ -2,7 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import type { MiddlewareHandler } from "hono";
 import { agentsStore } from "./agents-store";
 import { type AuthMethod, runAsUser } from "./context";
-import { demoWeekSeeded, keepDemoWeekFresh } from "./demo/sync";
+import { demoRefreshGate, keepDemoWeekFresh } from "./demo/sync";
 import {
   DEMO_PRESENTER_HEADER,
   DEMO_VISITOR_HEADER,
@@ -156,12 +156,13 @@ export const requireUser =
     }
 
     // The demo account's generated week follows the clock (at most one refresh per 5 minutes).
-    // Only the first refresh after a start holds the request (there is no week yet); later ones
-    // run in the background, so a demo request never waits for about 20 round trips of seeding.
+    // Refreshes run in the background, so a demo request never waits for about 20 round trips of
+    // seeding. The first one starts with the process (index.ts); until it has finished a request
+    // waits for it, but at most FIRST_REFRESH_WAIT_MS (#364): the week from before is still there.
     if (userId === env.DEMO_USER_ID) {
       const uid = userId;
       const refresh = untimed(() => runAsUser(uid, () => keepDemoWeekFresh(store), via));
-      if (!demoWeekSeeded()) await refresh;
+      await demoRefreshGate(refresh);
     }
 
     if (agentId) {
