@@ -35,8 +35,11 @@ returns `501 not_implemented`, `planned` = not routed yet. Update the status whe
   - The presenter (#343): a demo visitor whose request also carries
     `X-Michael-Demo-Presenter: <DEMO_PRESENTER_KEY>` (server to server, from the web app's presenter
     link). On top of a visitor's writes it may answer `POST /v1/connect/requests/:id`, so the stage
-    laptop connects claude.ai to the demo week in one tap. A wrong key, no key configured, or the
-    header without `API_KEY` grants nothing.
+    laptop connects claude.ai to the demo week in one tap, switch Off the record
+    (`PUT /v1/privacy/off-the-record`), and say yes to Do Not Disturb (`POST /v1/dnd`, #447: it
+    switches a real device's Focus, so no other visitor may, and a signed button on a nudge of the
+    demo account never does). A wrong key, no key configured, or the header without `API_KEY`
+    grants nothing.
 - **Shared secret details:**
   Send `Authorization: Bearer <API_KEY>`. Applies to everything under `/v1/*` and `/mcp`, except
   `/health` and the OAuth callback redirect (`/oauth/google/callback`). Only `/v1/webhooks/*` and `/mcp` also accept

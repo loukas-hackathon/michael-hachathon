@@ -7,7 +7,7 @@ import {
   nudgeOffersDnd,
   nudgeTrigger,
 } from "@michael/shared";
-import { currentAuthMethod, currentDemoVisitor, currentUserId } from "../context";
+import { currentAuthMethod, currentUserId } from "../context";
 import { DEMO_VISITOR_MESSAGE } from "../demo/visitor";
 import { env } from "../env";
 import { HttpError } from "../http";
@@ -31,12 +31,15 @@ export const dndOnLine = (until: string) => `Do Not Disturb is on until ${clock(
 export const dndTapLine = (until: string) => `Tap to switch on Do Not Disturb until ${clock(until)}.`;
 
 /**
- * The demo week belongs to everyone who looks at it: a visitor, or a button on a nudge of the demo
- * account, never switches anything on. The API key itself (our own tools, a local run) still may.
+ * The demo week belongs to everyone who looks at it: a button on a nudge of the demo account (a
+ * signed token, which any visitor's device may hold) never switches anything on. A web visitor is
+ * judged before this, by the route (demo/visitor.ts): refused, except the presenter on stage. The
+ * API key itself (our own tools, a local run) still may.
  */
-const isDemo = () =>
-  currentDemoVisitor() !== null ||
-  (currentUserId() === env.DEMO_USER_ID && currentAuthMethod() !== "api_key");
+const isDemo = () => {
+  const via = currentAuthMethod();
+  return currentUserId() === env.DEMO_USER_ID && via !== "api_key" && via !== "demo_visitor";
+};
 
 /** The standard line of the demo week, as a refusal (403). */
 export function refuseDemoDnd(): void {

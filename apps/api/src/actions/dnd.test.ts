@@ -15,7 +15,7 @@ import {
 } from "@michael/shared";
 import { app } from "../app";
 import { runAsUser } from "../context";
-import { DEMO_VISITOR_MESSAGE } from "../demo/visitor";
+import { DEMO_VISITOR_MESSAGE, demoVisitorMay } from "../demo/visitor";
 import { env } from "../env";
 import { withoutInstructions } from "../instructions/testkit";
 import { actionsFor, actOnNudge, handleTelegramCallback, offeredActions } from "../nudges/actions";
@@ -287,6 +287,34 @@ test("the demo week: a button on its nudge is refused with the standard line", a
   });
   assert.equal(res.status, 403);
   assert.equal(((await res.json()) as { error: { message: string } }).error.message, DEMO_VISITOR_MESSAGE);
+});
+
+test("the demo week: only the presenter may say yes, a visitor and a nudge's button may not", async () => {
+  resetDnd();
+  // The route decides for a web visitor: refused, except with the presenter key.
+  assert.equal(demoVisitorMay("POST", "/v1/dnd"), false);
+  assert.equal(demoVisitorMay("POST", "/v1/dnd", true), true);
+  const until = iso(Date.now() + 30 * MIN);
+  // Past the route (so: the presenter), the tap switches it on for the stage account.
+  const on = await runAsUser(
+    env.DEMO_USER_ID,
+    () => startDnd({ until, requested_by: "a nudge" }),
+    "demo_visitor",
+    undefined,
+    randomUUID(),
+  );
+  assert.equal(on.until, until);
+  await runAsUser(env.DEMO_USER_ID, async () => {
+    assert.deepEqual(await activeDnd(), { id: on.id, until });
+    // A signed button on the same account still may not.
+    await assert.rejects(
+      startDnd({ until, requested_by: "a nudge" }),
+      (err: Error) => err.message === DEMO_VISITOR_MESSAGE,
+    );
+    await undoRecommendation(on.id);
+    assert.equal(await activeDnd(), null);
+  });
+  resetDnd();
 });
 
 test("over HTTP: the Mac's look reports the shortcut and reads what to switch on; the page reads and taps", async () => {
