@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { currentUserId } from "../context";
 import { parse } from "../http";
 import { allowedMove } from "../instructions/guard";
+import { memo } from "../memo";
 import { computeMoment, type MomentCore, momentRange } from "../moments/compute";
 import { phraseHeadline } from "../moments/phrase";
 import { DEFAULT_TIMEZONE } from "../patterns";
@@ -10,6 +11,7 @@ import { store } from "../store";
 import { TYPES } from "./score";
 
 const WEEK_MS = 7 * 24 * 3600_000;
+const MOMENT_MEMO_MS = 20_000;
 
 /** The one place that reads the store for a moment; ../moments/compute stays pure. No model. */
 export async function momentCoreFor(kind: MomentKind, now: string): Promise<MomentCore> {
@@ -48,7 +50,12 @@ export async function momentCoreFor(kind: MomentKind, now: string): Promise<Mome
  * (`phrase_pending`, #378).
  */
 export async function momentFor(kind: MomentKind, at?: string, { wait = true } = {}): Promise<Moment> {
-  const core = await momentCoreFor(kind, at ?? new Date().toISOString());
+  // At the real clock the numbers are reused for a few seconds until the user writes (memo.ts,
+  // #298); a moment seen as of another instant (`at`) is always computed.
+  const core =
+    at === undefined
+      ? await memo("moment", { kind }, MOMENT_MEMO_MS, () => momentCoreFor(kind, new Date().toISOString()))
+      : await momentCoreFor(kind, at);
   const phrased = await phraseHeadline(core, `${currentUserId()}:${kind}:${core.day}`, undefined, { wait });
   return { ...core, ...phrased };
 }
