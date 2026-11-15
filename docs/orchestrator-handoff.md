@@ -6,7 +6,7 @@ permission, keep building with parallel agents, close every issue we can, phone 
 developed), keep colours and branding exactly as they are (pink `#E6007A`, red `#FF3B30`), and pace
 the usage limit by slowing down at about 60% of the window.
 
-## State (updated 13:40 UTC / 15:40 Athens)
+## State (updated 13:45 UTC / 15:45 Athens)
 - This session (loukas-hackathon) is the lead orchestrator. Production healthy (API f6c86ec).
 - Since 13:00: #528 iCloud shortcut links as defaults (Michael c0c2a08d..., Focus 76e297e8...),
   #530 off the record never set by focus/DND words, Michael always states it; #531 automation opens
@@ -15,7 +15,12 @@ the usage limit by slowing down at about 60% of the window.
   runs the Michael Focus shortcut (Do Not Disturb until the end), smooth ring, full title, breathing Mi.
 - Loukas' real account: 7259e4cf... (email sign up). Off the record was ON by accident 14:47 to 15:08
   (the You switch row); now off.
-- Running: Focus now follow-up ("min kept" counter, finish moment), due 14:40 UTC.
+- Loukas' first iPhone open stored 13:38 UTC ("An app"). He edited his Michael shortcut so `app` = plain
+  Shortcut Input (not its Name); with a per app automation (Text "Instagram" then Run Shortcut Michael)
+  names should now arrive. His goal is literally named "Personal T".
+- Running (due 14:40 UTC): Focus agent fixing End early stuck on "Saving" and the hidden session pill
+  covering the chat composer, then "min kept" + finish moment; a chat agent fixing Michael saying the
+  iPhone is not connected (connections-state must match GET /live/connections).
 - Scheduled: final stage rehearsal QA at 13:50 UTC (send_later), next build cycle 13:56 UTC.
 - Known gaps for after the pitch: #514 (brief/check-ins ignore shortcut opens), app names need the
   re-signed shortcut or the user editing the shortcut to send "Shortcut Input" not its Name,
