@@ -1,7 +1,7 @@
 # Pitch: three minutes
 
 One speaker talks, one drives. Rehearsed end to end against production on Sun 15 Nov 06:40 Athens
-(commit `8f65dde` plus this branch, Playwright at 390x844 and `/stage` at 1920x1080; issue #253).
+(commit `8f65dde`; fixes in #335 and #361, Playwright at 390x844 and `/stage` at 1920x1080; issue #253).
 Run `docs/demo-runbook.md` first. Lines in quotes are said out loud. Numbers are read off the
 screen, never from this page: the demo week follows the clock, and the examples below are what the
 screen said at rehearsal.
@@ -133,10 +133,10 @@ Screen: `/stage`, full screen. Click the page once so N reaches it. Speaker rais
 
 1. Driver presses **N**. The watch buzzes and the same line slides in on the projector with its
    reason underneath; the status line reads "Sent to [2] of [2] devices" (push and Telegram).
-   With this branch the line is the goal furthest behind, at any hour, e.g. "Work 1h 30 behind
-   this week. Book 60 min today." with "University: ... done; the pace by now is ...". (On `main`
-   before this branch, after 19:00 it fell back to "Nudges are on. At most five a day, only when
-   it matters.")
+   The line is the goal furthest behind its pace, at any hour and by its own name (#361), e.g.
+   "University 3h 22 behind this week. Book 90 min today." with the pace maths underneath. Only
+   when every goal is on pace does it say "Nudges are on. At most five a day, only when it
+   matters."
    > "That is Michael on my wrist. Under fifteen words, tied to a goal, at most five a day, never
    > in quiet hours."
 2. Point at the bottom line: "Agents asking about me: Claude". "And every question an AI asks
