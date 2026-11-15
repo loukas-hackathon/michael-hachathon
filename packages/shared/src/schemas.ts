@@ -2424,8 +2424,36 @@ export const VoiceStatus = z.object({
   elevenlabs: z.boolean(),
   voice: VoiceInUse,
   reason: z.string().nullable(), // why, when it is not the chosen voice
+  // Whether POST /v1/voice/transcribe can turn speech into text (ElevenLabs Speech to Text).
+  transcribe: z.boolean(),
 });
 export type VoiceStatus = z.infer<typeof VoiceStatus>;
+
+// ---------- voice in (POST /v1/voice/transcribe) ----------
+// The raw recording is the request body (Content-Type one of these); text comes back. The audio
+// is held in memory only for the one call to the provider, never stored and never logged.
+export const VOICE_AUDIO_TYPES = [
+  "audio/webm",
+  "audio/mp4",
+  "audio/mpeg",
+  "audio/ogg",
+  "audio/wav",
+  "audio/aac",
+] as const;
+export const VoiceAudioType = z.enum(VOICE_AUDIO_TYPES);
+export type VoiceAudioType = z.infer<typeof VoiceAudioType>;
+// About a minute of speech from any browser (iPhone records AAC at up to 128 kbps); also under
+// Vercel's 4.5 MB request limit, which the web app's proxy sits behind.
+export const VOICE_AUDIO_MAX_BYTES = 4 * 1024 * 1024;
+export const VOICE_AUDIO_MAX_SECONDS = 60;
+// Shorter than this is a tap, not speech.
+export const VOICE_AUDIO_MIN_BYTES = 1000;
+
+export const VoiceTranscript = z.object({
+  text: z.string(), // empty when nothing was said
+  language: z.string().nullable(), // ISO 639 code the provider detected, e.g. "en", "el"
+});
+export type VoiceTranscript = z.infer<typeof VoiceTranscript>;
 
 // ---------- your data: deletion and retention (DELETE /v1/me/data) ----------
 
@@ -2499,6 +2527,8 @@ export const ErrorCode = z.enum([
   "not_implemented",
   // A dependency is not configured (for example no model key): try again once it is set up.
   "unavailable",
+  // Too many requests in a short time (voice transcription): wait and try again.
+  "rate_limited",
   "internal",
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
@@ -2541,9 +2571,10 @@ export const MomentGoal = z.object({
   // True for the sleep goal (isSleepGoal): screens hide it from time lines.
   sleep: z.boolean().optional(),
   budget_minutes: z.number().int().nonnegative().nullable(),
+  // The numbers of the score (GET /v1/score, `goals`), so Today and Goals agree.
   // This week (Monday 00:00 local) until now.
   spent_week_minutes: z.number().int().nonnegative(),
-  // Today: planned blocks (sleep: a seventh of the weekly budget), time held, time lost in them.
+  // Today: planned blocks (sleep: the nightly goal), time held, time lost in them.
   planned_today_minutes: z.number().int().nonnegative(),
   spent_today_minutes: z.number().int().nonnegative(),
   lost_today_minutes: z.number().int().nonnegative(),
@@ -2560,11 +2591,23 @@ export const MomentStretch = z.object({
   title: z.string(),
   goal_id: z.uuid().nullable(),
   block_event_id: z.string().nullable(),
-  // Average minutes lost in these hours on the history days, scaled to this stretch.
+  // Average minutes lost inside goal blocks in these hours, over the history days that had one
+  // (`history_days` of the last 7). A day with no block in these hours is not in the average.
   expected_lost_minutes: z.number().int().nonnegative(),
   history_days: z.number().int().nonnegative(),
-  // What usually takes the time in these hours (an app name or a site label).
+  // What usually takes the time in these hours: an app, a site by its product name ("Gmail") or a
+  // site label.
   usual_trigger: z.string().nullable(),
+  // The last time this same block ran in the history days (same title, or same goal at the same
+  // hour), when it lost 10 minutes or more: Michael quotes it in place of the average.
+  last_time: z
+    .object({
+      day: LocalDay,
+      lost_minutes: z.number().int().nonnegative(),
+      trigger: z.string().nullable(),
+    })
+    .nullable()
+    .optional(),
 });
 export type MomentStretch = z.infer<typeof MomentStretch>;
 
@@ -2588,12 +2631,14 @@ export const Moment = z.object({
   phrased_by: z.enum(["template", "model"]),
   goals: z.array(MomentGoal),
   totals: z.object({
-    // Goal blocks today (rest excluded: sleep is not booked).
+    // The score's day (GET /v1/score, `day`): goal blocks today, the time held in them so far and
+    // the time lost inside them so far. Held plus lost is what has elapsed, never more than planned.
     planned_minutes: z.number().int().nonnegative(),
     spent_minutes: z.number().int().nonnegative(),
-    // Lost today to interruptions in focus time (morning: so far).
     lost_minutes: z.number().int().nonnegative(),
-    // Daily average lost on the history days: the line "won back" is measured against.
+    // What today's blocks lose at the usual rate (the score's `time_won_back.usual_loss_rate`):
+    // in the morning over all that is planned, in the evening over what has elapsed, which is the
+    // line "won back" is measured against. Null until the score has enough history.
     baseline_lost_minutes: z.number().int().nonnegative().nullable(),
     won_back_minutes: z.number().int().nonnegative(),
   }),

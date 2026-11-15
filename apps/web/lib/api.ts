@@ -192,6 +192,33 @@ export async function getVoiceEnabled(): Promise<boolean> {
   }
 }
 
+/** Whether the API can turn a recording into text (POST /v1/voice/transcribe). False when unsure. */
+export async function getTranscribeEnabled(): Promise<boolean> {
+  try {
+    return (await get<{ transcribe?: boolean }>("/v1/voice")).transcribe === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A recording passed straight through to POST /v1/voice/transcribe. The API's answer (text, or its
+ * error) comes back as it is; the audio is never kept here. Null when the API cannot be reached.
+ */
+export async function transcribe(audio: ArrayBuffer, type: string): Promise<Response | null> {
+  try {
+    return await fetch(`${API_URL}/v1/voice/transcribe`, {
+      method: "POST",
+      headers: { ...(await authHeaders()), "content-type": type },
+      body: audio,
+      cache: "no-store",
+    });
+  } catch (err) {
+    console.error("voice: transcribe:", err instanceof Error ? err.message : "unknown");
+    return null;
+  }
+}
+
 /** Michael's reply as audio/mpeg from POST /v1/voice/speak, or null so the browser speaks instead. */
 export async function speak(text: string): Promise<Response | null> {
   try {
