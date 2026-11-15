@@ -1,4 +1,4 @@
-import { MiMark } from "./brand";
+import { Michael } from "./michael";
 
 // "Michael is thinking" (#378): whenever a line written by the model is on its way, the Mi mark
 // breathes slowly beside a few plain words, in place of what is coming. Never a spinner, never a
@@ -17,8 +17,8 @@ export function Thinking({
 }) {
   return (
     <span role={live ? "status" : undefined} className={`inline-flex items-center gap-1.5 ${className}`}>
-      <span aria-hidden="true" className="m-think block w-[15px] shrink-0">
-        <MiMark className="block h-auto w-full" />
+      <span aria-hidden="true" className="block w-[15px] shrink-0">
+        <Michael state="thinking" className="block h-auto w-full" />
       </span>
       <span>{text}</span>
     </span>

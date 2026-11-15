@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { formatTime } from "@/lib/format";
 import { useOffTheRecord } from "@/lib/off-the-record";
-import { MiMark } from "./brand";
+import { Michael } from "./michael";
 
 /** The Mi button: top right on every tab. Opens the You sheet. Dimmed while off the record. */
 export function MiButton({ size = 30 }: { size?: number }) {
@@ -27,7 +27,7 @@ export function MiButton({ size = 30 }: { size?: number }) {
         style={{ width: size, height: size }}
       >
         <span style={{ width: Math.round(size * 0.56) }} className="block">
-          <MiMark className="block h-auto w-full" />
+          <Michael className="block h-auto w-full" />
         </span>
       </span>
     </Link>

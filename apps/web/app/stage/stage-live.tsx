@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { type ReactNode, startTransition, useCallback, useEffect, useRef, useState } from "react";
-import { MiMark } from "@/components/brand";
+import { Michael } from "@/components/michael";
 import { formatTime } from "@/lib/format";
 import { sendTestNudge } from "@/lib/push-actions";
 import type { StageFeed, StageNudge } from "@/lib/stage";
@@ -114,7 +114,7 @@ export function StageLive({
             <div key={nudge.id} className={`stage-nudge${fresh ? " stage-enter" : ""}`}>
               <p className="stage-nudge-head">
                 <span className="stage-mi">
-                  <MiMark />
+                  <Michael state={fresh ? "pleased" : "idle"} />
                 </span>
                 <span>
                   <b>Michael</b> <span className="tnum">{formatTime(nudge.created_at)}</span>
@@ -127,7 +127,7 @@ export function StageLive({
             <div className="stage-nudge stage-nudge-empty">
               <p className="stage-nudge-head">
                 <span className="stage-mi">
-                  <MiMark />
+                  <Michael state={fresh ? "pleased" : "idle"} />
                 </span>
                 <b>Michael</b>
               </p>
