@@ -347,6 +347,7 @@ for (const [name, userId] of [
         ["get_instructions", { active_only: false }],
         ["get_score", {}],
         ["get_patterns", {}],
+        ["get_insights", {}],
         ["list_recommendations", {}],
         ["get_nudges", {}],
         ["get_moments", { kind: "morning" }],

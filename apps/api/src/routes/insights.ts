@@ -1,11 +1,12 @@
-import { type InsightsResponse, mockInsights } from "@michael/shared";
 import { Hono } from "hono";
+import { applyFix, insightsFor, undoFix } from "../insights/service";
 
-// What Michael has learnt by studying the user (docs/api.md, "Insights"). The contract first: this
-// answers the example from the shared mocks until the engine (apps/api/src/insights) lands.
+// What Michael has learnt by studying the user (docs/api.md, "Insights"). Every figure is worked
+// out from the caller's own events (apps/api/src/insights); the store scopes every read.
 export const insights = new Hono()
   // GET /v1/insights
-  .get("/insights", (c) => {
-    const body: InsightsResponse = mockInsights;
-    return c.json(body);
-  });
+  .get("/insights", async (c) => c.json(await insightsFor()))
+  // POST /v1/insights/:id/fix  (ids carry ":" and ">": send them URL encoded)
+  .post("/insights/:id/fix", async (c) => c.json(await applyFix(c.req.param("id"))))
+  // DELETE /v1/insights/:id/fix
+  .delete("/insights/:id/fix", async (c) => c.json(await undoFix(c.req.param("id"))));

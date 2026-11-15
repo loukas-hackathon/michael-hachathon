@@ -63,6 +63,7 @@ const TOOLS = [
   "get_check_in",
   "get_checklist",
   "get_goals",
+  "get_insights",
   "get_instructions",
   "get_memories",
   "get_moments",

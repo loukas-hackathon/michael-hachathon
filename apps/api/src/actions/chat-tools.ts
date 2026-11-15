@@ -11,6 +11,7 @@ import {
 import { z } from "zod";
 import { answerCheckIn } from "../checkin/service";
 import { HttpError } from "../http";
+import { insightsFor, insightsText } from "../insights/service";
 import { knowledgeFor, knowledgeText } from "../knowledge";
 import { forget, remember } from "../memory";
 import { DEFAULT_TIMEZONE } from "../patterns";
@@ -212,6 +213,12 @@ export const CHAT_TOOLS: Anthropic.Tool[] = [
       properties: { memory_id: { type: "string" } },
       required: ["memory_id"],
     },
+  },
+  {
+    name: "get_insights",
+    description:
+      "What you have learnt by studying the user over the last 12 weeks: relations between one day's behaviour and the same or the next day's outcome (late phone, then a worse night, then a slower first block), each with its numbers on both sides, how often it held and one fix. Call it when the user asks what you have learnt or noticed about them, why a day went the way it did, or what to change; cite one pattern with its numbers as written, never a number of your own.",
+    input_schema: { type: "object", properties: {} },
   },
   {
     name: "what_you_know",
@@ -516,6 +523,8 @@ export async function runChatTool(
         return await keep(input);
       case "forget_memory":
         return await drop(input);
+      case "get_insights":
+        return { content: insightsText(await insightsFor()), isError: false };
       case "what_you_know":
         return { content: knowledgeText(await knowledgeFor()), isError: false };
       case "draft_follow_up":
