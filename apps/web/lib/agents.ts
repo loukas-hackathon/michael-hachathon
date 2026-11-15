@@ -1,6 +1,7 @@
 import "server-only";
 import type { AgentClient, AgentClientUpdate, AgentQuery, AgentScope } from "@michael/shared";
 import { authHeaders } from "./caller";
+import { devLatency } from "./dev-latency";
 import { API_URL, USE_MOCKS } from "./mode";
 
 // Michael for agents, from the user's side. Shapes are the contract's (AgentClient, AgentQuery).
@@ -132,6 +133,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
  * (?demo=sample|empty|connected|pending|error).
  */
 export async function getAgents(variant?: string): Promise<AgentsView> {
+  await devLatency();
   if (variant === "error") throw new Error("Preview of the error state");
   if (variant === "empty") return { sample: true, agents: [], queries: [] };
   if (variant === "connected" || variant === "pending") {

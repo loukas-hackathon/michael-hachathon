@@ -10,6 +10,7 @@ import {
 } from "@michael/shared";
 import { get } from "./api";
 import { CONNECTIONS, type Connection, type ConnectionId } from "./connections";
+import { devLatency } from "./dev-latency";
 import { formatTime } from "./format";
 import { saidNoMac } from "./no-mac";
 
@@ -269,6 +270,7 @@ export function statusFor(c: Connection, x: Inputs, now = Date.now()): Connectio
  * person can prove it end to end on production before CONNECTOR_STATUS switches it on (#306).
  */
 export async function getConnections(preview?: ConnectionId): Promise<ConnectionsView> {
+  await devLatency();
   const [sources, integrations, push, agents, places, telegram, noMac] = await Promise.all([
     safe("/v1/sources/status", SourcesStatusResponse),
     safe("/v1/integrations", IntegrationsResponse),

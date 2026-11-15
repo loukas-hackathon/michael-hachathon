@@ -8,6 +8,7 @@ import { LogTimeForm } from "@/components/log-time";
 import { Tween } from "@/components/motion-ui";
 import { HowICount, ScoreLearning } from "@/components/score/how-i-count";
 import { ScreenHeader } from "@/components/screen";
+import { MoreFromMichaelSkeleton } from "@/components/skeletons";
 import { Tape, TapeKey } from "@/components/tape";
 import { BriefCard } from "@/components/today/brief-card";
 import { CalendarCard } from "@/components/today/calendar-card";
@@ -286,7 +287,7 @@ export default async function TodayPage({
             </section>
           ) : null}
 
-          <Suspense fallback={null}>
+          <Suspense fallback={<MoreFromMichaelSkeleton />}>
             <MoreFromMichael>
               {momentKind ? <MomentCard kind={momentKind} sample={day.sample} /> : null}
               <WatchLine demo={demo} />
