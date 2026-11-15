@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ConnectorId } from "./connectors";
 import { goalArea } from "./goal-areas";
 import { VOICE_AUDIO_TYPES } from "./voice-limits";
 
@@ -2152,6 +2153,146 @@ export const PhoneCadenceReport = PatternReport.pick({
   phone_cadence: true,
 });
 export type PhoneCadenceReport = z.infer<typeof PhoneCadenceReport>;
+
+// ---------- insights (GET /v1/insights) ----------
+// What Michael has learnt by studying the user: relations between one day's behaviour and the
+// same or the next day's outcome ("phone after 23:00, then a worse night, then a lost morning").
+// Every number is computed from the user's own events (apps/api/src/insights). A relation is a
+// `pattern` once both sides of the comparison have been seen `needed` times and it clears the bar;
+// below that it is `watching`, with its progress.
+
+// chain: three steps (x, then y, then z). link: two steps. discovered: a relation the model
+// proposed and the server verified with the same statistics (found_by "model").
+export const InsightKind = z.enum(["chain", "link", "discovered"]);
+export type InsightKind = z.infer<typeof InsightKind>;
+
+export const InsightStatus = z.enum(["pattern", "watching"]);
+export type InsightStatus = z.infer<typeof InsightStatus>;
+
+export const InsightUnit = z.enum(["score", "min", "pct", "bpm", "ms", "count"]);
+export type InsightUnit = z.infer<typeof InsightUnit>;
+
+// Where the numbers come from, by connector id (packages/shared/src/connectors.ts).
+export const InsightSource = z.enum([
+  "google-calendar",
+  "apple-watch",
+  "mac",
+  "iphone",
+  "claude",
+  "nudges",
+  "telegram",
+  "travel",
+] as const satisfies readonly ConnectorId[]);
+export type InsightSource = z.infer<typeof InsightSource>;
+
+export const InsightStep = z.object({
+  // What was measured, in a few words: "Phone after 23:00", "Sleep score", "Lost in the first block".
+  label: z.string().min(1),
+  // Ready to show, number first. A step that compares two sides always reads "X against Y":
+  // the figure on the days the trigger was there, against the other days.
+  value: z.string().min(1),
+  // The same two figures as numbers, for drawing: on trigger days, and on the other days.
+  value_num: z.number().optional(),
+  usual_num: z.number().optional(),
+  unit: InsightUnit.optional(),
+});
+export type InsightStep = z.infer<typeof InsightStep>;
+
+export const InsightEvidence = z.object({
+  // Times the trigger was seen and the outcome followed, out of the times the trigger was seen.
+  times_held: z.number().int().nonnegative(),
+  times_seen: z.number().int().nonnegative(),
+  // How often the trigger must be seen (and its absence too) before this can be a pattern.
+  needed: z.number().int().positive(),
+  // One entry per time the trigger was seen, oldest first, true when the outcome followed. The
+  // last 30 at most. `days` has the same length and order: the local day of each one.
+  history: z.array(z.boolean()).max(30),
+  days: z.array(LocalDay).max(30),
+});
+export type InsightEvidence = z.infer<typeof InsightEvidence>;
+
+// The one tap the app already supports. instruction: a standing instruction (POST applies it,
+// DELETE removes it again). focus_block: a block on the user's own calendar, undone like any
+// other block Michael made (the recommendation it creates carries the undo).
+export const InsightActionKind = z.enum(["instruction", "focus_block"]);
+export type InsightActionKind = z.infer<typeof InsightActionKind>;
+
+export const InsightFixAction = z.object({
+  kind: InsightActionKind,
+  // On the button before the tap ("Phone down at 22:30") and after it ("Set. Undo").
+  label: z.string().min(1),
+  done_label: z.string().min(1),
+});
+export type InsightFixAction = z.infer<typeof InsightFixAction>;
+
+export const InsightFix = z.object({
+  // Exactly one fix, in Michael's voice.
+  text: z.string().min(1),
+  // Absent when nothing the app can do in one tap fits.
+  action: InsightFixAction.optional(),
+  // When the user applied the action; null while it is not applied (or was undone).
+  applied_at: IsoDateTime.nullable(),
+});
+export type InsightFix = z.infer<typeof InsightFix>;
+
+export const Insight = z.object({
+  // Stable across reads: made from what is compared, never from the numbers.
+  id: z.string().min(1),
+  kind: InsightKind,
+  status: InsightStatus,
+  title: z.string().min(1),
+  // One line, number first.
+  line: z.string().min(1),
+  // Two steps for a link, three for a chain, in the order they happen.
+  steps: z.array(InsightStep).min(2).max(3),
+  evidence: InsightEvidence,
+  fix: InsightFix,
+  found_by: z.enum(["rule", "model"]),
+  // The local day the trigger was last seen.
+  last_seen: LocalDay,
+  // 0 to 1: how far apart the two sides are and how often it held. The list is ordered by it.
+  strength: z.number().min(0).max(1),
+  sources: z.array(InsightSource),
+});
+export type Insight = z.infer<typeof Insight>;
+
+// The daily figures behind the study, one point per local day, oldest first. null on a day with
+// no reading.
+export const InsightSeriesKey = z.enum([
+  "sleep_score",
+  "hrv",
+  "resting_hr",
+  "recovery",
+  "late_phone_min",
+  "lost_min",
+]);
+export type InsightSeriesKey = z.infer<typeof InsightSeriesKey>;
+
+export const InsightSeries = z.object({
+  key: InsightSeriesKey,
+  label: z.string().min(1),
+  unit: InsightUnit,
+  points: z.array(z.object({ day: LocalDay, value: z.number().nullable() })),
+});
+export type InsightSeries = z.infer<typeof InsightSeries>;
+
+export const InsightsResponse = z.object({
+  generated_at: IsoDateTime,
+  studied: z.object({
+    // Local days with any data, and how many daily figures were read from them.
+    days: z.number().int().nonnegative(),
+    data_points: z.number().int().nonnegative(),
+    sources: z.array(InsightSource),
+    // Nights with sleep data.
+    nights: z.number().int().nonnegative(),
+    // The fewest days of data before anything can become a pattern.
+    needed_days: z.number().int().positive(),
+  }),
+  // Patterns before watching, strongest first within each.
+  insights: z.array(Insight),
+  series: z.array(InsightSeries),
+});
+export type InsightsResponse = z.infer<typeof InsightsResponse>;
 
 // ---------- score (GET /v1/score) ----------
 
