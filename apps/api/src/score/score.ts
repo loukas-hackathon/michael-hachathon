@@ -626,12 +626,17 @@ export function buildScore(events: Event[], goals: Goal[], options: ScoreOptions
   return scoreWithHistory(events, goals, options).score;
 }
 
-/** The score, and the weeks and blocks before it that the target and the records read. */
+/**
+ * The score, and the weeks and blocks before it that the target and the records read. `blocks` is
+ * every block part the score saw (the week and the 28 days before it) in time order, each with its
+ * own totals and lost stretches: the Morning and Evening moments read the days before today from
+ * it, so what they say about a block is what the score counted.
+ */
 export function scoreWithHistory(
   events: Event[],
   goals: Goal[],
   options: ScoreOptions,
-): { score: Score; history: ScoreHistory } {
+): { score: Score; history: ScoreHistory; blocks: ScoreBlock[] } {
   const zone = new Zone(options.timezone ?? DEFAULT_TIMEZONE);
   const now = Date.parse(options.now);
   if (!Number.isFinite(now)) throw new RangeError("now must be a valid ISO datetime");
@@ -835,5 +840,5 @@ export function scoreWithHistory(
     },
     null,
   );
-  return { score, history };
+  return { score, history, blocks: pieces.map((p) => toBlock(p, instructions, zone)) };
 }

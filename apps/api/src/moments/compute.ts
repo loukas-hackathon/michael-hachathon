@@ -9,36 +9,38 @@ import {
   type MomentKind,
   type MomentMove,
   type MomentStretch,
+  type ScoreBlock,
+  type ScoreLostStretch,
+  voiceDuration,
 } from "@michael/shared";
-import { buildContext, DEFAULT_TIMEZONE } from "../patterns/context";
-import { analyseFocus, type GoalBlock, goalBlocks, type RawDisruption } from "../patterns/focus";
-import { duration, label } from "../patterns/format";
-import { napIn } from "../patterns/sleep";
-import { DAY, HOUR, MINUTE, Zone } from "../patterns/time";
-import { subjectOf } from "../patterns/timeline";
-import { iso, type Span, sum, union, unionLength } from "../patterns/util";
+import { DEFAULT_TIMEZONE } from "../patterns/context";
+import { goalBlocks } from "../patterns/focus";
+import { count, siteName } from "../patterns/format";
+import { DAY, MINUTE, Zone } from "../patterns/time";
+import { iso, type Span, sum, union } from "../patterns/util";
 import { isTrainingGoal } from "../score/purpose";
+import { scoreRange, scoreWithHistory } from "../score/score";
+import { sleepGoalMinutes } from "../score/week";
 
 // Morning and Evening moments, computed. Pure: events, goals and the clock come in, numbers come
 // out. Only the headline may later be phrased by a model (phrase.ts); everything else is here.
+//
+// ONE SOURCE: every minute here is the score's (score/score.ts). The goal lines are the score's
+// goal rows, today's totals are the score's day, and what a block lost before today is what the
+// score counted inside that block. The Goals screen reads the same rows, so the two never differ.
 
-/** Days before today that set the usual day (what is normally lost, and when). */
+/** Days before today that set the usual stretch (what a block in these hours loses). */
 export const HISTORY_DAYS = 7;
+/** A stretch is worth a line only when it stands to lose at least this much. */
+export const MIN_STAKE_MINUTES = 10;
+/** A block Michael offers to book today starts at least this long after now. */
+export const BOOK_LEAD_MINUTES = 15;
 /** Free time a suggested block may use, local wall clock. */
 const DAY_OPENS = 8 * 60;
 const DAY_CLOSES = 21 * 60;
 const MIN_SLOT = 30;
 const MAX_SLOT = 90;
-/** How a move names the time it books: goal titles are often long targets ("4h of deep work per day"). */
-const ACTIVITY: Record<Goal["category"], string> = {
-  business: "work",
-  health: "training",
-  personal: "your own time",
-  work: "deep work",
-  gym: "training",
-  rest: "sleep",
-  food: "meals",
-};
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 export type MomentCore = Omit<Moment, "headline" | "phrased_by">;
 
@@ -53,15 +55,19 @@ export interface MomentInput {
 }
 
 const toMin = (ms: number) => Math.max(0, Math.round(ms / MINUTE));
-const overlap = (s: Span, a: number, z: number) => Math.max(0, Math.min(s.end, z) - Math.max(s.start, a));
+const sameTitle = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
-/** The events a moment needs: the history days (and the night before them) to the end of tomorrow. */
+/**
+ * The events a moment needs: what the score needs for today (its week and the 28 days before it,
+ * for the usual loss rate), to the end of tomorrow when tomorrow is already next week.
+ */
 export function momentRange(now: string, timezone = DEFAULT_TIMEZONE): { from: string; to: string } {
   const zone = new Zone(timezone);
   const today = zone.dayOf(Date.parse(now));
+  const range = scoreRange(today, timezone);
   return {
-    from: iso(zone.startOfDay(zone.nextDay(today, -HISTORY_DAYS)) - 12 * HOUR),
-    to: iso(zone.startOfDay(zone.nextDay(today, 2))),
+    from: iso(range.from),
+    to: iso(Math.max(range.to, zone.startOfDay(zone.nextDay(today, 2)))),
   };
 }
 
@@ -84,6 +90,42 @@ export function slotLength(unplanned: number, daysLeft: number): number {
   return Math.min(MAX_SLOT, Math.max(MIN_SLOT, Math.round(perDay / 15) * 15));
 }
 
+/** What took the time, by the name a person would use: an app, or a site by its product name. */
+interface Trigger {
+  name: string;
+  minutes: number;
+  count: number;
+  device: "mac" | "iphone";
+  kind: "app" | "site";
+}
+
+/** Lost stretches summed by what took them, most first. */
+function triggers(stretches: ScoreLostStretch[]): Trigger[] {
+  const by = new Map<string, Trigger>();
+  for (const s of stretches) {
+    const name = s.kind === "site" ? siteName(s.what) : s.what;
+    const cur = by.get(name);
+    if (cur) {
+      cur.minutes += s.minutes;
+      cur.count += 1;
+    } else by.set(name, { name, minutes: s.minutes, count: 1, device: s.device, kind: s.kind });
+  }
+  return [...by.values()].sort((a, b) => b.minutes - a.minutes || a.name.localeCompare(b.name));
+}
+
+/**
+ * "Yesterday this block lost 24 minutes to Instagram." The last time the same block ran, in words.
+ * Null when the stretch has no last time. `block` names the block where the line stands alone.
+ */
+export function lastTimeLine(risk: MomentStretch, today: string, block = "this block"): string | null {
+  const last = risk.last_time;
+  if (!last) return null;
+  const yesterday = new Date(Date.parse(`${today}T00:00:00Z`) - DAY).toISOString().slice(0, 10);
+  const when =
+    last.day === yesterday ? "Yesterday" : `On ${WEEKDAYS[new Date(`${last.day}T00:00:00Z`).getUTCDay()]}`;
+  return `${when} ${block} lost ${voiceDuration(last.lost_minutes)}${last.trigger ? ` to ${last.trigger}` : ""}.`;
+}
+
 export function computeMoment(input: MomentInput): MomentCore {
   const timezone = input.timezone ?? DEFAULT_TIMEZONE;
   const zone = new Zone(timezone);
@@ -96,128 +138,113 @@ export function computeMoment(input: MomentInput): MomentCore {
   const tomorrowStart = zone.startOfDay(tomorrow);
   const dayAfterStart = zone.startOfDay(zone.nextDay(tomorrow));
   const weekday = (new Date(`${today}T00:00:00Z`).getUTCDay() + 6) % 7; // 0 = Monday
-  const weekStartDay = zone.nextDay(today, -weekday);
-  const weekStart = zone.startOfDay(weekStartDay);
-  const weekEnd = zone.startOfDay(zone.nextDay(weekStartDay, 7));
+  const weekEnd = zone.startOfDay(zone.nextDay(today, 7 - weekday));
   const historyStart = zone.startOfDay(zone.nextDay(today, -HISTORY_DAYS));
   const daysLeft = 7 - weekday;
   const { events } = input;
   const goals = input.goals.filter((g) => g.active);
+  const goalById = new Map(goals.map((g) => [g.id, g]));
 
-  // What actually happened, up to now: interruptions inside goal blocks and focus stretches.
-  let disruptions: RawDisruption[] = [];
-  let usageDays = new Set<string>();
-  if (now > historyStart) {
-    const ctx = buildContext(events, {
-      from: iso(historyStart),
-      to: iso(now),
-      now: input.now,
-      timezone,
-      goals,
-    });
-    disruptions = analyseFocus(ctx).disruptions;
-    usageDays = new Set(ctx.tl.attention.flatMap((s) => zone.splitByDay(s.start, s.end).map((p) => p.day)));
-  }
-  const lostBetween = (a: number, z: number, goalId?: string) =>
-    sum(
-      disruptions
-        .filter((d) => d.start >= a && d.start < z && (goalId === undefined || d.goalId === goalId))
-        .map((d) => d.lostMs),
-    );
-
-  // The plan: goal blocks from Monday to the end of tomorrow (tomorrow may be next week).
-  const plan: GoalBlock[] = goalBlocks(events, goals, weekStart, Math.max(weekEnd, dayAfterStart));
-  const titleOf = new Map(events.map((e) => [e.id, e.title]));
-  const workouts: Span[] = events
-    .filter((e) => e.type === "workout" && e.end_at)
-    .map((e) => ({ start: Date.parse(e.start_at), end: Date.parse(e.end_at as string) }));
-  const sleeps: Span[] = events
-    .filter((e) => e.type === "sleep" && e.end_at)
-    .map((e) => ({ start: Date.parse(e.start_at), end: Date.parse(e.end_at as string) }))
-    .filter((s) => s.end > s.start && s.end - s.start <= DAY && !napIn(zone, s.start, s.end));
+  // The score for today: its goal rows, its day, and every block part it counted before today.
+  const { score, blocks } = scoreWithHistory(events, goals, { date: today, now: input.now, timezone });
+  const day = score.day;
+  const rows = new Map(score.goals.map((g) => [g.goal_id, g]));
 
   const goalLines: MomentGoal[] = [];
   for (const g of goals) {
-    const blocks = plan.filter((b) => b.goal.id === g.id);
-    if (g.weekly_budget_minutes === null && blocks.length === 0) continue;
-    // Sleep: a health goal of kind `target` that describes sleep (an older `rest` goal reads as one).
-    const isRest = isSleepGoal(g);
-    const perDay = (g.weekly_budget_minutes ?? 0) / 7;
-    const blockTime = (a: number, z: number) => sum(blocks.map((b) => overlap(b, a, z)));
-    const spent = (a: number, z: number) => {
-      const until = Math.min(z, now);
-      if (!(until > a)) return 0;
-      // Rest is sleep, counted on the day it ends. Gym is the workouts the watch saw, when it saw any.
-      if (isRest) return sum(sleeps.filter((s) => s.end >= a && s.end < until).map((s) => s.end - s.start));
-      if (isTrainingGoal(g) && workouts.length > 0)
-        return unionLength(
-          workouts.map((w) => ({ start: Math.max(w.start, a), end: Math.min(w.end, until) })),
-        );
-      return Math.max(0, blockTime(a, until) - lostBetween(a, until, g.id));
-    };
-    const spentWeek = toMin(spent(weekStart, now));
-    const plannedAhead = isRest
-      ? toMin(((perDay * Math.max(0, weekEnd - now)) / DAY) * MINUTE)
-      : toMin(blockTime(now, weekEnd));
-    goalLines.push({
+    const row = rows.get(g.id);
+    if (!row) continue;
+    if (g.weekly_budget_minutes === null && row.planned_minutes === 0) continue;
+    const base = {
       goal_id: g.id,
       title: g.title,
       category: g.category,
       area: goalArea(g.category),
       kind: goalKind(g),
-      sleep: isRest,
       budget_minutes: g.weekly_budget_minutes,
-      spent_week_minutes: spentWeek,
-      planned_today_minutes: isRest ? Math.round(perDay) : toMin(blockTime(todayStart, tomorrowStart)),
-      spent_today_minutes: toMin(spent(todayStart, tomorrowStart)),
-      lost_today_minutes: isRest ? 0 : toMin(lostBetween(todayStart, now, g.id)),
-      planned_ahead_minutes: plannedAhead,
-      // Sleep is not booked, so it has no unplanned time.
+    };
+    // Sleep: a health goal of kind `target` that describes sleep (an older `rest` goal reads as
+    // one). The score keeps it outside its totals and reports the nights apart (`sleep`).
+    if (isSleepGoal(g)) {
+      const perNight = score.sleep?.goal_minutes ?? sleepGoalMinutes(g) ?? 0;
+      const nights = score.sleep?.nightly ?? [];
+      goalLines.push({
+        ...base,
+        sleep: true,
+        spent_week_minutes: sum(nights.map((n) => n ?? 0)),
+        planned_today_minutes: perNight,
+        spent_today_minutes: nights[weekday] ?? 0,
+        lost_today_minutes: 0,
+        planned_ahead_minutes: toMin(((perNight * Math.max(0, weekEnd - now)) / DAY) * MINUTE),
+        // Sleep is not booked, so it has no unplanned time.
+        unplanned_minutes: null,
+      });
+      continue;
+    }
+    const todayRow = row.daily.find((d) => d.date === today);
+    goalLines.push({
+      ...base,
+      sleep: false,
+      spent_week_minutes: row.spent_minutes,
+      planned_today_minutes: todayRow?.planned_minutes ?? 0,
+      spent_today_minutes: todayRow?.spent_minutes ?? 0,
+      lost_today_minutes: sum(day.blocks.filter((b) => b.goal_id === g.id).map((b) => b.lost_minutes)),
+      planned_ahead_minutes: row.ahead_minutes,
+      // Only a goal measured in planned minutes has time left to book.
       unplanned_minutes:
-        g.weekly_budget_minutes === null || isRest
+        g.weekly_budget_minutes === null || !row.scored
           ? null
-          : Math.max(0, g.weekly_budget_minutes - spentWeek - plannedAhead),
+          : Math.max(0, g.weekly_budget_minutes - row.spent_minutes - row.ahead_minutes),
     });
   }
 
-  // The usual day: what is lost on the history days that had any device data.
-  const historyDays = [...usageDays].filter((d) => d >= zone.dayOf(historyStart) && d < today);
+  // Today is the score's day: held plus lost is what has elapsed, never more than planned.
+  const planned = day.planned_minutes;
+  const spentToday = day.spent_minutes;
+  const lostToday = day.lost_minutes;
+  // Won back is the score's too: what the elapsed blocks usually lose, less what they lost today.
+  // The usual loss is the score's usual rate over today's blocks: in the morning over all that is
+  // planned (what today stands to lose), in the evening over what has elapsed (what won back is
+  // measured against).
+  const usual = day.time_won_back;
+  const wonBack = input.kind === "evening" ? usual.minutes : 0;
   const baseline =
-    historyDays.length > 0 ? toMin(lostBetween(historyStart, todayStart) / historyDays.length) : null;
-  const sleepIds = new Set(goals.filter(isSleepGoal).map((g) => g.id));
-  const work = goalLines.filter((l) => !sleepIds.has(l.goal_id));
-  const planned = sum(work.map((l) => l.planned_today_minutes));
-  const spentToday = sum(work.map((l) => l.spent_today_minutes));
-  const lostToday = toMin(lostBetween(todayStart, now));
-  const wonBack = input.kind === "evening" && baseline !== null ? Math.max(0, baseline - lostToday) : 0;
+    usual.usual_loss_rate === null
+      ? null
+      : input.kind === "morning"
+        ? Math.round(usual.usual_loss_rate * planned)
+        : wonBack > 0
+          ? wonBack + lostToday
+          : Math.round(usual.usual_loss_rate * day.elapsed_minutes);
 
   // The biggest gap in the week, for a suggestion or tomorrow's first move.
-  const gap = work
-    .filter((l) => (l.unplanned_minutes ?? 0) > 0)
+  const gap = goalLines
+    .filter((l) => !l.sleep && (l.unplanned_minutes ?? 0) > 0)
     .sort((a, b) => (b.unplanned_minutes ?? 0) - (a.unplanned_minutes ?? 0))[0];
   const busyOn = (a: number, z: number): Span[] =>
     events
       .filter((e) => e.type === "calendar_event" && e.end_at)
       .map((e) => ({ start: Date.parse(e.start_at), end: Date.parse(e.end_at as string) }))
       .filter((s) => s.end > a && s.start < z);
-  const bookGap = (day: string, after: number, when: string): MomentMove | null => {
+  /** Book the goal with the most unplanned budget on `onDay`, in the first free slot from `after`. */
+  const bookGap = (onDay: string, after: number, when: string): MomentMove | null => {
     if (!gap) return null;
     const minutes = slotLength(gap.unplanned_minutes ?? 0, daysLeft);
-    const dayStart = zone.startOfDay(day);
-    const from = Math.max(after, zone.at(day, DAY_OPENS));
-    const to = zone.at(day, DAY_CLOSES);
+    const dayStart = zone.startOfDay(onDay);
+    const from = Math.max(after, zone.at(onDay, DAY_OPENS));
+    const to = zone.at(onDay, DAY_CLOSES);
     const slot =
-      to > from ? freeSlot(busyOn(dayStart, zone.startOfDay(zone.nextDay(day))), from, to, minutes) : null;
-    const left = Math.max(0, (gap.budget_minutes ?? 0) - gap.spent_week_minutes);
-    const what = ACTIVITY[gap.category];
+      to > from ? freeSlot(busyOn(dayStart, zone.startOfDay(zone.nextDay(onDay))), from, to, minutes) : null;
+    const budget = gap.budget_minutes ?? 0;
+    const left = Math.max(0, budget - gap.spent_week_minutes);
+    // The goal by its own name: "Book 90 minutes for University", never "deep work".
+    const what = `${voiceDuration(minutes)} for ${gap.title}`;
     return {
-      title: slot
-        ? `Book ${minutes} minutes of ${what} at ${zone.clock(slot.start)}${when}`
-        : `Find ${minutes} minutes for ${what}${when}`,
+      title: slot ? `Book ${what} at ${zone.clock(slot.start)}${when}` : `Find ${what}${when}`,
       rationale:
         gap.planned_ahead_minutes > 0
-          ? `${duration(left)} of ${duration(gap.budget_minutes ?? 0)} for ${gap.title} left this week and ${duration(gap.planned_ahead_minutes)} planned, so ${duration(gap.unplanned_minutes ?? 0)} is not booked.`
-          : `${duration(left)} of ${duration(gap.budget_minutes ?? 0)} for ${gap.title} left this week and none of it booked.`,
+          ? `${voiceDuration(left)} of ${voiceDuration(budget)} for ${gap.title} left this week and ${voiceDuration(gap.planned_ahead_minutes)} planned, so ${voiceDuration(gap.unplanned_minutes ?? 0)} is not booked.`
+          : `${voiceDuration(left)} of ${voiceDuration(budget)} for ${gap.title} left this week and none of it booked.`,
       action_kind: slot ? "create_focus_block" : null,
       start_at: slot ? iso(slot.start) : null,
       end_at: slot ? iso(slot.end) : null,
@@ -242,152 +269,166 @@ export function computeMoment(input: MomentInput): MomentCore {
 
   if (input.kind === "morning") {
     const risk = atRisk();
-    const at_risk = risk?.stretch ?? null;
     const suggestions: MomentMove[] = [];
-    if (at_risk?.usual_trigger) {
-      const s = Date.parse(at_risk.start_at);
-      const e = Date.parse(at_risk.end_at);
-      const onPhone = risk?.device === "iphone";
+    if (risk?.trigger) {
+      const s = Date.parse(risk.stretch.start_at);
+      const e = Date.parse(risk.stretch.end_at);
+      const hours = `from ${zone.clock(s)} to ${zone.clock(e)}`;
+      const t = risk.trigger;
+      // A phone goes to another room, a Mac app can be closed for the block, a site is the user's to close.
+      const onPhone = t.device === "iphone";
+      const isApp = t.kind === "app";
       suggestions.push({
         title: onPhone
-          ? `Phone in another room from ${zone.clock(s)} to ${zone.clock(e)}`
-          : `Silence ${at_risk.usual_trigger} from ${zone.clock(s)} to ${zone.clock(e)}`,
-        rationale: `On a usual day you lose ${at_risk.expected_lost_minutes} minutes in these hours, mostly to ${at_risk.usual_trigger} (last ${at_risk.history_days} days).`,
-        action_kind: onPhone ? "reminder" : "block_mac_app",
-        start_at: at_risk.start_at,
-        end_at: at_risk.end_at,
-        goal_id: at_risk.goal_id,
+          ? `Phone in another room ${hours}`
+          : isApp
+            ? `Silence ${t.name} ${hours}`
+            : `Keep ${t.name} closed ${hours}`,
+        rationale:
+          lastTimeLine(risk.stretch, today) ??
+          `Goal blocks in these hours usually lose ${voiceDuration(risk.stretch.expected_lost_minutes)}, mostly to ${t.name} (${count(risk.stretch.history_days, "day")} with a block in the last ${HISTORY_DAYS}).`,
+        action_kind: !onPhone && isApp ? "block_mac_app" : "reminder",
+        start_at: risk.stretch.start_at,
+        end_at: risk.stretch.end_at,
+        goal_id: risk.stretch.goal_id,
       });
     }
-    const book = bookGap(today, now, "");
+    // Never a block that starts the minute it is shown: 15 minutes ahead, on the next quarter.
+    const lead = now + BOOK_LEAD_MINUTES * MINUTE;
+    const leadMinute = zone.minuteOfDay(lead) + (lead % MINUTE > 0 ? 1 : 0);
+    const earliest =
+      zone.dayOf(lead) === today ? zone.at(today, Math.ceil(leadMinute / 15) * 15) : tomorrowStart;
+    const book = bookGap(today, earliest, "");
     if (book) suggestions.push(book);
-    return { ...base, at_risk, suggestions, lesson: null, first_move: null };
+    return { ...base, at_risk: risk?.stretch ?? null, suggestions, lesson: null, first_move: null };
   }
 
   return { ...base, at_risk: null, suggestions: [], lesson: lesson(), first_move: firstMove() };
 
-  // ---------- morning: the stretch most likely to be lost ----------
+  // ---------- morning: the block most likely to lose time ----------
 
-  // The device of the usual trigger decides the wording of the suggestion.
-  function atRisk(): { stretch: MomentStretch; device: "mac" | "iphone" | null } | null {
-    if (historyDays.length === 0) return null;
-    const lostByHour = new Array<number>(24).fill(0);
-    const byHour = Array.from(
-      { length: 24 },
-      () => new Map<string, { ms: number; device: "mac" | "iphone" }>(),
-    );
-    for (const d of disruptions) {
-      if (d.start < historyStart || d.start >= todayStart) continue;
-      const h = zone.hourOf(d.start);
-      lostByHour[h] = (lostByHour[h] ?? 0) + d.lostMs;
-      const name = label(subjectOf(d.trigger));
-      const m = byHour[h] as Map<string, { ms: number; device: "mac" | "iphone" }>;
-      const cur = m.get(name) ?? { ms: 0, device: d.trigger.device };
-      cur.ms += d.lostMs;
-      m.set(name, cur);
+  /**
+   * Of today's blocks still ahead, the one with the most at stake. Training blocks are left out
+   * (nobody silences mail for a swim), and so is any block that stands to lose under 10 minutes.
+   * With nothing left there is no line and no move.
+   *
+   * The stake of a block is what the same block lost the last time it ran (same title, or same
+   * goal at the same hour) when that was 10 minutes or more, else the average over the history
+   * days that had a goal block in those hours. A day with no block there is not in the average.
+   */
+  function atRisk(): { stretch: MomentStretch; trigger: Trigger | null } | null {
+    interface Past extends Span {
+      day: string;
+      block: ScoreBlock;
     }
-    const hourStart = (h: number) => zone.at(today, h * 60);
-    const expected = (s: Span) => {
-      let ms = 0;
-      for (let h = 0; h < 24; h++) {
-        const part = overlap(s, hourStart(h), hourStart(h + 1));
-        if (part > 0) ms += ((lostByHour[h] ?? 0) / historyDays.length) * (part / HOUR);
-      }
-      return ms;
-    };
+    const past: Past[] = [];
+    for (const block of blocks) {
+      const start = Date.parse(block.start_at);
+      const goal = goalById.get(block.goal_id);
+      if (start < historyStart || start >= todayStart || !goal || isTrainingGoal(goal)) continue;
+      past.push({ start, end: Date.parse(block.end_at), day: zone.dayOf(start), block });
+    }
+    const historyDays = Array.from({ length: HISTORY_DAYS }, (_, i) => zone.nextDay(today, -(i + 1)));
 
-    type Candidate = Span & { title: string; goalId: string | null; blockId: string | null };
-    const candidates: Candidate[] = plan
-      .filter((b) => b.end > now && b.start < tomorrowStart)
-      .map((b) => ({
-        start: Math.max(b.start, now),
-        end: b.end,
-        title: titleOf.get(b.eventId) ?? b.goal.title,
-        goalId: b.goal.id,
-        blockId: b.eventId,
-      }));
-    // Nothing booked: the remaining hour of the day that usually costs the most.
-    if (candidates.length === 0) {
-      for (let h = Math.floor(DAY_OPENS / 60); h < Math.floor(DAY_CLOSES / 60); h++) {
-        if (hourStart(h + 1) <= now) continue;
-        candidates.push({
-          start: Math.max(hourStart(h), now),
-          end: hourStart(h + 1),
-          title: "Unbooked time",
-          goalId: null,
-          blockId: null,
-        });
-      }
-    }
-    let best: (Candidate & { ms: number }) | null = null;
-    for (const c of candidates) {
-      const ms = expected(c);
-      if (!best || ms > best.ms) best = { ...c, ms };
-    }
-    if (!best || toMin(best.ms) < 1) return null;
+    let best: { stake: number; stretch: MomentStretch; trigger: Trigger | null } | null = null;
+    for (const block of day.blocks) {
+      const goal = goalById.get(block.goal_id);
+      const blockStart = Date.parse(block.start_at);
+      const end = Date.parse(block.end_at);
+      if (!goal || isTrainingGoal(goal) || end <= now) continue;
+      const start = Math.max(blockStart, now);
+      const length = end - start;
+      const offset = zone.minuteOfDay(start);
 
-    const triggers = new Map<string, { ms: number; device: "mac" | "iphone" }>();
-    for (let h = 0; h < 24; h++) {
-      if (overlap(best, hourStart(h), hourStart(h + 1)) === 0) continue;
-      for (const [name, v] of byHour[h] ?? []) {
-        const cur = triggers.get(name) ?? { ms: 0, device: v.device };
-        cur.ms += v.ms;
-        triggers.set(name, cur);
+      // The same hours on each history day that had a goal block over at least half of them.
+      let blockDays = 0;
+      let lost = 0;
+      const stretches: ScoreLostStretch[] = [];
+      for (const d of historyDays) {
+        const a = zone.at(d, offset);
+        const z = a + length;
+        const parts = past.filter((p) => p.day === d && p.end > a && p.start < z);
+        const covered = sum(parts.map((p) => Math.min(p.end, z) - Math.max(p.start, a)));
+        if (covered * 2 < length) continue;
+        blockDays++;
+        for (const p of parts) {
+          const inside = p.block.lost.filter((s) => {
+            const at = Date.parse(s.start_at);
+            return at >= a && at < z;
+          });
+          stretches.push(...inside);
+          // A block wholly inside these hours counts with the minutes the score shows for it.
+          lost += p.start >= a && p.end <= z ? p.block.lost_minutes : sum(inside.map((s) => s.minutes));
+        }
       }
+      const expected = blockDays > 0 ? Math.round(lost / blockDays) : 0;
+
+      // The same block, the last time it ran.
+      const same = past
+        .filter(
+          (p) =>
+            sameTitle(p.block.title, block.title) ||
+            (p.block.goal_id === block.goal_id && zone.hourOf(p.start) === zone.hourOf(blockStart)),
+        )
+        .sort((a, b) => b.start - a.start)[0];
+      const lastTrigger = same ? (triggers(same.block.lost)[0] ?? null) : null;
+      const last =
+        same && same.block.lost_minutes >= MIN_STAKE_MINUTES
+          ? { day: same.day, lost_minutes: same.block.lost_minutes, trigger: lastTrigger?.name ?? null }
+          : null;
+
+      const stake = Math.max(expected, last?.lost_minutes ?? 0);
+      if (stake < MIN_STAKE_MINUTES) continue;
+      if (best && best.stake >= stake) continue;
+      const usualTrigger = triggers(stretches)[0] ?? null;
+      best = {
+        stake,
+        // The move follows what Michael quotes: last time's trigger when he quotes last time.
+        trigger: (last ? lastTrigger : null) ?? usualTrigger ?? lastTrigger,
+        stretch: {
+          start_at: iso(start),
+          end_at: iso(end),
+          title: block.title,
+          goal_id: block.goal_id,
+          block_event_id: block.event_id,
+          expected_lost_minutes: expected,
+          history_days: blockDays,
+          usual_trigger: (usualTrigger ?? lastTrigger)?.name ?? null,
+          last_time: last,
+        },
+      };
     }
-    const top = [...triggers.entries()].sort((a, b) => b[1].ms - a[1].ms)[0];
-    return {
-      device: top?.[1].device ?? null,
-      stretch: {
-        start_at: iso(best.start),
-        end_at: iso(best.end),
-        title: best.title,
-        goal_id: best.goalId,
-        block_event_id: best.blockId,
-        expected_lost_minutes: toMin(best.ms),
-        history_days: historyDays.length,
-        usual_trigger: top?.[0] ?? null,
-      },
-    };
+    return best;
   }
 
   // ---------- evening: one lesson and tomorrow's first move ----------
 
-  function topTriggerToday(): { name: string; ms: number; count: number } | null {
-    const t = new Map<string, { ms: number; count: number }>();
-    for (const d of disruptions) {
-      if (d.start < todayStart || d.start >= now) continue;
-      const name = label(subjectOf(d.trigger));
-      const cur = t.get(name) ?? { ms: 0, count: 0 };
-      cur.ms += d.lostMs;
-      cur.count += 1;
-      t.set(name, cur);
-    }
-    const top = [...t.entries()].sort((a, b) => b[1].ms - a[1].ms)[0];
-    return top && toMin(top[1].ms) >= 1 ? { name: top[0], ...top[1] } : null;
+  /** What took the most time inside today's goal blocks, as the score counted it. */
+  function topTriggerToday(): Trigger | null {
+    const top = triggers(day.blocks.flatMap((b) => b.lost))[0];
+    return top && Math.round(top.minutes) >= 1 ? top : null;
   }
 
   function lesson(): string {
     const top = topTriggerToday();
     if (top) {
       const n = top.count === 1 ? "1 interruption" : `${top.count} interruptions`;
-      return `${top.name} cost ${duration(toMin(top.ms))} in ${n} today.`;
+      return `${top.name} cost ${voiceDuration(Math.round(top.minutes))} in ${n} today.`;
     }
     if (planned === 0) return "No goal blocks today. Time you do not book goes elsewhere.";
-    if (spentToday >= planned) return "Every planned minute held. Book tomorrow the same way.";
-    return `${duration(planned - spentToday)} of planned goal time did not happen.`;
+    if (lostToday > 0) return `${voiceDuration(lostToday)} of planned goal time lost today.`;
+    if (day.ahead_minutes > 0)
+      return `Nothing lost so far. ${voiceDuration(day.ahead_minutes)} of goal time still ahead today.`;
+    return "Every planned minute held. Book tomorrow the same way.";
   }
 
   function firstMove(): MomentMove | null {
-    const next = plan
-      .filter((b) => b.start >= tomorrowStart && b.start < dayAfterStart)
-      .sort((a, b) => a.start - b.start)[0];
+    const next = goalBlocks(events, goals, tomorrowStart, dayAfterStart).sort((a, b) => a.start - b.start)[0];
     if (next) {
       const top = topTriggerToday();
-      const title = titleOf.get(next.eventId) ?? next.goal.title;
       return {
-        title: `Start ${title} at ${zone.clock(next.start)}`,
-        rationale: `First goal block tomorrow: ${toMin(next.end - next.start)} minutes for ${next.goal.title}.${top ? ` Put ${top.name} away before it starts.` : ""}`,
+        title: `Start ${next.title || next.goal.title} at ${zone.clock(next.start)}`,
+        rationale: `First goal block tomorrow: ${voiceDuration(toMin(next.end - next.start))} for ${next.goal.title}.${top ? ` Put ${top.name} away before it starts.` : ""}`,
         action_kind: "reminder",
         start_at: iso(next.start),
         end_at: iso(next.end),
@@ -404,18 +445,26 @@ export function templateHeadline(m: MomentCore): string {
   if (m.kind === "morning") {
     const risk = m.at_risk;
     const tz = new Zone(m.timezone);
+    const from = risk ? tz.clock(Date.parse(risk.start_at)) : "";
+    // The stake: what this block lost last time when there is one, else what these hours usually cost.
     const guard = risk
-      ? ` Guard ${tz.clock(Date.parse(risk.start_at))} to ${tz.clock(Date.parse(risk.end_at))}: it usually costs ${duration(risk.expected_lost_minutes)}.`
+      ? ` ${
+          lastTimeLine(risk, m.day, `the ${from} block`) ??
+          `Guard ${from} to ${tz.clock(Date.parse(risk.end_at))}: it usually costs ${voiceDuration(risk.expected_lost_minutes)}.`
+        }`
       : "";
-    if (t.planned_minutes > 0) return `Today holds ${duration(t.planned_minutes)} of goal time.${guard}`;
+    if (t.planned_minutes > 0) return `Today holds ${voiceDuration(t.planned_minutes)} of goal time.${guard}`;
     const move = m.suggestions.find((s) => s.action_kind === "create_focus_block");
     return `Nothing booked for your goals today.${move ? ` ${move.title}.` : guard}`;
   }
-  const lost = t.lost_minutes > 0 ? `${duration(t.lost_minutes)} lost` : "nothing lost";
-  const won = t.won_back_minutes > 0 ? ` ${duration(t.won_back_minutes)} won back on your usual day.` : "";
-  if (t.planned_minutes > 0)
-    return `${duration(t.spent_minutes)} of ${duration(t.planned_minutes)} planned goal time held, ${lost}.${won}`;
-  return t.lost_minutes > 0
-    ? `No goal time booked today, ${duration(t.lost_minutes)} lost to interruptions.${won}`
-    : "No goal time booked today. Book tomorrow before you sleep.";
+  // Evening. Held plus lost is what has elapsed; with what is still ahead they make the plan.
+  if (t.planned_minutes === 0) return "No goal time booked today. Book tomorrow before you sleep.";
+  const ahead = Math.max(0, t.planned_minutes - t.spent_minutes - t.lost_minutes);
+  if (ahead === t.planned_minutes)
+    return `${voiceDuration(t.planned_minutes)} of goal time still ahead today.`;
+  const lost = t.lost_minutes > 0 ? `${voiceDuration(t.lost_minutes)} lost` : "nothing lost";
+  const rest = ahead > 0 ? `, ${voiceDuration(ahead)} still ahead` : "";
+  const won =
+    t.won_back_minutes > 0 ? ` ${voiceDuration(t.won_back_minutes)} won back against your usual day.` : "";
+  return `${voiceDuration(t.spent_minutes)} of ${voiceDuration(t.planned_minutes)} planned goal time held, ${lost}${rest}.${won}`;
 }
