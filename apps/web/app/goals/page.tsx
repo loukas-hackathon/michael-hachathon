@@ -20,15 +20,18 @@ import { formatWeekday, hm } from "@/lib/format";
 import {
   bookedLine,
   bookedSplit,
-  bookMinutes,
+  bookOffer,
   closeState,
   type GoalStatus,
   type GoalWeek,
+  isFreshWeek,
   needsMost,
   pace,
+  paceKnown,
   paceMinutes,
   rank,
   todayIndex,
+  withoutPace,
 } from "@/lib/goals-view";
 import { MiConcerned } from "@/lib/mi-mood";
 import { openRecommendations, type RecCard, toCard } from "@/lib/recommendations";
@@ -68,7 +71,9 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
   const p = pace(week);
   const today = todayIndex(week);
   const daysLeft = 7 - today - 1;
-  const ranked = rank(week);
+  // No pace verdict until a planned goal block has gone by to measure against (#513).
+  const known = paceKnown(week, demo);
+  const ranked = known ? rank(week) : withoutPace(rank(week));
   const top = needsMost(ranked);
   // The maths names only goals that still need time: a closed goal is no "0 min" row (QA round 3).
   const open = ranked.filter((r) => r.leftMinutes > 0);
@@ -94,12 +99,7 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
   const toGo = daysLeft + 1;
   // A brand new account's first goals (#478): nothing spent and no day learnt yet, so no "behind
   // pace", no empty bars and no zeros. Each goal says its week and the one thing to do is Book.
-  const fresh =
-    !week.sample &&
-    !demo &&
-    (week.explain?.learning ?? false) &&
-    (week.explain?.daysLearnt ?? 0) === 0 &&
-    week.goals.every((g) => g.spentMinutes === 0);
+  const fresh = isFreshWeek(week, demo);
 
   return (
     <main className="screen m-wide">
@@ -151,6 +151,7 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
                 personalReady={personalReady}
                 canLog={canLog}
                 fresh={fresh}
+                known={known}
               />
             ) : ranked.length > 0 ? (
               <section aria-label="This week" className="mt-3">
@@ -171,7 +172,7 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
               </NewGoalButton>
             ) : null}
 
-            <TheWeek week={week} />
+            <TheWeek week={week} learning={known} />
 
             {!fresh && week.freeMinutesLeft != null && need > week.freeMinutesLeft ? (
               <section className="mt-6">
@@ -217,7 +218,9 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
                     {leadOnly && top ? (
                       <li className="flex min-h-11 items-center justify-between gap-3 px-4 py-2.5">
                         <span className="text-body text-label-2">{top.goal.title}</span>
-                        <span className="text-footnote text-label-2">Above</span>
+                        <span className="shrink-0 text-footnote text-label-2 tnum">
+                          {fresh ? `${hm(top.goal.budgetMinutes)} a week` : `${hm(top.leftMinutes)} left`}
+                        </span>
                       </li>
                     ) : null}
                     {rows.map((r, i) => (
@@ -234,6 +237,7 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
                           personalReady={personalReady}
                           canLog={canLog}
                           fresh={fresh}
+                          known={known}
                         />
                       </li>
                     ))}
@@ -304,6 +308,7 @@ function Hero({
   personalReady,
   canLog,
   fresh = false,
+  known = true,
 }: {
   status: GoalStatus;
   pace: number;
@@ -316,21 +321,33 @@ function Hero({
   canLog: boolean;
   /** A brand new account: the goal's week, no pace and no empty bar. */
   fresh?: boolean;
+  /** A planned block has gone by, so pace means something (#513). */
+  known?: boolean;
 }) {
   const { goal, behind, leftMinutes } = status;
   const due = paceMinutes(goal.budgetMinutes, p);
   const gap = Math.max(0, due - goal.spentMinutes);
   const draft = drafts.get(goal.id);
   const split = bookedSplit(leftMinutes, booked);
-  const minutes = bookMinutes(split.open, toGo);
+  const offer = bookOffer({ left: leftMinutes, booked, toGo, budget: goal.budgetMinutes, paceKnown: known });
   return (
     <section aria-label="Needs you most" className="mt-3">
       <h2 className="text-insight text-label-2">
         <b className="font-semibold text-label">{goal.title}</b>{" "}
         {fresh ? (
           <>
-            first: <b className="font-semibold text-label tnum">{hm(goal.budgetMinutes)}</b> this week,
-            counted from today.
+            first:{" "}
+            {offer.kind === "next_week" ? (
+              <>
+                <b className="font-semibold text-label tnum">{hm(goal.budgetMinutes)}</b> a week, counted from
+                Monday.
+              </>
+            ) : (
+              <>
+                <b className="font-semibold text-label tnum">{hm(goal.budgetMinutes)}</b> this week, counted
+                from today.
+              </>
+            )}
           </>
         ) : behind ? (
           <>
@@ -340,8 +357,8 @@ function Hero({
           </>
         ) : (
           <>
-            has the most left: <b className="font-semibold text-label tnum">{hm(leftMinutes)}</b>. Every goal
-            is on pace.
+            has the most left: <b className="font-semibold text-label tnum">{hm(leftMinutes)}</b>.
+            {known ? " Every goal is on pace." : ""}
           </>
         )}
       </h2>
@@ -354,8 +371,8 @@ function Hero({
             spent={goal.spentMinutes}
             unverified={goal.unverifiedMinutes}
             planned={goal.plannedMinutes}
-            pace={p}
-            label={`${hm(goal.spentMinutes)} of ${hm(goal.budgetMinutes)}. On pace would be ${hm(due)} by now.`}
+            pace={known ? p : null}
+            label={`${hm(goal.spentMinutes)} of ${hm(goal.budgetMinutes)}.${known ? ` On pace would be ${hm(due)} by now.` : ""}`}
           />
         )}
         <div className="mt-2.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-3 text-footnote text-label-2 tnum xl:flex-col xl:flex-nowrap xl:gap-2">
@@ -364,7 +381,7 @@ function Hero({
           {fresh ? null : (
             <p className="min-w-0 flex-[1_1_15rem] xl:flex-none">
               <b className="font-semibold text-label">{hm(goal.spentMinutes)}</b> of {hm(goal.budgetMinutes)}.
-              On pace: {hm(due)} by now.
+              {known ? ` On pace: ${hm(due)} by now.` : ""}
               {goal.loggedMinutes ? ` ${loggedLine(goal.loggedMinutes)}` : ""}
             </p>
           )}
@@ -386,25 +403,37 @@ function Hero({
       <div className="mt-5">
         {card ? (
           <RecommendationList cards={[card]} variant="primary" />
-        ) : split.open === 0 ? (
+        ) : offer.kind === "booked" ? (
           // Everything left is already in the calendar: nothing more to book.
           <p className="rounded-card bg-fill px-4 py-3.5 text-body font-semibold tnum">
             {bookedLine(leftMinutes, booked)}
           </p>
+        ) : offer.kind === "next_week" ? (
+          // First week, and it ends today (#513): start next week right, never cram today.
+          <div className="flex flex-col gap-1.5 rounded-card bg-fill px-4 pt-3.5 pb-4">
+            <p className="text-body font-semibold">This week ends today. Plan next week.</p>
+            <p className="text-subhead text-label-2">
+              I put {hm(offer.minutes)} for {goal.title} in your calendar from Monday. Undo until it starts.
+            </p>
+            <div className="mt-1.5">
+              <BookTime goalId={goal.id} minutes={offer.minutes} nextWeek primary label="Plan next week" />
+            </div>
+          </div>
         ) : (
           <div className="flex flex-col gap-1.5 rounded-card bg-fill px-4 pt-3.5 pb-4">
             <p className="text-body font-semibold">
-              Book {hm(minutes)} for {goal.title}.
+              Book {hm(offer.minutes)} for {goal.title}.
             </p>
             <p className="text-subhead text-label-2">
-              I take the first free {hm(minutes)} from now and put it in your calendar. Undo until it starts.
+              I take the first free {hm(offer.minutes)} from now and put it in your calendar. Undo until it
+              starts.
             </p>
             <p className="text-subhead font-semibold tnum">
               {hm(leftMinutes)} left{split.booked > 0 ? `, ${hm(split.booked)} booked` : ""},{" "}
               {toGo === 1 ? "today is the last day" : `${toGo} days to go`}.
             </p>
             <div className="mt-1.5">
-              <BookTime goalId={goal.id} minutes={minutes} primary />
+              <BookTime goalId={goal.id} minutes={offer.minutes} primary />
             </div>
           </div>
         )}
@@ -417,8 +446,16 @@ function Hero({
 const loggedLine = (minutes: number) => `${hm(minutes)} of it you logged outside your blocks.`;
 
 /** The week's target, balance and records (#165, #166), quietly under the answer. */
-function TheWeek({ week }: { week: Awaited<ReturnType<typeof getGoalsWeek>> }) {
-  const explain = week.explain ?? null;
+function TheWeek({
+  week,
+  learning: showLearning,
+}: {
+  week: Awaited<ReturnType<typeof getGoalsWeek>>;
+  /** False in the first week before any block (#513): the goals already count from today. */
+  learning: boolean;
+}) {
+  const raw = week.explain ?? null;
+  const explain = raw?.learning && !showLearning ? null : raw;
   const scoreLine = explain?.learning || explain?.scorePct != null;
   if (!week.target && !week.balance && !week.recordLine && !scoreLine) return null;
   return (
@@ -467,6 +504,7 @@ function GoalRow({
   personalReady,
   canLog,
   fresh = false,
+  known = true,
 }: {
   status: GoalStatus;
   first: boolean;
@@ -481,18 +519,20 @@ function GoalRow({
   canLog: boolean;
   /** A brand new account: the goal's week in words, no empty bar and no pace. */
   fresh?: boolean;
+  /** A planned block has gone by, so pace means something (#513). */
+  known?: boolean;
 }) {
   const { goal, behind, leftMinutes } = status;
   const close = closeState(goal.budgetMinutes, goal.spentMinutes, leftMinutes);
   const due = paceMinutes(goal.budgetMinutes, p);
   // What is true about the time left: how much is booked ahead and how much is still open after it.
-  const split = bookedSplit(leftMinutes, booked);
   const line = bookedLine(leftMinutes, booked);
+  const offer = bookOffer({ left: leftMinutes, booked, toGo, budget: goal.budgetMinutes, paceKnown: known });
   const summary = fresh ? (
     <>
       <h3 className="text-body font-semibold">{goal.title}</h3>
       <p className="mt-0.5 text-footnote text-label-2 tnum">
-        {hm(goal.budgetMinutes)} a week, counted from today.
+        {hm(goal.budgetMinutes)} a week, counted from {offer.kind === "next_week" ? "Monday" : "today"}.
       </p>
     </>
   ) : (
@@ -518,9 +558,9 @@ function GoalRow({
           spent={goal.spentMinutes}
           unverified={goal.unverifiedMinutes}
           planned={goal.plannedMinutes}
-          pace={p}
+          pace={known ? p : null}
           close={close}
-          label={`${hm(goal.spentMinutes)} of ${hm(goal.budgetMinutes)}, ${behind ? "behind" : "ahead of"} pace`}
+          label={`${hm(goal.spentMinutes)} of ${hm(goal.budgetMinutes)}${known ? `, ${behind ? "behind" : "ahead of"} pace` : ""}`}
         />
       </div>
       <p className="mt-2 text-footnote text-label-2 tnum">
@@ -545,7 +585,7 @@ function GoalRow({
             ) : (
               hm(goal.spentMinutes)
             )}{" "}
-            of {hm(goal.budgetMinutes)}. {behind ? "Behind pace." : "On pace."}
+            of {hm(goal.budgetMinutes)}.{known ? (behind ? " Behind pace." : " On pace.") : ""}
           </>
         )}
       </p>
@@ -558,7 +598,11 @@ function GoalRow({
     <ExpandRow first={first} summary={summary}>
       <WeekBars daily={goal.daily} today={today} cap={cap} />
       <p className="mt-3 text-footnote text-label-2 tnum">
-        On pace: <b className="font-semibold text-label">{hm(due)}</b> by now.{" "}
+        {known ? (
+          <>
+            On pace: <b className="font-semibold text-label">{hm(due)}</b> by now.{" "}
+          </>
+        ) : null}
         {line
           ? close === "open"
             ? line
@@ -568,7 +612,10 @@ function GoalRow({
             : "No blocks planned for the rest of the week."}
       </p>
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-        {split.open > 0 ? <BookTime goalId={goal.id} minutes={bookMinutes(split.open, toGo)} /> : null}
+        {offer.kind === "today" ? <BookTime goalId={goal.id} minutes={offer.minutes} /> : null}
+        {offer.kind === "next_week" ? (
+          <BookTime goalId={goal.id} minutes={offer.minutes} nextWeek label="Plan next week" />
+        ) : null}
         {canLog ? <FocusNowButton goal={{ id: goal.id, title: goal.title }} className={btnPlain} /> : null}
         {canLog ? <LogTimeButton goal={{ id: goal.id, title: goal.title }} className={btnPlain} /> : null}
         {draft ? (

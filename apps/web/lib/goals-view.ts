@@ -153,3 +153,47 @@ export function needsMost(ranked: GoalStatus[]): GoalStatus | null {
   if (behind) return behind;
   return [...open].sort((a, b) => b.leftMinutes - a.leftMinutes)[0] ?? null;
 }
+
+/**
+ * Can the screen say "On pace", "Behind" or "ahead" yet (#513)? Only once a planned goal block has
+ * gone by to measure against. A first week account (no day learnt) with no goal block in the past
+ * gets no pace verdict at all: the week is counted from today and the one action is to book.
+ */
+export function paceKnown(view: GoalsView, demo?: string): boolean {
+  const e = view.explain;
+  if (view.sample || demo || !e) return true;
+  return !(e.learning && e.daysLearnt === 0 && e.elapsed === 0);
+}
+
+/** A brand new account's first goals (#478): no pace yet and nothing done, so no bars and no zeros. */
+export function isFreshWeek(view: GoalsView, demo?: string): boolean {
+  return !paceKnown(view, demo) && view.goals.every((g) => g.spentMinutes === 0);
+}
+
+/** Pace verdicts off (#513): no goal reads as behind until there is a block to measure against. */
+export function withoutPace(ranked: GoalStatus[]): GoalStatus[] {
+  return ranked.map((r) => ({ ...r, behind: false }));
+}
+
+/**
+ * The one booking a goal is offered (#513). Everything left already booked: nothing to book.
+ * Otherwise a block today, sized to what is left over the days to go. In the first week, when the
+ * week ends today, the offer is next week's first block, never a weekly budget crammed into today.
+ */
+export type BookOffer =
+  | { kind: "booked" }
+  | { kind: "today"; minutes: number }
+  | { kind: "next_week"; minutes: number };
+
+export function bookOffer(o: {
+  left: number;
+  booked: number;
+  toGo: number;
+  budget: number;
+  paceKnown: boolean;
+}): BookOffer {
+  const split = bookedSplit(o.left, o.booked);
+  if (split.open === 0) return { kind: "booked" };
+  if (!o.paceKnown && o.toGo <= 1) return { kind: "next_week", minutes: bookMinutes(o.budget, 7) };
+  return { kind: "today", minutes: bookMinutes(split.open, o.toGo) };
+}
