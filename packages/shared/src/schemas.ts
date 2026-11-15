@@ -2002,7 +2002,8 @@ export const Score = WeeklyScore.extend({
 export type Score = z.infer<typeof Score>;
 
 // ---------- chat (POST /v1/chat, GET /v1/chat) ----------
-// Typed chat with Michael. The API keeps the history per user; the client sends only the new line.
+// Typed chat with Michael. The API keeps the history per user and thread; the client sends only the
+// new line.
 
 export const ChatRole = z.enum(["user", "assistant"]);
 export type ChatRole = z.infer<typeof ChatRole>;
@@ -2018,10 +2019,59 @@ export const ChatMessage = z.object({
 });
 export type ChatMessage = z.infer<typeof ChatMessage>;
 
+// ---------- chat threads (GET/POST /v1/chat/threads, PATCH/DELETE /v1/chat/threads/:id) ----------
+// Separate conversations with Michael, as in Messages: each has its own lines. Michael remembers
+// across them only through memories, check ins and the titles of recent threads, never their lines.
+
+export const ChatThread = z.object({
+  id: z.uuid(),
+  // Short, from the first line (a model writes it, a template when it cannot); the user can rename.
+  title: z.string().min(1).max(80),
+  pinned: z.boolean(),
+  archived: z.boolean(),
+  // The last line, cut to 140 characters, for the list; null while the thread has no lines.
+  preview: z.string().nullable(),
+  last_message_at: IsoDateTime.nullable(),
+  created_at: IsoDateTime,
+  updated_at: IsoDateTime,
+});
+export type ChatThread = z.infer<typeof ChatThread>;
+
+export const ChatThreadList = z.object({
+  // Pinned first, then by latest line (or creation while empty), newest first.
+  threads: z.array(ChatThread),
+});
+export type ChatThreadList = z.infer<typeof ChatThreadList>;
+
+export const NewChatThread = z.object({
+  title: z.string().trim().min(1).max(80).optional(),
+});
+export type NewChatThread = z.input<typeof NewChatThread>;
+
+export const ChatThreadPatch = z
+  .object({
+    title: z.string().trim().min(1).max(80).optional(),
+    pinned: z.boolean().optional(),
+    archived: z.boolean().optional(),
+  })
+  .refine((p) => p.title !== undefined || p.pinned !== undefined || p.archived !== undefined, {
+    message: "Nothing to change",
+  });
+export type ChatThreadPatch = z.input<typeof ChatThreadPatch>;
+
+export const ChatThreadDeleted = z.object({
+  id: z.uuid(),
+  // Lines deleted with it (really deleted, not hidden).
+  messages: z.number().int().nonnegative(),
+});
+export type ChatThreadDeleted = z.infer<typeof ChatThreadDeleted>;
+
 export const ChatRequest = z.object({
   message: z.string().trim().min(1).max(2000),
   // The answer will be read aloud (conversation mode): one or two short sentences, no lists.
   spoken: z.boolean().optional(),
+  // The thread to write in. "new" starts one; omitted, the latest thread (a new one when none).
+  thread_id: z.union([z.uuid(), z.literal("new")]).optional(),
 });
 export type ChatRequest = z.input<typeof ChatRequest>;
 
@@ -2034,6 +2084,8 @@ export const ChatResponse = z.object({
   // Status "proposed" (kinds change_goal and plan_change, #188): a proposal waiting for the user's
   // tap (POST /v1/recommendations/:id/execute accepts, PATCH status "dismissed" declines).
   actions: z.array(Recommendation).default([]),
+  // The thread the pair went into, as it stands after it (title, preview, time).
+  thread: ChatThread,
 });
 export type ChatResponse = z.infer<typeof ChatResponse>;
 
@@ -2042,6 +2094,8 @@ export const ChatHistory = z.object({
   messages: z.array(ChatMessage),
   // The recommendations named in the messages' action_ids, as they stand now (done or undone).
   actions: z.array(Recommendation).default([]),
+  // The thread these lines belong to; null while the user has no thread yet.
+  thread: ChatThread.nullable().default(null),
 });
 export type ChatHistory = z.infer<typeof ChatHistory>;
 

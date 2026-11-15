@@ -654,6 +654,11 @@ body::before {
   transition: transform var(--m-dur-smooth) var(--m-spring-smooth);
 }
 
+/* A conversation row that slides left over its actions (app/chat/thread-sheet.tsx). */
+.m-thread-face {
+  transition: transform var(--m-dur-smooth) var(--m-spring-smooth);
+}
+
 @media (prefers-reduced-motion: reduce) {
   /* Opacity only, and quick: nothing moves, nothing scales. */
   .m-pop-in,
@@ -663,6 +668,7 @@ body::before {
   .m-leave {
     animation: m-leave-fade var(--m-dur-exit) linear both;
   }
+  .m-thread-face,
   .m-seg-thumb,
   .m-switch::after {
     transition: none;

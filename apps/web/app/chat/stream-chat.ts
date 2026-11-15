@@ -23,6 +23,7 @@ const chatResponse = (json: unknown): ChatResponse | null => {
  */
 export async function streamChat(
   message: string,
+  threadId: string | null,
   onText: (text: string) => void,
   spoken = false,
 ): Promise<SendResult> {
@@ -31,7 +32,11 @@ export async function streamChat(
     res = await fetch("/chat/stream", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(spoken ? { message, spoken } : { message }),
+      body: JSON.stringify({
+        message,
+        ...(spoken ? { spoken } : {}),
+        ...(threadId ? { thread_id: threadId } : {}),
+      }),
     });
   } catch {
     return { ok: false, error: copyFor("network"), code: "network" };
