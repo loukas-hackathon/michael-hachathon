@@ -1575,8 +1575,9 @@ Hypothesise, then verify: the model is free to be creative and can never be wron
    the model failed, so a failing model is not asked again every beat. For a user with nothing
    new the beat costs a look at the kept study: no event is read, no row, no model. A failed or
    unreadable model answer never loses the stored tests: they are read before the model is asked
-   and written back with whatever was newly found; when they cannot be read, nothing is asked
-   and nothing is written. When the write fails the pass still shows from the kept study.
+   and written back with whatever was newly found. When nothing is stored yet, the first pass
+   writes it; when the stored run is there but cannot be read, nothing is asked and nothing is
+   written. When the write fails the pass still shows from the kept study.
 
 **Other readers.** MCP `get_insights` and the chat tool of the same name give the same findings
 as text. The real time nudges (`nudges/learnt.ts`) cite the kept study's strongest pattern about

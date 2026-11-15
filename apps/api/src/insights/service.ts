@@ -189,8 +189,13 @@ async function discover(study: Study, model: ModelClient): Promise<void> {
   const userId = currentUserId();
   // Read first, and strictly: when the stored tests cannot be read, nothing is asked and nothing
   // is written, so a pass can never replace tests it did not see.
-  const kept = InsightRun.safeParse(await store.getInsightRun());
-  const before = kept.success ? kept.data.discoveries : [];
+  const raw = await store.getInsightRun();
+  // Nothing stored yet is a first pass. Stored but unreadable is not: never overwrite what we cannot see.
+  if (raw !== null && !InsightRun.safeParse(raw).success) {
+    console.warn("[insights] the stored run cannot be read; the pass is not run");
+    return;
+  }
+  const before = raw === null ? [] : InsightRun.parse(raw).discoveries;
   let found: StoredDiscovery[] = [];
   let by: string | null = model.model;
   try {

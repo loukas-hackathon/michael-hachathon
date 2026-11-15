@@ -419,6 +419,22 @@ test("POST /v1/insights/run: the pass is stored, shown with found_by model, and 
   }
 });
 
+test("a stored run that cannot be read is never overwritten", async () => {
+  try {
+    await runAsUser(randomUUID(), async () => {
+      await seedPlain();
+      await store.saveInsightRun({ garbage: true });
+      const model = await script();
+      useModelClient(model);
+      await (await runInsights()).done;
+      assert.equal(model.requests.length, 0, "the model is not asked");
+      assert.deepEqual(await store.getInsightRun(), { garbage: true });
+    });
+  } finally {
+    useModelClient(null);
+  }
+});
+
 test("a failed model call never loses the stored tests", async () => {
   try {
     await runAsUser(randomUUID(), async () => {
