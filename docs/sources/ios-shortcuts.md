@@ -175,7 +175,9 @@ does (production, 15 Nov: "When any of 2 apps are opened, run Michael" sent an e
 It is stored as an open titled `An app` with `data.app_unknown: true`, so Timeline shows it and
 Michael says "An app opened at 15:08; name the app in the automation to see which". Two unnamed
 opens less than a minute apart are one. Callers without a device key (the API key, curl) keep the
-old rule: no app is always a test. Any other text in `app` is the app's name as it is.
+old rule: no app is always a test. With "My automation is for" set on You > Connections > iPhone
+(`profile.default_app`), an unnamed open is stored as that app with `data.app_assumed: true`, and
+saving it renames today's unnamed opens. Any other text in `app` is the app's name as it is.
 An open is stored at once (one minute, `data.open: true`); its close, or opening another app, sets
 the real end on that same event. A close without an open standing in the last two hours is dropped. Full rules: `docs/api.md`, "Source webhooks". Sample sequence:
 `apps/api/src/ingest/fixtures/ios-shortcuts.json`.

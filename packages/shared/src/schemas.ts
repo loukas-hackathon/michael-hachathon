@@ -1283,6 +1283,9 @@ export const Profile = z.object({
   // Calendar titles Michael never moves, even though they are the user's own blocks ("PT session",
   // booked outside the calendar). Matched like goal calendar titles: equal, or the title starts with it.
   fixed_titles: z.array(z.string().min(1).max(200)).max(50),
+  // The app the user's iPhone App automation is for ("Instagram"). Apple passes the shortcut no app
+  // name, so an open with none is stored as this app (data.app_assumed: true); null: "An app".
+  default_app: z.string().trim().min(1).max(80).nullable(),
   // Set when onboarding is finished or skipped; null means Today should offer onboarding.
   onboarded_at: IsoDateTime.nullable(),
   // null until the user saves anything (the response is then the defaults).
@@ -1301,6 +1304,7 @@ export const DEFAULT_PROFILE: Profile = {
   gym_days: [],
   weak_spots: [],
   fixed_titles: [],
+  default_app: null,
   onboarded_at: null,
   updated_at: null,
 };

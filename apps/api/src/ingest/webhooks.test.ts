@@ -6,6 +6,7 @@ import { EventInput, IngestResponse } from "@michael/shared";
 import { app } from "../app";
 import { currentUserId, runAsUser } from "../context";
 import { env } from "../env";
+import { updateProfile } from "../routes/profile";
 import { store } from "../store";
 import { createPersonalToken } from "../tokens";
 import { writeVersion } from "../writes";
@@ -223,6 +224,59 @@ test("iPhone key: the first call with no app is the test, later ones are opens o
   // The app from any field a shortcut may carry it in.
   assert.equal(ShortcutsPayload.parse({ app: "", name: "Threads" }).app, "Threads");
   assert.equal(ShortcutsPayload.parse({ text: "TikTok" }).app, "TikTok");
+});
+
+test("iPhone default app: saving it renames today's unnamed opens, later ones take it, others untouched", async () => {
+  const owner = randomUUID();
+  const other = randomUUID();
+  const now = Date.now();
+  const { secret } = await runAsUser(owner, () => createPersonalToken("iPhone Shortcuts"), "session");
+  const send = async (body: unknown) => {
+    const res = await app.request("/v1/webhooks/ios-shortcuts", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${secret}`, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    assert.equal(res.status, 200);
+    return (await res.json()) as {
+      inserted: number;
+      events: { title: string; data: Record<string, unknown> }[];
+    };
+  };
+  const today = () =>
+    store.listEvents({
+      from: new Date(now - 3600_000).toISOString(),
+      to: new Date(now + 3600_000).toISOString(),
+      source: ["ios_shortcuts"],
+    });
+  await send({ app: "" }); // the hand run test
+  const at = (minAgo: number) => new Date(now - minAgo * 60_000).toISOString();
+  assert.equal((await send({ app: "", at: at(5) })).events[0]?.title, UNKNOWN_APP);
+  // Another user's unnamed open stays theirs, unnamed.
+  await runAsUser(other, () =>
+    new ShortcutsPairer().handle(ShortcutsPayload.parse({ app: "" }), now - 4 * 60_000),
+  );
+
+  const saved = await runAsUser(owner, () => updateProfile({ default_app: "Instagram" }), "session");
+  assert.equal(saved.default_app, "Instagram");
+  const renamed = await runAsUser(owner, today);
+  assert.deepEqual(
+    renamed.map((e) => [e.title, e.data.app_unknown, e.data.app_assumed]),
+    [["Instagram", undefined, true]],
+  );
+  const theirs = await runAsUser(other, today);
+  assert.deepEqual(
+    theirs.map((e) => [e.title, e.data.app_unknown]),
+    [[UNKNOWN_APP, true]],
+  );
+
+  // A later unnamed open, minutes after the last: a new open of the default app.
+  const later = await send({ app: "", at: at(2) });
+  const open = later.events.find((e) => e.data.open === true);
+  assert.equal(open?.title, "Instagram");
+  assert.equal(open?.data.app_assumed, true);
+  assert.equal(open?.data.app_unknown, undefined);
+  assert.equal((await runAsUser(owner, today)).length, 2);
 });
 
 test("Shortcuts pairer: unnamed opens a minute or more apart are two opens", () =>
