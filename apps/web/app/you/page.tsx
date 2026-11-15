@@ -50,7 +50,7 @@ export default async function YouPage({
         </Link>
       ) : null}
 
-      <ConnectionsList view={connections} flash={flash} />
+      <ConnectionsList view={connections} flash={flash} demo={account === "The demo week"} />
 
       <section className="mt-8">
         <h2 className="mb-2 text-title3 font-bold">Privacy</h2>

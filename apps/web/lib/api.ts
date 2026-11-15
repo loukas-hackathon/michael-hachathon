@@ -84,6 +84,15 @@ export async function get<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+/** A write the API refused, with its status, so an action can pick its line (lib/demo-refusal.ts). */
+export class ApiFailure extends Error {
+  readonly status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
 async function send<T>(method: "PUT" | "PATCH" | "POST", path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     method,
@@ -91,7 +100,7 @@ async function send<T>(method: "PUT" | "PATCH" | "POST", path: string, body?: un
     body: body === undefined ? undefined : JSON.stringify(body),
     cache: "no-store",
   });
-  if (!res.ok) throw new Error(`${method} ${path} failed: ${res.status}`);
+  if (!res.ok) throw new ApiFailure(`${method} ${path} failed: ${res.status}`, res.status);
   return (await res.json()) as T;
 }
 

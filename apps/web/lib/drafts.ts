@@ -31,12 +31,18 @@ export async function getOpenDrafts(): Promise<Draft[]> {
   return (await get<{ drafts: Draft[] }>("/v1/drafts?status=proposed")).drafts;
 }
 
-/** PATCH /v1/drafts/:id. False when it failed (the caller says so in Michael's words). */
-export async function setDraftStatus(id: string, status: DraftStatus): Promise<boolean> {
+/**
+ * PATCH /v1/drafts/:id. Not ok when it failed (the caller says so in Michael's words), with the
+ * API's status when it answered.
+ */
+export async function setDraftStatus(
+  id: string,
+  status: DraftStatus,
+): Promise<{ ok: boolean; status?: number }> {
   if (USE_MOCKS) {
     const d = mockDrafts.find((x) => x.id === id);
     if (d) d.status = status;
-    return Boolean(d);
+    return { ok: Boolean(d) };
   }
   const res = await fetch(`${API_URL}/v1/drafts/${encodeURIComponent(id)}`, {
     method: "PATCH",
@@ -44,5 +50,5 @@ export async function setDraftStatus(id: string, status: DraftStatus): Promise<b
     body: JSON.stringify({ status }),
     cache: "no-store",
   }).catch(() => null);
-  return Boolean(res?.ok);
+  return { ok: Boolean(res?.ok), status: res?.status };
 }

@@ -29,6 +29,11 @@ export type TimelineScreen = {
   /** The most recent day with data before the shown day (up to today), for the empty state. */
   latest: string | null;
   /**
+   * A day with data in the week before the shown one, for the week strip's way back: the same
+   * weekday when it has data, else that week's latest day. Null when that week is empty.
+   */
+  earlier: string | null;
+  /**
    * Whether Google Calendar is connected. Read only when the day is empty, where it picks the one
    * action. Null when unknown.
    */
@@ -72,12 +77,15 @@ export async function loadTimeline(asked?: string, demo?: string): Promise<Timel
     date <= today
       ? get<Score>(`/v1/score?${new URLSearchParams({ date })}`).catch(() => null)
       : Promise.resolve(null);
-  const [timeline, patterns, light, goals, nextMorning, scored] = await Promise.all([
+  const priorStart = dayBounds(addDays(week[0] as string, -7)).start;
+  const [timeline, patterns, light, prior, goals, nextMorning, scored] = await Promise.all([
     get<TimelineResponse>(`/v1/timeline?${new URLSearchParams({ from: iso(start), to: iso(end) })}`),
     get<Patterns>(`/v1/patterns?${new URLSearchParams({ from: iso(start), to: iso(end) })}`).catch(
       () => ({}) as Patterns,
     ),
     lightScan(weekStart, weekEnd),
+    // The week before, for the strip's way back (on a Monday it is the only week with data).
+    lightScan(priorStart, weekStart),
     get<{ goals: Goal[] }>("/v1/goals").catch(() => ({ goals: [] as Goal[] })),
     // The night that starts after midnight still closes this day (the night rule, lib/health.ts):
     // its sleep and the heart readings around it are in the next morning.
@@ -94,16 +102,15 @@ export async function loadTimeline(asked?: string, demo?: string): Promise<Timel
   if (events.length > 0) seen.add(date);
   const available = week.filter((d) => seen.has(d));
   let latest = [...available].reverse().find((d) => d < date && d <= today) ?? null;
+  const priorDays = [...daysWithEvents(prior.events)].filter((d) => d < (week[0] as string)).sort();
+  const earlier = priorDays.includes(addDays(date, -7)) ? addDays(date, -7) : (priorDays.at(-1) ?? null);
 
   let calendarConnected: boolean | null = null;
   if (events.length === 0) {
     // An empty day needs a way out: the latest day before it (last week too, for a Monday) and
     // whether connecting the calendar is the one thing to do.
-    const [prior, calendar] = await Promise.all([
-      latest ? null : lightScan(dayBounds(addDays(week[0] as string, -7)).start, weekStart),
-      getGoogleCalendar(),
-    ]);
-    if (prior) latest = [...daysWithEvents(prior.events)].sort().at(-1) ?? null;
+    const calendar = await getGoogleCalendar();
+    if (!latest) latest = [...daysWithEvents(prior.events)].sort().at(-1) ?? null;
     calendarConnected = calendar ? calendar.status === "connected" : null;
   }
 
@@ -118,6 +125,7 @@ export async function loadTimeline(asked?: string, demo?: string): Promise<Timel
     longestUninterrupted: longestFrom(patterns),
     available,
     latest,
+    earlier,
     calendarConnected,
     sleepGoal: sleepGoalMinutes(goals.goals),
   };
@@ -153,6 +161,7 @@ function loadSample(asked?: string): TimelineScreen {
     longestUninterrupted: result?.longestUninterrupted ?? null,
     available: DATES_WITH_DATA,
     latest: [...DATES_WITH_DATA].reverse().find((d) => d < date && d <= today) ?? null,
+    earlier: null,
     calendarConnected: null,
     sleepGoal: null,
   };

@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { formatTime, hm } from "@/lib/format";
-import { type LostCause, type LostWeek, worstDay } from "@/lib/lost-week";
+import type { ReactNode } from "react";
+import { hm } from "@/lib/format";
+import { type LostCause, type LostWeek, phoneUntilLabel, topCauses, worstDay } from "@/lib/lost-week";
 
 const NAME = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const CHART_PX = 64;
@@ -15,17 +16,21 @@ function niceMax(n: number) {
 /**
  * Goal time lost per day of the week (Timeline, top). Shown only when something was lost this week.
  * Bars are grey and hatched, the lost colour everywhere in the app; days to come are empty slots,
- * never zero bars. A bar opens that day. Day letters live in the week strip right below, which uses
- * the same seven columns, so there is never a second row of dates.
+ * never zero bars. A bar opens that day. The day letters and dates are the week strip, passed in
+ * as `strip` and set right under the bars on the same seven columns, so each bar has its date and
+ * there is never a second row of dates.
  */
 export function LostWeekChart({
   week,
   selected,
   hrefFor,
+  strip,
 }: {
   week: LostWeek;
   selected: string;
   hrefFor: (date: string) => string;
+  /** The week strip (letters and day of the month), drawn directly under the bars. */
+  strip?: ReactNode;
 }) {
   const max = niceMax(Math.max(0, ...week.days.map((d) => d.lost ?? 0)));
   const worst = worstDay(week);
@@ -102,13 +107,14 @@ export function LostWeekChart({
           );
         })}
       </ol>
+      {strip}
 
       {week.causes.length ? <LostCauses causes={week.causes} total={week.total} /> : null}
 
       <p className="mt-2 text-footnote text-label-2 tnum">
         {worst ? `Most on ${NAME[worstIdx]}, ${hm(worst.lost ?? 0)}. ` : null}
         {week.phoneUntil
-          ? `Phone data up to ${week.phoneUntil.slice(0, 10) === week.today ? formatTime(week.phoneUntil) : `${NAME[(new Date(`${week.phoneUntil.slice(0, 10)}T12:00:00Z`).getUTCDay() + 6) % 7]} ${formatTime(week.phoneUntil)}`}, so today can still grow.`
+          ? `Phone data up to ${phoneUntilLabel(week.phoneUntil, week.today)}, so today can still grow.`
           : null}
       </p>
     </section>
@@ -117,18 +123,16 @@ export function LostWeekChart({
 
 /** What took the lost time: the top three, each with its share as a hatched bar, then the rest. */
 export function LostCauses({ causes, total }: { causes: LostCause[]; total: number }) {
-  const top = causes.slice(0, 3);
-  const rest = causes.slice(3).reduce((n, c) => n + c.minutes, 0);
+  const { top, others, rest } = topCauses(causes, total);
   const scale = Math.max(1, ...top.map((c) => c.minutes));
   return (
     <div className="mt-4">
       <h3 className="mb-2 text-footnote font-semibold text-label-2">What took it</h3>
-      <ul className="overflow-hidden rounded-group bg-fill">
+      {/* One grid for all rows: the name column is as wide as the longest name needs (it only
+          truncates when the row truly runs out), and the bars still start on one line. */}
+      <ul className="grid grid-cols-[minmax(0,max-content)_minmax(3rem,1fr)_auto] gap-x-3 overflow-hidden rounded-group bg-fill">
         {top.map((c, i) => (
-          <li
-            key={c.what}
-            className="relative grid grid-cols-[minmax(0,7.5rem)_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5"
-          >
+          <li key={c.what} className="relative col-span-3 grid grid-cols-subgrid items-center px-4 py-2.5">
             {i > 0 ? <span className="absolute inset-x-0 top-0 ml-4 h-[0.5px] bg-separator" /> : null}
             <span className="truncate text-body">{c.what}</span>
             <span className="flex h-2.5">
@@ -146,7 +150,7 @@ export function LostCauses({ causes, total }: { causes: LostCause[]; total: numb
       </ul>
       {rest > 0 ? (
         <p className="mt-1.5 px-4 text-footnote text-label-2 tnum">
-          {hm(rest)} more from {causes.length - 3} other {causes.length - 3 === 1 ? "thing" : "things"}.
+          {hm(rest)} more from {others} other {others === 1 ? "thing" : "things"}.
         </p>
       ) : null}
       {total > 0 && top[0] ? (
