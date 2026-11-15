@@ -22,6 +22,18 @@ export const focusShortcutLink = (input: string) =>
 
 export const focusShortcutOffLink = () => focusShortcutLink(FOCUS_SHORTCUT_OFF);
 
+/**
+ * Focus now on the iPhone (#534): the same shortcut through x-callback-url, so Shortcuts sets the
+ * Focus and comes straight back to `back` (the page the session is on). Without `back` (the
+ * installed app, which no https link can reopen) Shortcuts stays and iOS shows "Michael" top left.
+ */
+export function focusShortcutRunLink(input: string, back?: string): string {
+  const enc = encodeURIComponent;
+  const q = `name=${enc(FOCUS_SHORTCUT_NAME)}&input=text&text=${enc(input)}`;
+  const ret = back ? `&x-success=${enc(back)}&x-cancel=${enc(back)}&x-error=${enc(back)}` : "";
+  return `shortcuts://x-callback-url/run-shortcut?${q}${ret}`;
+}
+
 /** This browser has added the shortcut (kept on the device; the server never knows). */
 const ADDED = "michael-focus-shortcut";
 export const focusShortcutAdded = {
