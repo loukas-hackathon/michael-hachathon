@@ -3,6 +3,7 @@ import {
   AgentClient,
   type Integration,
   IntegrationsResponse,
+  LocationStatus,
   PlacesResponse,
   PushConfig,
   SourcesStatusResponse,
@@ -71,6 +72,7 @@ type Inputs = {
   telegram: TelegramStatus | null;
   agents: AgentClient[] | null;
   places: PlacesResponse | null;
+  location?: LocationStatus | null;
 };
 
 const unknown = (c: Connection): ConnectionStatus => ({
@@ -196,6 +198,18 @@ export function statusFor(c: Connection, x: Inputs, now = Date.now()): Connectio
     }
     case "travel": {
       const p = x.places;
+      // Connected once a location signal (Mac Wi-Fi or this phone) arrived in the last day (#267).
+      const loc = x.location;
+      const fresh = loc?.last_signal_at && now - Date.parse(loc.last_signal_at) < 24 * 3600_000;
+      if (fresh && loc?.collecting) {
+        const where = loc.now ? `At ${loc.now.label} since ${formatTime(loc.now.since)}.` : "";
+        return {
+          ...c,
+          state: "on",
+          line: `${otr}${where || `Last seen ${ago(loc.last_signal_at as string, now)}.`}`,
+          action: manage,
+        };
+      }
       if (!p) return unknown(c);
       const names = listPhrase(p.places.map((pl) => pl.label));
       if (p.places.length && !p.travel_enabled)
@@ -215,7 +229,7 @@ export function statusFor(c: Connection, x: Inputs, now = Date.now()): Connectio
 }
 
 export async function getConnections(): Promise<ConnectionsView> {
-  const [sources, integrations, push, agents, places, telegram] = await Promise.all([
+  const [sources, integrations, push, agents, places, telegram, location] = await Promise.all([
     safe("/v1/sources/status", SourcesStatusResponse),
     safe("/v1/integrations", IntegrationsResponse),
     safe("/v1/push", PushConfig),
@@ -224,6 +238,7 @@ export async function getConnections(): Promise<ConnectionsView> {
     }),
     safe("/v1/places", PlacesResponse),
     safe("/v1/telegram", TelegramStatus),
+    safe("/v1/location", LocationStatus),
   ]);
   const inputs: Inputs = {
     sources,
@@ -234,6 +249,7 @@ export async function getConnections(): Promise<ConnectionsView> {
     telegram,
     agents,
     places,
+    location,
   };
   const rows = CONNECTIONS.map((c) => statusFor(c, inputs));
   return {

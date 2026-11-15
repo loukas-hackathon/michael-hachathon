@@ -328,6 +328,18 @@ export function DayTimeline({
           );
         })}
 
+        {/* Where you were (#267): a quiet caption at the start of each place visit. */}
+        {(day.places ?? []).map((p) => (
+          <span
+            key={`pl${p.start}`}
+            className="pointer-events-none absolute right-[calc(var(--lane-r)+6px)] max-w-[45%] truncate rounded-[4px] bg-bg px-1 text-caption text-label-2 tnum"
+            style={{ top: y(p.start) - 8 }}
+            title={`${p.label} ${formatTime(iso(p.start))} to ${formatTime(iso(p.end))}`}
+          >
+            {p.label} {formatTime(iso(p.start))} to {formatTime(iso(p.end))}
+          </span>
+        ))}
+
         {lossLabels.map((l) => (
           <span
             key={l.key}

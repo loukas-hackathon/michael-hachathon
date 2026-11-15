@@ -14,6 +14,9 @@ import {
   type GoalSuggestion,
   type GoalSuggestionAccept,
   type GoalUpdate,
+  type LocationSignal,
+  type LocationSignalsResponse,
+  type LocationStatus,
   mockEvents,
   mockGoals,
   mockRecommendations,
@@ -632,6 +635,27 @@ export async function putPlaces(update: PlacesUpdate): Promise<WriteResult> {
   } catch {
     return { ok: false, message: "Michael's server can't be reached." };
   }
+}
+
+// ---------- location (#267) ----------
+
+/** Where the user is now, the last signal and the Wi-Fi networks seen, for the Location page. */
+export async function getLocation(): Promise<LocationStatus> {
+  if (USE_MOCKS) return { last_signal_at: null, now: null, networks: [], collecting: false };
+  return get<LocationStatus>("/v1/location");
+}
+
+/** Phone positions from the browser. Demo visitors get a 403: they cannot write, and that is fine. */
+export async function sendLocationSignals(
+  signals: LocationSignal[],
+): Promise<LocationSignalsResponse | null> {
+  if (USE_MOCKS) return null;
+  return send<LocationSignalsResponse>("POST", "/v1/location/signals", { signals });
+}
+
+/** "This is Home's Wi-Fi". A null place forgets the mapping. */
+export async function mapNetwork(network: string, placeKey: string | null): Promise<LocationStatus> {
+  return send<LocationStatus>("PUT", "/v1/location/networks", { network, place_key: placeKey });
 }
 
 // ---------- weekly targets (#165) ----------

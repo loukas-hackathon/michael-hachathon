@@ -3,6 +3,7 @@ import { Figtree } from "next/font/google";
 import type { ReactNode } from "react";
 import { MotionScript } from "@/components/count-up";
 import { Haptics } from "@/components/haptics";
+import { LocationPing } from "@/components/location/location-ping";
 import { Splash } from "@/components/splash";
 import { TabBar } from "@/components/tab-bar";
 import "./globals.css";
@@ -36,6 +37,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <Splash />
         <MotionScript />
         <Haptics />
+        <LocationPing />
         <div className="min-h-dvh lg:pl-64">
           <div className="mx-auto w-full max-w-[560px] lg:max-w-[720px]">{children}</div>
         </div>
