@@ -38,7 +38,7 @@ export default async function ChatPage({ searchParams }: { searchParams: Promise
   const [elevenlabs, today, day] = await Promise.all([voice, checkIn, score]);
 
   return (
-    <main className="screen flex min-h-dvh flex-col">
+    <main className="screen m-dash m-panes flex min-h-dvh flex-col">
       <Chat
         thread={history.thread}
         initial={history.messages}
