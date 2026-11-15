@@ -15,6 +15,7 @@ export type NavRow = { id: ConnectionId; name: string; href: string; state: stri
 
 const SECTIONS = [
   { href: "/you#privacy", label: "Privacy" },
+  { href: "/learnt?from=you", label: "What I have learnt" },
   { href: "/you/knowledge", label: "What I know about you" },
   { href: "/you#michael", label: "Standing instructions" },
   { href: "/you#account", label: "Account" },
