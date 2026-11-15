@@ -35,6 +35,7 @@ On the Build Hub: notes `decision-onboarding-talk`, `decision-personal-not-gener
 | 518 | `POST /v1/onboarding/turn`: Michael's next line on the quick model (`ANTHROPIC_FAST_MODEL`, default the Haiku model), opener from calendar facts, script fallback |
 | 521 | Word lists understand twice, weekdays, an hour and a half, a couple of hours |
 | 522 | Today: every line from the user's own data |
+| 537 | Siri like living voice: audio reactive pink light around Michael, onboarding and chat |
 | 529 | Hands free voice agent onboarding: intro voice, calendar first, live words, pause ends turn, laptop column; review fixes (You said ... Fix, startup and deep work one goal) |
 
 Key files: apps/web/app/onboarding/{talk.tsx,page.tsx,frame.tsx,actions.ts,voice-orb.tsx},
@@ -51,7 +52,7 @@ apps/web/lib/today-lines.ts. Tests: e2e/tests/onboarding.spec.ts, onboarding-iph
    loudness of his voice (a side decode of the ElevenLabs audio, playback untouched so iPhone
    routing is unchanged; browser voice by word beats), listening follows the mic, thinking is two
    lights circling the rim, muted is grey and still. Reviewed by screenshots and released (wip
-   removed); auto-merges when CI is green. Only a real iPhone can confirm: Safari decodes the mp3
+   removed); MERGED (live after deploy). Only a real iPhone can confirm: Safari decodes the mp3
    for the loudness curve, Michael stays loud on the speaker after the mic, 60 fps on the stage
    phone. Unused CSS left for later: .m-speak-breath and .m-think-soft in globals.css.
 2. Branch `claude/onboarding-alive` (PR labelled `wip`): every onboarding tap answers at once with
