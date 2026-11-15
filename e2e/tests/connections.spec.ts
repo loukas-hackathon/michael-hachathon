@@ -113,8 +113,8 @@ test("installed app: Add the shortcut opens a new page, /setup has Close", async
   await expect(focus).toHaveAttribute("target", "_blank");
   await expect(focus).toHaveAttribute("href", /^https?:\/\/[^/]+\/MichaelFocus\.shortcut$/);
 
-  // If Shortcuts does not open: steps in a sheet, Safari in a new page, and Done.
-  await page.getByRole("button", { name: "Shortcuts did not open?" }).click();
+  // If Safari does not open (our own file opens there): steps in a sheet, Safari again, and Done.
+  await page.getByRole("button", { name: "Safari did not open?" }).click();
   await expect(page.getByRole("link", { name: "Open in Safari" })).toHaveAttribute("target", "_blank");
   await expect(page.getByRole("link", { name: "Open in Safari" })).toHaveAttribute("href", addHref ?? "");
   await page.getByRole("button", { name: "Done" }).click();

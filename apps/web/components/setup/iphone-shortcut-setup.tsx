@@ -133,7 +133,7 @@ export function IPhoneShortcutSetup({
               onClick={() => setHelp(true)}
               className="press mx-auto mt-1 flex h-11 items-center px-2 text-subhead font-semibold text-tint-text"
             >
-              Shortcuts did not open?
+              {links && isICloud(links.add) ? "Shortcuts did not open?" : "Safari did not open?"}
             </button>
           ) : null}
         </Step>
@@ -171,7 +171,7 @@ export function IPhoneShortcutSetup({
         <ol className="flex list-decimal flex-col gap-2 pl-5 text-body">
           <li>Tap Open in Safari.</li>
           <li>
-            {links && /(^|\.)icloud\.com$/.test(new URL(links.file).hostname)
+            {links && isICloud(links.file)
               ? "Tap Get Shortcut, then Add Shortcut."
               : `Tap Download, then the download arrow, then ${SHORTCUT_NAME}. Tap Add Shortcut.`}
           </li>
@@ -191,4 +191,9 @@ export function IPhoneShortcutSetup({
       </Sheet>
     </Card>
   );
+}
+
+/** An iCloud link opens in Shortcuts; our own file opens in Safari. */
+function isICloud(link: string): boolean {
+  return /(^|\.)icloud\.com$/.test(new URL(link).hostname);
 }
