@@ -32,6 +32,8 @@ test("create an account, sign out, sign in, and a wrong password says so", async
   await fillReady(passwordField, password);
   await tap(page.getByRole("button", { name: "Create account" }));
   await expect(page).not.toHaveURL(/\/login/);
+  // Let the signed in page finish loading: signing out under a render still in flight fails it.
+  await page.waitForLoadState("networkidle");
   expect((await context.cookies()).map((c) => c.name)).toContain("michael_e2e_user");
 
   // Sign out, then try to create it again: Michael says it exists and offers Sign in.
@@ -58,6 +60,8 @@ test("create an account, sign out, sign in, and a wrong password says so", async
   await fillReady(page.getByPlaceholder(/^Password/), password);
   await tap(page.getByRole("button", { name: "Sign in", exact: true }));
   await expect(page).not.toHaveURL(/\/login/);
+  // Let the signed in page finish loading: signing out under a render still in flight fails it.
+  await page.waitForLoadState("networkidle");
   await page.goto("/you");
   await expect(page.getByText("Signed in as")).toBeVisible();
 });
