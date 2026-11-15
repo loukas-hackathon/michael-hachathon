@@ -3,7 +3,9 @@
 import { FOCUS_SHORTCUT_NAME, focusShortcutInput } from "@michael/shared/focus-shortcut";
 import { useEffect, useState } from "react";
 import { tryDndNudgeAction } from "@/app/dnd/actions";
+import { useStandalone } from "@/components/standalone";
 import { FOCUS_SHORTCUT_FILE, focusShortcutAdded, focusShortcutLink } from "@/lib/dnd";
+import { shortcutAddInNewContext } from "@/lib/one-tap";
 import { Card, ErrorLine, SecondaryButton, Step, useDevice } from "./parts";
 
 // The Michael Focus shortcut (#447): the one thing that may switch on Do Not Disturb, since no app
@@ -13,8 +15,15 @@ import { Card, ErrorLine, SecondaryButton, Step, useDevice } from "./parts";
 
 const TRY_MS = 2 * 60_000;
 
-export function FocusShortcutSetup() {
+export function FocusShortcutSetup({
+  url = FOCUS_SHORTCUT_FILE,
+}: {
+  /** `focusShortcutUrl()` in lib/dnd.ts, read on the server: an iCloud link or our own file. */
+  url?: string;
+}) {
   const device = useDevice();
+  // An iCloud link leaves the installed app for Shortcuts; our own file stays in this window.
+  const newContext = shortcutAddInNewContext(url, useStandalone());
   const [added, setAdded] = useState(false);
   const [sent, setSent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -43,7 +52,8 @@ export function FocusShortcutSetup() {
 
   const add = (
     <a
-      href={FOCUS_SHORTCUT_FILE}
+      href={url}
+      {...(newContext ? { target: "_blank", rel: "noopener" } : {})}
       onClick={() => {
         focusShortcutAdded.set();
         setAdded(true);

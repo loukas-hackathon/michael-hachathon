@@ -195,7 +195,11 @@ Michael shortcut before adding the new one, or iOS names it Michael 2 and Connec
 Michael asks in a nudge ("Your phone opened 5 times in University."), one tap, and Do Not Disturb
 is on until the block ends, or until morning at night (#447). No app may set a Focus, so a second
 signed shortcut does it: **Michael Focus** (`pnpm shortcut:focus` writes and signs it, the app
-serves it at `/MichaelFocus.shortcut`). It is added once per device. Focus is shared across your
+serves it at `/MichaelFocus.shortcut`). It is added once per device. Optional, as for Michael: on
+a phone that has it, open **Shortcuts**, hold **Michael Focus**, **Share**, **Copy iCloud Link**,
+and set `MICHAEL_FOCUS_SHORTCUT_URL` to that link in Vercel (project **michael**, **Settings >
+Environment Variables**, all environments, then **Redeploy**). **Add Michael Focus** then opens
+Shortcuts directly on **Add Shortcut**, with no browser. Focus is shared across your
 devices by default (Settings, Focus, Share Across Devices), so the Mac alone also quiets the iPhone.
 
 **On the Mac** (with Michael for Mac running, section 8):
