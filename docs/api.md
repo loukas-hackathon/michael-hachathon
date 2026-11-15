@@ -2227,9 +2227,10 @@ type MeetingsState = {
   `POST /v1/drafts/generate { event_id }` (Follow up drafts).
 - Sessions live in `meeting_sessions` and go with "Delete everything". Demo visitors may start,
   end and add commitments; the demo reseed clears the sessions, so the notice shows again.
-- Web: a "Meetings mode" row under Privacy on You (the Mi sheet), the consent sheet before the
-  first start, and while on, a pill "Meeting on · 12 min · End" above the tab bar on every screen.
-  The recap card on Today ("Meeting at 14:00: 2 commitments", from `last`) comes next.
+- Web: a "Meetings mode" Start/End row first in You (the Mi sheet), disabled while off the record,
+  the consent sheet before the first start, and while on, a pill "Meeting on · 12 min · End" above
+  the tab bar on every screen. After it, a card on Today ("Meeting at 14:00: 2 commitments", from
+  `last`): Add to today per commitment, the lesson, Draft a follow up, and Dismiss (per device).
 
 ### Your data: deletion and retention
 
