@@ -89,7 +89,8 @@ export async function proxy(request: NextRequest) {
 export const config = {
   // Everything except static files and images.
   // Static files, images, the PWA manifest, the service worker and its data free shell stay public so the app can be installed signed out.
+  // So does the Michael shortcut: the QR setup page adds it on a phone that is not signed in.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|shell.html|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|shell.html|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|shortcut)$).*)",
   ],
 };
