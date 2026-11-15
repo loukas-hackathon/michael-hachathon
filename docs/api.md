@@ -1677,6 +1677,10 @@ user's own block title), else `Removing your block`. The reply says what was rem
   `POST /v1/focus/:id/end` and `/extend`.
 - `meetings_mode { on }`: `POST /v1/meetings/start` and `/end`. Michael never gives consent: the
   first start is refused with the consent notice until the user has started it once in the app.
+- `accept_recommendation { recommendation_id }`: "do it" on a Today card, the same path as the MCP
+  `execute_recommendation` (`POST /v1/recommendations/:id/execute`), same refusals and undo. The
+  context lists Michael's offers waiting for a yes (`proposed` or `accepted`, an action of the
+  user's own time, not a Timeline edit) with their ids.
 - `go_off_the_record {}`: off the record ON (`PUT /v1/privacy/off-the-record { off_the_record:
   true }`). No tool turns it off; that switch is the user's own.
 
@@ -2158,7 +2162,7 @@ The user adds, moves, resizes, renames, gives a goal to, or removes blocks on th
 write is stored as a recommendation with `source: "user"` and carried out at once by the same
 executor as Michael's actions, so the same rules hold: never an event with other people (`409`),
 nothing that has started (`409`). A block made in Michael or the user's own solo event can be
-removed (#457), and undo puts it back with the same time and title until it starts. With Google Calendar connected the change is made there and mirrored;
+removed (#457), and undo puts it back with the same time and title until it starts. The Timeline offers Remove on every block of the user's own that has not started, never on an event with other people. With Google Calendar connected the change is made there and mirrored;
 without it, the block lives on the timeline (`source: "agent"`, `data.michael: true`). Standing
 instructions bind Michael, not the user, so they do not refuse these. `source: "user"`
 recommendations are left out of `GET /v1/recommendations` and the MCP `list_recommendations`.

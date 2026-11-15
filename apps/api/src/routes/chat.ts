@@ -120,9 +120,10 @@ Logging what the user did:
 - When no goal title plainly fits, still call log_done at once with goal set to the activity in the user's words ("bath", "ice bath after the ride"): the server matches it against goal titles, calendar titles and descriptions. Ask which goal only when the tool says it could be two, or none fits. If the time is unclear, ask one short question.
 
 Acting:
-- You can write everything the user can write in the app: log time (log_done), settle a past block (confirm_block), add a block to their calendar (create_focus_block), move or rename one of their own solo blocks (move_calendar_block), remove one of their own blocks (remove_calendar_block: "delete my Boatspace block"), rename, resize or give a goal to one of their own blocks (change_calendar_block), add a goal (add_goal), change a goal's budget, title or description, or pause and resume it (update_goal), add, tick off or reword an outcome (add_checklist_item, update_checklist_item), keep or pause a standing instruction (add_instruction, update_instruction), save a place (save_place), change quiet hours and the usual week (update_profile), close distracting apps on their Mac for a while (block_mac_app), start a Focus now session on a goal from this minute (focus_now: "let's focus on University for 45 minutes"), end or extend it (change_focus), start or end meetings mode when they ask (meetings_mode), go off the record when they ask (go_off_the_record), and take back something you did (undo_action).
+- You can write everything the user can write in the app: log time (log_done), settle a past block (confirm_block), add a block to their calendar (create_focus_block), move or rename one of their own solo blocks (move_calendar_block), remove one of their own blocks (remove_calendar_block: "delete my Boatspace block"), rename, resize or give a goal to one of their own blocks (change_calendar_block), carry out one of your offers on Today when they say yes (accept_recommendation), add a goal (add_goal), change a goal's budget, title or description, or pause and resume it (update_goal), add, tick off or reword an outcome (add_checklist_item, update_checklist_item), keep or pause a standing instruction (add_instruction, update_instruction), save a place (save_place), change quiet hours and the usual week (update_profile), close distracting apps on their Mac for a while (block_mac_app), start a Focus now session on a goal from this minute (focus_now: "let's focus on University for 45 minutes"), end or extend it (change_focus), start or end meetings mode when they ask (meetings_mode), go off the record when they ask (go_off_the_record), and take back something you did (undo_action).
 - When the user asks you to change something in the app, do it with the tool in the same answer. Never tell them to go and do it themselves when a tool can.
 - Off the record is the user's own switch: you may turn it on when they ask, never off. To turn it off, they use You.
+- When the user says yes to one of your offers on Today ("do it", "yes, book that"), carry it out with accept_recommendation and its recommendation_id from "Waiting for the user's yes". If it is unclear which one, ask.
 - Removing a block: find its event_id (today's list or find_calendar_blocks), call remove_calendar_block, then say what you removed and until when it can be undone ("Removed Boatspace, 15:00 to 16:00. Undo until 15:00.").
 - Deleting data, a goal, an instruction or a place, disconnecting a source and revoking an agent stay in the app: say where ("You, Goals") instead.
 - Prefer acting with undo over explaining why you cannot.
@@ -194,6 +195,8 @@ export interface ChatContextInput {
   score?: Score | null;
   /** Things Michael did that can still be undone (status done, undo deadline ahead). */
   undoable?: Recommendation[];
+  /** #457: Michael's offers waiting for the user's yes on Today, with ids for accept_recommendation. */
+  offers?: Recommendation[];
   /** Today's outcomes of checklist goals (#238), with ids for update_checklist_item. */
   checklist?: ChecklistItem[];
   /** Check in answers from the last week, and today's open questions (#187). */
@@ -428,6 +431,9 @@ function contextBody(input: ChatContextInput): string {
       : [],
   );
   if (undoable.length) parts.push(`Things I did that can still be undone:\n${undoable.join("\n")}`);
+  const offers = (input.offers ?? []).slice(0, 8).map((r) => `- ${r.title} {recommendation_id ${r.id}}`);
+  if (offers.length)
+    parts.push(`Waiting for the user's yes on Today (accept_recommendation):\n${offers.join("\n")}`);
 
   const outcomes = (input.checklist ?? []).filter((i) => i.date === day && i.status !== "moved");
   if (outcomes.length)
@@ -501,7 +507,7 @@ async function readContext(): Promise<ContextReads> {
     today,
     week,
     score,
-    undoable,
+    recommendations,
     checkIns,
     memories,
     checklist,
@@ -535,7 +541,7 @@ async function readContext(): Promise<ContextReads> {
     ),
     timed(
       "undoable",
-      store.listRecommendations({ status: "done" }).catch(() => []),
+      store.listRecommendations().catch(() => []),
     ),
     timed("check_ins", checkInContext(now)),
     timed(
@@ -565,7 +571,16 @@ async function readContext(): Promise<ContextReads> {
     today,
     week,
     score,
-    undoable,
+    undoable: recommendations.filter((r) => r.status === "done"),
+    // Only what Michael can carry out: an action of the user's own time, not a Timeline edit.
+    offers: recommendations.filter(
+      (r) =>
+        (r.status === "proposed" || r.status === "accepted") &&
+        r.action !== null &&
+        !r.action.involves_others &&
+        r.action.kind !== "draft_follow_up" &&
+        r.source !== "user",
+    ),
     checkIns,
     memories,
     checklist,
@@ -651,6 +666,11 @@ async function contextFor({ entry, hit }: ContextHandle, threadId: string | null
 
 let client: Anthropic | null = null;
 /** Tests only: answer with a stand in for Claude. */
+/** The caller's context text as the model would read it, for tests. */
+export async function readChatContextForTests(): Promise<string> {
+  return (await contextFor(ensureContext(), null)).text;
+}
+
 export function setChatClientForTests(fake: Anthropic | null) {
   client = fake;
 }

@@ -112,7 +112,7 @@ so take 21:15):
 Claude calls `create_focus_block`; the answer ends with "undo until 21:15".
 
 > "Claude is reading and writing the same day, through our connector. One link, one tap to allow.
-> He acts only on my own time: never a meeting with other people, never deletes, and everything
+> He acts only on my own time: never a meeting with other people, removes only my own events, with undo until they start, and everything
 > can be undone until it starts."
 
 Switch to **Today**: the block sits at the top, "Statistics, 21:15 to 22:00. Asked for in chat.
