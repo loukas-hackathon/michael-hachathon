@@ -108,6 +108,10 @@ test("installed app: Add the shortcut opens a new page, /setup has Close", async
   await (await opened).close();
   expect(page.url()).toBe(here);
   await expect(page.getByRole("button", { name: "Connect the shortcut" })).toBeVisible();
+  // Michael Focus, on the same page, opens in a new page too (QA walk, 15 Nov).
+  const focus = page.getByRole("link", { name: "Add Michael Focus" });
+  await expect(focus).toHaveAttribute("target", "_blank");
+  await expect(focus).toHaveAttribute("href", /^https?:\/\/[^/]+\/MichaelFocus\.shortcut$/);
 
   // If Shortcuts does not open: steps in a sheet, Safari in a new page, and Done.
   await page.getByRole("button", { name: "Shortcuts did not open?" }).click();

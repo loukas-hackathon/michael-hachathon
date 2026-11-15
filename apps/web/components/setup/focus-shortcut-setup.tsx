@@ -3,6 +3,7 @@
 import { FOCUS_SHORTCUT_NAME, focusShortcutInput } from "@michael/shared/focus-shortcut";
 import { useEffect, useState } from "react";
 import { tryDndNudgeAction } from "@/app/dnd/actions";
+import { useStandalone } from "@/components/standalone";
 import { FOCUS_SHORTCUT_FILE, focusShortcutAdded, focusShortcutLink } from "@/lib/dnd";
 import { Card, ErrorLine, SecondaryButton, Step, useDevice } from "./parts";
 
@@ -18,7 +19,12 @@ export function FocusShortcutSetup() {
   const [added, setAdded] = useState(false);
   const [sent, setSent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Installed app: the file must not load in the app's own window, which has no way back (as in
+  // iphone-shortcut-setup.tsx). The absolute link opens in a new context, Safari, with Add Shortcut.
+  const standalone = useStandalone();
+  const [fileUrl, setFileUrl] = useState(FOCUS_SHORTCUT_FILE);
   useEffect(() => setAdded(focusShortcutAdded.get()), []);
+  useEffect(() => setFileUrl(new URL(FOCUS_SHORTCUT_FILE, window.location.origin).href), []);
   if (device === null) return null;
 
   // The whole path once: the nudge arrives, its tap opens the page that asks and hands over.
@@ -31,7 +37,8 @@ export function FocusShortcutSetup() {
 
   const add = (
     <a
-      href={FOCUS_SHORTCUT_FILE}
+      href={standalone ? fileUrl : FOCUS_SHORTCUT_FILE}
+      {...(standalone ? { target: "_blank", rel: "noopener" } : {})}
       onClick={() => {
         focusShortcutAdded.set();
         setAdded(true);
