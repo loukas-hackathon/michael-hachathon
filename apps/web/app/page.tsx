@@ -16,6 +16,7 @@ import { DemoWeekLine } from "@/components/today/demo-week-line";
 import { Fold, MoreFromMichael } from "@/components/today/fold";
 import { GetStarted } from "@/components/today/get-started";
 import { KeepWeekStrip, keepLine, streakLine } from "@/components/today/keep-week";
+import { LastWeekLine } from "@/components/today/last-week-line";
 import { MichaelCard } from "@/components/today/michael-card";
 import { MomentCard } from "@/components/today/moment-card";
 import { RecommendationsPanel, todaySuggestions } from "@/components/today/recommendations";
@@ -27,6 +28,7 @@ import {
   getChecklist,
   getGoals,
   getKeepWeek,
+  getLastLostWeek,
   getLostWeek,
   getRitual,
   getToday,
@@ -75,12 +77,13 @@ export default async function TodayPage({
     getGoals().catch(() => []),
     getLostWeek(undefined, demo),
     getKeepWeek(demo),
+    getLastLostWeek(demo),
     demo === "sample" ? null : getRitual(ritualPreview(preview)),
   ]);
   loads.catch(() => {});
   preloadTodaySections(demo);
   if (await needsOnboarding()) redirect("/onboarding");
-  const [day, checklist, goals, lostWeek, keepWeek, ritual] = await loads;
+  const [day, checklist, goals, lostWeek, keepWeek, lastWeek, ritual] = await loads;
   // The daily ritual (#318): while its card shows, the outcomes live in it, not in the list.
   const ritualCard = ritualShows(ritual) ? <RitualCard ritual={ritual} /> : null;
   const lists = checklistsFor(checklist, goals).filter((l) => !ritualCard || l.goalId !== ritual?.goal_id);
@@ -234,6 +237,7 @@ export default async function TodayPage({
           </section>
 
           {lostWeek && lostWeek.total > 0 ? <LostWeekLine week={lostWeek} demo={demo} /> : null}
+          {lastWeek ? <LastWeekLine week={lastWeek} demo={demo} /> : null}
 
           {day.wonBackMinutes > 0 && !learning ? (
             <p className="mt-2 text-body" data-live-key="won" data-live-pop="">

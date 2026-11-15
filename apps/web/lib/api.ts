@@ -47,6 +47,7 @@ import {
   type TimelineResponse,
 } from "@michael/shared";
 import { cache } from "react";
+import { addDays } from "./athens";
 import { authHeaders } from "./caller";
 import { categoryOf } from "./categories";
 import type { ChecklistDay, ChecklistItem } from "./checklist";
@@ -571,6 +572,23 @@ export async function getLostWeek(date?: string, variant?: string): Promise<Lost
   if (USE_MOCKS || variant === "sample") return lostWeekFrom(mockScore, mockScore.date);
   try {
     return lostWeekFrom(await getScore(date ?? athensDay()), athensDay());
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Last week's lost goal time, for Today on a Monday: the week in GET /v1/score then holds only
+ * Monday, so last week's totals come from `?date=` the Sunday before. Null on other days.
+ * `?demo=monday` previews it with the sample week.
+ */
+export async function getLastLostWeek(variant?: string): Promise<LostWeek | null> {
+  if (variant === "monday") return lostWeekFrom(mockScore, addDays(mockScore.date, 7));
+  if (USE_MOCKS || variant) return null;
+  const today = athensDay();
+  if (new Date(`${today}T12:00:00Z`).getUTCDay() !== 1) return null;
+  try {
+    return lostWeekFrom(await getScore(addDays(today, -1)), today);
   } catch {
     return null;
   }
