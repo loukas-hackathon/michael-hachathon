@@ -6,7 +6,7 @@ permission, keep building with parallel agents, close every issue we can, phone 
 developed), keep colours and branding exactly as they are (pink `#E6007A`, red `#FF3B30`), and pace
 the usage limit by slowing down at about 60% of the window.
 
-## State (updated 14:20 UTC / 16:20 Athens)
+## State (updated 14:40 UTC / 16:40 Athens)
 - This session (loukas-hackathon) is the lead orchestrator. Production healthy (API f6c86ec).
 - Since 13:00: #528 iCloud shortcut links as defaults (Michael c0c2a08d..., Focus 76e297e8...),
   #530 off the record never set by focus/DND words, Michael always states it; #531 automation opens
@@ -27,8 +27,11 @@ the usage limit by slowing down at about 60% of the window.
 - FINAL REHEARSAL PASSED (14:16 UTC, production read only): all screens pass, numbers agree, no
   overlaps, copy clean. Notes: demo onboarding shows Calendar "Not connected"; Today planned bar draws
   unconfirmed before spent (cosmetic); Mac collector and watch buzz untested (Manolis #28).
-- Nothing running. Loukas to pick Instagram in the picker (email account) and choose which account to
-  keep (offered to delete the other).
+- #547 sign up hardened (one submit, 8 s timeouts, fall back to sign in; Supabase admin createUser hung
+  10 to 12 s at 13:56 UTC). Nothing running.
+- Loukas' WORKING account: c926bb0d (created 13:57 UTC, shortcut key, picker = Instagram, named opens).
+  Older accounts 7259e4cf, 6e2cc87b and an agent test account 8b1a4aad (claude-repro@example.com):
+  delete only after Loukas confirms (the Supabase delete asks him to approve).
 - Known gaps for after the pitch: #514 (brief/check-ins ignore shortcut opens), app names need the
   re-signed shortcut or the user editing the shortcut to send "Shortcut Input" not its Name,
   Screen Time needs the Mac app (Apple gives it only to native apps).
