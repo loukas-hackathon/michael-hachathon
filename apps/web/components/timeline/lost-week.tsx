@@ -55,9 +55,11 @@ export function LostWeekChart({
           const isSelected = d.date === selected;
           const future = d.lost == null;
           const h = future ? 0 : Math.round(((d.lost ?? 0) / max) * CHART_PX);
+          // A day with nothing lost (today before a block has run, a day without goal blocks) has
+          // no bar and no "0": nothing to report is not a number to read.
           const label = future
             ? `${NAME[i]}: still to come`
-            : `${NAME[i]}${isToday ? ", today" : ""}: ${hm(d.lost ?? 0)} lost from goal blocks`;
+            : `${NAME[i]}${isToday ? ", today" : ""}: ${d.lost ? `${hm(d.lost)} lost from goal blocks` : "nothing lost"}`;
           const body = (
             <>
               <span
@@ -66,23 +68,19 @@ export function LostWeekChart({
               >
                 {future ? (
                   <span className="absolute inset-x-1 bottom-0 h-0 border-b border-dashed border-separator" />
-                ) : (
+                ) : d.lost ? (
                   <span className="flex w-full flex-col items-center justify-end gap-1">
                     <span
                       className={`text-caption tnum ${i === worstIdx ? "font-semibold text-label" : "text-label-2"}`}
                     >
-                      {d.lost ? hm(d.lost) : "0"}
+                      {hm(d.lost)}
                     </span>
-                    {h > 0 ? (
-                      <span
-                        className="hatch w-full max-w-9 rounded-t-[5px] bg-bg shadow-[inset_0_0_0_1px_var(--m-label-2)]"
-                        style={{ height: Math.max(3, h) }}
-                      />
-                    ) : (
-                      <span className="h-[2px] w-full max-w-9 rounded-full bg-label-2" />
-                    )}
+                    <span
+                      className="hatch w-full max-w-9 rounded-t-[5px] bg-bg shadow-[inset_0_0_0_1px_var(--m-label-2)]"
+                      style={{ height: Math.max(3, h) }}
+                    />
                   </span>
-                )}
+                ) : null}
               </span>
             </>
           );

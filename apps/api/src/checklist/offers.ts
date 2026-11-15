@@ -12,7 +12,7 @@ import { currentUserId } from "../context";
 import { forbiddenBy } from "../instructions/protected";
 import { MINUTE, type Zone } from "../patterns/time";
 import { type Span, union } from "../patterns/util";
-import { behindPace, calendarTitles, goalForEvent, scoreRange } from "../score";
+import { behindPace, goalBlockTitle, goalForEvent, scoreRange } from "../score";
 import { type WakingDay, wakingDay, wakingSpan } from "../score/week";
 import { checklistOrder, type NewRecommendation, store } from "../store";
 import { zone as athens, todayOf } from "./items";
@@ -31,9 +31,11 @@ import { zone as athens, todayOf } from "./items";
 //                   long as the goal's usual block (60 minutes without history). At most once a
 //                   day per goal.
 //
-// "Once a day" rests on the title, which names the day: an offer with the same title already
-// stored, whatever its status, means it was made. planOffers is pure; offerGoalActions reads the
-// store and writes the offers.
+// "Once a day" rests on the offer's key, kept in its action payload (`offer_key`, the kind, the goal
+// and the day it was made): an offer with the same key already stored, whatever its status, means
+// it was made. The key is never shown, so the title says only what the user needs: the card's day
+// and time line above it already says when. planOffers is pure; offerGoalActions reads the store
+// and writes the offers.
 
 export const OFFER_RULES = {
   /** The focus block offered for the first outcome. */
@@ -57,9 +59,28 @@ export function dayLabel(day: string): string {
   return dayFormat.format(Date.UTC(y ?? 1970, (m ?? 1) - 1, d ?? 1)).replace(",", "");
 }
 
-export const outcomeTitle = (day: string) => `An hour for your first outcome, ${dayLabel(day)}`;
-export const sessionTitle = (goal: Goal, day: string) =>
-  `One more session for ${goal.title}, ${dayLabel(day)}`;
+export const OUTCOME_TITLE = "An hour for your first outcome";
+export const sessionTitle = (goal: Goal) => `One more session for ${goal.title}`;
+
+/** The once-a-day keys, for the day the offer is made. */
+export const outcomeKey = (day: string) => `first_outcome:${day}`;
+export const sessionKey = (goal: Goal, day: string) => `count_session:${goal.id}:${day}`;
+
+/**
+ * The keys of offers already made. Offers stored before the key existed carried the day in their
+ * title ("An hour for your first outcome, Fri 13 Nov"); they still count for that day.
+ */
+function madeKeys(existing: Recommendation[], goals: Goal[], day: string): Set<string> {
+  const keys = new Set<string>();
+  const label = dayLabel(day);
+  for (const r of existing) {
+    const key = r.action?.payload?.offer_key;
+    if (typeof key === "string") keys.add(key);
+    if (r.title === `${OUTCOME_TITLE}, ${label}`) keys.add(outcomeKey(day));
+    for (const g of goals) if (r.title === `${sessionTitle(g)}, ${label}`) keys.add(sessionKey(g, day));
+  }
+  return keys;
+}
 
 /** Calendar entries that hold time (not all day markers), merged. */
 export function busySpans(events: Event[]): Span[] {
@@ -97,12 +118,19 @@ export function freeSlot(
   return null;
 }
 
-const focusBlock = (slot: Span, title: string): NonNullable<Recommendation["action"]> => ({
+const focusBlock = (
+  slot: Span,
+  title: string,
+  key: string,
+  goalId?: string,
+): NonNullable<Recommendation["action"]> => ({
   kind: "create_focus_block",
   payload: {
     start_at: new Date(slot.start).toISOString(),
     end_at: new Date(slot.end).toISOString(),
     title: title.slice(0, 200),
+    ...(goalId ? { goal_id: goalId } : {}),
+    offer_key: key,
   },
   involves_others: false,
   undo_until: new Date(slot.start).toISOString(),
@@ -129,7 +157,7 @@ export function planOffers(input: OfferInput): NewRecommendation[] {
   const { now, zone } = input;
   const goals = input.goals.filter((g) => g.active);
   const today = zone.dayOf(now);
-  const titles = new Set(input.existing.map((r) => r.title));
+  const made = madeKeys(input.existing, goals, today);
   const busy = busySpans(input.events);
   const waking = wakingDay(goals);
   const out: NewRecommendation[] = [];
@@ -143,14 +171,14 @@ export function planOffers(input: OfferInput): NewRecommendation[] {
   const first = input.items
     .filter((i) => i.date === today && i.status === "open" && checklistGoals.has(i.goal_id))
     .sort(checklistOrder)[0];
-  if (first && !titles.has(outcomeTitle(today))) {
+  if (first && !made.has(outcomeKey(today))) {
     const slot = freeSlot(busy, today, now, OFFER_RULES.outcomeMinutes, waking, zone, free(first.text));
     if (slot) {
       out.push({
         goal_id: first.goal_id,
-        title: outcomeTitle(today),
-        rationale: `"${first.text}" is still open. I found ${voiceDuration(OFFER_RULES.outcomeMinutes)} free at ${zone.clock(slot.start)}. One tap books it, and you can undo it until it starts.`,
-        action: focusBlock(slot, first.text),
+        title: OUTCOME_TITLE,
+        rationale: `"${first.text}" is still open. I found ${voiceDuration(OFFER_RULES.outcomeMinutes)} free. One tap books it, and you can undo it until it starts.`,
+        action: focusBlock(slot, first.text, outcomeKey(today)),
         source: "analysis",
       });
     }
@@ -162,8 +190,8 @@ export function planOffers(input: OfferInput): NewRecommendation[] {
   for (const row of input.rows ?? []) {
     const goal = countGoals.find((g) => g.id === row.goal_id);
     if (!goal || !row.count || !behindPace(row.count)) continue;
-    const title = sessionTitle(goal, today);
-    if (titles.has(title)) continue;
+    const key = sessionKey(goal, today);
+    if (made.has(key)) continue;
     const own = input.events.filter((e) => goalForEvent(e, countGoals)?.goal.id === goal.id);
     const lengths = own
       .map((e) => Math.round((Date.parse(e.end_at ?? e.start_at) - Date.parse(e.start_at)) / MINUTE))
@@ -171,7 +199,7 @@ export function planOffers(input: OfferInput): NewRecommendation[] {
       .sort((a, b) => a - b);
     const minutes = lengths[Math.floor(lengths.length / 2)] ?? OFFER_RULES.sessionMinutes;
     const booked = new Set(own.map((e) => zone.dayOf(Date.parse(e.start_at))));
-    const blockTitle = calendarTitles(goal)[0] ?? goal.title;
+    const blockTitle = goalBlockTitle(goal);
     let slot: Span | null = null;
     for (const day of days) {
       if (booked.has(day)) continue;
@@ -180,12 +208,11 @@ export function planOffers(input: OfferInput): NewRecommendation[] {
     }
     if (!slot) continue;
     const { done, target, left, days_left } = row.count;
-    const when = `${zone.dayOf(slot.start) === today ? "today" : dayLabel(zone.dayOf(slot.start))} at ${zone.clock(slot.start)}`;
     out.push({
       goal_id: goal.id,
-      title,
-      rationale: `${done} of ${target} done, ${left} left and ${days_left} ${days_left === 1 ? "day" : "days"} to go. I found ${voiceDuration(minutes)} free ${when}. One tap books it, and you can undo it until it starts.`,
-      action: focusBlock(slot, blockTitle),
+      title: sessionTitle(goal),
+      rationale: `${done} of ${target} done, ${left} left and ${days_left} ${days_left === 1 ? "day" : "days"} to go. I found ${voiceDuration(minutes)} free. One tap books it, and you can undo it until it starts.`,
+      action: focusBlock(slot, blockTitle, key, goal.id),
       source: "analysis",
     });
   }
@@ -202,7 +229,9 @@ export function staleOutcomeOffer(
   goals: Goal[],
   today: string,
 ): Recommendation | null {
-  const offer = existing.find((r) => r.title === outcomeTitle(today) && r.status === "proposed");
+  const isToday = (r: Recommendation) =>
+    r.action?.payload?.offer_key === outcomeKey(today) || r.title === `${OUTCOME_TITLE}, ${dayLabel(today)}`;
+  const offer = existing.find((r) => isToday(r) && r.status === "proposed");
   if (!offer) return null;
   const checklistGoals = new Set(
     goals.filter((g) => g.active && goalKind(g) === "checklist").map((g) => g.id),
@@ -218,7 +247,7 @@ export function staleOutcomeOffer(
  */
 export function offerGoalActions(opts: { now?: number; rows?: ScoreGoal[] } = {}): Promise<Recommendation[]> {
   // Two reads of Today at once must not store the same offer twice: the second call for a user
-  // waits for the first, then finds the title already there.
+  // waits for the first, then finds the offer's key already there.
   const user = currentUserId();
   const run = (inFlight.get(user) ?? Promise.resolve()).catch(() => undefined).then(() => makeOffers(opts));
   const tail = run.finally(() => {

@@ -6,7 +6,7 @@ import { runAsUser } from "../context";
 import { buildScore } from "../score";
 import { store } from "../store";
 import { addItem } from "./items";
-import { offerGoalActions, outcomeTitle, sessionTitle } from "./offers";
+import { OUTCOME_TITLE, offerGoalActions, sessionTitle } from "./offers";
 
 // Michael's two actions for checklist and count goals (#238): stored offers, made once a day,
 // through the store's createRecommendation and so through the instruction guard. Never executed.
@@ -73,8 +73,8 @@ test("the first open outcome of today gets one offered hour, once a day, never e
     assert.equal(made.length, 1);
     const offer = made[0];
     assert.ok(offer?.action);
-    assert.equal(offer.title, outcomeTitle("2026-11-13"));
-    assert.equal(offer.title, "An hour for your first outcome, Fri 13 Nov");
+    // No date: the card's line above it already says "Today, 11:30 to 12:30".
+    assert.equal(offer.title, "An hour for your first outcome");
     assert.equal(offer.goal_id, first.goal_id);
     assert.deepEqual(
       [offer.status, offer.executed_at, offer.action.kind, offer.action.involves_others],
@@ -84,9 +84,10 @@ test("the first open outcome of today gets one offered hour, once a day, never e
       start_at: "2026-11-13T09:30:00.000Z",
       end_at: "2026-11-13T10:30:00.000Z",
       title: "Send the term sheet",
+      offer_key: "first_outcome:2026-11-13",
     });
     assert.equal(offer.action.undo_until, "2026-11-13T09:30:00.000Z");
-    assert.match(offer.rationale, /"Send the term sheet" is still open\. I found 60 minutes free at 11:30\./);
+    assert.match(offer.rationale, /"Send the term sheet" is still open\. I found 60 minutes free\. One tap/);
 
     // Once a day, whatever happens to it.
     await store.updateRecommendationStatus(offer.id, "dismissed");
@@ -113,17 +114,19 @@ test("a count goal behind pace gets one offered slot, once a day", () =>
     const made = await offerGoalActions({ now: FRIDAY, rows: await rows(FRIDAY) });
     assert.equal(made.length, 1);
     const offer = made[0];
-    assert.equal(offer?.title, sessionTitle(gym, "2026-11-13"));
+    assert.equal(offer?.title, "One more session for Gym");
     assert.equal(offer?.goal_id, gym.id);
     // The goal's usual length (90 minutes), from 07:00 on Saturday, titled so it counts.
     assert.deepEqual(offer?.action?.payload, {
       start_at: "2026-11-14T05:00:00.000Z",
       end_at: "2026-11-14T06:30:00.000Z",
       title: "Gym",
+      goal_id: gym.id,
+      offer_key: `count_session:${gym.id}:2026-11-13`,
     });
     assert.equal(
       offer?.rationale,
-      "0 of 4 done, 4 left and 3 days to go. I found 90 minutes free Sat 14 Nov at 07:00. One tap books it, and you can undo it until it starts.",
+      "0 of 4 done, 4 left and 3 days to go. I found 90 minutes free. One tap books it, and you can undo it until it starts.",
     );
     assert.deepEqual(await offerGoalActions({ now: FRIDAY, rows: await rows(FRIDAY) }), []);
 
@@ -144,7 +147,7 @@ test("a clear Sunday gets no offer: nothing to book, so nothing is said", () =>
     const { outcomes, gym } = await goals();
     await addItem({ goal_id: outcomes.id, date: "2026-11-15", text: "Plan the week" }, SUNDAY);
     assert.deepEqual(await offerGoalActions({ now: SUNDAY, rows: await rows(SUNDAY) }), []);
-    assert.deepEqual(await ours([outcomeTitle("2026-11-15"), sessionTitle(gym as Goal, "2026-11-15")]), []);
+    assert.deepEqual(await ours([OUTCOME_TITLE, sessionTitle(gym as Goal)]), []);
   }));
 
 test("a count goal's slot skips a protected day and an exception by title is allowed in", () =>
@@ -170,7 +173,7 @@ test("a count goal's slot skips a protected day and an exception by title is all
     await store.updateInstruction(sundays.id, { exceptions: ["Gym"] });
     const made = await offerGoalActions({ now: saturday, rows: await rows(saturday) });
     assert.equal(made.length, 1);
-    assert.equal(made[0]?.title, sessionTitle(gym, "2026-11-14"));
+    assert.equal(made[0]?.title, sessionTitle(gym));
     assert.ok(made[0]?.action);
     assert.equal(String(made[0]?.action?.payload.start_at).slice(0, 10), "2026-11-15");
   }));
@@ -187,7 +190,7 @@ test("an offer for an outcome that is ticked or gone is withdrawn", () =>
     assert.equal(offer?.status, "proposed");
     // Still open: the offer stays.
     await offerGoalActions({ now: FRIDAY + 60_000 });
-    assert.equal((await ours([outcomeTitle("2026-11-13")]))[0]?.status, "proposed");
+    assert.equal((await ours([OUTCOME_TITLE]))[0]?.status, "proposed");
     // Ticked: the next look withdraws it, and it is not offered again that day.
     await store.updateChecklistItem(first.id, {
       status: "done",
@@ -195,7 +198,7 @@ test("an offer for an outcome that is ticked or gone is withdrawn", () =>
       settled_by: "user",
     });
     assert.deepEqual(await offerGoalActions({ now: FRIDAY + 120_000 }), []);
-    const after = await ours([outcomeTitle("2026-11-13")]);
+    const after = await ours([OUTCOME_TITLE]);
     assert.equal(after.length, 1);
     assert.equal(after[0]?.status, "dismissed");
   }));
@@ -207,7 +210,7 @@ test("two reads at once store one offer", () =>
     await addItem({ goal_id: outcomes.id, date: "2026-11-13", text: "Send the term sheet" }, FRIDAY);
     const [a, b] = await Promise.all([offerGoalActions({ now: FRIDAY }), offerGoalActions({ now: FRIDAY })]);
     assert.equal(a.length + b.length, 1);
-    assert.equal((await ours([outcomeTitle("2026-11-13")])).length, 1);
+    assert.equal((await ours([OUTCOME_TITLE])).length, 1);
   }));
 
 test("no checklist or count goal: nothing is read or offered", () =>
@@ -215,4 +218,33 @@ test("no checklist or count goal: nothing is read or offered", () =>
     const before = (await store.listRecommendations()).length;
     assert.deepEqual(await offerGoalActions({ now: FRIDAY }), []);
     assert.equal((await store.listRecommendations()).length, before);
+  }));
+
+test("the same offer is made again the next day, and one stored with a dated title still counts", () =>
+  asNewUser(async () => {
+    await empty();
+    const { outcomes } = await goals();
+    await addItem({ goal_id: outcomes.id, date: "2026-11-13", text: "Send the term sheet" }, FRIDAY);
+    await addItem({ goal_id: outcomes.id, date: "2026-11-14", text: "Plan the pitch" }, FRIDAY);
+    assert.equal((await offerGoalActions({ now: FRIDAY })).length, 1);
+    // Same title, a new day: a new offer.
+    const next = await offerGoalActions({ now: at("14", "09:00") });
+    assert.equal(next.length, 1);
+    assert.equal(next[0]?.title, OUTCOME_TITLE);
+    assert.equal(next[0]?.action?.payload.offer_key, "first_outcome:2026-11-14");
+  }));
+
+test("an offer stored before the key, with the day in its title, still counts for that day", () =>
+  asNewUser(async () => {
+    await empty();
+    const { outcomes } = await goals();
+    await store.createRecommendation({
+      goal_id: outcomes.id,
+      title: "An hour for your first outcome, Fri 13 Nov",
+      rationale: "Made before.",
+      action: null,
+      source: "analysis",
+    });
+    await addItem({ goal_id: outcomes.id, date: "2026-11-13", text: "Send the term sheet" }, FRIDAY);
+    assert.deepEqual(await offerGoalActions({ now: FRIDAY }), []);
   }));

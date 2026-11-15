@@ -21,12 +21,8 @@ export const todaySuggestions = cache(async (): Promise<Suggestions> => {
   if (!loaded) return { booked: null, primary: null, rest: [] };
   const [recs, goals] = loaded;
   const justBooked = bookedAhead(recs, now);
-  const bookedCard = justBooked ? toCard(justBooked, goals, now) : null;
-  // The done line under it already says until when: keep who asked, drop the repeat.
-  const booked = bookedCard && {
-    ...bookedCard,
-    rationale: bookedCard.rationale.replace(/\s*Undo in Michael until it starts\.$/, ""),
-  };
+  // toCard keeps only who booked it: the done line under it already says until when.
+  const booked = justBooked ? toCard(justBooked, goals, now) : null;
   const cards = openRecommendations(
     recs.filter((r) => r !== justBooked),
     now,

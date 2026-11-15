@@ -123,7 +123,7 @@ function Card({
     >
       {card.when ? <p className="text-footnote font-semibold text-label-2 tnum">{card.when}</p> : null}
       <p className="text-body font-semibold">{/[.!?]$/.test(card.title) ? card.title : `${card.title}.`}</p>
-      <p className="text-subhead text-label-2">{card.rationale}</p>
+      {card.rationale ? <p className="text-subhead text-label-2">{card.rationale}</p> : null}
       {card.maths ? <p className="text-subhead font-semibold text-label tnum">{card.maths}</p> : null}
       {card.drives?.length ? <Drives drives={card.drives} /> : null}
 
