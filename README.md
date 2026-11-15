@@ -2,27 +2,29 @@
 
 **On your side.** Michael finds the time you lose every day and gives it back to your goals.
 
-Michael is a coach for the whole working day, for founders and executives whose time is the business.
-He builds **one timeline of your day** from your Apple Watch,
-calendar, Mac, iPhone, browser and Claude Code, checks it against your goals (business, health,
-personal), and recommends or makes concrete changes, each tied to a goal.
+**Not a screen time counter. Not an app blocker.** Michael is a coach who studies you, for founders
+and executives whose time is the business. He works in five steps, always in this order:
 
-- **Michael studies you.** He keeps a daily table of 34 figures from every source (sleep score,
-  heart rate variability, recovery, phone after dark, meetings, time lost in goal blocks) and tests
-  every sensible pair, same day and next day. A relation becomes a pattern only once it has held at
-  least 4 times and cleared a strict statistical bar; each comes with one fix and one tap ("What I
-  have learnt"). A discovery pass lets Claude propose less obvious tests (two conditions together,
-  lags, streaks); the server checks each one on the data, and Claude never supplies a number.
-- **The moment it happens.** Checks run every minute: the phone opened 5 times inside a goal
-  block, or 40 minutes of phone after the late cut off, gets one line, and one tap switches on Do
-  Not Disturb until the block ends (a signed Shortcut on the Mac and the iPhone), with undo.
-- **One day, with the maths.** Today shows the share of your planned goal time actually spent, what
-  leaked away and to what, and the time won back. Goals have weekly budgets and show the sums.
-- **Claude works with your day.** Paste one link into claude.ai and tap Allow: Claude reads your
-  day and goals, books focus blocks on your own time, and undoes them. Every agent's question is
-  logged under Agents in the Mi button ("who asked about me today").
-- **A nudge on your wrist.** At most five a day, never in quiet hours, under fifteen words. They
-  land on the iPhone and the Apple Watch; Morning and Evening moments open and close the day.
+1. **He collects.** One timeline of your day from your Apple Watch, Google Calendar, Mac and
+   iPhone app use, the browser, Claude Code and location: your body, your screens and your plans in
+   one place.
+2. **He analyses, on four levels.** One score: the share of your planned goal time you actually
+   spent, with the minutes lost and what took them. Links between any two things, tested same day
+   and next day over a daily table of 34 figures. Chains of three, such as late phone, lower sleep
+   score, slower first block. And tests nobody asked for: Claude proposes them, the server checks
+   each one on the data, and the model never supplies a number. A pattern is kept only once it has
+   held at least 4 times and passed a strict statistical test, so every result reads "held N of M
+   times" ("What I have learnt").
+3. **He tells you what you do right and what you do wrong**, each with one fix in plain words.
+4. **You tell him the rest.** Each morning, what would make today a win (up to three outcomes);
+   each evening, what went right and what did not, in about a minute. He keeps it, counts it in
+   your score, and uses it in his next advice and in the patterns he learns ("What I know about
+   you", where you can forget any line).
+5. **He acts for you, with undo.** One tap holds a fix. Claude connects with one link, reads your
+   day and books a block on your own calendar, and every agent's question is logged ("who asked
+   about me today"). Also built this weekend: nudges the moment it happens (the phone opened 5
+   times inside a goal block, or 40 minutes of phone late at night), at most 5 a day, where one tap
+   switches on Do Not Disturb until the block ends.
 
 Private by design: each source is opt in, Off the record stops all collection in one tap, the
 database is in the EU, and Michael removes only your own events (with undo), never sends in your name and never touches an
