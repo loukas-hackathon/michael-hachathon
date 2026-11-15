@@ -14,7 +14,7 @@ import {
   mockScore,
 } from "@michael/shared";
 import { app } from "../app";
-import { buildChatContext, scoreLines, setChatClientForTests, toTurns } from "./chat";
+import { buildChatContext, CONNECT_LINE, scoreLines, setChatClientForTests, toTurns } from "./chat";
 
 const auth = { Authorization: "Bearer dev-key", "content-type": "application/json" };
 
@@ -81,7 +81,7 @@ test("chat context reads older categories as the three, and carries the active s
   // The mock rule carries its exception, in words.
   assert.match(
     text,
-    /Standing instructions \(never plan, move or suggest[^\n]*\):\n- Keep Sundays clear \(except: Rhefuel\)\n/,
+    /Standing instructions \(never plan, move or suggest[^\n]*\):\n- Keep Sundays clear \(except: Rhefuel\) \{instruction_id [0-9a-f-]+\}\n/,
   );
   // A paused instruction is not handed over; with none, the section is not there at all.
   assert.doesNotMatch(text, /No calls on Fridays/);
@@ -152,6 +152,9 @@ test("the score goes into the chat context with its own figures", () => {
     text,
     /4h of deep work per day \[business\]: 6h 06 spent of budget 20h \(13h 54 left to reach it\)/,
   );
+  // A goal's score is its planned time kept, named so the model never quotes it as a share of the
+  // budget (production: "University at 42% (2h 01 of 6h)").
+  assert.match(text, /\d+% of its planned time already passed was spent \(not a share of the budget\)/);
 });
 
 test("POST /v1/chat/stream sends deltas, then the stored reply", async () => {
@@ -203,4 +206,13 @@ test("POST /v1/chat/stream sends deltas, then the stored reply", async () => {
   } finally {
     setChatClientForTests(null);
   }
+});
+
+test("Michael points to the Connect button only for live connections (#307)", () => {
+  assert.match(CONNECT_LINE, /connect their calendar, Claude, Telegram or nudges/);
+  assert.match(
+    CONNECT_LINE,
+    /their Apple Watch, their Mac, their iPhone apps or their location: coming soon/,
+  );
+  assert.match(CONNECT_LINE, /Never give steps, links or keys\./);
 });

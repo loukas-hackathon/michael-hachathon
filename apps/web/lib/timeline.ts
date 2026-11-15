@@ -1,4 +1,12 @@
-import type { Event } from "@michael/shared";
+import type { AppCategory, Event } from "@michael/shared";
+// The zod free entry: day-timeline.tsx renders this on the client.
+import {
+  bundleIdForAppName,
+  type CategoryRole,
+  categoriseEvent,
+  categoryRole,
+  isBrowser,
+} from "@michael/shared/categories";
 import { type DayHealth, healthOf } from "./health";
 import { driveFromEvent } from "./travel";
 
@@ -34,7 +42,27 @@ export type Mark = { start: number; end: number; title: string };
  * A calendar block on the day: drawn as a dashed outline under what actually happened. `michael` is
  * set for blocks Michael booked (from a recommendation, his chat or Claude through the connector).
  */
-export type Plan = { start: number; end: number; title: string; michael: boolean; withOthers: boolean };
+export type Plan = {
+  start: number;
+  end: number;
+  title: string;
+  michael: boolean;
+  withOthers: boolean;
+  /** The timeline event id (#271): set on live days, so the block can be edited. */
+  id?: string;
+  goalId?: string | null;
+  /** The user may move, resize, rename it or change its goal: solo and not started yet. */
+  editable?: boolean;
+  /** Made in Michael, so it may be removed (the user's own calendar events never are). */
+  removable?: boolean;
+  /** Where the event lives in Google Calendar, for the read only "Open in Google Calendar". */
+  htmlLink?: string;
+  /**
+   * The goal block this plan is in the score (#317), when it is one: its goal, the minutes no data
+   * proves yet, and the user's word on it. A past one with unconfirmed minutes offers Did it / Didn't.
+   */
+  goal?: { title: string; unverified: number; settled: "did" | "didnt" | null };
+};
 
 export type Segment =
   | { kind: "hours"; from: number; to: number }
@@ -62,70 +90,26 @@ export type TimelineDay = {
   plans?: Plan[];
   phone: Mark[];
   ai: Mark[];
+  /** Done time the user logged (#317), drawn as goal time. */
+  logged?: Mark[];
   segments: Segment[];
-  /** The Apple Watch: last night, tonight, workouts and heart rate per hour. */
+  /** The Apple Watch: last night, tonight, naps, workouts and heart rate per hour (lib/health.ts). */
   health?: DayHealth;
   totals: { workMinutes: number; lostMinutes: number; phoneSessions: number; phoneMinutes: number };
 };
 
 const MIN = 60_000;
 
-const WORK_APPS = new Set([
-  "VS Code",
-  "Cursor",
-  "Xcode",
-  "Terminal",
-  "iTerm",
-  "Claude",
-  "Notion",
-  "Word",
-  "Excel",
-  "PowerPoint",
-  "Pages",
-  "Numbers",
-  "Keynote",
-  "Figma",
-  "Linear",
-]);
-const MESSAGE_APPS = new Set([
-  "WhatsApp",
-  "WhatsApp Business",
-  "Telegram",
-  "Viber",
-  "Messages",
-  "Messenger",
-  "Mail",
-  "Outlook",
-  "Gmail",
-  "Slack",
-  "Discord",
-]);
-const SOCIAL_APPS = new Set([
-  "Instagram",
-  "Facebook",
-  "TikTok",
-  "YouTube",
-  "Netflix",
-  "LinkedIn",
-  "X",
-  "Reddit",
-]);
-const BROWSERS = new Set(["Chrome", "Safari", "Arc", "Brave Browser", "Browser", "Firefox"]);
+// Colours come from the one categoriser (packages/shared/src/categories.ts) and the role of each
+// category, the same rule the score and the patterns use: work and AI are work, messages, social,
+// video, news, shopping and travel are lost, music, the system and anything unknown are other.
+const KIND_OF_ROLE: Record<CategoryRole, Kind> = { work: "work", distractor: "lost", neutral: "other" };
+const kindOf = (category: AppCategory): Kind => KIND_OF_ROLE[categoryRole(category)];
 
-const WEB_KIND: Record<string, Kind> = {
-  ai: "work",
-  dev: "work",
-  docs: "work",
-  mail: "lost",
-  messaging: "lost",
-  social: "lost",
-  video: "lost",
-  news: "lost",
-  shopping: "lost",
-  travel: "other",
-  search: "other",
-  finance: "other",
-};
+const str = (v: unknown): string | null => (typeof v === "string" && v.length > 0 ? v : null);
+
+/** The app's bundle id, from the event or, failing that, from a well known name. */
+const bundleOf = (e: Event): string | null => str(e.data.bundle_id) ?? bundleIdForAppName(e.title);
 
 const t = (iso: string) => new Date(iso).getTime();
 
@@ -144,14 +128,12 @@ function browserKind(s: { start: number; end: number }, visits: Event[]): { kind
       best = v;
     }
   }
-  const cat = best ? String(best.data.category ?? "") : "";
-  return { kind: WEB_KIND[cat] ?? "other", what: best?.title ?? "Chrome" };
+  const category = best ? (categoriseEvent(best) ?? "other") : "other";
+  return { kind: kindOf(category), what: best?.title ?? "Chrome" };
 }
 
-function classify(app: string): Kind {
-  if (WORK_APPS.has(app)) return "work";
-  if (MESSAGE_APPS.has(app) || SOCIAL_APPS.has(app)) return "lost";
-  return "other";
+function classify(e: Event): Kind {
+  return kindOf(categoriseEvent(e) ?? "other");
 }
 
 function topApps(apps: Map<string, number>, n = 2) {
@@ -164,18 +146,30 @@ function topApps(apps: Map<string, number>, n = 2) {
 /** Michael's own block: tagged by the executor (data.michael) or written by him (source agent). */
 export const isMichaelBlock = (e: Event) => e.source === "agent" || e.data.michael === true;
 
-/** Calendar events on the day, all day events left out, as planned outlines. */
-export function plansOf(events: Event[], dayStart: number, dayEnd: number): Plan[] {
+/**
+ * Calendar events on the day, all day events left out, as planned outlines. `now` decides which are
+ * still editable (#271): a block that has started is history.
+ */
+export function plansOf(events: Event[], dayStart: number, dayEnd: number, now = Date.now()): Plan[] {
   return events
     .filter((e) => e.type === "calendar_event" && e.end_at && e.data.all_day !== true)
     .map((e) => {
       const attendees = typeof e.data.attendees === "number" ? e.data.attendees : 0;
+      const withOthers = e.data.with_others === true || attendees >= 2;
+      const start = t(e.start_at);
+      const end = t(e.end_at as string);
       return {
-        start: Math.max(t(e.start_at), dayStart),
-        end: Math.min(t(e.end_at as string), dayEnd),
+        start: Math.max(start, dayStart),
+        end: Math.min(end, dayEnd),
         title: e.title,
         michael: isMichaelBlock(e),
-        withOthers: e.data.with_others === true || attendees >= 2,
+        withOthers,
+        id: e.id,
+        goalId: typeof e.data.goal_id === "string" ? e.data.goal_id : null,
+        // Blocks that cross midnight stay read only: the day shows only part of them.
+        editable: !withOthers && start > now && start >= dayStart && end <= dayEnd,
+        removable: isMichaelBlock(e),
+        htmlLink: typeof e.data.html_link === "string" ? e.data.html_link : undefined,
       };
     })
     .filter((p) => p.end > p.start)
@@ -205,7 +199,8 @@ export function buildTimeline(
     if (e.source !== "macos_usage" || e.type !== "app_usage" || !e.end_at) continue;
     const [s, en] = clip(t(e.start_at), t(e.end_at));
     if (en - s < 5_000) continue;
-    if (BROWSERS.has(e.title)) {
+    const bundle = bundleOf(e);
+    if (bundle && isBrowser(bundle)) {
       const k = browserKind({ start: s, end: en }, visits);
       sessions.push({
         start: s,
@@ -215,7 +210,7 @@ export function buildTimeline(
         what: k.kind === "lost" ? k.what : e.title,
       });
     } else {
-      sessions.push({ start: s, end: en, app: e.title, kind: classify(e.title), what: e.title });
+      sessions.push({ start: s, end: en, app: e.title, kind: classify(e), what: e.title });
     }
   }
   sessions.sort((a, b) => a.start - b.start);
@@ -299,7 +294,9 @@ export function buildTimeline(
       .sort((a, b) => a.start - b.start);
   const phone = marks((e) => e.source === "iphone_usage" && e.type === "app_usage");
   const ai = marks((e) => e.type === "ai_session");
-  const plans = plansOf(events, dayStart, dayEnd);
+  // Done time the user logged (#317): goal time, drawn pink like a workout.
+  const logged = marks((e) => e.source === "manual" && e.type === "focus_session" && e.data.log === "done");
+  const plans = plansOf(events, dayStart, dayEnd, now);
   const health = healthOf(events, dayStart, dayEnd);
 
   // 5. Planned drives (source maps, type travel; TravelData in docs/api.md).
@@ -320,11 +317,13 @@ export function buildTimeline(
     .filter((d) => d.end > d.start);
 
   // 6. Quiet stretches of 90 minutes or more (no Mac block, no phone session, nothing planned, no
-  // workout, no drive) collapse to one row.
+  // workout, no nap, no drive) collapse to one row.
   const busy = [
     ...blocks.map((b) => [b.start, b.end] as const),
     ...health.workouts.map((w) => [Math.max(w.start, dayStart), Math.min(w.end, dayEnd)] as const),
+    ...health.naps.map((n) => [n.start, Math.min(n.end, dayEnd)] as const),
     ...phone.map((p) => [p.start, p.end] as const),
+    ...logged.map((l) => [l.start, l.end] as const),
     ...plans.map((p) => [p.start, p.end] as const),
     ...drives.map((d) => [d.start, d.end] as const),
   ];
@@ -377,6 +376,7 @@ export function buildTimeline(
     plans,
     phone,
     ai,
+    logged,
     segments,
     health,
     totals: { workMinutes, lostMinutes, phoneSessions: phone.length, phoneMinutes },
@@ -399,6 +399,31 @@ export function makeY(segments: Segment[], perHour: number, quiet: number) {
     }
     return y;
   };
+}
+
+/** The inverse of makeY: the time at a y offset. Inside a quiet row it spreads across the row. */
+export function makeTime(segments: Segment[], perHour: number, quiet: number) {
+  return (y: number) => {
+    let top = 0;
+    for (const s of segments) {
+      const h = s.kind === "quiet" ? quiet : ((s.to - s.from) / (60 * MIN)) * perHour;
+      if (y < top + h) return s.from + (Math.max(0, y - top) / h) * (s.to - s.from);
+      top += h;
+    }
+    return segments.at(-1)?.to ?? 0;
+  };
+}
+
+/** Quiet rows the viewer opened become hours again, merged with the hours around them. */
+export function openSegments(segments: Segment[], open: (s: Segment) => boolean): Segment[] {
+  const out: Segment[] = [];
+  for (const s of segments) {
+    const next: Segment = s.kind === "quiet" && open(s) ? { kind: "hours", from: s.from, to: s.to } : s;
+    const last = out.at(-1);
+    if (last && last.kind === "hours" && next.kind === "hours" && last.to === next.from) last.to = next.to;
+    else out.push({ ...next });
+  }
+  return out;
 }
 
 /** The plan a block mostly belongs to: the calendar block covering at least half of it. */

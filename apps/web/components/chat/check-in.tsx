@@ -18,6 +18,7 @@ export function Bubble({
   const pop = from === "you" ? "m-pop-in [--m-origin:100%_100%]" : "m-pop-in [--m-origin:0_100%]";
   return (
     <li className={`flex ${from === "you" ? "justify-end" : "justify-start"}`}>
+      <span className="sr-only">{from === "you" ? "You:" : "Michael:"}</span>
       <p
         className={`max-w-[85%] rounded-card px-3.5 py-2 text-body ${
           from === "you" ? "bg-tint text-on-tint" : "bg-fill text-label"
@@ -58,7 +59,8 @@ export function CheckIn({ questions, sample }: { questions: Question[]; sample: 
 
   return (
     <section aria-label="Check in" className="pt-4">
-      <ol className="flex flex-col gap-2">
+      {/* Polite: each new question is read out as it arrives. */}
+      <ol aria-live="polite" className="flex flex-col gap-2">
         <Bubble from="michael">{OPENING}</Bubble>
         {asked.map((q) => (
           <li key={q.id} className="flex flex-col gap-2">
@@ -92,7 +94,7 @@ export function CheckIn({ questions, sample }: { questions: Question[]; sample: 
       {current ? (
         <div className="mt-3 flex flex-col gap-2">
           {current.kind === "scale" ? (
-            <fieldset className="flex gap-2">
+            <fieldset className="flex flex-wrap gap-2">
               <legend className="sr-only">1 to 5</legend>
               {[1, 2, 3, 4, 5].map((n) => (
                 <button
@@ -106,7 +108,7 @@ export function CheckIn({ questions, sample }: { questions: Question[]; sample: 
               ))}
             </fieldset>
           ) : (
-            <fieldset className="flex gap-2">
+            <fieldset className="flex flex-wrap gap-2">
               <legend className="sr-only">Yes or no</legend>
               {(["yes", "no"] as const).map((v) => (
                 <button
@@ -120,7 +122,10 @@ export function CheckIn({ questions, sample }: { questions: Question[]; sample: 
               ))}
             </fieldset>
           )}
-          <form onSubmit={onText} className="flex items-center gap-2 rounded-card bg-fill p-1.5 pl-4">
+          <form
+            onSubmit={onText}
+            className="flex flex-wrap items-center justify-end gap-2 rounded-card bg-fill p-1.5 pl-4"
+          >
             <label htmlFor="check-in-text" className="sr-only">
               Answer in your own words
             </label>
@@ -130,12 +135,12 @@ export function CheckIn({ questions, sample }: { questions: Question[]; sample: 
               onChange={(e) => setText(e.target.value)}
               maxLength={280}
               placeholder="Or in your own words"
-              className="min-h-9 flex-1 bg-transparent text-body outline-none placeholder:text-label-2"
+              className="min-h-9 min-w-32 flex-1 bg-transparent text-body outline-none placeholder:text-label-2"
             />
             <button
               type="submit"
               disabled={!text.trim()}
-              className="press h-9 shrink-0 rounded-full px-3 text-subhead font-semibold text-tint-text disabled:opacity-40"
+              className="hit press h-9 shrink-0 rounded-full px-3 text-subhead font-semibold text-tint-text disabled:opacity-40"
             >
               Answer
             </button>

@@ -45,4 +45,47 @@ export function label(subject: PatternSubject): string {
   return subject.category === "other" ? "an uncategorised site" : `a ${subject.category} site`;
 }
 
+// Well known sites by the name people call them. A host that is not here keeps its own name.
+const SITE_NAMES: Record<string, string> = {
+  "mail.google.com": "Gmail",
+  "calendar.google.com": "Google Calendar",
+  "docs.google.com": "Google Docs",
+  "drive.google.com": "Google Drive",
+  "meet.google.com": "Google Meet",
+  "youtube.com": "YouTube",
+  "instagram.com": "Instagram",
+  "facebook.com": "Facebook",
+  "messenger.com": "Messenger",
+  "web.whatsapp.com": "WhatsApp",
+  "web.telegram.org": "Telegram",
+  "x.com": "X",
+  "twitter.com": "X",
+  "linkedin.com": "LinkedIn",
+  "reddit.com": "Reddit",
+  "tiktok.com": "TikTok",
+  "pinterest.com": "Pinterest",
+  "netflix.com": "Netflix",
+  "twitch.tv": "Twitch",
+  "outlook.live.com": "Outlook",
+  "outlook.office.com": "Outlook",
+  "discord.com": "Discord",
+  "app.slack.com": "Slack",
+  "github.com": "GitHub",
+  "amazon.com": "Amazon",
+  "booking.com": "Booking.com",
+  "airbnb.com": "Airbnb",
+};
+
+/**
+ * A site by its product name where it has one ("mail.google.com" is "Gmail", "m.youtube.com" is
+ * "YouTube"). Anything else comes back as it was, so a category label ("a news site") stays put.
+ */
+export function siteName(host: string): string {
+  const h = host.toLowerCase().replace(/^www\./, "");
+  for (const [site, name] of Object.entries(SITE_NAMES)) {
+    if (h === site || h.endsWith(`.${site}`)) return name;
+  }
+  return host;
+}
+
 export const days = (n: number) => count(n, "day");

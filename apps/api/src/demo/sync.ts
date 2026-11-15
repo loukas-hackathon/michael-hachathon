@@ -1,14 +1,18 @@
 import type { DemoSeedResult, Source } from "@michael/shared";
+import { InstructionCreate } from "@michael/shared";
+import { seedDemoDrafts } from "../actions/drafts";
 import { currentUserId } from "../context";
 import { env } from "../env";
-import { HttpError } from "../http";
-import { refusalFor } from "../instructions/guard";
+import { HttpError, parse } from "../http";
 import { Zone } from "../patterns/time";
+import { isLogEntry } from "../score/logged";
 import { goalForEvent } from "../score/match";
 import type { Store } from "../store";
-import { at, DEMO_TZ, iso, localDate } from "./time";
+import { removeRetiredSamples } from "./retired";
+import { seedDemoRitual } from "./ritual";
+import { DEMO_TZ, localDate } from "./time";
 import { DEMO_PLACES, demoTravel } from "./travel";
-import { buildDemoWeek, calendar, DEMO_PREFIX, type DemoWeek, demoGoals } from "./week";
+import { buildDemoWeek, DEMO_PREFIX, type DemoWeek, demoGoals, demoInstructions } from "./week";
 
 // How long a demo visitor's chat lives: the life of the visitor cookie.
 const VISITOR_CHAT_MS = 24 * 60 * 60_000;
@@ -30,16 +34,20 @@ export async function seedDemoWeek(
   const now = opts.now ?? new Date();
   const week = buildDemoWeek(now);
 
-  // A reset puts the stage back: no visitor chat from before it, and off the record off. Web
-  // visitors cannot change privacy (demo/visitor.ts), so this only undoes changes made with the
-  // API key or by hand. Per source switches stay as the team set them: on the demo account they
+  // A reset puts the stage back: no visitor chat from before it, off the record off, and the goals
+  // and standing instructions exactly the plan (goals added since are removed, plan goals are
+  // overwritten below). Web visitors cannot change any of it (demo/visitor.ts), so this undoes
+  // rehearsal changes made by Claude, the API key or by hand. Per source switches stay as the team set them: on the demo account they
   // keep real collectors out (#114). Visitor chat older than a day (the visitor cookie's life)
   // goes on every refresh.
   const resetState = opts.resetState ?? opts.overwriteGoals;
   await store.clearVisitorChat(
     resetState ? now.toISOString() : new Date(now.getTime() - VISITOR_CHAT_MS).toISOString(),
   );
-  if (resetState) await store.setOffTheRecord(false);
+  if (resetState) {
+    await store.setOffTheRecord(false);
+    await resetToPlan(store, week.days);
+  }
 
   // Off the record stops the demo week too (it is the switch people try on stage). Per source
   // switches are not applied: on the demo account they keep real collectors out (#114), and
@@ -48,69 +56,49 @@ export async function seedDemoWeek(
   const sources: Source[] = rules.offTheRecord ? [] : [...new Set(week.events.map((e) => e.source))];
 
   const events = await store.syncSeededEvents(DEMO_PREFIX, sources, week.events);
-  const goals = await store.seedGoals(demoGoals, { overwrite: opts.overwriteGoals });
+  const goals = await store.seedGoals(demoGoals, { overwrite: opts.overwriteGoals || resetState });
+  if (!rules.offTheRecord) await seedDemoTravel(store, week, opts.now ?? new Date());
+  // Follow up drafts for the latest conversations (#40). Best effort: never fails the seed.
   if (!rules.offTheRecord) {
-    await seedDemoTravel(store, week, opts.now ?? new Date());
-    await seedDemoFocus(store, opts.now ?? new Date());
+    await seedDemoDrafts(store, (opts.now ?? new Date()).getTime(), week.days.length).catch((err) =>
+      console.error("Demo drafts failed", err),
+    );
   }
+  // The daily ritual (#318): today's plan and two logged evenings. Best effort too.
+  if (!rules.offTheRecord) {
+    await seedDemoRitual(store, week.days).catch((err) => console.error("Demo ritual failed", err));
+  }
+  // The sample brief, the sample suggestions and the retired goal never stay on the stage (#330).
+  await removeRetiredSamples(store);
   return { days: week.days, events, goals_written: goals };
 }
 
-// Start times tried for the demo's study block, in order; each block is an hour.
-const FOCUS_STARTS = ["09:30", "11:00", "12:30", "14:00", "15:30", "18:00", "19:00"];
-const FOCUS_MINUTES = 60;
-
 /**
- * One suggestion Michael can do himself, so Today always has a "Do it" to tap on stage (the pitch
- * shows Do it, then Undo): an hour of study for University, the goal with fewer hours planned than
- * its budget, at the next free hour in the coming three days that no event and no house rule covers.
- * Nothing is added while an open focus block suggestion is still ahead.
+ * Goals not in the plan go; the standing instructions become the plan's. Visitors may save the
+ * daily ritual and log done time on stage (demo/visitor.ts), so those go back to the plan too: the
+ * ritual rows of the week (and tomorrow, for a carried outcome) are cleared, the outcomes goal is
+ * not in the plan so it goes with its outcomes, and every logged entry that is not the demo week's
+ * own is removed. seedDemoRitual then writes the plan's ritual again.
  */
-export async function seedDemoFocus(store: Store, now: Date): Promise<void> {
-  const open = await store.listRecommendations({ status: "proposed" });
-  const ahead = (r: (typeof open)[number]) =>
-    r.action?.kind === "create_focus_block" &&
-    !r.action.involves_others &&
-    Date.parse(r.action.undo_until ?? "") > now.getTime() + 10 * 60_000;
-  if (open.some(ahead)) return;
+async function resetToPlan(store: Store, days: string[]): Promise<void> {
+  const plan = new Set(demoGoals.map((g) => g.id));
+  for (const g of await store.listGoals()) if (!plan.has(g.id)) await store.deleteGoal(g.id);
+  for (const i of await store.listInstructions()) await store.deleteInstruction(i.id);
+  for (const i of demoInstructions) await store.createInstruction(parse(InstructionCreate, i));
 
-  const goal = (await store.listGoals()).find((g) => g.title === "University");
-  if (!goal) return;
-  const instructions = await store.listInstructions();
+  const first = days[0];
+  const last = days.at(-1);
+  if (!first || !last) return;
   const zone = new Zone(DEMO_TZ);
-  const today = localDate(now.getTime());
-  for (const day of [today, zone.nextDay(today), zone.nextDay(zone.nextDay(today))]) {
-    // The week only plans to Sunday, so read the generated calendar of the day itself.
-    const busy = calendar(day).map(
-      (e) => [Date.parse(e.start_at), Date.parse(e.end_at ?? e.start_at)] as const,
-    );
-    for (const hhmm of FOCUS_STARTS) {
-      const start = at(day, hhmm);
-      const end = start + FOCUS_MINUTES * 60_000;
-      if (start < now.getTime() + 20 * 60_000) continue;
-      if (busy.some(([s, e]) => s < end && start < e)) continue;
-      const action = {
-        kind: "create_focus_block" as const,
-        payload: { start_at: iso(start), end_at: iso(end), title: "Study" },
-        involves_others: false,
-        undo_until: iso(start),
-      };
-      const verdict = await refusalFor(action, {
-        instructions,
-        getEvent: (id) => store.getEvent(id),
-        timezone: DEMO_TZ,
-      });
-      if (!verdict.allowed) continue;
-      await store.createRecommendation({
-        goal_id: goal.id,
-        title: `Block ${zone.clock(start)} to ${zone.clock(end)} for University`,
-        rationale:
-          "University has fewer hours planned than its weekly budget. This hour is free on your calendar.",
-        action,
-      });
-      return;
-    }
-  }
+  const tomorrow = zone.nextDay(last);
+  await store.clearRituals({ from: first, to: tomorrow });
+  const manual = await store.listEvents({
+    from: new Date(zone.startOfDay(first)).toISOString(),
+    to: new Date(zone.startOfDay(zone.nextDay(tomorrow))).toISOString(),
+    source: ["manual"],
+  });
+  const logged = manual.filter((e) => isLogEntry(e) && !e.external_id?.startsWith(DEMO_PREFIX));
+  if (logged.length) await store.deleteEvents(logged.map((e) => e.id));
 }
 
 /**

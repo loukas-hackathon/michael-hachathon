@@ -85,7 +85,9 @@ export function undoDeadline(rec: Recommendation): string | null {
   return new Date(Math.min(...until.map((x) => Date.parse(x)))).toISOString();
 }
 
+// draft_follow_up: "Do it" saves the draft under Follow ups; nothing is sent.
 const EXECUTABLE = new Set([
+  "draft_follow_up",
   "create_focus_block",
   "move_calendar_block",
   "move_calendar_blocks",
@@ -199,6 +201,23 @@ export function openRecommendations(recs: Recommendation[], now: Date, limit = 3
       return ex(a) - ex(b) || Date.parse(b.created_at) - Date.parse(a.created_at);
     })
     .slice(0, limit);
+}
+
+/**
+ * The block the user just had booked, in chat or through Claude, that has not started yet (#330):
+ * the newest one. Today shows it at the top with its Undo, so a booking is never hidden in a fold.
+ */
+export function bookedAhead(recs: Recommendation[], now: Date): Recommendation | null {
+  const at = (r: Recommendation) => Date.parse(r.executed_at ?? r.created_at);
+  return (
+    recs
+      .filter((r) => r.status === "done" && r.source === "chat" && r.action?.kind === "create_focus_block")
+      .filter((r) => {
+        const until = undoDeadline(r);
+        return until !== null && Date.parse(until) > now.getTime();
+      })
+      .sort((a, b) => at(b) - at(a))[0] ?? null
+  );
 }
 
 /** Michael's words for a failed Do it, Undo or Not now. One line, owns the problem. */

@@ -2,6 +2,8 @@ import { test as base, expect, type Locator, type Page } from "@playwright/test"
 
 export const API_URL = `http://127.0.0.1:${process.env.E2E_API_PORT ?? 18787}`;
 export const API_KEY = "dev-key";
+/** DEMO_PRESENTER_KEY on both servers (playwright.config.ts): the presenter link's secret. */
+export const PRESENTER_KEY = "e2e-presenter-key";
 
 /** Today's date in Athens as the app writes it ("Saturday 14 November"). */
 export const athensToday = () =>
@@ -32,10 +34,25 @@ export async function enterDemo(page: Page) {
  * server rendered button that has no handler yet. The root fix for "click did nothing" flakes.
  */
 export async function tap(target: Locator) {
+  await hydrated(target);
+  await target.click();
+}
+
+/**
+ * Fills a field once React has hydrated it. A controlled input filled before hydration keeps the
+ * text in the DOM while React's state stays empty, so whatever reads that state never sees it (the
+ * onboarding flake: "Keep these three" never appeared because the own words goal was lost).
+ */
+export async function fillReady(target: Locator, value: string) {
+  await hydrated(target);
+  await target.fill(value);
+  await expect(target).toHaveValue(value);
+}
+
+async function hydrated(target: Locator) {
   await expect
     .poll(() => target.evaluate((el) => Object.keys(el).some((k) => k.startsWith("__reactProps$"))))
     .toBe(true);
-  await target.click();
 }
 
 type Guard = { problems: string[] };

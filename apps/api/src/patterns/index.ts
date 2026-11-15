@@ -3,6 +3,7 @@ import { aiToolUse } from "./ai";
 import { macAppCadence, phoneCadence } from "./cadence";
 import { buildContext, type PatternOptions } from "./context";
 import { analyseFocus, drift, focusDisruptions, recoveryCost, repeatOffenders } from "./focus";
+import { type Detectors, headlinesOf } from "./headlines";
 import { lateScreens } from "./late";
 import { contextSwitching } from "./switching";
 import { timeByApp } from "./totals";
@@ -10,6 +11,7 @@ import { iso } from "./util";
 
 export type { PatternOptions } from "./context";
 export { DEFAULT_TIMEZONE, RULES } from "./context";
+export { isHeadline, NO_HEADLINES } from "./headlines";
 
 /**
  * Events in, patterns out. Pure: no I/O and no clock, so the same input always gives the same
@@ -20,7 +22,7 @@ export function buildPatternReport(events: Event[], options: PatternOptions): Pa
   const ctx = buildContext(events, options);
   const focus = analyseFocus(ctx);
 
-  const detectors = {
+  const detectors: Detectors = {
     phone_cadence: phoneCadence(ctx),
     mac_app_cadence: macAppCadence(ctx),
     focus_disruptions: focusDisruptions(ctx, focus),
@@ -42,6 +44,7 @@ export function buildPatternReport(events: Event[], options: PatternOptions): Pa
     inputs: {
       mac_app_usage: ctx.tl.counts.macAppUsage,
       iphone_app_usage: ctx.tl.counts.iphoneAppUsage,
+      app_usage_superseded: ctx.tl.counts.appUsageSuperseded,
       web_visits: ctx.tl.counts.webVisits,
       web_visits_superseded: ctx.tl.counts.webVisitsSuperseded,
       web_visits_unmeasured: ctx.tl.counts.webVisitsUnmeasured,
@@ -50,8 +53,8 @@ export function buildPatternReport(events: Event[], options: PatternOptions): Pa
       sleeps: ctx.sleeps.length,
       ai_sessions: detectors.ai_tool_use.data?.sessions ?? 0,
     },
-    // Order of importance: the headline first.
-    headlines: Object.values(detectors).flatMap((d) => (d.summary ? [d.summary] : [])),
+    // Order of importance: the headline first. Trivial findings and small samples stay out.
+    headlines: headlinesOf(detectors),
     ...detectors,
   };
 }

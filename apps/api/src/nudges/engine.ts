@@ -12,6 +12,7 @@ import {
 } from "@michael/shared";
 import { DEFAULT_TIMEZONE } from "../patterns/context";
 import { goalBlocks } from "../patterns/focus";
+import { napIn } from "../patterns/sleep";
 import { DAY, MINUTE, Zone } from "../patterns/time";
 import { buildTimeline, type Segment } from "../patterns/timeline";
 import { type Span, union, unionLength } from "../patterns/util";
@@ -75,10 +76,9 @@ export const LIMITS = {
   goalBehindLatest: 19 * 60,
   goalBehindMinMinutes: 60,
   goalBehindMinShare: 0.15,
-  /** Morning: after the night's sleep ends (3 hours or more), else at 08:00; not after 12:00. */
+  /** Morning: after the night ends (a nap never counts, patterns/sleep.ts), else at 08:00; not after 12:00. */
   morningDefault: 8 * 60,
   morningLatest: 12 * 60,
-  mainSleepMs: 3 * 60 * MINUTE,
   /** Evening: an hour before the usual bedtime (median of 3+ recent nights), else 21:00... */
   eveningDefault: 21 * 60,
   eveningLead: 60,
@@ -105,6 +105,17 @@ export interface EngineInput {
    * it from GET /v1/moments/:kind; the engine only decides whether it goes out.
    */
   moment?: { kind: MomentKind; text: string; reason: string };
+  /**
+   * A recovery offer not yet nudged (recovery/offer.ts): a goal block slipped and Michael offers
+   * 25 minutes later today. The engine only decides whether it goes out, while its slot is ahead.
+   */
+  recovery?: {
+    recommendation_id: string;
+    goal_id: string | null;
+    text: string;
+    reason: string;
+    start_at: string;
+  };
 }
 
 export type MomentKind = "morning" | "evening";
@@ -115,6 +126,8 @@ export interface Candidate {
   goal_id: string | null;
   text: string;
   reason: string;
+  /** The recommendation the nudge is about (a recovery offer). */
+  recommendation_id?: string;
 }
 
 export type Decision =
@@ -125,7 +138,16 @@ export type Decision =
 // Most urgent first: a drift is happening now, a block is about to start, bedtime is close, and
 // a weekly gap can wait for the next check.
 // The Morning and Evening moments come after anything happening right now.
-const PRIORITY: NudgeKind[] = ["focus_drift", "block_soon", "morning", "evening", "wind_down", "goal_behind"];
+// A recovery offer is for a slot later today, so it goes before the moments.
+const PRIORITY: NudgeKind[] = [
+  "focus_drift",
+  "block_soon",
+  "recovery_block",
+  "morning",
+  "evening",
+  "wind_down",
+  "goal_behind",
+];
 
 // The three goal categories, and the four older names goals may still carry.
 const LABEL: Record<GoalCategory, string> = {
@@ -180,6 +202,7 @@ interface World {
   events: Event[];
   quiet: QuietHours;
   moment: EngineInput["moment"];
+  recovery: EngineInput["recovery"];
 }
 
 function world(input: EngineInput): World {
@@ -201,6 +224,7 @@ function world(input: EngineInput): World {
     events: input.events,
     quiet: input.quiet ?? DEFAULT_QUIET,
     moment: input.moment,
+    recovery: input.recovery,
   };
 }
 
@@ -216,6 +240,7 @@ export function spentThisWeek(w: World, goal: Goal): number {
   const spentType = isSleepGoal(goal) ? "sleep" : SPENT_TYPES[goal.category];
   for (const e of w.events) {
     if (e.type !== spentType || !e.end_at) continue;
+    if (e.type === "sleep" && napIn(w.zone, Date.parse(e.start_at), Date.parse(e.end_at))) continue;
     const start = Math.max(Date.parse(e.start_at), w.weekStart);
     const end = Math.min(Date.parse(e.end_at), w.now);
     if (end > start) spans.push({ start, end });
@@ -303,23 +328,42 @@ function windDown(w: World): Candidate | null {
   };
 }
 
-/** `anyGap`: any gap at any hour (the stage's test nudge), not only a big one before 19:00. */
-function goalBehind(w: World, anyGap = false): Candidate | null {
-  if (!anyGap && w.minute >= LIMITS.goalBehindLatest) return null;
+export interface BehindGoal {
+  goal: Goal;
+  spent: number;
+  pace: number;
+  gap: number;
+}
+
+/**
+ * Goals behind their linear weekly pace by 60+ minutes and 15%+, the furthest behind first.
+ * `anyGap` (the stage's test nudge): any time goal 15 or more minutes behind.
+ */
+function behindList(w: World, anyGap = false): BehindGoal[] {
   const elapsed = Math.min(1, (w.now - w.weekStart) / (7 * DAY));
-  let worst: { goal: Goal; spent: number; pace: number; gap: number } | null = null;
+  const out: BehindGoal[] = [];
   for (const goal of w.goals) {
     const budget = goal.weekly_budget_minutes;
     if (!budget) continue;
-    // A target goal (sleep) sits outside the time score: "book 90 min" means nothing for it.
-    if (anyGap && goalKind(goal) === "target") continue;
     const spent = spentThisWeek(w, goal);
     const pace = budget * elapsed;
     const gap = pace - spent;
+    // A target goal (sleep) sits outside the time score: "book 90 min" means nothing for it.
+    if (anyGap && goalKind(goal) === "target") continue;
     const min = anyGap ? 15 : Math.max(LIMITS.goalBehindMinMinutes, budget * LIMITS.goalBehindMinShare);
     if (gap < min) continue;
-    if (!worst || gap > worst.gap) worst = { goal, spent, pace, gap };
+    out.push({ goal, spent, pace, gap });
   }
+  return out.sort((a, b) => b.gap - a.gap);
+}
+
+/** The goal_behind rule at any hour, every goal it finds: the morning's suggestions (#318). */
+export const behindGoals = (input: EngineInput): BehindGoal[] => behindList(world(input));
+
+/** `anyGap`: any gap at any hour (the stage's test nudge), not only a big one before 19:00. */
+function goalBehind(w: World, anyGap = false): Candidate | null {
+  if (!anyGap && w.minute >= LIMITS.goalBehindLatest) return null;
+  const worst = behindList(w, anyGap)[0];
   if (!worst) return null;
   const { goal, spent, pace, gap } = worst;
   const next = goalBlocks(w.events, w.goals, w.now, w.dayEnd).find((b) => b.goal.id === goal.id);
@@ -344,9 +388,9 @@ const mainSleeps = (w: World): Span[] =>
   w.events
     .filter((e) => e.type === "sleep" && e.end_at)
     .map((e) => ({ start: Date.parse(e.start_at), end: Date.parse(e.end_at as string) }))
-    .filter((s) => s.end - s.start >= LIMITS.mainSleepMs && s.end - s.start <= DAY);
+    .filter((s) => s.end > s.start && s.end - s.start <= DAY && !napIn(w.zone, s.start, s.end));
 
-/** When the user woke today: the end of the last main sleep that ended today, or null. */
+/** When the user woke today: the end of the last night (never a nap) that ended today, or null. */
 function wokeAt(w: World): number | null {
   const ends = mainSleeps(w)
     .map((s) => s.end)
@@ -400,6 +444,9 @@ export function momentTiming(w: World): MomentTiming {
   };
 }
 
+/** When the Morning and Evening moments may go out today; the daily ritual follows them (#318). */
+export const momentTimes = (input: EngineInput): MomentTiming => momentTiming(world(input));
+
 /** Which moment is due now, if any. Each goes out at most once a day (its key is the kind). */
 export function momentDue(input: EngineInput): MomentKind | null {
   const w = world(input);
@@ -425,9 +472,26 @@ function momentRule(kind: MomentKind) {
   };
 }
 
+// ---------- recovery block (#167) ----------
+
+/** The recovery offer, while its slot is still ahead. One nudge per offer (the key names it). */
+function recoveryBlock(w: World): Candidate | null {
+  const r = w.recovery;
+  if (!r || !(Date.parse(r.start_at) > w.now)) return null;
+  return {
+    kind: "recovery_block",
+    key: `recovery_block:${r.recommendation_id}`,
+    goal_id: r.goal_id,
+    recommendation_id: r.recommendation_id,
+    text: r.text,
+    reason: r.reason,
+  };
+}
+
 const RULES: Record<NudgeKind, (w: World) => Candidate | null> = {
   focus_drift: focusDrift,
   block_soon: blockSoon,
+  recovery_block: recoveryBlock,
   morning: momentRule("morning"),
   evening: momentRule("evening"),
   wind_down: windDown,
@@ -446,7 +510,7 @@ export function candidates(input: EngineInput): Candidate[] {
 /**
  * The line for the stage's test nudge: the best candidate now, else the goal furthest behind its
  * weekly pace whatever the hour or the size of the gap, so the watch says something real and tied
- * to a goal. Null when every goal is on pace.
+ * to a goal (the finals are at 20:00, after the usual 19:00 cut off). Null when every goal is on pace.
  */
 export function testCandidate(input: EngineInput): Candidate | null {
   const best = candidates(input)[0];

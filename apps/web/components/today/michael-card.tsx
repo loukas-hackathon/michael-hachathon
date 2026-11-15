@@ -140,7 +140,7 @@ export function MichaelCard({ lead, primary = true }: { lead: Lead; primary?: bo
         ) : null}
         <Link
           href="/chat"
-          className="press inline-flex min-h-9 items-center rounded-full px-2 text-subhead font-semibold text-tint-text"
+          className="hit press inline-flex min-h-9 items-center rounded-full px-2 text-subhead font-semibold text-tint-text"
         >
           Ask Michael
         </Link>

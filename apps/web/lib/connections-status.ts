@@ -10,17 +10,31 @@ import {
 } from "@michael/shared";
 import { get } from "./api";
 import { CONNECTIONS, type Connection, type ConnectionId } from "./connections";
+import { devLatency } from "./dev-latency";
 import { formatTime } from "./format";
+import { saidNoMac } from "./no-mac";
 
 // Real status for every connection on You. Always asks the API (also with USE_MOCKS): a status we
 // cannot read says so, it is never made up. Each call fails on its own, so one outage costs one row.
 
 // on: connected and sending. paused: connected, but its privacy switch is off. none: not set up yet.
-export type ConnectionState = "on" | "paused" | "none" | "attention" | "unavailable" | "unknown";
+// optional: not set up, and not needed (the Mac for someone who said they have none, or whose
+// iPhone already sends without one). Never the next step, never counted as missing.
+// soon: not proven on production yet (#295), shown as Coming soon with nothing to tap.
+export type ConnectionState =
+  | "on"
+  | "paused"
+  | "none"
+  | "optional"
+  | "attention"
+  | "unavailable"
+  | "unknown"
+  | "soon";
 
 export type ConnectionAction =
   | { kind: "link"; label: string; href: string; external?: boolean }
-  | { kind: "sync-calendar"; label: string };
+  | { kind: "sync-calendar"; label: string }
+  | { kind: "none" };
 
 export type ConnectionStatus = Connection & {
   state: ConnectionState;
@@ -30,7 +44,11 @@ export type ConnectionStatus = Connection & {
 
 export type ConnectionsView = {
   rows: ConnectionStatus[];
+  /** How many are live (proven on production): the summary counts out of these, not the soon ones. */
+  live: number;
   connected: number;
+  /** Connections that count: live ones, minus the optional ones. */
+  total: number;
   /** The first connection still to set up, in the order of the list. */
   next: ConnectionStatus | null;
   sources: SourcesStatusResponse | null;
@@ -71,7 +89,13 @@ type Inputs = {
   telegram: TelegramStatus | null;
   agents: AgentClient[] | null;
   places: PlacesResponse | null;
+  /** The person said "I don't use a Mac" (lib/no-mac.ts). */
+  noMac?: boolean;
 };
+
+/** Live iPhone data, from the Shortcuts automation (Screen Time history needs a Mac). */
+const iphoneSends = (src: SourcesStatusResponse | null) =>
+  Boolean(src?.sources.some((s) => s.source === "ios_shortcuts" && s.last_event_at));
 
 const unknown = (c: Connection): ConnectionStatus => ({
   ...c,
@@ -80,8 +104,21 @@ const unknown = (c: Connection): ConnectionStatus => ({
   action: { kind: "link", label: "Manage", href: c.href },
 });
 
+export const SOON_LINE = "Coming soon. I will tell you when it is ready.";
+
+/** A device source that has sent nothing for this long needs attention (#307). */
+export const QUIET_MS = 24 * 60 * 60_000;
+
+/** The exact fix when a device source has gone quiet: one line, the one thing to do. */
+export const QUIET_FIX: Record<"apple-watch" | "mac" | "iphone", string> = {
+  "apple-watch": "Open Health Auto Export and tap Export Now on Michael health.",
+  mac: "Wake your Mac and open Michael there, or set it up again below.",
+  iphone: "Open an app you picked. If nothing arrives, check its automation in Shortcuts.",
+};
+
 /** Pure: the row for one connection from what the API said. Exported for tests. */
 export function statusFor(c: Connection, x: Inputs, now = Date.now()): ConnectionStatus {
+  if (!c.live) return { ...c, state: "soon", line: SOON_LINE, action: { kind: "none" } };
   const manage = { kind: "link" as const, label: "Manage", href: c.href };
   const setUp = (label = "Connect") => ({ kind: "link" as const, label, href: c.href });
   const src = x.sources;
@@ -129,7 +166,21 @@ export function statusFor(c: Connection, x: Inputs, now = Date.now()): Connectio
       if (!src) return unknown(c);
       if (last && switchedOff)
         return { ...c, state: "paused", line: `Switched off. Last data ${ago(last, now)}.`, action: manage };
+      if (last && !otr && now - Date.parse(last) > QUIET_MS)
+        return {
+          ...c,
+          state: "attention",
+          line: `Last data ${ago(last, now)}. ${QUIET_FIX[c.id]}`,
+          action: manage,
+        };
       if (last) return { ...c, state: "on", line: `${otr}Last data ${ago(last, now)}.`, action: manage };
+      if (c.id === "mac" && (x.noMac || iphoneSends(src)))
+        return {
+          ...c,
+          state: "optional",
+          line: "Optional. Everything else works without a Mac.",
+          action: setUp(),
+        };
       return {
         ...c,
         state: "none",
@@ -214,8 +265,13 @@ export function statusFor(c: Connection, x: Inputs, now = Date.now()): Connectio
   }
 }
 
-export async function getConnections(): Promise<ConnectionsView> {
-  const [sources, integrations, push, agents, places, telegram] = await Promise.all([
+/**
+ * `preview`: one Coming soon connection shown as if live, for its setup page with ?preview=1, so a
+ * person can prove it end to end on production before CONNECTOR_STATUS switches it on (#306).
+ */
+export async function getConnections(preview?: ConnectionId): Promise<ConnectionsView> {
+  await devLatency();
+  const [sources, integrations, push, agents, places, telegram, noMac] = await Promise.all([
     safe("/v1/sources/status", SourcesStatusResponse),
     safe("/v1/integrations", IntegrationsResponse),
     safe("/v1/push", PushConfig),
@@ -224,6 +280,7 @@ export async function getConnections(): Promise<ConnectionsView> {
     }),
     safe("/v1/places", PlacesResponse),
     safe("/v1/telegram", TelegramStatus),
+    saidNoMac(),
   ]);
   const inputs: Inputs = {
     sources,
@@ -234,11 +291,14 @@ export async function getConnections(): Promise<ConnectionsView> {
     telegram,
     agents,
     places,
+    noMac,
   };
-  const rows = CONNECTIONS.map((c) => statusFor(c, inputs));
+  const rows = CONNECTIONS.map((c) => statusFor(c.id === preview ? { ...c, live: true } : c, inputs));
   return {
     rows,
+    live: rows.filter((r) => r.live).length,
     connected: rows.filter((r) => r.state === "on").length,
+    total: rows.filter((r) => r.live && r.state !== "optional").length,
     next: rows.find((r) => r.state === "none") ?? null,
     sources,
   };
@@ -247,7 +307,8 @@ export async function getConnections(): Promise<ConnectionsView> {
 /** One connection's status, for its setup page. */
 export async function getConnection(
   id: ConnectionId,
+  { preview = false }: { preview?: boolean } = {},
 ): Promise<{ row: ConnectionStatus; view: ConnectionsView }> {
-  const view = await getConnections();
+  const view = await getConnections(preview ? id : undefined);
   return { row: view.rows.find((r) => r.id === id) as ConnectionStatus, view };
 }

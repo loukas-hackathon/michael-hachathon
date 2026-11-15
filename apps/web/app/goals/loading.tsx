@@ -1,14 +1,13 @@
-import { Bone, BoneGroup, Skeleton } from "@/components/skeleton";
+import { Skeleton } from "@/components/skeleton";
+import { GoalGroupSkeleton, GoalsTopSkeleton } from "@/components/skeletons";
 
-/** Goals, loading: the week line, one group of goal rows, then the maths. */
+/** Goals, loading: the week line, target and balance, then the goal rows by area. */
 export default function Loading() {
   return (
-    <Skeleton title="Goals" label="Loading your goals">
-      <Bone className="mt-2 h-4 w-72 max-w-full" />
-      <Bone className="mt-6 mb-2 h-6 w-24" />
-      <BoneGroup rows={3} rowHeight={96} />
-      <Bone className="mt-6 mb-2 h-6 w-28" />
-      <Bone className="h-28 w-full rounded-group" />
+    <Skeleton header={{ kind: "tab", title: "Goals", actions: 1 }} label="Loading your goals">
+      <GoalsTopSkeleton />
+      <GoalGroupSkeleton rows={2} />
+      <GoalGroupSkeleton rows={2} title="5rem" />
     </Skeleton>
   );
 }

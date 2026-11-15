@@ -14,6 +14,8 @@ const unset = [
   "WHOOP_CLIENT_SECRET",
   "VAPID_PUBLIC_KEY",
   "VAPID_PRIVATE_KEY",
+  "ELEVENLABS_API_KEY",
+  "ELEVENLABS_VOICE_ID",
   "API_KEY",
   "PUBLIC_WEB_URL",
   "WEB_URL",
@@ -26,4 +28,6 @@ Object.assign(process.env, {
   DEMO_WEEK: "off",
   SCHEDULER_ENABLED: "false",
   CALENDAR_SYNC_MINUTES: "0",
+  // A fixed presenter key, so isolation.test.ts can prove who may and may not use it.
+  DEMO_PRESENTER_KEY: "test-presenter-key",
 });

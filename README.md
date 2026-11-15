@@ -145,7 +145,7 @@ What happens on merge, with no human involved:
 | PR opened, CI green, no conflicts             | `Auto-merge` action squash-merges it                          |
 | API, `packages/shared` or root config changed | `Deploy API` action deploys to Railway, then checks `/health` |
 | new file in `supabase/migrations/`            | `Migrate database` action applies it to production            |
-| anything on `main`                            | Vercel rebuilds the web app (no PR previews, `vercel.json`)   |
+| anything on `main`                            | Vercel rebuilds the web app (every PR also gets a preview)    |
 
 Everything runs in the EU next to the database (Frankfurt): the API on Railway in Amsterdam
 (`railway.json` `multiRegionConfig`, `europe-west4-drams3a`), the web functions on Vercel in
@@ -163,7 +163,7 @@ Where configuration lives (values are never committed):
 
 The production API key and access notes for the team are on the Build Hub (link in `CLAUDE.local.md`).
 
-Seed the demo goals and recommendations (idempotent, never events): `pnpm --filter @michael/api seed`.
+Put the demo account's "Do it, then Undo" suggestion back to proposed (idempotent, writes nothing else): `pnpm --filter @michael/api seed`.
 
 ## Deploy (from scratch)
 

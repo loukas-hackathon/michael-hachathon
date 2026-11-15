@@ -2,8 +2,14 @@ import "server-only";
 import {
   type AddressSearchResponse,
   ApiError,
+  BlockChange,
+  type BlockCreate,
+  type BlockUpdate,
   type ChatHistory,
   type ChatResponse,
+  type ChatThread,
+  type ChatThreadList,
+  type ChatThreadPatch,
   type CheckInAnswerResponse,
   type CheckInToday,
   type CheckInValue,
@@ -14,9 +20,12 @@ import {
   type GoalSuggestion,
   type GoalSuggestionAccept,
   type GoalUpdate,
+  type LogTimeInput,
+  type LogTimeResponse,
   mockEvents,
   mockGoals,
   mockRecommendations,
+  mockScore,
   type NudgeTestResult,
   type PlaceSuggestionsResponse,
   type PlacesResponse,
@@ -27,19 +36,30 @@ import {
   type PushConfig,
   type PushSubscriptionInput,
   type Recommendation,
+  type RitualEveningInput,
+  type RitualEveningResponse,
+  type RitualKind,
+  type RitualMorningInput,
+  type RitualToday,
   type Score,
+  type SettleBlockInput,
   Source,
   type SourceSetting,
   type TargetResponse,
   type TargetUpdate,
   type TimelineResponse,
 } from "@michael/shared";
+import { cache } from "react";
+import { addDays } from "./athens";
 import { authHeaders } from "./caller";
 import { categoryOf } from "./categories";
 import type { ChecklistDay, ChecklistItem } from "./checklist";
 import type { DayView } from "./day";
+import { devLatency } from "./dev-latency";
 import type { GoalsView } from "./goals-view";
 import type { Instruction, InstructionInput } from "./instructions";
+import { type KeepWeek, keepWeekFrom, restDaysFrom } from "./keep-day";
+import { type LostWeek, lostWeekFrom } from "./lost-week";
 import { API_URL, USE_MOCKS } from "./mode";
 import { sampleChecklist } from "./sample/checklist";
 import {
@@ -47,6 +67,7 @@ import {
   sampleEarly,
   sampleEmpty,
   sampleEvening,
+  sampleLearning,
   sampleMissed,
   sampleMorning,
 } from "./sample/day";
@@ -69,6 +90,15 @@ export async function get<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+/** A write the API refused, with its status, so an action can pick its line (lib/demo-refusal.ts). */
+export class ApiFailure extends Error {
+  readonly status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
 async function send<T>(method: "PUT" | "PATCH" | "POST", path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     method,
@@ -76,7 +106,7 @@ async function send<T>(method: "PUT" | "PATCH" | "POST", path: string, body?: un
     body: body === undefined ? undefined : JSON.stringify(body),
     cache: "no-store",
   });
-  if (!res.ok) throw new Error(`${method} ${path} failed: ${res.status}`);
+  if (!res.ok) throw new ApiFailure(`${method} ${path} failed: ${res.status}`, res.status);
   return (await res.json()) as T;
 }
 
@@ -84,11 +114,18 @@ async function send<T>(method: "PUT" | "PATCH" | "POST", path: string, body?: un
  * The raw server-sent event stream of POST /v1/chat/stream, for the /chat/stream route to pass on.
  * Throws when signed out or the API cannot be reached.
  */
-export async function openChatStream(message: string): Promise<Response> {
+export async function openChatStream(
+  message: string,
+  opts: { spoken?: boolean; threadId?: string } = {},
+): Promise<Response> {
   return fetch(`${API_URL}/v1/chat/stream`, {
     method: "POST",
     headers: { ...(await authHeaders()), "content-type": "application/json" },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({
+      message,
+      ...(opts.spoken ? { spoken: true } : {}),
+      ...(opts.threadId ? { thread_id: opts.threadId } : {}),
+    }),
     cache: "no-store",
   });
 }
@@ -104,24 +141,50 @@ export async function answerCheckIn(id: string, value: CheckInValue): Promise<Ch
 }
 
 /** Chat always talks to the API: there is no fixture for a conversation. */
-export async function getChatHistory(): Promise<ChatHistory> {
-  const body = await get<ChatHistory>("/v1/chat?limit=50");
-  // An API from before action_ids still answers: no chips come back, the lines do.
+export async function getChatHistory(threadId?: string): Promise<ChatHistory> {
+  await devLatency();
+  const q = threadId ? `&thread_id=${encodeURIComponent(threadId)}` : "";
+  const body = await get<ChatHistory>(`/v1/chat?limit=50${q}`);
+  // An API from before action_ids (or threads) still answers: no chips come back, the lines do.
   return {
     messages: body.messages.map((m) => ({ ...m, action_ids: m.action_ids ?? [] })),
     actions: body.actions ?? [],
+    thread: body.thread ?? null,
   };
+}
+
+/** GET /v1/chat/threads: the caller's conversations, pinned first. `q` searches titles and lines. */
+export async function getChatThreads(q?: string): Promise<ChatThread[]> {
+  const query = q?.trim() ? `?q=${encodeURIComponent(q.trim().slice(0, 100))}` : "";
+  const body = await get<ChatThreadList>(`/v1/chat/threads${query}`);
+  return body.threads ?? [];
+}
+
+/** PATCH /v1/chat/threads/:id: rename, pin or archive one of the caller's threads. */
+export async function patchChatThread(id: string, patch: ChatThreadPatch): Promise<ChatThread> {
+  return send<ChatThread>("PATCH", `/v1/chat/threads/${encodeURIComponent(id)}`, patch);
+}
+
+/** DELETE /v1/chat/threads/:id: the thread and its lines, for good. */
+export async function deleteChatThread(id: string): Promise<void> {
+  const res = await fetch(`${API_URL}/v1/chat/threads/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: await authHeaders(),
+    cache: "no-store",
+  });
+  // Already gone counts as done.
+  if (!res.ok && res.status !== 404) throw new Error(`DELETE chat thread failed: ${res.status}`);
 }
 
 export type ChatResult = { ok: true; data: ChatResponse } | { ok: false; code: string; message: string };
 
-export async function sendChat(message: string): Promise<ChatResult> {
+export async function sendChat(message: string, threadId?: string): Promise<ChatResult> {
   let res: Response;
   try {
     res = await fetch(`${API_URL}/v1/chat`, {
       method: "POST",
       headers: { ...(await authHeaders()), "content-type": "application/json" },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify(threadId ? { message, thread_id: threadId } : { message }),
       cache: "no-store",
     });
   } catch {
@@ -141,6 +204,33 @@ export async function getVoiceEnabled(): Promise<boolean> {
     return (await get<{ elevenlabs: boolean }>("/v1/voice")).elevenlabs;
   } catch {
     return false;
+  }
+}
+
+/** Whether the API can turn a recording into text (POST /v1/voice/transcribe). False when unsure. */
+export async function getTranscribeEnabled(): Promise<boolean> {
+  try {
+    return (await get<{ transcribe?: boolean }>("/v1/voice")).transcribe === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A recording passed straight through to POST /v1/voice/transcribe. The API's answer (text, or its
+ * error) comes back as it is; the audio is never kept here. Null when the API cannot be reached.
+ */
+export async function transcribe(audio: ArrayBuffer, type: string): Promise<Response | null> {
+  try {
+    return await fetch(`${API_URL}/v1/voice/transcribe`, {
+      method: "POST",
+      headers: { ...(await authHeaders()), "content-type": type },
+      body: audio,
+      cache: "no-store",
+    });
+  } catch (err) {
+    console.error("voice: transcribe:", err instanceof Error ? err.message : "unknown");
+    return null;
   }
 }
 
@@ -349,6 +439,35 @@ async function recCall(method: "POST" | "PATCH", path: string, body?: unknown): 
   };
 }
 
+export type LogResult = { ok: true; log: LogTimeResponse } | { ok: false; message: string };
+
+async function logCall(path: string, body: unknown): Promise<LogResult> {
+  if (USE_MOCKS) return { ok: false, message: "Logging time needs the live API." };
+  try {
+    const res = await fetch(`${API_URL}${path}`, {
+      method: "POST",
+      headers: { ...(await authHeaders()), "content-type": "application/json" },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
+    const json: unknown = await res.json().catch(() => null);
+    if (res.ok) return { ok: true, log: json as LogTimeResponse };
+    const err = ApiError.safeParse(json);
+    return {
+      ok: false,
+      message: err.success ? err.data.error.message : `I could not log it (${res.status}).`,
+    };
+  } catch {
+    return { ok: false, message: "I could not reach the server. Nothing was logged." };
+  }
+}
+
+/** POST /v1/log (#317): done time the user reports, counted as confirmed goal time. */
+export const postLog = (input: LogTimeInput) => logCall("/v1/log", input);
+
+/** POST /v1/log/block (#317): Did it or Didn't on a past goal block. */
+export const postBlockSettle = (input: SettleBlockInput) => logCall("/v1/log/block", input);
+
 /** POST /v1/recommendations/:id/execute: Michael carries out the action on the user's own time. */
 export async function executeRecommendation(id: string): Promise<RecResult> {
   if (USE_MOCKS && isMockRec(id)) return mockRecAction(id, "execute");
@@ -361,10 +480,56 @@ export async function undoRecommendation(id: string): Promise<RecResult> {
   return recCall("POST", `/v1/recommendations/${encodeURIComponent(id)}/undo`);
 }
 
+/** POST /v1/goals/:id/book: the first free slot this week, booked at once, undoable until it starts. */
+export async function bookGoal(goalId: string, minutes: number): Promise<RecResult> {
+  if (USE_MOCKS) return { ok: false, status: 501, message: "Booking needs the live API" };
+  return recCall("POST", `/v1/goals/${encodeURIComponent(goalId)}/book`, { minutes });
+}
+
 /** PATCH /v1/recommendations/:id { status: dismissed }: "Not now". */
 export async function dismissRecommendation(id: string): Promise<RecResult> {
   if (USE_MOCKS && isMockRec(id)) return mockRecAction(id, "dismiss");
   return recCall("PATCH", `/v1/recommendations/${encodeURIComponent(id)}`, { status: "dismissed" });
+}
+
+// Calendar blocks the user edits on the Timeline (#271). Undo goes through undoRecommendation.
+export type BlockResult = { ok: true; change: BlockChange } | { ok: false; message: string };
+
+async function blockCall(method: "POST" | "PATCH" | "DELETE", path: string, body?: unknown) {
+  if (USE_MOCKS) return { ok: false, message: "Editing the day needs the live API." } as BlockResult;
+  try {
+    const res = await fetch(`${API_URL}${path}`, {
+      method,
+      headers: { ...(await authHeaders()), "content-type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      cache: "no-store",
+    });
+    const json: unknown = await res.json().catch(() => null);
+    if (res.ok) {
+      const change = BlockChange.safeParse(json);
+      if (change.success) return { ok: true, change: change.data } as BlockResult;
+      return { ok: false, message: "The server answered in a way I did not expect." } as BlockResult;
+    }
+    const err = ApiError.safeParse(json);
+    return { ok: false, message: err.success ? err.data.error.message : `${res.status}` } as BlockResult;
+  } catch {
+    return { ok: false, message: "Michael's server can't be reached." } as BlockResult;
+  }
+}
+
+/** POST /v1/blocks: a new block on the user's own time. */
+export function postBlock(input: BlockCreate): Promise<BlockResult> {
+  return blockCall("POST", "/v1/blocks", input);
+}
+
+/** PATCH /v1/blocks/:id: move, resize, rename or change the goal. */
+export function patchBlock(id: string, input: BlockUpdate): Promise<BlockResult> {
+  return blockCall("PATCH", `/v1/blocks/${encodeURIComponent(id)}`, input);
+}
+
+/** DELETE /v1/blocks/:id: only blocks made in Michael. */
+export function deleteBlock(id: string): Promise<BlockResult> {
+  return blockCall("DELETE", `/v1/blocks/${encodeURIComponent(id)}`);
 }
 
 // Privacy. With mocks, one in-process state so the switches still hold while the server runs.
@@ -419,14 +584,59 @@ const SAMPLE_DAYS: Record<string, DayView> = {
   evening: sampleEvening,
   empty: sampleEmpty,
   missed: sampleMissed,
+  learning: sampleLearning,
 };
 
 const athensDay = (d = new Date()) =>
   new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Athens" }).format(d);
 
 /** GET /v1/score for a local day (default today). */
+// Deduped per request: Today asks for the score twice (the day and the week's lost time).
+const scoreFor = cache((date: string) => get<Score>(`/v1/score?date=${date}`));
 export async function getScore(date = athensDay()): Promise<Score> {
-  return get<Score>(`/v1/score?date=${date}`);
+  return scoreFor(date);
+}
+
+/** Keep the Day (Today): this week's days against the line, and the run of days kept. */
+export async function getKeepWeek(variant?: string): Promise<KeepWeek | null> {
+  const instructions = await getInstructions().catch(() => ({ available: false }) as const);
+  const rest = restDaysFrom(instructions.available ? instructions.items : []);
+  if (USE_MOCKS || variant === "sample") return keepWeekFrom(mockScore, null, mockScore.date, rest);
+  try {
+    const today = athensDay();
+    const lastWeek = new Date(Date.parse(`${today}T12:00:00Z`) - 7 * 86_400_000).toISOString().slice(0, 10);
+    const [week, before] = await Promise.all([getScore(today), getScore(lastWeek).catch(() => null)]);
+    return keepWeekFrom(week, before, today, rest);
+  } catch {
+    return null;
+  }
+}
+
+/** Goal time lost per day of the week holding `date` (Timeline chart, Today's week line). */
+export async function getLostWeek(date?: string, variant?: string): Promise<LostWeek | null> {
+  if (USE_MOCKS || variant === "sample") return lostWeekFrom(mockScore, mockScore.date);
+  try {
+    return lostWeekFrom(await getScore(date ?? athensDay()), athensDay());
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Last week's lost goal time, for Today on a Monday: the week in GET /v1/score then holds only
+ * Monday, so last week's totals come from `?date=` the Sunday before. Null on other days.
+ * `?demo=monday` previews it with the sample week.
+ */
+export async function getLastLostWeek(variant?: string): Promise<LostWeek | null> {
+  if (variant === "monday") return lostWeekFrom(mockScore, addDays(mockScore.date, 7));
+  if (USE_MOCKS || variant) return null;
+  const today = athensDay();
+  if (new Date(`${today}T12:00:00Z`).getUTCDay() !== 1) return null;
+  try {
+    return lostWeekFrom(await getScore(addDays(today, -1)), today);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -435,15 +645,19 @@ export async function getScore(date = athensDay()): Promise<Score> {
  * `variant` previews the sample day's moments and states (?demo=morning|early|evening|empty|error|sample).
  */
 export async function getToday(variant?: string): Promise<DayView> {
+  await devLatency();
   if (variant === "error") throw new Error("Preview of the error state");
   if (variant && variant in SAMPLE_DAYS) return SAMPLE_DAYS[variant] as DayView;
   if (USE_MOCKS || variant === "sample") return sampleDay;
-  const score = await getScore();
   const to = new Date().toISOString();
   const from = new Date(Date.now() - 7 * 86_400_000).toISOString();
-  const patterns = await get<{ phone_cadence?: { status: string; data: unknown } }>(
-    `/v1/patterns?${new URLSearchParams({ from, to })}`,
-  ).catch(() => ({}));
+  // Side by side: the lead never waits for the score, nor the score for the lead.
+  const [score, patterns] = await Promise.all([
+    getScore(),
+    get<{ phone_cadence?: { status: string; data: unknown } }>(
+      `/v1/patterns?${new URLSearchParams({ from, to })}`,
+    ).catch(() => ({})),
+  ]);
   return dayFromScore(score, leadFromPatterns(patterns, score.day.now));
 }
 
@@ -452,6 +666,7 @@ export async function getToday(variant?: string): Promise<DayView> {
  * `variant` previews states (?demo=empty|error|sample).
  */
 export async function getGoalsWeek(variant?: string): Promise<GoalsView> {
+  await devLatency();
   if (variant === "error") throw new Error("Preview of the error state");
   if (variant === "empty") return sampleGoalsEmpty;
   if (variant === "monday") return sampleGoalsMonday;
@@ -737,3 +952,41 @@ export async function carryChecklistItem(id: string): Promise<WriteResult> {
   }
   return write("POST", `/v1/checklist/${id}/carry`);
 }
+
+// ---------- the daily ritual (#318): morning outcomes, evening log ----------
+
+/** GET /v1/ritual. Null with fixtures, on an older API, or when it cannot be read: no card. */
+export async function getRitual(phase?: RitualKind): Promise<RitualToday | null> {
+  if (USE_MOCKS) return null;
+  const qs = phase ? `?phase=${phase}` : "";
+  const res = await fetch(`${API_URL}/v1/ritual${qs}`, {
+    headers: await authHeaders(),
+    cache: "no-store",
+  }).catch(() => null);
+  if (!res?.ok) return null;
+  return (await res.json()) as RitualToday;
+}
+
+export type RitualWrite<T> = { ok: true; data: T } | { ok: false; message: string };
+
+async function ritualWrite<T>(path: string, body?: unknown): Promise<RitualWrite<T>> {
+  try {
+    const res = await fetch(`${API_URL}${path}`, {
+      method: "POST",
+      headers: { ...(await authHeaders()), "content-type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      cache: "no-store",
+    });
+    if (res.ok) return { ok: true, data: (await res.json()) as T };
+    const err = ApiError.safeParse(await res.json().catch(() => null));
+    return { ok: false, message: err.success ? err.data.error.message : "I could not save that. Try again." };
+  } catch {
+    return { ok: false, message: "I could not reach the server. Nothing changed." };
+  }
+}
+
+export const postRitualMorning = (input: RitualMorningInput) =>
+  ritualWrite<RitualToday>("/v1/ritual/morning", input);
+export const postRitualEvening = (input: RitualEveningInput) =>
+  ritualWrite<RitualEveningResponse>("/v1/ritual/evening", input);
+export const postRitualSkip = (kind: RitualKind) => ritualWrite<RitualToday>(`/v1/ritual/${kind}/skip`);

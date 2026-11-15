@@ -4,11 +4,11 @@ import type { AnalysisRun } from "@michael/shared";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { askForBrief } from "@/lib/analysis-actions";
-import { formatTime } from "@/lib/format";
+import { briefRow } from "./brief-row";
 import { Fold } from "./fold";
 
 const tinted =
-  "press min-h-9 self-start rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-4 text-subhead font-semibold text-tint-text disabled:opacity-60";
+  "hit press min-h-9 self-start rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-4 text-subhead font-semibold text-tint-text disabled:opacity-60";
 
 /**
  * "Ask Michael for a brief", a quiet row on Today: runs the analysis, then shows the summary, his
@@ -53,13 +53,13 @@ export function BriefView({
     startTransition(() => router.refresh());
   }
 
-  const firstLine = run?.summary?.split("\n").find((l) => l.trim()) ?? null;
+  const row = briefRow(run);
   return (
     <Fold
       title="Michael's brief"
       label="Michael's brief"
-      meta={run?.finished_at ? <time dateTime={run.finished_at}>{formatTime(run.finished_at)}</time> : null}
-      preview={firstLine ?? "I read your day and tell you what matters now."}
+      meta={run?.finished_at ? <time dateTime={run.finished_at}>{row.when}</time> : null}
+      preview={row.preview}
     >
       <div aria-busy={busy} className="flex flex-col gap-2.5">
         {run?.summary ? (
@@ -69,16 +69,13 @@ export function BriefView({
           >
             {run.summary}
           </p>
-        ) : (
-          <p className="text-subhead text-label-2">I read your day and tell you what matters now.</p>
-        )}
+        ) : null}
         {run?.question ? <p className="text-subhead font-semibold">{run.question}</p> : null}
         {run && suggestions > 0 ? (
           <p className="text-footnote text-label-2">
             {suggestions === 1 ? "One suggestion" : `${suggestions} suggestions`} on Today.
           </p>
         ) : null}
-        {run ? <p className="text-caption text-label-2">Written by {run.model}.</p> : null}
 
         {error ? (
           <p role="alert" className="text-subhead text-danger">

@@ -3,7 +3,8 @@ import { test } from "node:test";
 import { demoRecommendations } from "@michael/shared";
 
 // Found by the end-to-end suite: on a Saturday evening the demo suggested a Sunday focus block, and
-// the demo's own "Keep Sundays clear" refused it when the user tapped Do it.
+// the demo's own "Keep Sundays clear" refused it when the user tapped Do it. The demo plan no
+// longer clears Sundays (demo/sunday.test.ts), but a user who does must still never be offered one.
 const weekday = (iso: string) =>
   new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Athens", weekday: "short" }).format(new Date(iso));
 

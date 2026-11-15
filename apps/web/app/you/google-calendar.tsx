@@ -14,7 +14,7 @@ export async function GoogleCalendarRow() {
   if (!connected) {
     return (
       <div className="flex min-h-14 items-center justify-between gap-4 px-4 py-2">
-        <span className="flex flex-col">
+        <span className="flex min-w-0 flex-col">
           <span className="text-body">Google Calendar</span>
           <span className="text-footnote text-label-2">
             {cal?.status === "error"
@@ -24,7 +24,7 @@ export async function GoogleCalendarRow() {
         </span>
         <a
           href="/integrations/google/connect"
-          className="press flex h-9 shrink-0 items-center rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint"
+          className="hit press flex h-9 shrink-0 items-center rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint"
         >
           Connect
         </a>
@@ -49,13 +49,13 @@ export async function GoogleCalendarRow() {
           action={syncCalendar}
           label="Sync now"
           pendingLabel="Syncing"
-          className="press h-9 min-w-[4.5rem] text-left text-subhead font-semibold text-tint-text"
+          className="hit press h-9 min-w-[4.5rem] text-left text-subhead font-semibold text-tint-text"
         />
         <ActionButton
           action={disconnectCalendar}
           label="Disconnect"
           pendingLabel="Disconnecting"
-          className="press h-9 text-left text-subhead font-semibold text-danger"
+          className="hit press h-9 text-left text-subhead font-semibold text-danger"
         />
       </span>
       {suggestions.length > 0 ? <CalendarGoals initial={suggestions} className="pb-2" /> : null}

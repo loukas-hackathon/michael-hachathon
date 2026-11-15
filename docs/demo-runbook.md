@@ -18,12 +18,31 @@ the stage and Claude will each see a different day.
 - [ ] **Production is the build we rehearsed.**
       `curl -s $API/health` shows `"status":"ok"`, `"storage":"supabase"` and a `commit` equal to
       `git rev-parse --short origin/main`. Freeze merges (label open PRs `wip`) until after the pitch.
-- [ ] **Reseed the demo week** (refreshes the seven days up to now, resets goals to the plan; never
+- [ ] **Reseed the demo week** (refreshes the seven days up to now, resets goals and standing
+      instructions to the plan, clears visitor chat, turns off the record off; never
       touches anything that is not a demo row):
       `curl -s -X POST -H "Authorization: Bearer $MICHAEL_API_KEY" $API/v1/demo/reseed`
       Expect `days` ending today and `goals_written` above 0.
-- [ ] **Laptop browser in the demo week.** Open `$WEB/auth/demo` (the "See the demo week" button on
-      the login page). The cookie lasts 24 hours. Today shows a score, not "Nothing yet".
+- [ ] **No sample text on the stage** (#330). The reseed removes the sample brief ("Written by
+      gemini (mock)"), the sample suggestions ("Add a protein snack before the gym") and the
+      weight goal, and rewrites the follow up drafts:
+      `curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $MICHAEL_API_KEY" $API/v1/analysis/latest`
+      prints `404` (or `200` once someone has asked for a real brief on Today), and
+      `curl -s -H "Authorization: Bearer $MICHAEL_API_KEY" $API/v1/recommendations | grep -c -i "protein\|recovery is"`
+      prints `0`. On Today, "Michael's brief" reads "I read your day and tell you what matters now."
+      and Follow ups shows no line about seeding a demo week.
+- [ ] **Book works on a Sunday.** The plan's only standing instruction is "Nothing between 23:00
+      and 07:00" (it follows the sleep goal). "Keep Sundays clear" made Book and Do it refuse all
+      Sunday with "No free 90 minutes left this week"; it must not be back:
+      `curl -s -H "Authorization: Bearer $MICHAEL_API_KEY" $API/v1/instructions` lists that one
+      rule. Then on **Goals** tap **Book time** on University: a block lands this evening (after the
+      20:00 finalists slot, before 23:00). Tap **Undo** so the stage starts clean. If it still
+      refuses, reseed again: the reseed replaces the instructions with the plan's.
+- [ ] **Laptop browser in the demo week, as the presenter.** Open the presenter link from the Build
+      Hub, `$WEB/auth/presenter?key=...`, in the laptop browser you present from (the one signed in
+      to claude.ai). It signs out any Google session there and opens the demo week; the cookie lasts
+      3 days, so once per laptop is enough. Today shows a score, not "Nothing yet". (No link? Set
+      `DEMO_PRESENTER_KEY`: `docs/setup-manual.md` step 2b. A wrong key just opens the demo week.)
 - [ ] **Claude can talk.** In `$WEB/chat` send `How is my day going?`. A reply means
       `ANTHROPIC_API_KEY` works on Railway; "not set up" or a 503 means it is missing or out of credit.
 - [ ] **Push is configured.** `curl -s -H "Authorization: Bearer $MICHAEL_API_KEY" $API/v1/push`
@@ -35,12 +54,28 @@ the stage and Claude will each see a different day.
 - [ ] **Watch mirrors it.** iPhone Watch app > Notifications > Michael (or the Home Screen app's
       entry): **Mirror my iPhone alerts**. Lock the iPhone, press **Send a test** from the laptop
       (You > Nudges) and feel the buzz.
-- [ ] **claude.ai connector on the demo account.** In the same laptop browser that holds the demo
-      cookie: claude.ai, Settings > Connectors > Add custom connector, name `Michael`, URL
-      `$API/mcp`, Connect. Michael's page says "Signed in as the demo week"; tap **Allow**. If an
-      older Michael connector exists (Manolis' own account), remove it first.
-      In a throwaway chat ask `Use Michael. What are my goals?`. Then open **Agents**: Claude is
-      under **Allowed**, and "Who asked about you today" names Claude.
+- [ ] **claude.ai connector on the demo account: one tap.** Demo visitors cannot connect (it grants
+      full write on the shared account); the presenter link above can.
+
+      1. claude.ai > Settings > Connectors. If a `Michael` connector already exists, open it and
+         **Disconnect** or remove it.
+      2. **Add custom connector**: name `Michael`, URL `$API/mcp`
+         (`https://api-production-16521a26.up.railway.app/mcp`; nothing in Advanced settings).
+         **Add**, then **Connect**.
+      3. A Michael tab opens: "Allow Claude to read and change your day?", and at the bottom
+         "Signed in as the demo week (presenter)". Tap **Allow**. claude.ai finishes connecting.
+         It says "This is the demo week" with no Allow instead? This browser is not the presenter:
+         open the presenter link in it, then reload that tab (the request lasts 30 minutes).
+      4. Check it worked: in a throwaway chat, Michael switched on in the tools menu, ask
+         `Use Michael. What are my goals?`; the answer lists the demo goals. Then open
+         `$WEB/agents`: Claude is listed under **What they can do**, and the line at the top says
+         "Claude asked about you 1 today".
+
+      Without a browser, the connector's server side can be checked end to end:
+      `curl -s -o /dev/null -w '%{http_code}\n' -X POST $API/mcp` prints `401`, and
+      `curl -s $API/.well-known/oauth-protected-resource/mcp` names `$API/mcp` as the resource.
+      Last resort only (presenter link broken and no time to fix it)[^curl].
+
 - [ ] **Google Calendar**, only if you also show a real account: Google Testing mode expires refresh
       tokens after 7 days. You > Sources > Google Calendar: if it says reconnect, tap it and pick the
       account. (The demo week has no Google connection; its calendar is generated.)
@@ -80,10 +115,15 @@ the stage and Claude will each see a different day.
 | claude.ai connector  | Same request in `/chat` (Done chip with Undo), or Today's "Michael suggests" card: Do it, then Undo         |
 | Chat answers 503     | `ANTHROPIC_API_KEY` missing on Railway: skip chat, use the claude.ai beat                                   |
 | Watch does not buzz  | The projector still shows the nudge. Check iPhone locked, Focus off, `devices` above 0 in `/v1/push`        |
-| Demo cookie expired  | Open `$WEB/auth/demo` again (lasts 24 hours), on the laptop and in the iPhone Home Screen app               |
+| Demo cookie expired  | Laptop: the presenter link again (3 days). iPhone Home Screen app: `$WEB/auth/demo` again (24 hours)        |
 | Old numbers on Today | Reseed, then refresh                                                                                        |
 
 ## After the pitch
 
 - Undo anything Claude booked, check Off the record is off, remove the `wip` labels.
 - Update `status-now` on the Build Hub with what worked and what did not.
+
+[^curl]: With the API key in the terminal, answer the consent by hand: copy the id after `request=`
+in the Michael tab's address bar, run
+`REQ=paste-the-id; curl -s -X POST -H "Authorization: Bearer $MICHAEL_API_KEY" -H "content-type: application/json" -d '{"allow":true}' $API/v1/connect/requests/$REQ`
+and open the `redirect_to` URL it returns in the same tab within 5 minutes.

@@ -16,7 +16,7 @@ const WORK = {
 };
 const goals: Goal[] = [WORK];
 
-const LINE = { text: "Today holds 2h 00 of goal time.", reason: "Today holds 120 minutes of goal time." };
+const LINE = { text: "Today holds 2h of goal time.", reason: "Today holds 120 minutes of goal time." };
 
 const input = (
   now: string,
@@ -44,8 +44,19 @@ test("morning is due after the night's sleep ends, else from 08:00, and not afte
   assert.equal(momentDue(input("07:50")), null);
   assert.equal(momentDue(input("08:00")), "morning");
   assert.equal(momentDue(input("12:30")), null);
-  // A nap is not the night's sleep.
-  assert.equal(momentDue(input("07:00", [sleep(at("05:00"), at("06:30"))])), null);
+  // A short night is still the night (the nap rule, packages/shared/src/sleep.ts): 05:00 to 06:30.
+  assert.equal(momentDue(input("07:00", [sleep(at("05:00"), at("06:30"))])), "morning");
+});
+
+test("a nap never wakes the Morning moment or teaches the usual bedtime", () => {
+  // Woke at 06:40 after midnight; a nap from 09:00 to 10:30 changes nothing.
+  const night = sleep(at("00:30"), at("06:40"));
+  const nap = sleep(at("09:00"), at("10:30"));
+  assert.equal(momentDue(input("06:45", [night, nap])), "morning");
+  // Three late nights plus three afternoon naps at 15:00: the bedtime stays 00:30, not 15:00.
+  const naps = ["2026-11-08", "2026-11-09", "2026-11-10"].map((d) => sleep(at("15:00", d), at("15:40", d)));
+  assert.equal(momentDue(input("21:10", [...lateNights, ...naps])), null);
+  assert.equal(momentDue(input("21:15", [...lateNights, ...naps])), "evening");
 });
 
 test("evening is due an hour before the usual bedtime, else 21:00, always before quiet hours", () => {
@@ -119,7 +130,7 @@ test("the moment's nudge line is under 15 words with no dashes", () => {
     assert.ok(n.reason.length > 0);
   }
   const morning = momentNudge(computeMoment({ kind: "morning", events, goals, now: at("07:30") }));
-  assert.equal(morning.text, "Today holds 2h 00 of goal time.");
+  assert.equal(morning.text, "Today holds 2h of goal time.");
   const empty = momentNudge(computeMoment({ kind: "evening", events: [], goals: [], now: at("21:00") }));
   assert.equal(empty.text, "No goal time booked today. Book tomorrow before you sleep.");
 });

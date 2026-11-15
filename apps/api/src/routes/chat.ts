@@ -5,30 +5,41 @@ import {
   type ChatMessage,
   ChatRequest,
   type ChatResponse,
+  type ChatThread,
   type CheckIn,
+  type ChecklistItem,
+  type ConnectorId,
   type Event,
   type Goal,
   goalArea,
   type Instruction,
+  isLive,
   MICHAEL_VOICE,
   type PatternReport,
   type Recommendation,
+  type RitualToday,
   type Score,
   voiceDuration,
 } from "@michael/shared";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
+import { z } from "zod";
 import { CHAT_TOOLS, type ChatTurnState, runChatTool, undoLine } from "../actions/chat-tools";
 import { checkInContext, checkInLine } from "../checkin/service";
 import { env } from "../env";
 import { HttpError, jsonBody, parse } from "../http";
 import { instructionLine } from "../instructions/protected";
 import { listMemories, type Memory, memoryContext } from "../memory";
-import { DEFAULT_TIMEZONE } from "../patterns";
+import { DEFAULT_TIMEZONE, NO_HEADLINES } from "../patterns";
 import { Zone } from "../patterns/time";
+import { ritualFor } from "../ritual/ritual";
+import { isLogEntry } from "../score/logged";
 import { store } from "../store";
+import { latestThread, titleFor, untitled } from "./chat-threads";
 import { patternReportFor } from "./patterns";
 import { scoreFor } from "./score";
+
+const ThreadIdParam = z.uuid();
 
 // How many earlier lines Michael sees, and how many GET /v1/chat returns.
 const HISTORY_TURNS = 20;
@@ -37,6 +48,8 @@ const HISTORY_MAX = 100;
 // totals, not lines.
 const MAX_TODAY_LINES = 40;
 const WEEK_MS = 7 * 24 * 3600_000;
+// Titles of other conversations handed to the model: enough to say "as we planned on Tuesday".
+const OTHER_THREADS = 5;
 
 // Event types listed one per line. App, web and AI detail arrive as totals from the pattern report;
 // conversations and memories stay out entirely (privacy: send summaries, never other people's words).
@@ -52,6 +65,31 @@ const LISTED_TYPES = new Set<Event["type"]>([
 // Types totalled over the week so Michael can talk budgets.
 const WEEK_TYPES = ["workout", "sleep", "focus_session", "meal"] as const;
 
+// "Connect my calendar" (#307): the web puts the one tap button under the answer for live
+// connections (CONNECTOR_STATUS, #295), so Michael points to it instead of giving steps.
+const CONNECT_NAMES: Record<ConnectorId, string> = {
+  "google-calendar": "their calendar",
+  claude: "Claude",
+  telegram: "Telegram",
+  nudges: "nudges",
+  "apple-watch": "their Apple Watch",
+  mac: "their Mac",
+  iphone: "their iPhone apps",
+  travel: "their location",
+};
+const spoken = (items: string[]) =>
+  items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} or ${items.at(-1)}`;
+const connectIds = Object.keys(CONNECT_NAMES) as ConnectorId[];
+export const CONNECT_LINE = [
+  `- When the user asks to connect ${spoken(connectIds.filter(isLive).map((id) => CONNECT_NAMES[id]))}, the app shows a one tap Connect button under your answer: say in one short line what it gives you and that the button below does it.`,
+  connectIds.some((id) => !isLive(id))
+    ? `${spoken(connectIds.filter((id) => !isLive(id)).map((id) => CONNECT_NAMES[id]))}: coming soon, say so in one line.`
+    : "",
+  "Never give steps, links or keys.",
+]
+  .filter(Boolean)
+  .join(" ");
+
 const SYSTEM_PROMPT = `${MICHAEL_VOICE}
 
 In this chat:
@@ -64,17 +102,28 @@ Facts:
 - For goal progress and budgets, quote the score figures exactly as given; they are the same numbers the app shows.
 - Quote times and ids only from the context or from tool results.
 
+Logging what the user did:
+- When the user says they did something for a goal ("I took a bath for 40 minutes at 13:00", "an hour of reading this morning"), log it at once with log_done. It counts as confirmed goal time straight away; no calendar block is needed. Then reply in one line with the new maths from the tool result and end with "Undo", e.g. "Logged. Everything bath 40 of 60 min this week. Undo".
+- When the user says how one of their past goal blocks went ("skipped the gym", "only did half of deep work"), settle it with confirm_block (did, minutes, reason).
+- You can always log time against a goal. Never say you cannot, and never offer a workaround such as renaming or moving another block instead. If the goal or the time is unclear, ask one short question.
+
 Acting:
-- You act only on the user's own time: you can add a block to their calendar (create_focus_block), move one of their own solo blocks (move_calendar_block), close distracting apps on their Mac for a while (block_mac_app) and take back something you did (undo_action). On everything else you advise.
+- You can write everything the user can write in the app: log time (log_done), settle a past block (confirm_block), add a block to their calendar (create_focus_block), move or rename one of their own solo blocks (move_calendar_block), add a goal (add_goal), change a goal's budget, title or description, or pause and resume it (update_goal), add, tick off or reword an outcome (add_checklist_item, update_checklist_item), keep or pause a standing instruction (add_instruction, update_instruction), save a place (save_place), change quiet hours and the usual week (update_profile), close distracting apps on their Mac for a while (block_mac_app), and take back something you did (undo_action).
+- Deleting data, a goal, an instruction or a place, disconnecting a source and revoking an agent stay in the app: say where ("You, Goals") instead.
+- Prefer acting with undo over explaining why you cannot.
+- You act only on the user's own time. On everything else you advise.
+- You can draft a follow up message after a conversation or a meeting with other people (draft_follow_up). It is saved for the user to copy and send themselves; show them the text.
 - Act when the user asks you to, or clearly agrees to a change you proposed. If the time or the block is unclear, ask first instead of guessing.
 - You never touch events with other people, never delete the user's events, and never send anything in the user's name. If a tool refuses, say why in one line and offer advice instead.
 - Never claim you did something unless a tool result says it is done.
 - After acting, say in one or two short sentences what you did, with times, and end with the undo line exactly as the tool gave it, e.g. "Undo until 15:00."
 - Times you pass to tools are ISO 8601 with the user's UTC offset, as in "Now (ISO)" below.
+${CONNECT_LINE}
 
 Proposing:
 - When the user tells you something that changes their week (exams, an injury, travel, a deadline), propose one concrete change tied to a goal: a goal's weekly budget with propose_goal_change (with until for a temporary change), or this week's blocks with propose_plan_change. Show the maths ("University 4h to 8h a week until 22 December; Business 8h to 4h, so the week still adds up").
-- A proposal changes nothing until the user taps Accept. Never say it is done. Never change goals any other way. One proposal per answer. If a tool says the user declined it this week, do not propose it again.
+- A proposal changes nothing until the user taps Accept. Never say it is done. One proposal per answer. If a tool says the user declined it this week, do not propose it again.
+- Propose when the change is your idea. When the user plainly asks for a change to a goal ("make bath 90 minutes a week", "pause Spanish"), make it with update_goal instead.
 
 Memory:
 - "What the user told you before" below is what you remember from earlier conversations. Use it without being asked; it is why the user does not repeat themselves.
@@ -83,7 +132,22 @@ Memory:
 
 Check in:
 - "What you told me" below are the user's own answers to earlier check in questions. Use them, quote them, never invent them.
-- When the user answers one of today's open check in questions in chat, keep it with answer_check_in. If the result gives a follow up, ask it word for word.`;
+- When the user answers one of today's open check in questions in chat, keep it with answer_check_in. If the result gives a follow up, ask it word for word.
+
+Conversations:
+- The user keeps separate conversations with you, each on its own topic. You see the lines of this one only.
+- You know the others only by their titles under "Other conversations" and through what you remember. Never claim to recall their exact words; if it matters, ask.
+
+The daily ritual (morning outcomes, evening log):
+- When the user tells you what they want to get done today ("my goals today are X and Y"), keep them with set_day_outcomes, in their words, linked to a goal only when one clearly fits. Three is the most.
+- When they tell you what they got done ("I finished X, did 30 min of Y"), log it with log_day using the item ids under "Today's outcomes", then give the line the tool returns, word for word.
+- If the morning is due and no outcomes are set, you may ask once: "What do you want to get done today?" In the evening, with outcomes open: "What did you get done?" Never guilt, never streaks; skipping a day is fine.`;
+
+// Added after the cached prompt when the answer is read aloud in a voice conversation (#299).
+const SPOKEN_STYLE = `This answer is spoken aloud in a voice conversation:
+- One or two short sentences, then one question or one concrete fix. Never a list, heading or markdown.
+- Say numbers as a person would: "forty seven minutes", "half past six", "two of three sessions".
+- If the user only greets you or says thanks, answer in a few words.`;
 
 /** "2026-11-14T19:05:00+02:00": the instant as the user's wall clock with its UTC offset. */
 function isoIn(zone: Zone, ms: number): string {
@@ -112,11 +176,45 @@ export interface ChatContextInput {
   score?: Score | null;
   /** Things Michael did that can still be undone (status done, undo deadline ahead). */
   undoable?: Recommendation[];
+  /** Today's outcomes of checklist goals (#238), with ids for update_checklist_item. */
+  checklist?: ChecklistItem[];
   /** Check in answers from the last week, and today's open questions (#187). */
   checkIns?: { answered: CheckIn[]; open: CheckIn[] };
   /** Facts the user asked Michael (or an agent) to keep, newest first. */
   memories?: Memory[];
+  /** The user's other recent conversations, titles only (never their lines), latest first. */
+  otherThreads?: Pick<ChatThread, "title" | "last_message_at">[];
+  /** The daily ritual (#318): today's outcomes and which half is due. */
+  ritual?: RitualToday | null;
 }
+
+/** "Today's outcomes" for the chat context, with the ids log_day needs. */
+export function ritualContext(r: RitualToday, goals: Goal[]): string {
+  const title = new Map(goals.map((g) => [g.id, g.title]));
+  const lines = r.items.map((i) => {
+    const extra = [
+      i.linked_goal_id ? `for ${title.get(i.linked_goal_id) ?? "a goal"}` : null,
+      i.estimate_minutes ? `about ${hm(i.estimate_minutes)}` : null,
+      i.logged_minutes ? `${hm(i.logged_minutes)} logged` : null,
+      i.carried_from ? "carried from yesterday" : null,
+    ].filter(Boolean);
+    return `- [${i.status}] ${i.text}${extra.length ? ` (${extra.join(", ")})` : ""} {item_id ${i.id}}`;
+  });
+  const state = (s: string) => s.replace("_", " ");
+  return [
+    `Today's outcomes (morning ${state(r.morning)}, evening ${state(r.evening)}):`,
+    ...(lines.length ? lines : ["- none set yet"]),
+    ...(r.summary ? [`Evening line: ${r.summary}`] : []),
+  ].join("\n");
+}
+
+const weekdayIn = (zone: Zone, ms: number) =>
+  new Intl.DateTimeFormat("en-GB", {
+    timeZone: zone.name,
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  }).format(ms);
 
 const pct = (p: number | null) => (p === null ? "no score yet" : `${Math.round(p)}%`);
 
@@ -140,7 +238,9 @@ export function scoreLines(s: Score): string {
       `- ${g.title} [${g.area}]: ${hm(g.spent_minutes)} spent of ${budget}` +
       (g.budget_minutes ? ` (${hm(left)} left to reach it)` : "") +
       `; ${hm(g.planned_minutes)} planned in the calendar, ${hm(g.lost_minutes)} lost, ` +
-      `${hm(g.ahead_minutes)} planned still ahead; ${pct(g.score_pct)}`
+      `${hm(g.ahead_minutes)} planned still ahead; ` +
+      // Named, so it is never read as a share of the budget ("42% (2h 01 of 6h)" was wrong maths).
+      `${pct(g.score_pct)} of its planned time already passed was spent (not a share of the budget)`
     );
   });
   if (goals.length) lines.push(`Goals this week:\n${goals.join("\n")}`);
@@ -199,11 +299,17 @@ export function buildChatContext(input: ChatContextInput): string {
   if (rules.length > 0) {
     parts.push(
       `Standing instructions (never plan, move or suggest anything inside the time they protect):\n${rules
-        .map((i) => `- ${instructionLine(i)}`)
+        .map((i) => `- ${instructionLine(i)} {instruction_id ${i.id}}`)
         .join("\n")}`,
     );
   }
 
+  // Blocks the user already settled (#317), so Michael does not ask about them again.
+  const settledBlocks = new Map<string, "did" | "didnt">();
+  for (const e of input.events) {
+    if (!isLogEntry(e) || typeof e.data.event_id !== "string") continue;
+    settledBlocks.set(e.data.event_id, e.data.log === "didnt" ? "didnt" : "did");
+  }
   const todayLines = input.events
     .filter((e) => LISTED_TYPES.has(e.type))
     .filter((e) => {
@@ -219,14 +325,22 @@ export function buildChatContext(input: ChatContextInput): string {
       const end = e.end_at ? Date.parse(e.end_at) : null;
       const when = end ? `${zone.clock(start)} to ${zone.clock(end)}` : zone.clock(start);
       const planned = start > now ? " (planned)" : "";
-      // Ids only where Michael may act: the user's own blocks that have not started.
+      // Ids only where Michael may act: the user's own blocks; a past one can be settled.
       const others = e.data.with_others === true || Number(e.data.attendees ?? 0) >= 2;
+      const settled = settledBlocks.get(e.id);
       const tag =
-        e.type !== "calendar_event" || start <= now
+        e.type !== "calendar_event"
           ? ""
           : others
             ? " [with other people, advice only]"
-            : ` {event_id ${e.id}}`;
+            : start > now
+              ? ` {event_id ${e.id}}`
+              : settled
+                ? ` [settled: ${settled}] {event_id ${e.id}}`
+                : ` [past, unconfirmed: confirm_block] {event_id ${e.id}}`;
+      // The user's own word (#317): logged time and settled blocks.
+      if (isLogEntry(e))
+        return e.data.log === "didnt" ? `- ${when} ${e.title}` : `- ${when} logged by the user: ${e.title}`;
       return `- ${when} ${e.type.replace("_", " ")}: ${e.title}${planned}${tag}`;
     });
   parts.push(
@@ -277,6 +391,12 @@ export function buildChatContext(input: ChatContextInput): string {
   );
   if (undoable.length) parts.push(`Things I did that can still be undone:\n${undoable.join("\n")}`);
 
+  const outcomes = (input.checklist ?? []).filter((i) => i.date === day && i.status !== "moved");
+  if (outcomes.length)
+    parts.push(
+      `Today's outcomes (checklist):\n${outcomes.map((i) => `- [${i.status}] ${i.text} {item_id ${i.id}}`).join("\n")}`,
+    );
+
   const told = input.checkIns?.answered ?? [];
   if (told.length)
     parts.push(
@@ -289,11 +409,24 @@ export function buildChatContext(input: ChatContextInput): string {
     );
   }
 
+  if (input.ritual) parts.push(ritualContext(input.ritual, input.goals));
+
   const remembered = memoryContext(input.memories ?? []);
   if (remembered) parts.push(remembered);
 
+  const others = (input.otherThreads ?? []).slice(0, OTHER_THREADS).flatMap((t) => {
+    if (!t.last_message_at) return [];
+    const at = Date.parse(t.last_message_at);
+    return [`- ${t.title} (${zone.dayOf(at) === day ? "today" : weekdayIn(zone, at)})`];
+  });
+  if (others.length) parts.push(`Other conversations (titles only):\n${others.join("\n")}`);
+
   const headlines = (label: string, r: PatternReport | null) =>
-    r?.headlines.length ? [`${label}:\n${r.headlines.map((h) => `- ${h}`).join("\n")}`] : [];
+    !r
+      ? []
+      : r.headlines.length
+        ? [`${label}:\n${r.headlines.map((h) => `- ${h}`).join("\n")}`]
+        : [`${label}: ${NO_HEADLINES}.`];
   parts.push(
     ...headlines("Patterns today", input.today),
     ...headlines("Patterns over the last 7 days", input.week),
@@ -302,7 +435,7 @@ export function buildChatContext(input: ChatContextInput): string {
   return parts.join("\n\n");
 }
 
-async function contextForNow(): Promise<string> {
+async function contextForNow(threadId: string | null): Promise<string> {
   const now = Date.now();
   const zone = new Zone(DEFAULT_TIMEZONE);
   const dayStart = zone.startOfDay(zone.dayOf(now));
@@ -310,7 +443,20 @@ async function contextForNow(): Promise<string> {
   const nowIso = new Date(now).toISOString();
   // Pattern reports are best effort: a detector failing must not take the chat down.
   const report = (from: string) => patternReportFor({ from, to: nowIso }).catch(() => null);
-  const [goals, instructions, events, today, week, score, undoable, checkIns, memories] = await Promise.all([
+  const [
+    goals,
+    instructions,
+    events,
+    today,
+    week,
+    score,
+    undoable,
+    checkIns,
+    memories,
+    threads,
+    checklist,
+    ritual,
+  ] = await Promise.all([
     store.listGoals(),
     store.listInstructions().catch(() => []),
     store.listEvents({
@@ -327,6 +473,9 @@ async function contextForNow(): Promise<string> {
     store.listRecommendations({ status: "done" }).catch(() => []),
     checkInContext(now),
     listMemories().catch(() => []),
+    store.listChatThreads({ limit: OTHER_THREADS + 1 }).catch(() => []),
+    store.listChecklist({ from: zone.dayOf(now), to: zone.dayOf(now) }).catch(() => []),
+    ritualFor(now).catch(() => null),
   ]);
   return buildChatContext({
     now,
@@ -339,6 +488,14 @@ async function contextForNow(): Promise<string> {
     undoable,
     checkIns,
     memories,
+    otherThreads: threads
+      .filter((t) => t.id !== threadId && !untitled(t))
+      .sort(
+        (a, b) =>
+          Date.parse(b.last_message_at ?? b.created_at) - Date.parse(a.last_message_at ?? a.created_at),
+      ),
+    checklist,
+    ritual,
   });
 }
 
@@ -360,7 +517,7 @@ const REFUSAL = "I can't help with that one. Ask me about your day or your goals
 // Model calls per answer: room to look a block up, act, and then say what was done.
 const MAX_ROUNDS = 5;
 
-function request(messages: Anthropic.MessageParam[], context: string, lastRound: boolean) {
+function request(messages: Anthropic.MessageParam[], context: string, lastRound: boolean, spoken = false) {
   return {
     model: env.ANTHROPIC_MODEL,
     max_tokens: 4000,
@@ -370,6 +527,7 @@ function request(messages: Anthropic.MessageParam[], context: string, lastRound:
       // Stable prompt first so it can be cached; the per-request context comes after.
       { type: "text" as const, text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" as const } },
       { type: "text" as const, text: `What I know about the user right now:\n\n${context}` },
+      ...(spoken ? [{ type: "text" as const, text: SPOKEN_STYLE }] : []),
     ],
     tools: CHAT_TOOLS,
     // The last round must answer in words, not call another tool.
@@ -400,6 +558,8 @@ interface Hooks {
   /** Streams text as it is written; without it the model is called without streaming. */
   onText?: (text: string) => Promise<void>;
   onAction?: (action: Recommendation) => Promise<void>;
+  /** The answer is read aloud: brief, no lists (SPOKEN_STYLE). */
+  spoken?: boolean;
 }
 
 /** One model call: streamed piece by piece when `onText` is given. */
@@ -408,10 +568,12 @@ async function callModel(
   context: string,
   lastRound: boolean,
   onText: Hooks["onText"],
+  spoken = false,
 ): Promise<Anthropic.Message> {
   try {
-    if (!onText) return await anthropic().messages.create(request(messages, context, lastRound));
-    const stream = anthropic().messages.stream(request(messages, context, lastRound));
+    const body = request(messages, context, lastRound, spoken);
+    if (!onText) return await anthropic().messages.create(body);
+    const stream = anthropic().messages.stream(body);
     for await (const event of stream) {
       if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
         await onText(event.delta.text);
@@ -449,7 +611,7 @@ export async function askMichael(
   const turn: ChatTurnState = { proposals: 0 };
   for (let round = 0; round < MAX_ROUNDS; round++) {
     wrote = false;
-    const response = await callModel(messages, context, round === MAX_ROUNDS - 1, onText);
+    const response = await callModel(messages, context, round === MAX_ROUNDS - 1, onText, hooks.spoken);
     if (response.stop_reason === "refusal") {
       texts.push(REFUSAL);
       break;
@@ -500,21 +662,57 @@ export async function askMichael(
   return { answer, actions };
 }
 
-/** Everything both POST routes need before the model is called. */
-async function prepare(body: unknown) {
-  const { message } = parse(ChatRequest, body);
-  // Fail before storing anything when chat is not configured.
-  anthropic();
-  const [earlier, context] = await Promise.all([store.listChatMessages(HISTORY_TURNS), contextForNow()]);
-  const turns: Anthropic.MessageParam[] = [...toTurns(earlier), { role: "user", content: message }];
-  return { message, turns, context };
+/** The thread a request writes in, if it exists yet: a "new" one is only made once the answer is in. */
+async function existingThread(id: string | undefined): Promise<ChatThread | null> {
+  if (id === "new") return null;
+  if (!id) return latestThread();
+  const thread = await store.getChatThread(id);
+  if (!thread) throw new HttpError("not_found", "Chat thread not found");
+  return thread;
 }
 
-async function save(message: string, { answer, actions }: MichaelAnswer): Promise<ChatResponse> {
-  const stored = await store.addChatMessage("user", message);
+interface Prepared {
+  message: string;
+  turns: Anthropic.MessageParam[];
+  context: string;
+  /** The answer is read aloud (conversation mode): brief, no lists. */
+  spoken: boolean;
+  /** Null when the pair starts a new thread (made in save, so a failed answer leaves nothing). */
+  thread: ChatThread | null;
+  /** The thread's name, started alongside the answer when this is its first line. */
+  title: Promise<string> | null;
+}
+
+/** Everything both POST routes need before the model is called. */
+async function prepare(body: unknown): Promise<Prepared> {
+  const { message, thread_id, spoken = false } = parse(ChatRequest, body);
+  // Someone else's thread is a 404 even before the model is asked.
+  const thread = await existingThread(thread_id);
+  // Fail before storing anything when chat is not configured.
+  anthropic();
+  const [earlier, context] = await Promise.all([
+    thread ? store.listChatMessages(thread.id, HISTORY_TURNS) : Promise.resolve([]),
+    contextForNow(thread?.id ?? null),
+  ]);
+  const turns: Anthropic.MessageParam[] = [...toTurns(earlier), { role: "user", content: message }];
+  // Named from the first line, in parallel with the answer, so naming adds no wait.
+  const title = !thread || (untitled(thread) && earlier.length === 0) ? titleFor(message) : null;
+  return { message, turns, context, spoken, thread, title };
+}
+
+async function save(p: Prepared, { answer, actions }: MichaelAnswer): Promise<ChatResponse> {
+  const thread = p.thread ?? (await store.createChatThread());
+  const stored = await store.addChatMessage(thread.id, "user", p.message);
   const ids = [...new Set(actions.map((a) => a.id))];
-  const reply = await store.addChatMessage("assistant", answer, ids);
-  return { message: stored, reply, actions };
+  const reply = await store.addChatMessage(thread.id, "assistant", answer, ids);
+  if (p.title) {
+    const title = await p.title;
+    const current = await store.getChatThread(thread.id);
+    // Unless the user renamed it in the meantime.
+    if (current && untitled(current)) await store.updateChatThread(thread.id, { title });
+  }
+  const after = (await store.getChatThread(thread.id)) ?? thread;
+  return { message: stored, reply, actions, thread: after };
 }
 
 /** The recommendations the lines name, as they stand now. Missing ones (deleted data) are skipped. */
@@ -532,18 +730,21 @@ export function toTurns(history: ChatMessage[]): Anthropic.MessageParam[] {
 
 export const chat = new Hono()
   // GET /v1/chat?limit=50  recent history, oldest first
+  // GET /v1/chat?thread_id=&limit=50  one thread's lines (default: the latest thread)
   .get("/chat", async (c) => {
     const raw = Number(c.req.query("limit") ?? 50);
     const limit = Number.isFinite(raw) ? Math.min(Math.max(Math.trunc(raw), 1), HISTORY_MAX) : 50;
-    const messages = await store.listChatMessages(limit);
-    const body: ChatHistory = { messages, actions: await actionsOf(messages) };
+    const id = c.req.query("thread_id");
+    const thread = await existingThread(id ? parse(ThreadIdParam, id) : undefined);
+    const messages = thread ? await store.listChatMessages(thread.id, limit) : [];
+    const body: ChatHistory = { messages, actions: await actionsOf(messages), thread };
     return c.json(body);
   })
   // POST /v1/chat { message }  Michael answers from today's timeline, goals and patterns, and acts
   // on the user's own calendar when asked (ChatResponse.actions)
   .post("/chat", async (c) => {
-    const { message, turns, context } = await prepare(await jsonBody(c));
-    const body = await save(message, await askMichael(turns, context));
+    const p = await prepare(await jsonBody(c));
+    const body = await save(p, await askMichael(p.turns, p.context, { spoken: p.spoken }));
     return c.json(body, 201);
   })
   // POST /v1/chat/stream { message }  the same answer as server-sent events: `delta` { text } as it
@@ -551,14 +752,15 @@ export const chat = new Hono()
   // `error` ApiError if the model fails mid-way.
   .post("/chat/stream", async (c) => {
     // Validation and "not set up" still fail as plain JSON errors, before the stream opens.
-    const { message, turns, context } = await prepare(await jsonBody(c));
+    const p = await prepare(await jsonBody(c));
     return streamSSE(c, async (sse) => {
       try {
-        const answer = await askMichael(turns, context, {
+        const answer = await askMichael(p.turns, p.context, {
+          spoken: p.spoken,
           onText: (text) => sse.writeSSE({ event: "delta", data: JSON.stringify({ text }) }),
           onAction: (action) => sse.writeSSE({ event: "action", data: JSON.stringify(action) }),
         });
-        const body = await save(message, answer);
+        const body = await save(p, answer);
         await sse.writeSSE({ event: "done", data: JSON.stringify(body) });
       } catch (err) {
         const e = err instanceof HttpError ? err : new HttpError("internal", "Internal server error");

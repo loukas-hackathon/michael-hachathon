@@ -8,6 +8,10 @@ const Env = z.object({
   DEMO_USER_ID: z.uuid().default("2ee12960-e594-456d-85cb-a672d0ff3ac3"),
   // "on": the demo account carries the generated demo week (src/demo), kept up to now. "off": not.
   DEMO_WEEK: z.enum(["on", "off"]).default("on"),
+  // The presenter link's secret (#343), the same value on the web app. With it, the web app's
+  // presenter (one laptop) may answer the claude.ai consent for the demo account; demo visitors
+  // never can. Empty = no presenter.
+  DEMO_PRESENTER_KEY: z.string().optional(),
   // End-to-end tests only (e2e/): "on" accepts `Bearer e2e_<uuid>` as that user, so the suite can
   // sign in a fresh, non demo user without Supabase. Ignored unless the store is in memory.
   E2E_TEST_AUTH: z.enum(["on", "off"]).default("off"),
@@ -67,7 +71,13 @@ const Env = z.object({
   ELEVENLABS_API_KEY: z.string().optional(),
   // "George": warm, calm, middle aged British male from the ElevenLabs default voices.
   ELEVENLABS_VOICE_ID: z.string().default("JBFqnCBsd6RMkjVDRZzb"),
+  // Built-in voice used when ElevenLabs refuses the chosen one (401/402: a Voice Library voice on
+  // the free plan). Default "George", which every plan can use.
+  ELEVENLABS_FALLBACK_VOICE_ID: z.string().default("JBFqnCBsd6RMkjVDRZzb"),
   ELEVENLABS_MODEL: z.string().default("eleven_flash_v2_5"),
+  // Speech to text for POST /v1/voice/transcribe (ElevenLabs Scribe, same key; it needs the
+  // Speech to Text permission). Without a key the app uses the browser's recogniser.
+  ELEVENLABS_STT_MODEL: z.string().default("scribe_v2"),
 });
 
 export type Env = z.infer<typeof Env>;

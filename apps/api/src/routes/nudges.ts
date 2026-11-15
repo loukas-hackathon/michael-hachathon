@@ -19,6 +19,9 @@ import {
 } from "../nudges/engine";
 import { pushToCurrentUser } from "../nudges/push";
 import { telegramToCurrentUser } from "../nudges/telegram";
+import { recoveryOffer } from "../recovery/offer";
+import { ritualNudgeText } from "../ritual/nudge";
+import { outcomesGoal } from "../ritual/ritual";
 import { store } from "../store";
 import { momentCoreFor } from "./moments";
 import { readProfile } from "./profile";
@@ -26,6 +29,17 @@ import { readProfile } from "./profile";
 /** The night's quiet hours from the profile; dinner and deep work keep their defaults. */
 export const quietFrom = (profile: { quiet_hours?: { start: string; end: string } | null } | null) =>
   quietFromProfile(profile?.quiet_hours);
+
+/** The ritual's question for the Morning or Evening nudge, or null when that half is done. */
+async function ritualAsk(kind: "morning" | "evening", day: string): Promise<string | null> {
+  const [goal, items, rows] = await Promise.all([
+    outcomesGoal(false),
+    store.listChecklist({ from: day, to: day }),
+    store.listRituals({ from: day, to: day }),
+  ]);
+  const own = goal ? items.filter((i) => i.goal_id === goal.id) : [];
+  return ritualNudgeText(kind, { items: own, rows });
+}
 
 /**
  * Runs the engine once for the current user: reads the week so far, decides, stores the nudge
@@ -54,7 +68,18 @@ export async function checkNudges(): Promise<NudgeCheckResult> {
   const due = privacy.offTheRecord ? null : momentDue(input);
   if (due && !today.some((n) => n.key === due)) {
     input.moment = { kind: due, ...momentNudge(await momentCoreFor(due, now)) };
+    // The daily ritual (#318): while its half is still to do, the nudge asks its question.
+    const ask = await ritualAsk(due, win.day).catch(() => null);
+    if (ask) input.moment.text = ask;
   }
+  input.recovery = await recoveryOffer({
+    now,
+    events,
+    goals,
+    today,
+    quiet: profile?.quiet_hours ?? { start: "22:00", end: "07:00" },
+    offTheRecord: privacy.offTheRecord,
+  });
   const decision = decide(input);
   const counted = today.filter((n) => countsTowardsCap(n.status)).length;
   if (decision.action === "skip") {
@@ -64,7 +89,7 @@ export async function checkNudges(): Promise<NudgeCheckResult> {
   const channel = primaryChannel();
   const { candidate } = decision;
   const created = await store.createNudge({
-    recommendation_id: null,
+    recommendation_id: candidate.recommendation_id ?? null,
     goal_id: candidate.goal_id,
     kind: candidate.kind,
     key: candidate.key,

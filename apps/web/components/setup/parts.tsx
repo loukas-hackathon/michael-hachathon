@@ -140,9 +140,18 @@ export function ErrorLine({ text }: { text: string | null }) {
 
 /**
  * From a computer: one tap makes a QR code. The iPhone camera opens the setup page with a setup
- * token that works once, for 30 minutes, and the steps continue there.
+ * token that works once, for 30 minutes, and the steps continue there. `after` shows once the code
+ * is up: the live first data check, so the laptop turns to Connected when the phone is done.
  */
-export function QrHandoff({ connection, what }: { connection: SetupConnection; what: string }) {
+export function QrHandoff({
+  connection,
+  what,
+  after,
+}: {
+  connection: SetupConnection;
+  what: string;
+  after?: ReactNode;
+}) {
   const [link, setLink] = useState<LinkResult | null>(null);
   const [busy, setBusy] = useState(false);
   const ok = link && "qrSvg" in link ? link : null;
@@ -161,6 +170,7 @@ export function QrHandoff({ connection, what }: { connection: SetupConnection; w
           <p className="mt-3 text-center text-footnote text-label-2">
             Point your iPhone camera at it and tap the link. It works once, for 30 minutes.
           </p>
+          <div className="w-full">{after}</div>
         </div>
       ) : (
         <PrimaryButton

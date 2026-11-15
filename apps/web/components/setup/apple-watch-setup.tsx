@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { HEALTH_AUTO_EXPORT_APP_STORE, healthAutoExportLinks } from "@/lib/one-tap";
 import { connectHere, exchangeSetupToken, type KeyResult } from "@/lib/setup-actions";
+import { FirstDataWatch, hasFirstDataNote, startFirstData } from "./first-data-watch";
 import {
   Card,
   ErrorLine,
@@ -19,6 +20,7 @@ import {
 // the Authorization header, metrics, format, every 5 minutes) through its com.HealthExport:// deep
 // link. One automation carries one data type, so it is two taps: health, then workouts.
 // Anywhere else: a QR code opens this same flow on the iPhone.
+// Once started, the live check below the steps waits for the first Health event (#306).
 //
 // `setupToken`: set on /setup/apple-watch, the page the QR code opens, where the person may not be
 // signed in. The token is swapped for the key on the first tap.
@@ -37,7 +39,11 @@ export function AppleWatchSetup({ setupToken }: { setupToken?: string }) {
 
   // Back from Health Auto Export after iOS reloaded the tab: pick up where it was.
   useEffect(() => {
-    if (!setupToken) return;
+    // Signed in: the live check noted that step 2 was tapped (no key is kept on this page).
+    if (!setupToken) {
+      if (hasFirstDataNote("apple-watch")) setOpened((o) => ({ ...o, metrics: true }));
+      return;
+    }
     const saved = tabMemory.get("apple-watch");
     if (saved) {
       const s = JSON.parse(saved) as { links: Links; opened: typeof opened };
@@ -52,6 +58,7 @@ export function AppleWatchSetup({ setupToken }: { setupToken?: string }) {
       <QrHandoff
         connection="apple-watch"
         what="Your watch saves to Apple Health on your iPhone. Scan this there and I fill in Health Auto Export for you."
+        after={<FirstDataWatch connection="apple-watch" active />}
       />
     );
   }
@@ -72,7 +79,7 @@ export function AppleWatchSetup({ setupToken }: { setupToken?: string }) {
   }
 
   async function open(which: "metrics" | "workouts") {
-    const l = await ensureLinks();
+    const [l] = await Promise.all([ensureLinks(), setupToken ? null : startFirstData("apple-watch")]);
     if (!l) return;
     const next = { ...opened, [which]: true };
     setOpened(next);
@@ -93,7 +100,7 @@ export function AppleWatchSetup({ setupToken }: { setupToken?: string }) {
           </a>
         </Step>
         <Step n={2} done={opened.metrics}>
-          <p>Add sleep and heart rate. I fill in everything; tap Save if it asks.</p>
+          <p>Add sleep, heart rate, HRV and steps. I fill in everything; tap Save if it asks.</p>
           {opened.metrics ? (
             <SecondaryButton onClick={() => open("metrics")}>Open again</SecondaryButton>
           ) : (
@@ -117,6 +124,7 @@ export function AppleWatchSetup({ setupToken }: { setupToken?: string }) {
         Allow Health access when the app asks. Your first data shows here within minutes.
       </p>
       <ErrorLine text={error} />
+      <FirstDataWatch connection="apple-watch" active={opened.metrics && !setupToken} />
     </Card>
   );
 }

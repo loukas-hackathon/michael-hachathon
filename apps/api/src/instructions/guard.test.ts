@@ -393,7 +393,7 @@ test("path: the Morning and Evening moments and their nudge never offer a Sunday
     const free = await momentCoreFor("evening", "2026-11-14T20:00:00+02:00");
     assert.equal(free.first_move?.action_kind, "create_focus_block");
     assert.equal(zone.dayOf(Date.parse(free.first_move?.start_at ?? "")), "2026-11-15");
-    assert.match(momentNudge(free).reason, /Tomorrow: Book \d+ minutes of work at 08:00 tomorrow/);
+    assert.match(momentNudge(free).reason, /Tomorrow: Book \d+ minutes for .+ at 08:00 tomorrow/);
     const freeMorning = await momentCoreFor("morning", "2026-11-15T08:00:00+02:00");
     assert.ok(freeMorning.suggestions.some((m) => m.action_kind === "create_focus_block"));
   });

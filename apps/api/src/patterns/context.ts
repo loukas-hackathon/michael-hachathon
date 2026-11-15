@@ -1,4 +1,5 @@
 import type { Event, Goal } from "@michael/shared";
+import { napIn } from "./sleep";
 import { DAY, HOUR, type LocalDaySpan, MINUTE, SECOND, Zone } from "./time";
 import { buildTimeline, type Timeline } from "./timeline";
 import type { Span } from "./util";
@@ -47,7 +48,6 @@ export const RULES = {
   minLateMs: 5 * MINUTE,
   minNights: 3,
   minSleepsForBedtime: 3,
-  mainSleepMs: 3 * HOUR,
   lateNightForComparisonMs: 30 * MINUTE,
   minComparisonNights: 3,
   // Context switching: a stay shorter than this is a fragment.
@@ -57,6 +57,18 @@ export const RULES = {
   minActiveMsForRate: 30 * MINUTE,
   minActiveMs: HOUR,
   evidenceCap: 20,
+  // The bar a finding clears before it leads the report (headlines.ts). Below it the detector
+  // still answers, but "0 minutes lost" or a median of six is not something to lead with.
+  headline: {
+    // Minutes: drift, minutes lost, recovery per day, an offender's total, AI tools open.
+    minMinutes: 5,
+    minDisruptions: 5,
+    minFocusMinutes: 60,
+    minRecoverySample: 10,
+    minSessions: 20,
+    minAiSessions: 3,
+    minScreenMinutes: 60,
+  },
 } as const;
 
 export interface PatternOptions {
@@ -80,6 +92,8 @@ export interface DayInfo extends LocalDaySpan {
 
 export interface SleepSpan extends Span {
   id: string;
+  /** A nap (patterns/sleep.ts): not waking time, but never the night. */
+  nap: boolean;
 }
 
 export interface Ctx {
@@ -118,7 +132,8 @@ export function buildContext(events: Event[], options: PatternOptions): Ctx {
     const start = Date.parse(e.start_at);
     const end = Date.parse(e.end_at);
     // A sleep longer than a day is a broken record, not a sleep.
-    if (end > start && end - start <= DAY) sleeps.push({ id: e.id, start, end });
+    if (end > start && end - start <= DAY)
+      sleeps.push({ id: e.id, start, end, nap: napIn(zone, start, end) });
   }
   sleeps.sort((a, b) => a.start - b.start);
 
