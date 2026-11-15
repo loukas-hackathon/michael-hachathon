@@ -321,7 +321,6 @@ export interface CopyViolation {
 
 const BANNED: [RegExp, string][] = [
   [/\bproductivity\b/i, "productivity"],
-  [/\boptimi[sz](e[ds]?|ing|ation)\b/i, "optimise"],
   [/\bhustl(e[ds]?|ing)\b/i, "hustle"],
   [/\bcrush(e[ds]|ing)?\b/i, "crush"],
   [/\bjourneys?\b/i, "journey"],

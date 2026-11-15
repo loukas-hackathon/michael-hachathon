@@ -49,8 +49,9 @@ export async function googleConnectUrl(returnTo?: ReturnPath): Promise<string> {
   return OAuthConnectResponse.parse(await res.json()).url;
 }
 
-export async function syncGoogleCalendar(): Promise<void> {
-  await call("POST", "/v1/integrations/google_calendar/sync");
+/** Pull the calendar now; `pastDays` (at most 28) reads further back, as onboarding does. */
+export async function syncGoogleCalendar(pastDays?: number): Promise<void> {
+  await call("POST", `/v1/integrations/google_calendar/sync${pastDays ? `?past_days=${pastDays}` : ""}`);
 }
 
 export async function disconnectGoogleCalendar(): Promise<void> {

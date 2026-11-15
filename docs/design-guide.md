@@ -62,7 +62,7 @@ Locked on the Build Hub ("Colour and type"). Use the CSS variables, never litera
 | `--m-context`   | `#D1D1D6` | `#3A3A3C` | Context bars in charts (days that are not today, other goals) |
 | `--m-spark`     | `#FF2E93` | `#FF2E93` | Goal time as a shape: ticks, fills, bars. Never small text    |
 | `--m-tint`      | `#E6007A` | `#E6007A` | Filled buttons (white text), selected tab                     |
-| `--m-tint-text` | `#B80062` | `#FF4FA3` | Pink text and links (AA on `--m-fill` and tinted buttons)     |
+| `--m-tint-text` | `#E6007A` | `#FF4FA3` | Pink text and links                                           |
 | `--m-danger`    | `#FF3B30` | `#FF453A` | Errors only                                                   |
 
 - Text on a pink fill is black (about 6:1). White on `--m-spark` fails contrast.
@@ -234,6 +234,8 @@ rules, the springs' derivation and a checklist are in the agent skill
 | `--m-dur-smooth`        | 430ms                                        | Always with `--m-spring-smooth`              |
 | `--m-dur-sheet`, `-out` | 500ms in, 360ms out                          | Sheets                                       |
 | `--m-dur-count`         | 700ms                                        | Score count up                               |
+| `--m-dur-tween`         | 450ms                                        | A number that changed after mount            |
+| `--m-stagger`           | 30ms, capped at six items                    | Several things arriving together             |
 
 | What                       | How                                                                                                       |
 | -------------------------- | --------------------------------------------------------------------------------------------------------- |
@@ -242,11 +244,12 @@ rules, the springs' derivation and a checklist are in the agent skill
 | Tab switches               | None. The tab bar never moves                                                                             |
 | Interface changes          | 200ms, `--m-ease-out`; a status line that changes in place fades in (`.m-swap`)                           |
 | Arrivals                   | `.m-pop-in` from 0.96, from where it comes from (`--m-origin`); only items new since mount (`useArrival`) |
-| Departures                 | `.m-leave`, 200ms, then unmount                                                                           |
+| Departures                 | `.m-leave`, 200ms, then unmount; the items below slide into the gap (`FlipList`)                          |
+| Expand and collapse        | `<Collapse>`: height on `--m-spring-smooth`, content fades in behind; sheets ease to a new height         |
 | Switches, segmented        | Knob and pill slide on `--m-spring-smooth`; the knob stretches under the finger                           |
 | Sheets                     | 500ms in on `--m-ease-sheet`, 360ms out; a short drag settles back on `--m-spring`                        |
 | Score count up             | Once per session, 700ms, no bounce, after the splash. The real number is always in the DOM                |
-| Live refresh               | New blocks rise 6px and fade in; a tape tick that just filled grows from the baseline                     |
+| Live refresh               | New blocks rise 6px and fade in, 30ms apart in reading order; a filled tick grows; numbers move, 450ms    |
 | Loading                    | Skeleton in the final layout (`loading.tsx` per route): blank for 150ms, then a slow 1.6s breath          |
 | Reduced motion             | Instant, opacity only: no transforms, no count up, skeletons still                                        |
 
@@ -256,7 +259,7 @@ Animate `transform` and `opacity` only. Content is visible by default; motion ne
 
 The Build Hub voice sheet is the source; paste its lines as written. British spelling, 24 hour time,
 numbers first ("47 minutes", above two hours "2h 15"), no emoji, no exclamation marks, no dashes,
-never "productivity", "optimise" or "wellness". "I" for what Michael did, "we" for shared effort.
+never "productivity" or "wellness". "I" for what Michael did, "we" for shared effort.
 Buttons say the action and keep the word ("Undo until 09:00", then "Undone").
 
 ## Don'ts

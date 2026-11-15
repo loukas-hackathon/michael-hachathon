@@ -1,10 +1,4 @@
-import {
-  categoriseApp,
-  categoriseHost,
-  type Event,
-  type EventSummary,
-  RETENTION_DAYS,
-} from "@michael/shared";
+import { categoriseEvent, type Event, type EventSummary, RETENTION_DAYS } from "@michael/shared";
 
 // Pure helpers of the retention job (retention.ts): what an old event becomes in event_summaries.
 
@@ -16,16 +10,15 @@ export const retentionCutoff = (now: number, days = RETENTION_DAYS): string =>
 
 const str = (v: unknown) => (typeof v === "string" && v.length ? v : null);
 
-/** The app or site category an event carries, else "". Never guesses from a title. */
-export function eventCategory(e: Pick<Event, "data">): string {
-  const d = e.data ?? {};
-  const own = str(d.category);
-  if (own) return own.slice(0, 40);
-  const bundle = str(d.bundle_id);
-  if (bundle) return categoriseApp(bundle);
-  const host = str(d.host);
-  if (host) return categoriseHost(host);
-  return "";
+/**
+ * The category of an event's app or site (the shared categoriser), else the category the event
+ * carries itself, else "". Never guesses from a title.
+ */
+export function eventCategory(e: Pick<Event, "data"> & Partial<Pick<Event, "type" | "title">>): string {
+  const known = categoriseEvent(e);
+  if (known) return known;
+  const own = str(e.data?.category);
+  return own ? own.slice(0, 40) : "";
 }
 
 /** Seconds an event covers: end minus start, else the `seconds` it reports, else 0. */
@@ -39,7 +32,9 @@ export const summaryKey = (s: Pick<EventSummary, "day" | "source" | "type" | "ca
   `${s.day}|${s.source}|${s.type}|${s.category}`;
 
 /** Pure: daily totals per UTC day, source, type and category, sorted by day then key. */
-export function summariseEvents(events: Pick<Event, "source" | "type" | "start_at" | "end_at" | "data">[]) {
+export function summariseEvents(
+  events: (Pick<Event, "source" | "type" | "start_at" | "end_at" | "data"> & Partial<Pick<Event, "title">>)[],
+) {
   const out = new Map<string, EventSummary>();
   for (const e of events) {
     const row: EventSummary = {

@@ -1,18 +1,11 @@
-import type { Source } from "@michael/shared";
+import { type ConnectorId, isLive, type Source } from "@michael/shared";
 
 // One word for everything the user plugs into Michael: a Connection. Not "sources", "devices" or
 // "integrations" in copy. This file is the single map of connections and their routes, so Today's
 // Get started checklist and the You hub link to the same places. Pure data: safe on server and client.
 
-export type ConnectionId =
-  | "google-calendar"
-  | "apple-watch"
-  | "mac"
-  | "iphone"
-  | "claude"
-  | "nudges"
-  | "telegram"
-  | "travel";
+// The ids and whether each is proven on production live in @michael/shared (CONNECTOR_STATUS, #295).
+export type ConnectionId = ConnectorId;
 
 export type Connection = {
   id: ConnectionId;
@@ -24,11 +17,13 @@ export type Connection = {
   href: string;
   /** The privacy switches this connection owns (one place per source). */
   sources: Source[];
+  /** Proven end to end on production. False: a calm "Coming soon", nothing to tap (#295). */
+  live: boolean;
 };
 
 export const CONNECTIONS_HREF = "/you#connections";
 
-export const CONNECTIONS: readonly Connection[] = [
+const LIST: Omit<Connection, "live">[] = [
   {
     id: "google-calendar",
     name: "Google Calendar",
@@ -86,6 +81,8 @@ export const CONNECTIONS: readonly Connection[] = [
     sources: ["maps"],
   },
 ];
+
+export const CONNECTIONS: readonly Connection[] = LIST.map((c) => ({ ...c, live: isLive(c.id) }));
 
 /** Route per connection, for links from anywhere in the app (Today's checklist imports this). */
 export const CONNECTION_ROUTES = Object.fromEntries(CONNECTIONS.map((c) => [c.id, c.href])) as Record<

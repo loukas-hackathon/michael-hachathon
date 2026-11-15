@@ -25,6 +25,7 @@ import {
   withOthers,
 } from "../integrations/google";
 import { store } from "../store";
+import { draftFromRecommendation } from "./drafts";
 import { startFocusGuard, stopFocusGuard } from "./focus-guard";
 
 // Michael acts on the user's own time only. Rules (Build Hub, docs/api.md):
@@ -399,6 +400,20 @@ async function execute(id: string, opts: { byUser?: boolean } = {}): Promise<Rec
     if (!verdict.allowed) throw conflict(verdict.reason);
   }
 
+  // A draft is stored for the user to copy and send themselves (#40). Nothing is sent, nothing on
+  // the calendar changes, so there is nothing to undo: the draft is dismissed under Follow ups.
+  if (action.kind === "draft_follow_up") {
+    const draft = await draftFromRecommendation({ id: rec.id, title: rec.title, payload: action.payload });
+    const saved = await store.recordRecommendationAction(id, {
+      status: "done",
+      executed_at: new Date().toISOString(),
+      undone_at: null,
+      execution: { kind: "draft_follow_up", draft_id: draft.id },
+    });
+    if (!saved) throw new HttpError("not_found", "Recommendation not found");
+    return saved;
+  }
+
   let execution: Execution;
   if (action.kind === "create_focus_block") execution = await createFocusBlock(rec, action);
   else if (action.kind === "move_calendar_block") execution = await moveCalendarBlock(action);
@@ -423,6 +438,8 @@ export async function undoRecommendation(id: string): Promise<Recommendation> {
   const rec = await store.getRecommendation(id);
   if (!rec) throw new HttpError("not_found", "Recommendation not found");
   if (rec.status !== "done") throw conflict("Only a done recommendation can be undone");
+  if (rec.action?.kind === "draft_follow_up")
+    throw conflict("A draft changes nothing on your calendar. Dismiss it under Follow ups instead");
   const parsed = Execution.safeParse(await store.getRecommendationExecution(id));
   if (!parsed.success) throw conflict("I have no record of what I changed, so I cannot undo it");
   const ex = parsed.data;

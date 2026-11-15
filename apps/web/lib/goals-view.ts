@@ -101,3 +101,29 @@ export function closeState(budget: number, spent: number, left: number): CloseSt
   if (left <= 60 || spent / budget >= 0.75) return "near";
   return "open";
 }
+
+/** Where an even week would have the goal by now, in minutes ("on pace: 5h 10 by now"). */
+export function paceMinutes(budget: number, p: number) {
+  return Math.round(budget * p);
+}
+
+/**
+ * How long a block "Book time" offers (#309): what is left spread over the days to go, today
+ * included, in quarter hours between 30 and 90 minutes, and never more than what is left.
+ */
+export function bookMinutes(left: number, daysToGo: number) {
+  const q = (m: number) => Math.ceil(m / 15) * 15;
+  const even = q(left / Math.max(1, daysToGo));
+  return Math.max(15, Math.min(q(left), Math.max(30, Math.min(90, even))));
+}
+
+/**
+ * The goal that needs the user most this week: the furthest behind pace, else (all on pace) the
+ * one with the most still to find. Null when every time goal is closed.
+ */
+export function needsMost(ranked: GoalStatus[]): GoalStatus | null {
+  const open = ranked.filter((r) => r.leftMinutes > 0);
+  const behind = open.find((r) => r.behind);
+  if (behind) return behind;
+  return [...open].sort((a, b) => b.leftMinutes - a.leftMinutes)[0] ?? null;
+}

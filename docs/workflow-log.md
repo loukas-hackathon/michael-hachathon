@@ -2,6 +2,7 @@
 
 One line per change to how we work (newest first): date, what changed, why.
 
+- Sat 14 Nov 23:00: Vercel pull request previews back on (main only `git.deploymentEnabled` removed from apps/web/vercel.json). Why: the team is on Vercel Pro, so previews no longer eat a daily deployment limit (#283).
 - Sat 14 Nov 20:10: CI runs `pnpm test` (hermetic: `apps/api/src/test-env.ts` clears real keys), `pnpm --filter @michael/web build` and a migrations guard (unique timestamps, new files sort after main; Auto-merge rechecks against main before merging). Why: regressions slipped through untested merges, a web build break blocked API deploys, and duplicate migration timestamps stopped production migrations (#178).
 - Sat 14 Nov 20:05: Vercel builds only main (apps/web/vercel.json); PR previews off. Why: previews plus merges hit the Hobby daily deployment limit and production stopped updating (#161).
 - Sat 14 Nov 18:25: AGENTS.md rewritten lean (247 to about 90 lines): goals, facts and a few principles instead of scripts. Why: strong models need context, not step-by-step rules.
@@ -18,3 +19,4 @@ One line per change to how we work (newest first): date, what changed, why.
 - Sat 14 Nov 17:35: `Migrate database` runs `db push --include-all`. Why: parallel PRs merged migrations out of timestamp order (personal_tokens after google_calendar) and the push refused, blocking every later migration.
 - Sat 14 Nov 18:50: `Railway region` workflow (dispatch only) shows where the API runs and moves it with `railway scale`. Why: `multiRegionConfig` in railway.json did not move the API to the EU (#229), and nobody has a Railway seat to click Region.
 - Sat 14 Nov 21:30: CI job `e2e` and `pnpm e2e`: Playwright drives the production web build against the in-memory API through the whole demo path (login, Today, Timeline, Goals, Do it and Undo, chat, Agents, stage N, onboarding), failing on any console error, outside request or serious axe finding. Why: a merge could break the pitch with every unit test green.
+- Sat 14 Nov 23:59: `.scratch/` is gitignored. Why: agents keep screenshots, logs and one off scripts there, and one careless `git add .` would commit them.

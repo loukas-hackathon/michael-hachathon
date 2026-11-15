@@ -16,11 +16,13 @@ import { formatTime } from "./format";
 // cannot read says so, it is never made up. Each call fails on its own, so one outage costs one row.
 
 // on: connected and sending. paused: connected, but its privacy switch is off. none: not set up yet.
-export type ConnectionState = "on" | "paused" | "none" | "attention" | "unavailable" | "unknown";
+// soon: not proven on production yet (#295), shown as Coming soon with nothing to tap.
+export type ConnectionState = "on" | "paused" | "none" | "attention" | "unavailable" | "unknown" | "soon";
 
 export type ConnectionAction =
   | { kind: "link"; label: string; href: string; external?: boolean }
-  | { kind: "sync-calendar"; label: string };
+  | { kind: "sync-calendar"; label: string }
+  | { kind: "none" };
 
 export type ConnectionStatus = Connection & {
   state: ConnectionState;
@@ -30,6 +32,8 @@ export type ConnectionStatus = Connection & {
 
 export type ConnectionsView = {
   rows: ConnectionStatus[];
+  /** How many are live (proven on production): the summary counts out of these, not the soon ones. */
+  live: number;
   connected: number;
   /** The first connection still to set up, in the order of the list. */
   next: ConnectionStatus | null;
@@ -80,8 +84,11 @@ const unknown = (c: Connection): ConnectionStatus => ({
   action: { kind: "link", label: "Manage", href: c.href },
 });
 
+export const SOON_LINE = "Coming soon. I will tell you when it is ready.";
+
 /** Pure: the row for one connection from what the API said. Exported for tests. */
 export function statusFor(c: Connection, x: Inputs, now = Date.now()): ConnectionStatus {
+  if (!c.live) return { ...c, state: "soon", line: SOON_LINE, action: { kind: "none" } };
   const manage = { kind: "link" as const, label: "Manage", href: c.href };
   const setUp = (label = "Connect") => ({ kind: "link" as const, label, href: c.href });
   const src = x.sources;
@@ -238,6 +245,7 @@ export async function getConnections(): Promise<ConnectionsView> {
   const rows = CONNECTIONS.map((c) => statusFor(c, inputs));
   return {
     rows,
+    live: rows.filter((r) => r.live).length,
     connected: rows.filter((r) => r.state === "on").length,
     next: rows.find((r) => r.state === "none") ?? null,
     sources,

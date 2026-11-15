@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { registerServiceWorker } from "@/components/service-worker";
 import { readPushConfig, savePushSubscription } from "./push-actions";
 
 // Nudges on this device (Web Push), shared by You's button, the end of onboarding and the ask after
@@ -47,10 +48,7 @@ export function useNudges(active = true) {
       if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
         return set({ kind: "unsupported" });
       }
-      const [config, registration] = await Promise.all([
-        readPushConfig(),
-        navigator.serviceWorker.register("/sw.js", { scope: "/", updateViaCache: "none" }),
-      ]);
+      const [config, registration] = await Promise.all([readPushConfig(), registerServiceWorker()]);
       if (!config.enabled || !config.public_key) return set({ kind: "unavailable" });
       if (Notification.permission === "denied") return set({ kind: "denied" });
       const existing = await registration.pushManager.getSubscription();

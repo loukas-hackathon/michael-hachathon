@@ -8,6 +8,7 @@ import { DEFAULT_TIMEZONE } from "../patterns";
 import { Zone } from "../patterns/time";
 import { store } from "../store";
 import { executeRecommendation, undoRecommendation } from "./calendar";
+import { draftText, generateDrafts } from "./drafts";
 import { guardMacApps } from "./mac-apps";
 import { PROPOSAL_TOOLS, runProposalTool } from "./proposals";
 
@@ -80,6 +81,17 @@ export const CHAT_TOOLS: Anthropic.Tool[] = [
         goal_id: { type: "string", description: "Id of the goal this protects, from the goals list" },
       },
       required: ["apps", "start_at", "end_at"],
+    },
+  },
+  {
+    name: "draft_follow_up",
+    description:
+      "Draft short follow up messages after the user's conversations and meetings with other people, from the summary and their own commitments, and save them under Follow ups for the user to copy. Nothing is ever sent. Without event_id it covers what ended in the last 24 hours. Use it when the user asks for a follow up, then show them the text.",
+    input_schema: {
+      type: "object",
+      properties: {
+        event_id: { type: "string", description: "A conversation or meeting id (optional)" },
+      },
     },
   },
   {
@@ -183,6 +195,7 @@ const MoveInput = z.object({
   new_title: z.string().trim().min(1).max(200).nullish(),
 });
 const UndoInput = z.object({ recommendation_id: z.uuid() });
+const DraftInput = z.object({ event_id: z.uuid().nullish() });
 const GuardInput = z.object({
   apps: z.array(z.string().trim().min(1).max(80)).min(1).max(10),
   start_at: IsoDateTime,
@@ -326,6 +339,23 @@ async function undo(input: unknown): Promise<ToolOutcome> {
   return { content: `Undone: ${rec.title}.`, isError: false, action: rec };
 }
 
+async function draftFollowUp(input: unknown): Promise<ToolOutcome> {
+  const p = DraftInput.safeParse(input ?? {});
+  if (!p.success) return invalid(p.error);
+  const { drafts, skipped } = await generateDrafts({ eventId: p.data.event_id ?? undefined });
+  if (drafts.length)
+    return {
+      content: `Saved under Follow ups; nothing was sent.\n\n${drafts.map(draftText).join("\n\n")}`,
+      isError: false,
+    };
+  return {
+    content: skipped
+      ? "Those already have drafts under Follow ups."
+      : "No conversation or meeting with other people ended in the last 24 hours.",
+    isError: false,
+  };
+}
+
 /**
  * Runs one tool call. Guard rail refusals (HttpError, e.g. 409 for an event with other people)
  * come back as error results the model explains; anything else is a real failure and throws.
@@ -362,6 +392,8 @@ export async function runChatTool(
         return await keep(input);
       case "forget_memory":
         return await drop(input);
+      case "draft_follow_up":
+        return await draftFollowUp(input);
       default:
         return { content: `Unknown tool ${name}`, isError: true };
     }

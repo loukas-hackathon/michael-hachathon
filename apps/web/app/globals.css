@@ -14,7 +14,7 @@
   --m-context: #d1d1d6;
   --m-spark: #ff2e93;
   --m-tint: #e6007a;
-  --m-tint-text: #b80062; /* AA (4.5:1) on fill and on the tinted button; #e6007a was 4.05 */
+  --m-tint-text: #e6007a;
   --m-on-tint: #ffffff;
   --m-danger: #ff3b30;
   --m-glass: rgb(249 249 251 / 0.82);
@@ -43,6 +43,10 @@
   --m-dur-sheet: 500ms;
   --m-dur-sheet-out: 360ms;
   --m-dur-count: 700ms;
+  /* A number that changed after mount moves to its new value (components/motion-ui.tsx, Tween). */
+  --m-dur-tween: 450ms;
+  /* Between items that arrive together, in reading order; capped at six items (motion.ts, stagger). */
+  --m-stagger: 30ms;
 }
 @supports (transition-timing-function: linear(0, 1)) {
   :root {
@@ -235,6 +239,18 @@ body::before {
   }
 }
 
+/* A screen with two columns on a laptop (Goals): wider than the reading column, still centred in
+ * the space beside the sidebar. Phone and narrow laptops keep the one column. */
+@media (min-width: 1280px) {
+  .m-wide {
+    --m-wide: min(1040px, calc(100vw - 16rem - 48px));
+    position: relative;
+    left: 50%;
+    width: var(--m-wide);
+    margin-left: calc(var(--m-wide) / -2);
+  }
+}
+
 ::view-transition {
   pointer-events: none;
 }
@@ -255,11 +271,28 @@ body::before {
   animation: m-listen 1.8s ease-in-out infinite;
 }
 
+/* Conversation: the Mi symbol breathes slowly while Michael speaks. */
+@keyframes m-speak {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.06);
+  }
+}
+.m-speak-breath {
+  animation: m-speak 2.4s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .m-listen-ring {
     animation: none;
     transform: scale(1.3);
     opacity: 0.25;
+  }
+  .m-speak-breath {
+    animation: none;
   }
   .press,
   .press:active:not(:disabled),
@@ -503,6 +536,8 @@ body::before {
   background: var(--m-bg);
   color: var(--m-label);
   box-shadow: 0 -8px 30px -12px rgb(0 0 0 / 0.3);
+  /* Content never spills while the sheet eases to a new height (motion.ts, useSmoothHeight). */
+  overflow: hidden;
   transform: translateY(0);
   transition:
     transform var(--m-dur-sheet) var(--m-ease-sheet),
@@ -589,8 +624,38 @@ body::before {
   animation: m-fade-in var(--m-dur-ui) var(--m-ease-out) both;
 }
 
+/*
+ * Open and close in place (components/motion-ui.tsx, Collapse): the row's height eases on the
+ * smooth spring (no overshoot, so nothing spills), the content fades in just behind it and out
+ * quicker than it came.
+ */
+.m-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows var(--m-dur-smooth) var(--m-spring-smooth),
+    opacity var(--m-dur-exit) var(--m-ease-out);
+}
+.m-collapse[data-open] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition:
+    grid-template-rows var(--m-dur-smooth) var(--m-spring-smooth),
+    opacity var(--m-dur-ui) var(--m-ease-out) 60ms;
+}
+.m-collapse-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
 /* Segmented control: the selected pill slides between segments (components/form-controls.tsx). */
 .m-seg-thumb {
+  transition: transform var(--m-dur-smooth) var(--m-spring-smooth);
+}
+
+/* A conversation row that slides left over its actions (app/chat/thread-sheet.tsx). */
+.m-thread-face {
   transition: transform var(--m-dur-smooth) var(--m-spring-smooth);
 }
 
@@ -603,9 +668,15 @@ body::before {
   .m-leave {
     animation: m-leave-fade var(--m-dur-exit) linear both;
   }
+  .m-thread-face,
   .m-seg-thumb,
   .m-switch::after {
     transition: none;
+  }
+  /* Rows snap open or shut; the content still fades so the change is noticed. */
+  .m-collapse,
+  .m-collapse[data-open] {
+    transition: opacity var(--m-dur-ui) linear;
   }
   .m-switch:active:not(:disabled)::after {
     transform: none;

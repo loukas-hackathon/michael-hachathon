@@ -1,3 +1,4 @@
+import { bundleIdForAppName, categoriseApp, categoryRole, isBrowser } from "@michael/shared";
 import { z } from "zod";
 import { formatMinutes, type MappedEvent } from "./common";
 
@@ -28,55 +29,14 @@ export const FOCUS_MIN_MS = 25 * MINUTE;
 const FOCUS_BREAK_MS = 3 * MINUTE;
 const FOCUS_WORK_SHARE = 0.7;
 
-const WORK_APPS = new Set(
-  [
-    "code",
-    "visual studio code",
-    "cursor",
-    "zed",
-    "xcode",
-    "terminal",
-    "iterm2",
-    "warp",
-    "ghostty",
-    "alacritty",
-    "kitty",
-    "wezterm",
-    "intellij idea",
-    "pycharm",
-    "webstorm",
-    "goland",
-    "android studio",
-    "sublime text",
-    "nova",
-    "figma",
-    "sketch",
-    "notion",
-    "obsidian",
-    "linear",
-    "pages",
-    "numbers",
-    "keynote",
-    "microsoft word",
-    "microsoft excel",
-    "microsoft powerpoint",
-    "tableplus",
-    "postico",
-    "dbeaver",
-    "docker desktop",
-    "postman",
-    "claude",
-  ].map((s) => s.toLowerCase()),
-);
-const BROWSERS = new Set(
-  ["google chrome", "safari", "arc", "firefox", "brave browser", "microsoft edge", "opera", "vivaldi"].map(
-    (s) => s.toLowerCase(),
-  ),
-);
+// Which apps are work comes from the one categoriser (packages/shared/src/categories.ts): an app
+// whose category has the work role (work, ai) is work, a browser is neutral, the rest is other.
 type Kind = "work" | "neutral" | "other";
 export const appKind = (app: string): Kind => {
-  const a = app.toLowerCase().replace(/\.app$/, "");
-  return WORK_APPS.has(a) ? "work" : BROWSERS.has(a) ? "neutral" : "other";
+  const bundle = bundleIdForAppName(app);
+  if (!bundle) return "other";
+  if (isBrowser(bundle)) return "neutral";
+  return categoryRole(categoriseApp(bundle)) === "work" ? "work" : "other";
 };
 
 const AwEvent = z.object({

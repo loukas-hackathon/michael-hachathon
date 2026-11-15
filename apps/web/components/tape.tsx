@@ -1,4 +1,5 @@
 import type { Tick } from "@/lib/day";
+import { Tween } from "./motion-ui";
 
 /**
  * The tape: Michael's signature (docs/design-guide.md). One tick per 5 minutes of planned goal time.
@@ -83,11 +84,14 @@ export function Tape({
   );
 }
 
-/** The small key under the tape. */
-export function TapeKey({ items }: { items: { kind: Tick; text: string }[] }) {
+/**
+ * The small key under the tape. Given `minutes`, the figure ("1h 20") moves to its new value on a
+ * live refresh instead of snapping, followed by `text` ("spent").
+ */
+export function TapeKey({ items }: { items: { kind: Tick; text: string; minutes?: number }[] }) {
   return (
     <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-footnote text-label-2 tnum">
-      {items.map(({ kind, text }) => (
+      {items.map(({ kind, text, minutes }) => (
         <li key={kind} className="inline-flex items-center gap-1.5">
           <span
             aria-hidden="true"
@@ -101,7 +105,13 @@ export function TapeKey({ items }: { items: { kind: Tick; text: string }[] }) {
                     : "h-3 w-1 rounded-[1px] shadow-[inset_0_0_0_1px_var(--m-label-2)]"
             }
           />
-          {text}
+          {minutes == null ? (
+            text
+          ) : (
+            <span>
+              <Tween value={minutes} format="hm" /> {text}
+            </span>
+          )}
         </li>
       ))}
     </ul>

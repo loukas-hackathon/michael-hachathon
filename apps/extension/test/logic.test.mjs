@@ -188,14 +188,17 @@ test("the user's list covers a host and its subdomains, however it was typed", (
   assert.equal(isExcluded("notexample.org", ["example.org"]), false);
 });
 
-test("categories: the most specific host wins", () => {
-  assert.equal(categoryFor("mail.google.com"), "mail");
-  assert.equal(categoryFor("docs.google.com"), "docs");
-  assert.equal(categoryFor("www.google.com"), "search");
-  assert.equal(categoryFor("www.google.gr"), "search");
+test("categories: the shared vocabulary, the most specific host wins", () => {
+  assert.equal(categoryFor("mail.google.com"), "communication");
+  assert.equal(categoryFor("docs.google.com"), "work");
+  assert.equal(categoryFor("music.youtube.com"), "music");
   assert.equal(categoryFor("www.youtube.com"), "video");
-  assert.equal(categoryFor("github.com"), "dev");
+  assert.equal(categoryFor("github.com"), "work");
+  assert.equal(categoryFor("amazon.co.uk"), "shopping");
+  // A search page could be anything: no category, as in the API.
+  assert.equal(categoryFor("www.google.com"), undefined);
   assert.equal(categoryFor("example.com"), undefined);
+  assert.equal(categoryFor("constructor.com"), undefined);
 });
 
 test("API address parsing and the permission pattern", () => {
