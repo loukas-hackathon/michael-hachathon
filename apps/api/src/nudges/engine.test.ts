@@ -96,7 +96,8 @@ test("a goal block about to start says when to wrap up", () => {
   assert.equal(d.action, "send");
   if (d.action !== "send") return;
   assert.equal(d.candidate.kind, "block_soon");
-  assert.equal(d.candidate.text, "Gym at 18:00. Wrap up in 12 min.");
+  // The goal's own name, never the category word "Gym" (#364).
+  assert.equal(d.candidate.text, "70.3 training at 18:00. Wrap up in 12 min.");
   assert.match(d.candidate.reason, /block 18:00 to 19:00/);
 });
 

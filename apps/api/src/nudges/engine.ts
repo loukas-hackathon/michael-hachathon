@@ -6,7 +6,6 @@ import {
   type Event,
   findBlockableMacApp,
   type Goal,
-  type GoalCategory,
   isSleepGoal,
   type Nudge,
   type NudgeKind,
@@ -163,17 +162,6 @@ const PRIORITY: NudgeKind[] = [
   "goal_behind",
 ];
 
-// The three goal categories, and the four older names goals may still carry.
-const LABEL: Record<GoalCategory, string> = {
-  business: "Focus block",
-  health: "Training",
-  personal: "Your own time",
-  work: "Focus block",
-  gym: "Gym",
-  rest: "Rest",
-  food: "Meal",
-};
-
 /** Compact durations the voice sheet way: "47 min", "2h 10", "6h". */
 export const shortDuration = voiceShortDuration;
 
@@ -312,7 +300,7 @@ function blockSoon(w: World): Candidate | null {
     kind: "block_soon",
     key: `block_soon:${block.eventId}`,
     goal_id: goal.id,
-    text: `${LABEL[goal.category]} at ${start}. Wrap up in ${lead} min.`,
+    text: `${nameOf(goal)} at ${start}. Wrap up in ${lead} min.`,
     reason: `${goal.title}: block ${start} to ${w.zone.clock(block.end)} on your calendar${progress}.`,
   };
 }
