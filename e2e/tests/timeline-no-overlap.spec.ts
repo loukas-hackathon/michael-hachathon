@@ -196,6 +196,11 @@ function stressEvents(date: string) {
     mac("10:20", "10:27", "WhatsApp", "net.whatsapp.WhatsApp"),
     mac("10:27", "10:55", "Xcode", "com.apple.dt.Xcode"),
     ev("claude_code", "ai_session", "10:00", "11:00", "Fix the score", { tool: "claude_code" }),
+    // Logged time over the Mac block, and a five minute nap right after it.
+    ev("manual", "focus_session", "10:30", "10:50", "Did Read the term sheet, 20 min from 10:30", {
+      log: "done",
+    }),
+    ev("health_auto_export", "sleep", "10:56", "11:01", "Sleep 5m", { duration_min: 5 }),
     // An event fully inside another.
     cal("11:00", "13:00", "Offsite planning with the whole leadership team"),
     cal("11:30", "12:00", "Quick sync", { attendees: 2 }),
