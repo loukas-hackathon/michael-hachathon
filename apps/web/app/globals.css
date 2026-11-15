@@ -229,6 +229,13 @@ textarea {
   border-radius: 8px;
 }
 
+/* Rows that fill a clipped group (overflow-hidden, rounded) draw the ring inside, or the group cuts
+ * it off and only one edge shows. */
+:where(.overflow-hidden) > :focus-visible,
+:where(.overflow-hidden) > li > :focus-visible {
+  outline-offset: -2px;
+}
+
 /* Chips and segments drawn on a label around a visually hidden input carry the input's ring. */
 label:has(> input.sr-only:focus-visible) {
   outline: 2px solid var(--m-tint);
@@ -334,12 +341,13 @@ body::before {
     position: relative;
     left: 50%;
     width: var(--m-wide);
+    /* .screen caps the reading column at 760px; without this the centring above is off. */
+    max-width: none;
     margin-left: calc(var(--m-wide) / -2);
   }
   /* A dashboard (Today in three columns, You and Chat in two panes): wider still. */
   .m-dash {
     --m-wide: min(1280px, calc(100vw - 16rem - 48px));
-    max-width: none;
   }
   /* Two panes (You, Chat): the list and a reading column beside it, never stretched wider. */
   .m-dash.m-panes {
