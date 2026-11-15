@@ -2,7 +2,8 @@ import { z } from "zod";
 
 // Demo visitors: people browsing the demo week in the web app without signing in. They all share
 // the demo account, so they may look at everything but only change what is undoable or their own:
-// their own chat (stored per visitor), doing, undoing or dismissing a recommendation, asking for a
+// their own chat (stored per visitor), doing, undoing or dismissing a recommendation, the daily
+// ritual, logging done time (all reset by the demo reseed), asking for a
 // brief, and turning nudges on for their device. Everything that changes the account itself
 // (privacy, goals, instructions, places, profile, integrations, agents, keys, data deletion) is
 // refused, so no visitor can change the stage for the next one. MCP tokens and the API key keep
@@ -29,6 +30,13 @@ const ALLOWED: [string, RegExp][] = [
   ["POST", /^\/v1\/blocks$/],
   ["PATCH", /^\/v1\/blocks\/[^/]+$/],
   ["DELETE", /^\/v1\/blocks\/[^/]+$/],
+  // The stage path (/auth/demo) shows the daily ritual and logging done time (#318, #317): saving
+  // the ritual, logging time, settling a block and undoing a log. Reversible, and the demo reseed
+  // puts the ritual and the logged entries back to the plan.
+  ["POST", /^\/v1\/ritual\/(morning|evening)$/],
+  ["POST", /^\/v1\/ritual\/(morning|evening)\/skip$/],
+  ["POST", /^\/v1\/log(\/block)?$/],
+  ["DELETE", /^\/v1\/log\/[^/]+$/],
   ["POST", /^\/v1\/analysis\/run$/],
   ["POST", /^\/v1\/travel\/plan$/],
   ["POST", /^\/v1\/focus-guards\/suggest$/],

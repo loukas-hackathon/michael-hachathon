@@ -103,6 +103,7 @@ const ids: {
   recBefore?: string;
   item?: string;
   thread?: string;
+  log?: string;
   block?: string;
 } = {};
 
@@ -139,6 +140,12 @@ test("A writes through every write route", async () => {
     await request(asA, "PATCH", `/v1/goals/${goal.id}`, { description: `${MARK} description` }),
     "PATCH /v1/goals",
   );
+  // Done time (#317): the entry lands on A's timeline and in A's score only.
+  const logged = await ok(
+    await request(asA, "POST", "/v1/log", { goal_id: goal.id, minutes: 30, note: `${MARK} logged` }),
+    "POST /v1/log",
+  );
+  ids.log = logged.entry.id;
   // A block on the Timeline (#271), tomorrow so it can still change. Before off the record, which stops new events.
   const block = await ok(
     await request(asA, "POST", "/v1/blocks", {
@@ -247,6 +254,8 @@ for (const [name, who] of [
       ["PATCH", `/v1/chat/threads/${ids.thread}`, { title: "taken" }],
       ["DELETE", `/v1/chat/threads/${ids.thread}`],
       ["POST", "/v1/chat", { message: "into A's thread", thread_id: ids.thread }],
+      ["DELETE", `/v1/log/${ids.log}`],
+      ["POST", "/v1/log", { goal_id: ids.goal, minutes: 10 }],
     ];
     for (const [method, path, body] of tries) {
       const res = await request(who, method, path, body);
@@ -344,6 +353,8 @@ for (const [name, userId] of [
       const update = await call("update_goal", { id: ids.goal, title: "taken" });
       assert.ok(update.isError, `update_goal on A's goal as ${name} must fail`);
       await call("update_recommendation", { id: ids.rec, status: "proposed" });
+      const logged = await call("log_done", { goal_id: ids.goal, minutes: 10 });
+      assert.ok(logged.isError, `log_done on A's goal as ${name} must fail`);
       // add_event and add_goal land in the caller's own account.
       await call("add_goal", { category: "rest", title: `${name} own goal` });
     }));
@@ -521,7 +532,16 @@ test("the demo reseed puts goals and standing instructions back to the plan", as
   await runAsUser(DEMO, () => seedDemoWeek(store, { overwriteGoals: true }), "api_key");
 
   const { goals } = await ok(await request(asDemo, "GET", "/v1/goals"), "goals");
-  assert.deepEqual(goals.map((g: { id: string }) => g.id).sort(), demoGoals.map((g) => g.id).sort());
+  // The plan is the demo goals plus the ritual's outcomes goal, which the reseed writes again (#318).
+  const { OUTCOMES_TITLE } = await import("./ritual/ritual");
+  assert.deepEqual(
+    goals
+      .filter((g: { title: string }) => g.title !== OUTCOMES_TITLE)
+      .map((g: { id: string }) => g.id)
+      .sort(),
+    demoGoals.map((g) => g.id).sort(),
+  );
+  assert.ok(!goals.some((g: { title: string }) => g.title === "Rehearsal goal"));
   assert.equal(goals.find((g: { id: string }) => g.id === plan.id).title, plan.title);
   const { instructions } = await ok(await request(asDemo, "GET", "/v1/instructions"), "instructions");
   assert.deepEqual(
@@ -530,7 +550,64 @@ test("the demo reseed puts goals and standing instructions back to the plan", as
   );
 });
 
+test("demo visitors may save the ritual and log time on stage; the reseed puts both back to the plan", async () => {
+  const { demoGoals } = await import("./demo/week");
+  await runAsUser(DEMO, () => seedDemoWeek(store, { overwriteGoals: true }), "api_key");
+  const tri = demoGoals.find((g) => g.title === "70.3") as { id: string };
+  const ritualBefore = await ok(await request(asDemo, "GET", "/v1/ritual"), "ritual before");
+  const textsBefore = (ritualBefore.items as { text: string }[]).map((i) => i.text).sort();
+
+  const logged = await request(visitor1, "POST", "/v1/log", {
+    goal_id: tri.id,
+    minutes: 20,
+    note: "Stage swim",
+  });
+  assert.equal(logged.status, 201);
+  const entry = (await logged.json()).entry as { id: string };
+  const second = await ok(
+    await request(visitor1, "POST", "/v1/log", { goal_id: tri.id, minutes: 10, note: "Stage run" }),
+    "second log",
+  );
+  assert.equal((await request(visitor1, "DELETE", `/v1/log/${second.entry.id}`)).status, 200);
+  // Settling a block that is not there is a clean 404, past the visitor guard.
+  assert.equal(
+    (await request(visitor1, "POST", "/v1/log/block", { event_id: randomUUID(), did: true })).status,
+    404,
+  );
+  // The ritual: a morning save (refused only if today is full) and Not today on the evening.
+  const morning = await request(visitor1, "POST", "/v1/ritual/morning", {
+    outcomes: [{ text: "Visitor outcome" }],
+  });
+  assert.notEqual(morning.status, 403);
+  assert.notEqual((await request(visitor1, "POST", "/v1/ritual/evening/skip")).status, 403);
+
+  await runAsUser(DEMO, () => seedDemoWeek(store, { overwriteGoals: true }), "api_key");
+
+  assert.equal(await runAsUser(DEMO, () => store.getEvent(entry.id), "api_key"), null);
+  const ritualAfter = await ok(await request(asDemo, "GET", "/v1/ritual"), "ritual after");
+  assert.deepEqual((ritualAfter.items as { text: string }[]).map((i) => i.text).sort(), textsBefore);
+  assert.notEqual(ritualAfter.evening, "skipped");
+  // The demo week's own logged entry stays.
+  const from = new Date(Date.now() - 3 * 86_400_000).toISOString();
+  const to = new Date().toISOString();
+  const { events } = await ok(
+    await request(asDemo, "GET", `/v1/timeline?${new URLSearchParams({ from, to })}`),
+    "timeline",
+  );
+  assert.ok(
+    (events as { external_id: string | null; data: { log?: string } }[]).some(
+      (e) => e.data.log === "done" && e.external_id?.startsWith("demo:"),
+    ),
+  );
+});
+
 test("the visitor rules fail closed for routes nobody listed", () => {
+  assert.equal(demoVisitorMay("POST", "/v1/log"), true);
+  assert.equal(demoVisitorMay("POST", "/v1/log/block"), true);
+  assert.equal(demoVisitorMay("DELETE", "/v1/log/x"), true);
+  assert.equal(demoVisitorMay("POST", "/v1/ritual/morning"), true);
+  assert.equal(demoVisitorMay("POST", "/v1/ritual/evening/skip"), true);
+  assert.equal(demoVisitorMay("POST", "/v1/ritual/other"), false);
   assert.equal(demoVisitorMay("POST", "/v1/connect/requests/x"), false);
   assert.equal(demoVisitorMay("POST", "/v1/something-new"), false);
   assert.equal(demoVisitorMay("DELETE", "/v1/me/data"), false);
