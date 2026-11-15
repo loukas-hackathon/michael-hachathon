@@ -8,7 +8,8 @@ export const metadata = { title: "Location · Michael" };
 
 // Location: where you are on the timeline (this phone when you open Michael, the Mac's Wi-Fi),
 // home, work and gym typed or taken from the phone in one tap, and the travel switch (#267).
-export default async function LocationPage() {
+export default async function LocationPage({ searchParams }: { searchParams: Promise<{ from?: string }> }) {
+  const { from } = await searchParams;
   const [{ row }, places, suggestions, location] = await Promise.all([
     getConnection("travel"),
     getPlaces().catch(() => null),
@@ -16,7 +17,7 @@ export default async function LocationPage() {
     getLocation().catch(() => null),
   ]);
   return (
-    <ConnectionPage row={row}>
+    <ConnectionPage row={row} from={from}>
       <SetupSection
         title="Where you are"
         note="Only near your saved places is a place named. Elsewhere I keep about a kilometre, never a trail."

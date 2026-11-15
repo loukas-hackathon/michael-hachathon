@@ -24,10 +24,10 @@ export const found = <T>(
   data,
 });
 
-/** Too little data: no number, no summary, and a reason that says what is missing. */
+/** Too little data: no number, no summary, and a reason that says what is missing ("Not enough data yet: ..."). */
 export const notEnough = <T>(minimum: string, missing: string): Detector<T> => ({
   status: "not_enough_data",
-  reason: `not enough data: ${missing}`,
+  reason: `Not enough data yet: ${missing}`,
   minimum,
   summary: null,
   evidence: [],

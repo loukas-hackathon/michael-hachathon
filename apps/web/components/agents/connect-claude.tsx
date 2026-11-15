@@ -29,7 +29,7 @@ function LinkField({ url, primary, surface = "bg-bg" }: { url: string; primary: 
         type="button"
         onClick={copy}
         aria-live="polite"
-        className={`press min-h-9 min-w-[88px] shrink-0 rounded-full px-4 text-subhead font-semibold ${
+        className={`hit press min-h-9 min-w-[88px] shrink-0 rounded-full px-4 text-subhead font-semibold ${
           primary ? "bg-tint text-on-tint" : TINTED
         }`}
       >
@@ -123,7 +123,7 @@ export function ConnectClaude({ url, primary = true }: { url: string; primary?: 
                 href={CLAUDE_CONNECTORS}
                 target="_blank"
                 rel="noreferrer"
-                className={`press inline-flex min-h-9 items-center gap-1.5 rounded-full px-4 text-subhead font-semibold ${TINTED}`}
+                className={`hit press inline-flex min-h-9 max-w-full items-center gap-1.5 rounded-full px-4 text-subhead font-semibold ${TINTED}`}
               >
                 Open Claude connectors
                 <svg viewBox="0 0 256 256" aria-hidden="true" className="size-4">

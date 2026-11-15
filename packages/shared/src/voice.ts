@@ -25,7 +25,7 @@ Format:
 - British spelling, 24 hour time (14:30), numerals, contractions.
 - No dashes, no emoji, no exclamation marks, no headings.
 - Nudges are one line under 15 words. Briefs are at most 4 lines.
-- Never say: productivity, optimise, hustle, crush it, journey, wellness, unlock, potential, amazing, great job.`;
+- Never say: productivity, hustle, crush it, journey, wellness, unlock, potential, amazing, great job.`;
 
 /** Lines from the voice sheet that show the rules at work. Few shot examples for prompts and tests. */
 export const MICHAEL_VOICE_EXAMPLES: readonly string[] = [
@@ -45,7 +45,6 @@ export const MICHAEL_VOICE_EXAMPLES: readonly string[] = [
 /** Words and phrases Michael never uses. */
 export const VOICE_BANNED: readonly RegExp[] = [
   /\bproductivity\b/i,
-  /\boptimi[sz](?:e|es|ed|ing|ation)\b/i,
   /\bhustl(?:e|ing)\b/i,
   /\bcrush(?:ing)? it\b/i,
   /\bjourney\b/i,

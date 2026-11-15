@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import type { EventInput, Goal } from "@michael/shared";
+import type { EventInput, Goal, InstructionCreate } from "@michael/shared";
 import type { z } from "zod";
 import { addDays, at, athensMidnight, iso, localDate, weekday } from "./time";
 import { demoTravel } from "./travel";
@@ -540,6 +540,19 @@ function meals(date: string): EventRow[] {
   return out;
 }
 
+/** One logged entry, in the shape POST /v1/log writes (score/logged.ts), for the University goal. */
+function loggedStudy(date: string): EventRow {
+  return {
+    source: "manual",
+    type: "focus_session",
+    start_at: iso(at(date, "21:00")),
+    end_at: iso(at(date, "21:50")),
+    title: "Study on paper: Accounting II",
+    data: { log: "done", goal_id: UNIVERSITY_GOAL_ID, note: "Study on paper: Accounting II" },
+    external_id: `${DEMO_PREFIX}${date}:log:study`,
+  };
+}
+
 // ---------- the week ----------
 
 export interface DemoWeek {
@@ -651,6 +664,10 @@ export function buildDemoWeek(now: Date = new Date()): DemoWeek {
     events.push(...dayBiometrics(date, night.wake, nextBed, train, nowMs));
     events.push(...conversations(date), ...meals(date), ...visits(date));
   });
+  // Done time he logged himself (#317): studying on paper leaves no trace on a screen, so he told
+  // Michael. It counts as confirmed University time. The Φροντιστήριο blocks with no Mac data stay
+  // unconfirmed (pale), ready for Did it / Didn't on stage.
+  events.push(loggedStudy(addDays(today, -1)));
 
   // Nothing from the future, and nothing still running: collectors send finished things.
   const past = events.filter((e) => Date.parse(e.end_at ?? e.start_at) <= nowMs);
@@ -670,6 +687,9 @@ export function buildDemoWeek(now: Date = new Date()): DemoWeek {
 }
 
 // ---------- goals (Build Hub, "goals-manolis") ----------
+
+/** The University goal (demoGoals below), which the logged study counts towards. */
+const UNIVERSITY_GOAL_ID = "10000000-0000-4000-8000-000000000005";
 
 const CREATED = "2026-11-09T00:00:00.000Z";
 const goal = (n: number, g: Omit<Goal, "id" | "created_at" | "updated_at" | "active">): Goal => ({
@@ -720,4 +740,13 @@ export const demoGoals: Goal[] = [
     target: { calendar_titles: ["Study", "Φροντιστήριο"] },
     weekly_budget_minutes: 360,
   }),
+];
+
+// The demo account's standing instructions, restored by every reset (demo/sync.ts). The rule
+// follows the sleep goal (screens off by 23:00) and no block of the week breaks it. It must never
+// protect a free hour on a Saturday or Sunday evening: the finals demo runs on a Sunday evening and
+// books time live (Book on Goals, Do it). "Keep Sundays clear" refused both, and "home by 21:00"
+// would mark every gym evening as broken. demo/sunday.test.ts holds this.
+export const demoInstructions: z.input<typeof InstructionCreate>[] = [
+  { text: "Nothing between 23:00 and 07:00", kind: "quiet_hours", time: "23:00", end_time: "07:00" },
 ];

@@ -12,6 +12,7 @@ const STATUS: Record<ErrorCode, ContentfulStatusCode> = {
   upstream_error: 502,
   not_implemented: 501,
   unavailable: 503,
+  rate_limited: 429,
   internal: 500,
 };
 
@@ -48,3 +49,19 @@ export async function jsonBody(c: Context): Promise<unknown> {
 
 export const notImplemented = (what: string) => (c: Context) =>
   errorResponse(c, "not_implemented", `${what} is not implemented yet`);
+
+/** A PostgREST error: Postgres' SQLSTATE in `code`. */
+export type DbError = { message: string; code?: string };
+
+/**
+ * The HttpError for a failed database call. A write that names a user who no longer exists
+ * (foreign key to auth.users, 23503) means the caller's sign in outlived its account: a deleted
+ * account's access token still verifies locally until it expires (auth.ts). That is a 401, so the
+ * web app signs out and asks for a fresh sign in, never a 502.
+ */
+export function dbError(error: DbError): HttpError {
+  if (error.code === "23503" && /user_id_fkey/.test(error.message)) {
+    return new HttpError("unauthorized", "Your sign in has ended. Sign in again.");
+  }
+  return new HttpError("upstream_error", `Database error: ${error.message}`);
+}

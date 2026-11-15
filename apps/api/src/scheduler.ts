@@ -1,5 +1,6 @@
 import { countsTowardsCap, type NudgeCheckResult } from "@michael/shared";
 import { revertExpiredGoalChanges } from "./actions/calendar";
+import { generateDrafts } from "./actions/drafts";
 import { runAsUser } from "./context";
 import { env } from "./env";
 import { HOUR } from "./patterns/time";
@@ -23,6 +24,9 @@ export interface UserCheck {
   error?: string;
 }
 
+/** Follow ups are drafted for what ended this recently; older meetings are left alone. */
+const DRAFT_WINDOW_MS = 2 * HOUR;
+
 let running = false;
 
 /** One pass: each active user's check runs scoped as that user, one after another. */
@@ -45,6 +49,11 @@ export async function runNudgeChecks(now = Date.now()): Promise<UserCheck[] | nu
         console.error(`[scheduler] nudge check failed for ${userId}`, err);
         out.push({ userId, error: err instanceof Error ? err.message : String(err) });
       }
+      // Follow up drafts for conversations and meetings that just ended (#40). Once per event, so
+      // a tick with nothing new costs one read and no model call.
+      await runAsUser(userId, () => generateDrafts({ now, windowMs: DRAFT_WINDOW_MS })).catch((err) =>
+        console.error(`[scheduler] follow up drafts failed for ${userId}`, err),
+      );
     }
     const sent = out.filter((c) => c.result?.nudge && countsTowardsCap(c.result.nudge.status)).length;
     if (users.length) console.log(`[scheduler] checked ${users.length} users, ${sent} nudges`);

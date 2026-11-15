@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { MotionScript } from "@/components/count-up";
 import { Haptics } from "@/components/haptics";
 import { LocationPing } from "@/components/location/location-ping";
+import { ServiceWorker } from "@/components/service-worker";
 import { Splash } from "@/components/splash";
 import { TabBar } from "@/components/tab-bar";
 import "./globals.css";
@@ -42,6 +43,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <div className="mx-auto w-full max-w-[560px] lg:max-w-[720px]">{children}</div>
         </div>
         <TabBar />
+        <ServiceWorker />
       </body>
     </html>
   );

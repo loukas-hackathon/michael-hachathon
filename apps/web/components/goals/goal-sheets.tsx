@@ -1,10 +1,46 @@
 "use client";
 
-import { useActionState, useCallback, useEffect, useId, useState, useTransition } from "react";
+import type { GoalSuggestion } from "@michael/shared";
+import {
+  type ReactNode,
+  useActionState,
+  useCallback,
+  useEffect,
+  useId,
+  useState,
+  useSyncExternalStore,
+  useTransition,
+} from "react";
 import { addGoal, editGoal, type FormState, pauseGoal, removeGoal } from "@/app/goals/actions";
 import { CATEGORY_TITLE, type Category } from "@/lib/categories";
+import { safeFormAction } from "@/lib/use-action";
 import { input, Row, Segmented } from "../form-controls";
 import { Sheet } from "../sheet";
+import { CalendarGoals } from "./calendar-goals";
+
+// The New goal sheet opens from the header's "+", the calendar hint row and the empty state, so
+// its open state lives here, outside any one component.
+let newGoalOpen = false;
+const listeners = new Set<() => void>();
+function setNewGoalOpen(open: boolean) {
+  newGoalOpen = open;
+  for (const l of listeners) l();
+}
+const subscribe = (l: () => void) => {
+  listeners.add(l);
+  return () => {
+    listeners.delete(l);
+  };
+};
+
+/** Anything that opens the New goal sheet: the hint row, the empty state's button. */
+export function NewGoalButton({ className, children }: { className: string; children: ReactNode }) {
+  return (
+    <button type="button" onClick={() => setNewGoalOpen(true)} className={className}>
+      {children}
+    </button>
+  );
+}
 
 export type GoalDraft = {
   id?: string;
@@ -78,7 +114,7 @@ function GoalForm({
   personalReady: boolean;
 }) {
   const action = draft.id ? editGoal.bind(null, draft.id) : addGoal;
-  const [state, formAction, pending] = useActionState(action, initial);
+  const [state, formAction, pending] = useActionState(safeFormAction(action), initial);
   const [category, setCategory] = useState<Category>(draft.category);
   const [kind, setKind] = useState<GoalDraft["kind"]>(draft.kind);
   const [unit, setUnit] = useState(draft.unit);
@@ -183,7 +219,7 @@ function GoalForm({
           <svg
             viewBox="0 0 12 12"
             aria-hidden="true"
-            className={`size-3 transition-transform duration-200 ${more ? "rotate-90" : ""}`}
+            className={`size-3 transition-transform duration-[var(--m-dur-smooth)] ease-[var(--m-spring-smooth)] motion-reduce:transition-none ${more ? "rotate-90" : ""}`}
           >
             <path
               d="M4 2l4 4-4 4"
@@ -281,14 +317,27 @@ function SaveButton({ formId, label, pending }: { formId: string; label: string;
   );
 }
 
-/** "+" next to the Mi button: a new goal in one sheet. */
-export function AddGoal({ personalReady }: { personalReady: boolean }) {
-  const [open, setOpen] = useState(false);
+/**
+ * "+" next to the Mi button: a new goal in one sheet. Goals Michael found in the calendar come
+ * first, one tap to keep each; the form below sets one of your own.
+ */
+export function AddGoal({
+  personalReady,
+  suggestions = [],
+}: {
+  personalReady: boolean;
+  suggestions?: GoalSuggestion[];
+}) {
+  const open = useSyncExternalStore(
+    subscribe,
+    () => newGoalOpen,
+    () => false,
+  );
   const [key, setKey] = useState(0);
   const [saving, setSaving] = useState(false);
   const formId = useId();
   const close = useCallback(() => {
-    setOpen(false);
+    setNewGoalOpen(false);
     setKey((k) => k + 1);
   }, []);
   return (
@@ -296,7 +345,7 @@ export function AddGoal({ personalReady }: { personalReady: boolean }) {
       <button
         type="button"
         aria-label="New goal"
-        onClick={() => setOpen(true)}
+        onClick={() => setNewGoalOpen(true)}
         className="press -m-[7px] grid size-11 place-items-center rounded-full"
       >
         <span className="grid size-[30px] place-items-center rounded-full bg-fill text-tint-text">
@@ -311,6 +360,12 @@ export function AddGoal({ personalReady }: { personalReady: boolean }) {
         title="New goal"
         trailing={<SaveButton formId={formId} label="Add" pending={saving} />}
       >
+        {suggestions.length > 0 ? (
+          <>
+            <CalendarGoals key={`s${key}`} initial={suggestions} tone="tinted" />
+            <h3 className="mt-7 mb-3 px-1 text-subhead font-semibold text-label-2">Or set your own</h3>
+          </>
+        ) : null}
         <GoalForm
           key={key}
           draft={EMPTY}
@@ -329,10 +384,13 @@ export function EditGoal({
   draft,
   personalReady,
   children,
+  className = "press block w-full text-left",
 }: {
   draft: GoalDraft;
   personalReady: boolean;
-  children: React.ReactNode;
+  children: ReactNode;
+  /** The trigger's look: a whole row by default, or a small button inside an open row. */
+  className?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -350,7 +408,7 @@ export function EditGoal({
 
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className="press block w-full text-left">
+      <button type="button" onClick={() => setOpen(true)} className={className}>
         {children}
       </button>
       <Sheet
@@ -410,7 +468,7 @@ export function EditGoal({
                 }
               });
             }}
-            className="press relative flex min-h-11 w-full items-center px-4 text-body text-danger before:absolute before:inset-x-0 before:top-0 before:ml-4 before:h-[0.5px] before:bg-separator before:content-['']"
+            className="press relative flex min-h-11 w-full items-center px-4 text-body font-semibold text-danger before:absolute before:inset-x-0 before:top-0 before:ml-4 before:h-[0.5px] before:bg-separator before:content-['']"
           >
             {pending && doing === "delete"
               ? "Deleting"
@@ -420,10 +478,16 @@ export function EditGoal({
           </button>
         </div>
         {note ? (
-          <p role="status" className="mt-2 px-1 text-footnote text-label-2">
+          <p role="status" className="m-swap mt-2 px-1 text-footnote text-label-2">
             {note}
           </p>
-        ) : null}
+        ) : (
+          <p className="mt-2 px-1 text-footnote text-label-2">
+            {draft.active
+              ? "A paused goal stays out of the score until you resume it."
+              : "Resume it and it counts again from today."}
+          </p>
+        )}
       </Sheet>
     </>
   );

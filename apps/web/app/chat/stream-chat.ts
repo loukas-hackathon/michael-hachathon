@@ -21,13 +21,22 @@ const chatResponse = (json: unknown): ChatResponse | null => {
  * Sends one line and reads Michael's answer as it is written (server-sent events from
  * /chat/stream). `onText` gets each new piece; the result carries the stored pair, as sendMessage's.
  */
-export async function streamChat(message: string, onText: (text: string) => void): Promise<SendResult> {
+export async function streamChat(
+  message: string,
+  threadId: string | null,
+  onText: (text: string) => void,
+  spoken = false,
+): Promise<SendResult> {
   let res: Response;
   try {
     res = await fetch("/chat/stream", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({
+        message,
+        ...(spoken ? { spoken } : {}),
+        ...(threadId ? { thread_id: threadId } : {}),
+      }),
     });
   } catch {
     return { ok: false, error: copyFor("network"), code: "network" };

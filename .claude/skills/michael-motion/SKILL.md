@@ -11,6 +11,8 @@ always explains what changed. These rules sit under `docs/design-guide.md` ("Mot
 two disagree, the design guide wins. Brand is locked: motion never adds colour, glow, gradients
 or new brand elements, and **tab switches have no motion at all**.
 
+What sits still (no noise, the one bar, radius and focus rings) is in `.claude/skills/michael-ui/SKILL.md`.
+
 ## 1. When to animate
 
 Animate only when it answers "what just happened?" or "where did it go?":
@@ -27,21 +29,24 @@ Do not animate:
 - Tab switches, the tab bar, headers, or anything the user does many times a minute.
 - Keyboard-driven actions, focus moves, typing.
 - Decoration: no loops, pulses or attention-seeking motion. The only loops allowed are the
-  skeleton breath and the push-to-talk listening ring, both stopped by reduced motion.
+  skeleton breath, the push-to-talk listening ring and the conversation's speaking breath
+  (`.m-speak-breath`), all stopped by reduced motion.
 
 ## 2. Tokens (apps/web/app/globals.css)
 
 Never write a literal duration or curve. Pair each spring with its own duration token.
 
-| Token pair                               | Use                                                  |
-| ---------------------------------------- | ---------------------------------------------------- |
-| `--m-dur-press` + `--m-ease-out`         | Press in (120ms)                                     |
-| `--m-dur-ui` + `--m-ease-out`            | Small interface changes, colour on small controls    |
-| `--m-dur-exit` + `--m-ease-out`          | Leaving (200ms); exits are quicker than entrances    |
-| `--m-dur-spring` + `--m-spring`          | Release, pops, arrivals, settle back (slight bounce) |
-| `--m-dur-smooth` + `--m-spring-smooth`   | Things that slide across: knob, pill (no bounce)     |
-| `--m-dur-sheet(-out)` + `--m-ease-sheet` | Sheets: 500ms in, 360ms out                          |
-| `--m-dur-count` + `--m-ease-out`         | Score count up, once per session                     |
+| Token pair                               | Use                                                   |
+| ---------------------------------------- | ----------------------------------------------------- |
+| `--m-dur-press` + `--m-ease-out`         | Press in (120ms)                                      |
+| `--m-dur-ui` + `--m-ease-out`            | Small interface changes, colour on small controls     |
+| `--m-dur-exit` + `--m-ease-out`          | Leaving (200ms); exits are quicker than entrances     |
+| `--m-dur-spring` + `--m-spring`          | Release, pops, arrivals, settle back (slight bounce)  |
+| `--m-dur-smooth` + `--m-spring-smooth`   | Things that slide across: knob, pill (no bounce)      |
+| `--m-dur-sheet(-out)` + `--m-ease-sheet` | Sheets: 500ms in, 360ms out                           |
+| `--m-dur-count` + `--m-ease-out`         | Score count up, once per session                      |
+| `--m-dur-tween` + `--m-ease-out`         | A number that changed after mount (450ms)             |
+| `--m-stagger`                            | 30ms between items that arrive together (capped at 6) |
 
 The springs are SwiftUI's `spring(response:dampingFraction:)` step response sampled into CSS
 `linear()` (24 points, cut where it is within 0.4% of rest). `--m-spring` is response 0.4,
@@ -63,6 +68,15 @@ bounce at or under 0.2 for interface; Michael is calm.
 - **Departures:** `.m-leave` (fade and `scale(.97)`, 200ms, no spring), then unmount on
   `animationend` (see `components/today/recommendation-list.tsx`). Keep the optimistic state;
   roll back by removing the class.
+- **Gaps close:** wrap a list whose items leave or arrive in `<FlipList>` (`components/flip-list.tsx`):
+  the siblings slide into the gap, transform only. Keep a leaving item rendered with
+  `useDeparting()` from `components/motion.ts`, or a `router.refresh()` unmounts it mid fade.
+  Pattern: `components/today/recommendation-list.tsx`.
+- **Expand and collapse:** `<Collapse open>` from `components/motion-ui.tsx` (grid rows 0fr to
+  1fr on the smooth spring, content fades in behind, closed content inert). Rows, keys, secondary
+  items, scope lists. Use a button with `aria-expanded`, not `<details>` (it cannot animate shut).
+- **Sheets that change height:** `<Sheet>` eases to its new height on its own
+  (`useSmoothHeight`); nothing to do in the sheet's content.
 - **In place changes:** `.m-swap` fades in a status line that replaced a button ("Done. Undo
   until 09:00."). Text changes, layout does not jump.
 - **Switches:** `.m-switch` (or the native `<input switch>`): knob slides on the smooth spring
@@ -73,9 +87,12 @@ bounce at or under 0.2 for interface; Michael is calm.
   out. Dragging follows the finger 1:1 down and with 1/6 friction up; release past 120px or
   0.5px/ms closes from where it is, otherwise it settles back on the spring.
 - **Numbers:** a headline number counts up once per session (`.m-count`, CSS `@property`, the
-  real value always in the DOM). Later changes swap in place with `tabular-nums`; no slot reels,
-  no count up on every refresh.
-- **Live data:** things that arrived since the last look use `.m-live-enter` (#203).
+  real value always in the DOM). A later change (live refresh) moves briefly to the new value:
+  `.m-count` transitions on its own; anything else uses `<Tween value format>` or `useTween()`
+  from `components/motion-ui.tsx` (450ms, from the old value, never from zero). No slot reels.
+- **Live data:** things that arrived since the last look use `.m-live-enter` (#203); a section
+  marked `data-live-pop` pops in instead. Several at once arrive in reading order, 30ms apart,
+  capped at six (`stagger(i)`), so a screen that fills for the first time reads top to bottom.
 - **Skeletons:** `components/skeleton.tsx`: blank for 150ms, then a slow opacity breath, final
   layout, real titles. No shimmer gradients, no spinners. Loading, pending, success and error
   states follow the `michael-feedback` skill.
@@ -84,7 +101,8 @@ bounce at or under 0.2 for interface; Michael is calm.
 
 - Touch feedback 100 to 150ms. Interface changes 150 to 250ms. Anything over 300ms must be a
   spring or a sheet (they feel done well before they settle).
-- Exits are faster than entrances. Stagger at most 2 or 3 items, 40ms apart, never a list.
+- Exits are faster than entrances. Stagger only things that arrive together after a refresh:
+  `--m-stagger` (30ms) apart, capped at the sixth item, so a long list never waits.
 
 ## 5. Reduced motion (`prefers-reduced-motion: reduce`)
 
@@ -95,7 +113,9 @@ set from JS (drag settle) check `matchMedia("(prefers-reduced-motion: reduce)")`
 ## 6. Performance and craft
 
 - Animate `transform` and `opacity` only (colour on small controls is the one exception).
-  Never `transition: all`; never animate `width`, `height`, `top`, `left`, `margin`, or blur.
+  Never `transition: all`; never animate `width`, `top`, `left`, or blur. Height moves only
+  through `<Collapse>` (grid rows) and `useSmoothHeight` (sheets), briefly on the smooth spring;
+  never write your own.
 - No layout reads in animation loops; no JS animation where CSS works (CSS, then WAAPI, then JS).
 - Set `transform-origin` to where the motion starts. Use `will-change` only while dragging.
 - Motion must be interruptible: prefer transitions (they retarget) over keyframes for anything
