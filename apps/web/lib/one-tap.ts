@@ -72,6 +72,41 @@ export const SHORTCUT_FILE = `/${SHORTCUT_NAME}.shortcut`;
 export const shortcutUrl = () => process.env.MICHAEL_SHORTCUT_URL || SHORTCUT_FILE;
 
 /**
+ * "Add the shortcut" from the installed app, which has no browser chrome: a file opened in its own
+ * window leaves the person on a page with no way back (Loukas, 15 Nov). An https file goes straight
+ * to the Shortcuts app's import screen; an iCloud link already opens Shortcuts, so it stays as it
+ * is; anything else (a local http dev server) is returned absolute, to open in a new page.
+ */
+export function shortcutAddLink(url: string, origin: string): string {
+  const abs = new URL(url, origin);
+  if (abs.protocol !== "https:" || /(^|\.)icloud\.com$/.test(abs.hostname)) return abs.href;
+  return `shortcuts://import-shortcut?url=${encodeURIComponent(abs.href)}&name=${encodeURIComponent(SHORTCUT_NAME)}`;
+}
+
+/** The server hop that redirects to the Telegram bot with a one-time start token. */
+export const TELEGRAM_CONNECT = "/integrations/telegram/connect";
+
+/**
+ * The Telegram app's own link for a t.me bot link (https://t.me/<bot>?start=<token>), so the
+ * installed app hands over to Telegram instead of loading t.me in its own window. Null for
+ * anything that is not a t.me bot link.
+ */
+export function telegramAppLink(url: string): string | null {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return null;
+  }
+  const bot = u.pathname.replace(/^\/+|\/+$/g, "");
+  if (u.protocol !== "https:" || !/^(www\.)?(t|telegram)\.me$/.test(u.hostname) || !/^\w+$/.test(bot)) {
+    return null;
+  }
+  const start = u.searchParams.get("start");
+  return `tg://resolve?domain=${bot}${start ? `&start=${encodeURIComponent(start)}` : ""}`;
+}
+
+/**
  * Runs the installed Michael shortcut with the device key as its input. The shortcut saves the key
  * in its own file and from then on sends app opens with it. A shortcuts:// link stays on the phone.
  */

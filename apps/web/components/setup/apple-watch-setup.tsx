@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useStandalone } from "@/components/standalone";
 import { HEALTH_AUTO_EXPORT_APP_STORE, healthAutoExportLinks } from "@/lib/one-tap";
 import { connectHere, exchangeSetupToken, type KeyResult } from "@/lib/setup-actions";
 import { FirstDataWatch, hasFirstDataNote, startFirstData } from "./first-data-watch";
@@ -29,6 +30,7 @@ type Links = ReturnType<typeof healthAutoExportLinks>;
 
 export function AppleWatchSetup({ setupToken }: { setupToken?: string }) {
   const device = useDevice();
+  const standalone = useStandalone();
   const [links, setLinks] = useState<Links | null>(null);
   const [opened, setOpened] = useState<{ metrics: boolean; workouts: boolean }>({
     metrics: false,
@@ -94,6 +96,8 @@ export function AppleWatchSetup({ setupToken }: { setupToken?: string }) {
           <p>Get Health Auto Export from the App Store. Skip this if you have it.</p>
           <a
             href={HEALTH_AUTO_EXPORT_APP_STORE}
+            // The installed app has no back button: the App Store opens in a new context.
+            {...(standalone ? { target: "_blank", rel: "noopener" } : {})}
             className="press mt-2 flex h-11 w-full items-center justify-center rounded-full bg-bg text-body font-semibold text-tint-text"
           >
             Open the App Store

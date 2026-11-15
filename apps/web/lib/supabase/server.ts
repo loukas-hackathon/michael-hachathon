@@ -25,3 +25,19 @@ export async function supabaseServer() {
     },
   });
 }
+
+/**
+ * True when this session came from email and password (#475), not Google. Onboarding then offers
+ * Google Calendar as a Connect step instead of jumping to Google's consent: in the installed iPhone
+ * app that jump leaves the app. Reads the JWT locally (getClaims), no round trip.
+ */
+export async function signedInWithEmail(): Promise<boolean> {
+  if (!authEnabled) return false;
+  try {
+    const { data } = await (await supabaseServer()).auth.getClaims();
+    const meta = data?.claims?.app_metadata as { provider?: unknown } | undefined;
+    return meta?.provider === "email";
+  } catch {
+    return false;
+  }
+}

@@ -1,4 +1,5 @@
 import { ActionButton } from "@/components/action-button";
+import { TelegramConnectLink } from "@/components/telegram-connect-link";
 import { getTelegram } from "@/lib/integrations";
 import { disconnectTelegramChat, sendTelegramTest } from "./telegram-actions";
 
@@ -31,15 +32,14 @@ export async function TelegramRow() {
           <span className="text-body">Telegram</span>
           <span className="text-footnote text-label-2">Nudges in a chat too. Tap Start in Telegram.</span>
         </span>
-        {/* Beside the app, so this page stays and flips by itself once you tap Start (#466). */}
-        <a
-          href="/integrations/telegram/connect"
-          target="_blank"
-          rel="noopener"
+        {/* Beside the app, so this page stays and flips by itself once you tap Start (#466). From the
+            installed app it hands over to the Telegram app instead (#468). */}
+        <TelegramConnectLink
+          newTab
           className="hit press flex h-9 shrink-0 items-center rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint"
         >
           Connect
-        </a>
+        </TelegramConnectLink>
       </div>
     );
   }

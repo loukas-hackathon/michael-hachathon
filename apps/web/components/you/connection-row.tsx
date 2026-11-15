@@ -4,11 +4,13 @@ import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 import { syncCalendar } from "@/app/you/google-calendar-actions";
 import { ActionButton } from "@/components/action-button";
+import { TelegramConnectLink } from "@/components/telegram-connect-link";
 import { Thinking } from "@/components/thinking";
 import { FINISH_ELSEWHERE, STATE_WORDS } from "@/lib/connection-words";
 import type { ConnectionId } from "@/lib/connections";
 import type { ConnectionAction, ConnectionStatus } from "@/lib/connections-status";
 import { isOn, rowLine, waitingLine } from "@/lib/live-connections";
+import { TELEGRAM_CONNECT } from "@/lib/one-tap";
 import { ConnectionIcon } from "./connection-icon";
 import { useLiveConnection } from "./connections-live";
 
@@ -58,6 +60,15 @@ function Action({
   // site. Telegram opens beside the app, so this page stays here, waiting, and flips by itself.
   if (action.external) {
     const beside = onConnect !== undefined && action.label === "Connect";
+    // Telegram from the installed app: handed to the Telegram app (tg://), never t.me in place,
+    // since the app has no back button and its cookies do not reach Safari.
+    if (action.href === TELEGRAM_CONNECT) {
+      return (
+        <TelegramConnectLink className={style} onOpen={onClick} newTab={beside}>
+          {label}
+        </TelegramConnectLink>
+      );
+    }
     return (
       <a
         href={action.href}
