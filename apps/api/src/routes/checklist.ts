@@ -27,10 +27,20 @@ export const checklist = new Hono()
   })
   .patch("/checklist/:id", async (c) => {
     const patch = parse(ChecklistItemUpdate, await jsonBody(c));
-    return c.json(await updateItem(c.req.param("id"), patch, "user"));
+    const item = await updateItem(c.req.param("id"), patch, "user");
+    await refreshOffers();
+    return c.json(item);
   })
   .delete("/checklist/:id", async (c) => {
     await deleteItem(c.req.param("id"));
+    await refreshOffers();
     return c.body(null, 204);
   })
-  .post("/checklist/:id/carry", async (c) => c.json(await carryItem(c.req.param("id")), 201));
+  .post("/checklist/:id/carry", async (c) => {
+    const carried = await carryItem(c.req.param("id"));
+    await refreshOffers();
+    return c.json(carried, 201);
+  });
+
+/** After an outcome changes: an offer that names a settled outcome is withdrawn at once. */
+const refreshOffers = () => offerGoalActions().catch((err) => console.error("checklist: offers", err));
