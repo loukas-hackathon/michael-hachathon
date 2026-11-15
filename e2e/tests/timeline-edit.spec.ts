@@ -59,7 +59,7 @@ test("Timeline: add a block on a free slot, drag it later, undo the move", async
   for (let i = 1; i <= 8; i++) await page.mouse.move(x, y + (112 * i) / 8);
   await page.mouse.up();
   // Michael varies the phrasing by day (#398); the block and the new time are always in it.
-  await expect(page.getByRole("status").filter({ hasText: /Deep work.*12:00\./ })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: /Deep work.*12:00/ })).toBeVisible();
   await expect(page.getByRole("button", { name: "Deep work, 12:00 to 13:00" })).toBeVisible();
 
   const startOf = async () => {
