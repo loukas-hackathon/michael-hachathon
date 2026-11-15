@@ -6,14 +6,14 @@ import { HttpError } from "../http";
 import { dayList, forbiddenBy } from "../instructions/protected";
 import { MINUTE } from "../patterns/time";
 import type { Span } from "../patterns/util";
-import { calendarTitles, scoreRange } from "../score";
+import { goalBlockTitle, scoreRange } from "../score";
 import { wakingDay } from "../score/week";
 import { store } from "../store";
 
 // Book time for a goal (#309), the one action on the Goals tab: the first free slot of `minutes`
 // from now to the end of the week, inside the waking day, clear of the calendar and of time a
-// standing instruction protects. The block is titled with the goal's first calendar title so the
-// score counts it, then booked at once through bookFocusBlock (the same path as the MCP tool), so
+// standing instruction protects. The block is named after the goal ("University study") and carries
+// its id, so the user reads what it is for and the score counts it. It is booked at once through bookFocusBlock (the same path as the MCP tool), so
 // it is undoable until it starts with POST /v1/recommendations/:id/undo.
 //
 // When that length does not fit any more (#330), Michael takes the longest shorter one that does
@@ -131,7 +131,7 @@ export async function bookGoalTime(
     }),
     store.listInstructions(),
   ]);
-  const title = calendarTitles(goal)[0] ?? goal.title;
+  const title = goalBlockTitle(goal);
   const found = goalBooking({ now, minutes, title, goals, events, instructions });
   if (!found.slot) throw new HttpError("conflict", noSlotLine(minutes, found.kept));
   return bookFocusBlock({
@@ -139,7 +139,8 @@ export async function bookGoalTime(
     end_at: new Date(found.slot.end).toISOString(),
     title,
     goal_id: goal.id,
-    requested_by: "Goals",
+    // The user tapped Book in Michael: nobody else to name.
+    requested_by: null,
     // A shorter block than asked for says so where the user reads why.
     note:
       found.minutes < minutes

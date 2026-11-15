@@ -45,7 +45,7 @@ const ctx: BriefContext = {
   goalBlocks: [study, gym],
   // A meeting with other people tomorrow from 14:00 to 15:00.
   busy: [{ start: ms("2026-11-11 14:00"), end: ms("2026-11-11 15:00") }],
-  blockTitles: new Map([[GOAL, "Study"]]),
+  blockTitles: new Map([[GOAL, "University study"]]),
   patterns: new Set(["phone_cadence", "repeat_offenders"]),
   actionsAre: "offers",
 };
@@ -190,7 +190,8 @@ test("a new focus block must be in the future and clear of other people", () => 
     payload: {
       start_at: new Date(ms("2026-11-11 08:00")).toISOString(),
       end_at: new Date(ms("2026-11-11 09:30")).toISOString(),
-      title: "Study",
+      title: "University study",
+      goal_id: GOAL,
     },
     involves_others: false,
     undo_until: new Date(ms("2026-11-11 08:00")).toISOString(),

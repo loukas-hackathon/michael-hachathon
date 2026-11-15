@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Recommendation } from "@michael/shared";
-import { bookedAhead, openRecommendations } from "./recommendations";
+import { bookedAhead, bookedRationale, openRecommendations } from "./recommendations";
 
 // Sunday 15 November 2026, 12:00 in Athens.
 const now = new Date("2026-11-15T10:00:00.000Z");
@@ -17,7 +17,7 @@ function block(over: Partial<Recommendation> & { start?: number } = {}): Recomme
     analysis_run_id: null,
     goal_id: null,
     title: "Sales focus",
-    rationale: "Booked at your request through Claude. Undo in Michael until it starts.",
+    rationale: "Sales focus, 60 minutes, booked by Claude. Undo until 15:00.",
     action: {
       kind: "create_focus_block",
       payload: { start_at: at(start), end_at: at(start + 1), title: "Sales focus" },
@@ -70,4 +70,20 @@ test("nothing shows on top once the block has started, was undone, or was not as
     null,
   );
   assert.equal(bookedAhead([], now), null);
+});
+
+test("a booked block's card keeps only who booked it: title, time and undo say the rest", () => {
+  assert.equal(bookedRationale(block()), "Booked by Claude.");
+  // Booked by the user in Michael (Goals, chat): nothing left to say.
+  assert.equal(bookedRationale(block({ rationale: "Sales focus, 60 minutes. Undo until 15:00." })), "");
+  // Older rows lose only the undo sentence.
+  assert.equal(
+    bookedRationale(
+      block({ rationale: "Booked at your request through Goals. Undo in Michael until it starts." }),
+    ),
+    "Booked at your request through Goals.",
+  );
+  // Michael's own offer keeps its reasons.
+  const offer = "0 of 4 done, 4 left and 3 days to go. I found 60 minutes free.";
+  assert.equal(bookedRationale(block({ rationale: offer })), offer);
 });

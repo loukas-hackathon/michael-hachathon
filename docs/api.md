@@ -473,14 +473,15 @@ The Goals tab's one action. `type GoalBook = { minutes?: number }` (15 to 360, d
 takes the first free slot of that length from now (at least 5 minutes ahead, on the quarter hour)
 to Sunday night, inside the waking day (the sleep goal sets it), clear of every calendar entry that
 holds time and of time an active standing instruction protects for the goal's block title. The
-block is titled with the goal's first `calendar_titles` entry (else its title), so the score counts
-it, and is booked at once as a `create_focus_block` recommendation (`status: "done"`, rationale
-"Booked at your request through Goals."), the same path as the MCP `create_focus_block` tool.
+block is named after the goal (`goalBlockTitle` in `score/match.ts`: the goal's own title,
+"University", never a bare "Study") and carries its `goal_id`, so the score counts it, and is
+booked at once as a `create_focus_block` recommendation (`status: "done"`, rationale "University,
+90 minutes. Undo until 07:00."), the same path as the MCP `create_focus_block` tool.
 Undo with `POST /v1/recommendations/:id/undo` until it starts. `404` for an unknown or paused goal.
 
 When that length no longer fits (#330), Michael takes the longest shorter one that does, in quarter
-hours and never under 30 minutes (asked for 90 with 45 free: 45), and the rationale says so: "Booked
-at your request through Goals. No free 90 minutes left this week, so I took 45 minutes." The
+hours and never under 30 minutes (asked for 90 with 45 free: 45), and the rationale says so: "University,
+45 minutes. No free 90 minutes left this week, so I took 45 minutes. Undo until 07:00." The
 answer is still `201`; read the booked times from `action.payload`. `409` when nothing fits, with
 the reason as the message, in Michael's words: "Sundays are kept clear, so no 90 minutes are left
 this week." when a standing instruction keeps the time that would have fitted ("You're home by
@@ -1737,13 +1738,17 @@ through the store's `createRecommendation`, so the instruction guard has the las
 
 - **First outcome:** the first open checklist item of today gets one hour, the first free one from
   now inside the waking day, titled with the item's text. Title
-  `An hour for your first outcome, Fri 13 Nov`. Checked after an item is added (`POST
+  `An hour for your first outcome` (no date: the card's time line says when). Checked after an item is added (`POST
   /v1/checklist`, `add_checklist_item`) and on `GET /v1/score` for the current week.
 - **Behind pace:** a count goal with `left > days_left` gets one slot, the first free one from now
   on a day without a block of the goal yet, as long as the goal's usual block this week (60
-  minutes without one), titled with the goal's first `calendar_titles` entry so it counts. Title
-  `One more session for <goal>, Fri 13 Nov`. Checked on `GET /v1/score` for the current week.
-- **Once a day:** an offer whose title is already stored, whatever its status, is not made again.
+  minutes without one), named after the goal (`goalBlockTitle`: "University study") and carrying
+  its `goal_id` so it counts. Title `One more session for <goal>`. Checked on `GET /v1/score` for
+  the current week.
+- **Once a day:** each offer carries `payload.offer_key` (`first_outcome:<day>`,
+  `count_session:<goal id>:<day>`, the day it was made). An offer whose key is already stored,
+  whatever its status, is not made again. Offers stored before the key had the day in their title
+  (`..., Fri 13 Nov`) and still count for that day.
 
 ### Calendar blocks (edit the day on the Timeline, #271)
 
@@ -3077,8 +3082,9 @@ offset. A refused or failed call returns `isError: true` with one plain sentence
   same rules: own time only, never an event with other people, never deletes the user's events,
   undo until the block starts.
 - `create_focus_block` books straight away: it saves a recommendation (`source: "chat"`, `status: "done"`, rationale
-  "Booked at your request through <agent name>") and carries it out like any other, so the block
-  shows in Michael and `undo_recommendation` takes it back. Refused in the past, under 5 minutes,
+  "University study, 90 minutes, booked by <agent name>. Undo until 07:00.") and carries it out like any other, so the block
+  shows in Michael and `undo_recommendation` takes it back. With a `goal_id` and no title (or one
+  of the goal's bare calendar titles) the block is named after the goal. Refused in the past, under 5 minutes,
   over 6 hours, or when it overlaps an event with other people.
 - `block_mac_app` mutes straight away the same way (`source: "chat"`, `status: "done"`, see Focus
   guards); `undo_recommendation` lets the apps open again until the window ends. Apps off the

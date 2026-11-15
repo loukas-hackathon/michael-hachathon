@@ -58,7 +58,7 @@ test("a block Claude books is on Today's first screen with Undo, and gone once u
   await expect(page.getByText("This is the demo week.")).toBeVisible();
   const booked = page.getByRole("region", { name: "Booked for you" });
   await expect(booked.getByText("Sales focus.")).toBeVisible();
-  await expect(booked.getByText(/^Booked at your request through /)).toBeVisible();
+  await expect(booked.getByText(/^Booked by .+\.$/)).toBeVisible();
   await expect(booked.getByRole("status")).toHaveText(`Done. Undo until ${until}.`);
   // On the first screen, above the tab bar, without scrolling.
   await expect(booked.getByRole("button", { name: "Undo" })).toBeInViewport({ ratio: 1 });

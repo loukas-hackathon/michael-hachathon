@@ -74,6 +74,30 @@ export function calendarTitles(goal: Goal): string[] {
   return list.filter((t): t is string => typeof t === "string" && t.trim().length > 0);
 }
 
+/** Lower case for a word inside a title, but an acronym ("MBA", "UX") stays as it is. */
+const lowerWord = (word: string) =>
+  word.length > 1 && word === word.toUpperCase() ? word : word.toLowerCase();
+
+/**
+ * The calendar title for a block Michael books for a goal: it names the goal, so the user reads
+ * what it is for ("University study", never a bare "Study"). The goal's first calendar title when
+ * it already says the goal, the goal's title when that already holds the calendar title, else
+ * both ("University" and "Study" give "University study"). It still counts towards the goal: it
+ * starts with the goal's title (rule 4), and the booked block carries the goal's id (rule 1).
+ * `title`: a name someone gave (an agent, the chat); kept unless it is one of the goal's bare
+ * calendar titles.
+ */
+export function goalBlockTitle(goal: Goal, title?: string | null): string {
+  const given = title?.trim();
+  const titles = calendarTitles(goal);
+  if (given && !titles.some((t) => normaliseTitle(t) === normaliseTitle(given))) return given.slice(0, 200);
+  const entry = given ?? titles[0];
+  if (!entry) return goal.title.slice(0, 200);
+  if (titleMatchesAny(entry, [goal.title])) return entry.slice(0, 200);
+  if (titleMatchesAny(goal.title, [entry])) return goal.title.slice(0, 200);
+  return `${goal.title} ${entry.split(/\s+/).map(lowerWord).join(" ")}`.slice(0, 200);
+}
+
 /** The number of other people in a calendar event. Missing or not a number reads as nobody. */
 export function attendeesOf(event: Event): number {
   const n = event.data.attendees;

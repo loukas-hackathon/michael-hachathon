@@ -146,6 +146,22 @@ export function travelCard(rec: Recommendation, now: Date): Partial<RecCard> | n
   return null;
 }
 
+/**
+ * The line under a booked block's title. The API says it plainly ("University study, 90 minutes,
+ * booked by Claude. Undo until 07:00."), but on the card the title, the time line, the maths and
+ * "Done. Undo until 07:00." already say all of it but who booked it: only that stays ("Booked by
+ * Claude."), or nothing when the user booked it in Michael. Older rows keep their line without the
+ * undo sentence. Any other rationale is left as it is.
+ */
+export function bookedRationale(rec: Recommendation): string {
+  const title = rec.action?.kind === "create_focus_block" ? rec.action.payload.title : null;
+  const old = rec.rationale.replace(/\s*Undo in Michael until it starts\.$/, "");
+  if (old !== rec.rationale) return old;
+  if (typeof title !== "string" || !rec.rationale.startsWith(`${title}, `)) return rec.rationale;
+  const by = /, booked by (.+)\. Undo until \d\d:\d\d\.$/.exec(rec.rationale.slice(title.length));
+  return by ? `Booked by ${by[1]}.` : "";
+}
+
 export function toCard(rec: Recommendation, goals: Goal[], now: Date): RecCard {
   const goal = goalName(goals.find((g) => g.id === rec.goal_id));
   const { start, end } = actionTimes(rec);
@@ -159,7 +175,7 @@ export function toCard(rec: Recommendation, goals: Goal[], now: Date): RecCard {
   return {
     id: rec.id,
     title: rec.title,
-    rationale: rec.rationale,
+    rationale: rec.status === "done" ? bookedRationale(rec) : rec.rationale,
     goal,
     maths,
     // The title often says the times already ("Block 09:30 to 11:00 for ..."): then only the day.
