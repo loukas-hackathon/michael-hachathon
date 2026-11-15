@@ -238,8 +238,20 @@
         }, 15000);
         var sw = navigator.serviceWorker?.controller;
         if (!sw || !navigator.onLine) return offline();
+        // Never wait forever (#544): iOS can stop the worker holding the request, and then no answer
+        // comes. After 6 seconds, load the page straight from the network (the worker lets
+        // ?m-net=1 through untouched; the page drops the marker from the address).
+        var answered = false;
+        var giveUp = setTimeout(() => {
+          if (answered || !navigator.onLine) return;
+          var next = new URL(location.href);
+          next.searchParams.set("m-net", "1");
+          location.replace(next.href);
+        }, 6000);
         var channel = new MessageChannel();
         channel.port1.onmessage = (event) => {
+          answered = true;
+          clearTimeout(giveUp);
           const status = event.data?.status;
           if (status === "ready") return reload();
           if (status === "retry" && !retriedRecently()) return reload();

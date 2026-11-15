@@ -21,6 +21,12 @@ const UPDATE_EVERY_MS = 60_000;
  */
 export function ServiceWorker() {
   useEffect(() => {
+    // The shell's give up load (?m-net=1, public/shell.html) did its job: keep the address clean.
+    const here = new URL(window.location.href);
+    if (here.searchParams.has("m-net")) {
+      here.searchParams.delete("m-net");
+      window.history.replaceState(window.history.state, "", here.pathname + here.search + here.hash);
+    }
     if (!("serviceWorker" in navigator)) return;
     const sw = navigator.serviceWorker;
     let registration: ServiceWorkerRegistration | undefined;
