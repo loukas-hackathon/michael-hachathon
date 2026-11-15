@@ -3,6 +3,7 @@
 -- return a whole window as ONE json value, which the row cap does not apply to.
 -- Only the API calls them, with the service role and the caller's user id from auth.ts (never
 -- from a request body); anon and authenticated may not execute them.
+-- Purely additive: two functions and their grants. No table, column, index or policy changes.
 
 -- Every event of one user overlapping [p_from, p_to], ordered by (start_at, id) like the paged
 -- read: it starts at or before p_to and ends (or, if instant, starts) at or after p_from.
@@ -16,6 +17,7 @@ create or replace function events_window(
 returns json
 language sql
 stable
+security invoker
 set search_path = public
 as $$
   select coalesce(
@@ -52,6 +54,7 @@ create or replace function last_event_at_by_source(p_user_id uuid)
 returns json
 language sql
 stable
+security invoker
 set search_path = public
 as $$
   select coalesce(json_object_agg(s.source, s.at) filter (where s.at is not null), '{}'::json)
@@ -65,8 +68,3 @@ as $$
 $$;
 revoke all on function last_event_at_by_source(uuid) from public, anon, authenticated;
 grant execute on function last_event_at_by_source(uuid) to service_role;
-
--- The window's overlap test reads the end (or the start of an instant event): this index lets a
--- recent window skip a user's older history instead of scanning everything before p_to.
-create index if not exists events_user_end_or_start_idx
-  on events (user_id, (coalesce(end_at, start_at)));

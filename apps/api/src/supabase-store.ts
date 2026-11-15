@@ -86,7 +86,7 @@ const EVENT_COLUMNS = "id, source, type, start_at, end_at, title, data, external
 // events_window (#298) answers windows up to this long in one round trip; a busy day is about
 // 1,000 events, so three weeks stays a few megabytes. Longer windows read page by page.
 const WINDOW_MAX_MS = 21 * 24 * 3600_000;
-const WINDOW_RETRY_MS = 60_000;
+const RPC_RETRY_MS = 60_000;
 
 // A value inside a PostgREST or(...)/and(...) filter, quoted so `+`, `:` and `.` stay literal.
 const q = (v: string) => `"${v.replace(/["\\]/g, "")}"`;
@@ -392,15 +392,18 @@ export class SupabaseStore implements Store {
   async lastEventAtBySource() {
     // One round trip (#298): last_event_at_by_source does one index lookup per source in Postgres.
     const userId = currentUserId();
-    const res = await this.db.rpc("last_event_at_by_source", { p_user_id: userId });
-    if (!res.error && res.data && typeof res.data === "object" && !Array.isArray(res.data)) {
-      const out: Partial<Record<Source, string>> = {};
-      for (const [source, at] of Object.entries(res.data as Record<string, string | null>)) {
-        if (at && SourceEnum.safeParse(source).success) out[source as Source] = iso(at) as string;
+    if (Date.now() - this.lastAtDownAt > RPC_RETRY_MS) {
+      const res = await this.tryRpc("last_event_at_by_source", { p_user_id: userId });
+      if (res.ok && res.data && typeof res.data === "object" && !Array.isArray(res.data)) {
+        const out: Partial<Record<Source, string>> = {};
+        for (const [source, at] of Object.entries(res.data as Record<string, string | null>)) {
+          if (at && SourceEnum.safeParse(source).success) out[source as Source] = iso(at) as string;
+        }
+        return out;
       }
-      return out;
+      this.lastAtDownAt = Date.now();
+      this.logRpcDown("last_event_at_by_source", res.ok ? "not an object" : res.message);
     }
-    console.error("last_event_at_by_source failed, one query per source:", res.error?.message);
     // Fallback: one tiny query per source (index on user_id, source, created_at).
     const rows = await Promise.all(
       SourceEnum.options.map(async (source) => {
@@ -422,27 +425,49 @@ export class SupabaseStore implements Store {
     return out;
   }
 
-  // When events_window last failed (missing before its migration ran, or broken): the paged read
-  // stands in for a minute before the function is tried again.
+  // When events_window or last_event_at_by_source last failed (missing before the migration ran,
+  // or broken): the old reads stand in for a minute before the function is tried again.
   private windowDownAt = 0;
+  private lastAtDownAt = 0;
+  private rpcLogged = new Set<string>();
+
+  /** An RPC that never throws: a network failure is reported like a PostgREST error. */
+  private async tryRpc(
+    fn: string,
+    args: Record<string, unknown>,
+  ): Promise<{ ok: true; data: unknown } | { ok: false; message: string }> {
+    try {
+      const res = await this.db.rpc(fn, args);
+      return res.error ? { ok: false, message: res.error.message } : { ok: true, data: res.data };
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  /** Logged once per process for each function, so a missing function never floods the logs. */
+  private logRpcDown(fn: string, message: string) {
+    if (this.rpcLogged.has(fn)) return;
+    this.rpcLogged.add(fn);
+    console.error(`${fn} failed, using the old reads instead:`, message);
+  }
 
   async listEvents(f: TimelineFilter) {
     // A window up to a few weeks comes back in one round trip as one json value (#298), which the
     // row cap does not touch. Longer windows, and any failure of the function, read page by page.
     const span = Date.parse(f.to) - Date.parse(f.from);
-    if (span <= WINDOW_MAX_MS && Date.now() - this.windowDownAt > WINDOW_RETRY_MS) {
-      const res = await this.db.rpc("events_window", {
+    if (span <= WINDOW_MAX_MS && Date.now() - this.windowDownAt > RPC_RETRY_MS) {
+      const res = await this.tryRpc("events_window", {
         p_user_id: currentUserId(),
         p_from: f.from,
         p_to: f.to,
         p_sources: f.source?.length ? f.source : null,
         p_types: f.type?.length ? f.type : null,
       });
-      if (!res.error && Array.isArray(res.data)) {
+      if (res.ok && Array.isArray(res.data)) {
         return (res.data as Record<string, unknown>[]).map(toEvent);
       }
       this.windowDownAt = Date.now();
-      console.error("events_window failed, reading pages instead:", res.error?.message ?? "not an array");
+      this.logRpcDown("events_window", res.ok ? "not an array" : res.message);
     }
     return this.listEventsPaged(f);
   }
