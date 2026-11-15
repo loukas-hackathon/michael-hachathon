@@ -15,7 +15,6 @@ Built in 36 hours at the Gen AI Summit Hackathon, Athens, 14 and 15 November 202
 | What you want to see                       | How                                                                                                                                                                    |
 | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **A full week of real data** (recommended) | Sign in with **`judges@michael.app`** / **`OnYourSide2026`**. Opens Manolis' real week, names removed. Your taps stay in your own copy, so nothing you do breaks it.   |
-| Same, without typing                       | https://michael-zeta-sand.vercel.app/auth/demo                                                                                                                         |
 | **The whole experience from zero**         | On the login page tap **Continue with email**, then **Create account**. No email confirmation. You land in onboarding and set your goals in under a minute.            |
 | **Michael inside Claude**                  | claude.ai: Settings, Connectors, Add custom connector, paste `https://api-production-16521a26.up.railway.app/mcp`, sign in, tap Allow. Then ask "How is my day going?" |
 
