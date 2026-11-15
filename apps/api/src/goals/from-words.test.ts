@@ -28,11 +28,14 @@ test("the word lists read a messy transcript into goals and notes", () => {
     "um so mostly the startup, we launch in December, ten hours of deep work, and I want to get back to the gym three times a week. I lose my evenings on my phone. also sleep, like 7 hours",
   );
   const titles = read.goals.map((g) => g.title);
-  assert.deepEqual(titles, ["Ship the product", "Deep work", "Training", "Sleep"]);
+  // The deep work is the startup's: one goal with the hours said, never counted twice.
+  assert.deepEqual(titles, ["Ship the product", "Training", "Sleep"]);
   const training = read.goals.find((g) => g.title === "Training");
   assert.equal(training?.weekly_budget_minutes, 180);
   assert.equal(training?.estimated, false);
-  assert.equal(read.goals.find((g) => g.title === "Deep work")?.weekly_budget_minutes, 600);
+  const product = read.goals.find((g) => g.title === "Ship the product");
+  assert.equal(product?.weekly_budget_minutes, 600);
+  assert.equal(product?.estimated, false);
   const sleep = read.goals.find((g) => g.title === "Sleep");
   assert.equal(sleep?.target.kind, "target");
   assert.equal(sleep?.target.sleep_hours, 7);

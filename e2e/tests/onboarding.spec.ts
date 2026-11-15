@@ -108,12 +108,14 @@ test("onboarding completes for a fresh user, by voice and by keyboard", async ({
   // What he heard: no model key in CI, so the word lists read it. Hours said are kept as said.
   await expect(page.getByRole("heading", { name: "Here's what I heard." })).toBeVisible();
   const heard = page.getByRole("list", { name: "Goals I heard" });
-  await expect(heard.getByRole("textbox", { name: "Goal name" })).toHaveCount(3);
+  // The startup and its ten hours of deep work are one goal, not two.
+  await expect(heard.getByRole("textbox", { name: "Goal name" })).toHaveCount(2);
+  await expect(heard.getByText("10h a week")).toBeVisible();
   await expect(heard.getByText("3h a week")).toBeVisible();
   await expect(page.getByRole("region", { name: "What I'll remember" })).toContainText(
     "I lose my evenings on my phone",
   );
-  await tap(page.getByRole("button", { name: "Keep these three" }));
+  await tap(page.getByRole("button", { name: "Keep these two" }));
 
   await expect(page.getByRole("heading", { name: "Now, your days." })).toBeVisible();
   // Everything that adds to the day is offered, each with Connect; nudges wait for a moment (#207).
@@ -129,7 +131,7 @@ test("onboarding completes for a fresh user, by voice and by keyboard", async ({
 
   // Saved for this user only, never on the demo account.
   const { goals } = await asUser<{ goals: { title: string }[] }>("/v1/goals");
-  expect(goals.map((g) => g.title).sort()).toEqual(["Deep work", "Ship the product", "Training"]);
+  expect(goals.map((g) => g.title).sort()).toEqual(["Ship the product", "Training"]);
   const profile = await asUser<{ onboarded_at: string | null }>("/v1/profile");
   expect(profile.onboarded_at).not.toBeNull();
 

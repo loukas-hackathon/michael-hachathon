@@ -966,9 +966,12 @@ export function Talk({
                 onClick={() => startEditing(lastAt, lastSent.text)}
                 disabled={thinking}
                 aria-label={`You said: ${lastSent.text}. Tap to fix.`}
-                className="press max-w-full rounded-group bg-fill px-4 py-3 text-left text-body text-label-2"
+                // Quiet and labelled: the last answer, kept to fix, never read as an answer to the new question.
+                className="press max-w-full rounded-control px-3 py-2 text-footnote text-label-2"
               >
-                {lastSent.text}
+                <span className="line-clamp-2">
+                  You said “{lastSent.text}” <span className="font-semibold text-tint-text">Fix</span>
+                </span>
               </button>
             ) : null}
 
