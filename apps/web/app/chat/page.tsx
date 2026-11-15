@@ -9,9 +9,10 @@ import { startersFrom } from "./starters";
 
 export const metadata = { title: "Chat with Michael" };
 
-export default async function ChatPage() {
+export default async function ChatPage({ searchParams }: { searchParams: Promise<{ talk?: string }> }) {
   // Always per request: the history is the signed-in user's own.
   await connection();
+  const { talk } = await searchParams;
   // History is a nicety: if it cannot load, the chat still opens and sending explains what is wrong.
   const voice = getVoiceEnabled();
   // The check in from the API (#187); the sample card only when the API cannot answer.
@@ -45,6 +46,7 @@ export default async function ChatPage() {
         threads={threads}
         starters={startersFrom(day)}
         elevenlabs={elevenlabs}
+        talk={talk === "1"}
         checkIn={
           today ? <LiveCheckIn initial={today.questions} /> : <CheckIn questions={SAMPLE_QUESTIONS} sample />
         }

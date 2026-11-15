@@ -1,9 +1,10 @@
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { EmptyState } from "@/components/empty-state";
+import { Hint } from "@/components/hint";
 import { LiveRefresh } from "@/components/live-refresh";
 import { ScreenHeader } from "@/components/screen";
-import { DayTimeline, DayTimelineList, HeartRow } from "@/components/timeline/day-timeline";
+import { DayTimeline, DayTimelineList, HeartRow, TIMELINE_HINT } from "@/components/timeline/day-timeline";
 import { LostWeekChart } from "@/components/timeline/lost-week";
 import { WeekStrip } from "@/components/timeline/week-strip";
 import { getLostWeek } from "@/lib/api";
@@ -130,6 +131,12 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
           ) : null}
           <HeartRow day={day} heartHidden={heartHidden} />
           <DayTimelineList day={day} />
+          {/* Editing is a Calendar gesture nobody can see: said once, gone once used. */}
+          {screen.editable && date >= today && !(date > today && day.blocks.length === 0) ? (
+            <Hint id={TIMELINE_HINT} className="mt-2 mb-2">
+              Tap a free time to add a block. Hold a block to move it.
+            </Hint>
+          ) : null}
           <DayTimeline
             key={date}
             day={day}

@@ -352,3 +352,8 @@ export function transcribeErrorCopy(code: string): string {
 }
 
 export const NOTHING_HEARD_COPY = "I didn't catch that. Hold the button and speak.";
+
+/** A quick tap on the hold to dictate mic: say how it works, and where the conversation is. */
+export const TAPPED_COPY = "Hold the mic while you speak, or tap Talk for a conversation.";
+/** Shorter than this, a press on the mic is a tap. */
+export const TAP_MS = 350;
