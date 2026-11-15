@@ -814,3 +814,207 @@ test("accept_recommendation refuses an offer that involves other people", () =>
     );
     assert.equal((await store.getRecommendation(offer.id))?.status, "proposed");
   }));
+
+// #483: on Loukas' account Michael said he had added a Gym block when no tool had saved it in that
+// answer, and read Saturday's lines on Sunday as if said today.
+
+test("#483 a claimed booking with no tool call becomes one honest line and an offer", () =>
+  asNewUser(() =>
+    withClaude(
+      [
+        {
+          text: "Yes, I can write to your calendar. I've added Gym for Sunday 10:00 to 11:00. Undo until 10:00.",
+        },
+      ],
+      async () => {
+        const { answer, actions } = await askMichael(
+          turns("Yes do you have access to write as well?"),
+          "context",
+        );
+        assert.deepEqual(actions, []);
+        assert.doesNotMatch(answer, /I've added|Undo until/);
+        assert.match(
+          answer,
+          /^Yes, I can write to your calendar\. I haven't added it yet\. Shall I do it now\?$/,
+        );
+      },
+    ),
+  ));
+
+test("#483 a tool error the model ignores is said as an error, and the block it tried is offered", () =>
+  asNewUser(() => {
+    const start = Date.now() - HOUR;
+    return withClaude(
+      [
+        {
+          tool: {
+            name: "create_focus_block",
+            input: { title: "Gym", start_at: iso(start), end_at: iso(start + HOUR) },
+          },
+        },
+        { text: `Added Gym, ${clock(start)} to ${clock(start + HOUR)}. Undo until ${clock(start)}.` },
+      ],
+      async () => {
+        const { answer, actions } = await askMichael(turns("Add gym for the last hour"), "context");
+        assert.deepEqual(actions, []);
+        assert.equal(answer, "That didn't go through: That time has already started.");
+      },
+    );
+  }));
+
+test("#483 a booking that really happened keeps its words", () =>
+  asNewUser(() => {
+    const start = Date.now() + 3 * HOUR;
+    return withClaude(
+      [
+        {
+          tool: {
+            name: "create_focus_block",
+            input: { title: "Gym", start_at: iso(start), end_at: iso(start + HOUR) },
+          },
+        },
+        { text: `I've added Gym, ${clock(start)} to ${clock(start + HOUR)}.` },
+      ],
+      async () => {
+        const { answer } = await askMichael(turns("Add gym"), "context");
+        assert.equal(
+          answer,
+          `I've added Gym, ${clock(start)} to ${clock(start + HOUR)}. Undo until ${clock(start)}.`,
+        );
+      },
+    );
+  }));
+
+test("#483 an old claim replayed from the thread is not repeated as done; the thread's actions are in the prompt", () =>
+  // The account behind the dev key, so POST /v1/chat reads the same thread.
+  runAsUser(env.DEMO_USER_ID, async () => {
+    await withoutInstructions(store);
+    const start = Date.now() + 5 * HOUR;
+    // Saturday: Gym booked, then undone from the app.
+    const booked = await withClaude(
+      [
+        {
+          tool: {
+            name: "create_focus_block",
+            input: { title: "Gym", start_at: iso(start), end_at: iso(start + HOUR) },
+          },
+        },
+      ],
+      () => askMichael(turns("Add gym"), "context"),
+    );
+    const rec = booked.actions[0];
+    assert.ok(rec);
+    const { undoRecommendation } = await import("../actions/calendar");
+    await undoRecommendation(rec.id);
+    const thread = await store.createChatThread();
+    await store.addChatMessage(thread.id, "user", "Yes please");
+    await store.addChatMessage(
+      thread.id,
+      "assistant",
+      `I've added Gym, ${clock(start)} to ${clock(start + HOUR)}.`,
+      [rec.id],
+    );
+
+    await withClaude(
+      [
+        {
+          text: `Hello. It's there now: Gym, ${clock(start)} to ${clock(start + HOUR)}. Undo until ${clock(start)}.`,
+        },
+      ],
+      async (requests) => {
+        const res = await app.request("/v1/chat", {
+          method: "POST",
+          headers: auth,
+          body: JSON.stringify({ message: "Hello", thread_id: thread.id }),
+        });
+        assert.equal(res.status, 201);
+        const body = ChatResponse.parse(await res.json());
+        assert.equal(body.reply.content, "Hello. I haven't added it yet. Shall I do it now?");
+        const system = JSON.stringify(requests[0]?.system);
+        assert.match(system, /What I did earlier in this conversation, as it stands now:/);
+        assert.match(system, /Gym, \d\d:\d\d to \d\d:\d\d \([A-Za-z]+ \d+ [A-Za-z]+\): undone at /);
+        assert.match(system, /Now: [A-Za-z]+ \d+ [A-Za-z]+, \d\d:\d\d \(Europe\/Athens\)/);
+      },
+    );
+  }));
+
+test("#483 a block booked but gone from the calendar since reads as removed, never as never added", () =>
+  asNewUser(async () => {
+    const start = Date.now() + 5 * HOUR;
+    const booked = await withClaude(
+      [
+        {
+          tool: {
+            name: "create_focus_block",
+            input: { title: "Gym", start_at: iso(start), end_at: iso(start + HOUR) },
+          },
+        },
+      ],
+      () => askMichael(turns("Add gym"), "context"),
+    );
+    const rec = booked.actions[0];
+    assert.ok(rec);
+    const { threadActionLines } = await import("./chat");
+    assert.match((await threadActionLines([rec]))[0] ?? "", /: done at .*; undo until \d\d:\d\d$/);
+    const [block] = await store.listEvents({
+      from: iso(start - 1000),
+      to: iso(start + HOUR),
+      type: ["calendar_event"],
+    });
+    assert.ok(block);
+    await store.deleteEvents([block.id]);
+    assert.match(
+      (await threadActionLines([rec]))[0] ?? "",
+      /the block is no longer on the calendar \(removed since/,
+    );
+  }));
+
+test("#483 lines from an earlier day carry their day, so Saturday's tomorrow is not read on Sunday", async () => {
+  const { toTurns } = await import("./chat");
+  // Sunday 15 November, 12:48 in Athens.
+  const now = Date.parse("2026-11-15T12:48:00+02:00");
+  const line = (role: "user" | "assistant", content: string, at: string) => ({
+    id: randomUUID(),
+    role,
+    content,
+    created_at: at,
+    action_ids: [],
+  });
+  const t = toTurns(
+    [
+      line("user", "How is my day going?", "2026-11-14T20:17:00+02:00"),
+      line("assistant", "Nothing today. Gym tomorrow at 10:00?", "2026-11-14T20:17:01+02:00"),
+      line("user", "What time did I open Instagram today", "2026-11-15T12:40:00+02:00"),
+    ],
+    now,
+  );
+  assert.equal(t[0]?.content, "[Saturday 14 November, 20:17] How is my day going?");
+  // Michael's own lines are left as he wrote them; the user's line before each one dates the pair.
+  assert.equal(t[1]?.content, "Nothing today. Gym tomorrow at 10:00?");
+  assert.equal(t[2]?.content, "What time did I open Instagram today");
+});
+
+test("#483 the cached context reads again after a calendar sync and after midnight in Athens", () =>
+  asNewUser(async () => {
+    const { contextVersion } = await import("./chat");
+    const { currentUserId } = await import("../context");
+    const user = currentUserId();
+    const before = contextVersion(user, Date.parse("2026-11-14T23:59:00+02:00"));
+    // A new day in Athens, with no write: the version moves.
+    assert.notEqual(contextVersion(user, Date.parse("2026-11-15T00:01:00+02:00")), before);
+    // A calendar sync writes through the store: the version moves too.
+    const same = contextVersion(user, Date.parse("2026-11-14T23:59:00+02:00"));
+    assert.equal(same, before);
+    await store.upsertEvents([
+      {
+        source: "google_calendar",
+        type: "calendar_event",
+        start_at: iso(Date.now() + HOUR),
+        end_at: iso(Date.now() + 2 * HOUR),
+        title: "Boatspace",
+        data: {},
+        external_id: `g-${randomUUID()}`,
+      },
+    ]);
+    assert.notEqual(contextVersion(user, Date.parse("2026-11-14T23:59:00+02:00")), before);
+  }));

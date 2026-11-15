@@ -42,6 +42,7 @@ import { isLogEntry } from "../score/logged";
 import { store } from "../store";
 import { currentTiming } from "../timing";
 import { writeVersion } from "../writes";
+import { honestAnswer, type ToolCallRecord } from "./chat-honesty";
 import { latestThread, titleFor, untitled } from "./chat-threads";
 import { plannedVisitLines } from "./location";
 import { patternReportFor } from "./patterns";
@@ -131,7 +132,10 @@ Acting:
 - You can draft a follow up message after a conversation or a meeting with other people (draft_follow_up). It is saved for the user to copy and send themselves; show them the text.
 - Act when the user asks you to, or clearly agrees to a change you proposed. If the time or the block is unclear, ask first instead of guessing.
 - You never touch events with other people, remove only the user's own events (always with undo until they start), and never send anything in the user's name. If a tool refuses, say why in one line and offer advice instead.
-- Never claim you did something unless a tool result says it is done.
+- Never claim you did something unless a tool result in this answer says it is done. Agreeing to a change is not making it: call the tool first, then say it. If you have not called it, say so and offer it ("I haven't added it yet. Shall I book Gym 10:00 to 11:00?").
+- A tool result that is an error or a refusal means nothing changed: say it did not go through and why, in one line.
+- Lines from an earlier day in this conversation start with their day and time in brackets. "Today" and "tomorrow" in them mean that day, not now. Check the "Now:" line for today's date and weekday before you say today, tomorrow or a weekday.
+- What became of your earlier actions in this conversation is under "What I did earlier in this conversation". Trust it over your own earlier lines. A block you added that is gone since was removed, not never added. Correct an earlier line only when the records show it was wrong, in one line, then the fix.
 - After acting, say in one or two short sentences what you did, with times, and end with the undo line exactly as the tool gave it, e.g. "Undo until 15:00."
 - Times you pass to tools are ISO 8601 with the user's UTC offset, as in "Now (ISO)" below.
 ${CONNECT_LINE}
@@ -621,12 +625,19 @@ interface ContextHandle {
   hit: boolean;
 }
 
+/**
+ * When the cached context must be read again: any write of the user's (a calendar sync included,
+ * it writes through the store) or a new day in Athens, so "Today" never carries yesterday (#483).
+ */
+export const contextVersion = (userId: string, now: number) =>
+  `${writeVersion(userId)}|${new Zone(DEFAULT_TIMEZONE).dayOf(now)}`;
+
 /** The caller's cached context reads, started now when there are none (or they are stale). */
 function ensureContext(): ContextHandle {
   const userId = currentUserId();
   const key = `${userId}|${currentDemoVisitor() ?? ""}`;
-  const version = writeVersion(userId);
   const now = Date.now();
+  const version = contextVersion(userId, now);
   const cached = contexts.get(key);
   if (cached && cached.version === version && now - cached.at < CONTEXT_TTL_MS)
     return { entry: cached, hit: true };
@@ -768,6 +779,8 @@ interface Hooks {
   spoken?: boolean;
   /** The "Now:" line, when the context leaves the clock out (contextFor). */
   now?: string;
+  /** Done actions from earlier answers in this thread: a line about them is not a false claim. */
+  earlierDone?: number;
 }
 
 /** Where the time of one model call went, for the chat_timing log and the stream's `timing` event. */
@@ -885,6 +898,8 @@ export async function askMichael(
   const messages = [...turns];
   const texts: string[] = [];
   const actions: Recommendation[] = [];
+  // Every tool call of this turn, for the claim guard after the loop (#483).
+  const calls: ToolCallRecord[] = [];
   let wrote = false;
   // Text from a later round starts a new paragraph in the stream too.
   const onText = hooks.onText
@@ -937,20 +952,21 @@ export async function askMichael(
     }
     const text = textOf(response);
     if (text) texts.push(text);
-    const calls = response.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
-    if (response.stop_reason !== "tool_use" || calls.length === 0) break;
+    const uses = response.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
+    if (response.stop_reason !== "tool_use" || uses.length === 0) break;
 
     // Hand the whole turn back unchanged (thinking blocks included), then every result in one turn.
     messages.push({ role: "assistant", content: response.content });
     const results: Anthropic.ToolResultBlockParam[] = [];
     const replies: string[] = [];
     const toolsStart = performance.now();
-    for (const call of calls) {
+    for (const call of uses) {
       const step = { id: `s${++steps}`, label: hooks.onStep ? await labelFor(call) : "" };
       await hooks.onStep?.({ ...step, status: "running" });
       const outcome = await runChatTool(call.name, call.input, turn);
       await hooks.onStep?.({ ...step, status: "done" });
       if (outcome.reply && !outcome.isError) replies.push(outcome.reply);
+      calls.push({ name: call.name, input: call.input, ok: !outcome.isError, content: outcome.content });
       if (outcome.action) {
         actions.push(outcome.action);
         await hooks.onAction?.(outcome.action);
@@ -964,7 +980,7 @@ export async function askMichael(
     }
     const current = timing.at(-1);
     if (current) current.tools_ms = Math.round(performance.now() - toolsStart);
-    if (statement && replies.length === calls.length) {
+    if (statement && replies.length === uses.length) {
       const line = replies.join(" ");
       if (hooks.onText) await hooks.onText(text ? `\n\n${line}` : line);
       texts.push(line);
@@ -973,7 +989,14 @@ export async function askMichael(
     messages.push({ role: "user", content: results });
   }
 
-  let answer = texts.join("\n\n").trim();
+  // A change is claimed only when this turn made one; otherwise one honest line and an offer (#483).
+  // The stream already showed the model's words; the stored reply (the `done` event) replaces them.
+  let answer = honestAnswer({
+    answer: texts.join("\n\n").trim(),
+    actions,
+    calls,
+    earlierDone: hooks.earlierDone,
+  });
   const done = actions.filter((a) => a.status === "done");
   const missing = done.flatMap((a) => {
     const line = undoLine(a);
@@ -1009,8 +1032,10 @@ interface Prepared {
   turns: Anthropic.MessageParam[];
   /** Everything Michael knows but the clock (cached for a few minutes, contextFor). */
   context: string;
-  /** The "Now:" line, sent apart from the cached context. */
+  /** The "Now:" line (and this thread's earlier actions), sent apart from the cached context. */
   now: string;
+  /** Done actions from earlier answers in the thread. */
+  earlierDone: number;
   /** The answer is read aloud (conversation mode): brief, no lists. */
   spoken: boolean;
   /** Null when the pair starts a new thread (made in save, so a failed answer leaves nothing). */
@@ -1039,7 +1064,11 @@ async function prepare(body: unknown): Promise<Prepared> {
     thread ? store.listChatMessages(thread.id, HISTORY_TURNS) : Promise.resolve([]),
     contextFor(handle ?? ensureContext(), thread?.id ?? null),
   ]);
-  const turns: Anthropic.MessageParam[] = [...toTurns(earlier), { role: "user", content: message }];
+  const nowMs = Date.now();
+  const turns: Anthropic.MessageParam[] = [...toTurns(earlier, nowMs), { role: "user", content: message }];
+  // What became of this thread's earlier actions, read fresh every turn (never from the cache).
+  const earlierActions = await actionsOf(earlier).catch(() => []);
+  const actionLines = earlierActions.length ? await threadActionLines(earlierActions, nowMs) : [];
   // Named from the first line, in parallel with the answer, so naming adds no wait.
   const title = !thread || (untitled(thread) && earlier.length === 0) ? titleFor(message) : null;
   const contextMs = Math.round(performance.now() - contextStart);
@@ -1051,7 +1080,14 @@ async function prepare(body: unknown): Promise<Prepared> {
     message,
     turns,
     context: context.text,
-    now: nowLine(Date.now()),
+    // The clock, and this thread's actions as they stand: both per turn, after the cached context.
+    now: [
+      nowLine(nowMs),
+      ...(actionLines.length
+        ? [`What I did earlier in this conversation, as it stands now:\n${actionLines.join("\n")}`]
+        : []),
+    ].join("\n\n"),
+    earlierDone: earlierActions.filter((a) => a.status === "done").length,
     spoken,
     thread,
     title,
@@ -1103,10 +1139,59 @@ async function actionsOf(messages: ChatMessage[]): Promise<Recommendation[]> {
   return found.filter((r): r is Recommendation => r !== null);
 }
 
-/** Stored lines as model turns. The first turn must be the user's, so a leading answer is dropped. */
-export function toTurns(history: ChatMessage[]): Anthropic.MessageParam[] {
+/**
+ * Stored lines as model turns. The first turn must be the user's, so a leading answer is dropped.
+ * With `now`, a user line from an earlier day starts with its day and time in brackets, so a
+ * Saturday "tomorrow" is never read on Sunday as if said today (#483).
+ */
+export function toTurns(history: ChatMessage[], now?: number): Anthropic.MessageParam[] {
   const first = history.findIndex((m) => m.role === "user");
-  return first === -1 ? [] : history.slice(first).map((m) => ({ role: m.role, content: m.content }));
+  if (first === -1) return [];
+  const zone = new Zone(DEFAULT_TIMEZONE);
+  const today = now === undefined ? null : zone.dayOf(now);
+  return history.slice(first).map((m) => {
+    const at = Date.parse(m.created_at);
+    const earlier = today !== null && m.role === "user" && !Number.isNaN(at) && zone.dayOf(at) !== today;
+    return {
+      role: m.role,
+      content: earlier ? `[${weekdayIn(zone, at)}, ${zone.clock(at)}] ${m.content}` : m.content,
+    };
+  });
+}
+
+/**
+ * What became of each action of this thread's earlier answers, as it stands now, so Michael never
+ * guesses: "Gym, 10:00 to 11:00 (Sunday 15 November): undone". A block that was booked but is gone
+ * from the calendar since says so, so it is never called "never added" (#483).
+ */
+export async function threadActionLines(actions: Recommendation[], now = Date.now()): Promise<string[]> {
+  const zone = new Zone(DEFAULT_TIMEZONE);
+  return Promise.all(
+    actions.map(async (a) => {
+      const start =
+        typeof a.action?.payload?.start_at === "string" ? Date.parse(a.action.payload.start_at) : NaN;
+      const day = Number.isNaN(start) ? "" : ` (${weekdayIn(zone, start)})`;
+      const when = (iso: string | null | undefined) =>
+        iso ? ` at ${weekdayIn(zone, Date.parse(iso))}, ${zone.clock(Date.parse(iso))}` : "";
+      let state: string;
+      if (a.status === "done") {
+        state = `done${when(a.executed_at)}`;
+        if (a.action?.kind === "create_focus_block") {
+          const ex = (await store.getRecommendationExecution(a.id).catch(() => null)) as {
+            timeline_event_id?: string | null;
+          } | null;
+          const id = ex?.timeline_event_id;
+          const event = id ? await store.getEvent(id).catch(() => null) : null;
+          if (id && !event) state += "; the block is no longer on the calendar (removed since, not by me)";
+        }
+        const until = a.action?.undo_until ? Date.parse(a.action.undo_until) : NaN;
+        if (!Number.isNaN(until) && until > now) state += `; undo until ${zone.clock(until)}`;
+      } else if (a.status === "undone") state = `undone${when(a.undone_at)}`;
+      else if (a.status === "proposed") state = "proposed, not accepted";
+      else state = `${a.status}, nothing changed`;
+      return `- ${a.title}${day}: ${state}`;
+    }),
+  );
 }
 
 export const chat = new Hono()
@@ -1145,7 +1230,11 @@ export const chat = new Hono()
   .post("/chat", async (c) => {
     const start = performance.now();
     const p = await prepare(await jsonBody(c));
-    const answer = await askMichael(p.turns, p.context, { spoken: p.spoken, now: p.now });
+    const answer = await askMichael(p.turns, p.context, {
+      spoken: p.spoken,
+      now: p.now,
+      earlierDone: p.earlierDone,
+    });
     const saveStart = performance.now();
     const body = await save(p, answer);
     const t = timingOf(p, answer, start, Math.round(performance.now() - saveStart));
@@ -1178,6 +1267,7 @@ export const chat = new Hono()
         const answer = await askMichael(p.turns, p.context, {
           spoken: p.spoken,
           now: p.now,
+          earlierDone: p.earlierDone,
           onText: async (text) => {
             await closeOpening();
             await sse.writeSSE({ event: "delta", data: JSON.stringify({ text }) });
