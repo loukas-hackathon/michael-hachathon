@@ -29,7 +29,21 @@ export const webhooks = new Hono()
   .post("/ios-shortcuts", async (c) => {
     const payload = parse(ShortcutsPayload, await jsonBody(c));
     // Checked first so an open is not even held while off the record or with the source off.
-    if (!(await collecting("ios_shortcuts"))) return c.json(ignoredResponse(1));
+    if (!(await collecting("ios_shortcuts"))) {
+      return c.json({
+        ...ignoredResponse(1),
+        message: "Michael is not keeping iPhone app opens: you are off the record or switched it off.",
+      });
+    }
+    // Run by hand in Shortcuts: the test. The key worked (auth already passed), so the iPhone row
+    // turns Connected; app opens arrive once the App automation runs the shortcut (#466).
+    if (!payload.app) {
+      return c.json({
+        ...ignoredResponse(0),
+        test: true,
+        message: "Connected to Michael. Now add the App automation so opens arrive.",
+      });
+    }
     // Kept live as well: the app in front now is not an event until the next open ends it (#438).
     phoneLive.record(currentUserId(), payload, Date.now());
     return c.json(await ingest(shortcuts.handle(currentUserId(), payload, Date.now())));

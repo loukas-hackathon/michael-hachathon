@@ -325,7 +325,7 @@ mode); otherwise it answers `200` with `ignored: 1` and nothing is stored.
 
 ```ts
 type ShortcutsPayload = {
-  app: string; // the Shortcuts "App" value, e.g. "Instagram"
+  app?: string; // the Shortcuts "App" value, e.g. "Instagram"; empty or missing = a test run
   action?: "open" | "close"; // "opened", "closed", any case also accepted; missing = "open"
   at?: string; // ISO 8601; missing or unreadable = time of arrival
   bundle_id?: string; // optional, e.g. "com.burbn.instagram"
@@ -339,7 +339,11 @@ type ShortcutsPayload = {
 - Opening another app closes the held one at that moment. A close with no open, or a session longer
   than two hours, is dropped. Held opens live in the API's memory, so a deploy in the middle of a
   session loses that session.
-- While off the record or with the source off, a call answers `ignored: 1` and an open is not held.
+- While off the record or with the source off, a call answers `ignored: 1` and an open is not held,
+  with a `message` that says why.
+- No `app` (the shortcut run by hand in Shortcuts, with no automation as its input) is the test run
+  (#466): `200` with `test: true`, `inserted: 0` and a `message`; nothing is stored. The device key's
+  `last_used_at` records it, which is what turns the iPhone connection Connected.
 - The patterns layer uses these sessions for the hours the Biome backfill (`iphone_usage`) has not
   covered yet, and steps aside once it has (see "One timeline first").
 

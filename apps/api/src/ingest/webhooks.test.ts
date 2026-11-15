@@ -113,9 +113,16 @@ test("POST /v1/webhooks/ios-shortcuts stores a session on close", async () => {
   );
   assert.equal(close.inserted, 1);
   assert.equal(close.events[0]?.source, "ios_shortcuts");
-  // No action means open (one "Is Opened" automation is enough); no app is still refused.
+  // No action means open (one "Is Opened" automation is enough).
   assert.equal((await post("ios-shortcuts", { app: "Threads" })).status, 200);
-  assert.equal((await post("ios-shortcuts", { action: "open" })).status, 400);
+  // No app: the shortcut run by hand, the test (#466). Answered, nothing stored, never a 400.
+  for (const body of [{ action: "open" }, { app: "", action: "open" }, { app: "  " }]) {
+    const res = await post("ios-shortcuts", body);
+    assert.equal(res.status, 200);
+    const json = (await res.json()) as { test?: boolean; inserted: number };
+    assert.equal(json.test, true);
+    assert.equal(json.inserted, 0);
+  }
 });
 
 // ---------- ActivityWatch ----------
