@@ -4,12 +4,15 @@ import { AREA_ORDER, type Balance, verdict } from "@/lib/gamification";
 /**
  * The balanced week (#168): each area's score against its floor. Under the floor reads like lost
  * time (grey, hatched); at or above it, solid. The black tick is the floor. Pink stays goal time.
+ * The numbers are scores, not progress, so the heading says what they measure (#330): the share
+ * of each area's booked goal time that was held.
  */
 export function BalanceBars({ balance }: { balance: Balance }) {
   const v = verdict(balance);
   return (
     <div className="flex flex-col gap-3">
       {v.line ? <p className="text-body font-semibold">{v.line}</p> : null}
+      <h3 className="-mb-1 text-footnote font-semibold text-label-2">Booked time held</h3>
       <ul className="flex flex-col gap-2.5">
         {AREA_ORDER.filter((a) => balance.areas[a] != null).map((a) => {
           const score = balance.areas[a] as number;
@@ -20,7 +23,7 @@ export function BalanceBars({ balance }: { balance: Balance }) {
               <span className="text-subhead">{CATEGORY_TITLE[a]}</span>
               <span
                 role="img"
-                aria-label={`${CATEGORY_TITLE[a]} ${score}%, floor ${floor}%`}
+                aria-label={`${CATEGORY_TITLE[a]}: ${score}% of booked time held, floor ${floor}%`}
                 className="relative h-2.5 rounded-full bg-[color-mix(in_srgb,var(--m-context)_55%,transparent)]"
               >
                 <span

@@ -50,7 +50,19 @@ const STATE_WORDS: Record<ConnectionStatus["state"], string> = {
   soon: "Coming soon",
 };
 
-export function ConnectionRow({ row }: { row: ConnectionStatus }) {
+export function ConnectionRow({ row, sample = false }: { row: ConnectionStatus; sample?: boolean }) {
+  // The demo week: this source is replayed, not connected. Say so, with nothing to tap.
+  if (sample) {
+    return (
+      <div className="flex min-h-16 items-center gap-3 py-2.5 pr-4 pl-4">
+        <ConnectionIcon id={row.id} />
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="text-body">{row.name}</span>
+          <span className="text-footnote text-label-2">Sample data</span>
+        </span>
+      </div>
+    );
+  }
   // Not proven on production yet (#295): the same row, quieter, and nothing to tap.
   if (row.state === "soon") {
     return (

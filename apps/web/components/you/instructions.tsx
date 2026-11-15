@@ -283,9 +283,15 @@ export function StandingInstructions({
               disabled={pending}
               onChange={(e) => {
                 const active = e.target.checked;
+                setError(null);
                 start(async () => {
                   setOptimistic({ id: i.id, active });
-                  await toggleInstruction(i.id, active);
+                  try {
+                    const res = await toggleInstruction(i.id, active);
+                    if (!res.ok) setError(res.message ?? "I could not save that. Nothing changed.");
+                  } catch {
+                    setError("I could not reach the server. Nothing changed.");
+                  }
                 });
               }}
               className="hit m-switch shrink-0"

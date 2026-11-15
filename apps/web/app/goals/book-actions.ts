@@ -3,6 +3,7 @@
 import { GoalBook } from "@michael/shared";
 import { revalidatePath } from "next/cache";
 import { bookGoal } from "@/lib/api";
+import { demoRefusal } from "@/lib/demo-refusal";
 
 // Book time from the Goals tab (#309). The id and length come from the browser, so both are
 // checked first. Undo goes through the existing undoRecommendationAction.
@@ -24,6 +25,8 @@ export async function bookGoalAction(goalId: string, minutes: number): Promise<B
     r = { ok: false, status: 0, message: "" };
   }
   if (!r.ok) {
+    const refused = await demoRefusal(r.status);
+    if (refused) return { ok: false, error: refused };
     if (r.status === 409 && r.message) return { ok: false, error: `${r.message.replace(/\.$/, "")}.` };
     if (r.status === 0) return { ok: false, error: "I could not reach the server. Nothing changed." };
     if (r.status === 501) return { ok: false, error: "Booking needs the live calendar. Nothing changed." };

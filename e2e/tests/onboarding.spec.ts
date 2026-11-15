@@ -78,3 +78,25 @@ test("You shows unproven connections as Coming soon, with nothing to tap", async
   await page.goto("/you/connections/apple-watch");
   await expect(page.getByText("Coming soon. I will tell you when it is ready.")).toBeVisible();
 });
+
+// The demo week replays recorded sources, so a demo visitor sees them as what they are, and a tap
+// the API refuses says the one demo line next to the control (#330).
+test("You on the demo week: sources read Sample data, a refused tap says why", async ({ page }) => {
+  await enterDemo(page);
+  await page.goto("/you");
+  const list = page.locator("#connections");
+  await expect(
+    list.getByText("The demo week runs on sample data from calendar, Mac, iPhone and watch."),
+  ).toBeVisible();
+  await expect(list.getByText("Sample data", { exact: true })).toHaveCount(4);
+  await expect(list.getByRole("link", { name: /Google Calendar|Apple Watch|Mac|iPhone/ })).toHaveCount(0);
+
+  const privacy = page.locator("section", { has: page.getByRole("heading", { name: "Privacy" }) });
+  await expect(async () => {
+    await page.locator("#off-the-record").click();
+    await expect(
+      privacy.getByText("This is the demo week. Sign in with Google to make it yours."),
+    ).toBeVisible({ timeout: 2000 });
+  }).toPass({ timeout: 15_000 });
+  await expect(page.locator("#off-the-record")).not.toBeChecked();
+});
