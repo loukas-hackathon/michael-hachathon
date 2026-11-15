@@ -1172,3 +1172,83 @@ test("off the record: the connections say so first, and a question about data ge
       await store.setOffTheRecord(false);
     }
   }));
+
+// 15 Nov: the iPhone row on You said Connected while Michael answered "Your iPhone and Mac aren't
+// connected". Both now read deviceState (@michael/shared), and the answer follows it.
+const PRODUCTION_ANSWER =
+  "I can't tell. Your iPhone and Mac aren't connected, so I can't see which apps you open. Right now I only have your Google Calendar.";
+
+async function usedIphoneKey() {
+  const { createPersonalToken, userForPersonalToken } = await import("../tokens");
+  const { SETUP_KEY_NAMES } = await import("@michael/shared");
+  const { secret } = await createPersonalToken(SETUP_KEY_NAMES.iphone);
+  await userForPersonalToken(secret);
+  await new Promise((r) => setImmediate(r));
+}
+
+test("15 Nov a used iPhone key and an unnamed open: Michael says when an app opened, never not connected", () =>
+  asNewUser(async () => {
+    const { connectionsNow } = await import("../connections-state");
+    const { deviceConnected, deviceState } = await import("@michael/shared");
+    await withoutMac();
+    await usedIphoneKey();
+    const openedAt = Date.now() - 60_000;
+    await store.insertEvents([
+      {
+        source: "ios_shortcuts",
+        type: "app_usage",
+        start_at: iso(openedAt),
+        end_at: iso(openedAt + 1000),
+        title: "An app",
+        data: { app_unknown: true },
+        external_id: `ios-${randomUUID()}`,
+      },
+    ]);
+    const c = await connectionsNow();
+    const line = `An app opened at ${clock(openedAt)}. Name the app in your automation and I'll say which.`;
+    assert.equal(c.iphone, line);
+    assert.ok(c.lines.some((l) => l.startsWith("- iPhone: connected, last data")));
+    assert.ok(c.lines.some((l) => l.includes(line)));
+    // The row's rule says the same.
+    const last = (await store.lastEventAtBySource()).ios_shortcuts;
+    assert.ok(deviceConnected(deviceState(last, null)));
+    await withClaude([{ text: PRODUCTION_ANSWER }], async (requests) => {
+      const { answer } = await askMichael(turns("Did I open the instagram"), "context", {
+        now: `Connections right now:\n${c.lines.join("\n")}`,
+        iphone: c.iphone,
+      });
+      assert.equal(answer, line);
+      assert.match(JSON.stringify(requests[0]?.system), /An app opened at \d\d:\d\d\. Name the app/);
+    });
+    // An answer that already says it keeps its own words.
+    await withClaude([{ text: `Not by name. ${line}` }], async () => {
+      const { answer } = await askMichael(turns("Did I open the instagram"), "context", { iphone: c.iphone });
+      assert.equal(answer, `Not by name. ${line}`);
+    });
+  }));
+
+test("15 Nov a used iPhone key with no opens: connected, opens once the automation runs", () =>
+  asNewUser(async () => {
+    const { connectionsNow } = await import("../connections-state");
+    await withoutMac();
+    await usedIphoneKey();
+    const c = await connectionsNow();
+    assert.equal(c.iphone, "Your iPhone is connected. I see opens once the App automation runs.");
+    assert.ok(c.lines.some((l) => l.startsWith("- iPhone: connected (shortcut test received")));
+    await withClaude([{ text: PRODUCTION_ANSWER }], async () => {
+      const { answer } = await askMichael(turns("Did I open the instagram"), "context", { iphone: c.iphone });
+      assert.equal(answer, c.iphone);
+    });
+  }));
+
+test("15 Nov no iPhone key and no opens: Michael may say it is not connected", () =>
+  asNewUser(async () => {
+    const { connectionsNow } = await import("../connections-state");
+    await withoutMac();
+    const c = await connectionsNow();
+    assert.equal(c.iphone, null);
+    await withClaude([{ text: PRODUCTION_ANSWER }], async () => {
+      const { answer } = await askMichael(turns("Did I open the instagram"), "context", { iphone: c.iphone });
+      assert.equal(answer, PRODUCTION_ANSWER);
+    });
+  }));

@@ -1,4 +1,4 @@
-import { SETUP_KEY_NAMES, type Source } from "@michael/shared";
+import { DEVICE_QUIET_MS, deviceState, pickIphoneKey, type Source } from "@michael/shared";
 import { MAC_FRESH_MS } from "./focus/session";
 import { DEFAULT_TIMEZONE } from "./patterns";
 import { Zone } from "./patterns/time";
@@ -11,7 +11,7 @@ import { listPersonalTokens } from "./tokens";
 // iPhone "not connected" (#483).
 
 /** A device source with nothing for this long needs attention (the rows' QUIET_MS). */
-const QUIET_MS = 24 * 3600_000;
+const QUIET_MS = DEVICE_QUIET_MS;
 
 const MAC_SOURCES: Source[] = ["macos_usage", "activitywatch"];
 const WATCH_SOURCES: Source[] = ["health_auto_export"];
@@ -33,6 +33,11 @@ export interface ConnectionsNow {
   offTheRecord: string | null;
   /** One line per connection for the chat context. */
   lines: string[];
+  /**
+   * The iPhone is connected (as its row on You says): the one line Michael gives about it, so an
+   * answer that calls it "not connected" is replaced (15 Nov). Null when it is not connected.
+   */
+  iphone: string | null;
 }
 
 const latest = (last: Partial<Record<Source, string>>, sources: Source[]) =>
@@ -68,12 +73,18 @@ export async function connectionsNow(now = Date.now()): Promise<ConnectionsNow> 
   const answer = otr ? offTheRecordAnswer(since) : null;
   // Off the record nothing arrives from any device, so no line promises data "once" something runs.
   const quiet = otr ? " Nothing arrives while off the record." : "";
-  const device = (name: string, sources: Source[], waiting?: string) => {
-    const t = latest(last, sources);
-    if (t && now - Date.parse(t) <= QUIET_MS) return `- ${name}: connected, last data ${at(t)}.${quiet}`;
-    if (t) return `- ${name}: connected but quiet, last data ${at(t)}.${quiet}`;
-    if (otr && waiting) return `${waiting.replace(/ Say ".*"$/, "")}${quiet}`;
-    return waiting ?? `- ${name}: not connected. Say "Connect your ${name} on You."`;
+  // The rows' own rule (deviceState in @michael/shared), so Michael and You never disagree.
+  const device = (
+    name: string,
+    sources: Source[],
+    waiting?: string,
+    key?: ReturnType<typeof pickIphoneKey>,
+  ) => {
+    const d = deviceState(latest(last, sources), key, now);
+    if (d.kind === "sending") return `- ${name}: connected, last data ${at(d.at)}.${quiet}`;
+    if (d.kind === "quiet") return `- ${name}: connected but quiet, last data ${at(d.at)}.${quiet}`;
+    if (d.kind === "tested" && waiting) return otr ? `${waiting.replace(/ Say ".*"$/, "")}${quiet}` : waiting;
+    return `- ${name}: not connected. Say "Connect your ${name} on You."`;
   };
 
   // First, so it frames every line below (#490 had it last, and the model missed it).
@@ -97,16 +108,15 @@ export async function connectionsNow(now = Date.now()): Promise<ConnectionsNow> 
   );
 
   // The iPhone shortcut's key was used (a hand run is the test, #466): connected before any open.
-  const key = tokens
-    .filter((t) => t.name === SETUP_KEY_NAMES.iphone)
-    .sort((a, b) => (b.last_used_at ?? "").localeCompare(a.last_used_at ?? ""))[0];
+  const key = pickIphoneKey(tokens);
+  const iphoneState = deviceState(latest(last, IPHONE_SOURCES), key, now);
+  const tested = iphoneState.kind === "tested" ? at(iphoneState.at) : null;
   lines.push(
     device(
       "iPhone",
       IPHONE_SOURCES,
-      key?.last_used_at
-        ? `- iPhone: connected (shortcut test received ${at(key.last_used_at)}), no app opens yet. Say "Your iPhone is connected. I see opens once the App automation runs."`
-        : undefined,
+      `- iPhone: connected (shortcut test received ${tested}), no app opens yet. Say "Your iPhone is connected. I see opens once the App automation runs."`,
+      key,
     ),
   );
   // Opens the automation did not name (an App automation passes the shortcut no input): Michael
@@ -120,10 +130,28 @@ export async function connectionsNow(now = Date.now()): Promise<ConnectionsNow> 
     })
     .catch(() => []);
   const lastPhone = phone.sort((a, b) => a.start_at.localeCompare(b.start_at)).at(-1);
-  if (lastPhone?.data?.app_unknown === true) {
+  const unnamed =
+    !otr && lastPhone?.data?.app_unknown === true ? unnamedOpenLine(at(lastPhone.start_at)) : null;
+  if (unnamed) {
     lines.push(
-      `- iPhone app opens: the automation does not name the app (shown as "An app"). Say "An app opened at ${at(lastPhone.start_at)}; name the app in the automation to see which."`,
+      `- iPhone app opens: the latest open is not named by the automation (shown as "An app"). Asked about an app open, say "${unnamed}"`,
     );
   }
-  return { macLive, offTheRecord: answer, lines };
+  let iphone: string | null = null;
+  if (!otr && iphoneState.at) {
+    iphone =
+      unnamed ??
+      (iphoneState.kind === "tested"
+        ? "Your iPhone is connected. I see opens once the App automation runs."
+        : `Your iPhone is connected, last data ${at(iphoneState.at)}.`);
+  }
+  return { macLive, offTheRecord: answer, lines, iphone };
 }
+
+/** What Michael says when the latest iPhone open came without an app name. */
+export const unnamedOpenLine = (clock: string) =>
+  `An app opened at ${clock}. Name the app in your automation and I'll say which.`;
+
+/** An answer that calls the iPhone not connected, or says it cannot see phone apps at all. */
+export const deniesIphone = (answer: string) =>
+  /iphone[^.]*\b(not|isn't|aren't)\b[^.]*connected|can't see which apps/i.test(answer);
