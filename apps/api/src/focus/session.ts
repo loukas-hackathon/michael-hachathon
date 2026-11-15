@@ -21,7 +21,8 @@ import {
 } from "../actions/calendar";
 import { type LogVia, logTime, matchGoal, settleBlock } from "../actions/log";
 import { guardMacApps } from "../actions/mac-apps";
-import { runAsUser } from "../context";
+import { currentUserId, runAsUser } from "../context";
+import { env } from "../env";
 import { HttpError, parse } from "../http";
 import { primaryChannel } from "../nudges/channels";
 import { DEFAULT_TIMEZONE } from "../patterns";
@@ -204,19 +205,24 @@ export const autoLine = (title: string, end: number) =>
  * Focus turns itself on: when the user's own goal block from the synced calendar is running now and
  * no session runs, the session starts without a tap, to the block's end. Once per block: a session
  * that already ran or was ended during this block (by the user, or on time) means the user decided,
- * so nothing starts again. Never off the record. Best effort: any refusal leaves things as they were.
+ * so nothing starts again. Never off the record, never on the replayed demo week. Best effort: any refusal leaves things as they were.
  */
 export async function autoStartFocus(
   now = Date.now(),
   latest?: StoredFocusSession | null,
 ): Promise<StoredFocusSession | null> {
   try {
+    // The demo week is replayed, not synced: its visitors start focus themselves.
+    if (currentUserId() === env.DEMO_USER_ID) return null;
     if ((await store.privacyRules()).offTheRecord) return null;
     const found = await runningBlock(await store.listGoals(), now);
     if (!found) return null;
     const blockStart = Date.parse(found.block.start_at);
     const last = latest === undefined ? await store.latestFocusSession() : latest;
-    if (last && (last.event_id === found.block.id || Date.parse(last.ended_at ?? last.start_at) >= blockStart))
+    if (
+      last &&
+      (last.event_id === found.block.id || Date.parse(last.ended_at ?? last.start_at) >= blockStart)
+    )
       return null;
     const s = await startFocus({ event_id: found.block.id }, "app");
     return store.updateFocusSession(s.id, {

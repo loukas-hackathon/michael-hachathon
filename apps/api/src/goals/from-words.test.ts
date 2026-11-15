@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { GoalWordsResponse, voiceProblems } from "@michael/shared";
 import { FakeModelClient, useModelClient } from "../analysis/model";
-import { cleanGoals, clauses, goalsFromWords, heardLine, minutesIn, readByRules } from "./from-words";
+import { clauses, cleanGoals, goalsFromWords, heardLine, minutesIn, readByRules } from "./from-words";
 
 // Goals from the user's own words: messy speech in, at most five goals and a few notes out.
 
@@ -60,16 +60,47 @@ test("the template line keeps the voice rules", () => {
 
 test("the model's goals are cleaned: bad rows dropped, repeats merged, sleep set from hours", () => {
   const goals = cleanGoals([
-    { title: "Ship the beta", category: "business", weekly_budget_minutes: 613, target: { kind: "time", calendar_titles: ["Build"] }, evidence: "the beta", estimated: false },
-    { title: "ship the beta", category: "business", weekly_budget_minutes: 60, target: { kind: "time" }, evidence: "x", estimated: true },
+    {
+      title: "Ship the beta",
+      category: "business",
+      weekly_budget_minutes: 613,
+      target: { kind: "time", calendar_titles: ["Build"] },
+      evidence: "the beta",
+      estimated: false,
+    },
+    {
+      title: "ship the beta",
+      category: "business",
+      weekly_budget_minutes: 60,
+      target: { kind: "time" },
+      evidence: "x",
+      estimated: true,
+    },
     { title: "", category: "health" },
-    { title: "Sleep", category: "health", weekly_budget_minutes: 1, target: { kind: "target", sleep_hours: 8 }, evidence: "sleep 8", estimated: false },
-    { title: "Dancing", category: "fun", weekly_budget_minutes: 60, target: { kind: "time" }, evidence: "x", estimated: true },
+    {
+      title: "Sleep",
+      category: "health",
+      weekly_budget_minutes: 1,
+      target: { kind: "target", sleep_hours: 8 },
+      evidence: "sleep 8",
+      estimated: false,
+    },
+    {
+      title: "Dancing",
+      category: "fun",
+      weekly_budget_minutes: 60,
+      target: { kind: "time" },
+      evidence: "x",
+      estimated: true,
+    },
   ]);
-  assert.deepEqual(goals.map((g) => [g.title, g.weekly_budget_minutes]), [
-    ["Ship the beta", 600],
-    ["Sleep", 8 * 60 * 7],
-  ]);
+  assert.deepEqual(
+    goals.map((g) => [g.title, g.weekly_budget_minutes]),
+    [
+      ["Ship the beta", 600],
+      ["Sleep", 8 * 60 * 7],
+    ],
+  );
 });
 
 test("with the model: its reading and its line, checked", async () => {
@@ -77,7 +108,14 @@ test("with the model: its reading and its line, checked", async () => {
     new FakeModelClient([
       JSON.stringify({
         goals: [
-          { title: "Fundraising", category: "business", weekly_budget_minutes: 300, target: { kind: "time", calendar_titles: ["Investor"] }, evidence: "investors in December", estimated: true },
+          {
+            title: "Fundraising",
+            category: "business",
+            weekly_budget_minutes: 300,
+            target: { kind: "time", calendar_titles: ["Investor"] },
+            evidence: "investors in December",
+            estimated: true,
+          },
         ],
         notes: ["Loses evenings to the phone"],
         line: "One goal: Fundraising, 5 hours a week. I set the hours, check them.",
@@ -99,7 +137,16 @@ test("a model line that breaks the voice rules gives way to the template", async
   useModelClient(
     new FakeModelClient([
       JSON.stringify({
-        goals: [{ title: "Training", category: "health", weekly_budget_minutes: 240, target: { kind: "time" }, evidence: "gym", estimated: true }],
+        goals: [
+          {
+            title: "Training",
+            category: "health",
+            weekly_budget_minutes: 240,
+            target: { kind: "time" },
+            evidence: "gym",
+            estimated: true,
+          },
+        ],
         notes: [],
         line: "Amazing! Let's crush it!",
       }),
@@ -118,8 +165,20 @@ test("the model fails: the word lists answer", async () => {
   try {
     const r = await goalsFromWords("gym twice a week and reading");
     assert.equal(r.source, "rules");
-    assert.deepEqual(r.goals.map((g) => g.title), ["Training", "Reading"]);
+    assert.deepEqual(
+      r.goals.map((g) => g.title),
+      ["Training", "Reading"],
+    );
   } finally {
     useModelClient(null);
   }
+});
+
+test("each answer on its own line stays its own clause", () => {
+  const read = readByRules("gym three times a week, and sleep 7 hours\nI lose my evenings on my phone");
+  assert.deepEqual(
+    read.goals.map((g) => g.title),
+    ["Training", "Sleep"],
+  );
+  assert.deepEqual(read.notes, ["I lose my evenings on my phone"]);
 });

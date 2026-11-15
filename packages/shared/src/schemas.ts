@@ -1177,7 +1177,11 @@ export const HeardGoal = z.object({
   // Always one of the three areas for a new goal (#131).
   category: GoalArea,
   // Per week. A sleep goal holds the nights: 7 x hours.
-  weekly_budget_minutes: z.number().int().min(0).max(7 * 24 * 60),
+  weekly_budget_minutes: z
+    .number()
+    .int()
+    .min(0)
+    .max(7 * 24 * 60),
   target: z.object({
     kind: z.enum(["time", "target"]),
     calendar_titles: z.array(z.string().min(1)).optional(),

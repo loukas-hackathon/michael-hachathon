@@ -178,7 +178,7 @@ const clamp = (m: number) => Math.max(30, Math.min(MAX_WEEK, Math.round(m / 30) 
 /** The text cut into clauses: sentences, lines, "and", "but", "also" and commas. */
 export function clauses(text: string): string[] {
   return text
-    .replace(/\s+/g, " ")
+    .replace(/[^\S\n]+/g, " ")
     .split(/[.!?;\n]+|,\s+|\s+(?:and also|and|but|also|plus|then)\s+/i)
     .map((c) => c.trim().replace(/^(?:and|but|also|plus|then|so|um+|uh+|like)\b[\s,]*/i, ""))
     .filter((c) => c.length >= 3);
@@ -192,7 +192,8 @@ const sentence = (s: string) => {
 function setMinutes(g: HeardGoal, minutes: number) {
   g.weekly_budget_minutes = clamp(minutes);
   g.estimated = false;
-  if (g.target.kind === "target") g.target.sleep_hours = Math.round((g.weekly_budget_minutes / 7 / 60) * 2) / 2;
+  if (g.target.kind === "target")
+    g.target.sleep_hours = Math.round((g.weekly_budget_minutes / 7 / 60) * 2) / 2;
 }
 
 /** The word lists' reading: themes found in order, one goal per theme, leaks as notes. */
@@ -333,7 +334,10 @@ export function cleanGoals(raw: unknown[]): HeardGoal[] {
       target: sleep
         ? { kind: "target", sleep_hours: Math.round(hours * 2) / 2 }
         : { kind: "time", calendar_titles: titles.length ? titles : [title] },
-      evidence: (typeof g.evidence === "string" && g.evidence.trim() ? g.evidence.trim() : title).slice(0, 200),
+      evidence: (typeof g.evidence === "string" && g.evidence.trim() ? g.evidence.trim() : title).slice(
+        0,
+        200,
+      ),
       estimated: g.estimated !== false,
     });
     if (out.length >= 5) break;
@@ -350,7 +354,9 @@ async function readByModel(text: string): Promise<GoalWordsResponse> {
       schema: SCHEMA as unknown as Record<string, unknown>,
       effort: "low",
     }),
-    new Promise<never>((_, reject) => setTimeout(() => reject(new Error("model timed out")), MODEL_TIMEOUT_MS)),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("model timed out")), MODEL_TIMEOUT_MS),
+    ),
   ]);
   const answer = ModelAnswer.parse(JSON.parse(reply.text));
   const goals = cleanGoals(answer.goals);
@@ -361,7 +367,12 @@ async function readByModel(text: string): Promise<GoalWordsResponse> {
   const line = answer.line.replace(/\s+/g, " ").trim();
   // A line that breaks the voice rules, or claims goals when none survived, gives way to the template.
   const usable = line.length > 0 && line.length <= 240 && voiceProblems(line).length === 0;
-  return { goals, notes, line: usable && (goals.length > 0 || /\?$/.test(line)) ? line : heardLine(goals), source: "model" };
+  return {
+    goals,
+    notes,
+    line: usable && (goals.length > 0 || /\?$/.test(line)) ? line : heardLine(goals),
+    source: "model",
+  };
 }
 
 /** POST /v1/goals/from-words: Claude first, the word lists when it cannot answer. */

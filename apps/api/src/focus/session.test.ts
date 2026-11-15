@@ -296,7 +296,10 @@ test("a synced goal block running now turns focus on by itself, once per block",
     assert.equal((await activeFocus()).session, null);
     const first = FocusActiveResponse.parse(await activeFocus(Date.now(), { autoStart: true }));
     assert.equal(first.session?.event_id, block.id);
-    assert.match(first.session?.message ?? "", /^Your University block started\. Focus is on until \d\d:\d\d\.$/);
+    assert.match(
+      first.session?.message ?? "",
+      /^Your University block started\. Focus is on until \d\d:\d\d\.$/,
+    );
     // The user ends it early: the same block never starts it again.
     await endFocus(first.session?.id as string, { count: false }, "app");
     const again = await activeFocus(Date.now(), { autoStart: true });

@@ -26,7 +26,7 @@ returns `501 not_implemented`, `planned` = not routed yet. Update the status whe
     account's own), and only these writes are allowed: `POST /v1/chat`, `/v1/chat/stream`, `/v1/chat/warm`,
     `POST /v1/chat/threads`, `PATCH|DELETE /v1/chat/threads/:id` (their own threads),
     `/v1/recommendations/:id/execute|undo`, `PATCH /v1/recommendations/:id`, `POST /v1/analysis/run`,
-    `/v1/travel/plan`, `/v1/focus-guards/suggest`, Focus now (`POST /v1/focus/start`, `/v1/focus/:id/extend|end`, one session per visitor, cleared with the blocks it made by the reseed), `/v1/voice/speak`, `/v1/voice/transcribe`, `/v1/records/:id/announced`, `POST|DELETE /v1/push/subscriptions`, `POST /v1/nudges/test`, the daily ritual (`POST /v1/ritual/morning|evening`, `/v1/ritual/:kind/skip`) and done time (`POST /v1/log`, `/v1/log/block`, `DELETE /v1/log/:id`), which the reseed puts back to the plan.
+    `/v1/travel/plan`, `/v1/focus-guards/suggest`, Focus now (`POST /v1/focus/start`, `/v1/focus/:id/extend|end`, one session per visitor, cleared with the blocks it made by the reseed), `/v1/voice/speak`, `/v1/voice/transcribe`, `POST /v1/goals/from-words` (reads only), `/v1/records/:id/announced`, `POST|DELETE /v1/push/subscriptions`, `POST /v1/nudges/test`, the daily ritual (`POST /v1/ritual/morning|evening`, `/v1/ritual/:kind/skip`) and done time (`POST /v1/log`, `/v1/log/block`, `DELETE /v1/log/:id`), which the reseed puts back to the plan.
     Anything else that writes (privacy, goals, instructions, places, profile, integrations,
     Telegram, agents, connecting an agent, keys, data deletion, ingest, `/mcp`) answers
     `403 forbidden` with the message "This is the demo week. Sign in with Google to make it yours."
@@ -470,17 +470,17 @@ AI tool events (`ai_session`, `ai_prompt`) from `claude_code`:
 
 ### Goals
 
-| Method | Path                               | Body                              | Response                      | Status |
-| ------ | ---------------------------------- | --------------------------------- | ----------------------------- | ------ |
-| GET    | `/v1/goals`                        |                                   | `200 { goals: Goal[] }`       | live   |
-| GET    | `/v1/goals/:id`                    |                                   | `200 Goal`, `404`             | live   |
-| POST   | `/v1/goals`                        | `GoalCreate`                      | `201 Goal`                    | live   |
-| PATCH  | `/v1/goals/:id`                    | `GoalUpdate`                      | `200 Goal`, `404`             | live   |
-| DELETE | `/v1/goals/:id`                    |                                   | `204`, `404`                  | live   |
-| GET    | `/v1/goals/suggestions`            |                                   | `200 GoalSuggestionsResponse` | live   |
-| POST   | `/v1/goals/suggestions/:id/accept` | `GoalSuggestionAccept` (optional) | `201 Goal`, `404`             | live   |
+| Method | Path                               | Body                              | Response                       | Status |
+| ------ | ---------------------------------- | --------------------------------- | ------------------------------ | ------ |
+| GET    | `/v1/goals`                        |                                   | `200 { goals: Goal[] }`        | live   |
+| GET    | `/v1/goals/:id`                    |                                   | `200 Goal`, `404`              | live   |
+| POST   | `/v1/goals`                        | `GoalCreate`                      | `201 Goal`                     | live   |
+| PATCH  | `/v1/goals/:id`                    | `GoalUpdate`                      | `200 Goal`, `404`              | live   |
+| DELETE | `/v1/goals/:id`                    |                                   | `204`, `404`                   | live   |
+| GET    | `/v1/goals/suggestions`            |                                   | `200 GoalSuggestionsResponse`  | live   |
+| POST   | `/v1/goals/suggestions/:id/accept` | `GoalSuggestionAccept` (optional) | `201 Goal`, `404`              | live   |
 | POST   | `/v1/goals/from-words`             | `GoalWordsRequest`                | `200 GoalWordsResponse`, `429` | live   |
-| POST   | `/v1/goals/:id/book`               | `GoalBook` (optional)             | `201 Recommendation`, `409`   | live   |
+| POST   | `/v1/goals/:id/book`               | `GoalBook` (optional)             | `201 Recommendation`, `409`    | live   |
 
 #### Book time for a goal (#309)
 
@@ -2390,7 +2390,8 @@ type FocusActiveResponse = { now: string; session: FocusSession | null; last: Fo
 - **Focus turns itself on:** `GET /v1/focus/active` with no session running and the user's own goal
   block from the synced calendar running now (at least 5 minutes left, nobody else in it) starts the
   session to the block's end, as if the user had tapped it. Once per block: a session that ran or
-  ended during the block means the user decided, so it never starts again. Never off the record.
+  ended during the block means the user decided, so it never starts again. Never off the record,
+  never on the demo account (its week is replayed, not synced).
   While it runs its `message` says so: "Your University block started. Focus is on until 12:00."
   Chat and MCP reads never start one.
 - **+15:** moves `end_at`, the block the session made, and adds a guard for the extra minutes. At
