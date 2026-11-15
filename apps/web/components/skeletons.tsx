@@ -434,16 +434,15 @@ export function AgentRowsSkeleton({ rows = 2 }: { rows?: number }) {
 
 /* ---------- You (app/you/page.tsx) ---------- */
 
-/** How many rows the Connections list shows: the live ones; the rest are one Coming soon line (#295). */
-const LIVE_CONNECTIONS = Object.values(CONNECTOR_STATUS).filter((s) => s === "live").length;
-const SOON_CONNECTIONS = Object.values(CONNECTOR_STATUS).length - LIVE_CONNECTIONS;
+/** How many rows the Connections list shows: one per connection, all eight. */
+const CONNECTION_COUNT = Object.keys(CONNECTOR_STATUS).length;
 
 /**
  * Connections (components/you/connections-list.tsx): heading and summary, one row per live
- * connection (icon, name, status line, a Manage pill), then the Coming soon line.
+ * connection (icon, name, status line, a Manage pill).
  */
 export function ConnectionRowsSkeleton({
-  rows = LIVE_CONNECTIONS,
+  rows = CONNECTION_COUNT,
   heading = true,
 }: {
   rows?: number;
@@ -473,7 +472,6 @@ export function ConnectionRowsSkeleton({
           </div>
         ))}
       </Group>
-      {SOON_CONNECTIONS > 0 ? <Lines text="footnote" className="mt-2 px-4" widths={["92%", "5rem"]} /> : null}
     </section>
   );
 }

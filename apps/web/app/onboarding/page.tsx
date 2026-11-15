@@ -33,8 +33,8 @@ const CONNECT_PATH = "/onboarding?step=connect";
 const calendarHref = (back: string) => `/integrations/google/connect?return_to=${encodeURIComponent(back)}`;
 
 /**
- * What screen 2 offers, in order of value. Nudges and Telegram wait for a moment that needs them.
- * Only connections proven on production appear (#295): a Coming soon one is not offered here at all.
+ * What screen 2 offers, in order of value: everything that adds to the day (#295, all live now).
+ * Nudges and Telegram wait for a moment that needs them (#207); You lists all eight.
  */
 const OFFER: ConnectionId[] = ["google-calendar", "apple-watch", "mac", "iphone", "travel", "claude"];
 

@@ -93,7 +93,8 @@ Enums:
   (as a generated copy) the browser extension all use them.
 - `ConnectorId`: `google-calendar | apple-watch | mac | iphone | claude | nudges | telegram | travel`;
   `ConnectorStatus`: `live | soon`. `CONNECTOR_STATUS` (shared, not served by the API) says which
-  connections are proven end to end on production; the apps show the rest as Coming soon (#295).
+  connections are offered. All eight are `live` (every row on You has Connect or Manage); a `soon`
+  one would show as a quiet Coming soon row with nothing to tap (#295).
 - `IntegrationProvider`: `google_calendar | whoop`
 - `IntegrationStatus`: `connected | disconnected | error`
 - `DraftStatus`: `proposed | done | dismissed`; `DraftChannel`: `email | chat`; `DraftAuthor`: `model | template | analysis`
