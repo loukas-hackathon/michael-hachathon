@@ -33,6 +33,7 @@ const LABELS: Record<string, string> = {
   update_instruction: "Updating your rule",
   save_place: "Saving the place",
   update_profile: "Updating your profile",
+  focus_now: "Starting your focus",
 };
 
 const obj = (v: unknown): Record<string, unknown> =>

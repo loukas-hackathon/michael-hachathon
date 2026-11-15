@@ -62,6 +62,11 @@ export const LAST_SHOWN_MS = 15 * MINUTE;
 export const ON_TIME_SLACK_MS = 30_000;
 /** A goal block running now is reused when at least this much of it is left. */
 const MIN_LEFT_MS = 5 * MINUTE;
+/**
+ * A block that starts this soon may be named too: "Start focus" on the block about to start nudge
+ * (2 to 15 minutes ahead) runs the session from now to the block's end.
+ */
+export const BLOCK_AHEAD_MS = 15 * MINUTE;
 
 // Chat, social and video (ten, the most a guard names): the apps people lose a focus block to. Mail, Slack and music
 // stay open; some people work in them.
@@ -293,7 +298,7 @@ export async function startFocus(raw: unknown, _via: LogVia): Promise<FocusSessi
       throw new HttpError("not_found", "That block is not on the timeline");
     if (isOthers(e))
       throw new HttpError("conflict", "That block has other people in it. I only advise on those.");
-    if (Date.parse(e.start_at) > now + 2 * MINUTE || Date.parse(e.end_at) - now < MIN_LEFT_MS)
+    if (Date.parse(e.start_at) > now + BLOCK_AHEAD_MS || Date.parse(e.end_at) - now < MIN_LEFT_MS)
       throw new HttpError("conflict", "That block is not happening now");
     const byBlock = goalForEvent(
       e,

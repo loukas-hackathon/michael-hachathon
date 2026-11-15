@@ -1509,7 +1509,8 @@ export type NudgeKind = z.infer<typeof NudgeKind>;
 //   snooze    the same nudge again in 10 minutes (block_soon)
 //   mute_app  close `app` on the user's Mac for 30 minutes (focus_drift, Mac reporting, allowlisted app)
 //   do_it     carry out the nudge's recommendation (recovery_block), undoable in the app
-export const NudgeActionId = z.enum(["open", "snooze", "mute_app", "do_it"]);
+//   focus     start a Focus now session on the block's goal, from now to the block's end (block_soon, #397)
+export const NudgeActionId = z.enum(["open", "snooze", "mute_app", "do_it", "focus"]);
 export type NudgeActionId = z.infer<typeof NudgeActionId>;
 
 export const NudgeAction = z.object({
