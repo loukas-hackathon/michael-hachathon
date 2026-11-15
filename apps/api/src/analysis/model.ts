@@ -65,12 +65,26 @@ export class AnthropicModelClient implements ModelClient {
   constructor(
     apiKey: string,
     readonly model: string,
-    /** Tests pass their own `fetch` to read the request and answer it without a network. */
-    options: { fetch?: typeof fetch } = {},
+    options: {
+      /** Tests pass their own `fetch` to read the request and answer it without a network. */
+      fetch?: typeof fetch;
+      /** Server-side refusal fallbacks. Off for models that do not take them. Default on. */
+      fallbacks?: boolean;
+      timeoutMs?: number;
+      maxRetries?: number;
+    } = {},
   ) {
+    this.fallbacks = options.fallbacks ?? true;
     // The key is passed in, so the SDK never looks for other credentials on the machine.
-    this.client = new Anthropic({ apiKey, maxRetries: 1, timeout: 120_000, fetch: options.fetch });
+    this.client = new Anthropic({
+      apiKey,
+      maxRetries: options.maxRetries ?? 1,
+      timeout: options.timeoutMs ?? 120_000,
+      fetch: options.fetch,
+    });
   }
+
+  private readonly fallbacks: boolean;
 
   async complete(request: ModelRequest): Promise<ModelReply> {
     let response: Anthropic.Beta.BetaMessage;
@@ -88,8 +102,9 @@ export class AnthropicModelClient implements ModelClient {
         },
         // If a safety classifier declines the request, the API retries it on the model Anthropic
         // recommends for that case, inside the same call.
-        betas: ["server-side-fallback-2026-07-01"],
-        fallbacks: "default",
+        ...(this.fallbacks
+          ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const }
+          : {}),
         // One breakpoint at the end of the instructions: they never change, the brief always does.
         system: [{ type: "text", text: request.system, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: request.user }],
@@ -162,6 +177,24 @@ let real: ModelClient | null = null;
 /** Tests swap the model here; `null` puts the real one back. */
 export function useModelClient(client: ModelClient | null) {
   override = client;
+}
+
+let fast: ModelClient | null = null;
+
+/**
+ * The quick model, for lines someone is waiting on out loud (the onboarding talk). No refusal
+ * fallbacks (the quick model does not take them), no retries and a short timeout: the caller has a
+ * scripted line ready. Tests swap it with `useModelClient` like the main one.
+ */
+export function fastModelClient(): ModelClient {
+  if (override) return override;
+  if (!env.ANTHROPIC_API_KEY) throw new ModelNotConfiguredError();
+  fast ??= new AnthropicModelClient(env.ANTHROPIC_API_KEY, env.ANTHROPIC_FAST_MODEL, {
+    fallbacks: false,
+    maxRetries: 0,
+    timeoutMs: 6_000,
+  });
+  return fast;
 }
 
 /** The model for this server. Throws ModelNotConfiguredError when there is no key. */

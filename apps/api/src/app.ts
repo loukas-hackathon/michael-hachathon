@@ -36,6 +36,7 @@ import { meetings } from "./routes/meetings";
 import { moments } from "./routes/moments";
 import { nudgeActPublic, nudges } from "./routes/nudges";
 import { connect, oauthPublic } from "./routes/oauth";
+import { onboarding } from "./routes/onboarding";
 import { patterns } from "./routes/patterns";
 import { places } from "./routes/places";
 import { privacy } from "./routes/privacy";
@@ -80,6 +81,7 @@ export const v1Routes = new Hono()
   .route("/", accounts)
   .route("/", events)
   .route("/", goals)
+  .route("/", onboarding)
   .route("/", checklist)
   .route("/", ritual)
   .route("/", instructions)

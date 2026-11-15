@@ -815,6 +815,7 @@ test("focus sessions (#397): only their owner sees, extends or ends one; visitor
   assert.equal(ended.status, "ended");
   assert.equal(demoVisitorMay("POST", "/v1/focus/start"), true);
   assert.equal(demoVisitorMay("POST", "/v1/goals/from-words"), true);
+  assert.equal(demoVisitorMay("POST", "/v1/onboarding/turn"), true);
   assert.equal(demoVisitorMay("POST", "/v1/focus/x/end"), true);
   assert.equal(demoVisitorMay("POST", "/v1/focus/x/delete"), false);
 });
