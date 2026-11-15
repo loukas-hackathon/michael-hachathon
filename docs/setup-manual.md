@@ -187,13 +187,13 @@ Michael shortcut before adding the new one, or iOS names it Michael 2 and Connec
 Michael asks in a nudge ("Your phone opened 5 times in University."), one tap, and Do Not Disturb
 is on until the block ends, or until morning at night (#447). No app may set a Focus, so a second
 signed shortcut does it: **Michael Focus** (`pnpm shortcut:focus` writes and signs it, the app
-serves it at `/Michael%20Focus.shortcut`). It is added once per device. Focus is shared across your
+serves it at `/MichaelFocus.shortcut`). It is added once per device. Focus is shared across your
 devices by default (Settings, Focus, Share Across Devices), so the Mac alone also quiets the iPhone.
 
 **On the Mac** (with Michael for Mac running, section 8):
 
 1. Open `https://michael-zeta-sand.vercel.app/you/connections/iphone` in Safari on the Mac, find
-   **Do Not Disturb, when you say yes**, click **Add the shortcut**. Open the downloaded
+   **Do Not Disturb, when you say yes**, click **Add Michael Focus**. Open the downloaded
    `Michael Focus.shortcut`: Shortcuts shows it, click **Add Shortcut**. It must be named exactly
    **Michael Focus** (delete an older one first, or macOS names it Michael Focus 2).
 2. In Terminal: `shortcuts list | grep "Michael Focus"` prints the name. Within 15 seconds Michael
@@ -204,7 +204,7 @@ devices by default (Settings, Focus, Share Across Devices), so the Mac alone als
 **The phone test (five steps, on the stage iPhone, signed in to Michael, the home screen app):**
 
 1. In Safari open `https://michael-zeta-sand.vercel.app/you/connections/iphone`, scroll to **Do Not
-   Disturb, when you say yes**, tap **Add the shortcut**, **Download**, open it from Downloads, tap
+   Disturb, when you say yes**, tap **Add Michael Focus**, **Download**, open it from Downloads, tap
    **Add Shortcut**. Pass: Shortcuts lists **Michael Focus** (exactly that name).
 2. Back on the page tap **Try it**, then **Open** if Safari asks. Pass: Shortcuts opens for a
    second, the moon shows in the status bar, and it is gone again within two minutes. If iOS asks

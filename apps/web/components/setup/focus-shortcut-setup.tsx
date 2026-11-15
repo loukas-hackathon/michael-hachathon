@@ -38,7 +38,7 @@ export function FocusShortcutSetup() {
       }}
       className="press mt-2 flex h-11 w-full items-center justify-center rounded-full bg-tint text-body font-semibold text-on-tint"
     >
-      Add the shortcut
+      Add Michael Focus
     </a>
   );
 

@@ -253,6 +253,8 @@ export function michaelShortcut({ api = DEFAULT_API, uuid = newUuid } = {}) {
 // same text. Focus is shared across the person's devices by default, so either one is enough.
 
 export const FOCUS_SHORTCUT_NAME = "Michael Focus";
+/** The signed file in apps/web/public. Its download is named after the shortcut (next.config.ts). */
+export const FOCUS_SIGNED_FILE = "MichaelFocus.shortcut";
 export const FOCUS_OFF = "off";
 export const FOCUS_CHECK = "check";
 /** Apple's own identifier for the Do Not Disturb Focus, the one every device has. */
@@ -338,8 +340,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       sign(out, signed);
       console.log(`Signed ${signed}. Commit it: the web app serves it at /${SHORTCUT_NAME}.shortcut.`);
     }
-    const focusSigned = resolve(dirname(signed), `${FOCUS_SHORTCUT_NAME}.shortcut`);
+    // No space in the served file's name; the web app sends it as "Michael Focus.shortcut".
+    const focusSigned = resolve(dirname(signed), FOCUS_SIGNED_FILE);
     sign(focusOut, focusSigned);
-    console.log(`Signed ${focusSigned}. Commit it: the web app serves it at /Michael%20Focus.shortcut.`);
+    console.log(`Signed ${focusSigned}. Commit it: the web app serves it at /${FOCUS_SIGNED_FILE}.`);
   }
 }

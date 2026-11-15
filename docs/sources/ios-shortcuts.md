@@ -16,7 +16,7 @@ when the phone was put down.
 
 ## The second shortcut: Michael Focus (#447)
 
-`pnpm shortcut:focus` writes and signs `apps/web/public/Michael Focus.shortcut` (the name of the
+`pnpm shortcut:focus` writes and signs `apps/web/public/MichaelFocus.shortcut` (the name of the
 file is the name iOS and macOS give it, and the app and the Mac collector run it by that name).
 It receives Text and has one job, Set Focus on Do Not Disturb: a date and time (`2026-11-17 14:00`)
 switches it on until then, `off` switches it off, `check` does nothing. It sends nothing anywhere

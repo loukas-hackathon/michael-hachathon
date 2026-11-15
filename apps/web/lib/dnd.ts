@@ -4,7 +4,7 @@ import { FOCUS_SHORTCUT_NAME, FOCUS_SHORTCUT_OFF, FOCUS_SHORTCUT_PATH } from "@m
 // shortcut (scripts/shortcut/build.mjs). No app or page may set a Focus; a shortcut can, so the
 // page runs it by name with the time it should end.
 
-/** The signed shortcut this app serves (public/Michael Focus.shortcut, made by `pnpm shortcut`). */
+/** The signed shortcut this app serves (public/MichaelFocus.shortcut, made by `pnpm shortcut:focus`). */
 export const FOCUS_SHORTCUT_FILE = FOCUS_SHORTCUT_PATH;
 
 /** Runs the installed shortcut with `input`: a date and time ("2026-11-17 14:00"), or "off". */

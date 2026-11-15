@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { FOCUS_SHORTCUT_NAME, focusShortcutInput } from "@michael/shared";
+import { FOCUS_SHORTCUT_DOWNLOAD, FOCUS_SHORTCUT_NAME, focusShortcutInput } from "@michael/shared";
 import { FOCUS_SHORTCUT_FILE, focusShortcutLink, focusShortcutOffLink } from "./dnd";
 
 test("the hand over runs the Michael Focus shortcut by name, with the time to end as text", () => {
@@ -11,8 +12,15 @@ test("the hand over runs the Michael Focus shortcut by name, with the time to en
     "shortcuts://run-shortcut?name=Michael%20Focus&input=text&text=2026-11-17%2014%3A00",
   );
   assert.equal(focusShortcutOffLink(), "shortcuts://run-shortcut?name=Michael%20Focus&input=text&text=off");
-  // iOS names an imported shortcut after its file, so the file carries the name the link runs.
-  assert.equal(decodeURIComponent(FOCUS_SHORTCUT_FILE), `/${FOCUS_SHORTCUT_NAME}.shortcut`);
+  // iOS names an imported shortcut after its file: the address has no space, the download does.
+  assert.equal(FOCUS_SHORTCUT_FILE, "/MichaelFocus.shortcut");
+  assert.equal(FOCUS_SHORTCUT_DOWNLOAD, `${FOCUS_SHORTCUT_NAME}.shortcut`);
+  const config = readFileSync(new URL("../next.config.ts", import.meta.url), "utf8");
+  assert.ok(config.includes(`source: "${FOCUS_SHORTCUT_FILE}"`));
+  assert.ok(config.includes(`filename="${FOCUS_SHORTCUT_DOWNLOAD}"`));
+  // And the signed file is there, signed.
+  const file = readFileSync(new URL(`../public${FOCUS_SHORTCUT_FILE}`, import.meta.url));
+  assert.equal(file.subarray(0, 4).toString("latin1"), "AEA1");
 });
 
 test("the time is the wall clock of the place, to the minute, across midnight and summer time", () => {

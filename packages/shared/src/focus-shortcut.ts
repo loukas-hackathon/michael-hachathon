@@ -3,8 +3,12 @@
 
 /** The signed shortcut that sets the Focus (scripts/shortcut/build.mjs), by the name iOS gives it. */
 export const FOCUS_SHORTCUT_NAME = "Michael Focus";
-/** Where the web app serves the signed file. */
-export const FOCUS_SHORTCUT_PATH = "/Michael%20Focus.shortcut";
+/**
+ * Where the web app serves the signed file. No space in the address; the download itself is named
+ * "Michael Focus.shortcut" (apps/web/next.config.ts), because iOS names a shortcut after its file.
+ */
+export const FOCUS_SHORTCUT_PATH = "/MichaelFocus.shortcut";
+export const FOCUS_SHORTCUT_DOWNLOAD = `${FOCUS_SHORTCUT_NAME}.shortcut`;
 /** What the shortcut is run with to switch Do Not Disturb off, and to prove it is installed. */
 export const FOCUS_SHORTCUT_OFF = "off";
 export const FOCUS_SHORTCUT_CHECK = "check";

@@ -52,6 +52,16 @@ const config: NextConfig = {
         ],
       },
       {
+        // The signed Michael Focus shortcut (#447), the same way. The address has no space; the
+        // download is named after the shortcut, which the app and the Mac collector run by name.
+        source: "/MichaelFocus.shortcut",
+        headers: [
+          { key: "Content-Type", value: "application/octet-stream" },
+          { key: "Content-Disposition", value: 'attachment; filename="Michael Focus.shortcut"' },
+          { key: "Cache-Control", value: "no-cache" },
+        ],
+      },
+      {
         // The data free app shell the worker paints on a slow network: always revalidated.
         source: "/shell.html",
         headers: [{ key: "Cache-Control", value: "no-cache" }],

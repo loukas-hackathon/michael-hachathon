@@ -47,6 +47,12 @@ test("iPhone: the shortcut steps show for everyone, the signed file is public", 
     );
     await expect(page.getByRole("button", { name: "Connect the shortcut" })).toBeVisible();
     await expect(page.getByText("Coming soon. I will tell you when it is ready.")).toHaveCount(0);
+    // The second shortcut (#447), next to the first: Do Not Disturb, when you say yes.
+    await expect(page.getByRole("link", { name: "Add Michael Focus" })).toHaveAttribute(
+      "href",
+      "/MichaelFocus.shortcut",
+    );
+    await expect(page.getByRole("button", { name: "Try it" })).toBeVisible();
   }
   await context.close();
 
@@ -55,4 +61,25 @@ test("iPhone: the shortcut steps show for everyone, the signed file is public", 
   expect(file.status()).toBe(200);
   expect(file.headers()["content-disposition"]).toContain('filename="Michael.shortcut"');
   expect((await file.body()).subarray(0, 4).toString("latin1")).toBe("AEA1");
+  // Michael Focus the same way: iOS names it after the download, and Michael runs it by that name.
+  const focus = await request.get("/MichaelFocus.shortcut", { maxRedirects: 0 });
+  expect(focus.status()).toBe(200);
+  expect(focus.headers()["content-disposition"]).toContain('filename="Michael Focus.shortcut"');
+  expect((await focus.body()).subarray(0, 4).toString("latin1")).toBe("AEA1");
+});
+
+// Do Not Disturb, asked then done (#447): the page a nudge's tap opens. With no nudge and nothing
+// on, it says so plainly and switches nothing on.
+test("Do Not Disturb: the hand over page opens and offers nothing without a nudge", async ({
+  browser,
+  baseURL,
+}) => {
+  const context = await browser.newContext({ userAgent: IPHONE_UA, viewport: { width: 390, height: 844 } });
+  await context.addCookies([{ name: "michael_e2e_user", value: randomUUID(), url: baseURL ?? "" }]);
+  const page = await context.newPage();
+  await page.goto(`${baseURL}/dnd`);
+  await expect(page.getByRole("heading", { name: "Do Not Disturb" })).toBeVisible();
+  await expect(page.getByText("Nothing to protect right now.", { exact: false })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Switch it on" })).toHaveCount(0);
+  await context.close();
 });

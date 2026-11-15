@@ -2233,7 +2233,7 @@ type FocusGuardsResponse = {
 Michael asks in a nudge, one tap switches it on, it ends by itself (when the block ends, or when
 the night's quiet hours end), and the user can end it sooner. Nothing is switched on without that
 tap. No server or app may set a Focus, so a signed shortcut does it: **Michael Focus**
-(`scripts/shortcut/build.mjs`, `pnpm shortcut:focus`, served at `/Michael%20Focus.shortcut`), one
+(`scripts/shortcut/build.mjs`, `pnpm shortcut:focus`, served at `/MichaelFocus.shortcut`), one
 Set Focus action on Do Not Disturb. Its text input is a date and time (`"2026-11-17 14:00"`: on
 until then), `off` (off) or `check` (nothing).
 
@@ -2286,7 +2286,7 @@ type DndStartInput = { nudge_id: string } | { until: string };
   `/dnd?nudge=<id>` (the push's `url`). The page asks once more, the tap posts `{ nudge_id }` and
   then opens `shortcuts://run-shortcut?name=Michael%20Focus&input=text&text=<shortcut_input>`.
   End it there: the undo, then the shortcut with `off`. A device that has not added the shortcut
-  (remembered in the browser, never on the server) is offered "Add the shortcut" first.
+  (remembered in the browser, never on the server) is offered "Add Michael Focus" first.
 - `POST /v1/nudges/:id/act` with `dnd`: with a Mac that is `ready` it is switched on and the
   answer is `"Do Not Disturb is on until 14:00. Tap to end it."`, `undo_until` set, `url`
   `/dnd?id=<id>`. Otherwise nothing is switched on: `"Tap to switch on Do Not Disturb until
