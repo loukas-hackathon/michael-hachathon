@@ -1,6 +1,9 @@
+import { voiceDuration } from "@michael/shared";
 import type { Category } from "./categories";
 import type { ChecklistProgress, CountProgress } from "./checklist";
+import { hm } from "./format";
 import type { Balance, Baseline, WeeklyTarget } from "./gamification";
+import type { ScoreExplain } from "./score-explain";
 
 // The week as the Goals tab sees it. GET /v1/score has per goal totals (GoalScore) but not the
 // per day minutes or sleep; until it does (issue for the contract), lib/api.ts serves a sample week
@@ -49,6 +52,8 @@ export type GoalsView = {
   balance?: Balance | null;
   /** Michael's line for a personal best this week (never a baseline). */
   recordLine?: string | null;
+  /** The week's maths for the "How I count" sheet (#206). */
+  explain?: ScoreExplain | null;
 };
 
 const WEEK_MS = 7 * 86_400_000;
@@ -115,6 +120,24 @@ export function bookMinutes(left: number, daysToGo: number) {
   const q = (m: number) => Math.ceil(m / 15) * 15;
   const even = q(left / Math.max(1, daysToGo));
   return Math.max(15, Math.min(q(left), Math.max(30, Math.min(90, even))));
+}
+
+/**
+ * What is left of a goal, split into what is already booked in blocks still to come and what is
+ * not (#330). Only the open part can be offered as "Book".
+ */
+export function bookedSplit(left: number, booked: number) {
+  const b = Math.max(0, Math.round(booked));
+  return { booked: b, open: Math.max(0, left - b) };
+}
+
+/** "1h 30 booked, 19 minutes still open." or "2h booked. That closes it." Null when nothing is booked. */
+export function bookedLine(left: number, booked: number): string | null {
+  const s = bookedSplit(left, booked);
+  if (left <= 0 || s.booked <= 0) return null;
+  return s.open > 0
+    ? `${hm(s.booked)} booked, ${voiceDuration(s.open)} still open.`
+    : `${hm(s.booked)} booked. That closes it.`;
 }
 
 /**

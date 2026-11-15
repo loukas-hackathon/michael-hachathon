@@ -3,6 +3,7 @@ import { categoryOf } from "./categories";
 import type { DayView, GoalBlock, Lead, Moment, Tick } from "./day";
 import type { Balance, RecordMark, WeeklyTarget } from "./gamification";
 import type { GoalsView } from "./goals-view";
+import { explainFromScore } from "./score-explain";
 
 // Maps GET /v1/score (and the week's patterns) onto the views Today and Goals draw.
 
@@ -55,6 +56,7 @@ export function dayFromScore(score: Score, lead: Lead | null): DayView {
     wonBackMinutes: d.time_won_back_minutes,
     record: recordOnTape(score, blocks),
     balance: balanceFrom(score),
+    explain: explainFromScore(score),
     lead,
     nudge: null,
   };
@@ -142,6 +144,7 @@ export function goalsFromScore(score: Score, targets: TargetResponse | null = nu
     baseline,
     balance: balanceFrom(score),
     recordLine: record?.line ?? null,
+    explain: explainFromScore(score),
   };
 }
 

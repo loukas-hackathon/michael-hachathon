@@ -1,4 +1,6 @@
+import { mockScore } from "@michael/shared";
 import type { GoalsView } from "../goals-view";
+import { sampleExplain } from "../score-explain";
 
 // SAMPLE DATA, not the user's: the demo user's real goals (the company, university, 70.3 training,
 // sleep) with a made up week, on the same Wednesday 15:20 as the sample day. Replaced once the
@@ -9,6 +11,7 @@ export const sampleGoals: GoalsView = {
   weekStart: "2026-11-09T00:00:00+02:00",
   now: "2026-11-11T15:20:00+02:00",
   freeMinutesLeft: 720,
+  explain: sampleExplain(mockScore),
   goals: [
     {
       id: "10000000-0000-4000-8000-000000000001",
@@ -92,6 +95,7 @@ export const sampleGoalsMonday: GoalsView = {
   ...sampleGoals,
   now: "2026-11-09T08:10:00+02:00",
   freeMinutesLeft: null,
+  explain: null,
   target: {
     status: "proposed",
     median: 62,

@@ -44,11 +44,12 @@ const OPTIMISTIC: Record<Op, Partial<Local>> = {
 };
 
 const filled =
-  "press min-h-9 rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint disabled:opacity-60";
+  "hit press min-h-9 rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint disabled:opacity-60";
 const tinted =
-  "press min-h-9 rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-4 text-subhead font-semibold text-tint-text disabled:opacity-60";
+  "hit press min-h-9 rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-4 text-subhead font-semibold text-tint-text disabled:opacity-60";
 // Not now is grey (#208): only the one primary Do it on Today is filled pink.
-const plain = "press min-h-9 rounded-full px-3 text-subhead font-semibold text-label-2 disabled:opacity-60";
+const plain =
+  "hit press min-h-9 rounded-full px-3 text-subhead font-semibold text-label-2 disabled:opacity-60";
 
 /** The drives a travel suggestion changes: now, then with Michael's plan. Extra minutes hatched. */
 function Drives({ drives }: { drives: TravelDriveRow[] }) {

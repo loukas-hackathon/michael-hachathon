@@ -93,6 +93,15 @@ function ConversationSheet({ open, from, onClose }: { open: boolean; from: numbe
                   className="m-listen-ring pointer-events-none absolute inset-0 rounded-full bg-tint"
                 />
               ) : null}
+              {talk.phase === "listening" && talk.recorded ? (
+                // A recorded turn shows the live level instead of live words.
+                <span
+                  aria-hidden="true"
+                  data-testid="voice-level"
+                  className="pointer-events-none absolute inset-2 rounded-full bg-tint opacity-25 transition-transform duration-75"
+                  style={{ transform: `scale(${1 + Math.min(talk.level * 3, 0.35)})` }}
+                />
+              ) : null}
               <span
                 className={`relative grid size-28 place-items-center rounded-full bg-label text-bg transition-opacity duration-[var(--m-dur-ui)] ease-[var(--m-ease-out)] ${
                   talk.phase === "speaking" ? "m-speak-breath" : ""

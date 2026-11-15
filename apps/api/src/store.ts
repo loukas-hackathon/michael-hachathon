@@ -41,6 +41,7 @@ import {
 } from "@michael/shared";
 import type { z } from "zod";
 import { currentDemoVisitor, currentUserId } from "./context";
+import { demoWeekRecommendations } from "./demo/retired";
 import { stableUuid } from "./demo/week";
 import { env } from "./env";
 import { HttpError } from "./http";
@@ -239,6 +240,15 @@ export interface Store extends PrivacyBackend {
   saveAnalysis(input: NewAnalysis): Promise<{ run: AnalysisRun; recommendations: Recommendation[] }>;
   // Proposed by Michael's own rules (e.g. travel) or asked for in chat; status starts at proposed.
   createRecommendation(input: NewRecommendation): Promise<Recommendation>;
+  /**
+   * Takes sample analysis out of the caller's account: every run whose model contains
+   * `modelMarker` and the recommendations with these ids. A recommendation of a removed run that
+   * is not listed stays, without its run. Only the demo seed calls it (demo/sync.ts).
+   */
+  removeSampleAnalysis(
+    modelMarker: string,
+    recommendationIds: string[],
+  ): Promise<{ runs: number; recommendations: number }>;
   // Focus guards (block_mac_app): created by executing, deleted by undo (actions/mac-apps.ts).
   createFocusGuard(input: NewFocusGuard): Promise<FocusGuard>;
   deleteFocusGuard(id: string): Promise<boolean>;
@@ -282,6 +292,8 @@ export interface Store extends PrivacyBackend {
   /** Null when that event already has a draft (one per event). */
   createDraft(input: NewDraft): Promise<Draft | null>;
   updateDraftStatus(id: string, status: DraftStatus): Promise<Draft | null>;
+  /** Deletes the caller's drafts with these ids. Only the demo seed calls it (actions/drafts.ts). */
+  deleteDrafts(ids: string[]): Promise<number>;
 
   // ---- events mirrored from a provider (Google Calendar) ----
   getEvent(id: string): Promise<Event | null>;
@@ -540,7 +552,12 @@ export class MemoryStore implements Store {
     let x = this.data.get(userId);
     if (!x) {
       const demo = userId === env.DEMO_USER_ID && env.DEMO_WEEK === "on";
-      x = { ...this.fresh(true), ...(demo ? { events: [], goals: [] } : {}) };
+      // The demo week brings its own events and goals, and never the sample brief ("gemini (mock)")
+      // or the sample day's suggestions: only the suggestions that hold on the demo week.
+      x = {
+        ...this.fresh(true),
+        ...(demo ? { events: [], goals: [], runs: [], recommendations: demoWeekRecommendations() } : {}),
+      };
       this.data.set(userId, x);
     }
     return x;
@@ -764,6 +781,20 @@ export class MemoryStore implements Store {
     return rec;
   }
 
+  async removeSampleAnalysis(modelMarker: string, recommendationIds: string[]) {
+    const d = this.d;
+    const runs = new Set(d.runs.filter((r) => r.model.includes(modelMarker)).map((r) => r.id));
+    const ids = new Set(recommendationIds);
+    const before = d.recommendations.length;
+    d.recommendations = d.recommendations.filter((r) => !ids.has(r.id));
+    // As in Postgres (on delete set null): a recommendation outlives its run.
+    for (const r of d.recommendations) {
+      if (r.analysis_run_id && runs.has(r.analysis_run_id)) r.analysis_run_id = null;
+    }
+    d.runs = d.runs.filter((r) => !runs.has(r.id));
+    return { runs: runs.size, recommendations: before - d.recommendations.length };
+  }
+
   async latestAnalysisRun() {
     return this.runs.at(-1) ?? null;
   }
@@ -937,6 +968,14 @@ export class MemoryStore implements Store {
     draft.status = status;
     draft.updated_at = now();
     return draft;
+  }
+
+  async deleteDrafts(ids: string[]) {
+    const d = this.d;
+    const gone = new Set(ids);
+    const before = d.drafts.length;
+    d.drafts = d.drafts.filter((x) => !gone.has(x.id));
+    return before - d.drafts.length;
   }
 
   async getEvent(id: string) {

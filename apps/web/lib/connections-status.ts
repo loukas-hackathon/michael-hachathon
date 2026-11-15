@@ -11,13 +11,24 @@ import {
 import { get } from "./api";
 import { CONNECTIONS, type Connection, type ConnectionId } from "./connections";
 import { formatTime } from "./format";
+import { saidNoMac } from "./no-mac";
 
 // Real status for every connection on You. Always asks the API (also with USE_MOCKS): a status we
 // cannot read says so, it is never made up. Each call fails on its own, so one outage costs one row.
 
 // on: connected and sending. paused: connected, but its privacy switch is off. none: not set up yet.
+// optional: not set up, and not needed (the Mac for someone who said they have none, or whose
+// iPhone already sends without one). Never the next step, never counted as missing.
 // soon: not proven on production yet (#295), shown as Coming soon with nothing to tap.
-export type ConnectionState = "on" | "paused" | "none" | "attention" | "unavailable" | "unknown" | "soon";
+export type ConnectionState =
+  | "on"
+  | "paused"
+  | "none"
+  | "optional"
+  | "attention"
+  | "unavailable"
+  | "unknown"
+  | "soon";
 
 export type ConnectionAction =
   | { kind: "link"; label: string; href: string; external?: boolean }
@@ -35,6 +46,8 @@ export type ConnectionsView = {
   /** How many are live (proven on production): the summary counts out of these, not the soon ones. */
   live: number;
   connected: number;
+  /** Connections that count: live ones, minus the optional ones. */
+  total: number;
   /** The first connection still to set up, in the order of the list. */
   next: ConnectionStatus | null;
   sources: SourcesStatusResponse | null;
@@ -75,7 +88,13 @@ type Inputs = {
   telegram: TelegramStatus | null;
   agents: AgentClient[] | null;
   places: PlacesResponse | null;
+  /** The person said "I don't use a Mac" (lib/no-mac.ts). */
+  noMac?: boolean;
 };
+
+/** Live iPhone data, from the Shortcuts automation (Screen Time history needs a Mac). */
+const iphoneSends = (src: SourcesStatusResponse | null) =>
+  Boolean(src?.sources.some((s) => s.source === "ios_shortcuts" && s.last_event_at));
 
 const unknown = (c: Connection): ConnectionStatus => ({
   ...c,
@@ -154,6 +173,13 @@ export function statusFor(c: Connection, x: Inputs, now = Date.now()): Connectio
           action: manage,
         };
       if (last) return { ...c, state: "on", line: `${otr}Last data ${ago(last, now)}.`, action: manage };
+      if (c.id === "mac" && (x.noMac || iphoneSends(src)))
+        return {
+          ...c,
+          state: "optional",
+          line: "Optional. Everything else works without a Mac.",
+          action: setUp(),
+        };
       return {
         ...c,
         state: "none",
@@ -243,7 +269,7 @@ export function statusFor(c: Connection, x: Inputs, now = Date.now()): Connectio
  * person can prove it end to end on production before CONNECTOR_STATUS switches it on (#306).
  */
 export async function getConnections(preview?: ConnectionId): Promise<ConnectionsView> {
-  const [sources, integrations, push, agents, places, telegram] = await Promise.all([
+  const [sources, integrations, push, agents, places, telegram, noMac] = await Promise.all([
     safe("/v1/sources/status", SourcesStatusResponse),
     safe("/v1/integrations", IntegrationsResponse),
     safe("/v1/push", PushConfig),
@@ -252,6 +278,7 @@ export async function getConnections(preview?: ConnectionId): Promise<Connection
     }),
     safe("/v1/places", PlacesResponse),
     safe("/v1/telegram", TelegramStatus),
+    saidNoMac(),
   ]);
   const inputs: Inputs = {
     sources,
@@ -262,12 +289,14 @@ export async function getConnections(preview?: ConnectionId): Promise<Connection
     telegram,
     agents,
     places,
+    noMac,
   };
   const rows = CONNECTIONS.map((c) => statusFor(c.id === preview ? { ...c, live: true } : c, inputs));
   return {
     rows,
     live: rows.filter((r) => r.live).length,
     connected: rows.filter((r) => r.state === "on").length,
+    total: rows.filter((r) => r.live && r.state !== "optional").length,
     next: rows.find((r) => r.state === "none") ?? null,
     sources,
   };

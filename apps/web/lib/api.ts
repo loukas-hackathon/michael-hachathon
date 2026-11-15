@@ -65,6 +65,7 @@ import {
   sampleEarly,
   sampleEmpty,
   sampleEvening,
+  sampleLearning,
   sampleMissed,
   sampleMorning,
 } from "./sample/day";
@@ -87,6 +88,15 @@ export async function get<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+/** A write the API refused, with its status, so an action can pick its line (lib/demo-refusal.ts). */
+export class ApiFailure extends Error {
+  readonly status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
 async function send<T>(method: "PUT" | "PATCH" | "POST", path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     method,
@@ -94,7 +104,7 @@ async function send<T>(method: "PUT" | "PATCH" | "POST", path: string, body?: un
     body: body === undefined ? undefined : JSON.stringify(body),
     cache: "no-store",
   });
-  if (!res.ok) throw new Error(`${method} ${path} failed: ${res.status}`);
+  if (!res.ok) throw new ApiFailure(`${method} ${path} failed: ${res.status}`, res.status);
   return (await res.json()) as T;
 }
 
@@ -191,6 +201,33 @@ export async function getVoiceEnabled(): Promise<boolean> {
     return (await get<{ elevenlabs: boolean }>("/v1/voice")).elevenlabs;
   } catch {
     return false;
+  }
+}
+
+/** Whether the API can turn a recording into text (POST /v1/voice/transcribe). False when unsure. */
+export async function getTranscribeEnabled(): Promise<boolean> {
+  try {
+    return (await get<{ transcribe?: boolean }>("/v1/voice")).transcribe === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A recording passed straight through to POST /v1/voice/transcribe. The API's answer (text, or its
+ * error) comes back as it is; the audio is never kept here. Null when the API cannot be reached.
+ */
+export async function transcribe(audio: ArrayBuffer, type: string): Promise<Response | null> {
+  try {
+    return await fetch(`${API_URL}/v1/voice/transcribe`, {
+      method: "POST",
+      headers: { ...(await authHeaders()), "content-type": type },
+      body: audio,
+      cache: "no-store",
+    });
+  } catch (err) {
+    console.error("voice: transcribe:", err instanceof Error ? err.message : "unknown");
+    return null;
   }
 }
 
@@ -544,6 +581,7 @@ const SAMPLE_DAYS: Record<string, DayView> = {
   evening: sampleEvening,
   empty: sampleEmpty,
   missed: sampleMissed,
+  learning: sampleLearning,
 };
 
 const athensDay = (d = new Date()) =>

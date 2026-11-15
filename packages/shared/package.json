@@ -5,7 +5,11 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./sleep": "./src/sleep.ts"
+    "./categories": "./src/categories.ts",
+    "./connectors": "./src/connectors.ts",
+    "./goal-areas": "./src/goal-areas.ts",
+    "./sleep": "./src/sleep.ts",
+    "./voice-limits": "./src/voice-limits.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"

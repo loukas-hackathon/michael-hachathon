@@ -3,7 +3,7 @@ import Link from "next/link";
 import { EmptyState } from "@/components/empty-state";
 import { LiveRefresh } from "@/components/live-refresh";
 import { ScreenHeader } from "@/components/screen";
-import { DayTimeline, HeartRow } from "@/components/timeline/day-timeline";
+import { DayTimeline, DayTimelineList, HeartRow } from "@/components/timeline/day-timeline";
 import { LostWeekChart } from "@/components/timeline/lost-week";
 import { WeekStrip } from "@/components/timeline/week-strip";
 import { getLostWeek } from "@/lib/api";
@@ -31,6 +31,15 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
   const heartHidden = (await cookies()).get(HEART_COOKIE)?.value === "off";
   const isToday = date === today;
   const dayHref = (d: string) => `/timeline?day=${d}${sampleParam ? "&demo=sample" : ""}`;
+  const strip = (
+    <WeekStrip
+      date={date}
+      today={today}
+      available={screen.available}
+      earlier={screen.earlier}
+      demo={sampleParam}
+    />
+  );
 
   return (
     <main className="screen">
@@ -44,14 +53,19 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
         title="Timeline"
       />
       {/* Only when something was actually lost: an empty chart of zeros is noise. */}
+      {/* With the chart, the strip sits right under the bars: each bar gets its letter and date. */}
       {lostWeek && lostWeek.total > 0 ? (
-        <LostWeekChart week={lostWeek} selected={date} hrefFor={dayHref} />
-      ) : null}
-      <WeekStrip date={date} today={today} available={screen.available} demo={sampleParam} />
+        <LostWeekChart week={lostWeek} selected={date} hrefFor={dayHref} strip={strip} />
+      ) : (
+        strip
+      )}
 
       <div className="mt-4">
-        {isToday ? <p className="text-footnote font-semibold text-tint-text">Today</p> : null}
-        <h2 className="text-title3 font-bold">{formatDay(noon)}</h2>
+        {/* One "Today": the strip marks it, the heading says it once with the date. */}
+        <h2 className="text-title3 font-bold">
+          {isToday ? "Today, " : ""}
+          {formatDay(noon)}
+        </h2>
         {screen.source === "sample" && day ? (
           <p className="mt-0.5 text-footnote font-semibold text-label-2">
             {day.sample ? "Sample day, not yours." : "Demo account, anonymised. Not your data."}
@@ -114,6 +128,7 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
             </Link>
           ) : null}
           <HeartRow day={day} heartHidden={heartHidden} />
+          <DayTimelineList day={day} />
           <DayTimeline
             key={date}
             day={day}

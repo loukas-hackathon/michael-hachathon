@@ -1,6 +1,7 @@
 "use client";
 
-import { type GoalArea, type GoalCategory, type GoalSuggestion, goalArea } from "@michael/shared";
+import type { GoalArea, GoalCategory, GoalSuggestion } from "@michael/shared";
+import { goalArea } from "@michael/shared/goal-areas";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ConnectionIcon } from "@/components/you/connection-icon";

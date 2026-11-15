@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { useSmoothHeight } from "./motion";
 
 /**
@@ -21,6 +21,7 @@ export function Sheet({
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
   const drag = useRef<{ y: number; t: number; dy: number } | null>(null);
   // Content mounts when the sheet opens and stays through the slide down, then unmounts.
   const [render, setRender] = useState(open);
@@ -33,16 +34,24 @@ export function Sheet({
     return () => clearTimeout(t);
   }, [open]);
 
+  // showModal() traps focus and makes the page inert; on close, focus goes back to whatever opened
+  // the sheet, so VoiceOver and keyboard users land where they were.
+  const opener = useRef<HTMLElement | null>(null);
   useEffect(() => {
     const d = ref.current;
     if (!d) return;
     if (open && !d.open) {
+      opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       d.showModal();
       // showModal focuses the first control (Cancel), and some browsers ring it even after a tap.
       // Focus the sheet itself instead: screen readers hear its title, the next Tab reaches Cancel.
-      d.focus({ focusVisible: false } as FocusOptions);
+      d.focus({ preventScroll: true, focusVisible: false } as FocusOptions);
     }
-    if (!open && d.open) d.close();
+    if (!open && d.open) {
+      d.close();
+      if (opener.current?.isConnected) opener.current.focus({ preventScroll: true });
+      opener.current = null;
+    }
   }, [open]);
 
   // Once open with its content in, a change of content height (a step, a detail, a loaded list)
@@ -96,8 +105,8 @@ export function Sheet({
     // biome-ignore lint/a11y/useKeyWithClickEvents: the click closes on a backdrop tap; Escape closes the dialog natively
     <dialog
       ref={ref}
+      aria-labelledby={titleId}
       tabIndex={-1}
-      aria-label={title}
       onClose={onClose}
       onCancel={(e) => {
         e.preventDefault();
@@ -125,7 +134,9 @@ export function Sheet({
             >
               Cancel
             </button>
-            <h2 className="text-body font-semibold">{title}</h2>
+            <h2 id={titleId} className="text-body font-semibold">
+              {title}
+            </h2>
             <div className="justify-self-end">{trailing}</div>
           </div>
         </div>

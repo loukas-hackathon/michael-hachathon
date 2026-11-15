@@ -13,8 +13,8 @@ const REFRESH_MS = 60_000;
 
 /**
  * The live half of the stage: polls today's latest nudge and the agents' questions, and gives the
- * presenter N (or the hidden top right button) to send a test nudge, so the watch buzzes and this
- * screen shows the same line at the same moment.
+ * presenter N (or a double click on the hidden top right button) to send a test nudge, so the watch
+ * buzzes and this screen shows the same line at the same moment. One stray click sends nothing.
  */
 export function StageLive({
   initial,
@@ -164,8 +164,8 @@ export function StageLive({
       <button
         type="button"
         className="stage-trigger"
-        aria-label="Send a test nudge (N)"
-        onClick={() => fire()}
+        aria-label="Send a test nudge (N, or double click)"
+        onDoubleClick={() => fire()}
       />
       <p className="stage-status" style={{ opacity: status ? 1 : 0 }} aria-live="polite">
         {status ?? ""}

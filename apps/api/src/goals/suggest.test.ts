@@ -121,8 +121,9 @@ test("the demo week: training, the company, study and the Sunday ride, all goals
   const out = suggestGoals(events, [], { now });
   for (const s of out) GoalSuggestion.parse(s);
   assert.deepEqual(summary(out), [
+    // Monday's 07:30 preparation block (#330) brings the company to its 8 hours.
+    ["business", "Business", 480, "Cold Outreach|Meeting Preparation|Weekly marketing material"],
     ["training", "Training", 450, "Gym|Swimming|Run|Yoga"],
-    ["business", "Business", 420, "Cold Outreach|Weekly marketing material|Meeting Preparation"],
     ["study", "Study", 240, "Φροντιστήριο"],
     // His Sunday long ride: twice in the eight days the demo shows, still once a week.
     ["title:rhefuel", "Rhefuel", 90, "Rhefuel"],

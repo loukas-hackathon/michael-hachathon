@@ -272,23 +272,29 @@ export function StandingInstructions({
             <button
               type="button"
               onClick={() => setSheet({ type: "edit", item: i })}
-              className={`press min-w-0 flex-1 py-2.5 pl-4 text-left text-body ${i.active ? "" : "text-label-2"}`}
+              className={`press min-h-11 min-w-0 flex-1 self-stretch py-2.5 pl-4 text-left text-body ${i.active ? "" : "text-label-2"}`}
             >
               {i.text}
             </button>
             <input
               type="checkbox"
-              aria-label={`${i.text}: ${i.active ? "on" : "paused"}`}
+              aria-label={i.text}
               checked={i.active}
               disabled={pending}
               onChange={(e) => {
                 const active = e.target.checked;
+                setError(null);
                 start(async () => {
                   setOptimistic({ id: i.id, active });
-                  await toggleInstruction(i.id, active);
+                  try {
+                    const res = await toggleInstruction(i.id, active);
+                    if (!res.ok) setError(res.message ?? "I could not save that. Nothing changed.");
+                  } catch {
+                    setError("I could not reach the server. Nothing changed.");
+                  }
                 });
               }}
-              className="m-switch shrink-0"
+              className="hit m-switch shrink-0"
             />
           </li>
         ))}
@@ -393,7 +399,7 @@ export function StandingInstructions({
                   }
                 });
               }}
-              className="press flex min-h-11 w-full items-center px-4 text-body text-danger disabled:opacity-60"
+              className="press flex min-h-11 w-full items-center px-4 text-body font-semibold text-danger disabled:opacity-60"
             >
               {pending && confirm
                 ? "Deleting"

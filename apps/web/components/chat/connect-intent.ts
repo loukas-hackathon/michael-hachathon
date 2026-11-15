@@ -1,4 +1,5 @@
-import { type ConnectorId, isLive } from "@michael/shared";
+// The zod free entry: the chat client imports this.
+import { type ConnectorId, isLive } from "@michael/shared/connectors";
 
 // "Connect my calendar" in chat gets the one tap button under Michael's answer (#307). Read from
 // the person's own words, so it never depends on the model; only live connections (#295) get a

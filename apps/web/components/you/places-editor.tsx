@@ -208,7 +208,7 @@ function SlotRow({
             <button
               type="button"
               onClick={() => onOpen(false)}
-              className="press ml-auto min-h-9 px-1 text-subhead font-semibold text-tint-text"
+              className="hit press ml-auto min-h-9 px-1 text-subhead font-semibold text-tint-text"
             >
               Cancel
             </button>
