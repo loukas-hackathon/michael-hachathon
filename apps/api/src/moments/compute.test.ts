@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 import { type Event, type Goal, Moment, voiceProblems } from "@michael/shared";
 import { isValidCopy } from "../nudges/engine";
@@ -463,6 +464,55 @@ test("the same block's last time is quoted in place of the average", () => {
     templateHeadline(calm),
     "Today holds 90 minutes of goal time. Guard 10:30 to 12:00: it usually costs 12 minutes.",
   );
+});
+
+test("the user's own word is not a distraction: logged time and settled blocks stay out of the stake", () => {
+  const all = [...goals, sales];
+  const block = (d: string) => calendar("Cold outreach", T(`${d} 10:30`), T(`${d} 12:00`));
+  const monday = block("2026-11-09");
+  const tuesday = block("2026-11-10");
+  const manual = (type: Event["type"], start: string, end: string, data: Record<string, unknown>): Event => ({
+    id: randomUUID(),
+    source: "manual",
+    type,
+    start_at: start,
+    end_at: end,
+    title: "Logged",
+    data,
+    external_id: null,
+    created_at: end,
+  });
+  const events = [
+    monday,
+    phone(APPS.social, T("2026-11-09 10:30"), T("2026-11-09 10:54")),
+    // Tuesday's block he settled himself as not done: all of it lost in the score, to nothing.
+    tuesday,
+    manual("note", tuesday.start_at, tuesday.end_at as string, {
+      log: "didnt",
+      goal_id: SALES,
+      event_id: tuesday.id,
+    }),
+    // And he logged an hour of sales work on Sunday morning, outside any block.
+    manual("focus_session", T("2026-11-08 10:30"), T("2026-11-08 11:30"), { log: "done", goal_id: SALES }),
+    block("2026-11-11"),
+  ];
+  const score = buildScore(events, all, { date: "2026-11-10", now: T("2026-11-10 21:00") });
+  assert.equal(score.day.lost_minutes, 90);
+
+  const m = morning(events, "2026-11-11 07:30", all);
+  // One day had a planned block he did not settle himself: Monday, 24 minutes to Instagram.
+  assert.equal(m.at_risk?.history_days, 1);
+  assert.equal(m.at_risk?.expected_lost_minutes, 24);
+  assert.deepEqual(m.at_risk?.last_time, { day: "2026-11-09", lost_minutes: 24, trigger: "Instagram" });
+  assert.equal(
+    templateHeadline(m),
+    "Today holds 90 minutes of goal time. On Monday the 10:30 block lost 24 minutes to Instagram.",
+  );
+  // The goal line still counts his word, as the score does.
+  const row = buildScore(events, all, { date: "2026-11-11", now: T("2026-11-11 07:30") }).goals.find(
+    (g) => g.goal_id === SALES,
+  );
+  assert.equal(m.goals.find((g) => g.goal_id === SALES)?.spent_week_minutes, row?.spent_minutes);
 });
 
 // ---------- row 5: one total per goal ----------

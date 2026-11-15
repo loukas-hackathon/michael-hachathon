@@ -332,6 +332,9 @@ export function computeMoment(input: MomentInput): MomentCore {
       const start = Date.parse(block.start_at);
       const goal = goalById.get(block.goal_id);
       if (start < historyStart || start >= todayStart || !goal || isTrainingGoal(goal)) continue;
+      // The user's word is not a distraction: time they logged themselves is no planned block, and
+      // a block they settled ("did it", "didn't") has the minutes they said, not what took them.
+      if (block.matched_by === "logged" || block.settled) continue;
       past.push({ start, end: Date.parse(block.end_at), day: zone.dayOf(start), block });
     }
     const historyDays = Array.from({ length: HISTORY_DAYS }, (_, i) => zone.nextDay(today, -(i + 1)));
@@ -341,7 +344,7 @@ export function computeMoment(input: MomentInput): MomentCore {
       const goal = goalById.get(block.goal_id);
       const blockStart = Date.parse(block.start_at);
       const end = Date.parse(block.end_at);
-      if (!goal || isTrainingGoal(goal) || end <= now) continue;
+      if (!goal || isTrainingGoal(goal) || end <= now || block.matched_by === "logged") continue;
       const start = Math.max(blockStart, now);
       const length = end - start;
       const offset = zone.minuteOfDay(start);
