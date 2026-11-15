@@ -10,6 +10,7 @@ import { actions } from "./routes/actions";
 import { agents } from "./routes/agents";
 import { analysis } from "./routes/analysis";
 import { chat } from "./routes/chat";
+import { chatThreads } from "./routes/chat-threads";
 import { checkIn } from "./routes/check-in";
 import { checklist } from "./routes/checklist";
 import { demo } from "./routes/demo";
@@ -58,6 +59,7 @@ export const v1Routes = new Hono()
   .route("/", patterns)
   .route("/", score)
   .route("/", targets)
+  .route("/", chatThreads)
   .route("/", chat)
   .route("/", checkIn)
   .route("/", moments)

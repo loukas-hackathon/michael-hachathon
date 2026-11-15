@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { chatLineCount, useChatSession } from "@/app/chat/chat-session";
+import { chatLineCount, currentLines, useChatSession } from "@/app/chat/chat-session";
 import { MiMark } from "@/components/brand";
 import { Sheet } from "@/components/sheet";
 import {
@@ -61,7 +61,7 @@ function ConversationSheet({ open, from, onClose }: { open: boolean; from: numbe
     endConversation();
     onClose();
   };
-  const lines = session.lines.slice(from).slice(-4);
+  const lines = currentLines(session).slice(from).slice(-4);
   const live = talk.phase === "listening" && talk.heard ? talk.heard : null;
   const status = talk.phase === "speaking" && talk.bargeIn ? "Speak or tap to cut in" : STATUS[talk.phase];
   const unavailable =

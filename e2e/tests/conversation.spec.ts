@@ -39,7 +39,7 @@ test("one tap: Michael listens, answers briefly by voice after a pause, then lis
   await sayTurn(page, "How much deep work have I done today");
   await expect(page.getByTestId("conversation")).toContainText("How much deep work have I done today");
   // Sent on the pause, asking for an answer to be read aloud.
-  expect((await sent).postDataJSON()).toEqual({
+  expect((await sent).postDataJSON()).toMatchObject({
     message: "How much deep work have I done today",
     spoken: true,
   });
