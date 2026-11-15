@@ -10,12 +10,12 @@ import { HttpError, parse } from "../http";
 import { momentNudge } from "../moments/nudge";
 import { nudgePayload, primaryChannel } from "../nudges/channels";
 import {
-  candidates,
   decide,
   type EngineInput,
   engineWindow,
   momentDue,
   quietFromProfile,
+  testCandidate,
 } from "../nudges/engine";
 import { pushToCurrentUser } from "../nudges/push";
 import { telegramToCurrentUser } from "../nudges/telegram";
@@ -126,8 +126,9 @@ export const SAMPLE_NUDGE = {
 
 /**
  * The stage moment: push one nudge to the caller's devices now. Uses the engine's best current
- * candidate (real maths) when there is one, otherwise the sample. Ignores the cap, quiet hours
- * and dedupe. Stored with status `test` so GET /v1/nudges (the stage screen) shows the same line
+ * candidate (real maths) when there is one, else the goal furthest behind its pace at any hour
+ * and from a 15 minute gap (`testCandidate`), and the sample only when every goal is on pace.
+ * Ignores the cap, quiet hours and dedupe. Stored with status `test` so GET /v1/nudges (the stage screen) shows the same line
  * at the same moment; `test` never counts towards the 5 a day or blocks a real nudge.
  */
 export async function testNudge(): Promise<NudgeTestResult> {
@@ -138,7 +139,7 @@ export async function testNudge(): Promise<NudgeTestResult> {
     store.listGoals(),
     readProfile().catch(() => null),
   ]);
-  const pick = candidates({ now, goals, events, today: [], quiet: quietFrom(profile) })[0] ?? SAMPLE_NUDGE;
+  const pick = testCandidate({ now, goals, events, today: [], quiet: quietFrom(profile) }) ?? SAMPLE_NUDGE;
   // Stored first, so the screen can show it as the watch buzzes. A unique key per press keeps
   // the daily dedupe out of the way.
   const nudge = await store.createNudge({

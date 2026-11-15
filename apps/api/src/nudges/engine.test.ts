@@ -25,6 +25,7 @@ import {
   quietFromProfile,
   quietNow,
   shortDuration,
+  testCandidate,
   wordCount,
 } from "./engine";
 
@@ -212,6 +213,58 @@ test("a long or dashed goal title still makes a nudge that passes the voice rule
   assert.ok(wordCount(c.text) < 15);
   // The reason keeps the title as the user wrote it.
   assert.match(c.reason, /^Deep work - the investor deck for the Monday pitch in Athens!: 0 min of 10h done/);
+});
+
+test("the stage's test nudge speaks about the goal behind at any hour and from 15 minutes", () => {
+  // Monday 11:05: 11h 05 of 168 hours gone, so the pace for 10h is 40 minutes. Nothing spent yet.
+  const monday = (time: string, events: Event[], goals: Goal[]): EngineInput => ({
+    now: T(`2026-11-09 ${time}`),
+    goals,
+    events,
+    today: [],
+  });
+  assert.equal(candidates(monday("11:05", [], [GYM])).length, 0, "a real nudge keeps its thresholds");
+  const c = testCandidate(monday("11:05", [], [GYM]));
+  assert.equal(c?.kind, "goal_behind");
+  assert.equal(c?.text, "70.3 training 40 min behind pace. Book 90 minutes today.");
+  assert.equal(c?.reason, "70.3 training: 0 min of 10h done; the pace by now is 40 min.");
+  assert.deepEqual(voiceProblems(c?.text ?? ""), []);
+
+  // The same numbers as the score row and the shared pace rule.
+  const now = T("2026-11-09 11:05");
+  const score = buildScore([], [GYM], { date: "2026-11-09", now });
+  const share = paceShare(score.week_start, score.day.now);
+  const row = score.goals[0];
+  assert.equal(behindPaceMinutes(row?.budget_minutes ?? 0, row?.spent_minutes ?? 0, share), 40);
+  assert.equal(bookMinutes(row?.minutes_left ?? 0, paceDaysToGo(share)), 90);
+
+  // After 19:00 too, where a real goal_behind is silent; a block still ahead today is kept.
+  const behind = [calendar("Gym", T("2026-11-09 07:00"), T("2026-11-09 08:00"))];
+  assert.equal(candidates(input("20:30", behind, [GYM])).length, 0);
+  assert.equal(
+    testCandidate(input("20:30", behind, [GYM]))?.text,
+    "70.3 training 3h 05 behind pace. Book 90 minutes today.",
+  );
+  assert.equal(
+    testCandidate(monday("11:05", [calendar("Gym", T("2026-11-09 18:00"), T("2026-11-09 19:00"))], [GYM]))
+      ?.text,
+    "70.3 training 40 min behind pace. Keep the 18:00 block.",
+  );
+
+  // Under 15 minutes behind, or on pace: nothing, so the route falls back to its sample line.
+  assert.equal(testCandidate(monday("03:00", [], [GYM])), null);
+  const onPace = [calendar("Gym", T("2026-11-09 07:00"), T("2026-11-09 12:00"))];
+  assert.equal(testCandidate(input("20:30", onPace, [GYM])), null);
+  // Never a target goal such as sleep, however far "behind" its budget looks.
+  const sleep = {
+    ...goal("health", "00000000-0000-4000-8000-0000000000c1", "Sleep"),
+    target: { kind: "target", sleep_hours: 8 },
+    weekly_budget_minutes: 3360,
+  };
+  assert.equal(testCandidate(monday("11:05", [], [sleep])), null);
+  // A better candidate still wins: the block about to start.
+  const soon = [calendar("Gym", T("2026-11-09 11:15"), T("2026-11-09 12:15"))];
+  assert.equal(testCandidate(monday("11:05", soon, [GYM]))?.kind, "block_soon");
 });
 
 test("never in the night or at dinner", () => {

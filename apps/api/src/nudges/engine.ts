@@ -84,6 +84,8 @@ export const LIMITS = {
   goalBehindLatest: 19 * 60,
   goalBehindMinMinutes: 60,
   goalBehindMinShare: 0.15,
+  /** The stage's test nudge (POST /v1/nudges/test) speaks from this gap on, at any hour. */
+  testBehindMinMinutes: 15,
   /** Morning: after the night ends (a nap never counts, patterns/sleep.ts), else at 08:00; not after 12:00. */
   morningDefault: 8 * 60,
   morningLatest: 12 * 60,
@@ -332,9 +334,10 @@ export interface BehindGoal {
  * Goals behind their weekly pace by 60+ minutes and 15%+ of the budget, the furthest behind first.
  * Spent, pace and gap are the numbers Goals shows (packages/shared/src/pace.ts over the score's
  * rows), in whole minutes, and the order is Goals' own: the first is its "needs you most". Only
- * goals in the time score take part.
+ * goals in the time score take part: never a target (sleep), a count or a checklist.
+ * `anyGap`: every goal 15+ minutes behind, for the stage's test nudge.
  */
-function behindList(w: World): BehindGoal[] {
+function behindList(w: World, anyGap = false): BehindGoal[] {
   const share = paceShare(w.weekStart, w.now);
   const out: (BehindGoal & { shortfall: number })[] = [];
   for (const goal of w.goals) {
@@ -343,7 +346,10 @@ function behindList(w: World): BehindGoal[] {
     const budget = row.budget_minutes;
     const spent = row.spent_minutes;
     const gap = behindPaceMinutes(budget, spent, share);
-    if (gap < Math.max(LIMITS.goalBehindMinMinutes, budget * LIMITS.goalBehindMinShare)) continue;
+    const least = anyGap
+      ? LIMITS.testBehindMinMinutes
+      : Math.max(LIMITS.goalBehindMinMinutes, budget * LIMITS.goalBehindMinShare);
+    if (gap < least) continue;
     out.push({
       goal,
       spent,
@@ -375,9 +381,10 @@ const nameOf = (goal: Goal): string =>
     .slice(0, TITLE_WORDS)
     .join(" ") || "This goal";
 
-function goalBehind(w: World): Candidate | null {
-  if (w.minute >= LIMITS.goalBehindLatest) return null;
-  const worst = behindList(w)[0];
+/** `anyGap`: at any hour and from a 15 minute gap (the stage's test nudge), not only a real one. */
+function goalBehind(w: World, anyGap = false): Candidate | null {
+  if (!anyGap && w.minute >= LIMITS.goalBehindLatest) return null;
+  const worst = behindList(w, anyGap)[0];
   if (!worst) return null;
   const { goal, spent, pace, gap } = worst;
   const row = w.rows().get(goal.id);
@@ -513,7 +520,7 @@ const RULES: Record<NudgeKind, (w: World) => Candidate | null> = {
   morning: momentRule("morning"),
   evening: momentRule("evening"),
   wind_down: windDown,
-  goal_behind: goalBehind,
+  goal_behind: (w) => goalBehind(w),
 };
 
 /** Every candidate right now, most urgent first, before quiet hours, the cap and repeats. */
@@ -523,6 +530,19 @@ export function candidates(input: EngineInput): Candidate[] {
     const c = RULES[kind](w);
     return c && isValidCopy(c.text) ? [c] : [];
   });
+}
+
+/**
+ * The line for the stage's test nudge: the best candidate now, else the goal furthest behind its
+ * pace whatever the hour and from a gap of 15 minutes, so N on the stage says something real and
+ * tied to a goal on a Monday morning too. The same score row and the same pace rule as a real
+ * goal_behind, which keeps its thresholds. Null when every goal is on pace.
+ */
+export function testCandidate(input: EngineInput): Candidate | null {
+  const best = candidates(input)[0];
+  if (best) return best;
+  const c = goalBehind(world(input), true);
+  return c && isValidCopy(c.text) ? c : null;
 }
 
 /** Why now is quiet, or null. Inside a work block only a drift nudge may speak. */
