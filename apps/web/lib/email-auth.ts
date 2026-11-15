@@ -13,7 +13,7 @@ export const EMAIL_LINES = {
   weak: "That password is too easy to guess. Pick a stronger one.",
   wrong: "Wrong email or password. Try again.",
   exists: "You already have an account. Sign in instead.",
-  unconfirmed: "Check your inbox to finish, then sign in here.",
+  unconfirmed: "Check your inbox. The link there signs you in.",
   closed: "Sign in isn't open yet. See the demo week for now.",
   busy: "Too many tries. Wait a minute, then try again.",
   failed: "I couldn't sign you in. Check your connection and try again.",

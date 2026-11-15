@@ -62,11 +62,14 @@ export async function emailAuth(raw: unknown): Promise<EmailAuthResult> {
   if (typed) return failWith(typed);
 
   const store = await cookies();
-  const to = safeNext(parsed.next) ?? safeNext(store.get(NEXT_COOKIE)?.value) ?? "/";
+  const back = safeNext(parsed.next) ?? safeNext(store.get(NEXT_COOKIE)?.value);
+  // Set once an account was really made here: it goes straight on to onboarding (#492).
+  let isNew = false;
 
   if (process.env.E2E_TEST_AUTH === "on") {
     const result = testAccounts(mode, email, password);
     if (!result.ok) return failWith(result.line);
+    isNew = result.isNew;
     store.set(E2E_COOKIE, result.user, { path: "/", sameSite: "lax", httpOnly: true });
   } else {
     if (!authEnabled) return failWith("closed");
@@ -78,10 +81,13 @@ export async function emailAuth(raw: unknown): Promise<EmailAuthResult> {
       } else {
         // The API creates the account already confirmed (POST /v1/accounts), so no confirmation
         // email and no Supabase setting stand in the way; then the normal password sign in.
+        // An address that already has an account and the right password simply signs in: creating
+        // an account must never end on "now sign in" (#492).
         const created = await createAccount(email, password);
-        if (created !== "created") return failWith(created);
+        if (created !== "created" && created !== "exists") return failWith(created);
+        isNew = created === "created";
         const { error } = await auth.signInWithPassword({ email, password });
-        if (error) return failWith(emailAuthLine(error, "signin"));
+        if (error) return failWith(created === "exists" ? "exists" : emailAuthLine(error, "signin"));
       }
     } catch (err) {
       console.error(`[auth] email ${mode} failed: ${(err as Error).message}`);
@@ -92,7 +98,9 @@ export async function emailAuth(raw: unknown): Promise<EmailAuthResult> {
   // Signed in: the demo visitor and the way back are done with, as after Google (/auth/callback).
   store.delete(DEMO_COOKIE);
   store.delete(NEXT_COOKIE);
-  return { ok: true, to };
+  // Signed in, with no extra tap: a way back (the Claude consent page) wins, then a new account goes
+  // straight on to onboarding, and anyone else to Today.
+  return { ok: true, to: back ?? (isNew ? "/onboarding" : "/") };
 }
 
 // End to end tests only (E2E_TEST_AUTH=on, never on a deployment): accounts in this process's
@@ -104,14 +112,18 @@ function testAccounts(
   mode: "signin" | "signup",
   email: string,
   password: string,
-): { ok: true; user: string } | { ok: false; line: "wrong" | "exists" } {
+): { ok: true; user: string; isNew: boolean } | { ok: false; line: "wrong" | "exists" } {
   const found = accounts.get(email);
   if (mode === "signup") {
-    if (found) return { ok: false, line: "exists" };
+    // As on a deployment: the right password for an existing account signs in.
+    if (found)
+      return found.hash === hash(password)
+        ? { ok: true, user: found.user, isNew: false }
+        : { ok: false, line: "exists" };
     const user = randomUUID();
     accounts.set(email, { hash: hash(password), user });
-    return { ok: true, user };
+    return { ok: true, user, isNew: true };
   }
   if (!found || found.hash !== hash(password)) return { ok: false, line: "wrong" };
-  return { ok: true, user: found.user };
+  return { ok: true, user: found.user, isNew: false };
 }
