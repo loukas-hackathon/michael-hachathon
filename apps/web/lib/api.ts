@@ -78,6 +78,7 @@ import {
 } from "./sample/day";
 import { sampleGoals, sampleGoalsBaseline, sampleGoalsEmpty, sampleGoalsMonday } from "./sample/goals";
 import { dayFromScore, goalsFromScore, leadFromPatterns } from "./score-map";
+import { unionMs } from "./spans";
 
 // Server-side data access. The browser never sees API_KEY and never talks to the DB. Each request
 // carries the signed-in user's Supabase token, so the API returns only that user's data.
@@ -698,10 +699,12 @@ export async function getToday(variant?: string): Promise<DayView> {
 export type PhoneFocusCost = { minutes: number; atLeast: boolean };
 
 /**
- * Minutes of focus the phone cost in the last 7 days: for each disruption that started on the
- * iPhone inside a goal block or focus stretch, the time until the work was back in front (the time
- * in the phone when it never came back). The report keeps the newest 100 disruptions, so when all
- * 100 fall inside the week the figure is a floor and says so. Null when the report has no answer.
+ * Minutes of focus the phone cost in the last 7 days. Each disruption that started on the iPhone
+ * inside a goal block or a focus stretch runs from its start until the work was back in front (or
+ * for its time in the phone when the work never came back); the figure is the union of those
+ * spans, so a second pick up before the first one's return is never counted twice. The report keeps
+ * the newest 100 disruptions, so when all 100 fall inside the week the figure is a floor and says
+ * so. Null when the report has no answer.
  */
 export const getPhoneFocusCost = cache(async (variant?: string): Promise<PhoneFocusCost | null> => {
   if (variant && variant in SAMPLE_DAYS) return null;
@@ -715,12 +718,18 @@ export const getPhoneFocusCost = cache(async (variant?: string): Promise<PhoneFo
     );
     const parsed = FocusDisruptions.safeParse(report.focus_disruptions?.data);
     if (!parsed.success) return null;
-    const since = athensDay(from);
     const items = parsed.data.items;
-    const phone = items.filter((i) => i.device === "iphone" && i.day >= since);
-    const minutes = Math.round(phone.reduce((t, i) => t + (i.minutes_until_back ?? i.minutes_lost), 0));
+    const spans = items
+      .filter((i) => i.device === "iphone" && Date.parse(i.start_at) >= from.getTime())
+      .map((i) => {
+        const start = Date.parse(i.start_at);
+        return [start, start + (i.minutes_until_back ?? i.minutes_lost) * 60_000] as const;
+      });
     const oldest = items[items.length - 1];
-    return { minutes, atLeast: items.length >= 100 && oldest !== undefined && oldest.day >= since };
+    return {
+      minutes: Math.round(unionMs(spans) / 60_000),
+      atLeast: items.length >= 100 && oldest !== undefined && Date.parse(oldest.start_at) >= from.getTime(),
+    };
   } catch {
     return null;
   }
