@@ -2910,6 +2910,19 @@ simple Athens rush hour model (in `TravelData.calendar_event_id` the calendar ev
 and one "Leave at 19:15 instead of 18:30, win 20 minutes" style `reminder` recommendation for the
 next drive today or tomorrow that leaving later makes shorter.
 
+The demo account never carries the sample day (#330). Every seed (each refresh, the reseed and
+`seed:demo`) removes, through `apps/api/src/demo/retired.ts`: every analysis run whose `model`
+contains `(mock)` (so `GET /v1/analysis/latest` answers `404` until a real run is written and Today
+offers "Ask Michael for a brief"), the sample suggestions (`30000000-…-0001` to `0003`), the two
+hand written demo suggestions the week does not back up (`…-0005` the easy run, `…-0006` the 11:00
+sync) and the retired goal "Weight to 90 kg" (`10000000-…-0004`). What stays is the outreach focus
+block (`…-0004`, the "Do it, then Undo" card; `pnpm --filter @michael/api seed` puts it back to
+proposed) and what the week computes itself (the drive). The goal "The company" lists
+`work_categories: ["communication"]`: inside its blocks messaging and calls are spent, not lost.
+A conversation's summary and commitments are part of its `external_id`, so a change to the words
+replaces the stored row on the next seed, and a waiting template draft whose event is gone is
+deleted and written again (sent, dismissed and model written drafts stay).
+
 ## MCP server
 
 Streamable HTTP at `POST /mcp` (stateless, JSON responses). Auth: `Authorization: Bearer <token>`,

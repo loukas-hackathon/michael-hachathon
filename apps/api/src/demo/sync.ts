@@ -9,6 +9,7 @@ import { isLogEntry } from "../score/logged";
 import { goalForEvent } from "../score/match";
 import type { Store } from "../store";
 import { seedDemoRitual } from "./ritual";
+import { removeRetiredSamples } from "./retired";
 import { DEMO_TZ, localDate } from "./time";
 import { DEMO_PLACES, demoTravel } from "./travel";
 import { buildDemoWeek, DEMO_PREFIX, type DemoWeek, demoGoals, demoInstructions } from "./week";
@@ -67,6 +68,8 @@ export async function seedDemoWeek(
   if (!rules.offTheRecord) {
     await seedDemoRitual(store, week.days).catch((err) => console.error("Demo ritual failed", err));
   }
+  // The sample brief, the sample suggestions and the retired goal never stay on the stage (#330).
+  await removeRetiredSamples(store);
   return { days: week.days, events, goals_written: goals };
 }
 

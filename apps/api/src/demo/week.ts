@@ -73,12 +73,21 @@ interface DayPlan {
   shift: number;
   /** Share of replayed events left out, so repeated templates differ. */
   thin: number;
+  /**
+   * Minutes the events before noon move by, instead of `shift`: the morning starts earlier and
+   * the afternoon stays where it was (the gap before noon is a quiet stretch).
+   */
+  morningShift?: number;
 }
 
 // By weekday (0 Sunday). 29 Oct is the heavy phone, broken focus day; 12 Nov the full workday;
 // 14 Nov the hackathon Saturday (no iPhone yet, so it borrows the light Sunday's phone).
+//
+// Monday's morning runs 80 minutes early: he is at the desk by 07:32, inside the 07:30 block
+// (CALENDAR below). A new week starts on Monday, and without a block that has already run the
+// score, the lost time and "what took it" are empty until 17:00 (#330, the pitch is on a Monday).
 const PLANS: Record<number, DayPlan> = {
-  1: { base: "2026-10-29", shift: 0, thin: 0 },
+  1: { base: "2026-10-29", shift: 0, thin: 0, morningShift: -80 },
   2: { base: "2026-11-12", shift: 0, thin: 0 },
   3: { base: "2026-11-12", shift: 35, thin: 0.12 },
   4: { base: "2026-10-29", shift: -25, thin: 0.1 },
@@ -99,6 +108,9 @@ const SESSION_TITLES = [
   "Refactor the collector cursor",
   "Debug the Railway deploy",
 ] as const;
+
+/** Noon, in seconds of the template day. */
+const NOON = 12 * 3600;
 
 /** The replayed device lanes of one date. */
 function replayLanes(date: string): EventRow[] {
@@ -131,7 +143,8 @@ function replayLanes(date: string): EventRow[] {
     const [offset, duration, source, type, title, data] = row;
     // Thin out everything but Claude Code, whose prompts and sessions must stay consistent.
     if (plan.thin && source !== "claude_code" && rnd.next() < plan.thin) continue;
-    const startOffset = offset + plan.shift * 60;
+    const shift = plan.morningShift !== undefined && offset < NOON ? plan.morningShift : plan.shift;
+    const startOffset = offset + shift * 60;
     if (startOffset < 0 || startOffset >= 86_400) continue;
     const start = midnight + startOffset * 1000;
     const out_data: Record<string, unknown> = { ...data };
@@ -172,6 +185,8 @@ interface Block {
 // carry no names. University has fewer planned hours than its budget: that is the story.
 const CALENDAR: Record<number, Block[]> = {
   1: [
+    // Before the weekly sync, and over by 08:45: Monday has a score to read from 08:30 on.
+    { title: "Meeting Preparation", from: "07:30", to: "08:45", attendees: 0 },
     { title: "Weekly sync", from: "09:30", to: "10:00", attendees: 1, location: "Google Meet" },
     { title: "Φροντιστήριο", from: "17:00", to: "19:00", attendees: 0, location: "University", fixed: true },
     { title: "Gym", from: "20:30", to: "22:30", attendees: 0, location: "Gym" },
@@ -454,7 +469,9 @@ function conversations(date: string): EventRow[] {
       action_items_done: 0,
       duration_min: Math.round((at(date, to) - at(date, from)) / 60_000),
     },
-    external_id: `${DEMO_PREFIX}${date}:omi:${slug(title)}`,
+    // The words are part of the id, so a conversation whose summary or commitments change replaces
+    // the stored row (a reseed only adds and removes by id), and its follow up draft is rewritten.
+    external_id: `${DEMO_PREFIX}${date}:omi:${slug(title)}:${stableUuid([summary, ...action_items].join("|")).slice(0, 8)}`,
   });
   // Notes the user typed into Michael themself.
   const memory = (time: string, title: string, category: string): EventRow => ({
@@ -472,8 +489,8 @@ function conversations(date: string): EventRow[] {
         "09:31",
         "09:58",
         "Weekly sync: priorities for the week",
-        "Agreed the hackathon build comes first this week; outreach keeps its three blocks; no new features for existing pilots.",
-        ["Send three outreach emails a day", "Book the venue for Saturday"],
+        "Agreed the hackathon build comes first this week. Outreach keeps its three blocks and existing pilots get no new features.",
+        ["Send three outreach emails a day", "Share the outreach numbers on Friday"],
       ),
     ];
   if (day === 4)
@@ -483,7 +500,12 @@ function conversations(date: string): EventRow[] {
         "15:44",
         "Customer call: onboarding feedback",
         "The pilot team likes the weekly view but finds setup too long. They would pay for a one tap calendar connect.",
-        ["Write up the onboarding steps they skipped", "Follow up with pricing by Monday"],
+        // His own commitments, as Omi writes them: about the others ("them", "their"). The draft
+        // turns them to "you" (actions/drafts.ts).
+        [
+          "Send them the pricing for 20 seats by Tuesday",
+          "Set up the one tap calendar connect for their team",
+        ],
       ),
     ];
   if (day === 5) return [memory("09:40", "Knee still sore on runs; bike instead until it settles", "gym")];
@@ -494,7 +516,7 @@ function conversations(date: string): EventRow[] {
         "13:50",
         "Hackathon planning: scope for the demo",
         "One timeline from every source, the Claude connector as the headline moment, Apple Watch buzzing on stage.",
-        ["Seed a realistic demo week", "Rehearse the pitch on Sunday evening"],
+        ["Send them the pitch outline tonight", "Book the rehearsal for Sunday 18:00"],
       ),
       memory("23:10", "Wants screens off by 23:00 after the hackathon", "rest"),
     ];
@@ -640,8 +662,12 @@ const goal = (n: number, g: Omit<Goal, "id" | "created_at" | "updated_at" | "act
   ...g,
 });
 
-// Ids 1 to 4 are the mock goals' ids (same categories), so the mock recommendations still point at
-// a goal of the right kind. `calendar_titles` is how the score matches his own blocks to goals.
+// Ids 1 to 3 are the mock goals' ids (same categories), so the demo suggestions point at a goal of
+// the right kind. `calendar_titles` is how the score matches his own blocks to goals.
+// `work_categories`: he sells on WhatsApp Business and the phone, so inside a company block
+// messaging and calls are the work, not time lost (his real goal lists the same).
+// Id 4 was "Weight to 90 kg": no screen showed it and nothing in the week measures it, so it left
+// the plan (demo/retired.ts takes it out of an account seeded before).
 export const demoGoals: Goal[] = [
   goal(1, {
     category: "work",
@@ -649,6 +675,7 @@ export const demoGoals: Goal[] = [
     description: "Outreach, marketing and meeting preparation. Meetings with other people do not count.",
     target: {
       calendar_titles: ["Cold Outreach", "Weekly marketing material", "Meeting Preparation", "Call Leads"],
+      work_categories: ["communication"],
     },
     weekly_budget_minutes: 480,
   }),
@@ -665,13 +692,6 @@ export const demoGoals: Goal[] = [
     description: "7h 30 a night, screens off by 23:00.",
     target: { sleep_hours: 7.5, screens_off_by: "23:00" },
     weekly_budget_minutes: 3150,
-  }),
-  goal(4, {
-    category: "food",
-    title: "Weight to 90 kg",
-    description: "From 99 kg to about 90 kg while keeping muscle.",
-    target: { weight_kg_from: 99, weight_kg_to: 90 },
-    weekly_budget_minutes: null,
   }),
   goal(5, {
     category: "work",
