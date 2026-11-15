@@ -2109,6 +2109,19 @@ export const VoiceSpeakRequest = z.object({
 });
 export type VoiceSpeakRequest = z.input<typeof VoiceSpeakRequest>;
 
+// GET /v1/voice: which voice Michael speaks with and why. "chosen": ELEVENLABS_VOICE_ID.
+// "fallback": the built-in ElevenLabs voice, because the chosen one was refused (a library voice
+// on the free plan answers 402). "device": no ElevenLabs at all, the browser speaks.
+export const VoiceInUse = z.enum(["chosen", "fallback", "device"]);
+export type VoiceInUse = z.infer<typeof VoiceInUse>;
+
+export const VoiceStatus = z.object({
+  elevenlabs: z.boolean(),
+  voice: VoiceInUse,
+  reason: z.string().nullable(), // why, when it is not the chosen voice
+});
+export type VoiceStatus = z.infer<typeof VoiceStatus>;
+
 // ---------- your data: deletion and retention (DELETE /v1/me/data) ----------
 
 // Full detail is kept this many days; older events become daily summaries (EventSummary).

@@ -1442,10 +1442,10 @@ the facts; otherwise `phrased_by` is `template`. Lines are cached per user, kind
 
 ### Voice
 
-| Method | Path              | Body                               | Response                                                                                                   | Status |
-| ------ | ----------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------- | ------ |
-| GET    | `/v1/voice`       |                                    | `200 { elevenlabs: boolean }`: whether the API can speak with ElevenLabs                                   | live   |
-| POST   | `/v1/voice/speak` | `{ text: string }` (1..1000 chars) | `200 audio/mpeg`; `503 unavailable` without `ELEVENLABS_API_KEY`; `502 upstream_error` if ElevenLabs fails | live   |
+| Method | Path              | Body                               | Response                                                                                                       | Status |
+| ------ | ----------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------- | ------ |
+| GET    | `/v1/voice`       |                                    | `200 VoiceStatus` `{ elevenlabs: boolean, voice: "chosen" \| "fallback" \| "device", reason: string \| null }` | live   |
+| POST   | `/v1/voice/speak` | `{ text: string }` (1..1000 chars) | `200 audio/mpeg`; `503 unavailable` without `ELEVENLABS_API_KEY`; `502 upstream_error` if ElevenLabs fails     | live   |
 
 Push to talk in the app: the browser turns speech into text (Web Speech API, en-GB), the text goes
 to `POST /v1/chat`, and the reply is read aloud. `POST /v1/voice/speak` proxies ElevenLabs text to
@@ -1453,6 +1453,13 @@ speech (`ELEVENLABS_VOICE_ID`, default "George", a calm British male; `ELEVENLAB
 `eleven_flash_v2_5`) so the key stays on the server. Without a key, or when it fails, the app uses
 the browser's own speech synthesis, preferring a low en-GB male voice. Audio is never stored:
 only text goes in, and the mp3 is streamed straight back and played once.
+
+If ElevenLabs refuses the chosen voice with `401` or `402` (a Voice Library voice on the free plan
+answers `402 paid_plan_required`), the API retries once with the built-in fallback voice
+(`ELEVENLABS_FALLBACK_VOICE_ID`, default "George") and keeps using it for an hour before trying the
+chosen voice again. `GET /v1/voice` then reports `voice: "fallback"` with the reason ("paid plan
+required"). If both are refused the route answers `502` and the app speaks with the device voice;
+the words are always on screen as captions. Logs carry the status only, never the key or the text.
 
 ### Recommendations
 
