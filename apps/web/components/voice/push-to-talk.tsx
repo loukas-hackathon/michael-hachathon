@@ -9,6 +9,20 @@ import {
   useSyncExternalStore,
 } from "react";
 import {
+  checkRecorderPath,
+  currentInputMode,
+  type InputMode,
+  MicError,
+  NOTHING_HEARD_COPY,
+  primeRecorder,
+  type Recording,
+  releaseMic,
+  startRecording,
+  subscribeInputMode,
+  transcribeErrorCopy,
+  transcribeRecording,
+} from "./recorder";
+import {
   DICTATE_COPY,
   hasTouchKeyboard,
   isIosHomeScreenApp,
@@ -16,10 +30,8 @@ import {
   meansNoVoiceHere,
   primeSpeech,
   type Recognition,
-  readRefused,
   recognitionCtor,
   recognitionErrorCopy,
-  subscribeRefused,
   transcriptOf,
   UNSUPPORTED_COPY,
   unlockAudio,
@@ -32,6 +44,8 @@ type Props = {
   /** Everything said, once the button is let go. Empty speech never arrives here. */
   onFinal: (text: string) => void;
   onListeningChange?: (listening: boolean) => void;
+  /** The recording is being turned into text (the recorder path only). */
+  onTranscribingChange?: (transcribing: boolean) => void;
   /** Michael's line when voice cannot work (unsupported browser, microphone refused). */
   onError: (message: string) => void;
   /** Where the app cannot listen on a phone: open the keyboard so its own mic can dictate. */
@@ -39,39 +53,61 @@ type Props = {
 };
 
 /**
- * Hold to talk. Speech is turned into text by the browser (en-GB); nothing is recorded.
- * Pointer: press and hold, let go to send. Keyboard: hold Space or Enter.
- * Where recognition cannot run, a tap opens the keyboard and points to its dictation mic.
+ * Hold to talk. Speech becomes text in the browser (en-GB), or, where the browser cannot (an
+ * iPhone home screen app) or does it badly (iOS), the sentence is recorded and the API transcribes
+ * it; the audio is dropped once it is text. Pointer: press and hold, let go to send. Keyboard:
+ * hold Space or Enter. Where neither can run, a tap opens the keyboard and points to its mic.
  */
-export function PushToTalk({ disabled, onInterim, onFinal, onListeningChange, onError, onDictate }: Props) {
-  // The server cannot know; assume yes so the button does not jump in after hydration.
-  const supported = useSyncExternalStore(
-    subscribeRefused,
-    () => recognitionCtor() !== null && !readRefused(),
-    () => true,
-  );
+export function PushToTalk({
+  disabled,
+  onInterim,
+  onFinal,
+  onListeningChange,
+  onTranscribingChange,
+  onError,
+  onDictate,
+}: Props) {
+  // The server cannot know; assume the recogniser so the button does not jump in after hydration.
+  const mode = useSyncExternalStore<InputMode>(subscribeInputMode, currentInputMode, () => "recognition");
+  const supported = mode !== "none";
   const [listening, setListening] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const [level, setLevel] = useState(0);
   const rec = useRef<Recognition | null>(null);
+  const recording = useRef<Recording | null>(null);
   const heard = useRef("");
   const held = useRef(false);
+  const alive = useRef(true);
 
-  // Leaving the screen mid hold drops what was heard: nothing is sent from a screen that is gone.
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    alive.current = true;
+    checkRecorderPath();
+    // Leaving the screen mid hold drops what was heard: nothing is sent from a screen that is gone.
+    return () => {
+      alive.current = false;
       const r = rec.current;
-      if (!r) return;
-      r.onresult = null;
-      r.onerror = null;
-      r.onend = null;
-      r.abort();
-      rec.current = null;
-    },
-    [],
-  );
+      if (r) {
+        r.onresult = null;
+        r.onerror = null;
+        r.onend = null;
+        r.abort();
+        rec.current = null;
+      }
+      recording.current?.cancel();
+      recording.current = null;
+      held.current = false;
+      releaseMic();
+    };
+  }, []);
 
   function setOn(on: boolean) {
     setListening(on);
     onListeningChange?.(on);
+  }
+
+  function setBusy(on: boolean) {
+    setTranscribing(on);
+    onTranscribingChange?.(on);
   }
 
   /** No voice in this browser: on a phone, hand over to the keyboard's dictation. */
@@ -85,9 +121,12 @@ export function PushToTalk({ disabled, onInterim, onFinal, onListeningChange, on
   }
 
   function start() {
-    if (disabled || held.current) return;
+    if (disabled || held.current || transcribing) return;
+    const now = currentInputMode();
+    if (now === "recorder") return startRecorder();
+    if (now !== "recognition") return;
     const Ctor = recognitionCtor();
-    if (!Ctor || readRefused()) return;
+    if (!Ctor) return;
     held.current = true;
     heard.current = "";
     primeSpeech();
@@ -105,6 +144,8 @@ export function PushToTalk({ disabled, onInterim, onFinal, onListeningChange, on
         heard.current = "";
         onInterim("");
         markRefused();
+        // The API may still listen for us: the next press records instead.
+        checkRecorderPath();
         fallback();
         return;
       }
@@ -131,10 +172,60 @@ export function PushToTalk({ disabled, onInterim, onFinal, onListeningChange, on
     }
   }
 
+  // ---------- the recorder path ----------
+
+  function startRecorder() {
+    held.current = true;
+    primeSpeech();
+    primeRecorder();
+    onInterim("");
+    setOn(true);
+    startRecording({ onLevel: setLevel, onLimit: () => stop() })
+      .then((r) => {
+        if (!alive.current) return r.cancel();
+        recording.current = r;
+        // Let go while the microphone was still starting: too short, said so by finishRecorder.
+        if (!held.current) void finishRecorder();
+      })
+      .catch((err: unknown) => {
+        held.current = false;
+        setOn(false);
+        if (!alive.current) return;
+        onError(recognitionErrorCopy(err instanceof MicError ? err.code : "unknown") as string);
+      });
+  }
+
+  async function finishRecorder() {
+    const r = recording.current;
+    recording.current = null;
+    if (!r) return;
+    setOn(false);
+    setLevel(0);
+    const blob = await r.stop();
+    releaseMic();
+    if (!alive.current) return;
+    if (!blob) return onError(NOTHING_HEARD_COPY);
+    setBusy(true);
+    const res = await transcribeRecording(blob);
+    if (!alive.current) return;
+    setBusy(false);
+    if (!res.ok) return onError(transcribeErrorCopy(res.code));
+    if (!res.text) return onError(NOTHING_HEARD_COPY);
+    // "Got it": the words land in the box, then go.
+    onInterim(res.text);
+    onFinal(res.text);
+  }
+
   function stop() {
     if (!held.current) return;
-    // onend fires after the last words are in, and sends them.
-    rec.current?.stop();
+    held.current = false;
+    if (rec.current) {
+      // onend fires after the last words are in, and sends them.
+      rec.current.stop();
+      held.current = true;
+    } else {
+      void finishRecorder();
+    }
     // The release is a tap: the one moment iOS lets the reply's voice be unlocked.
     unlockAudio();
   }
@@ -163,19 +254,23 @@ export function PushToTalk({ disabled, onInterim, onFinal, onListeningChange, on
     ? dictate
       ? "Dictate with your keyboard's mic"
       : "Voice is not available in this browser"
-    : listening
-      ? "Listening. Let go to send"
-      : "Hold to talk to Michael";
+    : transcribing
+      ? "Got it. Writing it down"
+      : listening
+        ? "Listening. Let go to send"
+        : "Hold to talk to Michael";
 
   return (
     <button
       type="button"
       aria-label={label}
       aria-pressed={supported ? listening : undefined}
+      aria-busy={transcribing || undefined}
       title={label}
       data-testid="push-to-talk"
       data-supported={supported}
-      disabled={disabled && !listening}
+      data-mode={mode}
+      disabled={(disabled || transcribing) && !listening}
       onPointerDown={onPointerDown}
       onPointerUp={stop}
       onPointerCancel={stop}
@@ -192,6 +287,15 @@ export function PushToTalk({ disabled, onInterim, onFinal, onListeningChange, on
         <span
           aria-hidden="true"
           className="m-listen-ring pointer-events-none absolute inset-0 rounded-full bg-tint"
+        />
+      ) : null}
+      {listening && mode === "recorder" ? (
+        // The live level while recording: grows with the voice, so the user sees it is heard.
+        <span
+          aria-hidden="true"
+          data-testid="voice-level"
+          className="pointer-events-none absolute inset-0 rounded-full bg-tint opacity-30 transition-transform duration-75"
+          style={{ transform: `scale(${1 + Math.min(level * 6, 0.8)})` }}
         />
       ) : null}
       <MicIcon className="relative h-5 w-5" />

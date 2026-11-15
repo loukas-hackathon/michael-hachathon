@@ -1,5 +1,6 @@
 // Browser speech in and out for push to talk. Recognition runs in the browser (Web Speech API);
-// Michael only ever receives text. No audio is recorded or kept by us.
+// Michael only ever receives text. Where it cannot run, recorder.ts records the sentence for the
+// API to transcribe; that audio is dropped once it is text.
 
 // ---------- speech in ----------
 
