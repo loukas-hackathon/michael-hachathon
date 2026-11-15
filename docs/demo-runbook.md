@@ -23,6 +23,13 @@ the stage and Claude will each see a different day.
       touches anything that is not a demo row):
       `curl -s -X POST -H "Authorization: Bearer $MICHAEL_API_KEY" $API/v1/demo/reseed`
       Expect `days` ending today and `goals_written` above 0.
+- [ ] **Book works on a Sunday.** The plan's only standing instruction is "Nothing between 23:00
+      and 07:00" (it follows the sleep goal). "Keep Sundays clear" made Book and Do it refuse all
+      Sunday with "No free 90 minutes left this week"; it must not be back:
+      `curl -s -H "Authorization: Bearer $MICHAEL_API_KEY" $API/v1/instructions` lists that one
+      rule. Then on **Goals** tap **Book time** on University: a block lands this evening (after the
+      20:00 finalists slot, before 23:00). Tap **Undo** so the stage starts clean. If it still
+      refuses, reseed again: the reseed replaces the instructions with the plan's.
 - [ ] **Laptop browser in the demo week.** Open `$WEB/auth/demo` (the "See the demo week" button on
       the login page). The cookie lasts 24 hours. Today shows a score, not "Nothing yet".
 - [ ] **Claude can talk.** In `$WEB/chat` send `How is my day going?`. A reply means

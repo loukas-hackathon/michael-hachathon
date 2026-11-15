@@ -2658,7 +2658,8 @@ most every 5 minutes (the first refresh after a deploy resets the goals to the B
 later ones keep edits; `DEMO_WEEK=off` turns it off). `POST /v1/demo/reseed` also resets the goals.
 Any other account gets `403 forbidden`. The reseed (and the first refresh after a deploy) also
 deletes all demo visitor chat, turns off the record off, removes goals that are not in the plan
-and replaces the standing instructions with the plan's (`demoInstructions`); every refresh deletes visitor chat
+and replaces the standing instructions with the plan's (`demoInstructions`: only "Nothing between
+23:00 and 07:00", so a Saturday or Sunday evening stays bookable for the live demo); every refresh deletes visitor chat
 older than a day. Off the record, nothing changes. Per source switches are
 not applied: on the demo account they keep real collectors out (#114). From a terminal:
 `pnpm --filter @michael/api seed:demo` (or `--dry` to print the week without a database).
