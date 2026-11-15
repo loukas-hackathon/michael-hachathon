@@ -1,5 +1,11 @@
 import "server-only";
-import { type AgentClient, type PersonalToken, SETUP_KEY_NAMES } from "@michael/shared";
+import {
+  type AgentClient,
+  type ConnectorId,
+  isLive,
+  type PersonalToken,
+  SETUP_KEY_NAMES,
+} from "@michael/shared";
 import { cookies } from "next/headers";
 import { cache } from "react";
 import { get, getGoals, getPushConfig } from "./api";
@@ -21,7 +27,7 @@ export const SETUP_LINKS: Record<SetupKey, string> = {
   watch: CONNECTION_ROUTES["apple-watch"],
   mac: CONNECTION_ROUTES.mac,
   iphone: CONNECTION_ROUTES.iphone,
-  nudges: "/you",
+  nudges: CONNECTION_ROUTES.nudges,
   claude: "/agents",
 };
 
@@ -56,6 +62,21 @@ const CTA: Record<SetupKey, string> = {
 };
 
 const ORDER: SetupKey[] = ["goals", "calendar", "watch", "mac", "nudges", "claude"];
+
+/** The connection behind each step: a step whose connection is Coming soon is left out (#295). */
+const CONNECTOR: Partial<Record<SetupKey, ConnectorId>> = {
+  calendar: "google-calendar",
+  watch: "apple-watch",
+  mac: "mac",
+  iphone: "iphone",
+  nudges: "nudges",
+  claude: "claude",
+};
+
+const offered = (key: SetupKey) => {
+  const id = CONNECTOR[key];
+  return id === undefined || isLive(id);
+};
 
 /** The device key each connection gets (SETUP_KEY_NAMES in @michael/shared). */
 const KEY_NAMES = {
@@ -121,7 +142,7 @@ export const getSetup = cache(async (demo?: string): Promise<Setup | null> => {
   // Without a Mac the app time step is the iPhone's: never a Mac shown as missing progress.
   const withoutMac = !done.mac && (noMac || done.iphone);
   const order = withoutMac ? ORDER.map((k) => (k === "mac" ? "iphone" : k)) : ORDER;
-  const steps = order.map((key) => ({
+  const steps = order.filter(offered).map((key) => ({
     key,
     title: TITLES[key],
     why: WHY[key],

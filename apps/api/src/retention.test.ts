@@ -216,7 +216,8 @@ test("a full delete removes every row of the user, device keys included, and nob
       await store.insertEvents([
         { source: "manual", type: "note", start_at: "2026-11-14T08:00:00Z", title: "mine", data: {} },
       ]);
-      await store.addChatMessage("user", "hello");
+      const thread = await store.createChatThread("Sleep this week");
+      await store.addChatMessage(thread.id, "user", "hello");
       await store.addEventSummaries(summariseEvents([ev({ start_at: "2026-07-01T10:00:00Z" })]));
       await createPersonalToken("Mac collector");
     },
@@ -228,6 +229,7 @@ test("a full delete removes every row of the user, device keys included, and nob
   assert.equal(body.scope, "everything");
   assert.ok((body.deleted.events ?? 0) >= 1);
   assert.equal(body.deleted.chat_messages, 1);
+  assert.equal(body.deleted.chat_threads, 1);
   assert.equal(body.deleted.event_summaries, 1);
   assert.equal(body.deleted.personal_tokens, 1);
   assert.equal(body.account_deleted, false); // no Supabase Auth in tests
@@ -240,7 +242,7 @@ test("a full delete removes every row of the user, device keys included, and nob
         0,
       );
       assert.equal((await store.listGoals()).length, 0);
-      assert.equal((await store.listChatMessages(10)).length, 0);
+      assert.equal((await store.listChatThreads()).length, 0);
       assert.equal((await store.listEventSummaries()).length, 0);
       assert.equal((await listPersonalTokens()).length, 0);
     },

@@ -19,6 +19,8 @@ voice out; recognition needs a connection on most phones).
 - [ ] The demo week is loaded (Today screen shows real blocks) and the score endpoint answers.
 - [ ] In the Michael app, open `/chat`, hold the mic once and say "test" so the browser has asked
       for the microphone already. Never let the permission prompt appear on stage.
+- [ ] Open the app in Safari, not from the home screen icon: iOS home screen apps cannot use
+      in-app speech recognition, and the mic then only points to keyboard dictation.
 - [ ] Do Not Disturb on, except the Apple Watch nudge we want to show.
 
 ## Script A: Claude voice mode (90 seconds)
@@ -51,15 +53,29 @@ Open the Michael app on the phone, Chat tab.
 The voice is ElevenLabs (free tier) when the team has set `ELEVENLABS_API_KEY` on the API,
 otherwise the best low en-GB voice the phone has. Both sound fine; ElevenLabs sounds better in a hall.
 
+## Script C: talk to Michael hands free (60 seconds)
+
+Chat tab, tap the wave button left of the Mi button once. The sheet opens and Michael listens.
+
+1. Say: "How much deep work have I done today?" and pause. After about a second he answers in one
+   or two sentences, by voice, with the words on screen, and listens again.
+2. Say: "Block an hour for it this afternoon." He books it and says the undo time.
+3. While he speaks, tap the Mi symbol (or, on a laptop, just talk): he stops and listens.
+4. Tap End, or stay quiet for nine seconds and he ends it himself. The lines stay in the chat.
+
+On iPhone, speaking over him is off (the microphone would cut his voice); a tap cuts in.
+
 ## If something goes wrong
 
-| Problem                                | Recovery                                                                                      |
-| -------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Claude does not call Michael           | Say "use the Michael connector". Check the connector is switched on in the chat's tools menu. |
-| Connector asks to sign in again        | Tap through the consent page; it takes one tap.                                               |
-| Mic button says voice is not supported | Use Safari on iPhone or Chrome on Android or desktop. Firefox has no speech recognition.      |
-| No sound from Michael                  | Silent switch off, volume up. The reply is always on screen, so read it out and carry on.     |
-| Chat says it cannot talk yet           | `ANTHROPIC_API_KEY` is missing on Railway. Switch to Script A.                                |
+| Problem                                | Recovery                                                                                                                                                      |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude does not call Michael           | Say "use the Michael connector". Check the connector is switched on in the chat's tools menu.                                                                 |
+| Connector asks to sign in again        | Tap through the consent page; it takes one tap.                                                                                                               |
+| Mic button says voice is not supported | Use Safari on iPhone or Chrome on Android or desktop. Firefox has no speech recognition.                                                                      |
+| "Tap the mic on your keyboard"         | The app is opened from the iPhone home screen, where iOS refuses in-app recognition. Open it in Safari for hold to talk, or tap the keyboard mic and dictate. |
+| Michael speaks only on the second try  | iOS unlocks sound on the release of a tap. Hold and let go once before the pitch.                                                                             |
+| No sound from Michael                  | Silent switch off, volume up. The reply is always on screen, so read it out and carry on.                                                                     |
+| Chat says it cannot talk yet           | `ANTHROPIC_API_KEY` is missing on Railway. Switch to Script A.                                                                                                |
 
 ## Privacy line (if asked)
 

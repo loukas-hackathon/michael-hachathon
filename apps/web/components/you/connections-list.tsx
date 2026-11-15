@@ -11,6 +11,7 @@ export function ConnectionsList({
   view: ConnectionsView;
   flash: { ok: boolean; text: string } | null;
 }) {
+  // Coming soon (#295) and optional rows are not counted: "1 of 4 connected" means four to connect.
   const total = view.total;
   const mac = view.rows.find((r) => r.id === "mac");
   // No Mac yet: say plainly that the rest works without one, and let the person say so once.
@@ -43,7 +44,7 @@ export function ConnectionsList({
         </p>
       ) : null}
       <div className="overflow-hidden rounded-group bg-fill">
-        {view.rows.map((row, i) => (
+        {[...view.rows.filter((r) => r.live), ...view.rows.filter((r) => !r.live)].map((row, i) => (
           <div key={row.id} className="relative">
             {i > 0 ? <span className="absolute inset-x-0 top-0 ml-[52px] h-[0.5px] bg-separator" /> : null}
             <ConnectionRow row={row} />

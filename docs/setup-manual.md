@@ -64,7 +64,11 @@ The phone app and voice mode use the same connector automatically. Revoke it any
    `https://api-production-16521a26.up.railway.app/v1/oauth/google_calendar/callback`. **Save**.
 4. Put the same client on Railway: `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (snippet above).
 
-Then each user taps **Connect Google Calendar** in the app once (issues #12, #13).
+Then each user taps **Connect Google Calendar** in the app once (issues #12, #13). A brand new
+account does not even need that tap: right after **Continue with Google** on /login, the app goes
+straight on to Google's calendar consent (#270). It is the same OAuth client and the same scopes as
+above, so there is nothing new to set up in the console. If Google is not configured, onboarding
+simply starts with the goals and a Connect pill.
 
 ## 4. Maps and traffic (Loukas, 5 min; #115 is built, travel is skipped until the key is set)
 
