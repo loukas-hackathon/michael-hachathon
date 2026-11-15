@@ -34,7 +34,22 @@ export type Mark = { start: number; end: number; title: string };
  * A calendar block on the day: drawn as a dashed outline under what actually happened. `michael` is
  * set for blocks Michael booked (from a recommendation, his chat or Claude through the connector).
  */
-export type Plan = { start: number; end: number; title: string; michael: boolean; withOthers: boolean };
+export type Plan = {
+  start: number;
+  end: number;
+  title: string;
+  michael: boolean;
+  withOthers: boolean;
+  /** The timeline event id (#271): set on live days, so the block can be edited. */
+  id?: string;
+  goalId?: string | null;
+  /** The user may move, resize, rename it or change its goal: solo and not started yet. */
+  editable?: boolean;
+  /** Made in Michael, so it may be removed (the user's own calendar events never are). */
+  removable?: boolean;
+  /** Where the event lives in Google Calendar, for the read only "Open in Google Calendar". */
+  htmlLink?: string;
+};
 
 export type Segment =
   | { kind: "hours"; from: number; to: number }
@@ -164,18 +179,30 @@ function topApps(apps: Map<string, number>, n = 2) {
 /** Michael's own block: tagged by the executor (data.michael) or written by him (source agent). */
 export const isMichaelBlock = (e: Event) => e.source === "agent" || e.data.michael === true;
 
-/** Calendar events on the day, all day events left out, as planned outlines. */
-export function plansOf(events: Event[], dayStart: number, dayEnd: number): Plan[] {
+/**
+ * Calendar events on the day, all day events left out, as planned outlines. `now` decides which are
+ * still editable (#271): a block that has started is history.
+ */
+export function plansOf(events: Event[], dayStart: number, dayEnd: number, now = Date.now()): Plan[] {
   return events
     .filter((e) => e.type === "calendar_event" && e.end_at && e.data.all_day !== true)
     .map((e) => {
       const attendees = typeof e.data.attendees === "number" ? e.data.attendees : 0;
+      const withOthers = e.data.with_others === true || attendees >= 2;
+      const start = t(e.start_at);
+      const end = t(e.end_at as string);
       return {
-        start: Math.max(t(e.start_at), dayStart),
-        end: Math.min(t(e.end_at as string), dayEnd),
+        start: Math.max(start, dayStart),
+        end: Math.min(end, dayEnd),
         title: e.title,
         michael: isMichaelBlock(e),
-        withOthers: e.data.with_others === true || attendees >= 2,
+        withOthers,
+        id: e.id,
+        goalId: typeof e.data.goal_id === "string" ? e.data.goal_id : null,
+        // Blocks that cross midnight stay read only: the day shows only part of them.
+        editable: !withOthers && start > now && start >= dayStart && end <= dayEnd,
+        removable: isMichaelBlock(e),
+        htmlLink: typeof e.data.html_link === "string" ? e.data.html_link : undefined,
       };
     })
     .filter((p) => p.end > p.start)
@@ -299,7 +326,7 @@ export function buildTimeline(
       .sort((a, b) => a.start - b.start);
   const phone = marks((e) => e.source === "iphone_usage" && e.type === "app_usage");
   const ai = marks((e) => e.type === "ai_session");
-  const plans = plansOf(events, dayStart, dayEnd);
+  const plans = plansOf(events, dayStart, dayEnd, now);
   const health = healthOf(events, dayStart, dayEnd);
 
   // 5. Planned drives (source maps, type travel; TravelData in docs/api.md).
@@ -399,6 +426,31 @@ export function makeY(segments: Segment[], perHour: number, quiet: number) {
     }
     return y;
   };
+}
+
+/** The inverse of makeY: the time at a y offset. Inside a quiet row it spreads across the row. */
+export function makeTime(segments: Segment[], perHour: number, quiet: number) {
+  return (y: number) => {
+    let top = 0;
+    for (const s of segments) {
+      const h = s.kind === "quiet" ? quiet : ((s.to - s.from) / (60 * MIN)) * perHour;
+      if (y < top + h) return s.from + (Math.max(0, y - top) / h) * (s.to - s.from);
+      top += h;
+    }
+    return segments.at(-1)?.to ?? 0;
+  };
+}
+
+/** Quiet rows the viewer opened become hours again, merged with the hours around them. */
+export function openSegments(segments: Segment[], open: (s: Segment) => boolean): Segment[] {
+  const out: Segment[] = [];
+  for (const s of segments) {
+    const next: Segment = s.kind === "quiet" && open(s) ? { kind: "hours", from: s.from, to: s.to } : s;
+    const last = out.at(-1);
+    if (last && last.kind === "hours" && next.kind === "hours" && last.to === next.from) last.to = next.to;
+    else out.push({ ...next });
+  }
+  return out;
 }
 
 /** The plan a block mostly belongs to: the calendar block covering at least half of it. */
