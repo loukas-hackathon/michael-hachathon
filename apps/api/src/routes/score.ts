@@ -140,7 +140,14 @@ export async function syncRecords(week: Week): Promise<PersonalRecord[]> {
 }
 
 /** The score with the week's target, the balanced week and the records set in it. */
-export async function scoreFor(query: { date?: string; now?: string }): Promise<Score> {
+/**
+ * `readOnly`: the numbers only, for the chat context (#364): personal records are not synced and
+ * today's goal offers are not made, which saves their round trips (the screens still do both).
+ */
+export async function scoreFor(
+  query: { date?: string; now?: string },
+  opts: { readOnly?: boolean } = {},
+): Promise<Score> {
   const week = await loadWeek(query);
   // Targets and records are extras: a failed read must never take the score down.
   const [state, records] = await Promise.all([
@@ -148,15 +155,18 @@ export async function scoreFor(query: { date?: string; now?: string }): Promise<
       console.error("score: target", err);
       return null;
     }),
-    syncRecords(week).catch((err) => {
-      console.error("score: records", err);
-      return [] as PersonalRecord[];
-    }),
+    opts.readOnly
+      ? ([] as PersonalRecord[])
+      : syncRecords(week).catch((err) => {
+          console.error("score: records", err);
+          return [] as PersonalRecord[];
+        }),
   ]);
   // Today's offers for checklist and count goals (checklist/offers.ts), made once a day through
   // the instruction guard. Only from a score of the current week read at the real clock.
   const today = new Zone(DEFAULT_TIMEZONE).dayOf(Date.now());
   if (
+    !opts.readOnly &&
     week.real &&
     Date.now() - Date.parse(week.now) < 60_000 &&
     week.score.days.some((d) => d.date === today)
