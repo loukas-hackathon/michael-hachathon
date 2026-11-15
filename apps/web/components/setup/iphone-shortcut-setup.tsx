@@ -5,9 +5,10 @@ import { type ReactNode, startTransition, useEffect, useRef, useState } from "re
 import { Sheet } from "@/components/sheet";
 import { useStandalone } from "@/components/standalone";
 import {
+  isICloudLink,
+  SHORTCUT_FILE,
   SHORTCUT_NAME,
   shortcutAddInNewContext,
-  shortcutAddLink,
   shortcutConnectLink,
   shortcutTestLink,
 } from "@/lib/one-tap";
@@ -24,15 +25,16 @@ import {
 } from "./parts";
 
 // Live iPhone app opens through the Michael shortcut (#120, #303, docs/sources/ios-shortcuts.md).
-// 1. Add the shortcut: the signed file this app serves, or its iCloud link (Add Shortcut).
+// 1. Add the shortcut: its iCloud link (Shortcuts opens on Add Shortcut, no browser), or the
+//    signed file this app serves as the fallback.
 // 2. Connect: a shortcuts:// link runs it once with the device key as input; it saves the key.
 // 3. The app automation: Apple lets no app or link create one, so that part stays a few taps.
 // Without a shortcut link it shows `fallback` instead (the pages always pass one since #303).
-// Our own file opens in the page's own window, in the installed app too: iOS shows its preview
-// with Open in Shortcuts, and the import works (Loukas, 15 Nov). A new context did not: the in-app
-// sheet stayed blank and Safari saved the file to Files (#497, #508). Coming back to Michael, the
-// page picks up where it was (pageshow, visibilitychange, tab memory). An iCloud link still opens
-// in a new context from the installed app (Shortcuts), with a sheet of steps if nothing opens.
+// The iCloud link (the default since Loukas shared it, 15 Nov) opens Shortcuts itself; from the
+// installed app in a new context, so this page stays put. "Shortcuts did not open?" offers our own
+// file, in this window: iOS shows its preview with Open in Shortcuts and the import works. A new
+// context for the file did not: the in-app sheet stayed blank (#497, #508). Coming back to Michael,
+// the page picks up where it was (pageshow, visibilitychange, tab memory).
 // Never shortcuts://import-shortcut: it refuses anything but an iCloud link ("Import Failed").
 
 /** How long after coming back from a test run its event may take to land. */
@@ -62,15 +64,7 @@ export function IPhoneShortcutSetup({
   const standalone = useStandalone();
   const router = useRouter();
   const connectRef = useRef<HTMLDivElement>(null);
-  // Absolute links need the page's origin, so they are made once mounted.
-  const [links, setLinks] = useState<{ add: string; file: string } | null>(null);
-  useEffect(() => {
-    if (!shortcutUrl) return;
-    const origin = window.location.origin;
-    // Add and Open in Safari use the same absolute https URL.
-    const add = shortcutAddLink(shortcutUrl, origin);
-    setLinks({ add, file: add });
-  }, [shortcutUrl]);
+  const iCloud = shortcutUrl !== null && isICloudLink(shortcutUrl);
 
   // Back from Shortcuts: after Add, the next step is Connect, so bring it into view; after
   // Connect or a test, read the connection again so its state shows without a reload.
@@ -122,7 +116,7 @@ export function IPhoneShortcutSetup({
   }, [testing, live]);
 
   // Only an iCloud link leaves the installed app; our own file stays in this window.
-  const iCloudInApp = links !== null && shortcutAddInNewContext(links.add, standalone);
+  const newContext = shortcutUrl !== null && shortcutAddInNewContext(shortcutUrl, standalone);
 
   if (!shortcutUrl) return <>{fallback ?? null}</>;
   if (device === null) return null;
@@ -159,10 +153,10 @@ export function IPhoneShortcutSetup({
         <Step n={1} done={added}>
           <p>Add the {SHORTCUT_NAME} shortcut, then come back here.</p>
           <a
-            href={iCloudInApp && links ? links.add : shortcutUrl}
+            href={shortcutUrl}
             // Our file: this window, where iOS previews it with Open in Shortcuts. An iCloud link in
             // the installed app: a new context (Shortcuts), so this page stays put.
-            {...(iCloudInApp ? { target: "_blank", rel: "noopener" } : {})}
+            {...(newContext ? { target: "_blank", rel: "noopener" } : {})}
             onClick={() => {
               setAdded(true);
               setNotFound(false);
@@ -172,7 +166,7 @@ export function IPhoneShortcutSetup({
           >
             Add the shortcut
           </a>
-          {iCloudInApp ? (
+          {iCloud ? (
             <button
               type="button"
               onClick={() => setHelp(true)}
@@ -227,21 +221,21 @@ export function IPhoneShortcutSetup({
       <ErrorLine text={error} />
       <Sheet open={help} onClose={() => setHelp(false)} title="Add the shortcut" closeLabel="Done">
         <ol className="flex list-decimal flex-col gap-2 pl-5 text-body">
-          <li>Tap Open in Safari.</li>
-          <li>Tap Get Shortcut, then Add Shortcut.</li>
+          <li>Tap Open the shortcut file.</li>
+          <li>Tap Open in Shortcuts, then Add Shortcut.</li>
           <li>Come back to Michael and tap Connect the shortcut.</li>
         </ol>
-        {links ? (
-          <a
-            href={links.file}
-            target="_blank"
-            rel="noopener"
-            onClick={() => setHelp(false)}
-            className="press mt-6 flex h-11 w-full items-center justify-center rounded-full bg-tint text-body font-semibold text-on-tint"
-          >
-            Open in Safari
-          </a>
-        ) : null}
+        <a
+          href={SHORTCUT_FILE}
+          onClick={() => {
+            setHelp(false);
+            setAdded(true);
+            tabMemory.set("iphone-added", "1");
+          }}
+          className="press mt-6 flex h-11 w-full items-center justify-center rounded-full bg-tint text-body font-semibold text-on-tint"
+        >
+          Open the shortcut file
+        </a>
       </Sheet>
     </Card>
   );

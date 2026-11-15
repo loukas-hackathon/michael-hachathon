@@ -25,6 +25,10 @@ test("Apple Watch: the setup steps show for everyone, with or without ?preview=1
   await expect(page.getByText("This link is not complete. Scan the code in Michael again.")).toBeVisible();
 });
 
+// The shared iCloud links (Loukas, 15 Nov): Add opens Shortcuts on Add Shortcut, no browser.
+const MICHAEL_ICLOUD = "https://www.icloud.com/shortcuts/c0c2a08d12f74e5392e41b195ba2bd57";
+const FOCUS_ICLOUD = "https://www.icloud.com/shortcuts/76e297e86ff742dfb3446679fb46932d";
+
 const IPHONE_UA =
   "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
 
@@ -43,15 +47,12 @@ test("iPhone: the shortcut steps show for everyone, the signed file is public", 
     await page.goto(`${baseURL}${path}`);
     await expect(page.getByRole("link", { name: "Add the shortcut" })).toHaveAttribute(
       "href",
-      "/Michael.shortcut",
+      MICHAEL_ICLOUD,
     );
     await expect(page.getByRole("button", { name: "Connect the shortcut" })).toBeVisible();
     await expect(page.getByText("Coming soon. I will tell you when it is ready.")).toHaveCount(0);
     // The second shortcut (#447), next to the first: Do Not Disturb, when you say yes.
-    await expect(page.getByRole("link", { name: "Add Michael Focus" })).toHaveAttribute(
-      "href",
-      "/MichaelFocus.shortcut",
-    );
+    await expect(page.getByRole("link", { name: "Add Michael Focus" })).toHaveAttribute("href", FOCUS_ICLOUD);
     await expect(page.getByRole("button", { name: "Try it" })).toBeVisible();
   }
   await context.close();
@@ -87,10 +88,11 @@ test("Do Not Disturb: the hand over page opens and offers nothing without a nudg
   await context.close();
 });
 
-// The installed app (Loukas, 15 Nov): our own file opens in the app's own window, where iOS shows
-// its preview with Open in Shortcuts and the import works. A new context (#497, #508) did not: the
-// in-app sheet stayed blank. Coming back, the steps read as they were; /setup has its own Close.
-test("installed app: Add opens the file in this window and the steps survive the trip", async ({
+// The installed app (Loukas, 15 Nov): Add opens the iCloud link in a new context, which Shortcuts
+// takes over. The fallback is our own file in the app's own window, where iOS shows its preview
+// with Open in Shortcuts (a new context for the file stayed blank, #497, #508). Coming back, the
+// steps read as they were; /setup has its own Close.
+test("installed app: Add opens iCloud, the file is the fallback, the steps survive the trip", async ({
   browser,
   baseURL,
 }) => {
@@ -104,12 +106,22 @@ test("installed app: Add opens the file in this window and the steps survive the
   await page.goto(`${baseURL}/you/connections/iphone`);
   await expect(page.getByText("Add the shortcut first, then connect it here.")).toBeVisible();
   const add = page.getByRole("link", { name: "Add the shortcut" });
-  await expect(add).toHaveAttribute("href", "/Michael.shortcut");
-  await expect(add).not.toHaveAttribute("target", /.+/);
-  await expect(page.getByRole("button", { name: "Safari did not open?" })).toHaveCount(0);
+  await expect(add).toHaveAttribute("href", MICHAEL_ICLOUD);
+  await expect(add).toHaveAttribute("target", "_blank");
   const focus = page.getByRole("link", { name: "Add Michael Focus" });
-  await expect(focus).toHaveAttribute("href", "/MichaelFocus.shortcut");
-  await expect(focus).not.toHaveAttribute("target", /.+/);
+  await expect(focus).toHaveAttribute("href", FOCUS_ICLOUD);
+  await expect(focus).toHaveAttribute("target", "_blank");
+  const focusFile = page.getByRole("link", { name: "Shortcuts did not open? Open the file" });
+  await expect(focusFile).toHaveAttribute("href", "/MichaelFocus.shortcut");
+  await expect(focusFile).not.toHaveAttribute("target", /.+/);
+
+  // Shortcuts did not open: our own file, in this window.
+  await page.getByRole("button", { name: "Shortcuts did not open?" }).click();
+  const file = page.getByRole("link", { name: "Open the shortcut file" });
+  await expect(file).toHaveAttribute("href", "/Michael.shortcut");
+  await expect(file).not.toHaveAttribute("target", /.+/);
+  await page.getByRole("button", { name: "Done" }).click();
+  await expect(file).toHaveCount(0);
 
   // The tap marks the step; the file itself is iOS' business. Back in Michael, nothing is lost.
   await add.evaluate((a) => a.addEventListener("click", (e) => e.preventDefault()));

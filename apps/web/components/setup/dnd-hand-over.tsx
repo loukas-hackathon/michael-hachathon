@@ -13,7 +13,14 @@ import { Card, ErrorLine, PrimaryButton, SecondaryButton, Step, useDevice } from
 //   neither ready  the page offers to add the shortcut first, so the tap never fails silently.
 // Nothing is switched on before the tap.
 
-export function DndHandOver({ offer }: { offer: DndOffer | null }) {
+export function DndHandOver({
+  offer,
+  shortcutUrl = FOCUS_SHORTCUT_FILE,
+}: {
+  offer: DndOffer | null;
+  /** `focusShortcutUrl()`, read on the server: an iCloud link or our own file. */
+  shortcutUrl?: string;
+}) {
   const device = useDevice();
   const [on, setOn] = useState<Dnd | null>(offer?.active ?? null);
   const [ended, setEnded] = useState(false);
@@ -132,7 +139,7 @@ export function DndHandOver({ offer }: { offer: DndOffer | null }) {
                       : "Once only: add the Michael Focus shortcut to this Mac."}
                 </p>
                 <a
-                  href={FOCUS_SHORTCUT_FILE}
+                  href={shortcutUrl}
                   onClick={() => {
                     focusShortcutAdded.set();
                     setAdded(true);
@@ -161,7 +168,7 @@ export function DndHandOver({ offer }: { offer: DndOffer | null }) {
             {phone ? (
               <p className="mt-3 text-footnote text-label-2">
                 Shortcuts opens for a second. Shortcut gone?{" "}
-                <a href={FOCUS_SHORTCUT_FILE} className="font-semibold text-tint-text">
+                <a href={shortcutUrl} className="font-semibold text-tint-text">
                   Add it again
                 </a>
                 .

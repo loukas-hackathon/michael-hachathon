@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { DndHandOver } from "@/components/setup/dnd-hand-over";
+import { focusShortcutUrl } from "@/lib/dnd";
 import { getDndOffer } from "@/lib/dnd-server";
 
 export const metadata = { title: "Do Not Disturb · Michael" };
@@ -37,7 +38,7 @@ export default async function DndPage({
       </header>
       <h1 className="mt-1 text-large-title font-bold tracking-[0.01em]">Do Not Disturb</h1>
       <div className="mt-4">
-        <DndHandOver offer={offer} />
+        <DndHandOver offer={offer} shortcutUrl={focusShortcutUrl()} />
       </div>
     </main>
   );
