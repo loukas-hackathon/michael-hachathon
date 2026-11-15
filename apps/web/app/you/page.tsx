@@ -70,8 +70,15 @@ export default async function YouPage({
         <DeleteDataRow />
       </section>
 
+      <StandingInstructions
+        available={instructions.available}
+        items={instructions.available ? instructions.items : []}
+        quiet={profile?.quiet_hours ?? null}
+      />
+
       <section className="mt-8">
-        <h2 className="mb-2 text-title3 font-bold">Michael</h2>
+        <h2 className="mb-2 text-title3 font-bold">Account</h2>
+        {/* Redo setup lives here rather than under a heading of its own: one row needs no section. */}
         <div className="overflow-hidden rounded-group bg-fill">
           <Link
             href="/onboarding"
@@ -83,19 +90,8 @@ export default async function YouPage({
             </span>
             <span className="text-label-2">›</span>
           </Link>
-        </div>
-      </section>
-
-      <StandingInstructions
-        available={instructions.available}
-        items={instructions.available ? instructions.items : []}
-        quiet={profile?.quiet_hours ?? null}
-      />
-
-      <section className="mt-8">
-        <h2 className="mb-2 text-title3 font-bold">Account</h2>
-        <div className="overflow-hidden rounded-group bg-fill">
-          <p className="flex min-h-12 items-center justify-between gap-3 px-4 py-2">
+          <p className="relative flex min-h-12 items-center justify-between gap-3 px-4 py-2">
+            <span className={separator} />
             <span className="text-body">Signed in as</span>
             <span className="min-w-0 truncate text-body text-label-2">{account}</span>
           </p>

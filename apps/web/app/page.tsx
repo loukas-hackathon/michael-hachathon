@@ -73,11 +73,11 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
             <TodayChecklist key={l.goalId} {...l} />
           ))}
           <RecommendationsPanel slot="primary" />
+          {/* No moment card or brief on an empty day: both would only say there is nothing yet, which
+              Get started already says with one action. */}
           <Suspense fallback={null}>
             <MoreFromMichael>
-              {momentKind && !day.sample ? <MomentCard kind={momentKind} sample={false} /> : null}
               <WatchLine demo={demo} />
-              <BriefCard sample={day.sample} />
               <RecommendationsPanel slot="rest" />
             </MoreFromMichael>
           </Suspense>
@@ -126,34 +126,30 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
               <p className="mt-1 text-subhead font-semibold">{verdict(day.balance).line}</p>
             ) : null}
 
-            {day.blocks.length > 0 ? (
+            {/* Before the first block starts the tape is all outline: the sentence above already says
+                when it starts, so a bar of nothing stays off the screen. */}
+            {day.blocks.length > 0 && t.scorePct !== null ? (
               <div className="mt-5">
                 <div className="mt-3">
                   <Tape
                     ticks={ticks}
-                    nowAt={day.moment === "evening" || t.scorePct === null ? null : nowIndex(ticks)}
+                    nowAt={day.moment === "evening" ? null : nowIndex(ticks)}
                     nowLabel={formatTime(day.now)}
                     recordAt={day.record?.tick ?? null}
                     label={`${hm(t.spent)} spent (${hm(t.unverified)} unconfirmed), ${hm(t.lost)} lost, ${hm(t.ahead)} still ahead`}
                   />
                 </div>
                 <TapeKey
-                  items={
-                    t.scorePct === null
-                      ? [{ kind: "ahead" as const, minutes: t.planned, text: "planned" }]
-                      : [
-                          ...(t.spent - t.unverified > 0 || t.unverified === 0
-                            ? [{ kind: "spent" as const, minutes: t.spent - t.unverified, text: "spent" }]
-                            : []),
-                          ...(t.unverified > 0
-                            ? [{ kind: "unverified" as const, minutes: t.unverified, text: "unconfirmed" }]
-                            : []),
-                          ...(t.lost > 0 ? [{ kind: "lost" as const, minutes: t.lost, text: "lost" }] : []),
-                          ...(t.ahead > 0
-                            ? [{ kind: "ahead" as const, minutes: t.ahead, text: "ahead" }]
-                            : []),
-                        ]
-                  }
+                  items={[
+                    ...(t.spent - t.unverified > 0 || t.unverified === 0
+                      ? [{ kind: "spent" as const, minutes: t.spent - t.unverified, text: "spent" }]
+                      : []),
+                    ...(t.unverified > 0
+                      ? [{ kind: "unverified" as const, minutes: t.unverified, text: "unconfirmed" }]
+                      : []),
+                    ...(t.lost > 0 ? [{ kind: "lost" as const, minutes: t.lost, text: "lost" }] : []),
+                    ...(t.ahead > 0 ? [{ kind: "ahead" as const, minutes: t.ahead, text: "ahead" }] : []),
+                  ]}
                 />
                 {day.record ? (
                   <p className="mt-2 flex items-center gap-2 text-subhead">
