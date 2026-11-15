@@ -82,11 +82,15 @@ self.addEventListener("fetch", (event) => {
   // for the previous person, and let the request through untouched.
   if (url.pathname.startsWith("/auth/") || url.pathname === "/login") {
     event.waitUntil(forgetPersonal());
+    if (request.mode === "navigate") event.respondWith(passThrough(event));
     return;
   }
   if (request.method !== "GET") return; // writes always go straight to the network, never queued
   // The Michael shortcut is a file to download, never a page: the shell must not stand in for it.
-  if (url.pathname.endsWith(".shortcut")) return;
+  if (url.pathname.endsWith(".shortcut")) {
+    if (request.mode === "navigate") event.respondWith(passThrough(event));
+    return;
+  }
 
   if (request.mode === "navigate") {
     event.respondWith(navigate(event, url));
@@ -102,6 +106,23 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(staleWhileRevalidate(event, request, SHELL_CACHE));
   }
 });
+
+/**
+ * A navigation the worker leaves alone, answered with the navigation preload response. With preload
+ * on, a navigation the worker does not answer reaches the server twice (the preload, thrown away,
+ * then a normal fetch). /auth/callback spends a one time code and /auth/signout revokes a session,
+ * so a second copy undid the first: a new Google account bounced to "didn't go through" and one
+ * Sign out became three /logout calls that timed out (#459).
+ */
+async function passThrough(event) {
+  try {
+    const preloaded = await event.preloadResponse;
+    if (preloaded) return preloaded;
+  } catch {
+    // No preload: one normal fetch below.
+  }
+  return fetch(event.request);
+}
 
 function isRsc(request, url) {
   return url.searchParams.has("_rsc") || request.headers.get("RSC") === "1";

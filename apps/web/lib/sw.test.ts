@@ -144,3 +144,57 @@ test("sw: a refused or failed button says so plainly", async () => {
   await offline.click({ url: "/", act_url: PAYLOAD.act_url, token: "t" }, "do_it");
   assert.equal(offline.shown[0]?.options.body, "No connection. Open Michael to do it there.");
 });
+
+// #459: with navigation preload on, a navigation the worker does not answer reaches the server
+// twice. /auth/callback spends a one time code, so the worker must answer with the preload.
+function navigation(path: string, preload: Response | undefined) {
+  const listeners = new Map<string, Listener>();
+  const fetched: string[] = [];
+  const sandbox = {
+    self: {
+      location: { href: `${ORIGIN}/sw.js?v=test`, origin: ORIGIN },
+      addEventListener: (type: string, fn: Listener) => listeners.set(type, fn),
+      registration: {},
+      clients: {},
+    },
+    URL,
+    Map,
+    Set,
+    Promise,
+    Response,
+    setTimeout,
+    clearTimeout,
+    caches: { open: async () => ({}), keys: async () => [] },
+    fetch: async (req: { url: string }) => {
+      fetched.push(req.url);
+      return new Response("network");
+    },
+  };
+  vm.runInNewContext(SOURCE, sandbox);
+  let answer: Promise<Response> | undefined;
+  listeners.get("fetch")?.({
+    request: { url: `${ORIGIN}${path}`, method: "GET", mode: "navigate", headers: new Headers() },
+    preloadResponse: Promise.resolve(preload),
+    respondWith: (p: Promise<Response>) => {
+      answer = p;
+    },
+    waitUntil: () => {},
+  });
+  return { answer, fetched };
+}
+
+for (const path of ["/auth/callback?code=abc", "/auth/signout", "/login"]) {
+  test(`${path} reaches the server once: the preload answers it`, async () => {
+    const { answer, fetched } = navigation(path, new Response("preloaded"));
+    assert.ok(answer, "the worker answers the navigation");
+    assert.equal(await (await answer).text(), "preloaded");
+    assert.deepEqual(fetched, []);
+  });
+}
+
+test("without a preload the auth navigation is one normal fetch", async () => {
+  const { answer, fetched } = navigation("/auth/callback?code=abc", undefined);
+  assert.ok(answer);
+  assert.equal(await (await answer).text(), "network");
+  assert.equal(fetched.length, 1);
+});
