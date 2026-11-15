@@ -126,6 +126,12 @@ export function lastTimeLine(risk: MomentStretch, today: string, block = "this b
   return `${when} ${block} lost ${voiceDuration(last.lost_minutes)}${last.trigger ? ` to ${last.trigger}` : ""}.`;
 }
 
+/** How a line that stands alone names the block at risk: by its start, or "this block" once it is running. */
+export function riskBlockName(m: Pick<MomentCore, "generated_at" | "timezone">, risk: MomentStretch): string {
+  if (risk.start_at === m.generated_at) return "this block";
+  return `the ${new Zone(m.timezone).clock(Date.parse(risk.start_at))} block`;
+}
+
 export function computeMoment(input: MomentInput): MomentCore {
   const timezone = input.timezone ?? DEFAULT_TIMEZONE;
   const zone = new Zone(timezone);
@@ -449,7 +455,7 @@ export function templateHeadline(m: MomentCore): string {
     // The stake: what this block lost last time when there is one, else what these hours usually cost.
     const guard = risk
       ? ` ${
-          lastTimeLine(risk, m.day, `the ${from} block`) ??
+          lastTimeLine(risk, m.day, riskBlockName(m, risk)) ??
           `Guard ${from} to ${tz.clock(Date.parse(risk.end_at))}: it usually costs ${voiceDuration(risk.expected_lost_minutes)}.`
         }`
       : "";

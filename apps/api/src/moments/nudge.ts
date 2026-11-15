@@ -1,7 +1,7 @@
 import { voiceDuration } from "@michael/shared";
 import { isValidCopy } from "../nudges/engine";
 import { Zone } from "../patterns/time";
-import { lastTimeLine, type MomentCore, templateHeadline } from "./compute";
+import { lastTimeLine, type MomentCore, riskBlockName, templateHeadline } from "./compute";
 
 // The Morning or Evening moment as one nudge: the headline when it fits the nudge rules (under 15
 // words, no dashes), else its first sentence, else a shorter line from the same numbers. Pure.
@@ -20,11 +20,11 @@ export function momentNudge(m: MomentCore): { text: string; reason: string } {
     const risk = m.at_risk;
     if (risk) {
       // The stake as a line of its own when the whole headline is too long for a nudge.
-      const last = lastTimeLine(risk, m.day, `the ${clock(risk.start_at)} block`);
+      const last = lastTimeLine(risk, m.day, riskBlockName(m, risk));
       if (last) options.splice(1, 0, last);
       options.push(`Guard ${clock(risk.start_at)} to ${clock(risk.end_at)} today.`);
       reasons.push(
-        lastTimeLine(risk, m.day, `the ${clock(risk.start_at)} to ${clock(risk.end_at)} block`) ??
+        last ??
           `About ${risk.expected_lost_minutes} minutes usually go in ${clock(risk.start_at)} to ${clock(risk.end_at)}${risk.usual_trigger ? `, mostly to ${risk.usual_trigger}` : ""}.`,
       );
     }

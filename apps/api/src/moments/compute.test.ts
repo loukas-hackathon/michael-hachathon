@@ -425,7 +425,18 @@ test("the same block's last time is quoted in place of the average", () => {
   const nudge = momentNudge(m);
   assert.equal(nudge.text, "Yesterday the 10:30 block lost 24 minutes to Instagram.");
   assert.ok(isValidCopy(nudge.text), nudge.text);
-  assert.match(nudge.reason, /Yesterday the 10:30 to 12:00 block lost 24 minutes to Instagram\./);
+  assert.match(nudge.reason, /Yesterday the 10:30 block lost 24 minutes to Instagram\./);
+
+  // Read while the block is running, the line says "this block" and guards what is left of it.
+  const running = morning(events, "2026-11-11 10:47", all);
+  assert.equal(
+    running.at_risk?.start_at,
+    T("2026-11-11 10:47").replace("+02:00", "").replace("T10:47:00", "T08:47:00.000Z"),
+  );
+  assert.equal(
+    templateHeadline(running),
+    "Today holds 90 minutes of goal time. Yesterday this block lost 24 minutes to Instagram.",
+  );
 
   // Two days ago is named by its weekday.
   const friday = morning(
