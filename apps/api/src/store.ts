@@ -51,6 +51,7 @@ import type { GeocodeHit } from "./integrations/maps";
 import { type PrivacyBackend, type PrivacyRules, screenEvents } from "./privacy";
 import type { NewRecord } from "./score/records";
 import { SupabaseStore } from "./supabase-store";
+import { noteWrite } from "./writes";
 
 export interface TimelineFilter {
   from: string;
@@ -1456,8 +1457,33 @@ export class MemoryStore implements Store {
   }
 }
 
+// Store methods that write, by their verb (every write in the Store interface starts with one).
+// Chat lines and thread names are left out: the chat context does not depend on them (only on other
+// threads' titles, which may lag by the context cache's two minutes), nor on our geocoding cache.
+const WRITES =
+  /^(add|answer|bind|clear|create|delete|insert|mark|record|remove|replace|save|seed|set|sync|unbind|update|upsert)[A-Z]/;
+const QUIET_WRITES = new Set(["addChatMessage", "createChatThread", "updateChatThread", "saveGeocode"]);
+
+/** The store, noting each write before and after it, so caches of a user's data know to read again. */
+function noticingWrites(inner: Store): Store {
+  return new Proxy(inner, {
+    get(target, prop) {
+      const value: unknown = Reflect.get(target, prop, target);
+      if (typeof value !== "function") return value;
+      const fn = value as (...args: unknown[]) => unknown;
+      if (typeof prop !== "string" || !WRITES.test(prop) || QUIET_WRITES.has(prop)) return fn.bind(target);
+      return (...args: unknown[]) => {
+        noteWrite();
+        // After it lands too: a context read that started during the write must not count as fresh.
+        return Promise.resolve(fn.apply(target, args)).finally(noteWrite);
+      };
+    },
+  });
+}
+
 // Supabase when configured (production, or local with keys), otherwise the in-memory mock day.
-export const store: Store =
+export const store: Store = noticingWrites(
   env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY
     ? new SupabaseStore(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
-    : new MemoryStore();
+    : new MemoryStore(),
+);

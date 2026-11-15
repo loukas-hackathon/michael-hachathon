@@ -2351,6 +2351,10 @@ export const ChatRequest = z.object({
 });
 export type ChatRequest = z.input<typeof ChatRequest>;
 
+// POST /v1/chat/warm (#364): the chat screen is open on this thread (or a new one).
+export const ChatWarmRequest = ChatRequest.pick({ thread_id: true });
+export type ChatWarmRequest = z.input<typeof ChatWarmRequest>;
+
 export const ChatResponse = z.object({
   // The user's line as stored, then Michael's answer.
   message: ChatMessage,

@@ -709,6 +709,9 @@ test("the visitor rules fail closed for routes nobody listed", () => {
   assert.equal(demoVisitorMay("POST", "/v1/ritual/morning"), true);
   assert.equal(demoVisitorMay("POST", "/v1/ritual/evening/skip"), true);
   assert.equal(demoVisitorMay("POST", "/v1/ritual/other"), false);
+  // The chat screen warming Michael up (#364): it only reads.
+  assert.equal(demoVisitorMay("POST", "/v1/chat/warm"), true);
+  assert.equal(demoVisitorMay("POST", "/v1/chat/other"), false);
   assert.equal(demoVisitorMay("POST", "/v1/connect/requests/x"), false);
   assert.equal(demoVisitorMay("POST", "/v1/connect/requests/x", true), true);
   assert.equal(demoVisitorMay("POST", "/v1/goals", true), false);

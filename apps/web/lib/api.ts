@@ -130,6 +130,17 @@ export async function openChatStream(
   });
 }
 
+/** POST /v1/chat/warm (#364): read the day and warm the model before the question. Throws when signed out. */
+export async function warmChat(threadId?: string): Promise<void> {
+  const res = await fetch(`${API_URL}/v1/chat/warm`, {
+    method: "POST",
+    headers: { ...(await authHeaders()), "content-type": "application/json" },
+    body: JSON.stringify(threadId ? { thread_id: threadId } : {}),
+    cache: "no-store",
+  });
+  await res.body?.cancel();
+}
+
 /** GET /v1/check-in (#187): today's questions; the API opens a round when one is due. */
 export async function getCheckIn(): Promise<CheckInToday> {
   return get<CheckInToday>("/v1/check-in");
