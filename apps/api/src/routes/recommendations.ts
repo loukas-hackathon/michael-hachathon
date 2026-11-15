@@ -7,7 +7,9 @@ export const recommendations = new Hono()
   .get("/recommendations", async (c) => {
     const raw = c.req.query("status");
     const status = raw ? parse(RecommendationStatus, raw) : undefined;
-    return c.json({ recommendations: await store.listRecommendations({ status }) });
+    // The user's own Timeline edits (#271) are kept for Undo only; they are not advice.
+    const all = await store.listRecommendations({ status });
+    return c.json({ recommendations: all.filter((r) => r.source !== "user") });
   })
   .patch("/recommendations/:id", async (c) => {
     const { status } = parse(RecommendationStatusUpdate, await jsonBody(c));

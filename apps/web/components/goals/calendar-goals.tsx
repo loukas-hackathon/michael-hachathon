@@ -21,10 +21,13 @@ export function CalendarGoals({
   initial,
   onKept,
   className = "",
+  tone = "filled",
 }: {
   initial?: GoalSuggestion[];
   onKept?: (kept: number) => void;
   className?: string;
+  /** Filled Keep buttons where keeping is the step (onboarding); tinted beside a form (New goal). */
+  tone?: "filled" | "tinted";
 }) {
   const [list, setList] = useState<GoalSuggestion[] | null>(initial ?? null);
   const [minutes, setMinutes] = useState<Record<string, number>>({});
@@ -115,7 +118,11 @@ export function CalendarGoals({
                   disabled={on || pending}
                   onClick={() => keep([s.id])}
                   className={`press h-9 shrink-0 rounded-full px-4 text-subhead font-semibold ${
-                    on ? "text-label-2" : "bg-tint text-on-tint disabled:opacity-40"
+                    on
+                      ? "text-label-2"
+                      : tone === "filled"
+                        ? "bg-tint text-on-tint disabled:opacity-40"
+                        : "bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] text-tint-text disabled:opacity-40"
                   }`}
                 >
                   {on ? <span className="m-swap">Kept</span> : "Keep"}

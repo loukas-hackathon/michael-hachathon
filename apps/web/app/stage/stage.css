@@ -86,6 +86,12 @@
   letter-spacing: -0.03em;
   margin-left: calc(var(--u) * -10);
 }
+.stage-score-label {
+  font-size: calc(var(--u) * 40);
+  line-height: calc(var(--u) * 48);
+  font-weight: 700;
+  color: var(--m-label-2);
+}
 .stage-score-line {
   margin-top: calc(var(--u) * 16);
   font-size: calc(var(--u) * 52);

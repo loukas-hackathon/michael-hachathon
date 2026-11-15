@@ -5,30 +5,39 @@ import {
   type ChatMessage,
   ChatRequest,
   type ChatResponse,
+  type ChatThread,
   type CheckIn,
+  type ConnectorId,
   type Event,
   type Goal,
   goalArea,
   type Instruction,
+  isLive,
   MICHAEL_VOICE,
   type PatternReport,
   type Recommendation,
+  type RitualToday,
   type Score,
   voiceDuration,
 } from "@michael/shared";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
+import { z } from "zod";
 import { CHAT_TOOLS, type ChatTurnState, runChatTool, undoLine } from "../actions/chat-tools";
 import { checkInContext, checkInLine } from "../checkin/service";
 import { env } from "../env";
 import { HttpError, jsonBody, parse } from "../http";
 import { instructionLine } from "../instructions/protected";
 import { listMemories, type Memory, memoryContext } from "../memory";
-import { DEFAULT_TIMEZONE } from "../patterns";
+import { DEFAULT_TIMEZONE, NO_HEADLINES } from "../patterns";
 import { Zone } from "../patterns/time";
+import { ritualFor } from "../ritual/ritual";
 import { store } from "../store";
+import { latestThread, titleFor, untitled } from "./chat-threads";
 import { patternReportFor } from "./patterns";
 import { scoreFor } from "./score";
+
+const ThreadIdParam = z.uuid();
 
 // How many earlier lines Michael sees, and how many GET /v1/chat returns.
 const HISTORY_TURNS = 20;
@@ -37,6 +46,8 @@ const HISTORY_MAX = 100;
 // totals, not lines.
 const MAX_TODAY_LINES = 40;
 const WEEK_MS = 7 * 24 * 3600_000;
+// Titles of other conversations handed to the model: enough to say "as we planned on Tuesday".
+const OTHER_THREADS = 5;
 
 // Event types listed one per line. App, web and AI detail arrive as totals from the pattern report;
 // conversations and memories stay out entirely (privacy: send summaries, never other people's words).
@@ -51,6 +62,31 @@ const LISTED_TYPES = new Set<Event["type"]>([
 ]);
 // Types totalled over the week so Michael can talk budgets.
 const WEEK_TYPES = ["workout", "sleep", "focus_session", "meal"] as const;
+
+// "Connect my calendar" (#307): the web puts the one tap button under the answer for live
+// connections (CONNECTOR_STATUS, #295), so Michael points to it instead of giving steps.
+const CONNECT_NAMES: Record<ConnectorId, string> = {
+  "google-calendar": "their calendar",
+  claude: "Claude",
+  telegram: "Telegram",
+  nudges: "nudges",
+  "apple-watch": "their Apple Watch",
+  mac: "their Mac",
+  iphone: "their iPhone apps",
+  travel: "their location",
+};
+const spoken = (items: string[]) =>
+  items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} or ${items.at(-1)}`;
+const connectIds = Object.keys(CONNECT_NAMES) as ConnectorId[];
+export const CONNECT_LINE = [
+  `- When the user asks to connect ${spoken(connectIds.filter(isLive).map((id) => CONNECT_NAMES[id]))}, the app shows a one tap Connect button under your answer: say in one short line what it gives you and that the button below does it.`,
+  connectIds.some((id) => !isLive(id))
+    ? `${spoken(connectIds.filter((id) => !isLive(id)).map((id) => CONNECT_NAMES[id]))}: coming soon, say so in one line.`
+    : "",
+  "Never give steps, links or keys.",
+]
+  .filter(Boolean)
+  .join(" ");
 
 const SYSTEM_PROMPT = `${MICHAEL_VOICE}
 
@@ -72,6 +108,7 @@ Acting:
 - Never claim you did something unless a tool result says it is done.
 - After acting, say in one or two short sentences what you did, with times, and end with the undo line exactly as the tool gave it, e.g. "Undo until 15:00."
 - Times you pass to tools are ISO 8601 with the user's UTC offset, as in "Now (ISO)" below.
+${CONNECT_LINE}
 
 Proposing:
 - When the user tells you something that changes their week (exams, an injury, travel, a deadline), propose one concrete change tied to a goal: a goal's weekly budget with propose_goal_change (with until for a temporary change), or this week's blocks with propose_plan_change. Show the maths ("University 4h to 8h a week until 22 December; Business 8h to 4h, so the week still adds up").
@@ -84,7 +121,22 @@ Memory:
 
 Check in:
 - "What you told me" below are the user's own answers to earlier check in questions. Use them, quote them, never invent them.
-- When the user answers one of today's open check in questions in chat, keep it with answer_check_in. If the result gives a follow up, ask it word for word.`;
+- When the user answers one of today's open check in questions in chat, keep it with answer_check_in. If the result gives a follow up, ask it word for word.
+
+Conversations:
+- The user keeps separate conversations with you, each on its own topic. You see the lines of this one only.
+- You know the others only by their titles under "Other conversations" and through what you remember. Never claim to recall their exact words; if it matters, ask.
+
+The daily ritual (morning outcomes, evening log):
+- When the user tells you what they want to get done today ("my goals today are X and Y"), keep them with set_day_outcomes, in their words, linked to a goal only when one clearly fits. Three is the most.
+- When they tell you what they got done ("I finished X, did 30 min of Y"), log it with log_day using the item ids under "Today's outcomes", then give the line the tool returns, word for word.
+- If the morning is due and no outcomes are set, you may ask once: "What do you want to get done today?" In the evening, with outcomes open: "What did you get done?" Never guilt, never streaks; skipping a day is fine.`;
+
+// Added after the cached prompt when the answer is read aloud in a voice conversation (#299).
+const SPOKEN_STYLE = `This answer is spoken aloud in a voice conversation:
+- One or two short sentences, then one question or one concrete fix. Never a list, heading or markdown.
+- Say numbers as a person would: "forty seven minutes", "half past six", "two of three sessions".
+- If the user only greets you or says thanks, answer in a few words.`;
 
 /** "2026-11-14T19:05:00+02:00": the instant as the user's wall clock with its UTC offset. */
 function isoIn(zone: Zone, ms: number): string {
@@ -117,7 +169,39 @@ export interface ChatContextInput {
   checkIns?: { answered: CheckIn[]; open: CheckIn[] };
   /** Facts the user asked Michael (or an agent) to keep, newest first. */
   memories?: Memory[];
+  /** The user's other recent conversations, titles only (never their lines), latest first. */
+  otherThreads?: Pick<ChatThread, "title" | "last_message_at">[];
+  /** The daily ritual (#318): today's outcomes and which half is due. */
+  ritual?: RitualToday | null;
 }
+
+/** "Today's outcomes" for the chat context, with the ids log_day needs. */
+export function ritualContext(r: RitualToday, goals: Goal[]): string {
+  const title = new Map(goals.map((g) => [g.id, g.title]));
+  const lines = r.items.map((i) => {
+    const extra = [
+      i.linked_goal_id ? `for ${title.get(i.linked_goal_id) ?? "a goal"}` : null,
+      i.estimate_minutes ? `about ${hm(i.estimate_minutes)}` : null,
+      i.logged_minutes ? `${hm(i.logged_minutes)} logged` : null,
+      i.carried_from ? "carried from yesterday" : null,
+    ].filter(Boolean);
+    return `- [${i.status}] ${i.text}${extra.length ? ` (${extra.join(", ")})` : ""} {item_id ${i.id}}`;
+  });
+  const state = (s: string) => s.replace("_", " ");
+  return [
+    `Today's outcomes (morning ${state(r.morning)}, evening ${state(r.evening)}):`,
+    ...(lines.length ? lines : ["- none set yet"]),
+    ...(r.summary ? [`Evening line: ${r.summary}`] : []),
+  ].join("\n");
+}
+
+const weekdayIn = (zone: Zone, ms: number) =>
+  new Intl.DateTimeFormat("en-GB", {
+    timeZone: zone.name,
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  }).format(ms);
 
 const pct = (p: number | null) => (p === null ? "no score yet" : `${Math.round(p)}%`);
 
@@ -290,11 +374,24 @@ export function buildChatContext(input: ChatContextInput): string {
     );
   }
 
+  if (input.ritual) parts.push(ritualContext(input.ritual, input.goals));
+
   const remembered = memoryContext(input.memories ?? []);
   if (remembered) parts.push(remembered);
 
+  const others = (input.otherThreads ?? []).slice(0, OTHER_THREADS).flatMap((t) => {
+    if (!t.last_message_at) return [];
+    const at = Date.parse(t.last_message_at);
+    return [`- ${t.title} (${zone.dayOf(at) === day ? "today" : weekdayIn(zone, at)})`];
+  });
+  if (others.length) parts.push(`Other conversations (titles only):\n${others.join("\n")}`);
+
   const headlines = (label: string, r: PatternReport | null) =>
-    r?.headlines.length ? [`${label}:\n${r.headlines.map((h) => `- ${h}`).join("\n")}`] : [];
+    !r
+      ? []
+      : r.headlines.length
+        ? [`${label}:\n${r.headlines.map((h) => `- ${h}`).join("\n")}`]
+        : [`${label}: ${NO_HEADLINES}.`];
   parts.push(
     ...headlines("Patterns today", input.today),
     ...headlines("Patterns over the last 7 days", input.week),
@@ -303,7 +400,7 @@ export function buildChatContext(input: ChatContextInput): string {
   return parts.join("\n\n");
 }
 
-async function contextForNow(): Promise<string> {
+async function contextForNow(threadId: string | null): Promise<string> {
   const now = Date.now();
   const zone = new Zone(DEFAULT_TIMEZONE);
   const dayStart = zone.startOfDay(zone.dayOf(now));
@@ -311,24 +408,27 @@ async function contextForNow(): Promise<string> {
   const nowIso = new Date(now).toISOString();
   // Pattern reports are best effort: a detector failing must not take the chat down.
   const report = (from: string) => patternReportFor({ from, to: nowIso }).catch(() => null);
-  const [goals, instructions, events, today, week, score, undoable, checkIns, memories] = await Promise.all([
-    store.listGoals(),
-    store.listInstructions().catch(() => []),
-    store.listEvents({
-      from: new Date(now - WEEK_MS).toISOString(),
-      to: new Date(dayEnd).toISOString(),
-      type: [...LISTED_TYPES],
-    }),
-    now - dayStart > 60_000 ? report(new Date(dayStart).toISOString()) : Promise.resolve(null),
-    report(new Date(now - WEEK_MS).toISOString()),
-    scoreFor({ now: nowIso }).catch((err) => {
-      console.error("chat: score failed", err);
-      return null;
-    }),
-    store.listRecommendations({ status: "done" }).catch(() => []),
-    checkInContext(now),
-    listMemories().catch(() => []),
-  ]);
+  const [goals, instructions, events, today, week, score, undoable, checkIns, memories, threads, ritual] =
+    await Promise.all([
+      store.listGoals(),
+      store.listInstructions().catch(() => []),
+      store.listEvents({
+        from: new Date(now - WEEK_MS).toISOString(),
+        to: new Date(dayEnd).toISOString(),
+        type: [...LISTED_TYPES],
+      }),
+      now - dayStart > 60_000 ? report(new Date(dayStart).toISOString()) : Promise.resolve(null),
+      report(new Date(now - WEEK_MS).toISOString()),
+      scoreFor({ now: nowIso }).catch((err) => {
+        console.error("chat: score failed", err);
+        return null;
+      }),
+      store.listRecommendations({ status: "done" }).catch(() => []),
+      checkInContext(now),
+      listMemories().catch(() => []),
+      store.listChatThreads({ limit: OTHER_THREADS + 1 }).catch(() => []),
+      ritualFor(now).catch(() => null),
+    ]);
   return buildChatContext({
     now,
     goals,
@@ -340,6 +440,13 @@ async function contextForNow(): Promise<string> {
     undoable,
     checkIns,
     memories,
+    otherThreads: threads
+      .filter((t) => t.id !== threadId && !untitled(t))
+      .sort(
+        (a, b) =>
+          Date.parse(b.last_message_at ?? b.created_at) - Date.parse(a.last_message_at ?? a.created_at),
+      ),
+    ritual,
   });
 }
 
@@ -361,7 +468,7 @@ const REFUSAL = "I can't help with that one. Ask me about your day or your goals
 // Model calls per answer: room to look a block up, act, and then say what was done.
 const MAX_ROUNDS = 5;
 
-function request(messages: Anthropic.MessageParam[], context: string, lastRound: boolean) {
+function request(messages: Anthropic.MessageParam[], context: string, lastRound: boolean, spoken = false) {
   return {
     model: env.ANTHROPIC_MODEL,
     max_tokens: 4000,
@@ -371,6 +478,7 @@ function request(messages: Anthropic.MessageParam[], context: string, lastRound:
       // Stable prompt first so it can be cached; the per-request context comes after.
       { type: "text" as const, text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" as const } },
       { type: "text" as const, text: `What I know about the user right now:\n\n${context}` },
+      ...(spoken ? [{ type: "text" as const, text: SPOKEN_STYLE }] : []),
     ],
     tools: CHAT_TOOLS,
     // The last round must answer in words, not call another tool.
@@ -401,6 +509,8 @@ interface Hooks {
   /** Streams text as it is written; without it the model is called without streaming. */
   onText?: (text: string) => Promise<void>;
   onAction?: (action: Recommendation) => Promise<void>;
+  /** The answer is read aloud: brief, no lists (SPOKEN_STYLE). */
+  spoken?: boolean;
 }
 
 /** One model call: streamed piece by piece when `onText` is given. */
@@ -409,10 +519,12 @@ async function callModel(
   context: string,
   lastRound: boolean,
   onText: Hooks["onText"],
+  spoken = false,
 ): Promise<Anthropic.Message> {
   try {
-    if (!onText) return await anthropic().messages.create(request(messages, context, lastRound));
-    const stream = anthropic().messages.stream(request(messages, context, lastRound));
+    const body = request(messages, context, lastRound, spoken);
+    if (!onText) return await anthropic().messages.create(body);
+    const stream = anthropic().messages.stream(body);
     for await (const event of stream) {
       if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
         await onText(event.delta.text);
@@ -450,7 +562,7 @@ export async function askMichael(
   const turn: ChatTurnState = { proposals: 0 };
   for (let round = 0; round < MAX_ROUNDS; round++) {
     wrote = false;
-    const response = await callModel(messages, context, round === MAX_ROUNDS - 1, onText);
+    const response = await callModel(messages, context, round === MAX_ROUNDS - 1, onText, hooks.spoken);
     if (response.stop_reason === "refusal") {
       texts.push(REFUSAL);
       break;
@@ -501,21 +613,57 @@ export async function askMichael(
   return { answer, actions };
 }
 
-/** Everything both POST routes need before the model is called. */
-async function prepare(body: unknown) {
-  const { message } = parse(ChatRequest, body);
-  // Fail before storing anything when chat is not configured.
-  anthropic();
-  const [earlier, context] = await Promise.all([store.listChatMessages(HISTORY_TURNS), contextForNow()]);
-  const turns: Anthropic.MessageParam[] = [...toTurns(earlier), { role: "user", content: message }];
-  return { message, turns, context };
+/** The thread a request writes in, if it exists yet: a "new" one is only made once the answer is in. */
+async function existingThread(id: string | undefined): Promise<ChatThread | null> {
+  if (id === "new") return null;
+  if (!id) return latestThread();
+  const thread = await store.getChatThread(id);
+  if (!thread) throw new HttpError("not_found", "Chat thread not found");
+  return thread;
 }
 
-async function save(message: string, { answer, actions }: MichaelAnswer): Promise<ChatResponse> {
-  const stored = await store.addChatMessage("user", message);
+interface Prepared {
+  message: string;
+  turns: Anthropic.MessageParam[];
+  context: string;
+  /** The answer is read aloud (conversation mode): brief, no lists. */
+  spoken: boolean;
+  /** Null when the pair starts a new thread (made in save, so a failed answer leaves nothing). */
+  thread: ChatThread | null;
+  /** The thread's name, started alongside the answer when this is its first line. */
+  title: Promise<string> | null;
+}
+
+/** Everything both POST routes need before the model is called. */
+async function prepare(body: unknown): Promise<Prepared> {
+  const { message, thread_id, spoken = false } = parse(ChatRequest, body);
+  // Someone else's thread is a 404 even before the model is asked.
+  const thread = await existingThread(thread_id);
+  // Fail before storing anything when chat is not configured.
+  anthropic();
+  const [earlier, context] = await Promise.all([
+    thread ? store.listChatMessages(thread.id, HISTORY_TURNS) : Promise.resolve([]),
+    contextForNow(thread?.id ?? null),
+  ]);
+  const turns: Anthropic.MessageParam[] = [...toTurns(earlier), { role: "user", content: message }];
+  // Named from the first line, in parallel with the answer, so naming adds no wait.
+  const title = !thread || (untitled(thread) && earlier.length === 0) ? titleFor(message) : null;
+  return { message, turns, context, spoken, thread, title };
+}
+
+async function save(p: Prepared, { answer, actions }: MichaelAnswer): Promise<ChatResponse> {
+  const thread = p.thread ?? (await store.createChatThread());
+  const stored = await store.addChatMessage(thread.id, "user", p.message);
   const ids = [...new Set(actions.map((a) => a.id))];
-  const reply = await store.addChatMessage("assistant", answer, ids);
-  return { message: stored, reply, actions };
+  const reply = await store.addChatMessage(thread.id, "assistant", answer, ids);
+  if (p.title) {
+    const title = await p.title;
+    const current = await store.getChatThread(thread.id);
+    // Unless the user renamed it in the meantime.
+    if (current && untitled(current)) await store.updateChatThread(thread.id, { title });
+  }
+  const after = (await store.getChatThread(thread.id)) ?? thread;
+  return { message: stored, reply, actions, thread: after };
 }
 
 /** The recommendations the lines name, as they stand now. Missing ones (deleted data) are skipped. */
@@ -533,18 +681,21 @@ export function toTurns(history: ChatMessage[]): Anthropic.MessageParam[] {
 
 export const chat = new Hono()
   // GET /v1/chat?limit=50  recent history, oldest first
+  // GET /v1/chat?thread_id=&limit=50  one thread's lines (default: the latest thread)
   .get("/chat", async (c) => {
     const raw = Number(c.req.query("limit") ?? 50);
     const limit = Number.isFinite(raw) ? Math.min(Math.max(Math.trunc(raw), 1), HISTORY_MAX) : 50;
-    const messages = await store.listChatMessages(limit);
-    const body: ChatHistory = { messages, actions: await actionsOf(messages) };
+    const id = c.req.query("thread_id");
+    const thread = await existingThread(id ? parse(ThreadIdParam, id) : undefined);
+    const messages = thread ? await store.listChatMessages(thread.id, limit) : [];
+    const body: ChatHistory = { messages, actions: await actionsOf(messages), thread };
     return c.json(body);
   })
   // POST /v1/chat { message }  Michael answers from today's timeline, goals and patterns, and acts
   // on the user's own calendar when asked (ChatResponse.actions)
   .post("/chat", async (c) => {
-    const { message, turns, context } = await prepare(await jsonBody(c));
-    const body = await save(message, await askMichael(turns, context));
+    const p = await prepare(await jsonBody(c));
+    const body = await save(p, await askMichael(p.turns, p.context, { spoken: p.spoken }));
     return c.json(body, 201);
   })
   // POST /v1/chat/stream { message }  the same answer as server-sent events: `delta` { text } as it
@@ -552,14 +703,15 @@ export const chat = new Hono()
   // `error` ApiError if the model fails mid-way.
   .post("/chat/stream", async (c) => {
     // Validation and "not set up" still fail as plain JSON errors, before the stream opens.
-    const { message, turns, context } = await prepare(await jsonBody(c));
+    const p = await prepare(await jsonBody(c));
     return streamSSE(c, async (sse) => {
       try {
-        const answer = await askMichael(turns, context, {
+        const answer = await askMichael(p.turns, p.context, {
+          spoken: p.spoken,
           onText: (text) => sse.writeSSE({ event: "delta", data: JSON.stringify({ text }) }),
           onAction: (action) => sse.writeSSE({ event: "action", data: JSON.stringify(action) }),
         });
-        const body = await save(message, answer);
+        const body = await save(p, answer);
         await sse.writeSSE({ event: "done", data: JSON.stringify(body) });
       } catch (err) {
         const e = err instanceof HttpError ? err : new HttpError("internal", "Internal server error");

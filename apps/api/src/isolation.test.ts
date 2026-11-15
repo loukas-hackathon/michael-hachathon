@@ -12,6 +12,7 @@ import { env } from "./env";
 import { errorResponse, HttpError } from "./http";
 import { createMcpServer } from "./mcp";
 import { remember } from "./memory";
+import { threadFor } from "./routes/chat-threads";
 import { store } from "./store";
 
 // Each account sees only its own data (#197). User A writes through every write route; user B,
@@ -73,6 +74,9 @@ const READS = [
   () => "/v1/privacy",
   () => "/v1/push",
   () => "/v1/chat?limit=200",
+  () => "/v1/chat/threads",
+  () => `/v1/chat/threads?q=${encodeURIComponent(MARK)}`,
+  () => `/v1/chat?thread_id=${ids.thread}`,
   () => `/v1/score?date=${day}`,
   () => `/v1/patterns?${range()}`,
   () => "/v1/moments/morning",
@@ -92,7 +96,15 @@ const READS = [
   () => `/v1/checklist?date=${day}`,
 ];
 
-const ids: { goal?: string; instruction?: string; rec?: string; recBefore?: string; item?: string } = {};
+const ids: {
+  goal?: string;
+  instruction?: string;
+  rec?: string;
+  recBefore?: string;
+  item?: string;
+  thread?: string;
+  block?: string;
+} = {};
 
 async function ok(res: Response, what: string) {
   const text = await res.text();
@@ -127,6 +139,16 @@ test("A writes through every write route", async () => {
     await request(asA, "PATCH", `/v1/goals/${goal.id}`, { description: `${MARK} description` }),
     "PATCH /v1/goals",
   );
+  // A block on the Timeline (#271), tomorrow so it can still change. Before off the record, which stops new events.
+  const block = await ok(
+    await request(asA, "POST", "/v1/blocks", {
+      start_at: new Date(Date.now() + 26 * 3_600_000).toISOString(),
+      end_at: new Date(Date.now() + 27 * 3_600_000).toISOString(),
+      title: `${MARK} block`,
+    }),
+    "POST /v1/blocks",
+  );
+  ids.block = block.event.id;
   const instruction = await ok(
     await request(asA, "POST", "/v1/instructions", { text: `${MARK} keep Sundays clear` }),
     "POST /v1/instructions",
@@ -177,8 +199,13 @@ test("A writes through every write route", async () => {
   ids.rec = rec.id;
   ids.recBefore = rec.status;
   await ok(await request(asA, "PATCH", `/v1/recommendations/${rec.id}`, { status: "dismissed" }), "dismiss");
-  // Chat (the route needs a model, so the line is stored the way the route stores it).
-  await runAsUser(A, () => store.addChatMessage("user", `${MARK} chat`), "session");
+  // Chat: a thread through the route, then a line the way the chat route stores it (it needs a model).
+  const thread = await ok(
+    await request(asA, "POST", "/v1/chat/threads", { title: `${MARK} thread` }),
+    "POST /v1/chat/threads",
+  );
+  ids.thread = thread.id;
+  await runAsUser(A, () => store.addChatMessage(thread.id, "user", `${MARK} chat`), "session");
   // A memory, as the chat's remember tool keeps it.
   await runAsUser(A, () => remember(`${MARK} trains before 08:00`, "chat"), "session");
 });
@@ -212,9 +239,14 @@ for (const [name, who] of [
       ["DELETE", `/v1/goals/${ids.goal}`],
       ["PATCH", `/v1/instructions/${ids.instruction}`, { text: "taken over" }],
       ["DELETE", `/v1/instructions/${ids.instruction}`],
+      ["PATCH", `/v1/blocks/${ids.block}`, { title: "taken over" }],
+      ["DELETE", `/v1/blocks/${ids.block}`],
       ["PATCH", `/v1/checklist/${ids.item}`, { status: "done" }],
       ["POST", `/v1/checklist/${ids.item}/carry`],
       ["DELETE", `/v1/checklist/${ids.item}`],
+      ["PATCH", `/v1/chat/threads/${ids.thread}`, { title: "taken" }],
+      ["DELETE", `/v1/chat/threads/${ids.thread}`],
+      ["POST", "/v1/chat", { message: "into A's thread", thread_id: ids.thread }],
     ];
     for (const [method, path, body] of tries) {
       const res = await request(who, method, path, body);
@@ -233,6 +265,8 @@ test("A's data is all still there and unchanged", async () => {
     "/v1/instructions",
     "/v1/places",
     "/v1/chat",
+    "/v1/chat/threads",
+    `/v1/chat/threads?q=${encodeURIComponent(MARK)}`,
     `/v1/checklist?date=${day}`,
   ]) {
     const text = await (await request(asA, "GET", p)).text();
@@ -244,11 +278,12 @@ test("A's data is all still there and unchanged", async () => {
   assert.ok(instructions.some((i: { text: string }) => i.text === `${MARK} keep Sundays clear`));
   const { recommendations } = await ok(await request(asA, "GET", "/v1/recommendations"), "A's recs");
   assert.equal(recommendations.find((r: { id: string }) => r.id === ids.rec).status, "dismissed");
-  const { messages } = await ok(await request(asA, "GET", "/v1/chat"), "A's chat");
+  const { messages, thread } = await ok(await request(asA, "GET", "/v1/chat"), "A's chat");
   assert.deepEqual(
     messages.map((m: { content: string }) => m.content),
     [`${MARK} chat`],
   );
+  assert.equal(thread.title, `${MARK} thread`, "A's thread kept its name");
   assert.equal((await ok(await request(asA, "GET", "/v1/privacy"), "A's privacy")).off_the_record, true);
   assert.equal((await ok(await request(asA, "GET", "/v1/push"), "A's push")).devices, 1);
 });
@@ -325,11 +360,16 @@ test("A's rows survive the MCP attempts", async () => {
 
 // ---------- demo visitors ----------
 
+/** A line in the caller's latest thread (a new one when there is none), as the chat route stores it. */
+const line = async (text: string) => {
+  const { thread } = await threadFor(undefined);
+  return store.addChatMessage(thread.id, "user", text);
+};
 const say = (who: { visitor: string }, text: string) =>
-  runAsUser(DEMO, () => store.addChatMessage("user", text), "demo_visitor", undefined, who.visitor);
+  runAsUser(DEMO, () => line(text), "demo_visitor", undefined, who.visitor);
 
 test("two demo visitors never see each other's chat, nor the account's own", async () => {
-  await runAsUser(DEMO, () => store.addChatMessage("user", "the account's own line"), "api_key");
+  await runAsUser(DEMO, () => line("the account's own line"), "api_key");
   await say(visitor1, "visitor one asks");
   await say(visitor2, "visitor two asks");
 
@@ -340,6 +380,35 @@ test("two demo visitors never see each other's chat, nor the account's own", asy
   assert.deepEqual(await read(visitor1), ["visitor one asks"]);
   assert.deepEqual(await read(visitor2), ["visitor two asks"]);
   assert.deepEqual(await read(asDemo), ["the account's own line"]);
+});
+
+test("demo visitors keep threads of their own: make, rename, pin and delete, never another's", async () => {
+  const mine = await ok(
+    await request(visitor1, "POST", "/v1/chat/threads", { title: "Visitor one plan" }),
+    "visitor thread",
+  );
+  const titles = async (who: Who) =>
+    ((await ok(await request(who, "GET", "/v1/chat/threads"), "threads")).threads as { title: string }[]).map(
+      (t) => t.title,
+    );
+  assert.ok((await titles(visitor1)).includes("Visitor one plan"));
+  assert.ok(!(await titles(visitor2)).includes("Visitor one plan"));
+  assert.ok(!(await titles(asDemo)).includes("Visitor one plan"));
+  // The other visitor and the account itself cannot touch it.
+  for (const who of [visitor2, asDemo]) {
+    assert.equal((await request(who, "PATCH", `/v1/chat/threads/${mine.id}`, { title: "x" })).status, 404);
+    assert.equal((await request(who, "DELETE", `/v1/chat/threads/${mine.id}`)).status, 404);
+    assert.equal((await request(who, "GET", `/v1/chat?thread_id=${mine.id}`)).status, 404);
+  }
+  const pinned = await ok(
+    await request(visitor1, "PATCH", `/v1/chat/threads/${mine.id}`, { title: "Exam week", pinned: true }),
+    "rename",
+  );
+  assert.equal(pinned.title, "Exam week");
+  assert.equal(pinned.pinned, true);
+  const gone = await ok(await request(visitor1, "DELETE", `/v1/chat/threads/${mine.id}`), "delete");
+  assert.equal(gone.messages, 0);
+  assert.ok(!(await titles(visitor1)).includes("Exam week"));
 });
 
 test("demo visitors cannot change the shared account", async () => {
@@ -367,6 +436,8 @@ test("demo visitors cannot change the shared account", async () => {
     ],
     ["POST", "/v1/nudges/check"],
     ["DELETE", "/v1/me/data"],
+    // Connecting an agent grants full write: never from the shared demo week.
+    ["POST", `/v1/connect/requests/${randomUUID()}`, { allow: true }],
     ["DELETE", `/v1/events/${randomUUID()}`],
     ["POST", `/v1/goals/suggestions/${randomUUID()}/accept`],
     ["PUT", "/v1/targets/2026-11-09", {}],
@@ -433,7 +504,34 @@ test("the demo reseed clears visitor chat and puts off the record back off", asy
   assert.equal(privacy.off_the_record, false);
 });
 
+test("the presenter path: the API key alone may still answer a connect request", async () => {
+  // An unknown request is 404, not 403: the route is open to the key (docs/demo-runbook.md).
+  const res = await request(asDemo, "POST", `/v1/connect/requests/${randomUUID()}`, { allow: true });
+  assert.equal(res.status, 404);
+});
+
+test("the demo reseed puts goals and standing instructions back to the plan", async () => {
+  const { demoGoals, demoInstructions } = await import("./demo/week");
+  const plan = demoGoals[0] as { id: string; title: string };
+  // Rehearsal changes, made the ways that still can: Claude or the API key.
+  await ok(await request(asDemo, "POST", "/v1/goals", { category: "rest", title: "Rehearsal goal" }), "add");
+  await ok(await request(asDemo, "PATCH", `/v1/goals/${plan.id}`, { title: "Renamed" }), "rename");
+  await ok(await request(asDemo, "POST", "/v1/instructions", { text: "Rehearsal rule" }), "rule");
+
+  await runAsUser(DEMO, () => seedDemoWeek(store, { overwriteGoals: true }), "api_key");
+
+  const { goals } = await ok(await request(asDemo, "GET", "/v1/goals"), "goals");
+  assert.deepEqual(goals.map((g: { id: string }) => g.id).sort(), demoGoals.map((g) => g.id).sort());
+  assert.equal(goals.find((g: { id: string }) => g.id === plan.id).title, plan.title);
+  const { instructions } = await ok(await request(asDemo, "GET", "/v1/instructions"), "instructions");
+  assert.deepEqual(
+    instructions.map((i: { text: string }) => i.text),
+    demoInstructions.map((i) => i.text),
+  );
+});
+
 test("the visitor rules fail closed for routes nobody listed", () => {
+  assert.equal(demoVisitorMay("POST", "/v1/connect/requests/x"), false);
   assert.equal(demoVisitorMay("POST", "/v1/something-new"), false);
   assert.equal(demoVisitorMay("DELETE", "/v1/me/data"), false);
   assert.equal(demoVisitorMay("GET", "/v1/goals"), true);

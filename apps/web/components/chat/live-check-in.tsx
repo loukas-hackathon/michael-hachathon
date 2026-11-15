@@ -3,6 +3,7 @@
 import type { CheckIn, CheckInValue } from "@michael/shared";
 import { type FormEvent, useState, useTransition } from "react";
 import { answerCheckInAction } from "@/app/chat/check-in-actions";
+import { haptic } from "@/components/haptics";
 import { AFTER, DONE } from "@/lib/check-in-data";
 import { Bubble, label } from "./check-in";
 
@@ -21,19 +22,38 @@ export function LiveCheckIn({ initial }: { initial: CheckIn[] }) {
   const current = questions.find((q) => q.answer === null);
   const asked = questions.filter((q) => q.answer !== null);
 
-  const reply = (q: CheckIn, value: CheckInValue) =>
+  // The answer shows as the user's bubble at once (michael-feedback R2). Michael's next line waits
+  // for the server, since a follow up may come first; a failure takes the bubble back and keeps the
+  // text with Michael's line.
+  const setAnswer = (id: string, answer: CheckInValue | null) =>
+    setQuestions((list) => list.map((x) => (x.id === id ? { ...x, answer } : x)));
+  const reply = (q: CheckIn, value: CheckInValue) => {
+    if (pending) return;
+    const typed = text;
+    setError(null);
+    setText("");
+    setAnswer(q.id, value);
     startTransition(async () => {
-      setError(null);
-      const res = await answerCheckInAction(q.id, value);
-      if (!res.ok) return setError(res.error);
-      setText("");
-      setQuestions((list) => {
-        const next = list.map((x) => (x.id === q.id ? { ...x, answer: value } : x));
-        if (!res.followUp) return next;
-        const at = next.findIndex((x) => x.id === q.id);
-        return [...next.slice(0, at + 1), res.followUp, ...next.slice(at + 1)];
-      });
+      const res = await answerCheckInAction(q.id, value).catch(() => ({
+        ok: false as const,
+        error: "I could not reach the server. Nothing changed.",
+      }));
+      if (!res.ok) {
+        setAnswer(q.id, null);
+        setText(typed);
+        setError(res.error);
+        return;
+      }
+      haptic();
+      if (res.followUp) {
+        const followUp = res.followUp;
+        setQuestions((list) => {
+          const at = list.findIndex((x) => x.id === q.id);
+          return [...list.slice(0, at + 1), followUp, ...list.slice(at + 1)];
+        });
+      }
     });
+  };
   const onText = (e: FormEvent) => {
     e.preventDefault();
     if (current && text.trim()) reply(current, text.trim());
@@ -54,7 +74,7 @@ export function LiveCheckIn({ initial }: { initial: CheckIn[] }) {
             </ol>
           </li>
         ))}
-        {current ? (
+        {pending ? null : current ? (
           <Bubble from="michael">{current.question}</Bubble>
         ) : (
           <>
@@ -64,7 +84,7 @@ export function LiveCheckIn({ initial }: { initial: CheckIn[] }) {
         )}
       </ol>
 
-      {current ? (
+      {current && !pending ? (
         <div className="mt-3 flex flex-col gap-2">
           {current.answer_type === "scale" ? (
             <fieldset className="flex gap-2" disabled={pending}>

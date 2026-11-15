@@ -1,22 +1,31 @@
 "use server";
 
 import { GoalCategory, ProfileUpdate } from "@michael/shared";
-import { createGoal, getGoals, patchGoal, putProfile } from "@/lib/api";
+import { revalidatePath } from "next/cache";
+import { acceptGoalSuggestion, createGoal, getGoals, patchGoal, putProfile } from "@/lib/api";
 import { isDemoVisitor } from "@/lib/caller";
 
 // Server functions behind the onboarding talk. Only the server talks to the API, with the signed in
 // user's token. Everything here comes from the browser, so it is parsed first.
 
 export type GoalAnswer = { category: GoalCategory; weekly_minutes: number };
+/** A goal Michael found in the calendar (#134), kept with the hours the user left on it. */
+export type KeptSuggestion = { id: string; weekly_minutes: number };
+/** A goal in the user's own words (Manolis, #190): Business, a time goal, hours changed on Goals. */
+export type OwnGoal = { title: string; weekly_minutes: number };
 export type Answers = {
   goals: GoalAnswer[];
-  profile: Omit<ProfileUpdate, "onboarded_at">;
+  own?: OwnGoal;
+  /** Calendar suggestions to keep, by id. */
+  kept?: KeptSuggestion[];
+  /** Usual week and quiet hours are no longer asked: the API defaults stand until You changes them. */
+  profile?: Omit<ProfileUpdate, "onboarded_at">;
 };
 
 const MAX_WEEK = 7 * 24 * 60;
 
 function parseGoals(input: unknown): GoalAnswer[] {
-  if (!Array.isArray(input) || input.length > 4) throw new Error("Invalid goals");
+  if (!Array.isArray(input) || input.length > 5) throw new Error("Invalid goals");
   return input.map((g: Partial<GoalAnswer> | null) => {
     const weekly = g?.weekly_minutes;
     if (typeof weekly !== "number" || !Number.isInteger(weekly) || weekly < 0 || weekly > MAX_WEEK) {
@@ -30,12 +39,38 @@ function parseGoals(input: unknown): GoalAnswer[] {
 const GOAL_TEMPLATE: Record<GoalCategory, { title: string; target: Record<string, unknown> }> = {
   business: { title: "Deep work", target: { calendar_titles: ["Deep work", "Focus", "Study"] } },
   health: { title: "Training", target: { calendar_titles: ["Gym", "Run", "Swim", "Training"] } },
-  personal: { title: "Personal time", target: {} },
+  personal: { title: "Time for yourself", target: { kind: "time", label: "fun" } },
   work: { title: "Deep work", target: { calendar_titles: ["Deep work", "Focus", "Study"] } },
   gym: { title: "Training", target: { calendar_titles: ["Gym", "Run", "Swim", "Training"] } },
   rest: { title: "Sleep", target: {} },
   food: { title: "Proper meals", target: { calendar_titles: ["Breakfast", "Lunch", "Dinner"] } },
 };
+
+function parseOwn(input: unknown): OwnGoal | null {
+  if (input === undefined || input === null) return null;
+  const o = input as Partial<OwnGoal>;
+  const title = typeof o.title === "string" ? o.title.trim() : "";
+  const weekly = o.weekly_minutes;
+  if (!title || title.length > 60) throw new Error("Invalid goal name");
+  if (typeof weekly !== "number" || !Number.isInteger(weekly) || weekly < 0 || weekly > MAX_WEEK) {
+    throw new Error("Invalid weekly minutes");
+  }
+  return { title, weekly_minutes: weekly };
+}
+
+function parseKept(input: unknown): KeptSuggestion[] {
+  if (input === undefined) return [];
+  if (!Array.isArray(input) || input.length > 6) throw new Error("Invalid suggestions");
+  return input.map((k: Partial<KeptSuggestion> | null) => {
+    const id = k?.id;
+    const weekly = k?.weekly_minutes;
+    if (typeof id !== "string" || id.length === 0 || id.length > 120) throw new Error("Invalid id");
+    if (typeof weekly !== "number" || !Number.isInteger(weekly) || weekly < 0 || weekly > MAX_WEEK) {
+      throw new Error("Invalid weekly minutes");
+    }
+    return { id, weekly_minutes: weekly };
+  });
+}
 
 function targetFor(g: GoalAnswer, gymDays: number): Record<string, unknown> {
   const base = GOAL_TEMPLATE[g.category].target;
@@ -51,10 +86,16 @@ function targetFor(g: GoalAnswer, gymDays: number): Record<string, unknown> {
  */
 export async function finishOnboarding(input: Answers): Promise<{ ok: boolean }> {
   const goals = parseGoals(input?.goals);
+  const kept = parseKept(input?.kept);
+  const own = parseOwn(input?.own);
   const profile = ProfileUpdate.parse({ ...input?.profile, onboarded_at: new Date().toISOString() });
   // The demo week is read mostly: a visitor walks the whole talk, nothing is written (#239).
   if (await isDemoVisitor()) return { ok: true };
   try {
+    for (const k of kept) {
+      const res = await acceptGoalSuggestion(k.id, { weekly_budget_minutes: k.weekly_minutes });
+      if (!res.ok) throw new Error(res.message ?? "Could not keep a suggestion");
+    }
     const current = await getGoals();
     for (const g of goals) {
       const mine = current.find((x) => x.category === g.category && x.active);
@@ -72,7 +113,18 @@ export async function finishOnboarding(input: Answers): Promise<{ ok: boolean }>
         weekly_budget_minutes: g.weekly_minutes,
       });
     }
+    // Own words: never twice under the same name (Redo setup), never touching an existing goal.
+    if (own && !current.some((x) => x.active && x.title.toLowerCase() === own.title.toLowerCase())) {
+      await createGoal({
+        category: "business",
+        title: own.title,
+        target: { kind: "time" },
+        weekly_budget_minutes: own.weekly_minutes,
+      });
+    }
     await putProfile(profile);
+    revalidatePath("/");
+    revalidatePath("/goals");
     return { ok: true };
   } catch (err) {
     console.error(err);

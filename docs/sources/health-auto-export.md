@@ -18,6 +18,24 @@ Michael builds two of them per user (`apps/web/lib/one-tap.ts`), so on the iPhon
    minutes). Tap Save if it asks, and allow Health access.
 3. Back in Michael, tap **Add workouts** (routes off).
 
+What the deep link cannot do (checked against the official docs, 15 Nov): there is no import file,
+QR config or "run now" parameter, and it only makes REST API automations. So the first export is
+one human tap (**Export Now** in the automation) or up to five minutes of waiting with the phone
+unlocked. Price, US App Store: free for 7 days, then Premium at 1.99 a month, 6.99 a year or 24.99
+once (varies by country). The page says it in one line.
+
+**Live check (#306).** Once step 2 is tapped (or the QR code is shown on a laptop), the page notes
+the newest `health_auto_export` arrival from `GET /v1/sources/status`, asks again every 5 seconds
+and turns to "Connected. Last data just now." when something newer arrives. After 2 minutes with
+nothing it names the step to recheck (Export Now, Health access); after 10 it stops asking.
+
+**Proving it before it is live.** While `CONNECTOR_STATUS` says `soon`, the setup page shows the
+steps only with `?preview=1` (and the QR code it makes carries the preview through its setup token).
+Steps in `docs/setup-manual.md`, section 7.
+
+**Needs attention (#307).** A device connection that has sent nothing for 24 hours shows Needs
+attention on You with the one fix ("Open Health Auto Export and tap Export Now on Michael health.").
+
 The key is minted on the first tap through a setup token (`POST /v1/setup-tokens`, then the
 exchange) and stays in the page's memory only. On a computer the page shows a QR code instead: the
 iPhone camera opens `/setup/apple-watch#ms_...`, which works once, for 30 minutes, signed in or not.

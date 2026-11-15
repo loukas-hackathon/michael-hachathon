@@ -64,7 +64,11 @@ The phone app and voice mode use the same connector automatically. Revoke it any
    `https://api-production-16521a26.up.railway.app/v1/oauth/google_calendar/callback`. **Save**.
 4. Put the same client on Railway: `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (snippet above).
 
-Then each user taps **Connect Google Calendar** in the app once (issues #12, #13).
+Then each user taps **Connect Google Calendar** in the app once (issues #12, #13). A brand new
+account does not even need that tap: right after **Continue with Google** on /login, the app goes
+straight on to Google's calendar consent (#270). It is the same OAuth client and the same scopes as
+above, so there is nothing new to set up in the console. If Google is not configured, onboarding
+simply starts with the goals and a Connect pill.
 
 ## 4. Maps and traffic (Loukas, 5 min; #115 is built, travel is skipped until the key is set)
 
@@ -96,12 +100,21 @@ Then each user taps **Connect Google Calendar** in the app once (issues #12, #13
 2. When #44 ships, the app shows a **Subscribe** button with your private topic; tap it once.
 3. iPhone **Settings > Notifications > ntfy**: allow, **Time Sensitive** on. Watch app: mirror on.
 
-## 7. Apple Watch data (Manolis, 5 min, after #8 ships)
+## 7. Apple Watch data: prove it, then switch it on (Manolis, 5 min, on the stage iPhone)
 
-1. App Store: **Health Auto Export - JSON+CSV** (paid, has a trial). Allow Health access.
-2. In Michael: **You > Connections > Apple Watch > Connect > Copy** (a URL with your own key).
-3. Health Auto Export: **Automations > New > REST API**. URL: paste. Format JSON.
-   Metrics: sleep analysis, workouts, heart rate, HRV, steps. Interval: 5 minutes. **Save**.
+Apple Watch shows Coming soon until a real event reaches production (#295). To prove it without
+switching it on for everyone:
+
+1. On the iPhone, signed in to Michael with Google, open
+   `https://michael-zeta-sand.vercel.app/you/connections/apple-watch?preview=1` (only this link shows the steps; on a
+   laptop it shows a QR code, and the QR keeps the preview).
+2. **Open the App Store**, install **Health Auto Export - JSON+CSV** (free for 7 days, then Premium).
+3. Tap **Add sleep and heart rate**: the app opens with the automation filled in. **Save**,
+   allow Health access, then in the automation tap **Export Now**. Back in Michael, **Add workouts**.
+4. Stay on the Michael page: it says "Connected. Last data just now." within a minute or two, or
+   names the step to recheck.
+5. Once it says Connected: change `"apple-watch": "soon"` to `"live"` in
+   `packages/shared/src/connectors.ts` with the proof in the comment, and note it on the Build Hub.
 
 ## 8. Your Mac (Manolis and Loukas, 2 min)
 

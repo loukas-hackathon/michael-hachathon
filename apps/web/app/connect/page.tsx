@@ -1,18 +1,39 @@
+import { redirect } from "next/navigation";
 import { Wordmark } from "@/components/brand";
 import { SCOPE_LABEL } from "@/lib/agents";
 import { isDemoVisitor } from "@/lib/caller";
 import { getConnectRequest } from "@/lib/connect";
+import { signInAgainPath } from "@/lib/connect-outcome";
 import { authEnabled, supabaseServer } from "@/lib/supabase/server";
 
 export const metadata = { title: "Connect · Michael" };
 
 // The one tap in "paste one URL into claude.ai, tap Allow". The API's OAuth authorise step sends
 // the browser here; the proxy has already made sure the person is signed in.
-export default async function ConnectPage({ searchParams }: { searchParams: Promise<{ request?: string }> }) {
-  const { request: id } = await searchParams;
-  const request = id ? await getConnectRequest(id) : null;
+export default async function ConnectPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ request?: string; error?: string }>;
+}) {
+  const { request: id, error } = await searchParams;
+  const read = id ? await getConnectRequest(id) : ({ kind: "expired" } as const);
+  // The session outlived its account or token (the proxy only checks it locally): sign in again,
+  // then come back to this same request.
+  if (read.kind === "signed_out" && id) redirect(signInAgainPath(id));
 
-  if (!request) {
+  if (read.kind === "failed") {
+    return (
+      <main className="screen flex min-h-dvh flex-col justify-center pb-24">
+        <Wordmark className="h-8 w-auto text-label" />
+        <h1 className="mt-6 text-insight font-bold">I couldn't load this request.</h1>
+        <p className="mt-2 text-body text-label-2">
+          Reload the page. If it still fails, connect again from Claude.
+        </p>
+      </main>
+    );
+  }
+
+  if (read.kind !== "ok") {
     return (
       <main className="screen flex min-h-dvh flex-col justify-center pb-24">
         <Wordmark className="h-8 w-auto text-label" />
@@ -24,8 +45,27 @@ export default async function ConnectPage({ searchParams }: { searchParams: Prom
     );
   }
 
+  const request = read.request;
   const who = await signedInAs();
   const name = request.client_name;
+
+  // Connecting an agent grants it full write on the account, so demo visitors cannot: the demo
+  // week is shared. The presenter connects Claude to it with the API key (docs/demo-runbook.md).
+  if (who === "the demo week") {
+    return (
+      <main className="screen flex min-h-dvh flex-col justify-center pb-24">
+        <Wordmark className="h-8 w-auto text-label" />
+        <h1 className="mt-6 text-insight font-bold">This is the demo week.</h1>
+        <p className="mt-2 text-body text-label-2">Sign in with Google to make it yours.</p>
+        <a
+          href="/auth/signout"
+          className="press mt-8 flex h-12 items-center justify-center rounded-group bg-tint text-body font-semibold text-on-tint"
+        >
+          Sign in with Google
+        </a>
+      </main>
+    );
+  }
 
   return (
     <main className="screen flex min-h-dvh flex-col justify-center pb-24">
@@ -45,6 +85,12 @@ export default async function ConnectPage({ searchParams }: { searchParams: Prom
           </li>
         ))}
       </ul>
+
+      {error === "failed" ? (
+        <p role="alert" className="mt-5 text-footnote text-danger">
+          That didn't go through. Tap Allow again.
+        </p>
+      ) : null}
 
       <form method="post" action="/connect/decide" className="mt-8 flex flex-col gap-3">
         <input type="hidden" name="request" value={request.id} />

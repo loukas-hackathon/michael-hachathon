@@ -19,8 +19,16 @@ export const DEMO_VISITOR_MESSAGE = "This is the demo week. Sign in with Google 
 // Writes a demo visitor may make: [method, path pattern]. Reads (GET, HEAD) are allowed.
 const ALLOWED: [string, RegExp][] = [
   ["POST", /^\/v1\/chat(\/stream)?$/],
+  // Their own threads (stored per visitor, like the lines in them).
+  ["POST", /^\/v1\/chat\/threads$/],
+  ["PATCH", /^\/v1\/chat\/threads\/[^/]+$/],
+  ["DELETE", /^\/v1\/chat\/threads\/[^/]+$/],
   ["POST", /^\/v1\/recommendations\/[^/]+\/(execute|undo)$/],
   ["PATCH", /^\/v1\/recommendations\/[^/]+$/],
+  // The demo day can be edited on the Timeline (#271), like acting on a recommendation.
+  ["POST", /^\/v1\/blocks$/],
+  ["PATCH", /^\/v1\/blocks\/[^/]+$/],
+  ["DELETE", /^\/v1\/blocks\/[^/]+$/],
   ["POST", /^\/v1\/analysis\/run$/],
   ["POST", /^\/v1\/travel\/plan$/],
   ["POST", /^\/v1\/focus-guards\/suggest$/],
@@ -31,8 +39,6 @@ const ALLOWED: [string, RegExp][] = [
   ["POST", /^\/v1\/push\/subscriptions$/],
   ["DELETE", /^\/v1\/push\/subscriptions$/],
   ["POST", /^\/v1\/nudges\/test$/],
-  // The one tap Claude connector consent on stage. The agent it creates is the demo account's.
-  ["POST", /^\/v1\/connect\/requests\/[^/]+$/],
 ];
 
 // Never for a visitor, not even to read: device keys, ingest and MCP belong to real callers.

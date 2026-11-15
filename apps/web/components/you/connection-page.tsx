@@ -51,7 +51,8 @@ export function ConnectionPage({
       >
         {row.line}
       </p>
-      <div className="mt-6 flex flex-col gap-6">{children}</div>
+      {/* Coming soon (#295): no steps, no keys, nothing that could fail on stage. */}
+      {row.state === "soon" ? null : <div className="mt-6 flex flex-col gap-6">{children}</div>}
     </main>
   );
 }

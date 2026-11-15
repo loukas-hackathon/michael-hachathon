@@ -9,6 +9,7 @@ import {
   goalKind,
   voiceDuration,
 } from "@michael/shared";
+import { napIn } from "../patterns/sleep";
 import { HOUR, MINUTE, type Zone } from "../patterns/time";
 import { goalForEvent } from "../score/match";
 
@@ -64,7 +65,12 @@ export function lastNight(input: DayInput): number | null {
   const from = zone.startOfDay(zone.nextDay(day, -1)) + 18 * HOUR;
   const to = zone.at(day, 13 * 60);
   const sleeps = input.events.filter(
-    (e) => e.type === "sleep" && e.end_at && endOf(e) > from && endOf(e) <= to,
+    (e) =>
+      e.type === "sleep" &&
+      e.end_at &&
+      endOf(e) > from &&
+      endOf(e) <= to &&
+      !napIn(zone, startOf(e), endOf(e)),
   );
   if (!sleeps.length) return null;
   return Math.round(sleeps.reduce((sum, e) => sum + (endOf(e) - startOf(e)), 0) / MINUTE);
