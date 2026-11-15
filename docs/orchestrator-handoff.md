@@ -6,27 +6,22 @@ permission, keep building with parallel agents, close every issue we can, phone 
 developed), keep colours and branding exactly as they are (pink `#E6007A`, red `#FF3B30`), and pace
 the usage limit by slowing down at about 60% of the window.
 
-## State (updated 07:45 UTC)
+## State (updated 08:40 UTC)
 - Production: API https://api-production-16521a26.up.railway.app/health, web
   https://michael-zeta-sand.vercel.app. Supabase project `kpcoadbgevifyvvlhdbt`.
-- CI is green again: #407 fixed incident #402 (the Off the record switch dropped a second tap).
-- Merged this morning: #407 CI fix, #408 polish (#385, #393), #403 warmer voice (#398),
-  #391, #394, #396 API speed (#298). Today's first open went from 5.5 s to 2.4 s.
-- Loukas' deadline: everything that can land is merged by 08:45 UTC. After that he works on UI and UX.
+- Merged this morning: #407 CI fix, #408 polish, #403 warmer voice, #391/#394/#396 API speed,
+  #392 laptop chat, #406 nudge actions, #409 fast notification tap, #411 meetings mode (migration),
+  #404 Focus now (migration), #412/#414/#417 thinking steps, #413 nudge names the goal, #416 Start
+  focus on the block nudge, #336 laptop sidebar (Loukas marked it ready).
+- Closed: #364, #385, #393, #397, #398, #399, #400, #402, #405, #410.
 
-## Still in flight (check each PR; restart small if it has stalled)
-- #392 laptop chat (#285): main merged into the branch, waiting for CI.
-- Thinking steps (branch `thinking-steps`): a new SSE `step` event per tool call, a live step line in
-  chat and voice, and "How I worked it out" collapsed under each reply. Loukas asked for this.
-- #389 events_window (#298): Loukas approved landing it if it is safe. It merges only when the
-  migration is purely additive, has a fallback when the RPC fails, and the results are proven
-  equivalent. Deadline 14:00 UTC. Check /health and the Migrate database run afterwards.
-- Slow notification tap (branch `nudge-open-fast`): HIGH PRIORITY, more than 10 s. On
-  notificationclick, focus or navigate an existing window, render the card from the payload, skip
-  the blocking session refresh, lower the service worker shell timeout.
-- #404 Focus now (#397) and #406 nudge actions (#399): drafts. Land them if green, else leave them.
-- Meetings mode: consent sheet, start and end with the pill, Omi ingest only during a session.
-- Loukas must mark #280 and #336 Ready himself (the permission check refused agents doing it).
+## Still open
+- #389 events_window (#298): Loukas said merge now; CI green on a405373, marked ready. Auto-merge
+  (cron every 10 min) should land it. Afterwards check /health, the Migrate database run and Today.
+- #280 location draft: Loukas must mark it Ready himself.
+- #285 and #267 can close once #336 and #280 are in. Manolis: #319, #303, #28.
+- Follow-ups with no issue: after-meeting card on Today (API already returns `last` from
+  GET /v1/meetings/active), meetings quick toggle in the Mi sheet, phone guarding for Focus now.
 
 ## Rules learned the hard way
 - Never write to the production demo account (test locally). Never push test notifications to
