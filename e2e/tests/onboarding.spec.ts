@@ -119,7 +119,7 @@ test("You shows all eight connections, each with Connect", async ({ page, contex
 
 // The demo week replays recorded sources, so a demo visitor sees them as what they are, and a tap
 // the API refuses says the one demo line next to the control (#330).
-test("You on the demo week: sources read Replayed, a refused tap says why", async ({ page }) => {
+test("You on the demo week: sources read Sample data, a refused tap says why", async ({ page }) => {
   await enterDemo(page);
   await page.goto("/you");
   const list = page.locator("#connections");
@@ -128,7 +128,7 @@ test("You on the demo week: sources read Replayed, a refused tap says why", asyn
       "The demo week replays calendar, Mac, iPhone and watch data. Your own connections start off.",
     ),
   ).toBeVisible();
-  await expect(list.getByText("Replayed", { exact: true })).toHaveCount(4);
+  await expect(list.getByText("Sample data", { exact: true })).toHaveCount(4);
   await expect(list.getByRole("link", { name: /Google Calendar|Apple Watch|Mac|iPhone/ })).toHaveCount(0);
 
   const privacy = page.locator("section", { has: page.getByRole("heading", { name: "Privacy" }) });

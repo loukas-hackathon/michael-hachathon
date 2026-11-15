@@ -106,7 +106,7 @@ export function ConnectionRow({
         <ConnectionIcon id={row.id} />
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="text-body">{row.name}</span>
-          <span className="text-footnote text-label-2">Replayed</span>
+          <span className="text-footnote text-label-2">Sample data</span>
         </span>
       </div>
     );
