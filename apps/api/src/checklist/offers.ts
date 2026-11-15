@@ -229,7 +229,9 @@ export function staleOutcomeOffer(
   goals: Goal[],
   today: string,
 ): Recommendation | null {
-  const offer = existing.find((r) => r.title === outcomeTitle(today) && r.status === "proposed");
+  const isToday = (r: Recommendation) =>
+    r.action?.payload?.offer_key === outcomeKey(today) || r.title === `${OUTCOME_TITLE}, ${dayLabel(today)}`;
+  const offer = existing.find((r) => isToday(r) && r.status === "proposed");
   if (!offer) return null;
   const checklistGoals = new Set(
     goals.filter((g) => g.active && goalKind(g) === "checklist").map((g) => g.id),

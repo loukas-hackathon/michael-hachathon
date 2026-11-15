@@ -166,7 +166,7 @@ test("Book and the score's free minutes agree on a clear Sunday; a shorter block
       );
       assert.equal(
         rec.rationale,
-        "Booked at your request through Goals. No free 90 minutes left this week, so I took 45 minutes. Undo in Michael until it starts.",
+        `${goal.title}, 45 minutes. No free 90 minutes left this week, so I took 45 minutes. Undo until 22:15.`,
       );
     },
     "script",

@@ -190,7 +190,7 @@ test("an offer for an outcome that is ticked or gone is withdrawn", () =>
     assert.equal(offer?.status, "proposed");
     // Still open: the offer stays.
     await offerGoalActions({ now: FRIDAY + 60_000 });
-    assert.equal((await ours([outcomeTitle("2026-11-13")]))[0]?.status, "proposed");
+    assert.equal((await ours([OUTCOME_TITLE]))[0]?.status, "proposed");
     // Ticked: the next look withdraws it, and it is not offered again that day.
     await store.updateChecklistItem(first.id, {
       status: "done",
@@ -198,7 +198,7 @@ test("an offer for an outcome that is ticked or gone is withdrawn", () =>
       settled_by: "user",
     });
     assert.deepEqual(await offerGoalActions({ now: FRIDAY + 120_000 }), []);
-    const after = await ours([outcomeTitle("2026-11-13")]);
+    const after = await ours([OUTCOME_TITLE]);
     assert.equal(after.length, 1);
     assert.equal(after[0]?.status, "dismissed");
   }));

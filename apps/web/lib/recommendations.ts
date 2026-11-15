@@ -158,8 +158,12 @@ export function bookedRationale(rec: Recommendation): string {
   const old = rec.rationale.replace(/\s*Undo in Michael until it starts\.$/, "");
   if (old !== rec.rationale) return old;
   if (typeof title !== "string" || !rec.rationale.startsWith(`${title}, `)) return rec.rationale;
-  const by = /, booked by (.+)\. Undo until \d\d:\d\d\.$/.exec(rec.rationale.slice(title.length));
-  return by ? `Booked by ${by[1]}.` : "";
+  // ", 45 minutes[, booked by Claude]. [A note.] Undo until 07:00."
+  const m = /^, [^,.]+(?:, booked by (.+?))?\.(.*?)\s*Undo until \d\d:\d\d\.$/.exec(
+    rec.rationale.slice(title.length),
+  );
+  if (!m) return rec.rationale;
+  return [m[1] ? `Booked by ${m[1]}.` : "", (m[2] ?? "").trim()].filter(Boolean).join(" ");
 }
 
 export function toCard(rec: Recommendation, goals: Goal[], now: Date): RecCard {

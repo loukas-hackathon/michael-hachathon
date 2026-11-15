@@ -76,6 +76,16 @@ test("a booked block's card keeps only who booked it: title, time and undo say t
   assert.equal(bookedRationale(block()), "Booked by Claude.");
   // Booked by the user in Michael (Goals, chat): nothing left to say.
   assert.equal(bookedRationale(block({ rationale: "Sales focus, 60 minutes. Undo until 15:00." })), "");
+  // A note (a shorter block than asked for) stays.
+  assert.equal(
+    bookedRationale(
+      block({
+        rationale:
+          "Sales focus, 45 minutes. No free 90 minutes left this week, so I took 45 minutes. Undo until 15:00.",
+      }),
+    ),
+    "No free 90 minutes left this week, so I took 45 minutes.",
+  );
   // Older rows lose only the undo sentence.
   assert.equal(
     bookedRationale(
