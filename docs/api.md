@@ -1568,6 +1568,14 @@ Hypothesise, then verify: the model is free to be creative and can never be wron
    (`voiceProblems`), the shape (a title without a full stop, a line that starts with a number
    and ends with a full stop, a short fix), or carry any number that is not among the verified
    ones. A fix with a one tap action always keeps the template's words.
+   A hypothesis with two conditions (`and`) is worded as a pair, never as "hit harder": the title
+   names both ("Late training and a late dinner"), the line says both ("14 of 14 days with
+   training after 19:00 and a last meal at 20:45 or later gave less deep sleep that night: 49
+   minutes against 61 minutes."), and the first step names both ("Training after 19:00 and last
+   meal after 20:45", "14 of 69 days"). The line closes with "Late training alone costs less."
+   only when one condition alone does clearly less (the margin of the plain trigger rule), or when
+   it is the plain relation the rules already show. Every time of day in a test and in its words
+   is on the quarter hour, as the late cut off is, so the words describe exactly the days counted.
 4. What is stored is the test and its words, never its numbers: table `insight_runs`, one jsonb
    document per user (`ran_at`, `data_day`, `model`, up to 12 `discoveries`), RLS like every
    table, deleted with the account. Every study runs the stored tests again on the current

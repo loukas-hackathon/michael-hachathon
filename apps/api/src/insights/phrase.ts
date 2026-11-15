@@ -24,7 +24,16 @@ import {
 } from "./dictionary";
 import type { FeatureKey, FeatureTable } from "./features";
 import type { Condition, ReadCondition, Verified } from "./hypothesis";
-import { below, type Chain, type Link, MINER_RULES, type Occurrence, type Trigger } from "./miner";
+import {
+  below,
+  type Chain,
+  clearlyFurther,
+  compare,
+  type Link,
+  MINER_RULES,
+  type Occurrence,
+  type Trigger,
+} from "./miner";
 import { mean } from "./stats";
 
 // From what the miner found to what the user reads: a title, one line with the number first, the
@@ -434,6 +443,113 @@ const TRANSFORM_LABEL: Record<Condition["transform"], string> = {
   streak3: ", 3 days running",
 };
 
+// ---------- two conditions on the same day (`and`) ----------
+
+const TRANSFORM_WITH: Record<Condition["transform"], string> = {
+  none: "",
+  lag1: " the day before",
+  lag2: " two days before",
+  rolling3: " on average over 3 days",
+  rolling7: " on average over 7 days",
+  streak2: " 2 days running",
+  streak3: " 3 days running",
+};
+
+/** Whether a condition sits on the side its column's trigger is named for ("late", "low"). */
+const onNamedSide = (c: Condition): boolean => {
+  const cause = featureDef(c.feature).cause;
+  return Boolean(cause) && (cause?.side === "high") === (c.op === ">=") && c.transform === "none";
+};
+
+/** The condition as what a day had, after "days with": "a last meal at 20:45 or later". */
+function conditionWith(c: Condition, read: ReadCondition, t: Terms): string {
+  const def = featureDef(c.feature);
+  const said = def.cause?.with;
+  let base: string;
+  if (def.format === "flag") {
+    const thing = said?.("", t) ?? lowerFirst(def.label(t));
+    base = c.op === ">=" ? thing : `no ${thing}`;
+  } else {
+    const amountWords = atWords(def.format, c.op, rounded(def.format, read.threshold));
+    base = said?.(amountWords, t) ?? `${lowerFirst(def.label(t))} ${amountWords.replace(/^of /, "")}`;
+  }
+  return `${base}${TRANSFORM_WITH[c.transform]}`;
+}
+
+/** The condition in a step's label: "Training after 19:00", "Last meal after 20:45". */
+function conditionLabel(c: Condition, read: ReadCondition, t: Terms): string {
+  const def = featureDef(c.feature);
+  const label = def.label(t);
+  const threshold = rounded(def.format, read.threshold);
+  let base: string;
+  if (def.format === "flag") base = c.op === ">=" ? label : `No ${lowerFirst(label)}`;
+  else if (def.format === "clock")
+    base = `${label} ${c.op === ">=" ? "after" : "before"} ${clockLabel(threshold)}`;
+  else base = `${label}, ${shown(def.format, threshold)} or ${c.op === ">=" ? "more" : "less"}`;
+  return `${base}${TRANSFORM_LABEL[c.transform]}`;
+}
+
+/** The condition in a title: its short name when it is on its named side, else its label. */
+const conditionShort = (c: Condition, read: ReadCondition, t: Terms): string => {
+  const cause = featureDef(c.feature).cause;
+  return onNamedSide(c) && cause
+    ? (cause.short ?? lowerFirst(cause.title))
+    : lowerFirst(conditionLabel(c, read, t));
+};
+
+/** A figure in a sentence: durations in words ("49 minutes", "1h 02"), the rest as in a step. */
+const inProse = (format: Format, n: number) => (format === "min" ? voiceDuration(n) : shown(format, n));
+
+/**
+ * Two conditions on the same day, in words: a title that names both, a line that says both and,
+ * when the data shows it, that one of them alone does less; and the first step naming both.
+ */
+function pairWords(
+  v: Verified,
+  when: { c: Condition; read: ReadCondition },
+  and: { c: Condition; read: ReadCondition },
+  ctx: PhraseContext,
+  harderThan?: { key: FeatureKey },
+) {
+  const t = termsOf(ctx);
+  const h = v.hypothesis;
+  const x = featureDef(when.c.feature);
+  const y = featureDef(h.outcome);
+  const yWords = outcomeWords(y, v.cmp.diff);
+  const weekdays = h.weekdays ? weekdayWords([...new Set(h.weekdays)].sort()) : null;
+  const occasion = `days with ${conditionWith(when.c, when.read, t)} and ${conditionWith(and.c, and.read, t)}${weekdays ? `, on ${weekdays}` : ""}`;
+  const a = inProse(y.format, v.cmp.triggerMean);
+  const b = inProse(y.format, v.cmp.otherMean);
+  let line = `${v.cmp.held} of ${v.cmp.seen} ${occasion} gave ${yWords.phrase}${lineWhen(x, y, h.lag)}: ${a} against ${b}.`;
+  // Which one alone does less: the plain relation the rules found, else the stronger of the two
+  // on its own. Said only when the two together clearly go further, and without a number.
+  const way = v.cmp.diff >= 0 ? 1 : -1;
+  const alone = [when, and].map((side) => ({
+    side,
+    effect: compare(ctx.table, side.read.on, ctx.table.cols[h.outcome], h.lag, way).cmp.effect,
+  }));
+  const matches = (side: { c: Condition }) =>
+    harderThan !== undefined &&
+    (side.c.feature === harderThan.key || featureDef(side.c.feature).variantOf === harderThan.key);
+  const single =
+    alone.find((o) => matches(o.side)) ??
+    [...alone].sort((p, q) => Math.abs(q.effect) - Math.abs(p.effect))[0];
+  if (single && (matches(single.side) || clearlyFurther(v.cmp.effect, single.effect))) {
+    line += ` ${upperFirst(conditionShort(single.side.c, single.side.read, t))} alone ${isWorse(h.outcome, v.cmp.diff) ? "costs less" : "helps less"}.`;
+  }
+  return {
+    occasion,
+    line,
+    title: upperFirst(`${conditionShort(when.c, when.read, t)} and ${conditionShort(and.c, and.read, t)}`),
+    first: {
+      label: upperFirst(
+        `${conditionLabel(when.c, when.read, t)} and ${lowerFirst(conditionLabel(and.c, and.read, t))}`,
+      ),
+      value: `${v.cmp.seen} of ${v.cmp.seen + v.cmp.other} days`,
+    } satisfies InsightStep,
+  };
+}
+
 function conditionStep(c: Condition, read: ReadCondition, v: Verified, t: Terms): InsightStep {
   const def = featureDef(c.feature);
   const label = `${def.label(t)}${TRANSFORM_LABEL[c.transform]}`;
@@ -527,14 +643,20 @@ export function phraseDiscovered(
           plan: null,
         };
   const { fix, plan } = planned;
+  const pair =
+    h.when && v.when && h.and && v.and
+      ? pairWords(v, { c: h.when, read: v.when }, { c: h.and, read: v.and }, ctx, harderThan)
+      : null;
   const unit = unitOf(y.format);
   const steps: InsightStep[] = [
-    h.when && v.when
-      ? conditionStep(h.when, v.when, v, t)
-      : {
-          label: upperFirst(weekdays ?? "Those days"),
-          value: `${v.cmp.seen} of ${v.cmp.seen + v.cmp.other} days`,
-        },
+    pair
+      ? pair.first
+      : h.when && v.when
+        ? conditionStep(h.when, v.when, v, t)
+        : {
+            label: upperFirst(weekdays ?? "Those days"),
+            value: `${v.cmp.seen} of ${v.cmp.seen + v.cmp.other} days`,
+          },
     {
       label: `${y.label(t)}${stepWhen(from as FeatureDef, y, h.lag)}`,
       value: `${a} against ${b}`,
@@ -550,14 +672,15 @@ export function phraseDiscovered(
   // The dictionary's title names one side of the column: it fits only a condition on that side.
   const named =
     x && h.when && x.cause && (x.cause.side === "high") === (h.when.op === ">=") ? x.cause.title : null;
-  const title = `${named ?? (x ? x.label(t) : upperFirst(weekdays ?? "Those days"))}, ${yWords.title}`;
+  const title =
+    pair?.title ?? `${named ?? (x ? x.label(t) : upperFirst(weekdays ?? "Those days"))}, ${yWords.title}`;
   const features = [...(h.when ? [h.when.feature] : []), ...(h.and ? [h.and.feature] : []), h.outcome];
   const insight: Insight = {
     id: `discovered:${v.key}`,
     kind: "discovered",
     status: "pattern",
     title,
-    line,
+    line: pair?.line ?? line,
     steps,
     evidence: evidenceOf(v.cmp.occurrences, v.cmp.held, v.cmp.seen),
     fix,
@@ -566,7 +689,11 @@ export function phraseDiscovered(
     strength: v.strength,
     sources: sourcesOf(features),
   };
-  if (harderThan) {
+  if (harderThan && pair) {
+    // Two conditions together are not a harder version of one: the pair's own words say which
+    // one alone does less. It still never outranks the plain relation.
+    insight.strength = below(insight.strength, harderThan.strength);
+  } else if (harderThan) {
     // Shown beside the plain relation it is built on: it says so, in the template's own words,
     // and never outranks it.
     const said = harderWords(
@@ -582,7 +709,13 @@ export function phraseDiscovered(
     insight.strength = below(insight.strength, harderThan.strength);
   } else if (words) {
     const allowed = new Set(
-      [title, line, fix.text, occasion, ...steps.flatMap((s) => [s.label, s.value])].flatMap(numbersIn),
+      [
+        insight.title,
+        insight.line,
+        fix.text,
+        pair?.occasion ?? occasion,
+        ...steps.flatMap((s) => [s.label, s.value]),
+      ].flatMap(numbersIn),
     );
     if (wordsProblems(words, allowed).length === 0) {
       insight.title = words.title;
