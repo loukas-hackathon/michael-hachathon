@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Figtree } from "next/font/google";
 import type { ReactNode } from "react";
 import { MotionScript } from "@/components/count-up";
+import { Desktop } from "@/components/desktop";
 import { Haptics } from "@/components/haptics";
 import { Splash } from "@/components/splash";
 import { TabBar } from "@/components/tab-bar";
@@ -37,9 +38,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <MotionScript />
         <Haptics />
         <div className="min-h-dvh lg:pl-64">
-          <div className="mx-auto w-full max-w-[560px] lg:max-w-[720px]">{children}</div>
+          <div className="m-content mx-auto w-full max-w-[560px] lg:max-w-none">{children}</div>
         </div>
         <TabBar />
+        <Desktop />
       </body>
     </html>
   );

@@ -28,7 +28,7 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
   const dayHref = (d: string) => `/timeline?day=${d}${sampleParam ? "&demo=sample" : ""}`;
 
   return (
-    <main className="screen">
+    <main className="screen screen-mid">
       <ScreenHeader
         context={
           <>

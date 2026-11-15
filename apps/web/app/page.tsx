@@ -22,6 +22,11 @@ import { formatDay, formatTime, hm, minutesPhrase } from "@/lib/format";
 import { verdict } from "@/lib/gamification";
 import { momentKindFor } from "@/lib/moments";
 
+// Laptop (>= 1024px): two columns. Left, how the day is going (score, tape, the list); right,
+// Michael (the next move, what he did, more from him). On the phone the wrappers are plain blocks.
+const COLUMNS = "lg:grid lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] lg:items-start lg:gap-x-12";
+const MICHAEL_COLUMN = "lg:pt-1.5 lg:[&>*:first-child]:mt-0";
+
 const TITLE: Record<DayView["moment"], string> = { morning: "Morning", today: "Today", evening: "Evening" };
 
 // Today reads in three steps (#208): how am I doing (score, maths, time won back), the one thing to
@@ -48,7 +53,7 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
   const { primary } = await suggestions;
 
   return (
-    <main className="screen">
+    <main className="screen screen-wide">
       <ScreenHeader
         context={
           <>
@@ -60,125 +65,136 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
       />
 
       {day.blocks.length === 0 && day.week.scorePct == null ? (
-        <>
-          <GetStarted demo={demo} />
-          <TodayEmpty demo={demo} />
-          {lists.map((l) => (
-            <TodayChecklist key={l.goalId} {...l} />
-          ))}
-          <RecommendationsPanel slot="primary" />
-          <Suspense fallback={null}>
-            <MoreFromMichael>
-              {momentKind && !day.sample ? <MomentCard kind={momentKind} sample={false} /> : null}
-              <WatchLine demo={demo} />
-              <BriefCard sample={day.sample} />
-              <RecommendationsPanel slot="rest" />
-            </MoreFromMichael>
-          </Suspense>
-        </>
+        <div className={COLUMNS}>
+          <div>
+            <GetStarted demo={demo} />
+            <TodayEmpty demo={demo} />
+            {lists.map((l) => (
+              <TodayChecklist key={l.goalId} {...l} />
+            ))}
+          </div>
+          <div className={MICHAEL_COLUMN}>
+            <RecommendationsPanel slot="primary" />
+            <Suspense fallback={null}>
+              <MoreFromMichael>
+                {momentKind && !day.sample ? <MomentCard kind={momentKind} sample={false} /> : null}
+                <WatchLine demo={demo} />
+                <BriefCard sample={day.sample} />
+                <RecommendationsPanel slot="rest" />
+              </MoreFromMichael>
+            </Suspense>
+          </div>
+        </div>
       ) : (
-        <>
-          {day.week.scorePct != null ? (
-            <p className="mt-1.5 text-subhead text-label-2">
-              We're at <b className="font-semibold text-label tnum">{day.week.scorePct}%</b> of goal time this
-              week.{day.week.line ? ` ${day.week.line}` : ""}
-            </p>
-          ) : null}
-          {day.balance && verdict(day.balance).line ? (
-            <p className="mt-1 text-subhead font-semibold">{verdict(day.balance).line}</p>
-          ) : null}
+        <div className={COLUMNS}>
+          <div>
+            {day.week.scorePct != null ? (
+              <p className="mt-1.5 text-subhead text-label-2">
+                We're at <b className="font-semibold text-label tnum">{day.week.scorePct}%</b> of goal time
+                this week.{day.week.line ? ` ${day.week.line}` : ""}
+              </p>
+            ) : null}
+            {day.balance && verdict(day.balance).line ? (
+              <p className="mt-1 text-subhead font-semibold">{verdict(day.balance).line}</p>
+            ) : null}
 
-          {day.blocks.length > 0 ? (
-            <section aria-label="Goal time today" className="mt-5">
-              {t.scorePct === null && firstBlock ? (
-                <p className="text-title3 font-semibold">
-                  Your first block starts at <span className="tnum">{formatTime(firstBlock.start)}</span>.
-                </p>
-              ) : (
-                <h2 className="flex flex-col">
-                  <span className="font-num text-score font-extrabold tracking-[-0.02em] tnum">
-                    <CountUp value={t.scorePct ?? 0} suffix="%" />
-                  </span>
-                  <span className="text-title3 font-semibold">
-                    of your goal time {day.moment === "evening" ? "today" : "so far"}.
-                  </span>
-                </h2>
-              )}
-              <div className="mt-3">
-                <Tape
-                  ticks={ticks}
-                  nowAt={day.moment === "evening" || t.scorePct === null ? null : nowIndex(ticks)}
-                  nowLabel={formatTime(day.now)}
-                  recordAt={day.record?.tick ?? null}
-                  label={`${hm(t.spent)} spent (${hm(t.unverified)} unconfirmed), ${hm(t.lost)} lost, ${hm(t.ahead)} still ahead`}
-                />
-              </div>
-              <TapeKey
-                items={
-                  t.scorePct === null
-                    ? [{ kind: "ahead" as const, text: `${hm(t.planned)} planned` }]
-                    : [
-                        ...(t.spent - t.unverified > 0 || t.unverified === 0
-                          ? [{ kind: "spent" as const, text: `${hm(t.spent - t.unverified)} spent` }]
-                          : []),
-                        ...(t.unverified > 0
-                          ? [{ kind: "unverified" as const, text: `${hm(t.unverified)} unconfirmed` }]
-                          : []),
-                        ...(t.lost > 0 ? [{ kind: "lost" as const, text: `${hm(t.lost)} lost` }] : []),
-                        ...(t.ahead > 0 ? [{ kind: "ahead" as const, text: `${hm(t.ahead)} ahead` }] : []),
-                      ]
-                }
-              />
-              {day.record ? (
-                <p className="mt-2 flex items-center gap-2 text-subhead">
-                  <span aria-hidden="true" className="size-[7px] shrink-0 rotate-45 rounded-[1px] bg-label" />
-                  {day.record.line}
-                </p>
-              ) : null}
-            </section>
-          ) : null}
-
-          {day.wonBackMinutes > 0 ? (
-            <p className="mt-4 text-body">
-              <b className="font-num font-bold text-tint-text">{minutesPhrase(day.wonBackMinutes)}</b> won
-              back today.
-            </p>
-          ) : null}
-
-          {lists.map((l) => (
-            <TodayChecklist key={l.goalId} {...l} />
-          ))}
-
-          <RecommendationsPanel slot="primary" />
-
-          {day.lead || day.nudge ? (
-            <section aria-label="What I did" className="mt-6">
-              {day.lead ? <MichaelCard lead={day.lead} primary={!primary} /> : null}
-              {day.nudge ? (
-                <div className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 rounded-group bg-fill px-4 py-3">
-                  <p className="col-span-2 mb-0.5 text-footnote font-semibold">Latest nudge</p>
-                  <time
-                    className="text-footnote leading-5 font-semibold text-label-2 tnum"
-                    dateTime={day.nudge.at}
-                  >
-                    {formatTime(day.nudge.at)}
-                  </time>
-                  <p className="text-subhead">{day.nudge.text}</p>
+            {day.blocks.length > 0 ? (
+              <section aria-label="Goal time today" className="mt-5">
+                {t.scorePct === null && firstBlock ? (
+                  <p className="text-title3 font-semibold">
+                    Your first block starts at <span className="tnum">{formatTime(firstBlock.start)}</span>.
+                  </p>
+                ) : (
+                  <h2 className="flex flex-col">
+                    <span className="font-num text-score font-extrabold tracking-[-0.02em] tnum">
+                      <CountUp value={t.scorePct ?? 0} suffix="%" />
+                    </span>
+                    <span className="text-title3 font-semibold">
+                      of your goal time {day.moment === "evening" ? "today" : "so far"}.
+                    </span>
+                  </h2>
+                )}
+                <div className="mt-3">
+                  <Tape
+                    ticks={ticks}
+                    nowAt={day.moment === "evening" || t.scorePct === null ? null : nowIndex(ticks)}
+                    nowLabel={formatTime(day.now)}
+                    recordAt={day.record?.tick ?? null}
+                    label={`${hm(t.spent)} spent (${hm(t.unverified)} unconfirmed), ${hm(t.lost)} lost, ${hm(t.ahead)} still ahead`}
+                  />
                 </div>
-              ) : null}
-            </section>
-          ) : null}
+                <TapeKey
+                  items={
+                    t.scorePct === null
+                      ? [{ kind: "ahead" as const, text: `${hm(t.planned)} planned` }]
+                      : [
+                          ...(t.spent - t.unverified > 0 || t.unverified === 0
+                            ? [{ kind: "spent" as const, text: `${hm(t.spent - t.unverified)} spent` }]
+                            : []),
+                          ...(t.unverified > 0
+                            ? [{ kind: "unverified" as const, text: `${hm(t.unverified)} unconfirmed` }]
+                            : []),
+                          ...(t.lost > 0 ? [{ kind: "lost" as const, text: `${hm(t.lost)} lost` }] : []),
+                          ...(t.ahead > 0 ? [{ kind: "ahead" as const, text: `${hm(t.ahead)} ahead` }] : []),
+                        ]
+                  }
+                />
+                {day.record ? (
+                  <p className="mt-2 flex items-center gap-2 text-subhead">
+                    <span
+                      aria-hidden="true"
+                      className="size-[7px] shrink-0 rotate-45 rounded-[1px] bg-label"
+                    />
+                    {day.record.line}
+                  </p>
+                ) : null}
+              </section>
+            ) : null}
 
-          <Suspense fallback={null}>
-            <MoreFromMichael>
-              {momentKind ? <MomentCard kind={momentKind} sample={day.sample} /> : null}
-              <WatchLine demo={demo} />
-              {day.sample && day.travelPlan ? <TravelCard plan={day.travelPlan} /> : null}
-              <BriefCard sample={day.sample} />
-              <RecommendationsPanel slot="rest" />
-            </MoreFromMichael>
-          </Suspense>
-        </>
+            {day.wonBackMinutes > 0 ? (
+              <p className="mt-4 text-body">
+                <b className="font-num font-bold text-tint-text">{minutesPhrase(day.wonBackMinutes)}</b> won
+                back today.
+              </p>
+            ) : null}
+
+            {lists.map((l) => (
+              <TodayChecklist key={l.goalId} {...l} />
+            ))}
+          </div>
+
+          <div className={MICHAEL_COLUMN}>
+            <RecommendationsPanel slot="primary" />
+
+            {day.lead || day.nudge ? (
+              <section aria-label="What I did" className="mt-6">
+                {day.lead ? <MichaelCard lead={day.lead} primary={!primary} /> : null}
+                {day.nudge ? (
+                  <div className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 rounded-group bg-fill px-4 py-3">
+                    <p className="col-span-2 mb-0.5 text-footnote font-semibold">Latest nudge</p>
+                    <time
+                      className="text-footnote leading-5 font-semibold text-label-2 tnum"
+                      dateTime={day.nudge.at}
+                    >
+                      {formatTime(day.nudge.at)}
+                    </time>
+                    <p className="text-subhead">{day.nudge.text}</p>
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
+
+            <Suspense fallback={null}>
+              <MoreFromMichael>
+                {momentKind ? <MomentCard kind={momentKind} sample={day.sample} /> : null}
+                <WatchLine demo={demo} />
+                {day.sample && day.travelPlan ? <TravelCard plan={day.travelPlan} /> : null}
+                <BriefCard sample={day.sample} />
+                <RecommendationsPanel slot="rest" />
+              </MoreFromMichael>
+            </Suspense>
+          </div>
+        </div>
       )}
 
       {day.sample ? (

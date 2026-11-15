@@ -35,7 +35,7 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
   })).filter((g) => g.items.length > 0 || g.more.length > 0);
 
   return (
-    <main className="screen">
+    <main className="screen screen-wide">
       <ScreenHeader context={context} title="Goals" actions={<AddGoal personalReady={personalReady} />} />
       <CalendarGoals className="mt-4" />
 
@@ -73,100 +73,110 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
             </section>
           ) : null}
 
-          {groups.map(({ c, items, more }) => {
-            const spent = items.reduce((n, r) => n + r.goal.spentMinutes, 0);
-            const budget = items.reduce((n, r) => n + r.goal.budgetMinutes, 0);
-            return (
-              <section key={c} className="mt-6">
-                <div className="mb-2 flex items-baseline justify-between gap-3">
-                  <h2 className="text-title3 font-bold">{CATEGORY_TITLE[c]}</h2>
-                  {budget > 0 ? (
-                    <p className="text-footnote text-label-2 tnum">
-                      {hm(spent)} of {hm(budget)}
-                    </p>
-                  ) : null}
-                </div>
-                <ul className="overflow-hidden rounded-group bg-fill">
-                  {items.map((r, i) => {
-                    const row = (
-                      <GoalRow key={r.goal.id} status={r} first={i === 0} pace={p} today={today} cap={cap} />
-                    );
-                    const draft = drafts.get(r.goal.id);
-                    return draft ? (
-                      <li key={r.goal.id}>
-                        <EditGoal draft={draft} personalReady={personalReady}>
-                          {row}
-                        </EditGoal>
-                      </li>
-                    ) : (
-                      <li key={r.goal.id}>{row}</li>
-                    );
-                  })}
-                  {more.map((x, i) => {
-                    const row = <ExtraRow key={x.id} goal={x} first={items.length === 0 && i === 0} />;
-                    const draft = drafts.get(x.id);
-                    return (
-                      <li key={x.id}>
-                        {draft ? (
+          {/* Laptop: the goal groups sit side by side, two to a row. */}
+          <div className="lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-8">
+            {groups.map(({ c, items, more }) => {
+              const spent = items.reduce((n, r) => n + r.goal.spentMinutes, 0);
+              const budget = items.reduce((n, r) => n + r.goal.budgetMinutes, 0);
+              return (
+                <section key={c} className="mt-6">
+                  <div className="mb-2 flex items-baseline justify-between gap-3">
+                    <h2 className="text-title3 font-bold">{CATEGORY_TITLE[c]}</h2>
+                    {budget > 0 ? (
+                      <p className="text-footnote text-label-2 tnum">
+                        {hm(spent)} of {hm(budget)}
+                      </p>
+                    ) : null}
+                  </div>
+                  <ul className="overflow-hidden rounded-group bg-fill">
+                    {items.map((r, i) => {
+                      const row = (
+                        <GoalRow
+                          key={r.goal.id}
+                          status={r}
+                          first={i === 0}
+                          pace={p}
+                          today={today}
+                          cap={cap}
+                        />
+                      );
+                      const draft = drafts.get(r.goal.id);
+                      return draft ? (
+                        <li key={r.goal.id}>
                           <EditGoal draft={draft} personalReady={personalReady}>
                             {row}
                           </EditGoal>
-                        ) : (
-                          row
-                        )}
-                      </li>
-                    );
-                  })}
+                        </li>
+                      ) : (
+                        <li key={r.goal.id}>{row}</li>
+                      );
+                    })}
+                    {more.map((x, i) => {
+                      const row = <ExtraRow key={x.id} goal={x} first={items.length === 0 && i === 0} />;
+                      const draft = drafts.get(x.id);
+                      return (
+                        <li key={x.id}>
+                          {draft ? (
+                            <EditGoal draft={draft} personalReady={personalReady}>
+                              {row}
+                            </EditGoal>
+                          ) : (
+                            row
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              );
+            })}
+
+            {week.freeMinutesLeft != null && need > week.freeMinutesLeft ? (
+              <section className="mt-6">
+                <h2 className="mb-2 text-title3 font-bold">The maths</h2>
+                <div className="rounded-group bg-fill px-4 pt-3 pb-3.5">
+                  <p className="text-subhead">
+                    {ranked.length === 1
+                      ? "This goal needs"
+                      : `${["", "", "These two", "These three", "These four"][ranked.length] ?? `These ${ranked.length}`} need`}{" "}
+                    <b className="font-semibold tnum">{hm(need)}</b> more this week. You have{" "}
+                    <b className="font-semibold tnum">{hm(week.freeMinutesLeft)}</b> free. Which one gives?
+                  </p>
+                  <SplitBar
+                    parts={[...ranked]
+                      .sort((a, b) => b.leftMinutes - a.leftMinutes)
+                      .map((r) => ({ title: r.goal.title, minutes: r.leftMinutes }))}
+                    freeMinutes={week.freeMinutesLeft}
+                  />
+                </div>
+              </section>
+            ) : null}
+
+            {week.sleep ? <SleepSection sleep={week.sleep} /> : null}
+
+            {paused.length ? (
+              <section className="mt-6">
+                <h2 className="mb-2 text-title3 font-bold">Paused</h2>
+                <ul className="overflow-hidden rounded-group bg-fill">
+                  {paused.map((g, i) => (
+                    <li key={g.id} className="relative">
+                      {i > 0 ? (
+                        <span className="absolute inset-x-0 top-0 z-10 ml-4 h-[0.5px] bg-separator" />
+                      ) : null}
+                      <EditGoal draft={draftOf(g)} personalReady={personalReady}>
+                        <div className="flex min-h-11 items-center justify-between gap-3 px-4 py-2.5">
+                          <span className="text-body text-label-2">{g.title}</span>
+                          <span className="text-footnote text-label-2">
+                            {CATEGORY_TITLE[categoryOf(g.category)]}
+                          </span>
+                        </div>
+                      </EditGoal>
+                    </li>
+                  ))}
                 </ul>
               </section>
-            );
-          })}
-
-          {week.freeMinutesLeft != null && need > week.freeMinutesLeft ? (
-            <section className="mt-6">
-              <h2 className="mb-2 text-title3 font-bold">The maths</h2>
-              <div className="rounded-group bg-fill px-4 pt-3 pb-3.5">
-                <p className="text-subhead">
-                  {ranked.length === 1
-                    ? "This goal needs"
-                    : `${["", "", "These two", "These three", "These four"][ranked.length] ?? `These ${ranked.length}`} need`}{" "}
-                  <b className="font-semibold tnum">{hm(need)}</b> more this week. You have{" "}
-                  <b className="font-semibold tnum">{hm(week.freeMinutesLeft)}</b> free. Which one gives?
-                </p>
-                <SplitBar
-                  parts={[...ranked]
-                    .sort((a, b) => b.leftMinutes - a.leftMinutes)
-                    .map((r) => ({ title: r.goal.title, minutes: r.leftMinutes }))}
-                  freeMinutes={week.freeMinutesLeft}
-                />
-              </div>
-            </section>
-          ) : null}
-
-          {week.sleep ? <SleepSection sleep={week.sleep} /> : null}
-
-          {paused.length ? (
-            <section className="mt-6">
-              <h2 className="mb-2 text-title3 font-bold">Paused</h2>
-              <ul className="overflow-hidden rounded-group bg-fill">
-                {paused.map((g, i) => (
-                  <li key={g.id} className="relative">
-                    {i > 0 ? (
-                      <span className="absolute inset-x-0 top-0 z-10 ml-4 h-[0.5px] bg-separator" />
-                    ) : null}
-                    <EditGoal draft={draftOf(g)} personalReady={personalReady}>
-                      <div className="flex min-h-11 items-center justify-between gap-3 px-4 py-2.5">
-                        <span className="text-body text-label-2">{g.title}</span>
-                        <span className="text-footnote text-label-2">
-                          {CATEGORY_TITLE[categoryOf(g.category)]}
-                        </span>
-                      </div>
-                    </EditGoal>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ) : null}
+            ) : null}
+          </div>
         </>
       )}
 

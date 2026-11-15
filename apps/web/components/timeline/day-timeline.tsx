@@ -362,6 +362,7 @@ export function DayTimeline({
       </div>
 
       <Sheet
+        panel
         open={picked != null}
         onClose={() => setPicked(null)}
         title={
