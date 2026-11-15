@@ -33,6 +33,9 @@ import { store } from "../store";
 // the score, for the week's nights) and the device events the single line of attention is made of.
 // Plus the user's own word (#317): logged done time (focus_session) and blocks settled as not done
 // (note), both source manual (score/logged.ts).
+// How much of the score range one read covers (see loadWeek).
+const READ_STEP_MS = 2 * 24 * 3600_000;
+
 export const TYPES: EventType[] = [
   "calendar_event",
   "workout",
@@ -43,7 +46,6 @@ export const TYPES: EventType[] = [
   "focus_session",
   "note",
 ];
-const WEEK_MS = 7 * 24 * 3600_000;
 export interface Week {
   score: Score;
   history: ScoreHistory;
@@ -65,14 +67,15 @@ export async function loadWeek(query: { date?: string; now?: string }): Promise<
   if (!isLocalDay(date)) throw new HttpError("bad_request", "`date` must be a real day, YYYY-MM-DD");
 
   const range = scoreRange(date);
-  // Five weeks of events, read a week at a time side by side. An event on a border comes back
-  // twice and is kept once.
+  // Five weeks of events, read two days at a time side by side: a busy week of app and web
+  // activity is thousands of rows, and one read pages through them one round trip after another
+  // (#364). An event on a border comes back twice and is kept once.
   // The store returns every row of a window, however many (#127).
   const iso = (ms: number) => new Date(ms).toISOString();
   const chunks: Promise<Event[]>[] = [];
-  for (let start = range.from; start < range.to; start += WEEK_MS) {
+  for (let start = range.from; start < range.to; start += READ_STEP_MS) {
     chunks.push(
-      store.listEvents({ from: iso(start), to: iso(Math.min(start + WEEK_MS, range.to)), type: TYPES }),
+      store.listEvents({ from: iso(start), to: iso(Math.min(start + READ_STEP_MS, range.to)), type: TYPES }),
     );
   }
   // The week itself, for the checklist and count rows (#238): its items and the check in's
