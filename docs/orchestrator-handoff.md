@@ -6,22 +6,18 @@ permission, keep building with parallel agents, close every issue we can, phone 
 developed), keep colours and branding exactly as they are (pink `#E6007A`, red `#FF3B30`), and pace
 the usage limit by slowing down at about 60% of the window.
 
-## State (updated 08:40 UTC)
-- Production: API https://api-production-16521a26.up.railway.app/health, web
-  https://michael-zeta-sand.vercel.app. Supabase project `kpcoadbgevifyvvlhdbt`.
-- Merged this morning: #407 CI fix, #408 polish, #403 warmer voice, #391/#394/#396 API speed,
-  #392 laptop chat, #406 nudge actions, #409 fast notification tap, #411 meetings mode (migration),
-  #404 Focus now (migration), #412/#414/#417 thinking steps, #413 nudge names the goal, #416 Start
-  focus on the block nudge, #336 laptop sidebar (Loukas marked it ready).
-- Closed: #364, #385, #393, #397, #398, #399, #400, #402, #405, #410.
-
-## Still open
-- #389 events_window (#298): Loukas said merge now; CI green on a405373, marked ready. Auto-merge
-  (cron every 10 min) should land it. Afterwards check /health, the Migrate database run and Today.
-- #280 location draft: Loukas must mark it Ready himself.
-- #285 and #267 can close once #336 and #280 are in. Manolis: #319, #303, #28.
-- Follow-ups with no issue: after-meeting card on Today (API already returns `last` from
-  GET /v1/meetings/active), meetings quick toggle in the Mi sheet, phone guarding for Focus now.
+## State (updated 09:35 UTC)
+- Production healthy (250cfff). This session (loukas-hackathon) is the lead orchestrator, per Loukas.
+- Since 08:40: #389 events_window (migration ok), #423 warm ping (#421), #426 after-meeting card and
+  Mi sheet meetings toggle (#422), #425/#428/#435 laptop polish (#285 closed), #427 late workout
+  settles the missed block question, #433 watch lines agree, #280 location, #418 character, #419 dry
+  run. Closed: #267, #285, #298, #421, #422.
+- Running here: one agent on QA leftovers (Chat offline error, meetings pill "just started",
+  quiet hours vs booking rule copy, University goal row wrap, #434).
+- Other session (loukas-vetoulis account): #420 chat memories and pinned header (PR #424).
+- Manolis' side owns the new scope #432 "Michael studies you" (#438 real time nudges, #439 /learnt,
+  insights API). Do not double up on it. Words "efficient", "effective", "efficiency" are now allowed.
+- Freeze: after 15:00 UTC only copy, CSS, test fixes; after 17:30 UTC no merges unless stage breaking.
 
 ## Rules learned the hard way
 - Never write to the production demo account (test locally). Never push test notifications to
