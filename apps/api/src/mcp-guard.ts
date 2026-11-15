@@ -34,6 +34,7 @@ export const TOOL_SCOPE: Record<string, AgentScope> = {
   get_score: "score",
   get_records: "score",
   get_moments: "score",
+  get_week_review: "score",
   add_event: "write_events",
   execute_recommendation: "write_events",
   undo_recommendation: "write_events",
@@ -116,6 +117,8 @@ export function summarise(name: string, title: string | undefined, input: unknow
       return "Read your follow up drafts";
     case "draft_follow_up":
       return "Drafted a follow up for you to send";
+    case "get_week_review":
+      return "Read your week's review";
     case "get_moments":
       return a.kind === "evening" ? "Read your evening moment" : "Read your morning moment";
     case "add_goal":

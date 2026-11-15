@@ -338,6 +338,7 @@ for (const [name, userId] of [
         ["get_moments", { kind: "evening" }],
         ["propose_goals", {}],
         ["get_records", {}],
+        ["get_week_review", {}],
         ["get_check_in", {}],
         ["get_memories", {}],
         ["list_drafts", {}],

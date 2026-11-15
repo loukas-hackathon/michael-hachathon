@@ -42,6 +42,7 @@ import { telegram, telegramWebhook } from "./routes/telegram";
 import { tokens } from "./routes/tokens";
 import { voice } from "./routes/voice";
 import { webhooks } from "./routes/webhooks";
+import { week } from "./routes/week";
 import { store } from "./store";
 import { runTimed, serverTimingEntries } from "./timing";
 
@@ -68,6 +69,7 @@ export const v1Routes = new Hono()
   .route("/", chat)
   .route("/", checkIn)
   .route("/", moments)
+  .route("/", week)
   .route("/", voice)
   .route("/", integrations)
   .route("/", privacy)

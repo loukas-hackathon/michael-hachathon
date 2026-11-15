@@ -58,7 +58,9 @@ import { patternReportFor } from "./routes/patterns";
 import { travelPlanFor } from "./routes/places";
 import { scoreFor } from "./routes/score";
 import { recordsFor } from "./routes/targets";
+import { weekReviewFor } from "./routes/week";
 import { store } from "./store";
+import { weekReviewText } from "./week/text";
 
 // The claude.ai connector's tool set. Every tool answers with short text in the user's local time
 // (24 hour, Europe/Athens) plus structured content. Writes follow Michael's autonomy rules: only
@@ -494,6 +496,23 @@ export function createMcpServer(): McpServer {
       const k = kind ?? (zone.hourOf(Date.now()) < 15 ? "morning" : "evening");
       const m = await momentFor(k);
       return reply(momentText(m), m as Record<string, unknown>);
+    }),
+  );
+
+  server.registerTool(
+    "get_week_review",
+    {
+      title: "Get the week's review",
+      description:
+        "Michael's review of a week (Monday to Sunday, Europe/Athens), the Sunday evening moment: the week's score with the maths and the usual week, time won back, each goal kept or behind against its budget, personal records set, the biggest thief of time with its minutes, what the user logged and the daily outcomes done, one lesson, next week's target and the first move for next week. Use it for \"how was my week\". Give `week` as any day of an earlier week; default this week.",
+      inputSchema: {
+        week: LocalDayInput.optional().describe("Any day of the week, YYYY-MM-DD. Default this week"),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    safe(async ({ week }) => {
+      const r = await weekReviewFor({ week });
+      return reply(weekReviewText(r), r as Record<string, unknown>);
     }),
   );
 

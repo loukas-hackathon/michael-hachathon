@@ -37,6 +37,8 @@ const ALLOWED: [string, RegExp][] = [
   // Book on Goals (#309): one undoable block on the user's own calendar, the same as Do it, and a
   // beat of the stage demo (docs/demo-runbook.md). Undo goes through the recommendation route.
   ["POST", /^\/v1\/goals\/[^/]+\/book$/],
+  // Plan next week from Your week (#376): the same Book path for next Monday, undoable the same way.
+  ["POST", /^\/v1\/week\/plan$/],
   // The demo day can be edited on the Timeline (#271), like acting on a recommendation.
   ["POST", /^\/v1\/blocks$/],
   ["PATCH", /^\/v1\/blocks\/[^/]+$/],
