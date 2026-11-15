@@ -1,7 +1,7 @@
 import { type CheckIn, type Event, type Goal, type ScoreBlock, sleepScore } from "@michael/shared";
 import { aiToolUse } from "../patterns/ai";
 import { phoneSessions } from "../patterns/cadence";
-import { buildContext, type Ctx, RULES } from "../patterns/context";
+import { buildContext, type Ctx, daysTouched, RULES } from "../patterns/context";
 import { clockLabel } from "../patterns/format";
 import { lateScreens } from "../patterns/late";
 import { contextSwitching } from "../patterns/switching";
@@ -152,11 +152,27 @@ export function buildFeatures(input: FeatureInput): FeatureTable {
   const whole = (day: string) => ctx.completeDays.has(day);
   const byId = new Map(input.events.map((e) => [e.id, e]));
 
-  // ---------- the evening: screens after the cut off (patterns/late.ts) ----------
-  const late = lateScreens(ctx).data;
-  for (const n of late?.nights ?? []) {
-    set("late_phone_min", n.night, n.iphone_minutes);
-    set("late_screen_min", n.night, n.minutes);
+  // ---------- the evening: screens after the cut off ----------
+  // The cut off is the late screens rule's (patterns/late.ts: 23:00, or an hour before the usual
+  // bedtime), rounded to the quarter hour so it reads as a time someone can keep. A night runs for
+  // 6 hours from it and belongs to the day its evening is on.
+  const [cutoffHour, cutoffMinute] = (lateScreens(ctx).data?.cutoff ?? clockLabel(RULES.lateCutoffMinutes))
+    .split(":")
+    .map(Number);
+  const exact = (cutoffHour ?? 23) * 60 + (cutoffMinute ?? 0);
+  // Past midnight ("00:15") is still the evening before.
+  const cutoff = Math.round((exact < 12 * 60 ? exact + 1440 : exact) / 15) * 15;
+  const attention = union(ctx.tl.attention);
+  const iphone = union(ctx.tl.iphone);
+  const deviceDays = daysTouched(ctx, ctx.tl.attention);
+  for (const day of days) {
+    const night = {
+      start: zone.at(day, cutoff),
+      end: zone.at(day, cutoff + RULES.nightLengthMinutes),
+    };
+    if (night.start < ctx.from || night.end > ctx.to || !deviceDays.has(day)) continue;
+    set("late_phone_min", day, overlapWith(night, iphone) / MINUTE);
+    set("late_screen_min", day, overlapWith(night, attention) / MINUTE);
   }
   days.forEach((day, i) => {
     const tonight = cols.late_phone_min[i];
@@ -171,7 +187,6 @@ export function buildFeatures(input: FeatureInput): FeatureTable {
 
   // ---------- the night, on the day it ends ----------
   const nights = ctx.sleeps.filter((s) => !s.nap);
-  const iphone = union(ctx.tl.iphone);
   const longest = new Map<string, (typeof nights)[number]>();
   for (const s of nights) {
     const wake = zone.dayOf(s.end);
@@ -239,7 +254,8 @@ export function buildFeatures(input: FeatureInput): FeatureTable {
 
   // ---------- the phone through the day ----------
   for (const s of ctx.tl.iphone) {
-    for (const p of zone.splitByDay(s.start, s.end)) if (whole(p.day)) add("phone_min", p.day, (p.end - p.start) / MINUTE);
+    for (const p of zone.splitByDay(s.start, s.end))
+      if (whole(p.day)) add("phone_min", p.day, (p.end - p.start) / MINUTE);
   }
   for (const s of phoneSessions(ctx.tl.iphone)) {
     const day = zone.dayOf(s.start);
@@ -250,7 +266,8 @@ export function buildFeatures(input: FeatureInput): FeatureTable {
   const watchDays = new Set<string>();
   const firstWorkoutHour = new Map<string, number>();
   for (const e of input.events) {
-    if (e.type !== "sleep" && e.type !== "workout" && e.type !== "biometric" && e.type !== "recovery") continue;
+    if (e.type !== "sleep" && e.type !== "workout" && e.type !== "biometric" && e.type !== "recovery")
+      continue;
     const start = Date.parse(e.start_at);
     watchDays.add(zone.dayOf(e.type === "sleep" && e.end_at ? Date.parse(e.end_at) : start));
     if (e.type !== "workout" || !e.end_at) continue;
@@ -360,7 +377,7 @@ export function buildFeatures(input: FeatureInput): FeatureTable {
     days,
     weekdays: days.map((d) => new Date(`${d}T00:00:00Z`).getUTCDay()),
     cols,
-    cutoff: late?.cutoff ?? clockLabel(RULES.lateCutoffMinutes),
+    cutoff: clockLabel(cutoff),
     // Measured from noon, like the late screens rule, so 23:40 and 00:30 sit next to each other.
     usualBedtime: clockOfMedian(nights.map((s) => (zone.minuteOfDay(s.start) - 720 + 1440) % 1440)),
     usualWake: clockOfMedian(nights.map((s) => (zone.minuteOfDay(s.end) - 720 + 1440) % 1440)),

@@ -22,6 +22,7 @@ const LABELS: Record<string, string> = {
   remember: "Remembering that",
   forget_memory: "Forgetting that",
   what_you_know: "Checking what I know",
+  get_insights: "Checking what I have learnt",
   propose_goal_change: "Weighing a goal change",
   propose_plan_change: "Weighing a plan change",
   log_done: "Logging your time",

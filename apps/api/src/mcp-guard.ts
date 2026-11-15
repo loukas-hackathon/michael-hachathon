@@ -15,6 +15,7 @@ import { toInstant } from "./mcp-format";
 export const TOOL_SCOPE: Record<string, AgentScope> = {
   get_timeline: "timeline",
   get_patterns: "timeline",
+  get_insights: "timeline",
   get_goals: "goals",
   get_instructions: "goals",
   propose_goals: "goals",
@@ -96,6 +97,8 @@ export function summarise(name: string, title: string | undefined, input: unknow
       return `Read your day${range}`;
     case "get_patterns":
       return `Read your patterns${range}`;
+    case "get_insights":
+      return "Read what I have learnt about you";
     case "get_check_in":
       return "Read your check in";
     case "what_you_know":

@@ -1537,7 +1537,7 @@ export const mockInsights: InsightsResponse = {
       kind: "link",
       status: "watching",
       title: "Two late nights in a row",
-      line: "2 of the 4 I need. Recovery was 38% after a second late night in a row against 61% on the other mornings.",
+      line: "Recovery was 38% after a second late night in a row against 61% on the other mornings.",
       steps: [
         { label: "Second late night in a row", value: "2 times so far" },
         {

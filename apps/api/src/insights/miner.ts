@@ -1,5 +1,5 @@
 import { median } from "../patterns/util";
-import { type FeatureDef, FEATURES, featureDef } from "./dictionary";
+import { FEATURES, type FeatureDef, featureDef } from "./dictionary";
 import type { FeatureKey, FeatureTable } from "./features";
 import { benjaminiHochberg, clamp01, hash, mean, permutationP, pooledSd, sd, spearman } from "./stats";
 
@@ -133,7 +133,11 @@ export interface Mined {
 const present = (v: number | null | undefined): v is number => v !== null && v !== undefined;
 
 /** The days a cause's trigger was there. A fixed threshold when it splits the days, else the median. */
-export function triggerOf(table: FeatureTable, def: FeatureDef, needed: number = MINER_RULES.needed): Trigger | null {
+export function triggerOf(
+  table: FeatureTable,
+  def: FeatureDef,
+  needed: number = MINER_RULES.needed,
+): Trigger | null {
   const cause = def.cause;
   if (!cause) return null;
   const values = table.cols[def.key];
@@ -154,7 +158,13 @@ export function triggerOf(table: FeatureTable, def: FeatureDef, needed: number =
     threshold,
     inclusive,
     on: values.map((v) =>
-      !present(v) ? null : cause.side === "high" ? (inclusive ? v >= threshold : v > threshold) : v < threshold,
+      !present(v)
+        ? null
+        : cause.side === "high"
+          ? inclusive
+            ? v >= threshold
+            : v > threshold
+          : v < threshold,
     ),
   });
   const sides = (t: Trigger) => {
@@ -164,9 +174,9 @@ export function triggerOf(table: FeatureTable, def: FeatureDef, needed: number =
   const own = split(median(known), false);
   if (cause.at === undefined) return own;
   const fixed = split(cause.at, true);
-  // The usual threshold, unless this person never crosses it (or always does) and their own
-  // median still splits the days.
-  return sides(fixed) < needed && sides(own) >= needed ? own : fixed;
+  // The usual threshold, unless this person all but never crosses it (or always does) and their
+  // own median still splits the days. Crossed two or three times, it stays: that is watched.
+  return sides(fixed) < 2 && sides(own) >= needed ? own : fixed;
 }
 
 /**

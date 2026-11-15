@@ -182,4 +182,3 @@ export const asEvents = (inputs: EventInput[]): Event[] =>
     title: e.title ?? "",
     data: e.data ?? {},
   }));
-

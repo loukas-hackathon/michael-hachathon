@@ -37,6 +37,7 @@ import { currentAgent } from "./context";
 import { startFocus } from "./focus/session";
 import { currentSuggestions } from "./goals/suggestions";
 import { HttpError, parse } from "./http";
+import { insightsFor, insightsText } from "./insights/service";
 import { knowledgeFor, knowledgeText } from "./knowledge";
 import {
   dayLabel,
@@ -419,6 +420,23 @@ export function createMcpServer(): McpServer {
         ? ["Headlines:", ...report.headlines.map((h) => `- ${h}`)].join("\n")
         : `${NO_HEADLINES} for patterns in that range: no finding is big enough to lead with.`;
       return reply(`${text}\n\nFull report:\n${JSON.stringify(report)}`, report as Record<string, unknown>);
+    }),
+  );
+
+  server.registerTool(
+    "get_insights",
+    {
+      title: "Get insights",
+      description:
+        'What Michael has learnt by studying the user over the last 12 weeks: relations between one day\'s behaviour and the same or the next day\'s outcome, across sources (late phone, then a worse night, then a slower first block). Each has its numbers on both sides, how often it held, and one fix. Patterns cleared a strict statistical bar; the ones still being watched have not. Use it for "what have you learnt about me", "why was today hard" and to back advice with the user\'s own evidence. Every number is computed from their events: quote them as they are, never estimate one.',
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+    },
+    safe(async () => {
+      const body = await insightsFor();
+      // The daily series is for drawing: a model reads the findings.
+      const { series: _series, ...rest } = body;
+      return reply(insightsText(body), rest as Record<string, unknown>);
     }),
   );
 

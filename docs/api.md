@@ -1353,14 +1353,15 @@ travel site" or "an uncategorised site". Structured `data` carries the host for 
 What Michael has learnt by studying the user: relations between one day's behaviour and the same
 or the next day's outcome, across sources that do not look related ("30 minutes on the phone after
 23:00, then a worse night, then a slower first block"). Every number comes from the user's own
-events. Engine: `apps/api/src/insights`.
+events; nothing is a constant. Engine: `apps/api/src/insights` (pure: the same events in give the
+same insights out).
 
-| Method | Path                   | Body | Response               | Status  |
-| ------ | ---------------------- | ---- | ---------------------- | ------- |
-| GET    | `/v1/insights`         |      | `200 InsightsResponse` | mock    |
-| POST   | `/v1/insights/:id/fix` |      | `200 Insight`, `404`   | planned |
-| DELETE | `/v1/insights/:id/fix` |      | `200 Insight`, `404`   | planned |
-| POST   | `/v1/insights/run`     |      | `202 { status }`       | planned |
+| Method | Path                   | Body | Response                    | Status  |
+| ------ | ---------------------- | ---- | --------------------------- | ------- |
+| GET    | `/v1/insights`         |      | `200 InsightsResponse`      | live    |
+| POST   | `/v1/insights/:id/fix` |      | `200 Insight`, `404`, `409` | live    |
+| DELETE | `/v1/insights/:id/fix` |      | `200 Insight`, `404`, `409` | live    |
+| POST   | `/v1/insights/run`     |      | `202 { status }`            | planned |
 
 ```ts
 type InsightsResponse = {
@@ -1379,18 +1380,18 @@ type Insight = {
   id: string; // stable: made from what is compared, never from the numbers
   kind: "chain" | "link" | "discovered"; // three steps, two steps, or proposed by the model
   status: "pattern" | "watching";
-  title: string;
-  line: string; // one line, number first
+  title: string; // never ends with a full stop
+  line: string; // one line, number first, ends with a full stop
   steps: InsightStep[]; // 2 for a link, 3 for a chain, in the order they happen
   evidence: {
     times_held: number; // the trigger was seen and the outcome followed
     times_seen: number; // the trigger was seen
     needed: number; // times the trigger (and its absence) must be seen before `pattern`
     history: boolean[]; // one per time seen, oldest first, true when it held; the last 30
-    days: string[]; // YYYY-MM-DD of each entry of `history`, same length and order
+    days: string[]; // YYYY-MM-DD of each entry of `history`: the local day of the TRIGGER
   };
   fix: {
-    text: string; // exactly one fix
+    text: string; // exactly one fix, ends with a full stop
     action?: { kind: "instruction" | "focus_block"; label: string; done_label: string };
     applied_at: string | null;
   };
@@ -1424,17 +1425,87 @@ type InsightSource =
   | "travel";
 ```
 
-- `status`: `pattern` once the trigger and its absence have each been seen `evidence.needed` times
-  and the difference clears the bar; `watching` below that, with its progress in `evidence`.
-  Before `studied.needed_days` days of data nothing is a pattern, so the screen can say
-  "Studying. 3 of 14 nights so far." from `studied.nights` and `studied.needed_days`.
-- `found_by: "model"` (kind `discovered`): the model proposed the comparison, the server computed
-  every number with the same statistics as its own. The model never supplies a figure.
-- `fix.action` is one tap the app already supports. `POST /v1/insights/:id/fix` applies it and
-  answers the insight with `fix.applied_at` set; `DELETE` undoes an `instruction` (a `focus_block`
-  is undone like any block Michael made). A demo visitor gets the usual `403`.
-- `series` is the same daily table the insights are mined from; `null` is a day with no reading.
-- `mockInsights` in `packages/shared/src/mocks.ts` is a full example.
+**Dating, held everywhere.** A night's sleep, its score, heart rate variability, resting heart
+rate and recovery are dated on the local day the night ENDS (the morning), in `series` and in the
+table the insights are mined from. What happens in the evening (phone after the cut off, the hour
+before sleep, bedtime) is dated on the day the evening is on. `evidence.days` and `last_seen` are
+the local day of the trigger. So for "late phone, then a worse night" the trigger day is the
+evening, and the night it cost sits one day later on the sleep line.
+
+**The study.** The last 84 local days (Europe/Athens), read from `sleep`, `recovery`, `biometric`,
+`workout`, `calendar_event`, `app_usage`, `web_visit`, `screen`, `ai_session`, `meal` events and
+the evening check in's ratings. Conversations, memories, searches and prompts are never read.
+
+1. **Daily table** (`insights/features.ts`): one row per local day, 34 columns, built with the
+   same helpers as the patterns and the score, so a number here is the number shown elsewhere.
+   The evening: phone and screen minutes after the late cut off (the late screens rule: 23:00, or
+   an hour before the usual bedtime; rounded here to the quarter hour, so it reads as a time
+   someone can keep), phone minutes in the hour before sleep, bedtime, "second
+   late night in a row". The night: sleep minutes, sleep score, deep and REM minutes, "night under
+   6 hours". The morning: heart rate variability, resting heart rate, recovery. The day: phone
+   opens and minutes, workout minutes, "trained", "trained after 19:00", "day after training",
+   meeting minutes and count, "3 or more meetings", first block start, planned, spent and lost
+   minutes in goal blocks, lost minutes in the first block, share of goal time held, app switches
+   an hour, AI tool minutes, last meal and last coffee (when `meal` events carry them), the check
+   in's training and meeting ratings. The day still running has no figures for the day or the
+   evening.
+2. **Sleep score**: `data.score` on the `sleep` event when the source sent one; otherwise worked
+   out by `sleepScore` in `packages/shared/src/sleep.ts`: half is the duration against 8 hours, a
+   quarter is deep plus REM against 40% of the night, a quarter is how little of the time in bed
+   was spent awake (15% or more earns nothing). A part the source did not send is left out and the
+   rest carries its weight.
+3. **The miner** (`insights/miner.ts`): every sensible ordered pair of columns (what can come
+   first against what can follow, never two columns of the same family), on the same day and on
+   the next day. The days are split on the trigger: a fixed threshold where one is usual (30
+   minutes of late phone), else the person's own median. The two sides are compared: difference in
+   means, the same in standard deviations, a rank correlation, and a permutation test with a fixed
+   seed (up to 10,000 shuffles). "Held" on a trigger day means the outcome was beyond the other
+   days' median, on the side the means differ.
+4. **The bar for `pattern`**: the trigger and its absence each seen `evidence.needed` times (4);
+   at least `studied.needed_days` (14) days of data; the pair survives a false discovery rate of 2%
+   over every pair tested (Benjamini and Hochberg), so the more pairs are tested the stricter it
+   gets; the sides differ by at least 0.6 standard deviations; it held on at least 65% of the
+   trigger days; and the rank correlation points the same way. Noise does not pass.
+5. **Chains**: when x then y, and y then z both passed, and x then z holds too (its own
+   permutation test, p at most 0.05, same direction), one chain of three steps is given, counted
+   on the trigger days where both later readings exist and held when both moved. One chain per kind
+   of trigger; the links it is made of are not listed again, and neither is the same story told
+   from another column (two triggers on the same days, or the day after, ending in the same kind
+   of outcome).
+6. **`watching`**: a short list of named candidates (late phone and the night, a second late night
+   in a row and recovery, a short night and the first block, training and deep sleep, three
+   meetings and the day's lost time, late coffee and the night) is shown before it can be tested:
+   seen 2 or 3 times with the outcome moving every time by 1.5 standard deviations or more, or
+   seen often enough but with fewer than 14 days studied. Only the candidates are named in code;
+   whether one shows, which way it points and its numbers come from the data. Its `line` says what
+   was seen and never carries the count (`evidence` has it).
+7. **Words** (`insights/phrase.ts`): title, line, steps and the one fix come from templates in
+   Michael's voice, filled with the miner's numbers. `strength` is half the share of times it held
+   and half the distance between the two sides (1 standard deviation is 0.49, 2 are 0.74); a
+   watched one is halved. At most 8 patterns and 3 watched.
+
+**The fix.** `fix.action` is one tap the app already supports:
+
+- `instruction`: `POST /v1/insights/:id/fix` adds a standing instruction (kind `quiet_hours` from
+  the phone down time to the usual wake time, text "Phone down at 22:30"); `DELETE` removes it.
+- `focus_block`: `POST` books the next free slot for the goal (the same path as Book on Goals, so
+  it is undoable until it starts and shows under Recommendations); `DELETE` undoes that block.
+
+`applied_at` is never stored with the insight: it is read on every request from what the fix made
+(the active instruction, or a booked block of that goal still ahead), so removing the instruction
+anywhere clears it. Applying twice changes nothing. `404` for an unknown id, `409` for an insight
+whose fix has no action. Ids carry `:` and `>`: send them URL encoded
+(`/v1/insights/chain%3Alate_phone_min%3Esleep_min%3Efirst_block_lost_min/fix`). A demo visitor
+gets the usual `403` on both.
+
+**Speed.** A study reads 12 weeks of events, so it is worked out at most once every ten minutes
+per user (every 30 seconds while fewer than 14 days are studied) and kept in the process; a read
+past that age is answered at once with the kept study while a new one runs behind it.
+
+**Other readers.** MCP `get_insights` and the chat tool of the same name give the same findings
+as text. The real time nudges (`nudges/learnt.ts`) cite the kept study's strongest pattern about
+late phone or the phone in a block ("It costs you 14 sleep points.", "Held 9 of 11 times."); they
+never start a study. `mockInsights` in `packages/shared/src/mocks.ts` is an example of the shape.
 
 ### Chat
 
@@ -2801,7 +2872,7 @@ type AgentQuery = {
   an older line (`null` on a tool that writes) fall back to `allowed`. `recommendation_id` and
   `undo_until` are only ever set on a line that changed something. `apps/api/src/mcp-guard.ts`:
   `outcomeOf` and `logLine`.
-- Scope per tool: `get_timeline`, `get_patterns` = `timeline`; `get_goals`, `add_goal`,
+- Scope per tool: `get_timeline`, `get_patterns`, `get_insights` = `timeline`; `get_goals`, `add_goal`,
   `update_goal`, `propose_goals`, `get_checklist`, `add_checklist_item`, `set_day_outcomes`, `log_day` = `goals`; `list_recommendations`, `update_recommendation`, `get_nudges`,
   `list_drafts`, `draft_follow_up` = `recommendations`; `get_score`, `get_records`, `get_moments` = `score`; `add_event`, `execute_recommendation`,
   `undo_recommendation`, `create_focus_block`, `block_mac_app`, `plan_travel`, `log_done`,
@@ -3663,6 +3734,7 @@ offset. A refused or failed call returns `isError: true` with one plain sentence
 | `get_score`              | `score`           | `{ date?: LocalDay }` (default today)                                                   | `Score` without `day.blocks[].ticks` (target, verdict, records, free time, sleep included)      |
 | `get_records`            | `score`           | `{}`                                                                                    | `{ records: PersonalRecord[] }` (as `GET /v1/records`)                                          |
 | `get_patterns`           | `timeline`        | `{ from?: TimeInput, to?: TimeInput }` (default: the last 7 days)                       | `PatternReport`                                                                                 |
+| `get_insights`           | `timeline`        | `{}`                                                                                    | `InsightsResponse` without `series`: what Michael has learnt, as text and as data               |
 | `get_check_in`           | `timeline`        | `{}`                                                                                    | `CheckInToday` (see Check in)                                                                   |
 | `answer_check_in`        | `timeline`        | `{ id: uuid, value: "yes" \| "no" \| 1..5 \| string }`                                  | `CheckInAnswerResponse`                                                                         |
 | `list_recommendations`   | `recommendations` | `{ status?: RecommendationStatus }`                                                     | `{ recommendations: Recommendation[] }`                                                         |

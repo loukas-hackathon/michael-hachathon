@@ -21,7 +21,10 @@ import { type Chain, type Link, MINER_RULES, type Occurrence, type Trigger } fro
 
 /** What applying a fix does, kept beside the insight and never sent. */
 export type FixPlan =
-  | { kind: "instruction"; instruction: { text: string; kind: "quiet_hours"; time: string; end_time: string } }
+  | {
+      kind: "instruction";
+      instruction: { text: string; kind: "quiet_hours"; time: string; end_time: string };
+    }
   | { kind: "focus_block"; goal_id: string; minutes: number };
 
 export interface Phrased {
@@ -70,7 +73,8 @@ function lineWhen(x: FeatureDef, y: FeatureDef, lag: number): string {
 
 const outcomeWords = (y: FeatureDef, diff: number) => {
   const o = y.outcome;
-  if (!o) return { phrase: y.label({ cutoff: "" }).toLowerCase(), title: y.label({ cutoff: "" }).toLowerCase() };
+  if (!o)
+    return { phrase: y.label({ cutoff: "" }).toLowerCase(), title: y.label({ cutoff: "" }).toLowerCase() };
   return diff >= 0 ? { phrase: o.up, title: o.titleUp } : { phrase: o.down, title: o.titleDown };
 };
 
@@ -148,7 +152,7 @@ function fixFor(
 
   if (worse) {
     if (cause.fix === "phone_down") {
-      const at = roundClock(t.cutoff);
+      const at = t.cutoff;
       const what = x.key === "late_screen_min" ? "Screens off" : "Phone down";
       return {
         fix: {
