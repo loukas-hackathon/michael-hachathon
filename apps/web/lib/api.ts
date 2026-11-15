@@ -48,6 +48,7 @@ import {
   type TargetResponse,
   type TargetUpdate,
   type TimelineResponse,
+  type WeekReview,
 } from "@michael/shared";
 import { cache } from "react";
 import { addDays } from "./athens";
@@ -495,6 +496,18 @@ export async function undoRecommendation(id: string): Promise<RecResult> {
 export async function bookGoal(goalId: string, minutes: number): Promise<RecResult> {
   if (USE_MOCKS) return { ok: false, status: 501, message: "Booking needs the live API" };
   return recCall("POST", `/v1/goals/${encodeURIComponent(goalId)}/book`, { minutes });
+}
+
+/** POST /v1/week/plan (#376): next week's first goal block, through Book. Undo as for Book. */
+export async function planWeek(goalId: string, minutes: number): Promise<RecResult> {
+  if (USE_MOCKS) return { ok: false, status: 501, message: "Booking needs the live API" };
+  return recCall("POST", "/v1/week/plan", { goal_id: goalId, minutes });
+}
+
+/** GET /v1/week/review (#376): the week's review; `week` is any day of it, default this week. */
+export async function getWeekReview(week?: string): Promise<WeekReview | null> {
+  if (USE_MOCKS) return null;
+  return get<WeekReview>(`/v1/week/review${week ? `?week=${encodeURIComponent(week)}` : ""}`);
 }
 
 /** PATCH /v1/recommendations/:id { status: dismissed }: "Not now". */

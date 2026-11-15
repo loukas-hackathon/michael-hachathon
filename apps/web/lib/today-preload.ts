@@ -14,7 +14,7 @@ import { getMoment, momentKindAt } from "./moments";
 export function preloadTodaySections(variant?: string): void {
   if (variant || USE_MOCKS) return;
   const kind = momentKindAt(new Date().toISOString());
-  if (kind) getMoment(kind, false).catch(() => {});
+  if (kind) getMoment(kind, false, { cached: true }).catch(() => {});
   get(watchTimelinePath()).catch(() => {});
   void getLatestBrief();
 }

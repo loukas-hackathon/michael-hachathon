@@ -107,4 +107,7 @@ export const SOURCE_LABEL: Partial<Record<Source, [name: string, what: string]>>
   iphone_usage: ["Screen Time", "iPhone apps by the day, synced through your Mac"],
   ios_shortcuts: ["Shortcuts", "Live app opens from your iPhone"],
   maps: ["Travel times", "Traffic between your saved places and plans"],
+  whoop: ["WHOOP", "Sleep, strain and recovery"],
+  omi: ["Omi", "Meeting summaries you started"],
+  owntracks: ["OwnTracks", "Where you are, while it is on"],
 };

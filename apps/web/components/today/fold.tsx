@@ -1,8 +1,26 @@
 "use client";
 
+import Link from "next/link";
 import { createContext, type ReactNode, useContext, useId, useState } from "react";
 import { Collapse } from "@/components/motion-ui";
 import { useWide } from "@/components/use-wide";
+
+/** A row that opens another screen (Your week, #376): the same look as a Fold, with a chevron. */
+export function FoldLink({ title, preview, href }: { title: string; preview?: ReactNode; href: string }) {
+  return (
+    <div className="relative not-first:before:absolute not-first:before:top-0 not-first:before:right-0 not-first:before:left-4 not-first:before:h-[0.5px] not-first:before:bg-separator not-first:before:content-['']">
+      <Link href={href} className="press flex min-h-[60px] w-full items-center gap-3 px-4 py-2.5 text-left">
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="text-body font-semibold">{title}</span>
+          {preview ? <span className="line-clamp-2 text-footnote text-label-2">{preview}</span> : null}
+        </span>
+        <span aria-hidden="true" className="shrink-0 text-label-2">
+          ›
+        </span>
+      </Link>
+    </div>
+  );
+}
 
 // Today's supporting detail ("More from Michael"): one inset group of quiet rows. Each row shows a
 // title and one line, and opens in place: the body eases open under it while the preview line folds
@@ -43,6 +61,7 @@ export function Fold({
   meta,
   label,
   wideOpen = false,
+  reservePreview = false,
   children,
 }: {
   title: string;
@@ -53,6 +72,8 @@ export function Fold({
   /** Starts open on a laptop inside "More from Michael": short rows (moment, watch, brief). Long
    * ones (suggestions, drafts) and forms stay shut, so the right column stays in proportion. */
   wideOpen?: boolean;
+  /** Keeps both preview lines' room, for a preview that is about to be replaced. */
+  reservePreview?: boolean;
   children: ReactNode;
 }) {
   const wideGroup = useContext(WideOpen) && wideOpen;
@@ -65,7 +86,7 @@ export function Fold({
     <div
       data-collapse-group=""
       data-wide-open={toggled === null && wideGroup ? "" : undefined}
-      className="relativenot-first:before:absolute not-first:before:top-0 not-first:before:right-0 not-first:before:left-4 not-first:before:h-[0.5px] not-first:before:bg-separator not-first:before:content-['']"
+      className="relative not-first:before:absolute not-first:before:top-0 not-first:before:right-0 not-first:before:left-4 not-first:before:h-[0.5px] not-first:before:bg-separator not-first:before:content-['']"
     >
       <button
         type="button"
@@ -82,7 +103,11 @@ export function Fold({
           </span>
           {preview ? (
             <Collapse as="span" open={!open} className="m-fold-preview">
-              <span className="line-clamp-2 text-footnote text-label-2">{preview}</span>
+              <span
+                className={`line-clamp-2 text-footnote text-label-2 ${reservePreview ? "min-h-[2lh]" : ""}`}
+              >
+                {preview}
+              </span>
             </Collapse>
           ) : null}
         </span>

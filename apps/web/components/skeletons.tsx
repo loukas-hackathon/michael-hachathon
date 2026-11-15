@@ -1,5 +1,6 @@
 import { CONNECTOR_STATUS } from "@michael/shared";
 import { Bone, Group, Lines, Pending, RowRule, SectionTitle } from "./skeleton";
+import { Thinking } from "./thinking";
 
 /*
  * Section skeletons, one per real section, built from that section's own box model (margins,
@@ -112,7 +113,7 @@ export function MichaelCardSkeleton({ className = "mt-6" }: { className?: string
 /** "More from Michael" (components/today/fold.tsx): quiet rows of a title and one line. */
 export function FoldRowsSkeleton({ rows = 3, heading = true }: { rows?: number; heading?: boolean }) {
   return (
-    <section aria-hidden="true" className="mt-8">
+    <section aria-hidden="true" className={heading ? "mt-8" : undefined}>
       {heading ? <SectionTitle width="11rem" /> : null}
       <Group>
         {Array.from({ length: rows }, (_, i) => (
@@ -131,11 +132,18 @@ export function FoldRowsSkeleton({ rows = 3, heading = true }: { rows?: number; 
   );
 }
 
-/** Today's Suspense fallback for "More from Michael" while the brief, moment and watch stream in. */
+/**
+ * Today's Suspense fallback for "More from Michael" while the brief, moment and watch stream in:
+ * the real heading with Michael visibly thinking beside it (#378), then the rows' bones.
+ */
 export function MoreFromMichaelSkeleton() {
   return (
-    <Pending label="Loading more from Michael">
-      <FoldRowsSkeleton />
+    <Pending label="Reading your day">
+      <div aria-hidden="true" className="mt-8 mb-2 flex items-baseline justify-between gap-3">
+        <span className="text-title3 font-bold">More from Michael</span>
+        <Thinking />
+      </div>
+      <FoldRowsSkeleton heading={false} />
     </Pending>
   );
 }
@@ -644,6 +652,26 @@ export function SheetBodySkeleton({ rows = 3 }: { rows?: number }) {
     <div aria-hidden="true" className="flex flex-col gap-4">
       <Lines text="subhead" widths={["100%", "62%"]} />
       <RowsSkeleton rows={rows} />
+    </div>
+  );
+}
+
+/* ---------- What I know about you (app/you/knowledge/page.tsx) ---------- */
+
+/** The intro, then "Things you told me" (told-list.tsx) and "What I read": real titles, bones for rows. */
+export function KnowledgeSkeleton() {
+  return (
+    <div aria-hidden="true">
+      <Lines text="subhead" className="mt-1" widths={["100%", "55%"]} />
+      <section className="mt-6">
+        <h2 className="mb-2 text-title3 font-bold">Things you told me</h2>
+        <Lines text="footnote" className="px-4 pb-1.5" widths={["7rem"]} />
+        <RowsSkeleton rows={3} />
+      </section>
+      <section className="mt-8">
+        <h2 className="mb-2 text-title3 font-bold">What I read</h2>
+        <RowsSkeleton rows={2} />
+      </section>
     </div>
   );
 }

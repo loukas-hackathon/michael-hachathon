@@ -27,11 +27,17 @@ export function BookTime({
   goalId,
   minutes,
   primary = false,
+  nextWeek = false,
+  label,
 }: {
   goalId: string;
   minutes: number;
   /** The screen's one filled button; every other Book button is tinted. */
   primary?: boolean;
+  /** Plan next week (#376): the first free slot from next Monday. */
+  nextWeek?: boolean;
+  /** The button's words; default "Book 1h". */
+  label?: string;
 }) {
   const [state, setState] = useState<State>({ at: "idle" });
   const [error, setError] = useState<string | null>(null);
@@ -43,7 +49,7 @@ export function BookTime({
     setError(null);
     setState({ at: "booking" });
     try {
-      const r = await bookGoalAction(goalId, minutes);
+      const r = await bookGoalAction(goalId, minutes, nextWeek);
       if (r.ok) setState({ at: "booked", id: r.id, start: r.start, end: r.end, undoUntil: r.undoUntil });
       else {
         setState({ at: "idle" });
@@ -113,7 +119,7 @@ export function BookTime({
             aria-busy={state.at === "booking"}
             className={primary ? filled : tinted}
           >
-            {state.at === "booking" ? "Booking" : `Book ${hm(minutes)}`}
+            {state.at === "booking" ? "Booking" : (label ?? `Book ${hm(minutes)}`)}
           </button>
         )}
       </div>

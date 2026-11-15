@@ -2,8 +2,9 @@
 
 import type { ChatMessage, ChatThread, Recommendation } from "@michael/shared";
 import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { ConnectChip } from "@/components/chat/connect-chip";
+import { ConnectChip, KnowledgeChip } from "@/components/chat/connect-chip";
 import { connectIntent } from "@/components/chat/connect-intent";
+import { knowledgeIntent } from "@/components/chat/knowledge-intent";
 import { Hint, markHintSeen } from "@/components/hint";
 import { useArrival } from "@/components/motion";
 import { ScreenHeader } from "@/components/screen";
@@ -11,6 +12,7 @@ import { Bone } from "@/components/skeleton";
 import { TALK_HINT, TalkButton, useTalk } from "@/components/voice/conversation-sheet";
 import { PushToTalk } from "@/components/voice/push-to-talk";
 import { speakable } from "@/components/voice/speech";
+import { withoutUndoLine } from "@/lib/chat-undo";
 import { formatTime } from "@/lib/format";
 import { ActionChips } from "./action-chips";
 import {
@@ -244,16 +246,22 @@ export function Chat({
                 // "Connect my calendar": the one tap button under the answer, once it has finished (#307).
                 const asked = m.role === "assistant" && m.id !== streamingId ? lines[i - 1] : undefined;
                 const connect = asked?.role === "user" ? connectIntent(asked.content) : null;
+                const knows = asked?.role === "user" && knowledgeIntent(asked.content);
                 return (
                   <MessageBubble
                     key={m.key ?? m.id}
                     role={m.role}
-                    content={m.content}
+                    content={
+                      acted[m.id]?.some((a) => a.status !== "proposed")
+                        ? withoutUndoLine(m.content)
+                        : m.content
+                    }
                     streaming={m.id === streamingId}
                     arriving={arriving(m.key ?? m.id)}
                   >
                     {acted[m.id] ? <ActionChips actions={acted[m.id] ?? []} /> : null}
                     {connect ? <ConnectChip id={connect} /> : null}
+                    {knows ? <KnowledgeChip /> : null}
                     {m.role === "assistant" && m.created_at ? (
                       <span className="mt-0.5 px-1 text-caption text-label-2 tnum">
                         {formatTime(m.created_at)}

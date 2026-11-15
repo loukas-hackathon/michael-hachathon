@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { startTransition, useId, useRef, useState } from "react";
 import { Sheet } from "@/components/sheet";
+import { TimeField } from "@/components/time-field";
 import { type LogActionResult, logTimeAction, settleBlockAction, undoLogAction } from "@/lib/log-actions";
 
 // Saying "I did x" in one or two taps (#317). The result only the server knows (the week's maths)
@@ -146,20 +147,17 @@ export function LogTimeForm({
           />
         </label>
       </fieldset>
-      <label className="flex items-center justify-between gap-3 text-subhead" htmlFor={`${ids}-at`}>
-        <span className="text-label-2">Started at</span>
-        <input
-          id={`${ids}-at`}
-          type="time"
-          value={at}
-          onChange={(e) => setAt(e.target.value)}
-          aria-describedby={`${ids}-at-hint`}
-          className="min-h-9 rounded-[9px] bg-bg px-2 text-subhead font-semibold tnum"
-        />
-      </label>
-      <p id={`${ids}-at-hint`} className="-mt-2 text-footnote text-label-2">
-        {at ? `From ${at}, ${minutes} min.` : "Leave it empty for just now."}
-      </p>
+      <div className="flex items-center justify-between gap-3 text-subhead">
+        <label className="text-label-2" htmlFor={`${ids}-at`}>
+          Started
+        </label>
+        <TimeField id={`${ids}-at`} label="Started" value={at} onChange={setAt} step={5} emptyLabel="Now" />
+      </div>
+      {at ? (
+        <p className="-mt-2 text-footnote text-label-2">
+          From {at}, {minutes} min.
+        </p>
+      ) : null}
       {result && !result.ok ? (
         <p role="alert" className="text-footnote text-danger">
           {result.error}

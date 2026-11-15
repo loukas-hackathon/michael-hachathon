@@ -34,6 +34,7 @@ export const TOOL_SCOPE: Record<string, AgentScope> = {
   get_score: "score",
   get_records: "score",
   get_moments: "score",
+  get_week_review: "score",
   add_event: "write_events",
   execute_recommendation: "write_events",
   undo_recommendation: "write_events",
@@ -43,6 +44,7 @@ export const TOOL_SCOPE: Record<string, AgentScope> = {
   plan_travel: "write_events",
   get_check_in: "timeline",
   get_memories: "timeline",
+  what_you_know: "timeline",
   remember: "write_events",
   answer_check_in: "timeline",
   // Done time and settled blocks (#317) change the timeline and the score: the same scope as add_event.
@@ -96,6 +98,8 @@ export function summarise(name: string, title: string | undefined, input: unknow
       return `Read your patterns${range}`;
     case "get_check_in":
       return "Read your check in";
+    case "what_you_know":
+      return "Read what I know about you";
     case "answer_check_in":
       return "Kept an answer to your check in";
     case "log_done": {
@@ -124,6 +128,8 @@ export function summarise(name: string, title: string | undefined, input: unknow
       return "Read your follow up drafts";
     case "draft_follow_up":
       return "Drafted a follow up for you to send";
+    case "get_week_review":
+      return "Read your week's review";
     case "get_moments":
       return a.kind === "evening" ? "Read your evening moment" : "Read your morning moment";
     case "add_goal":

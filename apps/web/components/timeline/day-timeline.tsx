@@ -35,6 +35,7 @@ import {
   openSegments,
   type Plan,
   planFor,
+  sideBySide,
   type TimelineDay,
 } from "@/lib/timeline";
 import { BlockEditor, type GoalChip } from "./block-editor";
@@ -44,6 +45,11 @@ const PER_HOUR = 56;
 const QUIET = 32;
 const HOUR = 3_600_000;
 const iso = (ms: number) => new Date(ms).toISOString();
+// Two things at once share the lane (#393): the generated drive on the right, what really happened on
+// the left. The lane runs from 50px to the right lane; each half keeps 2px from the middle.
+const LEFT_HALF = { right: "calc(50% + var(--lane-r) / 2 - 23px)" };
+const RIGHT_HALF = { left: "calc(50% + 27px - var(--lane-r) / 2)" };
+const PLAN_TITLE_LEFT = { right: "calc(50% + var(--lane-r) / 2 - 21px)" };
 const span = (from: number, to: number) => `${formatTime(iso(from))} to ${formatTime(iso(to))}`;
 const MIN = 60_000;
 /** Moves and resizes snap to a quarter hour; a tap on a free slot to the half hour. */
@@ -541,12 +547,42 @@ export function DayTimeline({
     editable && sheetPlan && (picked?.kind === "new" || (pickedPlan?.editable && pickedPlan.id)),
   );
 
+  // Drives step aside for real activity (#393): both halves of the lane, never one over the other.
+  const drawn = (key: string, start: number, end: number, min: number) => {
+    const top = y(start);
+    return { key, top, bottom: top + Math.max(min, y(end) - top) };
+  };
+  const planTitleShown = (p: Plan) => {
+    const top = y(p.start);
+    const covered = [...day.blocks, ...workouts, ...naps].some(
+      (b) => y(b.start) < top + 18 && y(b.end) > top + 2,
+    );
+    return !covered && y(p.end) - top >= 17;
+  };
+  const aside = sideBySide(
+    (day.drives ?? []).map((d) => drawn(`d${d.start}`, d.start, d.end, 4)),
+    [
+      ...day.blocks.filter((b) => b.end > b.start).map((b) => drawn(`b${b.start}`, b.start, b.end, 3)),
+      ...(day.logged ?? []).map((l) => drawn(`log${l.start}`, l.start, l.end, 3)),
+      ...workouts.map((w) =>
+        drawn(`w${w.start}`, Math.max(w.start, day.dayStart), Math.min(w.end, day.dayEnd), 3),
+      ),
+      ...naps.map((n) => drawn(`n${n.start}`, n.start, Math.min(n.end, day.dayEnd), 18)),
+      ...plans
+        .filter(planTitleShown)
+        .map((p) => ({ key: `pt${p.start}${p.title}`, top: y(p.start) + 4, bottom: y(p.start) + 20 })),
+    ],
+  );
+  const half = (key: string) => (aside.has(key) ? (key.startsWith("d") ? RIGHT_HALF : LEFT_HALF) : undefined);
+
   // Loss labels never collide: each keeps clear of its block's title lines and of the label above.
   const lossLabels: { key: string; top: number; text: string }[] = [];
   let lastLabel = Number.NEGATIVE_INFINITY;
   for (const b of day.blocks) {
     const top = y(b.start);
     const titleUntil = y(b.end) - top >= 36 ? top + 38 : y(b.end) - top >= 17 ? top + 20 : top;
+    // A block sharing its time with a drive is half width: its loss labels would sit on the drive.
+    if (aside.has(`b${b.start}`)) continue;
     for (const l of b.lostStretches ?? []) {
       const ly = y(l.start) + (y(l.end) - y(l.start)) / 2 - 7;
       if (ly < titleUntil || ly - lastLabel < 16) continue;
@@ -732,7 +768,7 @@ export function DayTimeline({
                 aria-label={`${title}, ${span(b.start, b.end)}`}
                 data-live-key={`b${b.kind}${b.start}-${b.end}`}
                 className={`absolute right-(--lane-r) left-[50px] overflow-hidden rounded-block text-left ${fill}`}
-                style={{ top, height: h }}
+                style={{ top, height: h, ...half(`b${b.start}`) }}
               >
                 {b.cuts.length > 0 ? (
                   <span className="absolute top-0 right-3 bottom-0 w-[0.5px] bg-[rgb(0_0_0/0.2)]" />
@@ -798,7 +834,7 @@ export function DayTimeline({
               key={`log${l.start}`}
               data-live-key={`log${l.start}-${l.end}`}
               className="pointer-events-none absolute right-(--lane-r) left-[50px] overflow-hidden rounded-block bg-spark"
-              style={{ top, height: h }}
+              style={{ top, height: h, ...half(`log${l.start}`) }}
               title={`${l.title}, logged, ${span(l.start, l.end)}`}
             >
               {h >= 17 ? (
@@ -825,7 +861,7 @@ export function DayTimeline({
               aria-hidden="true"
               data-live-key={`w${w.start}-${w.end}`}
               className="pointer-events-none absolute right-(--lane-r) left-[50px] overflow-hidden rounded-block bg-spark"
-              style={{ top, height: h }}
+              style={{ top, height: h, ...half(`w${w.start}`) }}
               title={`${w.name}, ${formatTime(iso(w.start))} to ${formatTime(iso(w.end))}`}
             >
               {h >= 17 ? (
@@ -853,7 +889,7 @@ export function DayTimeline({
               onClick={() => setPicked({ kind: "nap", nap: n })}
               aria-label={`Nap, ${minutesPhrase(n.minutes)}, ${span(n.start, n.end)}`}
               className="dots absolute right-(--lane-r) left-[50px] overflow-hidden rounded-block bg-fill text-left"
-              style={{ top, height: h }}
+              style={{ top, height: h, ...half(`n${n.start}`) }}
             >
               <span className="absolute top-1/2 right-5 left-1 flex -translate-y-1/2 text-[12px] leading-4 font-medium text-label-2">
                 <span className="max-w-full truncate rounded-[4px] bg-fill px-1">Nap · {hm(n.minutes)}</span>
@@ -866,15 +902,12 @@ export function DayTimeline({
         {plans.map((p) => {
           const top = y(p.start);
           const h = y(p.end) - top;
-          const covered = [...day.blocks, ...workouts, ...naps].some(
-            (b) => y(b.start) < top + 18 && y(b.end) > top + 2,
-          );
           return (
             <div key={`calt${p.start}${p.title}`} aria-hidden="true" className="pointer-events-none">
-              {!covered && h >= 17 ? (
+              {planTitleShown(p) ? (
                 <p
                   className="absolute right-[calc(var(--lane-r)+60px)] left-[58px] truncate text-footnote leading-4 font-semibold text-label-2"
-                  style={{ top: top + 4 }}
+                  style={{ top: top + 4, ...(aside.has(`pt${p.start}${p.title}`) ? PLAN_TITLE_LEFT : null) }}
                 >
                   {p.title}
                 </p>
@@ -901,7 +934,7 @@ export function DayTimeline({
               key={`d${d.start}`}
               aria-hidden="true"
               className="absolute right-(--lane-r) left-[50px] overflow-hidden rounded-block bg-fill"
-              style={{ top, height: h }}
+              style={{ top, height: h, ...half(`d${d.start}`) }}
               title={`Drive to ${d.to}, ${d.minutes} minutes, ${d.trafficMinutes} in traffic`}
             >
               {trafficH > 0 ? (

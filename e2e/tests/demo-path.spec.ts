@@ -150,7 +150,9 @@ test("Agents shows Connect Claude with the MCP link", async ({ page }) => {
   await page.goto("/agents");
   await expect(page.getByRole("heading", { level: 1, name: "Agents" })).toBeVisible();
   await expect(page.getByText("Connect Claude")).toBeVisible();
-  await expect(page.getByText(`${API_URL}/mcp`)).toBeVisible();
+  // No URLs in the user's path (#385): a short name and Copy link, never the address itself.
+  await expect(page.getByText("Your Michael link")).toBeVisible();
+  await expect(page.getByText(`${API_URL}/mcp`)).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Copy" })).toBeVisible();
 });
 

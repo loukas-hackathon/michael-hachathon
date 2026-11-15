@@ -66,6 +66,10 @@ Sources: Nielsen's 0.1 / 1 / 10 second limits; Doherty threshold (about 400ms) f
     Links stay prefetched; `prefetch={false}` only for routes that redirect off site.
 12. **Long work tells its steps.** Anything that may pass 2s (the brief, chat answers, Google sync)
     shows what it is doing in plain words and streams partial results when it can (chat already does).
+13. **No screen waits for the model.** Render the computed numbers and template line at once; a
+    line the model writes arrives after and fades in where the old one was (`.m-swap`, room kept,
+    CLS 0). While it is on its way, `<Thinking />` (`components/thinking.tsx`: the Mi mark breathing
+    plus "Reading your day") stands in its place. Never a spinner, never a blank (#378).
 
 ## Copy for states
 

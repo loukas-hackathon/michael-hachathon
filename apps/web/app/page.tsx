@@ -15,7 +15,7 @@ import { BriefCard } from "@/components/today/brief-card";
 import { CalendarCard } from "@/components/today/calendar-card";
 import { TodayChecklist } from "@/components/today/checklist";
 import { DemoWeekLine } from "@/components/today/demo-week-line";
-import { Fold, MoreFromMichael } from "@/components/today/fold";
+import { Fold, FoldLink, MoreFromMichael } from "@/components/today/fold";
 import { GetStarted } from "@/components/today/get-started";
 import { KeepWeekStrip, keepLine, streakLine } from "@/components/today/keep-week";
 import { LastWeekLine } from "@/components/today/last-week-line";
@@ -27,6 +27,7 @@ import { RitualCard } from "@/components/today/ritual-card";
 import { TodayEmpty } from "@/components/today/today-empty";
 import { TravelCard } from "@/components/today/travel-card";
 import { WatchLine } from "@/components/today/watch-line";
+import { WeekCard } from "@/components/today/week-card";
 import { WeekGlance } from "@/components/today/week-glance";
 import {
   getChecklist,
@@ -46,6 +47,7 @@ import type { LostWeek } from "@/lib/lost-week";
 import { momentKindFor } from "@/lib/moments";
 import { ritualPreview, ritualShows } from "@/lib/ritual";
 import { preloadTodaySections } from "@/lib/today-preload";
+import { isSundayIn } from "@/lib/week";
 
 /** What VoiceOver reads for the tape: "3 hours 33 minutes spent, 47 minutes lost, 50 minutes still ahead". */
 function tapeLabel(t: ReturnType<typeof totals>) {
@@ -103,6 +105,8 @@ export default async function TodayPage({
   const t = totals(day);
   const firstBlock = day.blocks[0];
   const momentKind = momentKindFor(day);
+  // Sunday evening is the review's own moment (#376); a sample day has no review to open.
+  const sundayEvening = !day.sample && day.moment === "evening" && isSundayIn(day.now);
   // Too little to count yet (#206): no week figure, the day's number in grey, what Michael needs.
   const learning = day.explain?.learning ?? false;
   const { primary } = await suggestions;
@@ -344,10 +348,26 @@ export default async function TodayPage({
           <div className={COLUMN}>
             {ritualCard ? <div className="max-xl:order-6 xl:[&>*]:mt-3">{ritualCard}</div> : null}
 
+            {/* Your week (#376): Sunday evening leads with the review; other days it is a row below. */}
+            {sundayEvening ? (
+              <div className="max-xl:order-6 xl:[&>*]:mt-3">
+                <Suspense fallback={null}>
+                  <WeekCard />
+                </Suspense>
+              </div>
+            ) : null}
+
             <div className="max-xl:order-11 xl:[&:first-child>*]:mt-3">
               <Suspense fallback={<MoreFromMichaelSkeleton />}>
                 <MoreFromMichael wideOpen>
                   {momentKind ? <MomentCard kind={momentKind} sample={day.sample} /> : null}
+                  {day.sample || sundayEvening ? null : (
+                    <FoldLink
+                      title="Your week"
+                      href="/week"
+                      preview="The week so far with the maths, and next week's first move."
+                    />
+                  )}
                   <WatchLine demo={demo} />
                   {day.sample && day.travelPlan ? <TravelCard plan={day.travelPlan} /> : null}
                   <BriefCard sample={day.sample} />

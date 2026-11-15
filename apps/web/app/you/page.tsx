@@ -89,6 +89,18 @@ export default async function YouPage({
         <div className="overflow-hidden rounded-group bg-fill">
           <OffTheRecordSwitch />
         </div>
+        <Link
+          href="/you/knowledge"
+          className="press mt-4 flex min-h-14 items-center justify-between gap-3 rounded-group bg-fill px-4 py-2"
+        >
+          <span className="flex flex-col">
+            <span className="text-body">What I know about you</span>
+            <span className="text-footnote text-label-2">In plain words. Forget any of it</span>
+          </span>
+          <span aria-hidden="true" className="text-label-2">
+            ›
+          </span>
+        </Link>
         <DeleteDataRow />
       </section>
 
