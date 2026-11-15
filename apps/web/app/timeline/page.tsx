@@ -94,7 +94,14 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
                 ) : (
                   "Nothing planned yet."
                 )}
-                {screen.editable ? " Tap a free time to add a block." : null}
+                {screen.editable ? (
+                  <>
+                    {" "}
+                    {/* Laptop: a pointer clicks and drags (#285). */}
+                    <span className="lg:hidden">Tap a free time to add a block.</span>
+                    <span className="hidden lg:inline">Click a free time to add a block.</span>
+                  </>
+                ) : null}
               </>
             ) : day.blocks.length === 0 && day.phone.length === 0 ? (
               <>
@@ -134,7 +141,10 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
           {/* Editing is a Calendar gesture nobody can see: said once, gone once used. */}
           {screen.editable && date >= today && !(date > today && day.blocks.length === 0) ? (
             <Hint id={TIMELINE_HINT} className="mt-2 mb-2">
-              Tap a free time to add a block. Hold a block to move it.
+              <span className="lg:hidden">Tap a free time to add a block. Hold a block to move it.</span>
+              <span className="hidden lg:inline">
+                Click a free time to add a block. Drag a block to move it.
+              </span>
             </Hint>
           ) : null}
           <DayTimeline

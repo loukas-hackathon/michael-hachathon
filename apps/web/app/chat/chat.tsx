@@ -192,7 +192,8 @@ export function Chat({
     // the conversations pane on the left (space kept from the first paint, filled once the width is
     // known) and the conversation beside it.
     <div className="contents xl:grid xl:flex-1 xl:grid-cols-[18rem_minmax(0,1fr)] xl:gap-8">
-      <aside className="hidden xl:sticky xl:top-0 xl:block xl:max-h-dvh xl:self-start xl:overflow-y-auto xl:pt-[3.75rem] xl:pb-8">
+      {/* 67px puts the Conversations heading on the Chat title's baseline. */}
+      <aside className="hidden xl:sticky xl:top-0 xl:block xl:max-h-dvh xl:self-start xl:overflow-y-auto xl:pt-[67px] xl:pb-8">
         {wide ? <ThreadPane {...list} /> : null}
       </aside>
       <div className="contents xl:flex xl:min-w-0 xl:flex-col">
@@ -345,7 +346,9 @@ export function Chat({
             ) : (
               // First visit only: the two voice buttons do different things, said once.
               <Hint id={TALK_HINT} className="mb-1 px-1">
-                Tap Talk to speak with me. Hold the mic to dictate a message.
+                <span className="lg:hidden">Tap Talk to speak with me.</span>
+                <span className="hidden lg:inline">Click Talk to speak with me.</span> Hold the mic to dictate
+                a message.
               </Hint>
             )}
             {/* At 200% text the field keeps a usable width and the buttons wrap under it. */}
