@@ -23,6 +23,14 @@ the stage and Claude will each see a different day.
       touches anything that is not a demo row):
       `curl -s -X POST -H "Authorization: Bearer $MICHAEL_API_KEY" $API/v1/demo/reseed`
       Expect `days` ending today and `goals_written` above 0.
+- [ ] **No sample text on the stage** (#330). The reseed removes the sample brief ("Written by
+      gemini (mock)"), the sample suggestions ("Add a protein snack before the gym") and the
+      weight goal, and rewrites the follow up drafts:
+      `curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $MICHAEL_API_KEY" $API/v1/analysis/latest`
+      prints `404` (or `200` once someone has asked for a real brief on Today), and
+      `curl -s -H "Authorization: Bearer $MICHAEL_API_KEY" $API/v1/recommendations | grep -c -i "protein\|recovery is"`
+      prints `0`. On Today, "Michael's brief" reads "I read your day and tell you what matters now."
+      and Follow ups shows no line about seeding a demo week.
 - [ ] **Book works on a Sunday.** The plan's only standing instruction is "Nothing between 23:00
       and 07:00" (it follows the sleep goal). "Keep Sundays clear" made Book and Do it refuse all
       Sunday with "No free 90 minutes left this week"; it must not be back:

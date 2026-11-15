@@ -1,12 +1,12 @@
+import type { AppCategory, Event } from "@michael/shared";
+// The zod free entry: day-timeline.tsx renders this on the client.
 import {
-  type AppCategory,
   bundleIdForAppName,
   type CategoryRole,
   categoriseEvent,
   categoryRole,
-  type Event,
   isBrowser,
-} from "@michael/shared";
+} from "@michael/shared/categories";
 import { type DayHealth, healthOf } from "./health";
 import { driveFromEvent } from "./travel";
 
@@ -42,7 +42,20 @@ export type Mark = { start: number; end: number; title: string };
  * A calendar block on the day: drawn as a dashed outline under what actually happened. `michael` is
  * set for blocks Michael booked (from a recommendation, his chat or Claude through the connector).
  */
-export type Plan = { start: number; end: number; title: string; michael: boolean; withOthers: boolean };
+export type Plan = {
+  start: number;
+  end: number;
+  title: string;
+  michael: boolean;
+  withOthers: boolean;
+  /** The calendar event id (live days). */
+  id?: string;
+  /**
+   * The goal block this plan is in the score (#317), when it is one: its goal, the minutes no data
+   * proves yet, and the user's word on it. A past one with unconfirmed minutes offers Did it / Didn't.
+   */
+  goal?: { title: string; unverified: number; settled: "did" | "didnt" | null };
+};
 
 export type Segment =
   | { kind: "hours"; from: number; to: number }
@@ -70,6 +83,8 @@ export type TimelineDay = {
   plans?: Plan[];
   phone: Mark[];
   ai: Mark[];
+  /** Done time the user logged (#317), drawn as goal time. */
+  logged?: Mark[];
   segments: Segment[];
   /** The Apple Watch: last night, tonight, naps, workouts and heart rate per hour (lib/health.ts). */
   health?: DayHealth;
@@ -134,6 +149,7 @@ export function plansOf(events: Event[], dayStart: number, dayEnd: number): Plan
         start: Math.max(t(e.start_at), dayStart),
         end: Math.min(t(e.end_at as string), dayEnd),
         title: e.title,
+        id: e.id,
         michael: isMichaelBlock(e),
         withOthers: e.data.with_others === true || attendees >= 2,
       };
@@ -260,6 +276,8 @@ export function buildTimeline(
       .sort((a, b) => a.start - b.start);
   const phone = marks((e) => e.source === "iphone_usage" && e.type === "app_usage");
   const ai = marks((e) => e.type === "ai_session");
+  // Done time the user logged (#317): goal time, drawn pink like a workout.
+  const logged = marks((e) => e.source === "manual" && e.type === "focus_session" && e.data.log === "done");
   const plans = plansOf(events, dayStart, dayEnd);
   const health = healthOf(events, dayStart, dayEnd);
 
@@ -287,6 +305,7 @@ export function buildTimeline(
     ...health.workouts.map((w) => [Math.max(w.start, dayStart), Math.min(w.end, dayEnd)] as const),
     ...health.naps.map((n) => [n.start, Math.min(n.end, dayEnd)] as const),
     ...phone.map((p) => [p.start, p.end] as const),
+    ...logged.map((l) => [l.start, l.end] as const),
     ...plans.map((p) => [p.start, p.end] as const),
     ...drives.map((d) => [d.start, d.end] as const),
   ];
@@ -339,6 +358,7 @@ export function buildTimeline(
     plans,
     phone,
     ai,
+    logged,
     segments,
     health,
     totals: { workMinutes, lostMinutes, phoneSessions: phone.length, phoneMinutes },

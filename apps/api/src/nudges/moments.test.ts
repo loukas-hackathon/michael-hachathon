@@ -16,7 +16,7 @@ const WORK = {
 };
 const goals: Goal[] = [WORK];
 
-const LINE = { text: "Today holds 2h 00 of goal time.", reason: "Today holds 120 minutes of goal time." };
+const LINE = { text: "Today holds 2h of goal time.", reason: "Today holds 120 minutes of goal time." };
 
 const input = (
   now: string,
@@ -130,7 +130,7 @@ test("the moment's nudge line is under 15 words with no dashes", () => {
     assert.ok(n.reason.length > 0);
   }
   const morning = momentNudge(computeMoment({ kind: "morning", events, goals, now: at("07:30") }));
-  assert.equal(morning.text, "Today holds 2h 00 of goal time.");
+  assert.equal(morning.text, "Today holds 2h of goal time.");
   const empty = momentNudge(computeMoment({ kind: "evening", events: [], goals: [], now: at("21:00") }));
   assert.equal(empty.text, "No goal time booked today. Book tomorrow before you sleep.");
 });

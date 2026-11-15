@@ -90,7 +90,8 @@ test("the template speaks to the other people and keeps the user's commitments",
   const d = templateDraft(asEvent(customerCall(NOW - 26 * HOUR)), NOW);
   assert.equal(d.channel, "email");
   assert.equal(d.subject, "Following up: Customer call");
-  assert.match(d.body, /^Hi,\n\nThanks for your time yesterday\./);
+  // A greeting that stands without a name, then thanks, then the commitments turned to "you".
+  assert.match(d.body, /^Hello,\n\nThanks for your time yesterday\.\n\nNext from me:\n/);
   assert.match(d.body, /1\. Write up the onboarding steps you skipped\n2\. Follow up with pricing by Monday/);
   assert.doesNotMatch(d.body, /[–—]| - /);
 
@@ -98,6 +99,58 @@ test("the template speaks to the other people and keeps the user's commitments",
   assert.equal(sync.channel, "chat");
   assert.equal(sync.subject, null);
   assert.equal(sync.body, "Thanks for the weekly sync today. Shout if I missed anything.");
+});
+
+test('an email never speaks about its readers: no summary in the third person, every line to "you"', () => {
+  // The demo week's customer call (demo/week.ts). The summary is Omi's, written about the customer.
+  const call = asEvent({
+    ...customerCall(NOW - 50 * HOUR),
+    data: {
+      summary:
+        "The pilot team likes the weekly view but finds setup too long. They would pay for a one tap calendar connect.",
+      action_items: [
+        "Send them the pricing for 20 seats by Tuesday",
+        "Set up the one tap calendar connect for their team",
+      ],
+    },
+  });
+  const d = templateDraft(call, NOW);
+  assert.equal(d.channel, "email");
+  assert.equal(
+    d.body,
+    [
+      "Hello,",
+      "Thanks for your time on Thursday.",
+      "Next from me:\n1. Send you the pricing for 20 seats by Tuesday\n2. Set up the one tap calendar connect for your team",
+      "Best,",
+    ].join("\n\n"),
+  );
+  assert.doesNotMatch(d.body, /\b(they|them|their|the pilot team)\b/i);
+  assert.doesNotMatch(d.body, /[–—!]| - /);
+
+  // With nothing promised, the email still reads to its reader.
+  const bare = templateDraft(asEvent({ ...call, data: { summary: call.data?.summary } }), NOW);
+  assert.equal(
+    bare.body,
+    "Hello,\n\nThanks for your time on Thursday.\n\nTell me if anything is still open on your side.\n\nBest,",
+  );
+
+  // A note to the user's own team may quote what was agreed.
+  const team = templateDraft(
+    asEvent({
+      ...customerCall(NOW - 26 * HOUR),
+      title: "Hackathon planning: scope for the demo",
+      data: {
+        summary: "One timeline from every source, the Claude connector as the headline moment.",
+        action_items: ["Send them the pitch outline tonight", "Book the rehearsal for Sunday 18:00"],
+      },
+    }),
+    NOW,
+  );
+  assert.equal(
+    team.body,
+    "Thanks for the hackathon planning yesterday. Quick recap from my side: one timeline from every source, the Claude connector as the headline moment. Next from me: I will send you the pitch outline tonight and book the rehearsal for Sunday 18:00.",
+  );
 });
 
 test("Claude drafts from the summary only, the copy is tidied, and an event is drafted once", () =>
@@ -265,5 +318,45 @@ test("the demo week shows its two latest conversations as drafts, once", async (
       ["template", "template"],
     );
     assert.ok(drafts.some((d) => d.title === "Hackathon planning: scope"));
+  });
+});
+
+test("a reseed that replaces a conversation rewrites its waiting draft; sent and dismissed drafts stay", async () => {
+  const db = new MemoryStore();
+  await runAsUser(randomUUID(), async () => {
+    // A new account starts with the sample day: clear it, so only these conversations are drafted.
+    const all = { from: "2026-01-01T00:00:00Z", to: "2027-01-01T00:00:00Z" };
+    await db.deleteEvents((await db.listEvents(all)).map((e) => e.id));
+    const old = { ...customerCall(NOW - 4 * HOUR), title: "Hackathon planning: scope" };
+    old.data = { ...old.data, action_items: ["Seed a realistic demo week"] };
+    const { inserted } = await db.insertEvents([old, customerCall(NOW - 50 * HOUR)]);
+    const [oldPlanning, call] = inserted;
+    assert.equal(await seedDemoDrafts(db, NOW, 7), 2);
+    const before = await db.listDrafts();
+    assert.ok(before.some((d) => /seed a realistic demo week/.test(d.body)));
+    // The presenter sent the customer email: that draft is history and is never touched.
+    const sent = before.find((d) => d.event_id === call?.id) as Draft;
+    await db.updateDraftStatus(sent.id, "done");
+
+    // The reseed: the conversation's words changed, so its row is replaced (a new id).
+    await db.deleteEvents([oldPlanning?.id as string, call?.id as string]);
+    await db.insertEvents([
+      {
+        ...old,
+        data: { ...old.data, action_items: ["Send them the pitch outline tonight"] },
+        external_id: "omi:new",
+      },
+    ]);
+    assert.equal(await seedDemoDrafts(db, NOW, 7), 1);
+    const after = await db.listDrafts();
+    assert.ok(!after.some((d) => /seed a realistic demo week/.test(d.body)), "the old words are gone");
+    assert.ok(
+      after.some((d) => d.status === "proposed" && /send you the pitch outline tonight/.test(d.body)),
+    );
+    assert.ok(
+      after.some((d) => d.id === sent.id && d.status === "done"),
+      "the sent draft stays",
+    );
+    assert.equal(await seedDemoDrafts(db, NOW, 7), 0);
   });
 });

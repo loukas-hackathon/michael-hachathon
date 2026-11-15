@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import Link from "next/link";
 import { IPhoneShortcutSetup } from "@/components/setup/iphone-shortcut-setup";
 import { ConnectionPage, SetupSection } from "@/components/you/connection-page";
@@ -5,49 +6,77 @@ import { KeySetup } from "@/components/you/key-setup";
 import { SourcePrivacy } from "@/components/you/source-privacy";
 import { CONNECTION_ROUTES, connection } from "@/lib/connections";
 import { getConnection } from "@/lib/connections-status";
+import { isIPhone } from "@/lib/one-tap";
 
 export const metadata = { title: "iPhone · Michael" };
 
+// Two ways in. Live, from the iPhone alone: the Michael shortcut tells me when an app opens.
+// Screen Time history needs a Mac (Apple keeps it on the devices; the Mac collector reads the
+// synced copy, a day behind). Without a Mac, or on the iPhone itself, the iPhone path leads and the
+// Mac is a footnote; with a Mac, opened from the Mac, Screen Time leads.
 export default async function IPhonePage({ searchParams }: { searchParams: Promise<{ from?: string }> }) {
-  const { from } = await searchParams;
-  const { row } = await getConnection("iphone");
+  const [{ row, view }, { from }, h] = await Promise.all([getConnection("iphone"), searchParams, headers()]);
   const c = connection("iphone");
+  const mac = view.rows.find((r) => r.id === "mac");
+  const hasMac = mac?.state === "on" || mac?.state === "paused";
+  const leadIPhone = !hasMac || isIPhone(h.get("user-agent") ?? "");
+
+  const live = (
+    <SetupSection
+      key="live"
+      title={leadIPhone ? "Live, from your iPhone" : "Live, with Shortcuts"}
+      note={leadIPhone ? undefined : "Optional. Adds the apps you open as it happens."}
+    >
+      {leadIPhone ? (
+        <p className="mb-3 px-4 text-subhead text-label-2">
+          I see which apps you open and for how long, as it happens. No Mac needed.
+        </p>
+      ) : null}
+      <IPhoneShortcutSetup
+        shortcutUrl={process.env.MICHAEL_SHORTCUT_URL || null}
+        fallback={
+          <KeySetup
+            keyName="iPhone Shortcuts"
+            copyAs={{ kind: "webhook", path: "ios-shortcuts" }}
+            steps={[
+              "In Shortcuts, tap Automation, then +, then App. Pick the apps, tick Is Opened and Run Immediately.",
+              "Add Get Contents of URL and paste your link. Set Method to POST and add one field: app, with Shortcut Input.",
+            ]}
+          />
+        }
+      />
+    </SetupSection>
+  );
+
+  const screenTime = (
+    <SetupSection key="mac" title={leadIPhone ? "Have a Mac too?" : "Screen Time, from your Mac"}>
+      <div className="rounded-group bg-fill px-4 py-4 text-subhead">
+        {hasMac ? (
+          <p>
+            Your Mac is connected. Turn on Share Across Devices in Screen Time on your iPhone and your Mac,
+            and it sends every iPhone app's time too, a day behind.
+          </p>
+        ) : (
+          <>
+            <p>It adds every app's time from Screen Time, a day behind.</p>
+            <ol className="mt-2 list-decimal space-y-2 pl-5 text-label-2">
+              <li>Turn on Share Across Devices in Screen Time, on your iPhone and your Mac.</li>
+              <li>
+                <Link href={CONNECTION_ROUTES.mac} className="font-semibold text-tint-text">
+                  Connect your Mac
+                </Link>
+                .
+              </li>
+            </ol>
+          </>
+        )}
+      </div>
+    </SetupSection>
+  );
+
   return (
     <ConnectionPage row={row} from={from}>
-      <SetupSection title="Screen Time, every day">
-        <div className="rounded-group bg-fill px-4 py-4">
-          <ol className="list-decimal space-y-2 pl-5 text-subhead">
-            <li>On your iPhone, open Settings, Screen Time and turn on Share Across Devices.</li>
-            <li>Do the same on your Mac, in System Settings, Screen Time.</li>
-            <li>
-              Connect your{" "}
-              <Link href={CONNECTION_ROUTES.mac} className="font-semibold text-tint-text">
-                Mac
-              </Link>
-              . It sends your iPhone apps too, about a day behind.
-            </li>
-          </ol>
-        </div>
-      </SetupSection>
-      <SetupSection
-        title="Live, with Shortcuts"
-        note="Optional. One automation per app you want me to watch, such as Instagram or YouTube."
-      >
-        <IPhoneShortcutSetup
-          shortcutUrl={process.env.MICHAEL_SHORTCUT_URL || null}
-          fallback={
-            <KeySetup
-              keyName="iPhone Shortcuts"
-              copyAs={{ kind: "webhook", path: "ios-shortcuts" }}
-              steps={[
-                "In Shortcuts, tap Automation, +, App. Choose the apps, tick Is Opened, Run Immediately.",
-                "Add Get Contents of URL, paste it as the URL. Method POST, Request Body JSON.",
-                "Add two fields: app with Shortcut Input, and action with open. Repeat with Is Closed and close.",
-              ]}
-            />
-          }
-        />
-      </SetupSection>
+      {leadIPhone ? [live, screenTime] : [screenTime, live]}
       <SourcePrivacy sources={c.sources} />
     </ConnectionPage>
   );

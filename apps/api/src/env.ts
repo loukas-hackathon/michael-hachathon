@@ -75,6 +75,9 @@ const Env = z.object({
   // the free plan). Default "George", which every plan can use.
   ELEVENLABS_FALLBACK_VOICE_ID: z.string().default("JBFqnCBsd6RMkjVDRZzb"),
   ELEVENLABS_MODEL: z.string().default("eleven_flash_v2_5"),
+  // Speech to text for POST /v1/voice/transcribe (ElevenLabs Scribe, same key; it needs the
+  // Speech to Text permission). Without a key the app uses the browser's recogniser.
+  ELEVENLABS_STT_MODEL: z.string().default("scribe_v2"),
 });
 
 export type Env = z.infer<typeof Env>;

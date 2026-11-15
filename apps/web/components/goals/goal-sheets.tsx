@@ -468,7 +468,7 @@ export function EditGoal({
                 }
               });
             }}
-            className="press relative flex min-h-11 w-full items-center px-4 text-body text-danger before:absolute before:inset-x-0 before:top-0 before:ml-4 before:h-[0.5px] before:bg-separator before:content-['']"
+            className="press relative flex min-h-11 w-full items-center px-4 text-body font-semibold text-danger before:absolute before:inset-x-0 before:top-0 before:ml-4 before:h-[0.5px] before:bg-separator before:content-['']"
           >
             {pending && doing === "delete"
               ? "Deleting"

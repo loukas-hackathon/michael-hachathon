@@ -991,6 +991,30 @@ export class SupabaseStore implements Store {
     );
   }
 
+  async removeSampleAnalysis(modelMarker: string, recommendationIds: string[]) {
+    const userId = currentUserId();
+    const recommendations = recommendationIds.length
+      ? check(
+          await this.db
+            .from("recommendations")
+            .delete()
+            .eq("user_id", userId)
+            .in("id", recommendationIds)
+            .select("id"),
+        )
+      : [];
+    // recommendations.analysis_run_id is "on delete set null": what is not listed above stays.
+    const runs = check(
+      await this.db
+        .from("analysis_runs")
+        .delete()
+        .eq("user_id", userId)
+        .like("model", `%${modelMarker}%`)
+        .select("id"),
+    );
+    return { runs: (runs ?? []).length, recommendations: (recommendations ?? []).length };
+  }
+
   async latestAnalysisRun() {
     const row = check(
       await this.db
@@ -1246,6 +1270,14 @@ export class SupabaseStore implements Store {
     // 23505: that event already has a draft (drafts_user_event_idx).
     if (res.error?.code === "23505") return null;
     return toDraft(check(res));
+  }
+
+  async deleteDrafts(ids: string[]) {
+    if (!ids.length) return 0;
+    const rows = check(
+      await this.db.from("drafts").delete().eq("user_id", currentUserId()).in("id", ids).select("id"),
+    );
+    return (rows ?? []).length;
   }
 
   async updateDraftStatus(id: string, status: DraftStatus) {
@@ -1617,6 +1649,19 @@ export class SupabaseStore implements Store {
         .single(),
     );
     return toDayRitual(saved);
+  }
+
+  async clearRituals(f: { from: string; to: string }) {
+    const rows = check(
+      await this.db
+        .from("day_rituals")
+        .delete()
+        .eq("user_id", currentUserId())
+        .gte("day", f.from)
+        .lte("day", f.to)
+        .select("day"),
+    );
+    return (rows ?? []).length;
   }
 
   async listTargets(from: string, to: string) {

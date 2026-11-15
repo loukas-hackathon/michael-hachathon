@@ -17,6 +17,8 @@ import {
   type GoalSuggestion,
   type GoalSuggestionAccept,
   type GoalUpdate,
+  type LogTimeInput,
+  type LogTimeResponse,
   mockEvents,
   mockGoals,
   mockRecommendations,
@@ -37,6 +39,7 @@ import {
   type RitualMorningInput,
   type RitualToday,
   type Score,
+  type SettleBlockInput,
   Source,
   type SourceSetting,
   type TargetResponse,
@@ -185,6 +188,33 @@ export async function getVoiceEnabled(): Promise<boolean> {
     return (await get<{ elevenlabs: boolean }>("/v1/voice")).elevenlabs;
   } catch {
     return false;
+  }
+}
+
+/** Whether the API can turn a recording into text (POST /v1/voice/transcribe). False when unsure. */
+export async function getTranscribeEnabled(): Promise<boolean> {
+  try {
+    return (await get<{ transcribe?: boolean }>("/v1/voice")).transcribe === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A recording passed straight through to POST /v1/voice/transcribe. The API's answer (text, or its
+ * error) comes back as it is; the audio is never kept here. Null when the API cannot be reached.
+ */
+export async function transcribe(audio: ArrayBuffer, type: string): Promise<Response | null> {
+  try {
+    return await fetch(`${API_URL}/v1/voice/transcribe`, {
+      method: "POST",
+      headers: { ...(await authHeaders()), "content-type": type },
+      body: audio,
+      cache: "no-store",
+    });
+  } catch (err) {
+    console.error("voice: transcribe:", err instanceof Error ? err.message : "unknown");
+    return null;
   }
 }
 
@@ -392,6 +422,35 @@ async function recCall(method: "POST" | "PATCH", path: string, body?: unknown): 
     message: err.success ? err.data.error.message : `${method} ${path}`,
   };
 }
+
+export type LogResult = { ok: true; log: LogTimeResponse } | { ok: false; message: string };
+
+async function logCall(path: string, body: unknown): Promise<LogResult> {
+  if (USE_MOCKS) return { ok: false, message: "Logging time needs the live API." };
+  try {
+    const res = await fetch(`${API_URL}${path}`, {
+      method: "POST",
+      headers: { ...(await authHeaders()), "content-type": "application/json" },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
+    const json: unknown = await res.json().catch(() => null);
+    if (res.ok) return { ok: true, log: json as LogTimeResponse };
+    const err = ApiError.safeParse(json);
+    return {
+      ok: false,
+      message: err.success ? err.data.error.message : `I could not log it (${res.status}).`,
+    };
+  } catch {
+    return { ok: false, message: "I could not reach the server. Nothing was logged." };
+  }
+}
+
+/** POST /v1/log (#317): done time the user reports, counted as confirmed goal time. */
+export const postLog = (input: LogTimeInput) => logCall("/v1/log", input);
+
+/** POST /v1/log/block (#317): Did it or Didn't on a past goal block. */
+export const postBlockSettle = (input: SettleBlockInput) => logCall("/v1/log/block", input);
 
 /** POST /v1/recommendations/:id/execute: Michael carries out the action on the user's own time. */
 export async function executeRecommendation(id: string): Promise<RecResult> {

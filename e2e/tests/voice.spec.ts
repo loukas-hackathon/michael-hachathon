@@ -50,7 +50,7 @@ test("hold to talk: live words, let go sends, the answer streams and is spoken o
   await page.mouse.up();
   expect((await sent).postDataJSON()).toMatchObject({ message: "How much deep work have I done today" });
   await expect(mic).toHaveAttribute("aria-pressed", "false");
-  await expect(page.getByText("You have done")).toBeVisible();
+  await expect(page.getByRole("list", { name: "Conversation" }).getByText("You have done")).toBeVisible();
   await expect(page.locator("#chat-input")).toHaveValue("");
 
   await expect.poll(() => voice<string[]>(page, "v.spoken")).not.toEqual([]);
@@ -134,7 +134,7 @@ test("keyboard: hold Space to talk", async ({ page }) => {
   const sent = page.waitForRequest("**/chat/stream");
   await page.keyboard.up(" ");
   expect((await sent).postDataJSON()).toMatchObject({ message: "When should I train" });
-  await expect(page.getByText("Train at 18:00.")).toBeVisible();
+  await expect(page.getByRole("list", { name: "Conversation" }).getByText("Train at 18:00.")).toBeVisible();
 });
 
 test("leaving the tab while holding sends nothing, and the tabs still work", async ({ page }) => {
