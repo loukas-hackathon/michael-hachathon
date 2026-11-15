@@ -50,6 +50,7 @@ export function TravelCard({ plan }: { plan: TravelPlan }) {
 
   return (
     <Fold
+      wideOpen
       title="Traffic plan"
       label="Traffic plan"
       preview={`Traffic adds ${minutesPhrase(plan.before.trafficMinutes)} to the drive to your ${plan.block}. Leave at ${formatTime(plan.after.departAt)}.`}
