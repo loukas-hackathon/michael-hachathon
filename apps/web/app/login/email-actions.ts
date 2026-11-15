@@ -15,6 +15,7 @@ import {
   signUpFlow,
   withinWait,
 } from "@/lib/email-auth";
+import { isJudgeLogin } from "@/lib/judges";
 import { API_KEY, API_URL } from "@/lib/mode";
 import { NEXT_COOKIE, safeNext } from "@/lib/next-path";
 import { authEnabled, DEMO_COOKIE, supabaseServer } from "@/lib/supabase/server";
@@ -88,6 +89,26 @@ export async function emailAuth(raw: unknown): Promise<EmailAuthResult> {
   const back = safeNext(parsed.next) ?? safeNext(store.get(NEXT_COOKIE)?.value);
   // Set once an account was really made here: it goes straight on to onboarding (#492).
   let isNew = false;
+
+  // The judges' login opens a private copy of the demo week (lib/judges.ts), never an account.
+  if (isJudgeLogin(email, password)) {
+    if (authEnabled) {
+      try {
+        await (await supabaseServer()).auth.signOut();
+      } catch {
+        // Not signed in: nothing to sign out of.
+      }
+    }
+    store.set(DEMO_COOKIE, randomUUID(), {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 60 * 60 * 24,
+    });
+    store.delete(NEXT_COOKIE);
+    return { ok: true, to: "/" };
+  }
 
   if (process.env.E2E_TEST_AUTH === "on") {
     const result = testAccounts(mode, email, password);
