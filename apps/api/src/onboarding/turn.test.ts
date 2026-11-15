@@ -27,7 +27,7 @@ const reply = (line: string, done = false, uses_calendar = false) =>
 const michael = (text: string): OnboardingTurn => ({ role: "michael", text });
 const user = (text: string): OnboardingTurn => ({ role: "user", text });
 const skip: OnboardingTurn = { role: "user", text: "", skipped: true };
-const OPENER = "Hi, I'm Michael. What are you working towards right now?";
+const OPENER = "Let's start with the big one. What are you working towards right now?";
 
 /** A fresh user with no events at all (a new user starts with sample events). */
 async function freshUser<T>(fn: () => Promise<T>): Promise<T> {

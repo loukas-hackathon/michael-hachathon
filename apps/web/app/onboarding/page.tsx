@@ -24,16 +24,18 @@ type Search = {
 
 // Getting started is a talk with Michael (Loukas, Sun 15 Nov):
 //   0. Sign in (/login).
-//   1. The talk (talk.tsx): Michael introduces himself, then asks three questions out loud. The
-//      user answers by voice or text, skips any; the API reads the answers into goals.
+//   1. The talk (talk.tsx): Michael introduces himself out loud, offers to read the calendar first
+//      (optional), then a hands free conversation: his lines from POST /v1/onboarding/turn (or his
+//      script), the user's by voice or text, any skipped; the API reads the answers into goals.
 //   2. What he heard: the goals with hours, edited and kept with one tap. "Pick from the usual"
 //      (?step=goals) is the old list, with calendar suggestions when the calendar is in.
-//   3. The week in one number, and the connections, the calendar first. Each optional, one tap.
+//   3. The week in one number, and the connections (the calendar unless it is in). Each optional.
 // Then Today. Nudges are asked later, when a buzz obviously helps (#207). You has "Redo setup".
 // ?demo=connected previews screen 3 with sample numbers, marked as such.
 
 export const GOALS_PATH = "/onboarding?step=goals";
 const CONNECT_PATH = "/onboarding?step=connect";
+const TALK_PATH = "/onboarding?step=talk";
 const calendarHref = (back: string) => `/integrations/google/connect?return_to=${encodeURIComponent(back)}`;
 
 /**
@@ -70,8 +72,21 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
         : "talk";
   const failed = sp.integration_error === "google_calendar";
 
-  // First, the talk. The calendar no longer comes first: it is the first connection on screen 3.
-  if (step === "talk") return <Talk elevenlabs={await getVoiceEnabled().catch(() => false)} />;
+  // First, the talk. The calendar is offered before it (optional), so Michael can ask about the real
+  // week. Straight back from Google: read the last four weeks here, behind loading.tsx's "Reading
+  // your calendar", then one tap starts the talk (a phone needs a fresh tap to allow his voice).
+  if (step === "talk") {
+    const [elevenlabs, integration] = await Promise.all([
+      getVoiceEnabled().catch(() => false),
+      getGoogleCalendar().catch(() => null),
+    ]);
+    const connected = integration?.status === "connected" || sp.connected === "google_calendar";
+    if (connected && sp.sync === "pending") await syncGoogleCalendar(28).catch(() => null);
+    const back = sp.connected === "google_calendar" ? "connected" : failed ? "failed" : null;
+    return (
+      <Talk elevenlabs={elevenlabs} calendar={connected} back={back} calendarHref={calendarHref(TALK_PATH)} />
+    );
+  }
 
   const [integration, goals] = await Promise.all([
     preview ? null : getGoogleCalendar(),
@@ -100,7 +115,9 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
     preview ? SAMPLE_INSIGHT : calendarOn ? getFirstInsight() : null,
     getConnections().catch(() => null),
   ]);
+  // The calendar was offered before the talk: once it is in, it is not pushed again here.
   const rows = OFFER.flatMap((id) => {
+    if (id === "google-calendar" && calendarOn && !preview) return [];
     const row = view?.rows.find((r) => r.id === id);
     return row?.live ? [fromOnboarding(row)] : [];
   });

@@ -209,19 +209,21 @@ export const SCRIPT_QUESTIONS = [
   "Where does your time go that you wish it didn't?",
 ] as const;
 
-const OPENER = `Hi, I'm Michael. I'm here to find the time you lose and give it back to what matters. ${SCRIPT_QUESTIONS[0]}`;
+// The app has just introduced Michael out loud (apps/web/app/onboarding/talk.tsx), so the opener
+// never says hello or who he is again: it goes straight to the first question.
+const OPENER = `Let's start with the big one. ${SCRIPT_QUESTIONS[0]}`;
 
 /** The scripted opener: from the calendar when it shows something, else the plain one. */
 export function scriptOpener(facts: WeekFacts | null): { line: string; from_calendar: boolean } {
   const top = facts?.recurring[0];
   if (top)
     return {
-      line: `Hi, I'm Michael. I had a look at your last four weeks. ${top.title} takes about ${voiceDuration(top.weekly_budget_minutes)} of your week. ${SCRIPT_QUESTIONS[0]}`,
+      line: `I had a look at your last four weeks. ${top.title} takes about ${voiceDuration(top.weekly_budget_minutes)} of your week. ${SCRIPT_QUESTIONS[0]}`,
       from_calendar: true,
     };
   if (facts && facts.meetings.count > 0)
     return {
-      line: `Hi, I'm Michael. I had a look at your calendar. ${facts.meetings.count === 1 ? "One meeting" : `${facts.meetings.count} meetings`} with other people in the last 7 days. ${SCRIPT_QUESTIONS[0]}`,
+      line: `I had a look at your calendar. ${facts.meetings.count === 1 ? "One meeting" : `${facts.meetings.count} meetings`} with other people in the last 7 days. ${SCRIPT_QUESTIONS[0]}`,
       from_calendar: true,
     };
   return { line: OPENER, from_calendar: false };
@@ -265,7 +267,7 @@ What we want to learn, roughly in this order:
 Ask about two of these in one question when it sounds natural ("What are you working towards, and how many hours a week does it need?"). Never ask about something they already answered. If they skipped a question, move on to the next topic and never ask it again.
 
 The line:
-- Opener (no turns yet): introduce yourself in a few words and ask one open question. If calendar facts are given, mention one or two real things from their week, numbers exactly as the facts write them, and ask about them in a way that draws out their goals ("Gym 3 times a week and nothing before 12:00 on 4 mornings. Is that the week you want?").
+- Opener (no turns yet): the app has just introduced Michael out loud, so never say hello or who you are again. Go straight to one open question. If calendar facts are given, mention one or two real things from their week, numbers exactly as the facts write them, and ask about them in a way that draws out their goals ("Gym 3 times a week and nothing before 12:00 on 4 mornings. Is that the week you want?").
 - Later turns: first a short reaction that shows you listened, using their own words or the detail that matters ("Investors by December, got it."). Never generic praise like "great", "love that" or "sounds good". Then exactly ONE question.
 - Finishing (when the brief says finish, or when you already have goals with some sense of time and something about what gets in the way): a short reaction to their last answer, then hand over to the review, for example "That's plenty. Here's what I heard." No question. Set done true.
 - At most 3 short sentences and 45 words. It is speech: no lists, no brackets, no abbreviations, no quotes.
