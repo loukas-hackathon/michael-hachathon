@@ -179,11 +179,13 @@ On the stage iPhone, in **Safari** (latest iOS), signed in to Michael with Googl
 Passed on both: change `iphone: "soon"` to `"live"` in `packages/shared/src/connectors.ts` with the
 proof in the comment, note it on the Build Hub findings, and tick #303.
 
-Optional, and the most reliable path from the installed app: an iCloud link. On the phone that now has Michael, open **Shortcuts**, hold
-**Michael**, **Share**, **Copy iCloud Link**, and set `MICHAEL_SHORTCUT_URL` to that link in
-Vercel (project **michael**, **Settings > Environment Variables**, all environments, then
-**Redeploy**). An iCloud link opens Shortcuts directly on **Add Shortcut**. The shortcut behind the
-link is the same generated one, so it is still never built by hand.
+Done by default (15 Nov): **Add the shortcut** opens the iCloud link Loukas shared
+(`SHORTCUT_ICLOUD` in `apps/web/lib/one-tap.ts`), which opens Shortcuts directly on **Add
+Shortcut**, from Safari, the installed app and the laptop QR alike. `/Michael.shortcut` stays the
+fallback behind **Shortcuts did not open?**. After rebuilding the shortcut, share a new link: on
+the phone, open **Shortcuts**, hold **Michael**, **Share**, **Copy iCloud Link**, and either update
+the constant or set `MICHAEL_SHORTCUT_URL` to that link in Vercel (project **michael**, **Settings >
+Environment Variables**, all environments, then **Redeploy**).
 
 If it fails: write on #303 which step, what the phone showed (a screenshot helps) and the iOS
 version. To change the shortcut: edit `scripts/shortcut/build.mjs`, run `pnpm shortcut` on a Mac
@@ -195,11 +197,11 @@ Michael shortcut before adding the new one, or iOS names it Michael 2 and Connec
 Michael asks in a nudge ("Your phone opened 5 times in University."), one tap, and Do Not Disturb
 is on until the block ends, or until morning at night (#447). No app may set a Focus, so a second
 signed shortcut does it: **Michael Focus** (`pnpm shortcut:focus` writes and signs it, the app
-serves it at `/MichaelFocus.shortcut`). It is added once per device. Optional, as for Michael: on
-a phone that has it, open **Shortcuts**, hold **Michael Focus**, **Share**, **Copy iCloud Link**,
-and set `MICHAEL_FOCUS_SHORTCUT_URL` to that link in Vercel (project **michael**, **Settings >
-Environment Variables**, all environments, then **Redeploy**). **Add Michael Focus** then opens
-Shortcuts directly on **Add Shortcut**, with no browser. Focus is shared across your
+serves it at `/MichaelFocus.shortcut`). It is added once per device. As for Michael, **Add Michael
+Focus** opens its shared iCloud link (`FOCUS_SHORTCUT_ICLOUD` in `apps/web/lib/dnd.ts`) directly
+in Shortcuts on **Add Shortcut**, with the file as the fallback. To change it: **Shortcuts**, hold
+**Michael Focus**, **Share**, **Copy iCloud Link**, then update the constant or set
+`MICHAEL_FOCUS_SHORTCUT_URL` in Vercel the same way. Focus is shared across your
 devices by default (Settings, Focus, Share Across Devices), so the Mac alone also quiets the iPhone.
 
 **On the Mac** (with Michael for Mac running, section 8):

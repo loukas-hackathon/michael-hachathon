@@ -68,8 +68,15 @@ export const SHORTCUT_NAME = "Michael";
  */
 export const SHORTCUT_FILE = `/${SHORTCUT_NAME}.shortcut`;
 
-/** Where "Add the shortcut" goes: the iCloud link in MICHAEL_SHORTCUT_URL if set, else our own file. Server only. */
-export const shortcutUrl = () => process.env.MICHAEL_SHORTCUT_URL || SHORTCUT_FILE;
+/** The iCloud link of the Michael shortcut (public, shared from Loukas' iPhone, 15 Nov). */
+export const SHORTCUT_ICLOUD = "https://www.icloud.com/shortcuts/c0c2a08d12f74e5392e41b195ba2bd57";
+
+/**
+ * Where "Add the shortcut" goes: MICHAEL_SHORTCUT_URL if set, else the iCloud link above, which
+ * opens Shortcuts on Add Shortcut with no browser. Our own file is the fallback behind "Shortcuts
+ * did not open?". Server only.
+ */
+export const shortcutUrl = () => process.env.MICHAEL_SHORTCUT_URL || SHORTCUT_ICLOUD;
 
 /**
  * The plain absolute URL "Add the shortcut" opens. Never shortcuts://import-shortcut: Shortcuts

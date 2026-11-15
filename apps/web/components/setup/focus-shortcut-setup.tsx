@@ -63,6 +63,20 @@ export function FocusShortcutSetup({
       Add Michael Focus
     </a>
   );
+  // Behind an iCloud link, our own file in this window: iOS previews it with Open in Shortcuts.
+  const fallbackFile =
+    url === FOCUS_SHORTCUT_FILE ? null : (
+      <a
+        href={FOCUS_SHORTCUT_FILE}
+        onClick={() => {
+          focusShortcutAdded.set();
+          setAdded(true);
+        }}
+        className="press mx-auto mt-1 flex h-11 items-center px-2 text-subhead font-semibold text-tint-text"
+      >
+        Shortcuts did not open? Open the file
+      </a>
+    );
 
   if (device !== "iphone") {
     return (
@@ -72,7 +86,12 @@ export function FocusShortcutSetup({
             ? `Add the ${FOCUS_SHORTCUT_NAME} shortcut to this Mac. With Michael for Mac running, I switch on Do Not Disturb when you say yes in a nudge, and your iPhone follows.`
             : `Open this page on your iPhone or your Mac to add the ${FOCUS_SHORTCUT_NAME} shortcut.`}
         </p>
-        {device === "mac" ? add : null}
+        {device === "mac" ? (
+          <>
+            {add}
+            {fallbackFile}
+          </>
+        ) : null}
       </Card>
     );
   }
@@ -91,6 +110,7 @@ export function FocusShortcutSetup({
         <Step n={1} done={added}>
           <p>Add the {FOCUS_SHORTCUT_NAME} shortcut, then come back here.</p>
           {add}
+          {fallbackFile}
         </Step>
         <Step n={2}>
           <p>

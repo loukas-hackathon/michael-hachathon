@@ -7,11 +7,14 @@ import { FOCUS_SHORTCUT_NAME, FOCUS_SHORTCUT_OFF, FOCUS_SHORTCUT_PATH } from "@m
 /** The signed shortcut this app serves (public/MichaelFocus.shortcut, made by `pnpm shortcut:focus`). */
 export const FOCUS_SHORTCUT_FILE = FOCUS_SHORTCUT_PATH;
 
+/** The iCloud link of Michael Focus (public, shared from Loukas' iPhone, 15 Nov). */
+export const FOCUS_SHORTCUT_ICLOUD = "https://www.icloud.com/shortcuts/76e297e86ff742dfb3446679fb46932d";
+
 /**
- * Where "Add Michael Focus" goes: the iCloud link in MICHAEL_FOCUS_SHORTCUT_URL if set (it opens
- * Shortcuts on Add Shortcut, no browser), else our own file. Server only, like shortcutUrl().
+ * Where "Add Michael Focus" goes: MICHAEL_FOCUS_SHORTCUT_URL if set, else the iCloud link above (it
+ * opens Shortcuts on Add Shortcut, no browser). Our own file is the fallback. Server only.
  */
-export const focusShortcutUrl = () => process.env.MICHAEL_FOCUS_SHORTCUT_URL || FOCUS_SHORTCUT_FILE;
+export const focusShortcutUrl = () => process.env.MICHAEL_FOCUS_SHORTCUT_URL || FOCUS_SHORTCUT_ICLOUD;
 
 /** Runs the installed shortcut with `input`: a date and time ("2026-11-17 14:00"), or "off". */
 export const focusShortcutLink = (input: string) =>
