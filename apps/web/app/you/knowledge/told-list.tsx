@@ -2,16 +2,19 @@
 
 import type { KnowledgeItem, KnowledgeKind, KnowledgeOrigin } from "@michael/shared";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { haptic } from "@/components/haptics";
-import { forgetItem } from "./actions";
+import { addMemory, forgetItem } from "./actions";
 
 // "Things you told me" (#379). Forget hides the row at once and shows Undo for five seconds; only
 // then does the server really delete it (michael-feedback: deleting is not optimistic, so the
 // delete waits out the Undo instead). Leaving the page sends what is waiting straight away.
+// The first row of "Things to remember" adds one in the user's own words, like the memory in other
+// assistants; the chat reads it into every answer. Not optimistic: the id comes from the server.
 
 export const UNDO_MS = 5000;
 const SHOWN = 5;
+const MAX_MEMORY = 280;
 
 const GROUPS: [KnowledgeKind, string][] = [
   ["memory", "Things to remember"],
@@ -34,14 +37,77 @@ const dayFmt = new Intl.DateTimeFormat("en-GB", {
   timeZone: "Europe/Athens",
 });
 
-/** "In chat, 14 Nov", "Check in, 13 Nov. You said 2". */
+/** "In chat, 14 Nov", "Check in, 13 Nov. Paused", "You wrote it, 15 Nov". */
 function whereFrom(item: KnowledgeItem): string {
   const when = item.at ? `, ${dayFmt.format(new Date(item.at))}` : "";
   const paused = item.active ? "" : ". Paused";
-  return `${ORIGIN[item.origin]}${when}${paused}`;
+  const origin = item.kind === "memory" && item.origin === "you" ? "You wrote it" : ORIGIN[item.origin];
+  return `${origin}${when}${paused}`;
 }
 
 type Waiting = { item: KnowledgeItem; timer: ReturnType<typeof setTimeout> };
+
+/** One line to add a memory by hand. Enter or Add keeps it; the new row appears below. */
+function AddMemory({ onAdded }: { onAdded: (item: KnowledgeItem) => void }) {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const ready = text.trim().length > 0 && !busy;
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!ready) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await addMemory(text.trim());
+      if (res.ok) {
+        haptic();
+        setText("");
+        onAdded(res.item);
+      } else {
+        setError(res.error);
+      }
+    } catch {
+      setError("I lost the line. Nothing was kept.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <li className="relative">
+      <form onSubmit={submit} className="flex min-h-12 items-center gap-2 pl-4 pr-2">
+        <label htmlFor="add-memory" className="sr-only">
+          Something for me to remember
+        </label>
+        <input
+          id="add-memory"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          maxLength={MAX_MEMORY}
+          autoComplete="off"
+          enterKeyHint="done"
+          placeholder="Add something to remember"
+          className="min-h-12 min-w-0 flex-1 bg-transparent text-body text-label outline-none placeholder:text-label-2"
+        />
+        <button
+          type="submit"
+          disabled={!ready}
+          aria-busy={busy}
+          className="press h-11 min-w-16 shrink-0 px-2 text-subhead font-semibold text-tint-text disabled:text-label-2"
+        >
+          {busy ? "Adding" : "Add"}
+        </button>
+      </form>
+      {error ? (
+        <p role="alert" className="px-4 pb-2.5 text-footnote text-danger">
+          {error}
+        </p>
+      ) : null}
+    </li>
+  );
+}
 
 export function ToldList({ items }: { items: KnowledgeItem[] }) {
   // Rows forgotten on the server (kept hidden until the refreshed list drops them too).
@@ -50,6 +116,8 @@ export function ToldList({ items }: { items: KnowledgeItem[] }) {
   const [waiting, setWaiting] = useState<string[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [open, setOpen] = useState<Set<KnowledgeKind>>(new Set());
+  // Memories added on this page, shown at once (the refreshed list then carries them too).
+  const [added, setAdded] = useState<KnowledgeItem[]>([]);
   const timers = useRef(new Map<string, Waiting>());
 
   const key = (i: KnowledgeItem) => `${i.kind}:${i.id}`;
@@ -86,6 +154,18 @@ export function ToldList({ items }: { items: KnowledgeItem[] }) {
     setWaiting((list) => list.filter((x) => x !== k));
   }
 
+  function onAdded(item: KnowledgeItem) {
+    const k = key(item);
+    // The same words again come back as the memory already kept: bring it back if it was forgotten.
+    setGone((g) => {
+      if (!g.has(k)) return g;
+      const next = new Set(g);
+      next.delete(k);
+      return next;
+    });
+    setAdded((a) => [item, ...a.filter((x) => x.id !== item.id)]);
+  }
+
   // Leaving the page (or closing it) never loses a Forget: what is waiting goes now.
   useEffect(() => {
     const map = timers.current;
@@ -103,35 +183,31 @@ export function ToldList({ items }: { items: KnowledgeItem[] }) {
     };
   }, []);
 
-  const visible = items.filter((i) => !gone.has(key(i)));
-  if (!visible.length) {
-    return (
-      <p className="rounded-group bg-fill px-4 py-3 text-subhead text-label-2">
-        Nothing yet. Tell me something in{" "}
-        <Link href="/chat" className="font-semibold text-tint-text">
-          chat
-        </Link>{" "}
-        and it shows here.
-      </p>
-    );
-  }
+  const fresh = new Set(added.map(key));
+  const visible = [...added, ...items.filter((i) => !fresh.has(key(i)))].filter((i) => !gone.has(key(i)));
 
   return (
     <div className="flex flex-col gap-5">
       {GROUPS.map(([kind, label]) => {
         const all = visible.filter((i) => i.kind === kind);
-        if (!all.length) return null;
+        // The memory group is always there: its first row is where a new one is written.
+        if (!all.length && kind !== "memory") return null;
         const list = open.has(kind) ? all : all.slice(0, SHOWN);
         const more = all.length - list.length;
         return (
           <section key={kind} aria-label={label}>
             <h3 className="px-4 pb-1.5 text-footnote font-semibold text-label-2">{label}</h3>
             <ul className="overflow-hidden rounded-group bg-fill">
+              {kind === "memory" ? <AddMemory onAdded={onAdded} /> : null}
               {list.map((item, i) => {
                 const k = key(item);
                 return (
-                  <li key={k} className="relative" data-knowledge={item.kind}>
-                    {i > 0 ? (
+                  <li
+                    key={k}
+                    className={fresh.has(k) ? "m-live-enter relative" : "relative"}
+                    data-knowledge={item.kind}
+                  >
+                    {i > 0 || kind === "memory" ? (
                       <span className="absolute inset-x-0 top-0 z-10 ml-4 h-[0.5px] bg-separator" />
                     ) : null}
                     {waiting.includes(k) ? (
@@ -187,6 +263,15 @@ export function ToldList({ items }: { items: KnowledgeItem[] }) {
                 </li>
               ) : null}
             </ul>
+            {kind === "memory" && !all.length ? (
+              <p className="mt-2 px-4 text-footnote text-label-2">
+                Or tell me in{" "}
+                <Link href="/chat" className="font-semibold text-tint-text">
+                  chat
+                </Link>
+                . I keep what lasts and use it in every answer.
+              </p>
+            ) : null}
             {kind === "profile" ? (
               <p className="mt-2 px-4 text-footnote text-label-2">
                 To change your hours or your week,{" "}

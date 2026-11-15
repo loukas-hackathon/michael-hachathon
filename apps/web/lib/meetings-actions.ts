@@ -1,7 +1,9 @@
 "use server";
 
-import { ApiError, MeetingsState } from "@michael/shared";
+import { ApiError, MeetingCommitmentAdd, MeetingsState } from "@michael/shared";
+import { revalidatePath } from "next/cache";
 import { authHeaders } from "./caller";
+import { demoRefusal } from "./demo-refusal";
 import { API_URL, USE_MOCKS } from "./mode";
 
 // Meetings mode (#400): the browser calls these; only the server talks to the API, with the
@@ -62,4 +64,46 @@ export async function endMeetingAction(): Promise<MeetingsResult> {
     return { ok: true, state: mock };
   }
   return call("POST", "/v1/meetings/end");
+}
+
+// The after-meeting card on Today: a commitment onto today's outcomes, and a follow up draft.
+const UUID = /^[0-9a-f-]{36}$/i;
+export type MeetingStepResult = { ok: true } | { ok: false; message: string };
+
+async function post(path: string, body: unknown): Promise<MeetingStepResult> {
+  try {
+    const res = await fetch(`${API_URL}${path}`, {
+      method: "POST",
+      headers: { ...(await authHeaders()), "content-type": "application/json" },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
+    if (res.ok) {
+      revalidatePath("/");
+      return { ok: true };
+    }
+    const refused = await demoRefusal(res.status);
+    if (refused) return { ok: false, message: refused };
+    const err = ApiError.safeParse(await res.json().catch(() => null));
+    return { ok: false, message: err.success ? err.data.error.message : OFFLINE };
+  } catch {
+    return { ok: false, message: OFFLINE };
+  }
+}
+
+/** POST /v1/meetings/commitments: one commitment onto today's outcomes. */
+export async function addMeetingCommitmentAction(text: string): Promise<MeetingStepResult> {
+  const parsed = MeetingCommitmentAdd.safeParse({ text });
+  if (!parsed.success) return { ok: false, message: "I could not read that commitment." };
+  if (USE_MOCKS) return { ok: true };
+  return post("/v1/meetings/commitments", parsed.data);
+}
+
+/** POST /v1/drafts/generate for the meeting's conversation. The draft lands in Follow ups. */
+export async function draftMeetingFollowUpAction(eventId: string): Promise<MeetingStepResult> {
+  if (typeof eventId !== "string" || !UUID.test(eventId)) {
+    return { ok: false, message: "I could not find that conversation." };
+  }
+  if (USE_MOCKS) return { ok: true };
+  return post("/v1/drafts/generate", { event_id: eventId });
 }

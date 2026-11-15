@@ -55,4 +55,12 @@ test("what I know: forget one memory, undo, then forget it for good", async ({ p
   await expect.poll(memories, { timeout: 10_000 }).toEqual(["Fridays are for family"]);
   await expect(page.getByText("Trains best before 08:00")).toHaveCount(0);
   await expect(page.getByText("Fridays are for family")).toBeVisible();
+
+  // Add one by hand, like the memory in other assistants: it shows at once and is on the API.
+  await page.getByLabel("Something for me to remember").fill("I think best on long walks");
+  await tap(page.getByRole("button", { name: "Add", exact: true }));
+  await expect(page.getByText("I think best on long walks")).toBeVisible();
+  await expect(page.getByText(/^You wrote it/)).toBeVisible();
+  await expect(page.getByLabel("Something for me to remember")).toHaveValue("");
+  await expect.poll(memories).toContain("I think best on long walks");
 });

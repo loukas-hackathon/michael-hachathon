@@ -85,8 +85,8 @@ export function MeetingConsentSheet({ open, onClose }: { open: boolean; onClose:
   );
 }
 
-/** You > Privacy: start or end meetings mode; the first start goes through the consent sheet. */
-export function MeetingsRow() {
+/** The top of You (the Mi sheet): start or end meetings mode; the first start goes through the consent sheet. */
+export function MeetingsRow({ first = false }: { first?: boolean }) {
   const { meetings, active } = useActiveMeeting();
   const [consent, setConsent] = useState(false);
   const { on: offTheRecord } = useOffTheRecord();
@@ -97,13 +97,15 @@ export function MeetingsRow() {
   return (
     <>
       <div className="relative flex min-h-14 items-center justify-between gap-4 px-4 py-2">
-        <span className="absolute inset-x-0 top-0 ml-4 h-[0.5px] bg-separator" />
+        {first ? null : <span className="absolute inset-x-0 top-0 ml-4 h-[0.5px] bg-separator" />}
         <span className="flex min-w-0 flex-col">
           <span className="text-body">Meetings mode</span>
           <span className="text-footnote text-label-2 tnum" aria-live="polite">
             {active
               ? `On since ${formatTime(active.started_at)}. Ends by ${formatTime(new Date(meetingEndsAt(active)).toISOString())}.`
-              : "Conversations are kept only while it is on."}
+              : offTheRecord
+                ? "Off the record is on. Nothing is kept."
+                : "Conversations are kept only while it is on."}
           </span>
         </span>
         <PendingButton

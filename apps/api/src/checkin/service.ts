@@ -52,12 +52,20 @@ const toNew = (d: QuestionDraft, day: string, moment: CheckInMoment): NewCheckIn
 export async function checkInToday(now = Date.now(), timezone = DEFAULT_TIMEZONE): Promise<CheckInToday> {
   const zone = new Zone(timezone);
   const day = zone.dayOf(now);
-  const [events, goals, existing] = await Promise.all([
+  const [events, goals, stored] = await Promise.all([
     dayEvents(zone, day, now),
     store.listGoals(),
     store.listCheckIns({ fromDay: day, toDay: day }),
   ]);
   const drafts = dayQuestions({ now, zone, events, goals });
+  // A workout that lands after its block was asked about (the watch syncs late) settles the
+  // question: an open "No workout recorded" next to a recorded ride says the wrong thing.
+  const trainedNow = new Set(drafts.filter((d) => d.kind === "training").map((d) => d.event_id));
+  const settled = stored.filter(
+    (c) => c.kind === "missed_block" && c.answer === null && c.event_id && trainedNow.has(c.event_id),
+  );
+  for (const c of settled) await store.deleteCheckIn(c.id);
+  const existing = stored.filter((c) => !settled.includes(c));
   const known = new Set(existing.map((c) => c.key));
   const fresh = drafts.filter((d) => !known.has(d.key));
   const rounds = new Set(existing.filter((c) => !c.follow_up_of).map((c) => c.moment));

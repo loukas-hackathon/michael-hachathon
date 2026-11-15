@@ -181,6 +181,33 @@ test("two rounds at most: the missed block right after it, the rest in the eveni
     assert.equal(later.questions.length, 5);
   }));
 
+test("a workout that syncs after its block was asked about settles the missed block question", () =>
+  withDay(async () => {
+    const after = await checkInToday(at("19:45"));
+    assert.deepEqual(
+      after.questions.map((q) => q.kind),
+      ["missed_block"],
+    );
+    // The watch sends the run a little late: it ended after the block did.
+    await store.insertEvents([
+      {
+        source: "manual",
+        type: "workout",
+        start_at: T("18:40"),
+        end_at: T("19:50"),
+        title: "Run",
+        data: {},
+      },
+    ] as never);
+    const synced = await checkInToday(at("19:55"));
+    assert.ok(!synced.questions.some((q) => q.kind === "missed_block"));
+    assert.equal((await checkInContext(at("19:55"))).open.length, 0);
+    // The evening asks how the run went instead.
+    const evening = await checkInToday(at("21:00"));
+    assert.ok(!evening.questions.some((q) => q.kind === "missed_block"));
+    assert.ok(evening.questions.some((q) => q.kind === "training" && q.question.startsWith("Run,")));
+  }));
+
 test("answers are stored once, labelled, followed up, read back to the chat and can be deleted", () =>
   withDay(async () => {
     const today = CheckInToday.parse(await checkInToday(at("21:00")));
