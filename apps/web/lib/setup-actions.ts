@@ -23,7 +23,7 @@ export type LinkResult =
   | { token: string; setupUrl: string; installCommand: string | null; qrSvg: string; expiresAt: string }
   | { error: string };
 
-const SIGN_IN = "Sign in with Google to connect your own devices.";
+const SIGN_IN = "Sign in to connect your own devices.";
 
 async function mint(connection: SetupConnection) {
   if (await isDemoVisitor()) throw new Error(SIGN_IN);
