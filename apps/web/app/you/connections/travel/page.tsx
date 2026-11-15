@@ -6,8 +6,9 @@ import { getConnection } from "@/lib/connections-status";
 
 export const metadata = { title: "Location · Michael" };
 
-// Location: where you are on the timeline (this phone when you open Michael, the Mac's Wi-Fi),
-// home, work and gym typed or taken from the phone in one tap, and the travel switch (#267).
+// Location: where you are on the timeline (this phone when you open Michael, and calendar events
+// at your places), home, work and gym typed or taken from the phone in one tap, and the travel
+// switch (#267).
 export default async function LocationPage({ searchParams }: { searchParams: Promise<{ from?: string }> }) {
   const { from } = await searchParams;
   const [{ row }, places, suggestions, location] = await Promise.all([
@@ -22,7 +23,7 @@ export default async function LocationPage({ searchParams }: { searchParams: Pro
         title="Where you are"
         note="Only near your saved places is a place named. Elsewhere I keep about a kilometre, never a trail."
       >
-        <WhereYouAre status={location} places={places?.places ?? []} />
+        <WhereYouAre status={location} />
       </SetupSection>
       <SetupSection title="Your places">
         {places ? (
@@ -34,7 +35,7 @@ export default async function LocationPage({ searchParams }: { searchParams: Pro
           />
         ) : (
           <p className="rounded-group bg-fill px-4 py-3 text-subhead text-label-2">
-            I could not load your places. Pull to refresh.
+            I couldn't load your places. Pull to refresh.
           </p>
         )}
       </SetupSection>

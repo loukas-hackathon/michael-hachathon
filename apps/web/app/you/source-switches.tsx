@@ -7,12 +7,22 @@ import { SOURCE_LABEL } from "@/lib/connections";
 import { saveSource } from "@/lib/privacy-actions";
 import { useAction } from "@/lib/use-action";
 
-const SAVE_ERROR = "I could not save that. It is as it was.";
+const SAVE_ERROR = "I couldn't save that. It's as it was.";
 
 /** One source's switch: flips at once, flips back with a reason and a retry if the save fails. */
-function SourceSwitch({ source, initial, native }: { source: Source; initial: boolean; native: boolean }) {
+function SourceSwitch({
+  source,
+  initial,
+  native,
+  label,
+}: {
+  source: Source;
+  initial: boolean;
+  native: boolean;
+  label?: [name: string, what: string];
+}) {
   const [on, setOn] = useState(initial);
-  const [name, what] = SOURCE_LABEL[source] ?? [source, ""];
+  const [name, what] = label ?? SOURCE_LABEL[source] ?? [source, ""];
   const id = `source-${source}`;
   const save = useAction((next: boolean) => saveSource(source, next), {
     optimistic: (next) => {
@@ -50,7 +60,16 @@ function SourceSwitch({ source, initial, native }: { source: Source; initial: bo
 
 // Privacy switches for the given sources. Each connection's page shows its own, so there is one
 // place per source; You keeps the few no connection owns. Switch one off and I stop reading it.
-export function SourceSwitches({ initial, sources }: { initial: SourceSetting[]; sources: Source[] }) {
+export function SourceSwitches({
+  initial,
+  sources,
+  labels,
+}: {
+  initial: SourceSetting[];
+  sources: Source[];
+  /** Both lines per source instead of the usual ones (What I know: what it sends, last data). */
+  labels?: Partial<Record<Source, [name: string, what: string]>>;
+}) {
   const [native, setNative] = useState(true);
   useEffect(() => setNative("switch" in HTMLInputElement.prototype), []);
   const enabled = new Map(initial.map((s) => [s.source, s.enabled]));
@@ -60,7 +79,12 @@ export function SourceSwitches({ initial, sources }: { initial: SourceSetting[];
       {sources.map((source, i) => (
         <li key={source} className="relative">
           {i > 0 ? <span className="absolute inset-x-0 top-0 ml-4 h-[0.5px] bg-separator" /> : null}
-          <SourceSwitch source={source} initial={enabled.get(source) ?? false} native={native} />
+          <SourceSwitch
+            source={source}
+            initial={enabled.get(source) ?? false}
+            native={native}
+            label={labels?.[source]}
+          />
         </li>
       ))}
     </ul>

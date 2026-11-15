@@ -6,6 +6,8 @@ import { formatTime } from "@/lib/format";
 import { setOffTheRecord, useOffTheRecord } from "@/lib/off-the-record";
 import { useAction } from "@/lib/use-action";
 
+const SAVE_ERROR = "I couldn't save that. Nothing changed.";
+
 export function OffTheRecordSwitch() {
   const { on, since } = useOffTheRecord();
   // Safari draws <input switch> natively, with the system haptic. Elsewhere we draw the same switch.
@@ -13,7 +15,7 @@ export function OffTheRecordSwitch() {
   useEffect(() => setNative("switch" in HTMLInputElement.prototype), []);
   // The store flips every tab at once and flips back on failure; this adds pending and a retry.
   const save = useAction(setOffTheRecord, {
-    failure: (ok) => (ok ? null : "I could not save that. Nothing changed."),
+    failure: (r) => (r === true ? null : r || SAVE_ERROR),
   });
 
   return (
@@ -34,13 +36,21 @@ export function OffTheRecordSwitch() {
           switch=""
           checked={on}
           aria-busy={save.pending || undefined}
+          // Disabled while saving, so a tap in that moment is visibly not taken rather than silently
+          // dropped (incident #402: the second tap was lost and the switch stayed on).
+          disabled={save.pending}
           onChange={(e) => {
             if (!save.pending) void save.run(e.target.checked);
           }}
           className={native ? "h-[31px] w-[51px] shrink-0 accent-[var(--m-tint)]" : "m-switch shrink-0"}
         />
       </label>
-      <ActionError error={save.error} onRetry={save.retry} className="-mt-1 px-4 pb-2.5" />
+      {/* A refusal (the demo week) is not worth a retry: only a failed save gets one. */}
+      <ActionError
+        error={save.error}
+        onRetry={save.error === SAVE_ERROR ? save.retry : undefined}
+        className="-mt-1 px-4 pb-2.5"
+      />
     </>
   );
 }

@@ -33,7 +33,12 @@ test("a goal row logs 30 minutes with the maths, and Undo takes it back", async 
   const sheet = page.getByRole("dialog");
   await tap(sheet.getByRole("button", { name: "30 min", exact: true }));
   await tap(sheet.getByRole("button", { name: "Log 30 min" }));
-  await expect(sheet.getByRole("status")).toContainText("Logged. Everything bath 30 of 60 min this week.");
+  // Michael varies how he says Logged (#398): the minutes and the maths are what stay.
+  await expect(sheet.getByRole("status")).toContainText("30 min");
+  await expect(sheet.getByRole("status")).toContainText("Everything bath: 30 of 60 min this week.");
+  // Nothing left to cancel once logged: the sheet closes with Done (QA round 2, #346).
+  await expect(sheet.getByRole("button", { name: "Done", exact: true })).toBeVisible();
+  await expect(sheet.getByRole("button", { name: "Cancel", exact: true })).toHaveCount(0);
 
   // On the API: one manual entry for the goal.
   const from = new Date(Date.now() - 2 * 3600_000).toISOString();
@@ -44,7 +49,7 @@ test("a goal row logs 30 minutes with the maths, and Undo takes it back", async 
   expect(logged.events.filter((e) => e.source === "manual" && e.data.goal_id === goal.id)).toHaveLength(1);
 
   await tap(sheet.getByRole("button", { name: "Undo" }));
-  await expect(sheet.getByRole("status")).toContainText("Taken back.");
+  await expect(sheet.getByRole("status")).toContainText("Off the books.");
   await expect
     .poll(async () => {
       const after = await asUser<{ events: { source: string; data: { goal_id?: string } }[] }>(

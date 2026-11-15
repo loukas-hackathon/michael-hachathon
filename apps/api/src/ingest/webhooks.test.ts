@@ -3,6 +3,9 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { EventInput, IngestResponse } from "@michael/shared";
 import { app } from "../app";
+import { runAsUser } from "../context";
+import { env } from "../env";
+import { store } from "../store";
 import { AwPayload, mapActivityWatch } from "./activitywatch";
 import { ShortcutsPairer, ShortcutsPayload } from "./ios-shortcuts";
 import { mapOmi } from "./omi";
@@ -47,6 +50,14 @@ test("Omi: discarded conversations and transcript batches are not stored", () =>
 });
 
 test("POST /v1/webhooks/omi is idempotent and accepts what it does not keep", async () => {
+  // Kept only inside meetings mode (#400): the demo key's account had it on at the time.
+  const conversation = fixture("omi");
+  await runAsUser(env.DEMO_USER_ID, () =>
+    store.createMeetingSession({
+      started_at: conversation.started_at,
+      ends_at: new Date(Date.parse(conversation.started_at) + 3600_000).toISOString(),
+    }),
+  );
   const a = IngestResponse.parse(await (await post("omi?uid=ignored", fixture("omi"))).json());
   assert.equal(a.inserted, 1);
   const b = IngestResponse.parse(await (await post("omi", fixture("omi"))).json());

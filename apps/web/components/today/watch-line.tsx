@@ -38,6 +38,7 @@ export async function WatchLine({ demo }: { demo?: string }) {
 
   return (
     <Fold
+      wideOpen
       title="From the watch"
       label="From the watch"
       preview={[

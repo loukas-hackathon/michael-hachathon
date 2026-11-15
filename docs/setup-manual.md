@@ -54,6 +54,20 @@ No key: Claude signs in to Michael like any built-in connector, and sees only yo
 
 The phone app and voice mode use the same connector automatically. Revoke it any time under Agents.
 
+## 2b. Presenter link for the demo week (Loukas, 3 min, once)
+
+Demo visitors cannot connect Claude to the shared demo week. The presenter can, in one tap, with a
+secret link. Set the same secret in two places (never paste it into a chat or commit it):
+
+1. Make one: `openssl rand -base64 32 | tr -d '/+='` (any long random string works).
+2. Vercel: project `michael` > **Settings > Environment Variables** > add `DEMO_PRESENTER_KEY`,
+   Production, paste the value, **Save**. Then **Deployments > latest > Redeploy**.
+3. Railway: service `api` > **Variables** > add `DEMO_PRESENTER_KEY` with the same value (or the
+   PowerShell line at the top of this page). Railway redeploys by itself.
+4. Put the link `https://michael-zeta-sand.vercel.app/auth/presenter?key=<value>` on the Build Hub
+   for the presenters. Opening it once on the stage laptop is enough for 3 days
+   (`docs/demo-runbook.md`). To revoke it, change the value in both places.
+
 ## 3. Google Calendar (Loukas, 3 min, same Google project as step 1)
 
 1. https://console.cloud.google.com/apis/library/calendar-json.googleapis.com, project `Michael`,
@@ -121,18 +135,53 @@ switching it on for everyone:
 In Michael: **You > Connections > Mac > Connect > Copy**, then paste the line into Terminal in
 the repo folder (see `apps/collector` README). Real data then goes to your own account.
 
-## 8b. Publish the Michael shortcut (Manolis, 10 min, once, on an iPhone)
+## 8b. The Michael shortcut: prove it on two iPhones, then switch it on (Manolis, 10 min)
 
-This makes the iPhone connection one tap for everyone, Mac or not. Until it is done, You >
-Connections > iPhone shows three by hand steps with a Copy button instead.
+Nobody builds the shortcut by hand any more (#303): `pnpm shortcut` on a Mac writes and signs it,
+and the app serves it at `/Michael.shortcut`. iPhone shows Coming soon until the steps below pass
+on production. Three things stay with a human, because Apple allows no app to do them: tapping
+**Add Shortcut**, tapping **Connect**, and making the App automation.
 
-1. On the iPhone, build the shortcut exactly as `docs/sources/ios-shortcuts.md`, "One tap set up",
-   says. Name it **Michael** (the app runs it by that name).
-2. Share, **Copy iCloud Link**. Open the link on a second phone and check it adds without questions.
-3. Vercel, project **michael**, **Settings > Environment Variables**: `MICHAEL_SHORTCUT_URL` = the
-   link, all environments. **Deployments >** latest **> Redeploy**.
-4. Check: on your iPhone, You > Connections > iPhone shows **Add the shortcut**. Send the link
-   back as an issue comment only if something fails.
+On the stage iPhone, in **Safari** (latest iOS), signed in to Michael with Google:
+
+1. Open `https://michael-zeta-sand.vercel.app/you/connections/iphone?preview=1` (only this link
+   shows the steps; on a laptop it shows a QR code, and the QR keeps the preview).
+2. Tap **Add the shortcut**. Safari asks to download `Michael.shortcut`: **Download**, then tap
+   the download arrow in the address bar, **Downloads**, **Michael**. Shortcuts opens: tap **Add
+   Shortcut**. Pass: it is added with no question, and it is named exactly **Michael**.
+3. Back in Safari, tap **Connect the shortcut**, then **Open** if Safari asks. Pass: Shortcuts
+   opens for a second and a notification says **Connected to Michael.** (If iOS asks to allow
+   notifications or to save to the Shortcuts folder, allow.)
+4. Open **Shortcuts**, **Automation**, **+**, **App**. **Choose** two or three apps (Instagram,
+   Safari, Mail), tick **Is Opened** only, tick **Run Immediately**, **Next**, then pick
+   **Michael** under My Shortcuts.
+5. Open one of the chosen apps. The first time, iOS asks whether Michael may send to
+   `api-production-16521a26.up.railway.app`: tap **Always Allow**. Stay in the app for a minute,
+   then open a second chosen app (an open closes the app before it).
+6. Back in Safari, reload the Michael page. Pass: the line under the title reads **Last data just
+   now.** (or a few min ago) and no longer **Not connected**; Timeline then shows the first app,
+   from when you opened it until you opened the second. Fail: still **Not connected** after two
+   minutes.
+7. Second iPhone (another Apple ID if you can): scan the QR code from the same page opened on a
+   laptop, or open the link signed in to that person's account, and repeat steps 2 to 6. Pass: the
+   shortcut adds without any question about the first phone, and the opens land on that person's
+   own timeline.
+8. Try it once from the home screen app as well (step 2 only): if the download does not start
+   there, note it on the issue; Safari is the path that must work.
+
+Passed on both: change `iphone: "soon"` to `"live"` in `packages/shared/src/connectors.ts` with the
+proof in the comment, note it on the Build Hub findings, and tick #303.
+
+If step 2 feels like too many taps: on the phone that now has Michael, open **Shortcuts**, hold
+**Michael**, **Share**, **Copy iCloud Link**, and set `MICHAEL_SHORTCUT_URL` to that link in
+Vercel (project **michael**, **Settings > Environment Variables**, all environments, then
+**Redeploy**). An iCloud link opens Shortcuts directly on **Add Shortcut**. The shortcut behind the
+link is the same generated one, so it is still never built by hand.
+
+If it fails: write on #303 which step, what the phone showed (a screenshot helps) and the iOS
+version. To change the shortcut: edit `scripts/shortcut/build.mjs`, run `pnpm shortcut` on a Mac
+signed in to iCloud, commit `apps/web/public/Michael.shortcut`. On the phone, delete the old
+Michael shortcut before adding the new one, or iOS names it Michael 2 and Connect runs the old one.
 
 ## 9. Team access (Loukas, 2 min)
 

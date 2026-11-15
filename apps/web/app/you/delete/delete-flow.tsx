@@ -107,7 +107,7 @@ export function DeleteFlow() {
                 try {
                   setOutcome(await deleteEverything());
                 } catch {
-                  setOutcome({ error: "I could not reach the server. Nothing was deleted. Try again." });
+                  setOutcome({ error: "I lost the line. Nothing was deleted. Try again." });
                 } finally {
                   setBusy(false);
                 }

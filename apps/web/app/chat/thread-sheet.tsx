@@ -1,6 +1,7 @@
 "use client";
 
 import type { ChatThread } from "@michael/shared";
+import { plainText } from "@michael/shared/plain-text";
 import { type PointerEvent, useEffect, useRef, useState } from "react";
 import { motionMs, reducedMotion } from "@/components/motion";
 import { Sheet } from "@/components/sheet";
@@ -21,26 +22,65 @@ const TRAY = 216;
 const OPEN_AT = 56;
 const LONG_PRESS_MS = 480;
 
-/**
- * Every conversation with Michael, as Messages lists them: pinned first, then the latest, each with
- * its title, last line and time. Swipe a row left (or long press it, or tap its More button) for
- * Rename, Pin and Delete. Delete waits five seconds with Undo before anything is removed.
- */
-export function ThreadSheet({
-  open,
-  onClose,
-  threads,
-  currentKey,
-  serverKey,
-  onNew,
-}: {
-  open: boolean;
-  onClose: () => void;
+type ListProps = {
   /** All threads, including the ones waiting out their Undo. */
   threads: ChatThread[];
   currentKey: string;
   serverKey: string;
   onNew: () => void;
+};
+
+/** On a phone (and a narrow laptop): the conversations in a sheet over the chat. */
+export function ThreadSheet({ open, onClose, ...list }: ListProps & { open: boolean; onClose: () => void }) {
+  return (
+    <Sheet
+      open={open}
+      onClose={onClose}
+      title="Conversations"
+      trailing={
+        <button
+          type="button"
+          onClick={list.onNew}
+          className="press -mr-2 h-11 px-2 text-body font-semibold text-tint-text"
+        >
+          New
+        </button>
+      }
+    >
+      <ThreadList {...list} active={open} onChose={onClose} />
+    </Sheet>
+  );
+}
+
+/**
+ * On a laptop 1280 px and up (#285): the same list as a pane beside the conversation, always there,
+ * so switching conversations is one click and never covers the chat.
+ */
+export function ThreadPane(list: ListProps) {
+  return (
+    <nav aria-label="Conversations" className="flex flex-col">
+      {/* New chat is the + in the header beside the conversation: one of it on screen. */}
+      <h2 className="flex min-h-11 items-center pb-2 text-title3 font-bold">Conversations</h2>
+      <ThreadList {...list} active onChose={() => {}} />
+    </nav>
+  );
+}
+
+/**
+ * Every conversation with Michael, as Messages lists them: pinned first, then the latest, each with
+ * its title, last line and time. Swipe a row left (or long press it, or tap its More button) for
+ * Rename, Pin and Delete. Delete waits five seconds with Undo before anything is removed.
+ */
+function ThreadList({
+  active,
+  onChose,
+  threads,
+  currentKey,
+  serverKey,
+}: ListProps & {
+  /** Shown now: the list fetches itself again each time it becomes active. */
+  active: boolean;
+  onChose: () => void;
 }) {
   const { deleting, listError } = useChatSession();
   const [query, setQuery] = useState("");
@@ -51,11 +91,11 @@ export function ThreadSheet({
   // The list may have changed elsewhere (a title written after the first line): fetch it again,
   // showing what is here meanwhile.
   useEffect(() => {
-    if (!open) return;
+    if (!active) return;
     void refreshThreads();
     setRevealed(null);
     setRenaming(null);
-  }, [open]);
+  }, [active]);
 
   // Search: titles and previews match at once; line text from the API a moment later.
   const q = query.trim().toLowerCase();
@@ -82,7 +122,7 @@ export function ThreadSheet({
       return;
     }
     void openThread(t.id, { fromProps: t.id === serverKey });
-    onClose();
+    onChose();
   }
 
   const group = (label: string, list: ChatThread[]) =>
@@ -140,20 +180,7 @@ export function ThreadSheet({
     ) : null;
 
   return (
-    <Sheet
-      open={open}
-      onClose={onClose}
-      title="Conversations"
-      trailing={
-        <button
-          type="button"
-          onClick={onNew}
-          className="press -mr-2 h-11 px-2 text-body font-semibold text-tint-text"
-        >
-          New
-        </button>
-      }
-    >
+    <>
       <label className="m-field flex min-h-10 items-center gap-2 rounded-block bg-fill px-3">
         <svg viewBox="0 0 16 16" aria-hidden="true" className="size-4 shrink-0 text-label-2">
           <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" strokeWidth="1.6" />
@@ -188,7 +215,7 @@ export function ThreadSheet({
       <p className="px-4 pt-4 text-footnote text-label-2">
         Each conversation keeps its own lines. I remember what matters across them.
       </p>
-    </Sheet>
+    </>
   );
 }
 
@@ -347,7 +374,7 @@ function ThreadRow({
             <span className="shrink-0 text-footnote text-label-2 tnum">{formatWhen(when)}</span>
           </span>
           <span className="mt-0.5 line-clamp-2 min-h-[2lh] text-subhead text-label-2">
-            {thread.preview ?? "No lines yet."}
+            {thread.preview ? plainText(thread.preview) : "No lines yet."}
           </span>
         </button>
         <button

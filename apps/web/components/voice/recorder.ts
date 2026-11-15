@@ -3,7 +3,7 @@
 // app records the sentence with MediaRecorder and the API transcribes it with ElevenLabs Scribe.
 // The recording lives in memory only until it is sent; the API drops it once it has the text.
 
-import { VOICE_AUDIO_MAX_SECONDS } from "@michael/shared";
+import { VOICE_AUDIO_MAX_SECONDS } from "@michael/shared/voice-limits";
 import { isIos, readRefused, recognitionCtor, subscribeRefused } from "./speech";
 
 // ---------- which way to listen ----------
@@ -352,3 +352,8 @@ export function transcribeErrorCopy(code: string): string {
 }
 
 export const NOTHING_HEARD_COPY = "I didn't catch that. Hold the button and speak.";
+
+/** A quick tap on the hold to dictate mic: say how it works, and where the conversation is. */
+export const TAPPED_COPY = "Hold the mic while you speak, or tap Talk for a conversation.";
+/** Shorter than this, a press on the mic is a tap. */
+export const TAP_MS = 350;

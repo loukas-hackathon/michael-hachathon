@@ -1,7 +1,6 @@
-// Which connections are proven end to end in production (#295). The demo must work perfectly, so
-// anything not proven on production shows a calm "Coming soon" everywhere (Connections, You,
-// onboarding, the Get started card, the setup pages): no button, no error path, nothing to tap.
-// To switch one on, change its line to "live" and note the proof on the Build Hub findings.
+// Which connections are offered (#295). Loukas decided (Sun 15 Nov) that every connection is shown and
+// connectable: all eight rows with Connect, as before. "soon" remains available to hide one again
+// (calm "Coming soon", no button), but nothing uses it today.
 
 export type ConnectorId =
   | "google-calendar"
@@ -25,13 +24,13 @@ export const CONNECTOR_STATUS: Record<ConnectorId, ConnectorStatus> = {
   // Bot set on production; real accounts linked their chat through the one tap link.
   telegram: "live",
   // Health Auto Export: a device key was made, but no real watch data has arrived yet.
-  "apple-watch": "soon",
+  "apple-watch": "live",
   // Mac collector: no real Mac has sent data to production yet.
-  mac: "soon",
+  mac: "live",
   // iPhone Shortcuts: keys made, no real app opens have arrived yet.
-  iphone: "soon",
+  iphone: "live",
   // Places save, but travel times need Google Maps, which production does not have yet.
-  travel: "soon",
+  travel: "live",
 };
 
 export const isLive = (id: ConnectorId): boolean => CONNECTOR_STATUS[id] === "live";

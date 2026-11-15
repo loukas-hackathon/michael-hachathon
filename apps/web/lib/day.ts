@@ -1,4 +1,5 @@
 import type { Balance, RecordMark, Recovery } from "./gamification";
+import type { ScoreExplain } from "./score-explain";
 import type { Drive, TravelPlan } from "./travel";
 
 export type { Recovery };
@@ -67,6 +68,8 @@ export type DayView = {
   /** Today's drives and Michael's plan for them (#157). */
   drives?: Drive[];
   travelPlan?: TravelPlan | null;
+  /** The week's maths for the "How I count" sheet, and whether Michael is still learning (#206). */
+  explain?: ScoreExplain | null;
   lead: Lead | null;
   nudge: Nudge | null;
 };
@@ -144,5 +147,37 @@ export function nowIndex(ticks: Tick[][]) {
       i++;
     }
   }
+  return null;
+}
+
+// The one clock Today reads (#330): the large title and the moment card under "More from Michael"
+// follow the same hours, so the title never says one part of the day over the other's card.
+const MORNING_FROM = 5;
+const MORNING_UNTIL = 11;
+const EVENING_FROM = 20;
+
+const hourIn = (iso: string, tz: string) =>
+  Number(
+    new Intl.DateTimeFormat("en-GB", { hour: "2-digit", hourCycle: "h23", timeZone: tz }).format(
+      new Date(iso),
+    ),
+  );
+
+/** Today's title: Morning from 05:00 to 11:00, Evening from 20:00, Today otherwise (so also at night). */
+export function titleMomentAt(iso: string, tz = "Europe/Athens"): Moment {
+  const h = hourIn(iso, tz);
+  if (h >= MORNING_FROM && h < MORNING_UNTIL) return "morning";
+  if (h >= EVENING_FROM) return "evening";
+  return "today";
+}
+
+/**
+ * The moment card on offer: the Morning plan until 11:00 (at night too, when the title reads Today),
+ * the Evening review from 20:00, nothing in between.
+ */
+export function cardMomentAt(iso: string, tz = "Europe/Athens"): "morning" | "evening" | null {
+  const h = hourIn(iso, tz);
+  if (h < MORNING_UNTIL) return "morning";
+  if (h >= EVENING_FROM) return "evening";
   return null;
 }

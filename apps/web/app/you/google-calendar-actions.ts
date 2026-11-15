@@ -11,7 +11,7 @@ export async function syncCalendar(): Promise<ActionResult> {
     await syncGoogleCalendar();
     result = { ok: true, message: `Synced at ${formatTime(new Date())}.` };
   } catch {
-    result = { ok: false, message: "I could not reach Google. Try again in a minute." };
+    result = { ok: false, message: "I couldn't reach Google. Try again in a minute." };
   }
   revalidatePath("/you", "layout");
   return result;
@@ -21,7 +21,7 @@ export async function disconnectCalendar(): Promise<ActionResult> {
   try {
     await disconnectGoogleCalendar();
   } catch {
-    return { ok: false, message: "I could not disconnect. Nothing changed." };
+    return { ok: false, message: "I couldn't disconnect. Nothing changed." };
   }
   revalidatePath("/you", "layout");
   return { ok: true, message: "Disconnected." };

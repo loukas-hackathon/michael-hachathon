@@ -33,7 +33,7 @@ import { calendarTitles, goalForEvent, titleMatchesAny } from "./match";
 import { isBusinessGoal, isTrainingGoal, purposeFor } from "./purpose";
 import type { BlockRun, RecordWeek } from "./records";
 import { type TargetWeek, withTarget } from "./targets";
-import { commitments, committedMinutes, freeMinutesLeft, sleepWeek, wakingDay } from "./week";
+import { commitments, committedMinutes, freeMinutesLeft, protectedSpans, sleepWeek, wakingDay } from "./week";
 
 export { isSleepGoal };
 
@@ -81,14 +81,19 @@ export { isSleepGoal };
 //     Logged      Done time the user reported ("a bath, 40 minutes, at 13:00"), past only. Inside
 //                 a block of the same goal it confirms that time: verified, never lost, so the
 //                 block becomes confirmed instead of the minutes counting twice. The part outside
-//                 every block of its goal is goal time of its own: a piece (`matched_by: logged`,
-//                 `event_id` is the entry) whose minutes are planned, elapsed, spent and verified.
+//                 every block of its goal was never planned (#372), so it stays out of the score
+//                 entirely: not planned, not elapsed, not spent, no block, no ticks. It counts
+//                 toward the goal's weekly budget instead, as `logged_minutes` on the goal row
+//                 (`minutes_left` = budget - spent - logged), on each day and on the week, so the
+//                 maths can say "plus 40 min you logged outside your blocks".
 //     Did it      A past block settled with some of its minutes from its start: those minutes are
 //                 verified, the rest of its elapsed time is lost. All of it: the block is verified.
 //     Didn't      A past block settled as not done: all of its elapsed time is lost.
-//   A settled block carries `settled` ("did" or "didnt"); a logged piece reads "did". Logged
-//   pieces stay out of time won back and the records, which rest on the data alone. A logged
-//   entry for a count goal is one occurrence of it (score/count.ts), like a check in "yes".
+//   A settled block carries `settled` ("did" or "didnt"). A logged entry for a count goal is one
+//   occurrence of it (score/count.ts), like a check in "yes".
+//
+//   So the headline, the day's tape and the Keep the Day strip read the same planned and spent
+//   minutes: logging time outside a block never moves the score, only the budget.
 //
 //   Count and checklist goals are outside the score too: each gets a row of its own (`count`,
 //   `checklist`) by the rules in score/count.ts, and adds nothing to any total.
@@ -99,8 +104,9 @@ export { isSleepGoal };
 //   Areas: the same totals per category, for the week and for the day, so a strong business week
 //   with no personal time does not read as a win. They add up to the week and to the day.
 //
-//   Standing instructions ("keep Sundays clear") never change a minute of the score. Each block
-//   only carries `instructions_broken`: the active instructions its time falls under
+//   Standing instructions ("keep Sundays clear") never change a minute of the score; the one
+//   number they touch is `free_minutes_left`, which leaves out the time they protect (week.ts).
+//   Each block carries `instructions_broken`: the active instructions its time falls under
 //   (instructions/protected.ts), so the app can flag a block planned on a clear day. A block named
 //   in an instruction's `exceptions` ("Rhefuel" on a clear Sunday) does not break it.
 //
@@ -403,41 +409,11 @@ function evaluate(
 }
 
 /**
- * Logged time outside every block of its goal (#317): goal time of its own, all of it planned,
- * elapsed, spent and verified. Null when nothing of it has passed.
+ * Whole minutes of logged time outside every block of its goal on one day (#372): budget time,
+ * never planned time. 0 when nothing of it has passed.
  */
-function loggedPiece(
-  entry: LoggedDone,
-  goal: Goal,
-  part: { day: string; start: number; end: number },
-  now: number,
-): Piece | null {
-  const end = Math.min(part.end, now);
-  if (!(end > part.start)) return null;
-  const minutes = wholeMinutes(end - part.start);
-  const ticks: ScoreTick[] = [];
-  for (let a = part.start; a < end; a += SCORE_RULES.tickMs) ticks.push("spent");
-  return {
-    day: part.day,
-    start: part.start,
-    end,
-    block: {
-      start: part.start,
-      end,
-      eventId: entry.id,
-      goal,
-      title: entry.note ?? goal.title,
-      rule: "logged",
-    },
-    planned: minutes,
-    elapsed: minutes,
-    lost: 0,
-    verified: minutes,
-    ticks,
-    stretches: [],
-    settled: "did",
-  };
-}
+const loggedMinutes = (part: { start: number; end: number }, now: number): number =>
+  Math.max(0, wholeMinutes(Math.min(part.end, now) - part.start));
 
 // ---------- count goals (#238, the rule in score/count.ts) ----------
 
@@ -695,35 +671,40 @@ export function scoreWithHistory(
       pieces.push(evaluate(block, part, tl.attention, proof, now, word));
     }
   }
-  // Logged time outside every block of its goal is goal time of its own.
+  // Logged time outside every block of its goal is budget time, not planned time (#372): minutes
+  // by goal and day, kept apart from the pieces so no total of the score sees them.
+  const loggedByGoalDay = new Map<string, Map<string, number>>();
   for (const [goalId, entries] of doneByGoal) {
-    const goal = goalById.get(goalId) as Goal;
     const holes = union(blocks.filter((b) => b.goal.id === goalId));
+    const byDay = new Map<string, number>();
     for (const entry of entries) {
       const span = { start: Math.max(entry.start, range.from), end: Math.min(entry.end, range.to, now) };
       if (!(span.end > span.start)) continue;
       for (const rest of subtractSpans(span, holes)) {
         for (const part of zone.splitByDay(rest.start, rest.end)) {
-          const piece = loggedPiece(entry, goal, part, now);
-          if (piece) pieces.push(piece);
+          const minutes = loggedMinutes(part, now);
+          if (minutes > 0) byDay.set(part.day, (byDay.get(part.day) ?? 0) + minutes);
         }
       }
     }
+    loggedByGoalDay.set(goalId, byDay);
   }
+  const loggedOn = (day: string, goalId?: string): number => {
+    let t = 0;
+    for (const [id, byDay] of loggedByGoalDay) if (!goalId || id === goalId) t += byDay.get(day) ?? 0;
+    return t;
+  };
   pieces.sort((a, b) => a.start - b.start);
-  const isLogged = (p: Piece) => p.block.rule === "logged";
 
   const byDay = new Map<string, Sum>();
   for (const p of pieces) byDay.set(p.day, plus(byDay.get(p.day) ?? ZERO, p));
-  // Time won back compares the data with the usual day: logged pieces stay out of it.
-  const blocksByDay = new Map<string, Sum>();
-  for (const p of pieces) if (!isLogged(p)) blocksByDay.set(p.day, plus(blocksByDay.get(p.day) ?? ZERO, p));
 
-  const wonBack = new Map(range.days.map((day) => [day, timeWonBack(day, blocksByDay, zone)]));
+  const wonBack = new Map(range.days.map((day) => [day, timeWonBack(day, byDay, zone)]));
   const days: ScoreDay[] = range.days.map((day) => ({
     date: day,
     ...totals(byDay.get(day) ?? ZERO),
     time_won_back_minutes: wonBack.get(day)?.minutes ?? 0,
+    logged_minutes: loggedOn(day),
   }));
 
   const inWeek = new Set(range.days);
@@ -754,6 +735,7 @@ export function scoreWithHistory(
     const budget = goal.weekly_budget_minutes ?? 0;
     const scored = isScoredGoal(goal);
     const kind = goalKind(goal);
+    const logged = range.days.reduce((sum, day) => sum + loggedOn(day, goal.id), 0);
     return {
       goal_id: goal.id,
       title: goal.title,
@@ -763,11 +745,17 @@ export function scoreWithHistory(
       scored,
       budget_minutes: budget,
       ...t,
+      logged_minutes: logged,
       daily: range.days.map((day) => {
         const d = totals(own.filter((p) => p.day === day).reduce(plus, ZERO));
-        return { date: day, planned_minutes: d.planned_minutes, spent_minutes: d.spent_minutes };
+        return {
+          date: day,
+          planned_minutes: d.planned_minutes,
+          spent_minutes: d.spent_minutes,
+          logged_minutes: loggedOn(day, goal.id),
+        };
       }),
-      minutes_left: scored ? Math.max(0, budget - t.spent_minutes) : 0,
+      minutes_left: scored ? Math.max(0, budget - t.spent_minutes - logged) : 0,
       // A block that crosses midnight is one block.
       open_blocks: new Set(own.filter((p) => p.end > now).map((p) => p.block.eventId)).size,
       ...(kind === "checklist"
@@ -817,7 +805,7 @@ export function scoreWithHistory(
       committed_minutes: committedMinutes(zone, weekDays, waking, committed),
     };
   });
-  const runs = pieces.flatMap((p) => (p.end <= now && !isLogged(p) ? (longestRun(p) ?? []) : []));
+  const runs = pieces.flatMap((p) => (p.end <= now ? (longestRun(p) ?? []) : []));
   const history: ScoreHistory = { weeks, runs };
 
   const score: Score = withTarget(
@@ -825,6 +813,7 @@ export function scoreWithHistory(
       week_start: iso(zone.startOfDay(monday)),
       ...totals(week),
       time_won_back_minutes: days.reduce((t, d) => t + d.time_won_back_minutes, 0),
+      logged_minutes: days.reduce((t, d) => t + (d.logged_minutes ?? 0), 0),
       goals: goalRows,
       timezone: zone.name,
       generated_at: iso(now),
@@ -852,7 +841,14 @@ export function scoreWithHistory(
       target: null,
       on_target: null,
       records: [],
-      free_minutes_left: freeMinutesLeft(zone, range.days, now, waking, committed),
+      free_minutes_left: freeMinutesLeft(
+        zone,
+        range.days,
+        now,
+        waking,
+        committed,
+        protectedSpans(instructions, zone, range.days, blocks),
+      ),
       lost_by: lostBy(weekPieces.flatMap((piece) => piece.stretches)),
       sleep: sleepWeek(events, active, zone, range.days, now),
     },

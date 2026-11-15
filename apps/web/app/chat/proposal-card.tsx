@@ -10,6 +10,7 @@ import {
   type RecActionResult,
   undoRecommendationAction,
 } from "@/lib/recommendation-actions";
+import { undoneLine } from "@/lib/say";
 import { useAction } from "@/lib/use-action";
 
 type State = "proposed" | "done" | "dismissed" | "undone";
@@ -76,7 +77,7 @@ export function ProposalCard({ action }: { action: Recommendation }) {
         </button>
       ) : (
         <p className="m-swap text-footnote text-label-2" role="status">
-          {state === "dismissed" ? "Left as it was." : "Undone. Back as it was."}
+          {state === "dismissed" ? "Left as it was." : undoneLine("Back as it was.")}
         </p>
       )}
       <ActionError error={act.error} onRetry={act.retry} />

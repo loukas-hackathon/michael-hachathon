@@ -6,7 +6,7 @@ import { KeySetup } from "@/components/you/key-setup";
 import { SourcePrivacy } from "@/components/you/source-privacy";
 import { CONNECTION_ROUTES, connection } from "@/lib/connections";
 import { getConnection } from "@/lib/connections-status";
-import { isIPhone } from "@/lib/one-tap";
+import { isIPhone, shortcutUrl } from "@/lib/one-tap";
 
 export const metadata = { title: "iPhone · Michael" };
 
@@ -14,8 +14,15 @@ export const metadata = { title: "iPhone · Michael" };
 // Screen Time history needs a Mac (Apple keeps it on the devices; the Mac collector reads the
 // synced copy, a day behind). Without a Mac, or on the iPhone itself, the iPhone path leads and the
 // Mac is a footnote; with a Mac, opened from the Mac, Screen Time leads.
-export default async function IPhonePage({ searchParams }: { searchParams: Promise<{ from?: string }> }) {
-  const [{ row, view }, { from }, h] = await Promise.all([getConnection("iphone"), searchParams, headers()]);
+// ?preview=1 is kept harmless: it only matters if CONNECTOR_STATUS switches the iPhone back to
+// Coming soon, when it still shows the steps for proving on a real iPhone (#306, #303).
+export default async function IPhonePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ from?: string; preview?: string }>;
+}) {
+  const [{ from, preview }, h] = await Promise.all([searchParams, headers()]);
+  const { row, view } = await getConnection("iphone", { preview: preview === "1" });
   const c = connection("iphone");
   const mac = view.rows.find((r) => r.id === "mac");
   const hasMac = mac?.state === "on" || mac?.state === "paused";
@@ -33,7 +40,7 @@ export default async function IPhonePage({ searchParams }: { searchParams: Promi
         </p>
       ) : null}
       <IPhoneShortcutSetup
-        shortcutUrl={process.env.MICHAEL_SHORTCUT_URL || null}
+        shortcutUrl={shortcutUrl()}
         fallback={
           <KeySetup
             keyName="iPhone Shortcuts"

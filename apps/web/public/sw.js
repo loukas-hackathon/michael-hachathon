@@ -20,8 +20,9 @@ const SHELL_URL = "/shell.html";
 const PRECACHE = [SHELL_URL, "/manifest.webmanifest", "/icon-180.png", "/icon-512.png"];
 
 // How long a page may take before the skeleton shell paints instead. The real page still loads
-// behind it and replaces the shell the moment it arrives.
-const NAV_TIMEOUT_MS = 1200;
+// behind it and replaces the shell the moment its first bytes arrive (the rest streams in), so
+// showing the shell early costs nothing: 700 ms keeps a cold open from ever looking frozen.
+const NAV_TIMEOUT_MS = 700;
 const HANDOFF_TTL_MS = 30_000;
 
 /** url -> { promise: Promise<Response|null>, response?: Response|null, at: number } */
@@ -66,6 +67,9 @@ self.addEventListener("message", (event) => {
     event.waitUntil(answerHandoff(data.url, event.ports[0]));
   } else if (data.type === "forget") {
     event.waitUntil(forgetPersonal());
+  } else if (data.type === "open-nudge" && data.nudge) {
+    // The same path as tapping the notification (the e2e tests drive it from a page).
+    event.waitUntil(openNudge(data.nudge));
   }
 });
 
@@ -81,6 +85,8 @@ self.addEventListener("fetch", (event) => {
     return;
   }
   if (request.method !== "GET") return; // writes always go straight to the network, never queued
+  // The Michael shortcut is a file to download, never a page: the shell must not stand in for it.
+  if (url.pathname.endsWith(".shortcut")) return;
 
   if (request.mode === "navigate") {
     event.respondWith(navigate(event, url));
@@ -165,7 +171,7 @@ async function precacheStatic(urls) {
  * shows the calm offline message.
  */
 async function navigate(event, url) {
-  const key = url.href;
+  const key = withoutHash(url.href);
 
   // The shell asked to reload because the real page has arrived: serve it once, then forget it.
   const held = handoffs.get(key);
@@ -197,32 +203,55 @@ async function navigate(event, url) {
   if (first && first !== "timeout") return first;
 
   // Slow or offline: keep the request alive in memory for the shell to pick up, and paint the shell.
-  // The body is read to the end while this event is still alive: a streamed preload body would be
-  // cut off once the event finishes, leaving a blank page after the hand over.
-  const buffered = network.then(async (response) => {
-    if (!response || response.type === "opaqueredirect" || !response.body || response.status === 304) {
-      return response;
+  // The shell reloads the moment the first bytes arrive and the page streams on from there, so a
+  // slow section (a Suspense row still reading) never holds the whole screen back. The body is
+  // piped while this event is kept alive: a streamed preload body would otherwise be cut off once
+  // the event finishes, leaving a blank page after the hand over.
+  const entry = { at: Date.now() };
+  let piped = Promise.resolve();
+  entry.promise = network.then((response) => {
+    let handed = response;
+    if (response && response.body && response.type !== "opaqueredirect" && response.status !== 304) {
+      if (typeof TransformStream === "function") {
+        const { readable, writable } = new TransformStream();
+        piped = response.body.pipeTo(writable).catch(() => {});
+        handed = new Response(readable, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: response.headers,
+        });
+      } else {
+        // No streams: read to the end first, as before.
+        piped = response.blob().then(
+          (body) => {
+            entry.response = new Response(body, {
+              status: response.status,
+              statusText: response.statusText,
+              headers: response.headers,
+            });
+          },
+          () => {
+            entry.response = null;
+          },
+        );
+        return piped.then(() => entry.response);
+      }
     }
-    try {
-      const body = await response.blob();
-      return new Response(body, {
-        status: response.status,
-        statusText: response.statusText,
-        headers: response.headers,
-      });
-    } catch {
-      return null;
-    }
+    entry.response = handed;
+    entry.at = Date.now();
+    return handed;
   });
-  const entry = { promise: buffered, at: Date.now() };
   handoffs.set(key, entry);
   event.waitUntil(
-    buffered.then((response) => {
-      entry.response = response;
-      entry.at = Date.now();
+    entry.promise.then(() => {
       setTimeout(() => {
-        if (handoffs.get(key) === entry) handoffs.delete(key);
+        if (handoffs.get(key) !== entry) return;
+        handoffs.delete(key);
+        // Never picked up: let the network request go.
+        entry.response?.body?.cancel().catch(() => {});
       }, HANDOFF_TTL_MS);
+      // Alive until the page has streamed to the end (or was dropped above).
+      return Promise.race([piped, new Promise((resolve) => setTimeout(resolve, HANDOFF_TTL_MS + 1000))]);
     }),
   );
   return shellResponse();
@@ -242,7 +271,8 @@ async function shellResponse() {
  * Tells the shell page whether its real page arrived ("ready"), the network is gone ("offline"), or
  * the request was lost and is worth one more try ("retry").
  */
-async function answerHandoff(url, port) {
+async function answerHandoff(href, port) {
+  const url = withoutHash(href);
   const entry = handoffs.get(url);
   if (!entry) {
     // The worker restarted and lost the request: the shell tries the page once more.
@@ -252,6 +282,12 @@ async function answerHandoff(url, port) {
   const response = await entry.promise;
   port.postMessage({ status: response ? "ready" : "offline" });
   if (!response) handoffs.delete(url);
+}
+
+/** Handoffs are keyed without the fragment: the shell sees #nudge=..., the request may not. */
+function withoutHash(href) {
+  const i = href.indexOf("#");
+  return i === -1 ? href : href.slice(0, i);
 }
 
 async function forgetPersonal() {
@@ -264,6 +300,12 @@ async function forgetPersonal() {
 
 // ---------------------------------------------------------------------------------------------
 // Web Push
+//
+// A nudge may carry buttons (#399): "Snooze 10 min", "Mute Instagram 30 min", "Do it". Chrome,
+// Android and desktop browsers show them; iPhone and the Apple Watch do not show web push buttons,
+// so there the tap opens the exact card (`url`) and the button is one tap away in the app.
+// A button posts { action, token } to the API (`act_url`): the token is signed for that nudge and
+// user, so no session is needed here. The result comes back as a second notification.
 
 self.addEventListener("push", (event) => {
   let data = {};
@@ -272,31 +314,121 @@ self.addEventListener("push", (event) => {
   } catch {
     data = { body: event.data ? event.data.text() : "" };
   }
-  const title = data.title || "Michael";
-  event.waitUntil(
-    self.registration.showNotification(title, {
-      body: data.body || "",
-      tag: data.tag || "nudge",
-      renotify: true,
-      icon: "/icon-180.png",
-      badge: "/icon-180.png",
-      data: { url: data.url || "/" },
-    }),
-  );
+  event.waitUntil(self.registration.showNotification(data.title || "Michael", nudgeOptions(data)));
 });
+
+/** What showNotification gets for a push payload (apps/api/src/nudges/push.ts PushPayload). */
+function nudgeOptions(data) {
+  const actions = Array.isArray(data.actions)
+    ? data.actions
+        .filter((a) => a && typeof a.action === "string" && typeof a.title === "string")
+        .slice(0, 2)
+        .map((a) => ({ action: a.action, title: a.title }))
+    : [];
+  const options = {
+    body: data.body || "",
+    tag: data.tag || "nudge",
+    renotify: true,
+    icon: "/icon-180.png",
+    badge: "/icon-180.png",
+    data: {
+      url: data.url || "/",
+      // What the app shows the moment it opens, before any data arrives (openNudge).
+      text: data.body || "",
+      kind: data.tag || "nudge",
+      at: Date.now(),
+      act_url: typeof data.act_url === "string" ? data.act_url : null,
+      token: typeof data.token === "string" ? data.token : null,
+    },
+  };
+  if (actions.length) options.actions = actions;
+  return options;
+}
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = new URL(event.notification.data?.url || "/", self.location.origin).href;
-  event.waitUntil(
-    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
-      for (const w of windows) {
-        if (w.url.startsWith(self.location.origin) && "focus" in w) {
-          w.navigate(url);
-          return w.focus();
-        }
-      }
-      return self.clients.openWindow(url);
-    }),
-  );
+  const data = event.notification.data || {};
+  const action = event.action || "";
+  if (!action || action === "open" || !data.act_url || !data.token) {
+    event.waitUntil(openNudge(data));
+    return;
+  }
+  event.waitUntil(actOnNudge(data, action));
 });
+
+/** Posts the button to the API and shows what happened, under the same tag. */
+async function actOnNudge(data, action) {
+  let body = "That did not work. Open Michael to do it there.";
+  let url = data.url || "/";
+  try {
+    const res = await fetch(data.act_url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, token: data.token }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (res.ok && typeof json.text === "string") {
+      body = json.text;
+      if (typeof json.url === "string") url = json.url;
+    } else if (json.error && typeof json.error.message === "string") {
+      body = json.error.message;
+    }
+  } catch {
+    body = "No connection. Open Michael to do it there.";
+  }
+  await self.registration.showNotification("Michael", {
+    body,
+    tag: "nudge-done",
+    icon: "/icon-180.png",
+    badge: "/icon-180.png",
+    data: { url },
+  });
+}
+
+/**
+ * Where a nudge opens. The nudge itself rides in the URL fragment (#nudge=...), which never leaves
+ * the device, so the app paints a "From your nudge" card from it straight away while the day loads.
+ * An open window is focused and routed inside the app (no full reload); with no window the app
+ * opens on the URL and the shell paints at once if the server is slow.
+ */
+async function openNudge(data) {
+  const target = new URL(typeof data.url === "string" ? data.url : "/", self.location.origin);
+  if (target.origin !== self.location.origin) target.href = self.location.origin + "/";
+  const nudge = {
+    text: String(data.text || "").slice(0, 300),
+    kind: String(data.kind || "nudge"),
+    at: data.at || Date.now(),
+  };
+  if (nudge.text) target.hash = `nudge=${encodeURIComponent(JSON.stringify(nudge))}`;
+  const url = target.href;
+
+  const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+  const ours = windows.filter((w) => w.url.startsWith(self.location.origin));
+  // The one the person last looked at first.
+  ours.sort(
+    (a, b) =>
+      Number(b.focused) - Number(a.focused) ||
+      Number(b.visibilityState === "visible") - Number(a.visibilityState === "visible"),
+  );
+  const w = ours[0];
+  if (!w) return self.clients.openWindow(url);
+
+  const focused = "focus" in w ? w.focus().catch(() => w) : Promise.resolve(w);
+  // Ask the page to route itself; a page from an older build does not answer, so it navigates.
+  const routed = await new Promise((resolve) => {
+    const channel = new MessageChannel();
+    const timer = setTimeout(() => resolve(false), 800);
+    channel.port1.onmessage = () => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    try {
+      w.postMessage({ type: "nudge-open", url, nudge }, [channel.port2]);
+    } catch {
+      clearTimeout(timer);
+      resolve(false);
+    }
+  });
+  if (!routed && "navigate" in w) await w.navigate(url).catch(() => null);
+  return focused;
+}

@@ -31,3 +31,12 @@ test("GET /v1/moments takes ?at= and rejects a bad kind or instant", async () =>
     assert.equal(res.status, 400, path);
   }
 });
+
+test("GET /v1/moments/:kind?phrase=cached answers without the model (#378)", async () => {
+  const res = await app.request("/v1/moments/morning?phrase=cached", { headers: auth });
+  assert.equal(res.status, 200);
+  const body = Moment.parse(await res.json());
+  // No model key in the tests: the template, and nothing pending.
+  assert.equal(body.phrased_by, "template");
+  assert.equal(body.phrase_pending, undefined);
+});

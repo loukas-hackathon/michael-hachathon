@@ -55,8 +55,8 @@ export async function runBrief(): Promise<BriefResult> {
 /** One line in Michael's voice for a failed run. */
 export function briefError(status: number): string {
   if (status === 503) return "I can't write briefs on this server yet. The model key is missing.";
-  if (status === 502) return "I could not finish the brief this time. Try again in a minute.";
-  if (status === 401) return "Sign in again and I will brief you.";
-  if (status === 0) return "I can't reach the server right now. Try again in a minute.";
-  return "Something went wrong on my side. Try again in a minute.";
+  if (status === 502) return "I couldn't finish the brief this time. Try again in a minute.";
+  if (status === 401) return "Sign in again and I'll brief you.";
+  if (status === 0) return "I lost the line. Try again in a minute.";
+  return "That one's on me. Try again in a minute.";
 }

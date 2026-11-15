@@ -23,15 +23,20 @@ returns `501 not_implemented`, `planned` = not routed yet. Update the status whe
   - Demo visitors (the web app's "See the demo week", server to server only): `API_KEY` plus
     `X-Michael-Demo-Visitor: <uuid>`, one random id per visitor. Same demo account, but read
     mostly: chat is stored and read per visitor (a visitor never sees another's, nor the
-    account's own), and only these writes are allowed: `POST /v1/chat`, `/v1/chat/stream`,
+    account's own), and only these writes are allowed: `POST /v1/chat`, `/v1/chat/stream`, `/v1/chat/warm`,
     `POST /v1/chat/threads`, `PATCH|DELETE /v1/chat/threads/:id` (their own threads),
     `/v1/recommendations/:id/execute|undo`, `PATCH /v1/recommendations/:id`, `POST /v1/analysis/run`,
-    `/v1/travel/plan`, `/v1/focus-guards/suggest`, `/v1/voice/speak`, `/v1/voice/transcribe`, `/v1/records/:id/announced`, `POST|DELETE /v1/push/subscriptions`, `POST /v1/nudges/test`, the daily ritual (`POST /v1/ritual/morning|evening`, `/v1/ritual/:kind/skip`) and done time (`POST /v1/log`, `/v1/log/block`, `DELETE /v1/log/:id`), which the reseed puts back to the plan.
+    `/v1/travel/plan`, `/v1/focus-guards/suggest`, Focus now (`POST /v1/focus/start`, `/v1/focus/:id/extend|end`, one session per visitor, cleared with the blocks it made by the reseed), `/v1/voice/speak`, `/v1/voice/transcribe`, `/v1/records/:id/announced`, `POST|DELETE /v1/push/subscriptions`, `POST /v1/nudges/test`, the daily ritual (`POST /v1/ritual/morning|evening`, `/v1/ritual/:kind/skip`) and done time (`POST /v1/log`, `/v1/log/block`, `DELETE /v1/log/:id`), which the reseed puts back to the plan.
     Anything else that writes (privacy, goals, instructions, places, profile, integrations,
     Telegram, agents, connecting an agent, keys, data deletion, ingest, `/mcp`) answers
     `403 forbidden` with the message "This is the demo week. Sign in with Google to make it yours."
     and `details: { demo: true }`. A malformed visitor id is `401`. MCP OAuth tokens bound to the
     demo account and the bare `API_KEY` keep full access.
+  - The presenter (#343): a demo visitor whose request also carries
+    `X-Michael-Demo-Presenter: <DEMO_PRESENTER_KEY>` (server to server, from the web app's presenter
+    link). On top of a visitor's writes it may answer `POST /v1/connect/requests/:id`, so the stage
+    laptop connects claude.ai to the demo week in one tap. A wrong key, no key configured, or the
+    header without `API_KEY` grants nothing.
 - **Shared secret details:**
   Send `Authorization: Bearer <API_KEY>`. Applies to everything under `/v1/*` and `/mcp`, except
   `/health` and the OAuth callback redirect (`/oauth/google/callback`). Only `/v1/webhooks/*` and `/mcp` also accept
@@ -88,7 +93,8 @@ Enums:
   (as a generated copy) the browser extension all use them.
 - `ConnectorId`: `google-calendar | apple-watch | mac | iphone | claude | nudges | telegram | travel`;
   `ConnectorStatus`: `live | soon`. `CONNECTOR_STATUS` (shared, not served by the API) says which
-  connections are proven end to end on production; the apps show the rest as Coming soon (#295).
+  connections are offered. All eight are `live` (every row on You has Connect or Manage); a `soon`
+  one would show as a quiet Coming soon row with nothing to tap (#295).
 - `IntegrationProvider`: `google_calendar | whoop`
 - `IntegrationStatus`: `connected | disconnected | error`
 - `DraftStatus`: `proposed | done | dismissed`; `DraftChannel`: `email | chat`; `DraftAuthor`: `model | template | analysis`
@@ -261,7 +267,8 @@ Response `200`: `Health`.
 - `200`: `{ from, to, events: Event[] }`. `400` on bad dates or unknown enum values.
 
 `POST /v1/events` body `EventInput` → `201 { inserted: number, duplicates: number, ignored: number, events: Event[] }`.
-`ignored` counts events dropped because their source is switched off or the user is off the record.
+`ignored` counts events dropped because their source is switched off, the user is off the record,
+or (for a conversation) meetings mode was not on at its start (see Meetings mode).
 A duplicate `(source, external_id)` is skipped and counted in `duplicates` (not an error).
 
 `POST /v1/events/batch` body `{ events: EventInput[] }` (1..1000) → same response as above.
@@ -310,6 +317,8 @@ event, `start_at`/`end_at` = `started_at`/`finished_at`, `title` = `structured.t
 `duration_min`. `external_id` = `omi:<id>`. Only those fields are read: transcript segments, speaker
 names, app results and folders are never stored. A `discarded` conversation, a real time transcript
 batch (a JSON array) or any other Omi payload answers `200` with nothing inserted.
+A conversation is kept only when meetings mode was on at its `started_at` (#400, see Meetings
+mode); otherwise it answers `200` with `ignored: 1` and nothing is stored.
 
 `POST /v1/webhooks/ios-shortcuts` takes our own tiny body, sent by a Shortcuts personal automation
 ("App is opened" / "App is closed", then "Get Contents of URL"). Setup: `docs/sources/ios-shortcuts.md`.
@@ -468,12 +477,21 @@ The Goals tab's one action. `type GoalBook = { minutes?: number }` (15 to 360, d
 takes the first free slot of that length from now (at least 5 minutes ahead, on the quarter hour)
 to Sunday night, inside the waking day (the sleep goal sets it), clear of every calendar entry that
 holds time and of time an active standing instruction protects for the goal's block title. The
-block is titled with the goal's first `calendar_titles` entry (else its title), so the score counts
-it, and is booked at once as a `create_focus_block` recommendation (`status: "done"`, rationale
-"Booked at your request through Goals."), the same path as the MCP `create_focus_block` tool.
-Undo with `POST /v1/recommendations/:id/undo` until it starts. `404` for an unknown or paused goal,
-`409` "No free 90 minutes left this week" when nothing fits. Pure slot logic: `goalSlot` in
-`apps/api/src/goals/book.ts`.
+block is named after the goal (`goalBlockTitle` in `score/match.ts`: the goal's own title,
+"University", never a bare "Study") and carries its `goal_id`, so the score counts it, and is
+booked at once as a `create_focus_block` recommendation (`status: "done"`, rationale "University,
+90 minutes. Undo until 07:00."), the same path as the MCP `create_focus_block` tool.
+Undo with `POST /v1/recommendations/:id/undo` until it starts. `404` for an unknown or paused goal.
+
+When that length no longer fits (#330), Michael takes the longest shorter one that does, in quarter
+hours and never under 30 minutes (asked for 90 with 45 free: 45), and the rationale says so: "University,
+45 minutes. No free 90 minutes left this week, so I took 45 minutes. Undo until 07:00." The
+answer is still `201`; read the booked times from `action.payload`. `409` when nothing fits, with
+the reason as the message, in Michael's words: "Sundays are kept clear, so no 90 minutes are left
+this week." when a standing instruction keeps the time that would have fitted ("You're home by
+21:00, so ...", "Your quiet hours cover the rest, so ..."), else "No free 90 minutes left this
+week." The same protected time is left out of `free_minutes_left`, so "The maths" and Book agree.
+Pure slot logic: `goalSlot`, `goalBooking` and `noSlotLine` in `apps/api/src/goals/book.ts`.
 
 #### Goals from the calendar (#134)
 
@@ -772,7 +790,7 @@ guard" below).
 | Method | Path                   | Body                | Response                              | Status |
 | ------ | ---------------------- | ------------------- | ------------------------------------- | ------ |
 | GET    | `/v1/instructions`     |                     | `200 { instructions: Instruction[] }` | live   |
-| POST   | `/v1/instructions`     | `InstructionCreate` | `201 Instruction`, `400`              | live   |
+| POST   | `/v1/instructions`     | `InstructionCreate` | `201 Instruction`, `400`, `409`       | live   |
 | PATCH  | `/v1/instructions/:id` | `InstructionUpdate` | `200 Instruction`, `400`, `404`       | live   |
 | DELETE | `/v1/instructions/:id` |                     | `204`, `404`                          | live   |
 
@@ -791,6 +809,12 @@ about planning, not about nudges.
 
 - `text` is always the user's own words and is never rewritten. `kind` defaults to `custom`, so a
   client may send only the words.
+- The same rule is kept once (#330). `POST` answers `409 conflict` "You already have that one."
+  when an active instruction is the same rule: the same `kind` on the same `days` with the same
+  `time` and `end_time` (a `home_by` or `quiet_hours` without `days` is every day), or the same
+  words (case, spacing and a closing full stop aside), which is all a `custom` one is. A paused
+  instruction does not count. Michael's `add_instruction` in chat goes through the same check
+  (`createInstruction` in `apps/api/src/routes/instructions.ts`).
 - `days`: 0 = Sunday to 6 = Saturday. `time` and `end_time`: `"HH:MM"`, 24 hour clock.
 - When `end_time` is not after `time`, quiet hours run past midnight (22:00 to 07:00) and belong to
   the day they start on. `home_by` runs on until 05:00: a block at 00:30 counts as after 21:00 of
@@ -947,9 +971,19 @@ without calling any model.
 
 ### Patterns
 
-| Method | Path                               | Response            | Status |
-| ------ | ---------------------------------- | ------------------- | ------ |
-| GET    | `/v1/patterns?from=<iso>&to=<iso>` | `200 PatternReport` | live   |
+| Method | Path                               | Response                 | Status |
+| ------ | ---------------------------------- | ------------------------ | ------ |
+| GET    | `/v1/patterns?from=<iso>&to=<iso>` | `200 PatternReport`      | live   |
+| GET    | `/v1/patterns/phone-cadence`       | `200 PhoneCadenceReport` | live   |
+
+`/v1/patterns/phone-cadence` is the one detector Today reads (#298): the 7 days ending now, read
+from the iPhone's app usage and the nights only, so it is a fraction of the full report's work.
+`{ from, to, timezone, generated_at, phone_cadence }`, where `phone_cadence` equals the full
+report's for the same window.
+
+The score, a pattern report and a moment are kept for a few seconds per user (20 s, 60 s, 20 s;
+`apps/api/src/memo.ts`) and computed again at once after any write of that user's through the
+store. Replays with `now` or `at` are always computed.
 
 `from`, `to` optional; default is the 7 days ending now. `400` on bad dates, `to` not after `from`,
 or a range over 92 days. Computed on request by pure functions in `apps/api/src/patterns` (plain
@@ -1316,25 +1350,45 @@ travel site" or "an uncategorised site". Structured `data` carries the host for 
 
 ### Chat
 
-| Method | Path                                           | Body                                                                               | Response                                                                                                                                                                                                                                                                                       | Status |
-| ------ | ---------------------------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| GET    | `/v1/chat?thread_id=&limit=50`                 |                                                                                    | `200 { messages: ChatMessage[], actions: Recommendation[], thread: ChatThread \| null }` (one thread's lines, oldest first, limit 1..100; without `thread_id` the latest thread; `actions` are the ones named in `action_ids`, as they stand now); `404` for a thread that is not the caller's | live   |
-| POST   | `/v1/chat`                                     | `{ message: string, spoken?: boolean, thread_id?: uuid \| "new" }` (1..2000 chars) | `201 ChatResponse` `{ message, reply, actions: Recommendation[], thread: ChatThread }`; `404` unknown thread; `503 unavailable` without `ANTHROPIC_API_KEY`; `502 upstream_error` if Claude fails                                                                                              | live   |
-| POST   | `/v1/chat/stream`                              | same as `POST /v1/chat`                                                            | `200 text/event-stream`: `event: delta` `{ text }` per piece, `event: action` `Recommendation` per thing done or undone, then `event: done` `ChatResponse`, or `event: error` `ApiError`. Validation, `404` and `503 unavailable` come back as plain JSON before the stream opens              | live   |
-| GET    | `/v1/chat/threads?archived=false&q=&limit=100` |                                                                                    | `200 ChatThreadList` `{ threads: ChatThread[] }`, pinned first, then latest line first. `q` (1..100 chars) matches titles and line text                                                                                                                                                        | live   |
-| POST   | `/v1/chat/threads`                             | `{ title? }` (or no body)                                                          | `201 ChatThread`, empty, titled "New chat" unless named                                                                                                                                                                                                                                        | live   |
-| PATCH  | `/v1/chat/threads/:id`                         | `{ title?, pinned?, archived? }` (at least one)                                    | `200 ChatThread`; `404` when not the caller's                                                                                                                                                                                                                                                  | live   |
-| DELETE | `/v1/chat/threads/:id`                         |                                                                                    | `200 { id, messages }`: the thread and every line in it, really deleted; `404` when not the caller's                                                                                                                                                                                           | live   |
+| Method | Path                                           | Body                                                                               | Response                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Status |
+| ------ | ---------------------------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| GET    | `/v1/chat?thread_id=&limit=50`                 |                                                                                    | `200 { messages: ChatMessage[], actions: Recommendation[], thread: ChatThread \| null }` (one thread's lines, oldest first, limit 1..100; without `thread_id` the latest thread; `actions` are the ones named in `action_ids`, as they stand now); `404` for a thread that is not the caller's                                                                                                                                                             | live   |
+| POST   | `/v1/chat`                                     | `{ message: string, spoken?: boolean, thread_id?: uuid \| "new" }` (1..2000 chars) | `201 ChatResponse` `{ message, reply, actions: Recommendation[], thread: ChatThread }`; `404` unknown thread; `503 unavailable` without `ANTHROPIC_API_KEY`; `502 upstream_error` if Claude fails                                                                                                                                                                                                                                                          | live   |
+| POST   | `/v1/chat/stream`                              | same as `POST /v1/chat`                                                            | `200 text/event-stream`: `event: step` `ChatStep` `{ id, label, status: "running" \| "done" }` for how Michael is working it out (see below), `event: delta` `{ text }` per piece, `event: action` `Recommendation` per thing done or undone, `event: timing` `ChatTiming` (where the time went), then `event: done` `ChatResponse`, or `event: error` `ApiError`. Validation, `404` and `503 unavailable` come back as plain JSON before the stream opens | live   |
+| POST   | `/v1/chat/warm`                                | `{ thread_id?: uuid \| "new" }` (or no body)                                       | `204`: the chat screen is open, so the API reads the context now and warms the model's prompt cache with it; nothing is stored, and without `ANTHROPIC_API_KEY` it does nothing                                                                                                                                                                                                                                                                            | live   |
+| GET    | `/v1/chat/threads?archived=false&q=&limit=100` |                                                                                    | `200 ChatThreadList` `{ threads: ChatThread[] }`, pinned first, then latest line first. `q` (1..100 chars) matches titles and line text                                                                                                                                                                                                                                                                                                                    | live   |
+| POST   | `/v1/chat/threads`                             | `{ title? }` (or no body)                                                          | `201 ChatThread`, empty, titled "New chat" unless named                                                                                                                                                                                                                                                                                                                                                                                                    | live   |
+| PATCH  | `/v1/chat/threads/:id`                         | `{ title?, pinned?, archived? }` (at least one)                                    | `200 ChatThread`; `404` when not the caller's                                                                                                                                                                                                                                                                                                                                                                                                              | live   |
+| DELETE | `/v1/chat/threads/:id`                         |                                                                                    | `200 { id, messages }`: the thread and every line in it, really deleted; `404` when not the caller's                                                                                                                                                                                                                                                                                                                                                       | live   |
 
 `spoken: true` means the answer will be read aloud (the app's conversation mode): Michael keeps it
 to one or two short sentences with no lists or markdown, and says numbers as a person would.
+
+**Steps (how Michael is working it out).** The stream opens with `step` `{ id: "open", label: "Reading your day", status: "running" }`, marked `done` at the first word or the first tool step. Each tool call then sends `running` before it runs and `done` after, with the same `id` (`s1`, `s2`, ...) and a plain label in Michael's voice ("Reading your calendar", "Logging 40 min", "Blocking WhatsApp"; when the call points at one of the user's goals by id, its name from their own goals: "Logging 40 min to Gym", "Booking time for Deep work"; unknown tools say "Working it out"). Labels never carry other people's titles or raw ids. Clients that do not know `step` ignore it.
 
 `/v1/chat` stays for callers that want the whole answer (MCP, voice); `/v1/chat/stream` gives the
 first words fast and stores the same pair when it finishes. The stored answer keeps the ids of what
 it did (`action_ids`), so a client can show the same Undo chips under it after a reload.
 
+**Speed (#364).** Chat runs `ANTHROPIC_MODEL` at effort `low`, in fast mode when the account has it
+(`CHAT_SPEED=fast`, the default; a refused or rate limited fast request runs again at standard speed
+and fast mode rests for 10 minutes). The stable prompt, the context and the conversation so far are
+cached, so the second round of a tool loop reads them back. A plain statement (no question mark)
+whose tools all return a finished line (`log_done`, `confirm_block`) is answered with that line,
+without a second model call. Every answer logs one `chat_timing` JSON line and the stream sends it
+as `timing`: `ChatTiming { context_ms, context_parts (when each context read finished, and the database round trips), rounds: { first_event_ms, first_text_ms, ms, tools_ms, speed,
+input_tokens?, cache_read_tokens?, cache_write_tokens?, output_tokens? }[], save_ms, total_ms }`;
+`POST /v1/chat` sends `Server-Timing` `context` and `model` instead, and the stream `context`.
+The context's reads (all but other threads' titles) are kept per user and demo visitor for 2
+minutes and read again after any write of the user's through the store (`writes.ts`; chat lines and
+thread names do not count), so `context_parts` is `{ cached: 1, age_ms, wait }` for an answer that
+started from them. The clock (`Now: ...`) goes to the model after the cached context, so the context
+block itself stays the same and is read back from the prompt cache. The web calls
+`POST /v1/chat/warm` when the chat screen opens, when the box gets focus (at most every 30 s per
+thread) and after an answer that changed the day, so the first words wait only for the model.
+
 **Threads (#308).** Conversations are separate, as in Messages: `ChatThread { id, title, pinned,
-archived, preview, last_message_at, created_at, updated_at }` (`preview` is the last line, cut to
+archived, preview, last_message_at, created_at, updated_at }` (`preview` is the last line as plain text, no Markdown marks, cut to
 140 characters). `thread_id` omitted writes in the latest thread (a new one when there is none);
 `"new"` starts one, made only once the answer is stored, so a failed call leaves no empty thread.
 The first line names a thread: the model writes 2 to 5 words in Michael's voice in parallel with
@@ -1390,11 +1444,11 @@ did, minutes?, reason? }` (see Done time), `add_goal`, `update_goal { goal_id, w
 active?, title?, description? }` (a budget or a pause is a `change_goal` recommendation carried out at
 once, undoable for a week), `add_checklist_item`, `update_checklist_item { item_id, status?, text? }`,
 `add_instruction`, `update_instruction { instruction_id, active?, text?, ... }`, `save_place { key,
-label?, address }` (the other places stay) and `update_profile` (quiet hours, work hours, work and
+label?, address }` (the other places stay), `focus_now { goal_id? | goal?, minutes? }` (see Focus now; it answers with a finished line, the app opens the session) and `update_profile` (quiet hours, work hours, work and
 gym days, fixed titles). Deleting data, a goal, an instruction or a place, disconnecting and revoking
 stay in the app. The context gives ids for past own blocks (marked unconfirmed or settled), today's
 checklist items and the active instructions. After `log_done` the reply is one line with the new
-maths and "Undo" ("Logged. Everything bath 40 of 60 min this week. Undo"); the chip under it undoes.
+maths and "Undo" ("Logged 40 min. Everything bath: 40 of 60 min this week. Undo"); the chip under it undoes.
 
 **Check in in chat (#187).** The context lists the user's check in answers from the last 7 days
 ("What you told me", quoted, never invented) and today's open questions with their ids, and a tool
@@ -1466,7 +1520,8 @@ type CheckIn = {
 | GET    | `/v1/moments/morning?at=<iso>` | `200 Moment` | live   |
 | GET    | `/v1/moments/evening?at=<iso>` | `200 Moment` | live   |
 
-`at` is optional (default now) and shows the moment as of another instant. `400` for another kind
+`at` is optional (default now) and shows the moment as of another instant. `phrase=cached` never
+waits for the model (Today's cold open): see `phrase_pending` below. `400` for another kind
 or a bad `at`. Days, weeks (Monday first) and hours are Europe/Athens.
 
 ```ts
@@ -1515,6 +1570,7 @@ type Moment = {
   generated_at: string;
   headline: string;
   phrased_by: "template" | "model";
+  phrase_pending?: true; // only with ?phrase=cached: the model is writing a line, ask again without it
   goals: MomentGoal[];
   totals: {
     // The score's day: held + lost is what has elapsed, never more than planned.
@@ -1562,8 +1618,110 @@ Only `headline` may be phrased by Claude (`ANTHROPIC_MODEL`, when `ANTHROPIC_API
 facts only, and its line is used only if the reply finished by itself (`stop_reason` is `end_turn`:
 a reply cut by the token cap is never used), ends with a full stop or a question mark, holds no
 semicolon, keeps the voice rules and every number in it appears in the facts; otherwise
-`phrased_by` is `template`. Lines are cached in memory per user, kind, day and facts, and checked
-again when read.
+`phrased_by` is `template`. Lines are cached in memory per user, kind, day and a hash of the facts,
+and checked again when read; one call per set of facts runs at a time. With `?phrase=cached` the
+answer never waits: the cached line for these facts, else the day's last model line while it still
+passes the checks against the new facts, else the template, plus `phrase_pending: true` while the
+model call runs in the background (not after a recent failure). The scheduler phrases the current
+moment ahead for recently active users and the demo account, and a minute after a user's writes.
+
+### Your week (#376)
+
+| Method | Path                                   | Body                   | Response                                  | Status |
+| ------ | -------------------------------------- | ---------------------- | ----------------------------------------- | ------ |
+| GET    | `/v1/week/review?week=<day>&now=<iso>` |                        | `200 WeekReview`; `400` on a day not real | live   |
+| POST   | `/v1/week/plan`                        | `{ goal_id, minutes }` | `201 Recommendation`; `400`, `404`, `409` | live   |
+
+The Sunday evening review, on demand any time: one calm screen (`/week` on the web), reachable from
+Today on Sunday evening and from the Evening moment on Sundays, folded under "More from Michael" the
+rest of the week. `week` is any day of the week (default this week); `now` replays it. Read only:
+records are read, never synced, and no offers are made.
+
+```ts
+type WeekReviewGoal = {
+  goal_id: string;
+  title: string;
+  area: GoalArea;
+  kind: "time" | "count";
+  done: number; // time: held in blocks + logged outside them (minutes); count: sessions
+  budget: number; // time: weekly budget (minutes); count: sessions a week
+  planned_ahead: number; // time: still booked this week
+  kept: boolean; // done >= budget
+  short: number; // budget - done, never below 0
+};
+type WeekReviewMove = {
+  title: string; // "Book 90 minutes for University, Monday 07:00" or "University, Tuesday 09:00"
+  rationale: string; // the maths
+  status: "booked" | "book"; // already on the calendar, or Plan next week books it
+  goal_id: string;
+  minutes: number;
+  start_at: string;
+  end_at: string;
+};
+type WeekReview = {
+  week_start: string; // Monday
+  week_end: string; // Sunday
+  timezone: string;
+  generated_at: string;
+  complete: boolean; // the week has ended
+  score: {
+    pct: number | null; // the score's week: spent / elapsed
+    planned_minutes: number;
+    elapsed_minutes: number;
+    spent_minutes: number;
+    lost_minutes: number;
+    ahead_minutes: number;
+    unverified_minutes: number;
+    usual_pct: number | null; // median of the full weeks before (at most 4); null with fewer than 2
+    usual_weeks: number;
+    target_pct: number | null; // the week's target, when it had one
+    on_target: boolean | null; // the score's balanced week
+  };
+  won_back_minutes: number; // the score's time won back
+  logged_outside_minutes: number; // the score's logged_minutes (#372)
+  goals: WeekReviewGoal[];
+  records: PersonalRecord[]; // new bests set in the week; baselines left out
+  best_block: { goal_id: string; goal_title: string; day: string; minutes: number } | null; // longest verified run in one block
+  thief: { what: string; kind: "app" | "site"; minutes: number; share_pct: number } | null; // lost_by[0]
+  logged: { entries: number; minutes: number }; // done time entries (#317) that start in the week
+  outcomes: { set: number; done: number }; // the ritual's outcomes (#318), moved ones left out
+  lesson: string;
+  phrased_by: "template" | "model";
+  next_week: {
+    week_start: string;
+    target_pct: number | null;
+    status: "proposed" | "accepted" | null;
+    reason: string | null;
+  };
+  next_move: WeekReviewMove | null;
+};
+```
+
+**The review rule** (`apps/api/src/week/review.ts`, pure, with tests; the two change together):
+
+- **One source.** Every number is the score's week (`GET /v1/score`), the target rule, the records,
+  the done time log or the ritual; the review picks and words them and never counts again.
+- **Goals:** time goals with a budget (held plus logged outside blocks, the budget maths of #372)
+  and count goals (sessions done of sessions a week). Targets (sleep) and checklists are left out.
+- **Next week's target:** the target stored for next Monday, else Michael's proposal by the target
+  rule, reading the reviewed week as full from its Sunday on; else `reason` says why there is none
+  yet ("I need two full weeks of scores before I set a target. I have one."). Never stored here:
+  accepting it is `PUT /v1/targets/:week_start`.
+- **Next move:** next week's first goal block when one is already booked (`booked`). Otherwise the
+  goal furthest short this week (ties: the bigger budget), a fifth of its budget in quarter hours,
+  30 to 90 minutes, in the first free slot from next Monday that Book would take (`book`).
+- **Lesson:** the thief when it took 15 minutes or more ("Instagram took 2h 32 of your goal blocks,
+  51% of all you lost. Keep it out of next week's blocks."), else the goal furthest short, else a
+  plain line. Only `lesson` may be phrased by Claude, with the moments' checks: a finished reply,
+  a full stop, no semicolon, the voice rules, and every number in it appears in the facts (which
+  hold no dates); otherwise `phrased_by` is `template`.
+- **Plan next week:** `POST /v1/week/plan` books `minutes` for the goal (an active time goal, else
+  `404`) in the first free slot of next week, through Book (#309): same waking day, calendar and
+  standing instructions, the shorter block when the length no longer fits, `409` with the reason
+  when nothing does. A `create_focus_block` recommendation, undoable until it starts. Demo
+  visitors may use it, as they may Book.
+- **Chat and MCP:** the chat tool and the MCP tool `get_week_review` (scope `score`) answer "how
+  was my week" from the same review.
 
 ### Voice
 
@@ -1718,13 +1876,17 @@ through the store's `createRecommendation`, so the instruction guard has the las
 
 - **First outcome:** the first open checklist item of today gets one hour, the first free one from
   now inside the waking day, titled with the item's text. Title
-  `An hour for your first outcome, Fri 13 Nov`. Checked after an item is added (`POST
+  `An hour for your first outcome` (no date: the card's time line says when). Checked after an item is added (`POST
   /v1/checklist`, `add_checklist_item`) and on `GET /v1/score` for the current week.
 - **Behind pace:** a count goal with `left > days_left` gets one slot, the first free one from now
   on a day without a block of the goal yet, as long as the goal's usual block this week (60
-  minutes without one), titled with the goal's first `calendar_titles` entry so it counts. Title
-  `One more session for <goal>, Fri 13 Nov`. Checked on `GET /v1/score` for the current week.
-- **Once a day:** an offer whose title is already stored, whatever its status, is not made again.
+  minutes without one), named after the goal (`goalBlockTitle`: "University") and carrying
+  its `goal_id` so it counts. Title `One more session for <goal>`. Checked on `GET /v1/score` for
+  the current week.
+- **Once a day:** each offer carries `payload.offer_key` (`first_outcome:<day>`,
+  `count_session:<goal id>:<day>`, the day it was made). An offer whose key is already stored,
+  whatever its status, is not made again. Offers stored before the key had the day in their title
+  (`..., Fri 13 Nov`) and still count for that day.
 
 ### Calendar blocks (edit the day on the Timeline, #271)
 
@@ -1796,6 +1958,79 @@ type FocusGuardsResponse = { now: string; off_the_record: boolean; guards: Focus
   no block: "Mute WhatsApp 14:00 to 16:00", rationale "... took 47 min.". It is a `proposed`
   recommendation (`source: "analysis"`); nothing happens until Do it. Not repeated while an open one
   for the same app has not ended.
+
+### Focus now (#397)
+
+One tap turns an intention into protected time: a live session for one goal from this minute.
+Rules in `apps/api/src/focus/session.ts`; the REST routes, the chat tool `focus_now` and the MCP
+tool `focus_now` all call the same functions.
+
+| Method | Path                   | Body                                                    | Response                                | Status |
+| ------ | ---------------------- | ------------------------------------------------------- | --------------------------------------- | ------ |
+| GET    | `/v1/focus/active`     |                                                         | `200 FocusActiveResponse`               | live   |
+| POST   | `/v1/focus/start`      | `FocusStart { goal_id? \| goal?, minutes?, event_id? }` | `201 FocusSession`; `400`, `404`, `409` | live   |
+| POST   | `/v1/focus/:id/extend` | `FocusExtend { minutes? }` (optional, default 15)       | `200 FocusSession`; `404`, `409`        | live   |
+| POST   | `/v1/focus/:id/end`    | `FocusEnd { count? }` (optional, default true)          | `200 FocusSession`; `404`               | live   |
+
+```ts
+type FocusSession = {
+  id: string;
+  goal_id: string;
+  goal_title: string;
+  status: "active" | "done" | "ended"; // done: ran to its end; ended: ended early
+  start_at: string;
+  end_at: string; // the planned end; +15 moves it
+  ended_at: string | null;
+  minutes: number; // planned length, start to end
+  counted_minutes: number | null; // counted as goal time when it stopped; null while active
+  event_id: string | null; // the user's own block that holds it
+  guarded: boolean; // distracting Mac apps are muted for it
+  apps: string[];
+  log_recommendation_id: string | null; // the log_time that confirmed the time (undo for 24 hours)
+  message: string | null; // "Done. 45 min for University."
+  created_at: string;
+};
+type FocusActiveResponse = { now: string; session: FocusSession | null; last: FocusSession | null };
+```
+
+- **One at a time:** one active session per user (per demo visitor on the demo account, stored
+  like chat). A second start is `409` ("You are already focusing on University until 12:45. End
+  it first."). The state is on the server: the app reattaches to the same countdown after leaving.
+- **Start:** the goal by `goal_id` or by the user's words (`goal`, matched as in Done time), or the
+  goal of `event_id`. `minutes` 5 to 180; the app offers 25, 45, 60 and 90 (`FOCUS_LENGTHS`). The
+  session runs in the user's own block: the goal block running now (`event_id`, or found on its own
+  when one of the goal's blocks runs now with 5 minutes left; then the default length is the rest of
+  it; a block starting in the next 15 minutes may be named too, for "Start focus" on the block
+  about to start nudge), else a new block from this minute, named after the goal, through the same create_focus_block
+  path as the Timeline (`source: "user"`). It has started by the time it exists, so it cannot be
+  undone; End early is the way back. Off the record is `409` (nothing is kept, so nothing to count).
+- **Mac:** when Mac data arrived in the last 48 hours (the collector runs) and the user is not off
+  the record, distracting apps (WhatsApp, Telegram, Messages, Messenger, Discord, Instagram, X,
+  Reddit, TikTok, Netflix) are muted for the window through a focus guard (a `block_mac_app`
+  recommendation, "Muted distracting apps until 12:45"). Without a Mac this is skipped silently and
+  `guarded` is false, so the app never claims a guard that is not there.
+- **+15:** moves `end_at`, the block the session made, and adds a guard for the extra minutes. At
+  most 4 hours in all (`409` after). A block the user made is never changed: time past its end is
+  logged outside it and counts toward the goal's budget.
+- **The end on time:** at or after `end_at` (30 seconds early counts). The background finisher
+  (scheduler, every 30 seconds) and `GET /v1/focus/active` both end a due session, so it ends with
+  the app closed too. The whole length counts. The watch buzzes: a `focus_done` nudge ("Done. 45
+  min for University.", under 15 words) on the push and Telegram channels. **The cap rule:** the
+  user set this timer, so a `focus_done` nudge never counts towards the 5 a day or the 20 minute gap
+  (`countsTowardsCap(status, kind)`), and it never blocks one of Michael's nudges. Quiet hours still
+  hold: inside the profile's quiet hours it is stored `suppressed` and not sent. Off the record, no
+  nudge.
+- **End early:** before the end. `count` true (default) counts the whole minutes so far, false
+  counts nothing; the app asks "Count 30 min?" first. The block the session made is cut to the
+  minute it ended, the guards are undone at once (the apps open again), and an uncounted session's
+  block is settled as not done ("Ended early, not counted").
+- **Counted time** is confirmed goal time: logged through Done time (`log_time`, `POST /v1/log`'s
+  path) from `start_at` for `counted_minutes`, so inside its block it confirms the block and the
+  score, Today and Goals read it at once. When device attention (Mac, iPhone, ActivityWatch,
+  Chrome) or a workout already covers at least half of that span, nothing is logged and the score
+  reads the devices.
+- Ending twice is safe: a stopped session is returned as it is (the client's timer and the server
+  can both end it; only the first does the work).
 
 ### Follow up drafts
 
@@ -1934,6 +2169,68 @@ MCP). `manual` events, typed by the user, are always kept. `since` is when colle
 `null`. Never set sources show `updated_at` as `1970-01-01T00:00:00.000Z`. The check lives in
 `apps/api/src/privacy.ts` and runs inside `Store.insertEvents`.
 
+Conversations need one more thing: meetings mode (below). Any `conversation` event, and every event
+from a conversation source (`omi`), is dropped and counted in `ignored` unless a meetings mode
+session covered its `start_at`. Off the record and the source switch are checked first and still
+win. `manual` events are the user's own and never need it. Rule: `decideEvent` in `privacy.ts`.
+
+### Meetings mode
+
+Conversations are kept only while the user has started meetings mode (#400, Build Hub n10). Only
+the user starts it, from You (Privacy) or the Mi sheet, after a one time consent notice: "Only you
+start this. Tell the people in the room you're recording. I keep a short summary and your own
+commitments; the audio and full transcript are never kept." It ends when the user taps End, by
+itself after 2 hours or at the end of the calendar block it began in (a block running at the start
+with 10 minutes or more left, or one starting within 15 minutes; all day events do not count),
+whichever is first, and when the user goes off the record. Michael never stores other speakers'
+words: the Omi mapper keeps only the summary and the user's own action items.
+
+```ts
+const MEETING_MAX_MINUTES = 120;
+const MEETING_RECAP_HOURS = 12;
+type MeetingSession = {
+  id: string;
+  started_at: string;
+  ends_at: string; // when it ends by itself (2 hours, or the calendar block's end)
+  ended_at: string | null; // when the user (or off the record) ended it
+};
+type MeetingStart = { consent?: boolean }; // true the first time
+type MeetingCommitment = { text: string; event_id: string }; // the conversation it came from
+type MeetingRecap = {
+  session_id: string;
+  started_at: string;
+  ended_at: string; // ended_at, or ends_at when it ran out
+  conversation_ids: string[];
+  commitments: MeetingCommitment[]; // the user's own, never other speakers'
+  lesson: string | null; // a conversation's `data.lesson`, when one carried it
+};
+type MeetingsState = {
+  consented: boolean; // a session was started before: the notice was read
+  active: MeetingSession | null;
+  last: MeetingRecap | null; // the latest session that ended in the last 12 hours
+};
+```
+
+| Method | Path                       | Body                 | Response                                                  | Status |
+| ------ | -------------------------- | -------------------- | --------------------------------------------------------- | ------ |
+| GET    | `/v1/meetings/active`      |                      | `200 MeetingsState`                                       | live   |
+| POST   | `/v1/meetings/start`       | `MeetingStart` (opt) | `200 MeetingsState`; `409` without consent the first time | live   |
+| POST   | `/v1/meetings/end`         |                      | `200 MeetingsState` (nothing running: nothing changes)    | live   |
+| POST   | `/v1/meetings/commitments` | `{ text: string }`   | `201 { item: ChecklistItem }`; `409` when today is full   | live   |
+
+- Start is idempotent: while a session runs it answers that session. Off the record answers `409`.
+- The gate: a conversation is kept when its `start_at` lies inside a session, from 2 minutes before
+  `started_at` (the recorder often starts a breath before the tap) to `ended_at`, or `ends_at`
+  when it ran out. Ingest reads the latest 100 sessions.
+- `commitments` puts one commitment on today's outcomes (the checklist goal "Today's outcomes",
+  made when missing; at most three open a day). A follow up for the conversation is
+  `POST /v1/drafts/generate { event_id }` (Follow up drafts).
+- Sessions live in `meeting_sessions` and go with "Delete everything". Demo visitors may start,
+  end and add commitments; the demo reseed clears the sessions, so the notice shows again.
+- Web: a "Meetings mode" row under Privacy on You (the Mi sheet), the consent sheet before the
+  first start, and while on, a pill "Meeting on · 12 min · End" above the tab bar on every screen.
+  The recap card on Today ("Meeting at 14:00: 2 commitments", from `last`) comes next.
+
 ### Your data: deletion and retention
 
 ```ts
@@ -1965,7 +2262,7 @@ Deletion really deletes: rows are removed from the database, not hidden. `DELETE
 no parameters removes every row of the account: events, event summaries, goals, recommendations,
 analysis runs, nudges, chat messages, standing instructions, the Telegram chat, integrations (Google is revoked first), push subscriptions,
 device keys, agents with their query log, OAuth grants and tokens, places, the geocode cache, source
-switches, the off the record state and the profile. Then the Supabase Auth user itself is deleted,
+switches, the off the record state, meetings mode sessions and the profile. Then the Supabase Auth user itself is deleted,
 so the next sign in starts a new, empty account. With any of `source`, `from`, `to` (ISO date times,
 `from` < `to`) only the matching timeline events (`start_at` in `[from, to)`) and the summaries of
 the days they cover are removed (`scope: "timeline"`).
@@ -2003,6 +2300,63 @@ what ingest would do now: `false` while off the record or once the user switched
 when Michael last received a new event from that source (the event's `created_at`), or `null` if it
 never sent one. An event that arrives again unchanged does not move it. The web app's Connections
 rows on You read it to say "Last data 12 min ago". Code: `apps/api/src/routes/sources.ts`.
+
+### What I know about you (#379)
+
+```ts
+type KnowledgeItem = {
+  id: string; // memory: event id; check_in: check in id; instruction: its id; profile: "quiet_hours",
+  // "usual_week", "gym_days", or "weak_spots:<value>" / "fixed_titles:<title>" for one entry
+  kind: "memory" | "check_in" | "instruction" | "profile";
+  text: string; // plain words: the memory, question or instruction as written, or a profile line
+  answer: string | null; // a check in answer, in the user's own words
+  at: string | null; // when it was told
+  origin: "chat" | "agent" | "check_in" | "you" | "setup";
+  active: boolean; // false for a paused instruction
+  forgettable: boolean;
+};
+type KnowledgeSource = {
+  source: Source;
+  name: string; // "Chrome"
+  sends: string; // "Sites you spend time on, never what you type"
+  enabled: boolean;
+  collecting: boolean;
+  last_event_at: string | null;
+};
+type Knowledge = {
+  told: KnowledgeItem[]; // memory, check_in, instruction, profile; newest first within each
+  reads: KnowledgeSource[]; // switched on or ever sent; never manual or agent
+  never_kept: string[]; // three lines, true to the code
+  off_the_record: boolean;
+  asked_today: number; // agent calls logged today (Europe/Athens)
+  agents_connected: number; // approved agents
+};
+```
+
+| Method | Path               | Response        | Status |
+| ------ | ------------------ | --------------- | ------ |
+| GET    | `/v1/me/knowledge` | `200 Knowledge` | live   |
+
+Everything Michael uses about the user, in plain words, for the "What I know about you" page under
+You, Privacy. Built from the stores that already hold it (`apps/api/src/knowledge.ts`), so no table
+of its own: memories (the newest 200, as `get_memories`), answered check ins from the last 90 days
+(the newest 60), every standing instruction (paused ones with `active: false`), and the profile once
+the user saved it (defaults are not something they told). `reads` uses the same switch and last
+event as `GET /v1/sources/status`.
+
+Forgetting goes through the route that owns each item, so it really deletes: a memory with
+`DELETE /v1/events/:id`, a check in with `DELETE /v1/check-in/:id`, an instruction with
+`DELETE /v1/instructions/:id`, one weak spot or fixed title with `PUT /v1/profile` without it. Quiet
+hours and the usual week have `forgettable: false`: they can be changed (on You, or in chat), not removed. Demo
+visitors may read the page; their forgets get the usual demo `403`.
+
+`never_kept` is fixed copy that must stay true to the code: voice audio is transcribed and dropped
+(`routes/voice.ts`), Omi keeps only the summary and action items (`ingest/omi.ts`), and calendar
+events keep a count of attendees, never their names or emails (`integrations/calendar-sync.ts`).
+
+The same answer is the MCP tool `what_you_know` (scope `timeline`, logged like every agent call:
+"Read what I know about you") and the chat tool `what_you_know`, which the chat calls when the user
+asks what Michael knows about them; the web chat shows a button to the page under that answer.
 
 ### Device keys (personal tokens)
 
@@ -2127,7 +2481,6 @@ type Place = {
   address: string | null;
   lat: number | null; // null until geocoded
   lng: number | null;
-  wifi?: string[]; // Wi-Fi network ids the user said belong here (see Location)
   updated_at: string;
 };
 type PlaceInput = {
@@ -2253,58 +2606,41 @@ type PlaceSuggestionsResponse = { enabled: boolean; suggestions: PlaceSuggestion
 
 ### Location (#267)
 
-Where the user was, with no setup: the Mac's Wi-Fi (collector) and the phone's position when the
-user opens Michael (after a one tap ask on the Location page, never on launch). The API turns
+Where the user was, with no setup: the phone's position when the user opens Michael (after a one
+tap ask on the Location page, never on launch) and calendar events at saved places. The API turns
 signals into place visits on the timeline and keeps no raw trail. Code: `apps/api/src/location/visits.ts`
 (pure model) and `routes/location.ts`. More in `docs/location.md`.
 
 ```ts
-type LocationSignal =
-  | { kind: "point"; at: string; lat: number; lng: number; accuracy_m?: number | null }
-  | { kind: "wifi"; at: string; network: string; name?: string | null }; // network: opaque hash
+type LocationSignal = { kind: "point"; at: string; lat: number; lng: number; accuracy_m?: number | null };
 type LocationSignalsInput = { signals: LocationSignal[] }; // 1 to 500
 type LocationSignalsResponse = { recorded: number; ignored: number; at: string | null }; // at: where the last signal put the user
 // `data` of a visit event { source: "location", type: "location" }; the event spans the visit.
 type VisitData = {
   place_key: string | null; // null: "Out" (or the overlapping calendar location)
-  evidence: ("wifi" | "phone")[];
-  networks: string[];
-  names?: Record<string, string>; // network id -> name, when the Mac could read it
+  evidence: "phone"[];
   lat?: number | null; // only away from saved places, rounded to 2 decimals (about 1 km)
   lng?: number | null;
-};
-type WifiNetwork = {
-  network: string;
-  name: string | null;
-  place_key: string | null; // mapped place
-  suggested_place_key: string | null; // where the phone put the user while on it
-  last_seen_at: string;
 };
 type LocationStatus = {
   last_signal_at: string | null;
   now: { label: string; since: string } | null; // a signal in the last 30 minutes
-  networks: WifiNetwork[]; // last 14 days, newest first
   collecting: boolean;
 };
-type WifiMappingInput = { network: string; place_key: string | null }; // null forgets
 ```
 
-| Method | Path                    | Body                   | Response                      | Status |
-| ------ | ----------------------- | ---------------------- | ----------------------------- | ------ |
-| POST   | `/v1/location/signals`  | `LocationSignalsInput` | `200 LocationSignalsResponse` | live   |
-| GET    | `/v1/location`          |                        | `200 LocationStatus`          | live   |
-| PUT    | `/v1/location/networks` | `WifiMappingInput`     | `200 LocationStatus`          | live   |
+| Method | Path                   | Body                   | Response                      | Status |
+| ------ | ---------------------- | ---------------------- | ----------------------------- | ------ |
+| POST   | `/v1/location/signals` | `LocationSignalsInput` | `200 LocationSignalsResponse` | live   |
+| GET    | `/v1/location`         |                        | `200 LocationStatus`          | live   |
 
-- A point within 150 m of a saved place (plus its accuracy, up to 100 m) is a visit there; a
-  network mapped to a place is that place. An unmapped network joins the visit going on, unless
-  that visit already has another network. Anything else is "Out", or the location of the calendar
-  event at that time. The same place again within 20 minutes (Wi-Fi) or 3 hours (phone) extends the
-  visit (`external_id` `visit:<place_key|out>:<start>`), so a Mac reporting every pass makes one event.
+- A point within 150 m of a saved place (plus its accuracy, up to 100 m) is a visit there.
+  Anything else is "Out" (points within a kilometre of each other are one), or the location of the
+  calendar event at that time. The same place again within 3 hours extends the visit
+  (`external_id` `visit:<place_key|out>:<start>`), so opening Michael again makes no new event.
 - Privacy: source `location`. The first signal is the opt in; the privacy switch and off the
   record drop signals (`recorded: 0`, `ignored: n`). Device keys may post signals. Demo visitors
   cannot.
-- `PUT /v1/location/networks` maps a network to a saved place and relabels its "Out" visits from
-  the last 14 days.
 - Calendar events whose location names a saved place count as planned visits where no signal
   covers them: chat and MCP `get_timeline` list them as "planned in the calendar, not confirmed".
 - Score: visits at a training place (gym, pool, yoga ...) count as workouts for training goals;
@@ -2330,6 +2666,7 @@ type AgentQuery = {
   created_at: string;
   recommendation_id?: string | null; // a change the agent made, carried by this recommendation
   undo_until?: string | null; // until when POST /v1/recommendations/:id/undo still works
+  changed?: boolean | null; // true: it changed something; false: tried, nothing changed; null: a read
 };
 ```
 
@@ -2349,12 +2686,26 @@ type AgentQuery = {
   plain line ("Read your day from Sat 09:00 to Sat 17:00", `Added "Ran 5 km" to your day`), never
   the payload. A call outside the agent's scopes, or by an agent that is not `approved`, returns a
   tool result with `isError: true` ("Not allowed. ...") and is logged with `allowed: false`.
+- The line is written from what happened, once the call has finished (#330), not from what was
+  asked. A call that went through reads as done (`Booked "Sales focus" for Wed 15:00`). A call that
+  was allowed and still did not do what it asked reads as tried, with the reason in a few words and
+  no names in it: `Tried to book "Past" for Sun 00:30. Refused: already started.` (one of
+  Michael's rules said no: the time has started, it overlaps an event with other people, a
+  standing instruction protects it), `Tried to add "Ran 5 km" to your day. Nothing changed: already
+  on your timeline.` (there was nothing to do), or `... Failed: an error on my side.` Every such
+  line starts with "Tried to". This holds for every tool, reads included.
+- `changed` says what the call did: `true` when it changed something, `false` when a change was
+  tried and nothing changed (not shared, refused, nothing to do, failed), `null` for a tool that
+  only reads and for lines logged before the field. A change is a line with `changed: true`; for
+  an older line (`null` on a tool that writes) fall back to `allowed`. `recommendation_id` and
+  `undo_until` are only ever set on a line that changed something. `apps/api/src/mcp-guard.ts`:
+  `outcomeOf` and `logLine`.
 - Scope per tool: `get_timeline`, `get_patterns` = `timeline`; `get_goals`, `add_goal`,
   `update_goal`, `propose_goals`, `get_checklist`, `add_checklist_item`, `set_day_outcomes`, `log_day` = `goals`; `list_recommendations`, `update_recommendation`, `get_nudges`,
   `list_drafts`, `draft_follow_up` = `recommendations`; `get_score`, `get_records`, `get_moments` = `score`; `add_event`, `execute_recommendation`,
   `undo_recommendation`, `create_focus_block`, `block_mac_app`, `plan_travel`, `log_done`,
-  `confirm_block` = `write_events`;
-  `suggest_app_mute` = `recommendations`; `get_memories` = `timeline`; `remember` = `write_events`.
+  `confirm_block`, `focus_now` = `write_events`;
+  `suggest_app_mute` = `recommendations`; `get_memories`, `what_you_know` = `timeline`; `remember` = `write_events`.
   Memories are events of type `memory` (source `manual` from chat, `agent` from MCP); Michael's
   chat reads the newest 40 into every answer and keeps new ones with its own `remember` and
   `forget_memory` tools (`apps/api/src/memory.ts`). A tool not in that
@@ -2378,7 +2729,7 @@ type Nudge = {
   day: string; // local day, "YYYY-MM-DD"
   channel: NudgeChannel;
   text: string; // under 15 words
-  reason: string; // the maths, e.g. "70.3 training: 1h of 10h done; the pace by now is 3h 34m."
+  reason: string; // the maths, e.g. "University: 1h 11 of 6h done; the pace by now is 5h 13."
   status: NudgeStatus;
   created_at: string;
   sent_at: string | null;
@@ -2403,11 +2754,11 @@ most urgent candidate of these rules (in this order):
 | Kind             | When                                                                                                                         | Example                                                               |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
 | `focus_drift`    | inside a work goal block, 3+ of the last 10 min on distractor apps or sites                                                  | "6 min on Instagram in your focus block. Back to it until 12:00."     |
-| `block_soon`     | a goal block starts in 2 to 15 min                                                                                           | "Gym at 18:00. Wrap up in 12 min."                                    |
+| `block_soon`     | a goal block starts in 2 to 15 min, named by its goal's own title                                                            | "70.3 at 18:00. Wrap up in 12 min."                                   |
 | `morning`        | after the night's sleep (never a nap) ends today, else from 08:00; until 12:00                                               | the Morning moment's headline, e.g. "Today holds 2h 00 of goal time." |
 | `evening`        | an hour before the usual bedtime (median of 3+ of the last 8 nights), else 21:00; never later than 45 min before quiet hours | the Evening moment's headline                                         |
 | `wind_down`      | 30 min before the night, 3+ of the last 10 min on screens, a rest goal exists                                                | "Screens off by 22:00. Sleep is on the plan."                         |
-| `goal_behind`    | before 19:00, a weekly budget behind its linear pace by 60+ min and 15%+                                                     | "Gym 2h 34m behind this week. Book 90 min today."                     |
+| `goal_behind`    | before 19:00, a time goal behind its weekly pace by 60+ min and 15%+ of its budget, named by its own title                   | "University 4h 02 behind pace. Book 90 minutes today."                |
 | `recovery_block` | a recovery offer (see Recommendations, Recovery offers) not yet nudged, while its slot is ahead; ranked after `block_soon`   | "Meetings ate the block. Take 25 minutes at 16:00. Still counts."     |
 
 `morning` and `evening` carry the Morning and Evening moments (`GET /v1/moments/:kind`, template
@@ -2416,8 +2767,19 @@ line from the same numbers; `reason` holds the maths and when it was sent. Their
 each goes out at most once a day, and they count toward the 5. The push opens Today (`url: "/"`).
 The night's quiet hours come from the profile (`quiet_hours`, default 22:00 to 07:00).
 
-Goal time spent this week = the goal's calendar blocks so far plus its own events (`work`:
-`focus_session`, `gym`: `workout`, `rest`: `sleep`, `food`: `meal`), counted once. Rules: at most 5
+Goal time spent this week is the score's: the engine runs `buildScore` on the week so far and reads
+each goal's row (`spent_minutes` plus `logged_minutes`, `budget_minutes`, `minutes_left`), so a nudge and its reason
+quote exactly what `GET /v1/score` and the Goals screen show at that minute (#330). Planned time
+that was not spent is not in it, and only goals in the time score can be behind. The pace is one
+rule for the app and the server, `packages/shared/src/pace.ts`: the share of the week gone by
+(`paceShare(week_start, day.now)`), on pace = budget x share in whole minutes (`paceMinutes`),
+behind by = on pace minus spent (`behindPaceMinutes`), behind when the goal is more than 2 points of
+its budget under the share (`isBehindPace`), and the block to book = what is left over the days to
+go, 30 to 90 minutes in quarter hours (`bookMinutes(minutes_left, paceDaysToGo(share))`). The goal
+furthest behind is the one Goals names as "needs you most" (the largest share behind). The nudge
+names the goal by its title (its first five words; a dash or an exclamation mark in it is left
+out), never by a category word; with a block of the goal still ahead today it ends "Keep the 18:00
+block." instead of "Book ...". Rules: at most 5
 per day; none in quiet hours (the user's `Profile.quiet_hours`, default 22:00 to 07:00, which also
 sets when `wind_down` speaks; dinner 20:00 to 21:00; work goal blocks except
 `focus_drift`); one key once per local day (`goal_behind` once per day in all); at least 20 min
@@ -2438,7 +2800,8 @@ scoped as that user. On by default when `NODE_ENV=production`, `SCHEDULER_ENABLE
 and Telegram chat (counted as one device in `devices` and `delivered`) at once, ignoring the cap, quiet hours and dedupe. It is for the stage moment: it stores the nudge
 with status `test` (a fresh key each press), so `GET /v1/nudges` and the stage view (`/stage`) show
 the same line as the watch buzzes. `test` nudges never count towards the 5 a day, the 20 minute gap
-or the daily dedupe (`countsTowardsCap` in `@michael/shared`).
+or the daily dedupe (`countsTowardsCap` in `@michael/shared`). Nor do `focus_done` nudges, the end of
+a Focus now session the user started (see Focus now); they still respect quiet hours.
 
 ```ts
 type NudgeTestResult = { text: string; reason: string; delivered: number; devices: number; nudge: Nudge };
@@ -2449,6 +2812,74 @@ type PushSubscriptionInput = {
 };
 type PushConfig = { enabled: boolean; public_key: string | null; devices: number };
 ```
+
+#### Nudges you can act on (#399)
+
+A nudge can carry up to two buttons, the action first, so the user acts without opening the app.
+
+| Kind             | Buttons                                                                                                                          |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `block_soon`     | "Start focus" (Focus now on the block's goal, from now to the block's end), "Snooze 10 min" (the same nudge again in 10 minutes) |
+| `focus_drift`    | "Mute Instagram 30 min" (a `block_mac_app` guard, 30 min from now), "Open"                                                       |
+| `recovery_block` | "Do it" (executes its recommendation, undoable in the app as usual), "Open"                                                      |
+| others           | none: tapping opens the card                                                                                                     |
+
+`focus_drift` offers Mute only when the top distractor was an allowlisted app in front on the Mac
+(`BLOCKABLE_MAC_APPS`), so the Mac is connected and the guard can act; sites and phone apps get no
+button. "Start focus" on `block_soon` (#397) starts a Focus now session with the block as
+`event_id`: it runs from the tap to the block's end in the user's own block (so the minutes before
+the block starts count toward the goal's budget, the rest confirms the block), mutes the Mac when
+it is connected, and the session screen shows it when the app opens. The answer reads "Focusing on
+University until 13:00." Refused like `POST /v1/focus/start` (another session running, off the
+record, the block gone): the reason comes back and the button can be tried again. The body still
+opens the block. The buttons are not
+stored (no database change before the pitch): a tap works them out again from the stored nudge
+(`offeredActions`, the Mac app read back from the line).
+
+```ts
+type NudgeActionId = "open" | "snooze" | "mute_app" | "do_it" | "focus";
+type NudgeAction = { id: NudgeActionId; label: string; app?: string }; // app: mute_app only
+type NudgeActInput = { action: "snooze" | "mute_app" | "do_it" | "focus"; token: string };
+type NudgeActResult = {
+  action: NudgeActionId;
+  text: string; // "Done. Undo in the app until 15:00." / "Instagram is off until 14:30. Undo in the app." / "Snoozed. Back at 17:58."
+  undo_until: string | null; // null for a snooze
+  url: string; // where tapping the follow up goes
+  nudge_id: string;
+};
+```
+
+| Method | Path                 | Body            | Response                                                       | Status |
+| ------ | -------------------- | --------------- | -------------------------------------------------------------- | ------ |
+| POST   | `/v1/nudges/:id/act` | `NudgeActInput` | `200 NudgeActResult`; `401` bad or expired token; `404`; `409` | live   |
+
+- No session: the service worker has none. The push payload carries `token`, signed (HMAC, key
+  derived from `API_KEY`) for that nudge id and user id, valid 3 hours (`apps/api/src/nudges/token.ts`).
+  The user only ever comes from the signature.
+- Single use: the first tap marks the nudge acted on, whichever channel got there first; a second
+  tap is `409 "Already done."`. A snooze clears it when the nudge comes back (new push, fresh token,
+  same buttons). A refused action (say the slot has started, `409` with the executor's reason)
+  clears it too, so it can be tried in the app. The mark lives in the API process (no database
+  change before the pitch): after a restart a tap could run again, which stays safe (Do it on a
+  done recommendation is `409`, a second mute only adds a guard on the user's own Mac).
+- `409` also when the nudge does not offer that action. Snoozes are timers in the API process: a
+  deploy within those 10 minutes loses the snooze (the nudge is still on Today). A snooze is not a
+  new nudge: it never counts towards the 5 a day.
+- Push payload (`PushPayload`, `apps/api/src/nudges/push.ts`): `{ title, body, tag, url, actions?:
+  { action, title }[], act_url?, token? }`. `url` is the exact card (`nudgeUrl` in
+  `@michael/shared`): `/timeline?day=<day>&block=<event id>` for `block_soon` and `focus_drift`,
+  `/?card=<recommendation id>` for a nudge with a recommendation, else `/`. The web app scrolls to
+  that block or card and rings it briefly (`components/deep-link-focus.tsx`).
+- The worker (`apps/web/public/sw.js`) shows the buttons as notification actions. A button posts
+  `{ action, token }` to `act_url` and shows the result as a second notification (`tag:
+  nudge-done`); a refusal shows its message, no connection says "No connection. Open Michael to do
+  it there.". "Open" and the body open `url` (same origin only).
+- Where buttons show: Chrome on Android and desktop (Chrome, Edge, Firefox) show two. Safari on
+  iPhone, iPad and Mac shows no web push buttons, and the Apple Watch mirrors the iPhone's
+  notification, so there the tap opens the exact card and the action is one tap away in the app.
+  Telegram shows the same buttons on the iPhone, Android and desktop (below).
+- `POST /v1/nudges/test` (the stage moment) carries the same buttons as a real nudge of its kind;
+  its key is `test:<press>:<the real key>` so the tap still opens the block.
 
 ### Web push
 
@@ -2492,6 +2923,14 @@ type TelegramLinkResponse = { url: string };
   `TELEGRAM_WEBHOOK_SECRET` (default: derived from the bot token) and answers `401` otherwise,
   `404` when there is no bot. Only private chats. `/stop` unbinds the chat. A chat belongs to
   whoever bound it last (`telegram_chats`, one row per user).
+- Buttons (#399): a nudge's actions ride along as one row of an inline keyboard. Snooze, Mute and
+  Do it are callback buttons (`callback_data: na:<nudge id>:<action>`, at most 48 bytes); Open is a
+  link to the exact card, only when the web app's address is https. A tap arrives at the same
+  webhook as a `callback_query` (`allowed_updates: ["message", "callback_query"]`): the chat's owner
+  (bound with a signed start link) must own the nudge, and the action runs through the same logic as
+  `POST /v1/nudges/:id/act`, once. The webhook answers with `answerCallbackQuery` (the result as a
+  toast), takes the buttons off the message once acted on (`editMessageReplyMarkup`) and sends the
+  result as a new message so the watch buzzes with it.
 - Delivery: `sendMessage` with the nudge text. `sent` when Telegram took it, `failed` when it
   refused; a `403` (the user blocked the bot) also unbinds the chat.
 - On start, with a token, the API calls `setWebhook` to `${PUBLIC_API_URL}/v1/webhooks/telegram`
@@ -2501,7 +2940,8 @@ type TelegramLinkResponse = { url: string };
 ### Done time (#317)
 
 Saying "I did x" is one call. The user's own word becomes a manual event (source `manual`) that the
-score counts as confirmed goal time (Score, the attribution rule). Rules in `apps/api/src/actions/log.ts`;
+score reads by the attribution rule (Score): inside a block of its goal it confirms that block;
+outside every block it counts toward the goal's weekly budget (`logged_minutes`), never the score. Rules in `apps/api/src/actions/log.ts`;
 the chat's `log_done` and `confirm_block` and the MCP tools of the same names call the same functions.
 
 | Method | Path            | Body                                                                        | Response                                    | Status |
@@ -2515,14 +2955,19 @@ type LogTimeResponse = {
   entry: Event; // the manual entry
   recommendation: Recommendation; // kind log_time or settle_block, status done; undo it to take the entry back
   goal: { goal_id; title; spent_minutes; budget_minutes }; // the goal's week after it (a count goal: done of per_week)
-  message: string; // "Logged. Everything bath 40 of 60 min this week."
+  message: string; // "Logged 40 min. Everything bath: 40 of 60 min this week."
 };
 ```
 
 - **The goal** by `goal_id`, or by `goal`, the user's words, matched on the server among active time
   and count goals: the same title, then a title holding the words (or held by them), then calendar
-  titles, then any word of three letters or more. Two candidates at the same step are a `400` that
-  names both ("could be Reading or Reading club"); none is a `404` that lists the goals.
+  titles, then the words themselves (#364): each word of the user's counts 3 in a title, 2 in a
+  calendar title and 1 in the description, a related word (a bath is recovery, a bike ride a ride)
+  half that, and the single best goal wins. Two candidates at the same step, or a tie at the top,
+  are a `400` that names both ("could be Reading or Reading club"); none is a `404` that lists the
+  goals. In the demo plan "I took a bath for 40 minutes" lands on 70.3 ("recovery (ice baths,
+  stretching)" is in its description). Chat calls `log_done` with the user's words whenever no goal
+  title plainly fits, and asks only when the tool says it could be two or none.
 - **The time:** `start_at` and `end_at`; or `minutes` from `start_at`; or `minutes` up to `end_at`;
   or `minutes` alone, ending now. Past only: an end after now is a `409` ("That has not happened
   yet"); a start more than 14 days back is a `409`.
@@ -2572,6 +3017,7 @@ type Score = ScoreTotals & {
   // the week: the WeeklyScore fields, except that score_pct may be null
   week_start: string; // Monday 00:00 in Athens, as an instant
   time_won_back_minutes: number; // the sum of the days
+  logged_minutes: number; // #372: logged outside every block this week; toward budgets, in no total
   goals: ScoreGoal[];
   timezone: string; // "Europe/Athens"
   generated_at: string; // the instant it was scored at
@@ -2626,8 +3072,11 @@ type ScoreGoal = ScoreTotals & {
   kind: GoalKind; // goalKind(goal)
   scored: boolean; // true only for kind "time"; a target (sleep), count or checklist is listed, outside the score
   budget_minutes: number; // weekly_budget_minutes, 0 when the goal has none
-  daily: { date: string; planned_minutes: number; spent_minutes: number }[]; // Monday to Sunday
-  minutes_left: number; // budget - spent, never below 0; 0 for a goal outside the score
+  // #372: logged this week outside the goal's blocks. Toward the budget, outside the score: the
+  // week against the budget is spent_minutes + logged_minutes (budgetMinutesDone).
+  logged_minutes: number;
+  daily: { date: string; planned_minutes: number; spent_minutes: number; logged_minutes: number }[]; // Monday to Sunday
+  minutes_left: number; // budget - spent - logged, never below 0; 0 for a goal outside the score
   open_blocks: number; // the goal's blocks this week that have not ended (one block across midnight counts once)
   // Kind checklist only (#238): items set (open, done or dropped; a carried item counts on the day
   // it moved to) and done, on `date` and in its week. Outside the time score.
@@ -2636,7 +3085,11 @@ type ScoreGoal = ScoreTotals & {
   count?: { done: number; target: number; left: number; days_left: number };
 };
 
-type ScoreDay = ScoreTotals & { date: string; time_won_back_minutes: number };
+type ScoreDay = ScoreTotals & {
+  date: string;
+  time_won_back_minutes: number;
+  logged_minutes: number; // #372: logged outside the day's blocks; in none of the totals
+};
 
 type ScoreDayDetail = ScoreDay & {
   now: string; // the boundary between past and ahead on the tape
@@ -2724,15 +3177,20 @@ Stated here and at the top of `apps/api/src/score/score.ts`; the two change toge
   `apps/api/src/score/logged.ts`; written by `POST /v1/log`, `POST /v1/log/block`, the chat and MCP.
   - **Logged:** done time the user reported ("a bath, 40 minutes, at 13:00"), past only. Inside a
     block of the same goal it confirms that time: verified and never lost, so the block becomes
-    confirmed instead of the minutes counting twice. The part outside every block of its goal is
-    goal time of its own: a block in `day.blocks` with `matched_by: "logged"` (`event_id` is the
-    entry, `title` its note or the goal) whose minutes are planned, elapsed, spent and verified.
+    confirmed instead of the minutes counting twice. **The part outside every block of its goal
+    was never planned (#372), so it stays out of the score entirely:** not planned, not elapsed, not
+    spent, no block in `day.blocks`, no ticks. It counts toward the goal's weekly budget instead:
+    `logged_minutes` on the goal row (and on each of its `daily` entries), on each day and on the
+    week, and `minutes_left` = budget - spent - logged. The goal's week against its budget is
+    `spent_minutes + logged_minutes` (`budgetMinutesDone` in `@michael/shared`). So the headline,
+    the day's tape and the Keep the Day strip all read the same planned and spent minutes, and the
+    maths shows the rest on its own line: "Plus 40 min you logged outside your blocks."
   - **Did it:** a past block settled with some of its minutes from its start: those are verified,
     the rest of its elapsed time is lost. All of it: the whole block is verified.
   - **Didn't:** a past block settled as not done: all of its elapsed time is lost.
-  - A settled block carries `settled: "did" | "didnt"` (absent while unsettled); a logged block
-    reads `"did"`. Logged blocks stay out of time won back and the records, which rest on the data
-    alone. A logged entry for a count goal is one occurrence of it, like a check in "yes".
+  - A settled block carries `settled: "did" | "didnt"` (absent while unsettled). `matched_by:
+    "logged"` is no longer sent. A logged entry for a count goal is one occurrence of it, like a
+    check in "yes".
 - **Sleep is outside the score.** It is a goal of kind `target` (an older goal of category `rest`
   with a `sleep` or `bed` key in its target, or the word in its title, reads as one). It is listed
   in `goals` with its budget and `scored: false`. It has no blocks and takes no part in any total;
@@ -2793,8 +3251,13 @@ Stated here and at the top of `apps/api/src/score/count.ts`; the two change toge
   sleep goal with hours, 07:00 to 23:00.
 - **Fixed commitments:** calendar events that are not goal blocks (anything with other people,
   and the user's own entries with no goal), inside the waking day. All day entries are left out.
-- **`free_minutes_left`:** the waking day from `now` to Sunday night, minus the fixed commitments.
-  Goal blocks count as free: they are where goal time goes. 0 for a week that has ended. With
+- **`free_minutes_left`:** the waking day from `now` to Sunday night, minus the fixed commitments
+  and minus the time the active standing instructions protect (a clear day, the evening after
+  "home by", quiet hours: `protectedSpans` in `apps/api/src/score/week.ts`), because Michael books
+  nothing there (#330). It is the one number of the score an instruction changes. A goal block an
+  instruction's `exceptions` name stays free; so do all other goal blocks: they are where goal time
+  goes. On a clear Sunday it is 0, and Book answers "Sundays are kept clear, so no 90 minutes are
+  left this week." 0 for a week that has ended. With
   `goals[].minutes_left` this is the "The 70.3 and the degree need 23 hours this week. You have
   17." maths. The per day numbers for the Goals tab are `goals[].daily`.
 - **`sleep.nightly`:** minutes slept in the night that ended on each day (`data.duration_min` when
@@ -2945,11 +3408,13 @@ ending now, plus its calendar planned to Sunday. The Mac, iPhone, Chrome and Cla
 replay Manolis' anonymised real days (`apps/web/lib/sample/real`); Apple Watch, Google Calendar,
 Omi conversations and meals are generated around them. Every generated event has an `external_id`
 starting `demo:`; only those rows are ever added or removed, so nothing else in the account is
-touched; days that leave the window are removed. The API refreshes the week on demo requests at
-most every 5 minutes (the first refresh after a deploy resets the goals to the Build Hub plan,
+touched; days that leave the window are removed. The API refreshes the week as it starts and on
+demo requests at most every 5 minutes, in the background (#364: until the first refresh after a
+start has finished, a demo request waits for it at most 2 s, since the week from before is still in
+the database) (the first refresh after a deploy resets the goals to the Build Hub plan,
 later ones keep edits; `DEMO_WEEK=off` turns it off). `POST /v1/demo/reseed` also resets the goals.
 Any other account gets `403 forbidden`. The reseed (and the first refresh after a deploy) also
-deletes all demo visitor chat, turns off the record off, removes goals that are not in the plan
+deletes all demo visitor chat, turns off the record off, clears meetings mode sessions, removes goals that are not in the plan
 clears the week's ritual and every logged entry that is not the demo week's own (the plan's ritual is written again), and replaces the standing instructions with the plan's (`demoInstructions`: only "Nothing between
 23:00 and 07:00", so a Saturday or Sunday evening stays bookable for the live demo); every refresh deletes visitor chat
 older than a day. Off the record, nothing changes. Per source switches are
@@ -2969,6 +3434,26 @@ place is part of the calendar event's `external_id`), a `maps` `travel` event pe
 simple Athens rush hour model (in `TravelData.calendar_event_id` the calendar event's external id),
 and one "Leave at 19:15 instead of 18:30, win 20 minutes" style `reminder` recommendation for the
 next drive today or tomorrow that leaving later makes shorter.
+
+The demo account never carries the sample day (#330). Every seed (each refresh, the reseed and
+`seed:demo`) removes, through `apps/api/src/demo/retired.ts`: every analysis run whose `model`
+contains `(mock)` (so `GET /v1/analysis/latest` answers `404` until a real run is written and Today
+offers "Ask Michael for a brief"), the sample suggestions (`30000000-…-0001` to `0003`), the two
+hand written demo suggestions the week does not back up (`…-0005` the easy run, `…-0006` the 11:00
+sync) and the retired goal "Weight to 90 kg" (`10000000-…-0004`). What stays is the outreach focus
+block (`…-0004`, the "Do it, then Undo" card; `pnpm --filter @michael/api seed` puts it back to
+proposed) and what the week computes itself (the drive). The goal "The company" lists
+`work_categories: ["communication"]`: inside its blocks messaging and calls are spent, not lost.
+A conversation's summary and commitments are part of its `external_id`, so a change to the words
+replaces the stored row on the next seed, and a waiting template draft whose event is gone is
+deleted and written again (sent, dismissed and model written drafts stay).
+
+Monday opens with an own block, "Meeting Preparation" 07:30 to 08:45 (The company), and Monday's
+morning lanes are replayed 80 minutes early, so he is at the desk inside it. A new week starts on
+Monday: without that block the score, the lost time and "what took it" were empty until 17:00.
+From 08:30 on a Monday `GET /v1/score` has a day and a week to read (about 70%, about 20 minutes
+lost, Instagram first). A Mac "Screen off" replayed from one day ends where the next day's Mac use
+begins.
 
 ## MCP server
 
@@ -3041,7 +3526,9 @@ offset. A refused or failed call returns `isError: true` with one plain sentence
 | `list_recommendations`   | `recommendations` | `{ status?: RecommendationStatus }`                                                     | `{ recommendations: Recommendation[] }`                                                    |
 | `get_nudges`             | `recommendations` | `{ date?: LocalDay }` (default today)                                                   | `{ day, nudges: Nudge[] }`                                                                 |
 | `get_moments`            | `score`           | `{ kind?: MomentKind }` (default morning before 15:00 local, evening after)             | `Moment`                                                                                   |
+| `get_week_review`        | `score`           | `{ week?: LocalDay }` (any day of the week; default this week)                          | `WeekReview` (as `GET /v1/week/review`)                                                    |
 | `get_memories`           | `timeline`        | `{}`                                                                                    | `{ memories: { id, text, at, from: "chat" \| "agent" }[] }` (newest first, at most 40)     |
+| `what_you_know`          | `timeline`        | `{}`                                                                                    | `Knowledge` (see "What I know about you")                                                  |
 | `remember`               | `write_events`    | `{ fact: string (1..280) }`                                                             | `{ memory }` (same fact twice is kept once; `null` when off the record)                    |
 | `add_event`              | `write_events`    | `EventInput`                                                                            | `{ inserted, duplicates, ignored, events: Event[] }`                                       |
 | `add_goal`               | `goals`           | `{ category, title, description?, weekly_budget_minutes?, target? }`                    | `{ goal: Goal }`                                                                           |
@@ -3057,6 +3544,7 @@ offset. A refused or failed call returns `isError: true` with one plain sentence
 | `block_mac_app`          | `write_events`    | `{ apps: string[], start?: TimeInput, end: TimeInput, goal_id? }` (start default now)   | `{ recommendation, undo_until }`                                                           |
 | `log_done`               | `write_events`    | `{ goal_id? \| goal?, minutes?, start?: TimeInput, end?: TimeInput, note? }`            | `LogTimeResponse` (see Done time)                                                          |
 | `confirm_block`          | `write_events`    | `{ event_id, did: boolean, minutes?, reason? }`                                         | `LogTimeResponse`                                                                          |
+| `focus_now`              | `write_events`    | `{ goal_id? \| goal?, minutes? }` (5..180, default 45 or the rest of the running block) | `{ session: FocusSession }` (see Focus now)                                                |
 | `suggest_app_mute`       | `recommendations` | `{}`                                                                                    | `{ recommendation }` or `{}` when nothing stands out                                       |
 | `plan_travel`            | `write_events`    | `{ from?, to? }` (default today)                                                        | `TravelPlanResult` (see Places and travel)                                                 |
 | `list_drafts`            | `recommendations` | `{ status?: DraftStatus }` (default proposed)                                           | `{ drafts: Draft[] }`                                                                      |
@@ -3067,8 +3555,9 @@ offset. A refused or failed call returns `isError: true` with one plain sentence
   same rules: own time only, never an event with other people, never deletes the user's events,
   undo until the block starts.
 - `create_focus_block` books straight away: it saves a recommendation (`source: "chat"`, `status: "done"`, rationale
-  "Booked at your request through <agent name>") and carries it out like any other, so the block
-  shows in Michael and `undo_recommendation` takes it back. Refused in the past, under 5 minutes,
+  "University, 90 minutes, booked by <agent name>. Undo until 07:00.") and carries it out like any other, so the block
+  shows in Michael and `undo_recommendation` takes it back. With a `goal_id` and no title (or one
+  of the goal's bare calendar titles) the block is named after the goal. Refused in the past, under 5 minutes,
   over 6 hours, or when it overlaps an event with other people.
 - `block_mac_app` mutes straight away the same way (`source: "chat"`, `status: "done"`, see Focus
   guards); `undo_recommendation` lets the apps open again until the window ends. Apps off the

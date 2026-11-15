@@ -1,7 +1,8 @@
-import { type Event, type Goal, isSleepGoal, type ScoreSleep } from "@michael/shared";
+import { type Event, type Goal, type Instruction, isSleepGoal, type ScoreSleep } from "@michael/shared";
+import { isException, protectedWindow } from "../instructions/protected";
 import { napIn } from "../patterns/sleep";
 import { DAY, MINUTE, type Zone } from "../patterns/time";
-import { overlapWith, type Span, union } from "../patterns/util";
+import { overlapWith, type Span, subtractSpans, union } from "../patterns/util";
 
 // The week around the score (#117, #165): the waking day, the fixed calendar commitments, the
 // free time left and sleep per night. Pure, like the score.
@@ -12,8 +13,12 @@ import { overlapWith, type Span, union } from "../patterns/util";
 //   Committed    Calendar events that are not goal blocks (meetings, errands, anything with
 //                other people), inside the waking day. All day entries are left out: a holiday
 //                marker would otherwise fill the week.
-//   Free left    The waking day from `now` to the end of the week, minus what is committed. Goal
-//                blocks count as free: they are where goal time goes.
+//   Protected    The time the active standing instructions keep (instructions/protected.ts: a
+//                clear day, the evening after "home by", quiet hours). Michael books nothing
+//                there, so it is not free. A goal block an instruction's exceptions name is
+//                allowed there and stays free.
+//   Free left    The waking day from `now` to the end of the week, minus what is committed and
+//                what is protected. Goal blocks count as free: they are where goal time goes.
 //   Sleep        Minutes slept in the night that ended on each day (the same rule the Morning and
 //                Evening moments use), against the goal's nightly minutes.
 
@@ -83,19 +88,48 @@ export function committedMinutes(zone: Zone, days: string[], w: WakingDay, commi
   return Math.round(ms / MINUTE);
 }
 
-/** Waking time from `now` to the end of `days`, minus what is committed. */
+/**
+ * The time the active standing instructions protect around `days`, merged. A window that starts
+ * the evening before the first day (quiet hours past midnight) is in it. Each instruction leaves
+ * out the goal blocks its exceptions name: those are allowed there.
+ */
+export function protectedSpans(
+  instructions: Instruction[],
+  zone: Zone,
+  days: string[],
+  blocks: (Span & { title: string })[] = [],
+): Span[] {
+  const first = days[0];
+  if (!first) return [];
+  const spans: Span[] = [];
+  for (const instruction of instructions) {
+    const excepted = blocks.filter((b) => isException(instruction, b.title));
+    for (const day of [zone.nextDay(first, -1), ...days]) {
+      const window = protectedWindow(instruction, day, zone);
+      if (window) spans.push(...subtractSpans(window, union(excepted)));
+    }
+  }
+  return union(spans);
+}
+
+/**
+ * Waking time from `now` to the end of `days`, minus what is taken: the fixed commitments, and the
+ * time the standing instructions protect (`protectedSpans`), which Book never offers either.
+ */
 export function freeMinutesLeft(
   zone: Zone,
   days: string[],
   now: number,
   w: WakingDay,
   committed: Span[],
+  kept: Span[] = [],
 ): number {
+  const taken = kept.length ? union([...committed, ...kept]) : committed;
   let ms = 0;
   for (const day of days) {
     const waking = wakingSpan(zone, day, w);
     const span = { start: Math.max(waking.start, now), end: waking.end };
-    if (span.end > span.start) ms += span.end - span.start - overlapWith(span, committed);
+    if (span.end > span.start) ms += span.end - span.start - overlapWith(span, taken);
   }
   return Math.max(0, Math.round(ms / MINUTE));
 }

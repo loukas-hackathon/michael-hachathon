@@ -25,7 +25,7 @@ export type SaveResult = { ok: true } | { ok: false; message: string };
 /** Replaces the whole list (PUT /v1/places). */
 export async function savePlaceList(places: unknown): Promise<SaveResult> {
   const parsed = PlaceInput.array().max(20).safeParse(places);
-  if (!parsed.success) return { ok: false, message: "That address does not look right." };
+  if (!parsed.success) return { ok: false, message: "That address doesn't look right." };
   const res = await putPlaces({ places: parsed.data });
   if (!res.ok) return res;
   revalidatePath(PLACES_PATH);

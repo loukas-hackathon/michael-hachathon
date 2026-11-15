@@ -17,16 +17,15 @@ const U = "2026-11-16T";
 const at = (hm: string) => `${U}${hm}:00.000Z`;
 const ms = (hm: string) => Date.parse(at(hm));
 
-const place = (key: string, label: string, lat: number, lng: number, wifi: string[] = []): Place => ({
+const place = (key: string, label: string, lat: number, lng: number): Place => ({
   key,
   label,
   address: null,
   lat,
   lng,
-  wifi,
   updated_at: at("00:00"),
 });
-const HOME = place("home", "Home", 37.9838, 23.7275, ["net-home"]);
+const HOME = place("home", "Home", 37.9838, 23.7275);
 const GYM = place("gym", "Gym", 38.0, 23.8);
 const WORK = place("work", "Office", 37.97, 23.73);
 const PLACES = [HOME, GYM, WORK];
@@ -36,12 +35,6 @@ const point = (hm: string, lat: number, lng: number): LocationSignal => ({
   at: at(hm),
   lat,
   lng,
-});
-const wifi = (hm: string, network: string, name?: string): LocationSignal => ({
-  kind: "wifi",
-  at: at(hm),
-  network,
-  name,
 });
 const run = (open: Visit | null, signals: LocationSignal[], label?: (at: number) => string) =>
   applySignals(
@@ -67,38 +60,32 @@ test("phone points at the gym make one visit from the first to the last", () => 
   assert.deepEqual(v?.data.evidence, ["phone"]);
 });
 
-test("a mapped Wi-Fi network extends Home; a silence over 20 minutes starts a new visit", () => {
-  const visits = run(null, [wifi("08:00", "net-home"), wifi("08:01", "net-home"), wifi("08:40", "net-home")]);
-  assert.equal(visits.length, 2);
+test("a silence over 3 hours at the same place starts a new visit", () => {
+  const visits = run(null, [
+    point("08:00", 38.0, 23.8),
+    point("08:30", 38.0, 23.8),
+    point("12:00", 38.0, 23.8),
+  ]);
   assert.deepEqual(
     visits.map((v) => [v.label, v.start, v.end]),
     [
-      ["Home", ms("08:00"), ms("08:01")],
-      ["Home", ms("08:40"), ms("08:40")],
+      ["Gym", ms("08:00"), ms("08:30")],
+      ["Gym", ms("12:00"), ms("12:00")],
     ],
   );
 });
 
-test("an unmapped network joins the visit the phone placed, which is how a mapping is suggested", () => {
-  const [v] = run(null, [
-    point("09:00", 37.97, 23.73),
-    wifi("09:01", "net-office", "Acme"),
-    wifi("09:15", "net-office"),
+test("points away from saved places a kilometre apart are different places", () => {
+  const visits = run(null, [
+    point("13:00", 37.9, 23.6),
+    point("13:20", 37.9, 23.62),
+    point("14:00", 37.95, 23.6),
   ]);
-  assert.equal(v?.label, "Office");
-  assert.deepEqual(v?.data.networks, ["net-office"]);
-  assert.deepEqual(v?.data.names, { "net-office": "Acme" });
-  assert.deepEqual(v?.data.evidence, ["phone", "wifi"]);
-  assert.equal(v?.end, ms("09:15"));
-});
-
-test("a different unmapped network after the first is somewhere else", () => {
-  const visits = run(null, [wifi("09:00", "net-a"), wifi("09:05", "net-b")]);
   assert.deepEqual(
-    visits.map((v) => [v.label, v.data.networks]),
+    visits.map((v) => [v.label, v.end]),
     [
-      ["Out", ["net-a"]],
-      ["Out", ["net-b"]],
+      ["Out", ms("13:20")],
+      ["Out", ms("14:00")],
     ],
   );
 });
@@ -123,7 +110,7 @@ test("the open visit is extended, and only changed visits come back", () => {
     start: ms("18:00"),
     end: ms("18:30"),
     label: "Gym",
-    data: { place_key: "gym", evidence: ["phone"], networks: [] },
+    data: { place_key: "gym", evidence: ["phone"] },
   };
   assert.deepEqual(run(open, []), []);
   const [v] = run(open, [point("19:00", 38.0, 23.8)]);
@@ -165,11 +152,11 @@ test("calendar events at a saved place are planned visits, unless a signal cover
       start: ms("14:10"),
       end: ms("15:50"),
       label: "Office",
-      data: { place_key: "work", evidence: ["wifi"], networks: [] },
+      data: { place_key: "work", evidence: ["phone"] },
     },
   ];
   const planned = plannedVisits(calendar, PLACES, confirmed);
-  // No university saved, the call is online, the office block is confirmed by Wi-Fi.
+  // No university saved, the call is online, the office block is confirmed by the phone.
   assert.deepEqual(
     planned.map((p) => [p.label, p.title]),
     [["Gym", "Gym"]],

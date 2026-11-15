@@ -23,7 +23,8 @@ voice out; recognition needs a connection on most phones).
       ElevenLabs Speech to Text (setup manual step 10). No live words while you speak: the line
       appears once you let go, about a second later. Without that permission on the key, open the
       app in Safari (browser recognition) rather than from the home screen icon.
-- [ ] Do Not Disturb on, except the Apple Watch nudge we want to show.
+- [ ] Focus and Do Not Disturb off on the stage iPhone and watch (the watch buzz needs them off;
+      silence the laptop instead). The pitch script is `docs/pitch.md`; this page is the detail.
 
 ## Script A: Claude voice mode (90 seconds)
 

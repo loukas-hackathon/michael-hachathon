@@ -1,4 +1,5 @@
 import {
+  type ChecklistItem,
   type Event,
   type EventType,
   type Goal,
@@ -11,6 +12,7 @@ import {
 import { Hono } from "hono";
 import { offerGoalActions } from "../checklist/offers";
 import { HttpError, parse } from "../http";
+import { memo } from "../memo";
 import { DEFAULT_TIMEZONE } from "../patterns";
 import { Zone } from "../patterns/time";
 import {
@@ -33,6 +35,9 @@ import { store } from "../store";
 // the score, for the week's nights) and the device events the single line of attention is made of.
 // Plus the user's own word (#317): logged done time (focus_session) and blocks settled as not done
 // (note), both source manual (score/logged.ts).
+// How much of the score range one read covers (see loadWeek).
+const READ_STEP_MS = 2 * 24 * 3600_000;
+
 export const TYPES: EventType[] = [
   "calendar_event",
   "workout",
@@ -45,11 +50,14 @@ export const TYPES: EventType[] = [
   // Place visits: the gym backs training goals, work or university business ones (#267).
   "location",
 ];
-const WEEK_MS = 7 * 24 * 3600_000;
 export interface Week {
   score: Score;
   history: ScoreHistory;
   goals: Goal[];
+  /** Every event the score was built from (the five weeks), for readers that need more (#376). */
+  events: Event[];
+  /** The week's checklist items (#238), the ritual's outcomes among them (#318). */
+  checklist: ChecklistItem[];
   now: string;
   /** False when `now` is in the future: a replay that must not write records. */
   real: boolean;
@@ -67,14 +75,15 @@ export async function loadWeek(query: { date?: string; now?: string }): Promise<
   if (!isLocalDay(date)) throw new HttpError("bad_request", "`date` must be a real day, YYYY-MM-DD");
 
   const range = scoreRange(date);
-  // Five weeks of events, read a week at a time side by side. An event on a border comes back
-  // twice and is kept once.
+  // Five weeks of events, read two days at a time side by side: a busy week of app and web
+  // activity is thousands of rows, and one read pages through them one round trip after another
+  // (#364). An event on a border comes back twice and is kept once.
   // The store returns every row of a window, however many (#127).
   const iso = (ms: number) => new Date(ms).toISOString();
   const chunks: Promise<Event[]>[] = [];
-  for (let start = range.from; start < range.to; start += WEEK_MS) {
+  for (let start = range.from; start < range.to; start += READ_STEP_MS) {
     chunks.push(
-      store.listEvents({ from: iso(start), to: iso(Math.min(start + WEEK_MS, range.to)), type: TYPES }),
+      store.listEvents({ from: iso(start), to: iso(Math.min(start + READ_STEP_MS, range.to)), type: TYPES }),
     );
   }
   // The week itself, for the checklist and count rows (#238): its items and the check in's
@@ -90,9 +99,10 @@ export async function loadWeek(query: { date?: string; now?: string }): Promise<
     store.listPlaces().catch(() => []),
     ...chunks,
   ]);
-  const events = new Map<string, Event>();
-  for (const page of pages) for (const e of page) events.set(e.id, e);
-  const built = scoreWithHistory([...events.values()], goals, {
+  const byId = new Map<string, Event>();
+  for (const page of pages) for (const e of page) byId.set(e.id, e);
+  const events = [...byId.values()];
+  const built = scoreWithHistory(events, goals, {
     date,
     now,
     instructions,
@@ -100,7 +110,7 @@ export async function loadWeek(query: { date?: string; now?: string }): Promise<
     checklist,
     countCheckIns: countCheckInsFrom(checkIns),
   });
-  return { ...built, goals, now, real: Date.parse(now) <= clock };
+  return { ...built, goals, events, checklist, now, real: Date.parse(now) <= clock };
 }
 
 export interface TargetState {
@@ -144,23 +154,50 @@ export async function syncRecords(week: Week): Promise<PersonalRecord[]> {
 }
 
 /** The score with the week's target, the balanced week and the records set in it. */
-export async function scoreFor(query: { date?: string; now?: string }): Promise<Score> {
-  const week = await loadWeek(query);
+/**
+ * `readOnly`: the numbers only, for the chat context (#364): personal records are not synced and
+ * today's goal offers are not made, which saves their round trips (the screens still do both).
+ */
+export function scoreFor(
+  query: { date?: string; now?: string },
+  opts: { readOnly?: boolean } = {},
+): Promise<Score> {
+  // At the real clock, the same score is reused for a few seconds until the user writes (memo.ts,
+  // #298). A replay (`now`) is always computed.
+  if (query.now !== undefined) return computeScore(query, opts);
+  return memo("score", { date: query.date ?? null, readOnly: !!opts.readOnly }, SCORE_MEMO_MS, () =>
+    computeScore(query, opts),
+  );
+}
+
+// Long enough to serve one screen's several reads (Today asks three times), short enough that
+// the minutes on the tape keep moving.
+const SCORE_MEMO_MS = 20_000;
+
+async function computeScore(query: { date?: string; now?: string }, opts: { readOnly?: boolean }) {
+  return scoreOfWeek(await loadWeek(query), opts);
+}
+
+/** The score of a week already loaded (loadWeek), with its target, records and offers. */
+export async function scoreOfWeek(week: Week, opts: { readOnly?: boolean } = {}): Promise<Score> {
   // Targets and records are extras: a failed read must never take the score down.
   const [state, records] = await Promise.all([
     targetState(week).catch((err) => {
       console.error("score: target", err);
       return null;
     }),
-    syncRecords(week).catch((err) => {
-      console.error("score: records", err);
-      return [] as PersonalRecord[];
-    }),
+    opts.readOnly
+      ? ([] as PersonalRecord[])
+      : syncRecords(week).catch((err) => {
+          console.error("score: records", err);
+          return [] as PersonalRecord[];
+        }),
   ]);
   // Today's offers for checklist and count goals (checklist/offers.ts), made once a day through
   // the instruction guard. Only from a score of the current week read at the real clock.
   const today = new Zone(DEFAULT_TIMEZONE).dayOf(Date.now());
   if (
+    !opts.readOnly &&
     week.real &&
     Date.now() - Date.parse(week.now) < 60_000 &&
     week.score.days.some((d) => d.date === today)

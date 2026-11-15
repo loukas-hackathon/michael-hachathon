@@ -175,11 +175,13 @@ in #189): one question at a time, the time or the number first, quick answers as
 Yes and No) and an "Or in your own words" field. A no after a short night brings one follow up with
 its number, never a why. At most five questions. It ends on "Noted. I'll use it in tomorrow's
 plan." and "That's all for today. Sleep well." Below it, the free chat with Michael and push to
-talk. Michael's goal and plan proposals appear as a card with Accept and Undo (#188).
+talk. While the field is empty its pink button is Talk (waveform and the word), the hands
+free conversation; typing turns it into Send. The mic beside it is hold to dictate. Hints that point
+at a hidden gesture show once and go once used (`components/hint.tsx`). Michael's goal and plan proposals appear as a card with Accept and Undo (#188).
 
 ### The You sheet (Mi button)
 
-Agents first (a row into /agents, with a back link to You), then off the record (one switch),
+Talk to Michael and Agents first (rows into /chat?talk=1 and /agents), then off the record (one switch),
 standing instructions (quiet hours from the profile first, then the user's rules with a switch
 each), sources with one switch each, devices, settings. Off the record turns the Mi hollow and adds a grey line on every tab: "Off the
 record since 15:20."
@@ -254,7 +256,7 @@ rules, the springs' derivation and a checklist are in the agent skill
 | Sheets                     | 500ms in on `--m-ease-sheet`, 360ms out; a short drag settles back on `--m-spring`                        |
 | Score count up             | Once per session, 700ms, no bounce, after the splash. The real number is always in the DOM                |
 | Live refresh               | New blocks rise 6px and fade in, 30ms apart in reading order; a filled tick grows; numbers move, 450ms    |
-| Loading                    | Skeleton in the final layout (`loading.tsx` per route): blank for 150ms, then a slow 1.6s breath          |
+| Loading                    | Skeleton in the final layout (`loading.tsx` per route): blank for 200ms, then a slow 1.6s breath          |
 | Reduced motion             | Instant, opacity only: no transforms, no count up, skeletons still                                        |
 
 Animate `transform` and `opacity` only. Content is visible by default; motion never gates it.

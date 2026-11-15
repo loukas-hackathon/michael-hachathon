@@ -60,15 +60,7 @@ export async function savePlaces(body: z.output<typeof PlacesUpdate>): Promise<P
         lng = hit?.lng ?? null;
       }
     }
-    // Wi-Fi mappings are set on the Location page (routes/location.ts) and kept across edits.
-    rows.push({
-      key: p.key,
-      label: p.label ?? DEFAULT_LABEL[p.key] ?? p.key,
-      address,
-      lat,
-      lng,
-      wifi: existing.get(p.key)?.wifi ?? [],
-    });
+    rows.push({ key: p.key, label: p.label ?? DEFAULT_LABEL[p.key] ?? p.key, address, lat, lng });
   }
   const saved = await store.replacePlaces(rows);
   // Saving a place is the user's own opt in to travel times; the privacy switch turns it off.

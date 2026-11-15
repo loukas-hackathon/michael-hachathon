@@ -1,5 +1,6 @@
 import type { Goal, Recommendation } from "@michael/shared";
 import { formatTime, hm } from "./format";
+import { undoneLine } from "./say";
 
 // How the Today panel reads a recommendation: what Michael suggests, the goal it protects, the maths,
 // and when the change can still be taken back. Pure, so the server and the browser agree.
@@ -133,7 +134,7 @@ export function travelCard(rec: Recommendation, now: Date): Partial<RecCard> | n
             ? `Wins ${wonMinutes} min on the road.`
             : null,
       drives,
-      undoneNote: "Undone. Every block is back where it was.",
+      undoneNote: undoneLine("Every block is back where it was.", now),
     };
   }
   if (a.kind === "reminder" && /^leave at/i.test(rec.title)) {
@@ -144,6 +145,26 @@ export function travelCard(rec: Recommendation, now: Date): Partial<RecCard> | n
     };
   }
   return null;
+}
+
+/**
+ * The line under a booked block's title. The API says it plainly ("University, 90 minutes,
+ * booked by Claude. Undo until 07:00."), but on the card the title, the time line, the maths and
+ * "Done. Undo until 07:00." already say all of it but who booked it: only that stays ("Booked by
+ * Claude."), or nothing when the user booked it in Michael. Older rows keep their line without the
+ * undo sentence. Any other rationale is left as it is.
+ */
+export function bookedRationale(rec: Recommendation): string {
+  const title = rec.action?.kind === "create_focus_block" ? rec.action.payload.title : null;
+  const old = rec.rationale.replace(/\s*Undo in Michael until it starts\.$/, "");
+  if (old !== rec.rationale) return old;
+  if (typeof title !== "string" || !rec.rationale.startsWith(`${title}, `)) return rec.rationale;
+  // ", 45 minutes[, booked by Claude]. [A note.] Undo until 07:00."
+  const m = /^, [^,.]+(?:, booked by (.+?))?\.(.*?)\s*Undo until \d\d:\d\d\.$/.exec(
+    rec.rationale.slice(title.length),
+  );
+  if (!m) return rec.rationale;
+  return [m[1] ? `Booked by ${m[1]}.` : "", (m[2] ?? "").trim()].filter(Boolean).join(" ");
 }
 
 export function toCard(rec: Recommendation, goals: Goal[], now: Date): RecCard {
@@ -159,7 +180,7 @@ export function toCard(rec: Recommendation, goals: Goal[], now: Date): RecCard {
   return {
     id: rec.id,
     title: rec.title,
-    rationale: rec.rationale,
+    rationale: rec.status === "done" ? bookedRationale(rec) : rec.rationale,
     goal,
     maths,
     // The title often says the times already ("Block 09:30 to 11:00 for ..."): then only the day.
@@ -175,15 +196,16 @@ export function toCard(rec: Recommendation, goals: Goal[], now: Date): RecCard {
     status: rec.status,
     undoUntil: undoDeadline(rec),
     undoneNote: isGuard(rec)
-      ? `Undone. ${guardedApps(rec)} can open again.`
-      : "Undone. Your calendar is back as it was.",
+      ? undoneLine(`${guardedApps(rec)} can open again.`, now)
+      : undoneLine("Your calendar is back as it was.", now),
     ...travelCard(rec, now),
   };
 }
 
 /**
  * What the panel shows: open suggestions whose time is still ahead, and done ones that can still
- * be undone. Executable first, then newest. At most `limit`.
+ * be undone. Executable first, then newest. At most `limit`. Something the user asked for (in chat
+ * or through Claude) and then undid is gone: offering it back as "Do it" would read as Michael's idea.
  */
 export function openRecommendations(recs: Recommendation[], now: Date, limit = 3): Recommendation[] {
   const ahead = (iso: string | null) => iso === null || Date.parse(iso) > now.getTime();
@@ -191,6 +213,7 @@ export function openRecommendations(recs: Recommendation[], now: Date, limit = 3
     .filter((r) => {
       if (r.status === "done") return ahead(undoDeadline(r));
       if (r.status === "dismissed") return false;
+      if (r.status === "undone" && r.source === "chat") return false;
       const t = actionTimes(r);
       return ahead((isGuard(r) ? t.end : t.start) ?? r.action?.undo_until ?? null);
     })
@@ -201,6 +224,23 @@ export function openRecommendations(recs: Recommendation[], now: Date, limit = 3
     .slice(0, limit);
 }
 
+/**
+ * The block the user just had booked, in chat or through Claude, that has not started yet (#330):
+ * the newest one. Today shows it at the top with its Undo, so a booking is never hidden in a fold.
+ */
+export function bookedAhead(recs: Recommendation[], now: Date): Recommendation | null {
+  const at = (r: Recommendation) => Date.parse(r.executed_at ?? r.created_at);
+  return (
+    recs
+      .filter((r) => r.status === "done" && r.source === "chat" && r.action?.kind === "create_focus_block")
+      .filter((r) => {
+        const until = undoDeadline(r);
+        return until !== null && Date.parse(until) > now.getTime();
+      })
+      .sort((a, b) => at(b) - at(a))[0] ?? null
+  );
+}
+
 /** Michael's words for a failed Do it, Undo or Not now. One line, owns the problem. */
 export function recError(status: number, message: string): string {
   if (/other people|someone else/i.test(message))
@@ -209,6 +249,18 @@ export function recError(status: number, message: string): string {
   if (status === 404) return "That suggestion is gone. I have taken it off the list.";
   if (status === 501) return "I cannot do that one myself yet. Take it as advice.";
   if (status === 409) return message.endsWith(".") ? message : `${message}.`;
-  if (status === 0) return "I could not reach the server. Nothing changed.";
+  if (status === 0) return "I lost the line. Nothing changed.";
   return "That did not work on my side. Nothing changed. Try again in a minute.";
+}
+
+const DAY_FIRST = /^(Tomorrow|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b/;
+
+/**
+ * One suggestion in a folded list's preview line: its title, led by the day when that is not today
+ * (#385: "Tomorrow: Block 09:30 to 11:00 for cold outreach" in the evening, never a bare time).
+ */
+export function previewTitle(card: Pick<RecCard, "title" | "when">): string {
+  const title = card.title.replace(/[.!?]$/, "");
+  const day = card.when ? DAY_FIRST.exec(card.when)?.[1] : undefined;
+  return day && !title.includes(day) ? `${day}: ${title}` : title;
 }

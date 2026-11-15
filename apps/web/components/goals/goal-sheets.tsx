@@ -437,7 +437,7 @@ export function EditGoal({
                   setNote(r.message);
                   if (r.ok) close();
                 } catch {
-                  setNote("I could not reach the server. Nothing changed.");
+                  setNote("I lost the line. Nothing changed.");
                 }
               });
             }}
@@ -464,7 +464,7 @@ export function EditGoal({
                   setNote(r.message);
                   if (r.ok) close();
                 } catch {
-                  setNote("I could not reach the server. Nothing changed.");
+                  setNote("I lost the line. Nothing changed.");
                 }
               });
             }}

@@ -1,6 +1,6 @@
 "use client";
 
-import type { ChatResponse } from "@michael/shared";
+import type { ChatResponse, ChatStep } from "@michael/shared";
 import type { SendResult } from "./actions";
 import { copyFor } from "./copy";
 
@@ -17,15 +17,38 @@ const chatResponse = (json: unknown): ChatResponse | null => {
   return { ...body, actions: Array.isArray(body.actions) ? body.actions : [] } as ChatResponse;
 };
 
+// When each thread was last warmed, so focusing the box again and again asks once.
+const WARM_EVERY_MS = 30_000;
+const warmedAt = new Map<string, number>();
+
+/**
+ * The chat is open on this thread: the API reads the day now and warms the model with it, so the
+ * first words of the next answer come without that wait (#364). Fire and forget; `force` after an
+ * answer that changed the day.
+ */
+export function warmChat(threadId: string, force = false) {
+  const now = Date.now();
+  if (!force && now - (warmedAt.get(threadId) ?? 0) < WARM_EVERY_MS) return;
+  warmedAt.set(threadId, now);
+  void fetch("/chat/warm", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ thread_id: threadId }),
+    keepalive: true,
+  }).catch(() => {});
+}
+
 /**
  * Sends one line and reads Michael's answer as it is written (server-sent events from
- * /chat/stream). `onText` gets each new piece; the result carries the stored pair, as sendMessage's.
+ * /chat/stream). `onText` gets each new piece, `onStep` each step of the work; the result carries the stored pair, as sendMessage's.
  */
 export async function streamChat(
   message: string,
   threadId: string | null,
   onText: (text: string) => void,
   spoken = false,
+  /** How Michael is working it out (`step` events): each running then done. */
+  onStep?: (step: ChatStep) => void,
 ): Promise<SendResult> {
   let res: Response;
   try {
@@ -65,6 +88,12 @@ export async function streamChat(
       if (!event || !data) continue;
       const json: unknown = JSON.parse(data);
       if (event === "delta") onText((json as { text: string }).text);
+      if (event === "step" && onStep) {
+        const step = json as Partial<ChatStep> | null;
+        if (step && typeof step.id === "string" && typeof step.label === "string") {
+          onStep({ id: step.id, label: step.label, status: step.status === "done" ? "done" : "running" });
+        }
+      }
       if (event === "done") {
         const body = chatResponse(json);
         if (body) return { ok: true, data: body };

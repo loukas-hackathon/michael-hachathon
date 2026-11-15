@@ -1,8 +1,16 @@
 import "server-only";
-import { type Event, EventType, type Goal, type Score, type TimelineResponse } from "@michael/shared";
+import {
+  type Event,
+  EventType,
+  type Goal,
+  goalKind,
+  type Score,
+  type TimelineResponse,
+} from "@michael/shared";
 import { get } from "./api";
 import { addDays, athensDay, dayBounds, isLocalDay, weekOf } from "./athens";
 import { DATES_WITH_DATA, getTimelineDay, longestFrom, type Patterns } from "./days";
+import { devLatency } from "./dev-latency";
 import { getGoogleCalendar } from "./integrations";
 import { USE_MOCKS } from "./mode";
 import { sleepGoalMinutes } from "./sleep-goal";
@@ -29,12 +37,21 @@ export type TimelineScreen = {
   /** The most recent day with data before the shown day (up to today), for the empty state. */
   latest: string | null;
   /**
+   * A day with data in the week before the shown one, for the week strip's way back: the same
+   * weekday when it has data, else that week's latest day. Null when that week is empty.
+   */
+  earlier: string | null;
+  /**
    * Whether Google Calendar is connected. Read only when the day is empty, where it picks the one
    * action. Null when unknown.
    */
   calendarConnected: boolean | null;
   /** Minutes a night the Sleep goal asks for, to set the watch's nights against; null without one. */
   sleepGoal: number | null;
+  /** The user's active goals, for the goal chips when they add or edit a block (#271). */
+  goals: { id: string; title: string }[];
+  /** The day can be edited: the user's own live data (the sample day cannot). */
+  editable: boolean;
 };
 
 // The heavy per-second streams (app use, web visits, prompts, heart rate) are left out of the week
@@ -57,6 +74,7 @@ const lightScan = (from: number, to: number) =>
   ).catch(() => ({ events: [] as Event[] }));
 
 export async function loadTimeline(asked?: string, demo?: string): Promise<TimelineScreen> {
+  await devLatency();
   if (demo === "sample" || USE_MOCKS) return loadSample(asked);
 
   const today = athensDay();
@@ -72,12 +90,15 @@ export async function loadTimeline(asked?: string, demo?: string): Promise<Timel
     date <= today
       ? get<Score>(`/v1/score?${new URLSearchParams({ date })}`).catch(() => null)
       : Promise.resolve(null);
-  const [timeline, patterns, light, goals, nextMorning, scored] = await Promise.all([
+  const priorStart = dayBounds(addDays(week[0] as string, -7)).start;
+  const [timeline, patterns, light, prior, goals, nextMorning, scored] = await Promise.all([
     get<TimelineResponse>(`/v1/timeline?${new URLSearchParams({ from: iso(start), to: iso(end) })}`),
     get<Patterns>(`/v1/patterns?${new URLSearchParams({ from: iso(start), to: iso(end) })}`).catch(
       () => ({}) as Patterns,
     ),
     lightScan(weekStart, weekEnd),
+    // The week before, for the strip's way back (on a Monday it is the only week with data).
+    lightScan(priorStart, weekStart),
     get<{ goals: Goal[] }>("/v1/goals").catch(() => ({ goals: [] as Goal[] })),
     // The night that starts after midnight still closes this day (the night rule, lib/health.ts):
     // its sleep and the heart readings around it are in the next morning.
@@ -94,20 +115,21 @@ export async function loadTimeline(asked?: string, demo?: string): Promise<Timel
   if (events.length > 0) seen.add(date);
   const available = week.filter((d) => seen.has(d));
   let latest = [...available].reverse().find((d) => d < date && d <= today) ?? null;
+  const priorDays = [...daysWithEvents(prior.events)].filter((d) => d < (week[0] as string)).sort();
+  const earlier = priorDays.includes(addDays(date, -7)) ? addDays(date, -7) : (priorDays.at(-1) ?? null);
 
   let calendarConnected: boolean | null = null;
   if (events.length === 0) {
     // An empty day needs a way out: the latest day before it (last week too, for a Monday) and
     // whether connecting the calendar is the one thing to do.
-    const [prior, calendar] = await Promise.all([
-      latest ? null : lightScan(dayBounds(addDays(week[0] as string, -7)).start, weekStart),
-      getGoogleCalendar(),
-    ]);
-    if (prior) latest = [...daysWithEvents(prior.events)].sort().at(-1) ?? null;
+    const calendar = await getGoogleCalendar();
+    if (!latest) latest = [...daysWithEvents(prior.events)].sort().at(-1) ?? null;
     calendarConnected = calendar ? calendar.status === "connected" : null;
   }
 
-  const day = events.length > 0 ? buildTimeline(date, withNight, start, end, Date.now()) : null;
+  // Today and the days ahead always show, even empty, so a free slot can be tapped to plan it (#271).
+  const day =
+    events.length > 0 || date >= today ? buildTimeline(date, withNight, start, end, Date.now()) : null;
   if (day?.plans && scored) day.plans = withGoals(day.plans, scored);
 
   return {
@@ -118,8 +140,14 @@ export async function loadTimeline(asked?: string, demo?: string): Promise<Timel
     longestUninterrupted: longestFrom(patterns),
     available,
     latest,
+    earlier,
     calendarConnected,
     sleepGoal: sleepGoalMinutes(goals.goals),
+    // Only goals a block can serve: time and count. Sleep is counted by nights, outcomes by ticks.
+    goals: goals.goals
+      .filter((g) => g.active && (goalKind(g) === "time" || goalKind(g) === "count"))
+      .map((g) => ({ id: g.id, title: g.title })),
+    editable: true,
   };
 }
 
@@ -153,7 +181,10 @@ function loadSample(asked?: string): TimelineScreen {
     longestUninterrupted: result?.longestUninterrupted ?? null,
     available: DATES_WITH_DATA,
     latest: [...DATES_WITH_DATA].reverse().find((d) => d < date && d <= today) ?? null,
+    earlier: null,
     calendarConnected: null,
     sleepGoal: null,
+    goals: [],
+    editable: false,
   };
 }

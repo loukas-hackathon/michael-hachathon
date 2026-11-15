@@ -12,6 +12,8 @@ import { dbClient } from "./timing";
 
 export type QueryLog = Pick<AgentQuery, "agent_id" | "tool" | "summary" | "allowed"> & {
   recommendation_id?: string | null;
+  /** True: the call changed something. False: a change was tried and nothing changed. Null: a read. */
+  changed?: boolean | null;
 };
 
 export interface AgentsStore {
@@ -79,6 +81,7 @@ export class MemoryAgentsStore implements AgentsStore {
       id: crypto.randomUUID(),
       ...q,
       recommendation_id: q.recommendation_id ?? null,
+      changed: q.changed ?? null,
       created_at,
     });
     const a = this.mine.find((x) => x.id === q.agent_id);
@@ -110,6 +113,7 @@ const toQuery = (r: Record<string, unknown>): AgentQuery => ({
   allowed: r.allowed as boolean,
   created_at: iso(r.created_at) as string,
   recommendation_id: (r.recommendation_id as string | null | undefined) ?? null,
+  changed: (r.changed as boolean | null | undefined) ?? null,
 });
 const AGENT_COLUMNS = "id, name, status, scopes, created_at, last_seen_at";
 
@@ -208,17 +212,25 @@ export class SupabaseAgentsStore implements AgentsStore {
   async logQuery(q: QueryLog) {
     const userId = currentUserId();
     const created_at = now();
+    // recommendation_id and changed only when there is one, so plain reads never depend on
+    // either column.
+    const row = {
+      agent_id: q.agent_id,
+      tool: q.tool,
+      summary: q.summary,
+      allowed: q.allowed,
+      ...(q.recommendation_id ? { recommendation_id: q.recommendation_id } : {}),
+      user_id: userId,
+      created_at,
+    };
+    const insert = async () => {
+      if (q.changed == null) return this.db.from("agent_queries").insert(row);
+      const res = await this.db.from("agent_queries").insert({ ...row, changed: q.changed });
+      // Until the `changed` migration has run, keep the line (it already says what happened).
+      return res.error?.message.includes("changed") ? this.db.from("agent_queries").insert(row) : res;
+    };
     const [ins, upd] = await Promise.all([
-      // recommendation_id only when there is one, so plain reads never depend on the column.
-      this.db.from("agent_queries").insert({
-        agent_id: q.agent_id,
-        tool: q.tool,
-        summary: q.summary,
-        allowed: q.allowed,
-        ...(q.recommendation_id ? { recommendation_id: q.recommendation_id } : {}),
-        user_id: userId,
-        created_at,
-      }),
+      insert(),
       this.db
         .from("agent_clients")
         .update({ last_seen_at: created_at })
@@ -239,8 +251,10 @@ export class SupabaseAgentsStore implements AgentsStore {
         .order("created_at", { ascending: false })
         .limit(500);
     const base = "id, agent_id, tool, summary, allowed, created_at";
-    let res = await read(`${base}, recommendation_id`);
-    // Until the recommendation_id migration has run, read the log without it.
+    let res = await read(`${base}, recommendation_id, changed`);
+    // Until the `changed` migration has run, read the log without it; the same for the older
+    // recommendation_id one.
+    if (res.error?.message.includes("changed")) res = await read(`${base}, recommendation_id`);
     if (res.error?.message.includes("recommendation_id")) res = await read(base);
     const rows = check(res) as unknown as Record<string, unknown>[] | null;
     return (rows ?? []).map(toQuery);

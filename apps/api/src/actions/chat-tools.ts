@@ -3,6 +3,7 @@ import {
   CheckInValue,
   type Event,
   IsoDateTime,
+  LocalDay,
   type Recommendation,
   RitualEveningInput,
   RitualMorningInput,
@@ -10,12 +11,16 @@ import {
 import { z } from "zod";
 import { answerCheckIn } from "../checkin/service";
 import { HttpError } from "../http";
+import { knowledgeFor, knowledgeText } from "../knowledge";
 import { forget, remember } from "../memory";
 import { DEFAULT_TIMEZONE } from "../patterns";
 import { Zone } from "../patterns/time";
 import { logEvening, planMorning } from "../ritual/ritual";
+import { weekReviewFor } from "../routes/week";
+import { goalBlockTitle } from "../score/match";
 import { store } from "../store";
-import { executeRecommendation, undoRecommendation } from "./calendar";
+import { weekReviewText } from "../week/text";
+import { bookedLine, executeRecommendation, undoRecommendation } from "./calendar";
 import { runWriteTool, WRITE_TOOLS } from "./chat-write-tools";
 import { draftText, generateDrafts } from "./drafts";
 import { guardMacApps } from "./mac-apps";
@@ -180,6 +185,15 @@ export const CHAT_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "get_week_review",
+    description:
+      'Michael\'s review of the week, the Sunday evening moment: the score with the maths, time won back, each goal kept or behind, records, the biggest thief of time, what the user logged and the outcomes done, one lesson, next week\'s target and the first move. Call it when the user asks how their week went ("how was my week", "weekly review"), and answer from its numbers only. week: any day of an earlier week, default this week.',
+    input_schema: {
+      type: "object",
+      properties: { week: { type: "string", description: "Any day of the week, YYYY-MM-DD" } },
+    },
+  },
+  {
     name: "remember",
     description:
       "Keep one lasting fact or preference the user told you about themselves, their routine or their goals, so you know it in every later conversation. One short line in the user's words, e.g. 'Trains best before 08:00'. Not one off plans and nothing about other people.",
@@ -199,9 +213,24 @@ export const CHAT_TOOLS: Anthropic.Tool[] = [
       required: ["memory_id"],
     },
   },
+  {
+    name: "what_you_know",
+    description:
+      "Everything you know and use about the user, in plain words: what they told you (memories, check in answers, standing instructions, setup), what each connection sends, what you never keep and how often agents asked today. Call it when the user asks what you know about them.",
+    input_schema: { type: "object", properties: {} },
+  },
   ...PROPOSAL_TOOLS,
   ...WRITE_TOOLS,
 ];
+
+const WeekInput = z.object({ week: LocalDay.optional() });
+
+/** "How was my week" (#376): the same review as GET /v1/week/review, as text. */
+async function weekReview(input: unknown): Promise<ToolOutcome> {
+  const p = WeekInput.safeParse(input ?? {});
+  if (!p.success) return invalid(p.error);
+  return { content: weekReviewText(await weekReviewFor({ week: p.data.week })), isError: false };
+}
 
 const RememberInput = z.object({ fact: z.string().min(1).max(1000) });
 const ForgetInput = z.object({ memory_id: z.uuid() });
@@ -292,6 +321,8 @@ export interface ToolOutcome {
   isError: boolean;
   /** The recommendation done or undone, for the reply's `actions` and the stream's `action` event. */
   action?: Recommendation;
+  /** A finished line for the user ("Logged 40 min. 70.3: 2h 10 of 9h this week. Undo"): chat may answer with it. */
+  reply?: string;
 }
 
 const zone = () => new Zone(DEFAULT_TIMEZONE);
@@ -359,17 +390,19 @@ async function findBlocks(input: unknown): Promise<ToolOutcome> {
 async function createBlock(input: unknown): Promise<ToolOutcome> {
   const p = CreateInput.safeParse(input);
   if (!p.success) return invalid(p.error);
-  const { title, start_at, end_at } = p.data;
+  const { start_at, end_at } = p.data;
   if (Date.parse(end_at) <= Date.parse(start_at))
     return { content: "end_at must be after start_at", isError: true };
   const goal = p.data.goal_id ? await store.getGoal(p.data.goal_id).catch(() => null) : null;
+  // A bare "Study" for the University goal becomes "University": the block names its goal.
+  const title = goal ? goalBlockTitle(goal, p.data.title) : p.data.title;
   const rec = await store.createRecommendation({
     goal_id: goal?.id ?? null,
     title: `${title}, ${clock(start_at)} to ${clock(end_at)}`,
-    rationale: "Asked for in chat.",
+    rationale: bookedLine(title, start_at, end_at),
     action: {
       kind: "create_focus_block",
-      payload: { start_at, end_at, title },
+      payload: { start_at, end_at, title, ...(goal ? { goal_id: goal.id } : {}) },
       involves_others: false,
       undo_until: start_at,
     },
@@ -477,10 +510,14 @@ export async function runChatTool(
         return await guardApps(input);
       case "undo_action":
         return await undo(input);
+      case "get_week_review":
+        return await weekReview(input);
       case "remember":
         return await keep(input);
       case "forget_memory":
         return await drop(input);
+      case "what_you_know":
+        return { content: knowledgeText(await knowledgeFor()), isError: false };
       case "draft_follow_up":
         return await draftFollowUp(input);
       default:

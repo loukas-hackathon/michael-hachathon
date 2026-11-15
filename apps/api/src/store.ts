@@ -14,6 +14,7 @@ import {
   type EventSummary,
   type EventType,
   type FocusGuard,
+  type FocusSessionStatus,
   type Goal,
   type GoalCreate,
   type GoalUpdate,
@@ -22,6 +23,7 @@ import {
   type InstructionUpdate,
   type Integration,
   type IntegrationProvider,
+  type MeetingSession,
   mockAnalysisRun,
   mockEvents,
   mockGoals,
@@ -32,6 +34,7 @@ import {
   type PersonalRecord,
   type Place,
   type Profile,
+  plainText,
   type Recommendation,
   type RecommendationStatus,
   type RitualKind,
@@ -41,14 +44,16 @@ import {
 } from "@michael/shared";
 import type { z } from "zod";
 import { currentDemoVisitor, currentUserId } from "./context";
+import { demoWeekRecommendations } from "./demo/retired";
 import { stableUuid } from "./demo/week";
 import { env } from "./env";
 import { HttpError } from "./http";
 import { guardRecommendation, guardRecommendations } from "./instructions/guard";
 import type { GeocodeHit } from "./integrations/maps";
-import { type PrivacyBackend, type PrivacyRules, screenEvents } from "./privacy";
+import { type MeetingWindow, type PrivacyBackend, type PrivacyRules, screenEvents } from "./privacy";
 import type { NewRecord } from "./score/records";
 import { SupabaseStore } from "./supabase-store";
+import { noteWrite } from "./writes";
 
 export interface TimelineFilter {
   from: string;
@@ -127,7 +132,8 @@ export type ChatThreadChange = Partial<Pick<ChatThread, "title" | "pinned" | "ar
 export const NEW_THREAD_TITLE = "New chat";
 /** Characters of the last line kept as the thread's preview. */
 export const PREVIEW_CHARS = 140;
-export const previewOf = (content: string) => content.replace(/\s+/g, " ").trim().slice(0, PREVIEW_CHARS);
+/** Plain words, no Markdown marks: the list shows it as text. */
+export const previewOf = (content: string) => plainText(content).slice(0, PREVIEW_CHARS);
 
 /** Pinned first, then the latest line (creation while empty), newest first. */
 export const threadOrder = (a: ChatThread, b: ChatThread) =>
@@ -141,6 +147,72 @@ export const summaryDayRange = (from?: string, to?: string) => ({
 });
 
 export type NewFocusGuard = Omit<FocusGuard, "id" | "created_at">;
+
+/** A Focus now session as stored (#397); focus/session.ts turns it into the contract's FocusSession. */
+export interface StoredFocusSession {
+  id: string;
+  goal_id: string;
+  status: FocusSessionStatus;
+  start_at: string;
+  end_at: string;
+  ended_at: string | null;
+  counted_minutes: number | null;
+  event_id: string | null;
+  /** True when the session made its block (so it may resize it); false for the user's own block. */
+  owns_block: boolean;
+  block_recommendation_id: string | null;
+  guard_recommendation_ids: string[];
+  apps: string[];
+  log_recommendation_id: string | null;
+  message: string | null;
+  created_at: string;
+}
+export type NewFocusSession = Pick<
+  StoredFocusSession,
+  | "goal_id"
+  | "start_at"
+  | "end_at"
+  | "event_id"
+  | "owns_block"
+  | "block_recommendation_id"
+  | "guard_recommendation_ids"
+  | "apps"
+>;
+export type FocusSessionPatch = Partial<
+  Pick<
+    StoredFocusSession,
+    | "status"
+    | "start_at"
+    | "end_at"
+    | "ended_at"
+    | "counted_minutes"
+    | "guard_recommendation_ids"
+    | "log_recommendation_id"
+    | "message"
+  >
+>;
+/** A session whose end has passed, for the background finisher (not scoped to a user). */
+export interface DueFocusSession {
+  id: string;
+  user_id: string;
+  visitor_id: string | null;
+}
+export const ONE_ACTIVE_FOCUS = "You are already in a focus session. End it first.";
+export type NewMeetingSession = Pick<MeetingSession, "started_at" | "ends_at">;
+
+// How many of the latest meetings mode sessions ingest checks: a conversation arrives minutes after
+// it ends, so the latest ones are all that matter (and a retry of an older one still finds its own).
+export const MEETING_LOOKBACK = 100;
+
+/** The windows ingest checks: each session from its start to its end (by hand, or by itself). */
+export const meetingWindows = (sessions: MeetingSession[]): MeetingWindow[] =>
+  sessions.map((m) => ({
+    start: m.started_at,
+    end: m.ended_at && Date.parse(m.ended_at) < Date.parse(m.ends_at) ? m.ended_at : m.ends_at,
+  }));
+
+/** A session still running at `at`: not ended by hand and not run out. */
+export const isRunning = (m: MeetingSession, at = Date.now()) => !m.ended_at && Date.parse(m.ends_at) > at;
 
 export type EventPatch = Partial<Pick<Event, "start_at" | "end_at" | "title" | "data">>;
 
@@ -239,19 +311,55 @@ export interface Store extends PrivacyBackend {
   saveAnalysis(input: NewAnalysis): Promise<{ run: AnalysisRun; recommendations: Recommendation[] }>;
   // Proposed by Michael's own rules (e.g. travel) or asked for in chat; status starts at proposed.
   createRecommendation(input: NewRecommendation): Promise<Recommendation>;
+  /**
+   * Takes sample analysis out of the caller's account: every run whose model contains
+   * `modelMarker` and the recommendations with these ids. A recommendation of a removed run that
+   * is not listed stays, without its run. Only the demo seed calls it (demo/sync.ts).
+   */
+  removeSampleAnalysis(
+    modelMarker: string,
+    recommendationIds: string[],
+  ): Promise<{ runs: number; recommendations: number }>;
   // Focus guards (block_mac_app): created by executing, deleted by undo (actions/mac-apps.ts).
   createFocusGuard(input: NewFocusGuard): Promise<FocusGuard>;
   deleteFocusGuard(id: string): Promise<boolean>;
   /** Guards that end after `endsAfter` and start before `startsBefore`, soonest first. */
   listFocusGuards(filter: { endsAfter: string; startsBefore: string }): Promise<FocusGuard[]>;
+  // ---- Focus now sessions (#397), per demo visitor on the demo account like chat ----
+  getActiveFocusSession(): Promise<StoredFocusSession | null>;
+  getFocusSession(id: string): Promise<StoredFocusSession | null>;
+  /** The newest session, whatever its status. */
+  latestFocusSession(): Promise<StoredFocusSession | null>;
+  /** 409 (ONE_ACTIVE_FOCUS) when one is already active. */
+  createFocusSession(input: NewFocusSession): Promise<StoredFocusSession>;
+  /** `onlyActive`: change it only while it is still active (so two enders never both win). */
+  updateFocusSession(
+    id: string,
+    patch: FocusSessionPatch,
+    opts?: { onlyActive?: boolean },
+  ): Promise<StoredFocusSession | null>;
+  /** NOT scoped: active sessions of any user that end at or before `before`. Only the finisher. */
+  dueFocusSessions(before: string): Promise<DueFocusSession[]>;
+  /**
+   * Deletes every session of the current user (all visitors). Only the demo reseed uses it. The ids
+   * of the blocks those sessions made, so the reseed can take them off the demo day too.
+   */
+  clearFocusSessions(): Promise<string[]>;
   // Saved places (home, work, gym). replacePlaces swaps the whole list.
   listPlaces(): Promise<Place[]>;
   replacePlaces(places: Omit<Place, "updated_at">[]): Promise<Place[]>;
   // Geocoding cache, per user, keyed by the normalised query (integrations/maps.ts).
   cachedGeocode(query: string): Promise<GeocodeHit | null>;
   saveGeocode(query: string, hit: GeocodeHit): Promise<void>;
-  // Privacy (privacy.ts holds the rules; insertEvents applies them).
+  // Privacy (privacy.ts holds the rules; insertEvents applies them). Going off the record also
+  // ends a running meetings mode session.
   setOffTheRecord(on: boolean): Promise<PrivacyRules>;
+  // Meetings mode sessions (#400, meetings/meetings.ts), newest first; `since`: started at or after.
+  listMeetingSessions(filter: { since?: string; limit: number }): Promise<MeetingSession[]>;
+  createMeetingSession(input: NewMeetingSession): Promise<MeetingSession>;
+  updateMeetingSession(id: string, patch: { ended_at: string }): Promise<MeetingSession | null>;
+  /** Removes every session of the caller (the demo reseed), so the consent notice shows again. */
+  clearMeetingSessions(): Promise<number>;
   /**
    * Chat threads, pinned first then latest activity first. Chat is per demo visitor on the demo
    * account (`currentDemoVisitor()`): a visitor sees only their own threads and lines, everyone
@@ -282,6 +390,8 @@ export interface Store extends PrivacyBackend {
   /** Null when that event already has a draft (one per event). */
   createDraft(input: NewDraft): Promise<Draft | null>;
   updateDraftStatus(id: string, status: DraftStatus): Promise<Draft | null>;
+  /** Deletes the caller's drafts with these ids. Only the demo seed calls it (actions/drafts.ts). */
+  deleteDrafts(ids: string[]): Promise<number>;
 
   // ---- events mirrored from a provider (Google Calendar) ----
   getEvent(id: string): Promise<Event | null>;
@@ -302,6 +412,8 @@ export interface Store extends PrivacyBackend {
   /** Null when this key was already used on that day (the dedupe guard). */
   createNudge(input: NudgeCreate): Promise<Nudge | null>;
   updateNudgeStatus(id: string, status: NudgeStatus): Promise<Nudge | null>;
+  /** One nudge of the current user, or null (a button on it was tapped, #399). */
+  getNudge(id: string): Promise<Nudge | null>;
   // Web Push devices of the current user.
   listPushDevices(): Promise<PushDevice[]>;
   /** Saves the device for the current user (a device belongs to whoever subscribed it last). */
@@ -501,11 +613,13 @@ export class MemoryStore implements Store {
       geocodes: Map<string, GeocodeHit>;
       summaries: EventSummary[];
       guards: FocusGuard[];
+      focus: (StoredFocusSession & { visitor: string | null })[];
       targets: WeeklyTarget[];
       records: (PersonalRecord & { key: string })[];
       checkIns: StoredCheckIn[];
       checklist: ChecklistItem[];
       rituals: DayRitual[];
+      meetings: MeetingSession[];
     }
   >();
   private fresh(sample: boolean) {
@@ -528,11 +642,13 @@ export class MemoryStore implements Store {
       geocodes: new Map<string, GeocodeHit>(),
       summaries: [] as EventSummary[],
       guards: [] as FocusGuard[],
+      focus: [] as (StoredFocusSession & { visitor: string | null })[],
       targets: [] as WeeklyTarget[],
       records: [] as (PersonalRecord & { key: string })[],
       checkIns: [] as StoredCheckIn[],
       checklist: [] as ChecklistItem[],
       rituals: [] as DayRitual[],
+      meetings: [] as MeetingSession[],
     };
   }
   private get d() {
@@ -540,7 +656,12 @@ export class MemoryStore implements Store {
     let x = this.data.get(userId);
     if (!x) {
       const demo = userId === env.DEMO_USER_ID && env.DEMO_WEEK === "on";
-      x = { ...this.fresh(true), ...(demo ? { events: [], goals: [] } : {}) };
+      // The demo week brings its own events and goals, and never the sample brief ("gemini (mock)")
+      // or the sample day's suggestions: only the suggestions that hold on the demo week.
+      x = {
+        ...this.fresh(true),
+        ...(demo ? { events: [], goals: [], runs: [], recommendations: demoWeekRecommendations() } : {}),
+      };
       this.data.set(userId, x);
     }
     return x;
@@ -581,7 +702,8 @@ export class MemoryStore implements Store {
   }
 
   async privacyRules() {
-    return structuredClone(this.d.privacy);
+    const recent = await this.listMeetingSessions({ limit: MEETING_LOOKBACK });
+    return { ...structuredClone(this.d.privacy), meetings: meetingWindows(recent) };
   }
 
   async setOffTheRecord(on: boolean) {
@@ -590,7 +712,36 @@ export class MemoryStore implements Store {
       p.offTheRecord = on;
       p.since = on ? now() : null;
     }
-    return structuredClone(p);
+    if (on) for (const m of this.d.meetings) if (isRunning(m)) m.ended_at = now();
+    return this.privacyRules();
+  }
+
+  async listMeetingSessions(f: { since?: string; limit: number }) {
+    const since = f.since ? Date.parse(f.since) : -Infinity;
+    return this.d.meetings
+      .filter((m) => Date.parse(m.started_at) >= since)
+      .sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at))
+      .slice(0, f.limit)
+      .map((m) => ({ ...m }));
+  }
+
+  async createMeetingSession(input: NewMeetingSession) {
+    const m: MeetingSession = { id: crypto.randomUUID(), ...input, ended_at: null };
+    this.d.meetings.push(m);
+    return { ...m };
+  }
+
+  async updateMeetingSession(id: string, patch: { ended_at: string }) {
+    const m = this.d.meetings.find((x) => x.id === id);
+    if (!m) return null;
+    m.ended_at = patch.ended_at;
+    return { ...m };
+  }
+
+  async clearMeetingSessions() {
+    const n = this.d.meetings.length;
+    this.d.meetings = [];
+    return n;
   }
 
   async setSourceEnabled(source: Source, enabled: boolean): Promise<SourceSetting> {
@@ -762,6 +913,20 @@ export class MemoryStore implements Store {
     rec.status = status;
     rec.updated_at = now();
     return rec;
+  }
+
+  async removeSampleAnalysis(modelMarker: string, recommendationIds: string[]) {
+    const d = this.d;
+    const runs = new Set(d.runs.filter((r) => r.model.includes(modelMarker)).map((r) => r.id));
+    const ids = new Set(recommendationIds);
+    const before = d.recommendations.length;
+    d.recommendations = d.recommendations.filter((r) => !ids.has(r.id));
+    // As in Postgres (on delete set null): a recommendation outlives its run.
+    for (const r of d.recommendations) {
+      if (r.analysis_run_id && runs.has(r.analysis_run_id)) r.analysis_run_id = null;
+    }
+    d.runs = d.runs.filter((r) => !runs.has(r.id));
+    return { runs: runs.size, recommendations: before - d.recommendations.length };
   }
 
   async latestAnalysisRun() {
@@ -939,6 +1104,14 @@ export class MemoryStore implements Store {
     return draft;
   }
 
+  async deleteDrafts(ids: string[]) {
+    const d = this.d;
+    const gone = new Set(ids);
+    const before = d.drafts.length;
+    d.drafts = d.drafts.filter((x) => !gone.has(x.id));
+    return before - d.drafts.length;
+  }
+
   async getEvent(id: string) {
     return this.events.find((e) => e.id === id) ?? null;
   }
@@ -1027,6 +1200,10 @@ export class MemoryStore implements Store {
     return nudge;
   }
 
+  async getNudge(id: string) {
+    return this.d.nudges.find((n) => n.id === id) ?? null;
+  }
+
   async listPushDevices() {
     return structuredClone(this.d.push);
   }
@@ -1097,6 +1274,70 @@ export class MemoryStore implements Store {
         .filter((g) => Date.parse(g.end_at) > after && Date.parse(g.start_at) < before)
         .sort((a, b) => Date.parse(a.start_at) - Date.parse(b.start_at)),
     );
+  }
+
+  private ownFocus() {
+    const visitor = currentDemoVisitor();
+    return this.d.focus.filter((f) => f.visitor === visitor);
+  }
+
+  private publicFocus(f: (StoredFocusSession & { visitor: string | null }) | undefined) {
+    if (!f) return null;
+    const { visitor: _visitor, ...rest } = f;
+    return structuredClone(rest);
+  }
+
+  async getActiveFocusSession() {
+    return this.publicFocus(this.ownFocus().find((f) => f.status === "active"));
+  }
+
+  async getFocusSession(id: string) {
+    return this.publicFocus(this.ownFocus().find((f) => f.id === id));
+  }
+
+  async latestFocusSession() {
+    const all = [...this.ownFocus()].sort((a, b) => b.created_at.localeCompare(a.created_at));
+    return this.publicFocus(all[0]);
+  }
+
+  async createFocusSession(input: NewFocusSession) {
+    if (this.ownFocus().some((f) => f.status === "active")) throw new HttpError("conflict", ONE_ACTIVE_FOCUS);
+    const row = {
+      ...structuredClone(input),
+      id: crypto.randomUUID(),
+      status: "active" as const,
+      ended_at: null,
+      counted_minutes: null,
+      log_recommendation_id: null,
+      message: null,
+      created_at: now(),
+      visitor: currentDemoVisitor(),
+    };
+    this.d.focus.push(row);
+    return this.publicFocus(row) as StoredFocusSession;
+  }
+
+  async updateFocusSession(id: string, patch: FocusSessionPatch, opts: { onlyActive?: boolean } = {}) {
+    const row = this.ownFocus().find((f) => f.id === id);
+    if (!row || (opts.onlyActive && row.status !== "active")) return null;
+    Object.assign(row, structuredClone(patch));
+    return this.publicFocus(row);
+  }
+
+  async dueFocusSessions(before: string) {
+    const t = Date.parse(before);
+    const out: DueFocusSession[] = [];
+    for (const [userId, x] of this.data)
+      for (const f of x.focus)
+        if (f.status === "active" && Date.parse(f.end_at) <= t)
+          out.push({ id: f.id, user_id: userId, visitor_id: f.visitor });
+    return out;
+  }
+
+  async clearFocusSessions() {
+    const blocks = this.d.focus.flatMap((f) => (f.owns_block && f.event_id ? [f.event_id] : []));
+    this.d.focus = [];
+    return blocks;
   }
 
   async listChecklist(f: { from: string; to: string }) {
@@ -1227,7 +1468,7 @@ export class MemoryStore implements Store {
 
   async replacePlaces(places: Omit<Place, "updated_at">[]) {
     this.d.places = places
-      .map((p) => ({ ...p, wifi: p.wifi ?? [], updated_at: now() }))
+      .map((p) => ({ ...p, updated_at: now() }))
       .sort((a, b) => a.key.localeCompare(b.key));
     return structuredClone(this.d.places);
   }
@@ -1289,6 +1530,7 @@ export class MemoryStore implements Store {
         event_summaries: d.summaries.length,
         goals: d.goals.length,
         focus_guards: d.guards.length,
+        focus_sessions: d.focus.length,
         recommendations: d.recommendations.length,
         chat_messages: d.chat.length,
         chat_threads: d.threads.length,
@@ -1308,6 +1550,7 @@ export class MemoryStore implements Store {
         records: d.records.length,
         checklist_items: d.checklist.length,
         day_rituals: d.rituals.length,
+        meeting_sessions: d.meetings.length,
       };
       // An empty account, not the sample day a first visit gets.
       this.data.set(userId, this.fresh(false));
@@ -1415,8 +1658,33 @@ export class MemoryStore implements Store {
   }
 }
 
+// Store methods that write, by their verb (every write in the Store interface starts with one).
+// Chat lines and thread names are left out: the chat context does not depend on them (only on other
+// threads' titles, which may lag by the context cache's two minutes), nor on our geocoding cache.
+const WRITES =
+  /^(add|answer|bind|clear|create|delete|insert|mark|record|remove|replace|save|seed|set|sync|unbind|update|upsert)[A-Z]/;
+const QUIET_WRITES = new Set(["addChatMessage", "createChatThread", "updateChatThread", "saveGeocode"]);
+
+/** The store, noting each write before and after it, so caches of a user's data know to read again. */
+function noticingWrites(inner: Store): Store {
+  return new Proxy(inner, {
+    get(target, prop) {
+      const value: unknown = Reflect.get(target, prop, target);
+      if (typeof value !== "function") return value;
+      const fn = value as (...args: unknown[]) => unknown;
+      if (typeof prop !== "string" || !WRITES.test(prop) || QUIET_WRITES.has(prop)) return fn.bind(target);
+      return (...args: unknown[]) => {
+        noteWrite();
+        // After it lands too: a context read that started during the write must not count as fresh.
+        return Promise.resolve(fn.apply(target, args)).finally(noteWrite);
+      };
+    },
+  });
+}
+
 // Supabase when configured (production, or local with keys), otherwise the in-memory mock day.
-export const store: Store =
+export const store: Store = noticingWrites(
   env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY
     ? new SupabaseStore(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
-    : new MemoryStore();
+    : new MemoryStore(),
+);

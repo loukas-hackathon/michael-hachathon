@@ -169,7 +169,7 @@ test("evening: plan against what happened, won back, one lesson, tomorrow's firs
   );
   assert.equal(
     templateHeadline(m),
-    "115 minutes of 2h planned goal time held, 5 minutes lost. 15 minutes won back against your usual day.",
+    "You held 115 minutes of 2h planned goal time. 5 minutes got away. 15 minutes won back against your usual day.",
   );
 });
 
@@ -192,7 +192,7 @@ test("a new user with no data gets budgets and no invented risk", () => {
   const empty = computeMoment({ kind: "evening", events: [], goals: [], now: T("2026-11-11 21:00") });
   assert.equal(empty.lesson, "No goal blocks today. Time you do not book goes elsewhere.");
   assert.equal(empty.first_move, null);
-  assert.equal(templateHeadline(empty), "No goal time booked today. Book tomorrow before you sleep.");
+  assert.equal(templateHeadline(empty), "No goal time today. Put tomorrow's in before bed.");
 });
 
 // ---------- row 1: the headline is a finished line or the template ----------
@@ -265,6 +265,51 @@ test("a reply cut by the token cap falls back to the template", async () => {
   assert.equal(asked, 1);
 });
 
+test("without waiting the model is never on the request's path (#378)", async () => {
+  const m = morning([...history(), ...todayPlan()]);
+  const template = templateHeadline(m);
+  const good = "Two hours of goal time today. Guard 10:00 to 12:00.";
+  let release: () => void = () => {};
+  const gate = new Promise<void>((r) => {
+    release = r;
+  });
+  let asked = 0;
+  const slow = async () => {
+    asked++;
+    await gate;
+    return { stop_reason: "end_turn", content: [{ type: "text", text: good }] };
+  };
+  // Cold: the template at once, the model call running behind it.
+  const first = await phraseHeadline(m, "u:cold", slow, { wait: false });
+  assert.deepEqual(first, { headline: template, phrased_by: "template", phrase_pending: true });
+  // A second open and a waiting read share the same call.
+  const again = await phraseHeadline(m, "u:cold", slow, { wait: false });
+  assert.equal(again.phrase_pending, true);
+  const waiting = phraseHeadline(m, "u:cold", slow);
+  release();
+  assert.deepEqual(await waiting, { headline: good, phrased_by: "model" });
+  assert.equal(asked, 1);
+  // Warm: the cached line, nothing pending.
+  assert.deepEqual(await phraseHeadline(m, "u:cold", slow, { wait: false }), {
+    headline: good,
+    phrased_by: "model",
+  });
+
+  // A failed call is not asked again on every open.
+  let failures = 0;
+  const down = async () => {
+    failures++;
+    throw new Error("model is down");
+  };
+  await phraseHeadline(m, "u:fail", down, { wait: false });
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(await phraseHeadline(m, "u:fail", down, { wait: false }), {
+    headline: template,
+    phrased_by: "template",
+  });
+  assert.equal(failures, 1);
+});
+
 test("a half line that was already cached is never served again", async () => {
   const m = morning([...history(), ...todayPlan()]);
   cacheLineForTest(m, "u:old", "Today holds 2 hours of goal time; guard Deep work from 10:00 to 12:");
@@ -307,6 +352,8 @@ test("a training block is never most at risk", () => {
   );
   assert.equal(templateHeadline(m), "Today holds 90 minutes of goal time.");
   assert.equal(momentNudge(m).text, "Today holds 90 minutes of goal time.");
+  // The stage shows the reason under the line: it never says the line twice (QA round 3).
+  assert.ok(!momentNudge(m).reason.includes("Today holds 90 minutes"), momentNudge(m).reason);
 
   // A work block later the same day is the one at risk, not the session before it.
   const both = morning([...events, ...history(), ...todayPlan()], "2026-11-11 07:30", all);
@@ -426,7 +473,7 @@ test("the same block's last time is quoted in place of the average", () => {
   const nudge = momentNudge(m);
   assert.equal(nudge.text, "Yesterday the 10:30 block lost 24 minutes to Instagram.");
   assert.ok(isValidCopy(nudge.text), nudge.text);
-  assert.match(nudge.reason, /Yesterday the 10:30 block lost 24 minutes to Instagram\./);
+  assert.ok(!nudge.reason.includes(nudge.text), nudge.reason);
 
   // Read while the block is running, the line says "this block" and guards what is left of it.
   const running = morning(events, "2026-11-11 10:47", all);
@@ -606,7 +653,7 @@ test("the evening counts only what was lost inside goal blocks, so the numbers a
   assert.equal(m.totals.lost_minutes, score.day.lost_minutes);
   assert.equal(m.totals.spent_minutes + m.totals.lost_minutes, m.totals.planned_minutes);
   assert.equal(m.totals.won_back_minutes, score.day.time_won_back.minutes);
-  assert.equal(templateHeadline(m), "98 minutes of 2h planned goal time held, 22 minutes lost.");
+  assert.equal(templateHeadline(m), "You held 98 minutes of 2h planned goal time. 22 minutes got away.");
   assert.equal(m.lesson, "Instagram cost 22 minutes in 1 interruption today.");
 
   // A block still ahead in the evening: held and lost cover what has elapsed, never more than planned.
@@ -616,14 +663,14 @@ test("the evening counts only what was lost inside goal blocks, so the numbers a
   assert.ok(early.totals.spent_minutes + early.totals.lost_minutes <= early.totals.planned_minutes);
   assert.equal(
     templateHeadline(early),
-    "98 minutes of 3h planned goal time held, 22 minutes lost, 60 minutes still ahead.",
+    "You held 98 minutes of 3h planned goal time. 22 minutes got away, 60 minutes still ahead.",
   );
 
   // A good day reads "against your usual day".
   const good = evening([...history(), ...todayPlan()], "2026-11-11 21:00");
   assert.equal(
     templateHeadline(good),
-    "2h of 2h planned goal time held, nothing lost. 20 minutes won back against your usual day.",
+    "All 2h of planned goal time held, nothing lost. 20 minutes won back against your usual day.",
   );
   // Before the first block has started there is nothing held or lost to report.
   const before = evening([...history(), ...todayPlan()], "2026-11-11 02:00");

@@ -14,7 +14,14 @@ import {
   mockScore,
 } from "@michael/shared";
 import { app } from "../app";
-import { buildChatContext, CONNECT_LINE, scoreLines, setChatClientForTests, toTurns } from "./chat";
+import {
+  buildChatContext,
+  CONNECT_LINE,
+  clearChatContextCache,
+  scoreLines,
+  setChatClientForTests,
+  toTurns,
+} from "./chat";
 
 const auth = { Authorization: "Bearer dev-key", "content-type": "application/json" };
 
@@ -152,6 +159,9 @@ test("the score goes into the chat context with its own figures", () => {
     text,
     /4h of deep work per day \[business\]: 6h 06 spent of budget 20h \(13h 54 left to reach it\)/,
   );
+  // A goal's score is its planned time kept, named so the model never quotes it as a share of the
+  // budget (production: "University at 42% (2h 01 of 6h)").
+  assert.match(text, /\d+% of its planned time already passed was spent \(not a share of the budget\)/);
 });
 
 test("POST /v1/chat/stream sends deltas, then the stored reply", async () => {
@@ -175,11 +185,14 @@ test("POST /v1/chat/stream sends deltas, then the stored reply", async () => {
   try {
     const res = await app.request("/v1/chat/stream", {
       method: "POST",
-      headers: auth,
+      // The browser asks for gzip; the stream must still arrive piece by piece, never compressed
+      // (and so buffered) by the API's compression (#298).
+      headers: { ...auth, "accept-encoding": "gzip" },
       body: JSON.stringify({ message: "What is left today?" }),
     });
     assert.equal(res.status, 200);
     assert.match(res.headers.get("content-type") ?? "", /text\/event-stream/);
+    assert.equal(res.headers.get("content-encoding"), null);
     const events = (await res.text())
       .trim()
       .split("\n\n")
@@ -195,6 +208,10 @@ test("POST /v1/chat/stream sends deltas, then the stored reply", async () => {
     assert.equal(done?.event, "done");
     assert.equal(ChatResponse.parse(done?.data).reply.content, "Two hours of focus left today.");
     // Stored for this user: the history now ends with the pair.
+    // JSON is compressed for a client that accepts gzip.
+    const zipped = await app.request("/v1/chat", { headers: { ...auth, "accept-encoding": "gzip" } });
+    assert.equal(zipped.headers.get("content-encoding"), "gzip");
+    await zipped.arrayBuffer();
     const history = ChatHistory.parse(await (await app.request("/v1/chat", { headers: auth })).json());
     assert.deepEqual(
       history.messages.slice(-2).map((m) => m.content),
@@ -205,11 +222,78 @@ test("POST /v1/chat/stream sends deltas, then the stored reply", async () => {
   }
 });
 
-test("Michael points to the Connect button only for live connections (#307)", () => {
-  assert.match(CONNECT_LINE, /connect their calendar, Claude, Telegram or nudges/);
+test("Michael points to the Connect button for every live connection (#307)", () => {
   assert.match(
     CONNECT_LINE,
-    /their Apple Watch, their Mac, their iPhone apps or their location: coming soon/,
+    /connect their calendar, Claude, Telegram, nudges, their Apple Watch, their Mac, their iPhone apps or their location, the app shows/,
   );
+  assert.doesNotMatch(CONNECT_LINE, /coming soon/);
   assert.match(CONNECT_LINE, /Never give steps, links or keys\./);
+});
+
+test("chat warm up reads the context once and warms the prompt; a write reads it again (#364)", async () => {
+  clearChatContextCache();
+  const bodies: Anthropic.MessageCreateParams[] = [];
+  const fake = {
+    messages: {
+      create: async (body: Anthropic.MessageCreateParams) => {
+        bodies.push(body);
+        return {
+          stop_reason: body.max_tokens === 0 ? "max_tokens" : "end_turn",
+          content: [{ type: "text", text: "On track." }],
+        };
+      },
+    },
+  } as unknown as Anthropic;
+  setChatClientForTests(fake);
+  const timingOf = (res: Response) => res.headers.get("server-timing") ?? "";
+  try {
+    const warm = await app.request("/v1/chat/warm", { method: "POST", headers: auth, body: "{}" });
+    assert.equal(warm.status, 204);
+    assert.match(timingOf(warm), /context;desc="read"/);
+    // The warm up asks for nothing to be written, with the same context block an answer sends.
+    await new Promise((r) => setTimeout(r, 10));
+    const warmed = bodies.find((b) => b.max_tokens === 0);
+    assert.ok(warmed, "the prompt cache was warmed");
+    const block = (b: Anthropic.MessageCreateParams, i: number) =>
+      (b.system as Anthropic.TextBlockParam[])[i]?.text ?? "";
+    assert.doesNotMatch(block(warmed, 1), /Now:/);
+
+    // The question after it starts from the cached reads, and the clock comes after the cached blocks.
+    const ask = async (message: string) =>
+      app.request("/v1/chat", {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify({ message, thread_id: "new" }),
+      });
+    const first = await ask("How am I doing?");
+    assert.equal(first.status, 201);
+    const answer = bodies.at(-1) as Anthropic.MessageCreateParams;
+    assert.equal(block(answer, 1), block(warmed, 1));
+    assert.match(block(answer, 2), /^Now: \w+day \d+ \w+, \d\d:\d\d/);
+    assert.equal((answer.system as Anthropic.TextBlockParam[])[2]?.cache_control, undefined);
+    // Warming that thread right after the answer neither reads nor writes the prompt again.
+    const { thread } = ChatResponse.parse(await first.json());
+    const again = await app.request("/v1/chat/warm", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ thread_id: thread.id }),
+    });
+    assert.match(timingOf(again), /context;desc="cached"/);
+    await new Promise((r) => setTimeout(r, 10));
+    assert.equal(bodies.filter((b) => b.max_tokens === 0).length, 1);
+
+    // A write of the user's (a new goal) is in the very next answer.
+    const goal = await app.request("/v1/goals", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ title: "Learn the cello", category: "personal", weekly_budget_minutes: 120 }),
+    });
+    assert.equal(goal.status, 201);
+    await ask("And now?");
+    assert.match(block(bodies.at(-1) as Anthropic.MessageCreateParams, 1), /Learn the cello/);
+  } finally {
+    setChatClientForTests(null);
+    clearChatContextCache();
+  }
 });

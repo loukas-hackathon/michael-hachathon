@@ -59,8 +59,17 @@ export function healthAutoExportLinks(apiBase: string, key: string) {
   };
 }
 
-/** The name of the published iCloud shortcut (docs/sources/ios-shortcuts.md, "One tap set up"). */
+/** The name of the Michael shortcut (docs/sources/ios-shortcuts.md, "One tap set up"). */
 export const SHORTCUT_NAME = "Michael";
+
+/**
+ * The signed shortcut this app serves (public/Michael.shortcut, made by `pnpm shortcut`). iOS names
+ * an imported shortcut after its file, so the file keeps the name the Connect link runs.
+ */
+export const SHORTCUT_FILE = `/${SHORTCUT_NAME}.shortcut`;
+
+/** Where "Add the shortcut" goes: the iCloud link in MICHAEL_SHORTCUT_URL if set, else our own file. Server only. */
+export const shortcutUrl = () => process.env.MICHAEL_SHORTCUT_URL || SHORTCUT_FILE;
 
 /**
  * Runs the installed Michael shortcut with the device key as its input. The shortcut saves the key

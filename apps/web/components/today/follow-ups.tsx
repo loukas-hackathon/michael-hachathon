@@ -31,7 +31,7 @@ function DraftItem({ draft, local, set }: { draft: Draft; local: Local; set: (l:
       set({
         ...local,
         copied: false,
-        error: "I could not reach the clipboard. Select the text and copy it.",
+        error: "I couldn't reach the clipboard. Select the text and copy it.",
       });
     }
   }
@@ -41,8 +41,11 @@ function DraftItem({ draft, local, set }: { draft: Draft; local: Local; set: (l:
     const before = local;
     set({ ...local, busy: true, hidden: true, error: undefined });
     let ok = false;
+    let line = "I couldn't save that. Nothing changed.";
     try {
-      ok = (await markDraft(draft.id, status)).ok;
+      const r = await markDraft(draft.id, status);
+      ok = r.ok;
+      if (r.error) line = r.error;
     } catch {
       ok = false;
     } finally {
@@ -50,7 +53,7 @@ function DraftItem({ draft, local, set }: { draft: Draft; local: Local; set: (l:
         set({ ...before, busy: false, hidden: true });
         startTransition(() => router.refresh());
       } else {
-        set({ ...before, busy: false, hidden: false, error: "I could not save that. Nothing changed." });
+        set({ ...before, busy: false, hidden: false, error: line });
       }
     }
   }

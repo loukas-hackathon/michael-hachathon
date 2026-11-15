@@ -3,10 +3,8 @@ import type { Event, LocationSignal, Place, VisitData } from "@michael/shared";
 // Where the user was, as place visits. Pure: the route (routes/location.ts) reads the store and
 // the clock, this module only decides.
 //
-// A signal is a phone position or the Mac's Wi-Fi network. It becomes, or extends, one visit:
-//   - a point within RADIUS_M of a saved place, or a network mapped to one, is that place;
-//   - a network nobody mapped yet joins the visit going on (that is how "This is Home's Wi-Fi"
-//     gets suggested), unless that visit already has a different network: then it is "Out";
+// A signal is a phone position. It becomes, or extends, one visit:
+//   - a point within RADIUS_M of a saved place is that place;
 //   - a point near no saved place is "Out" (or the location of the calendar event at that time),
 //     rounded to about a kilometre. No raw trail is ever kept.
 // The same place again within the gap extends the visit; anything else starts a new one.
@@ -15,8 +13,6 @@ import type { Event, LocationSignal, Place, VisitData } from "@michael/shared";
 // signal says where the user was (plannedVisits).
 
 export const RADIUS_M = 150;
-/** The collector reports every minute or so: a longer silence means the Mac left or slept. */
-export const WIFI_GAP_MS = 20 * 60_000;
 /** The phone reports only when Michael is opened. */
 export const POINT_GAP_MS = 3 * 3600_000;
 /** Away from saved places, points further apart than this are different places. */
@@ -36,14 +32,8 @@ export interface Visit {
 
 export interface Classified {
   at: number;
-  kind: LocationSignal["kind"];
   /** A saved place, or null. */
   place: Place | null;
-  /** Unmapped network id (wifi only). */
-  unmapped: string | null;
-  network: string | null;
-  /** The network's name, when the Mac could read it. */
-  name: string | null;
   /** Rounded position for points away from saved places. */
   coarse: { lat: number; lng: number } | null;
 }
@@ -80,47 +70,12 @@ export function placeAt(p: { lat: number; lng: number; accuracy_m?: number | nul
 
 export function classify(signal: LocationSignal, places: Place[]): Classified {
   const at = Date.parse(signal.at);
-  if (signal.kind === "wifi") {
-    const place = places.find((p) => p.wifi?.includes(signal.network)) ?? null;
-    return {
-      at,
-      kind: "wifi",
-      place,
-      unmapped: place ? null : signal.network,
-      network: signal.network,
-      name: signal.name ?? null,
-      coarse: null,
-    };
-  }
   const place = placeAt(signal, places);
-  return {
-    at,
-    kind: "point",
-    place,
-    unmapped: null,
-    network: null,
-    name: null,
-    coarse: place ? null : { lat: coarse(signal.lat), lng: coarse(signal.lng) },
-  };
+  return { at, place, coarse: place ? null : { lat: coarse(signal.lat), lng: coarse(signal.lng) } };
 }
 
-const evidenceOf = (kind: LocationSignal["kind"]) => (kind === "wifi" ? "wifi" : "phone");
-const gapFor = (kind: LocationSignal["kind"]) => (kind === "wifi" ? WIFI_GAP_MS : POINT_GAP_MS);
-
 function withSignal(v: Visit, s: Classified): Visit {
-  const evidence = evidenceOf(s.kind);
-  return {
-    ...v,
-    start: Math.min(v.start, s.at),
-    end: Math.max(v.end, s.at),
-    data: {
-      ...v.data,
-      evidence: v.data.evidence.includes(evidence) ? v.data.evidence : [...v.data.evidence, evidence],
-      networks:
-        s.network && !v.data.networks.includes(s.network) ? [...v.data.networks, s.network] : v.data.networks,
-      ...(s.network && s.name ? { names: { ...v.data.names, [s.network]: s.name } } : {}),
-    },
-  };
+  return { ...v, start: Math.min(v.start, s.at), end: Math.max(v.end, s.at) };
 }
 
 function fresh(s: Classified, outLabel: string): Visit {
@@ -130,9 +85,7 @@ function fresh(s: Classified, outLabel: string): Visit {
     label: s.place?.label ?? outLabel,
     data: {
       place_key: s.place?.key ?? null,
-      evidence: [evidenceOf(s.kind)],
-      networks: s.network ? [s.network] : [],
-      ...(s.network && s.name ? { names: { [s.network]: s.name } } : {}),
+      evidence: ["phone"],
       ...(s.coarse ? { lat: s.coarse.lat, lng: s.coarse.lng } : {}),
     },
   };
@@ -140,16 +93,11 @@ function fresh(s: Classified, outLabel: string): Visit {
 
 /** True when the signal continues `open` rather than starting a new visit. */
 function continues(open: Visit, s: Classified): boolean {
-  if (s.at - open.end > gapFor(s.kind) || s.at < open.start) return false;
+  if (s.at - open.end > POINT_GAP_MS || s.at < open.start) return false;
   if (s.place) return open.data.place_key === s.place.key;
-  if (s.unmapped) {
-    // A network no one mapped belongs to the visit going on, unless that visit is on another one.
-    const nets = open.data.networks;
-    return nets.length === 0 || nets.includes(s.unmapped);
-  }
   // A point away from saved places.
   if (open.data.place_key !== null) return false;
-  if (open.data.lat == null || open.data.lng == null || !s.coarse) return open.data.networks.length > 0;
+  if (open.data.lat == null || open.data.lng == null || !s.coarse) return false;
   return distanceM({ lat: open.data.lat, lng: open.data.lng }, s.coarse) <= OUT_SAME_M;
 }
 
@@ -209,9 +157,7 @@ export function visitFromEvent(e: Event): Visit | null {
     label: e.title,
     data: {
       place_key: typeof d.place_key === "string" ? d.place_key : null,
-      evidence: Array.isArray(d.evidence) ? d.evidence.filter((x) => x === "wifi" || x === "phone") : [],
-      networks: Array.isArray(d.networks) ? d.networks.filter((x): x is string => typeof x === "string") : [],
-      ...(d.names && typeof d.names === "object" ? { names: d.names as Record<string, string> } : {}),
+      evidence: Array.isArray(d.evidence) ? d.evidence.filter((x) => x === "phone") : [],
       ...(typeof d.lat === "number" && typeof d.lng === "number" ? { lat: d.lat, lng: d.lng } : {}),
     },
   };

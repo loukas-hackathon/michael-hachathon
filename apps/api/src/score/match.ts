@@ -74,6 +74,19 @@ export function calendarTitles(goal: Goal): string[] {
   return list.filter((t): t is string => typeof t === "string" && t.trim().length > 0);
 }
 
+/**
+ * The calendar title for a block Michael books for a goal: the goal's own title ("University",
+ * "70.3"), short and clean, so the user reads what it is for and never a bare "Study". The booked
+ * block also carries the goal's id (rule 1), so the score never depends on the title.
+ * `title`: a name someone gave (an agent, the chat); kept unless it is one of the goal's bare
+ * calendar titles.
+ */
+export function goalBlockTitle(goal: Goal, title?: string | null): string {
+  const given = title?.trim();
+  const bare = given && calendarTitles(goal).some((t) => normaliseTitle(t) === normaliseTitle(given));
+  return (given && !bare ? given : goal.title).slice(0, 200);
+}
+
 /** The number of other people in a calendar event. Missing or not a number reads as nobody. */
 export function attendeesOf(event: Event): number {
   const n = event.data.attendees;

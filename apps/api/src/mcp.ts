@@ -34,8 +34,10 @@ import { answerCheckIn, checkInToday } from "./checkin/service";
 import { addItem, checklistFor, todayOf } from "./checklist/items";
 import { offerGoalActions } from "./checklist/offers";
 import { currentAgent } from "./context";
+import { startFocus } from "./focus/session";
 import { currentSuggestions } from "./goals/suggestions";
 import { HttpError, parse } from "./http";
+import { knowledgeFor, knowledgeText } from "./knowledge";
 import {
   dayLabel,
   dur,
@@ -59,7 +61,9 @@ import { patternReportFor } from "./routes/patterns";
 import { travelPlanFor } from "./routes/places";
 import { scoreFor } from "./routes/score";
 import { recordsFor } from "./routes/targets";
+import { weekReviewFor } from "./routes/week";
 import { store } from "./store";
+import { weekReviewText } from "./week/text";
 
 // The claude.ai connector's tool set. Every tool answers with short text in the user's local time
 // (24 hour, Europe/Athens) plus structured content. Writes follow Michael's autonomy rules: only
@@ -128,7 +132,7 @@ function recommendationLine(r: Recommendation, goals: Map<string, Goal>): string
 
 function scoreText(s: Score): string {
   const lines = [
-    `Week from ${dayLabel(Date.parse(s.week_start))}: ${pct(s.score_pct)} of planned goal time spent (${dur(s.spent_minutes)} of ${dur(s.elapsed_minutes)} so far; ${dur(s.lost_minutes)} lost, ${dur(s.ahead_minutes)} still ahead, ${dur(s.planned_minutes)} planned).`,
+    `Week from ${dayLabel(Date.parse(s.week_start))}: ${pct(s.score_pct)} of planned goal time spent (${dur(s.spent_minutes)} of ${dur(s.elapsed_minutes)} so far; ${dur(s.lost_minutes)} lost, ${dur(s.ahead_minutes)} still ahead, ${dur(s.planned_minutes)} planned).${s.logged_minutes ? ` Plus ${dur(s.logged_minutes)} you logged outside your blocks: it counts toward each goal's budget, never the score, which reads planned time only.` : ""}`,
     `${dayLabel(zone.startOfDay(s.date) + 12 * 3600_000)}: ${pct(s.day.score_pct)} (${dur(s.day.spent_minutes)} of ${dur(s.day.elapsed_minutes)}; ${dur(s.day.lost_minutes)} lost, ${dur(s.day.unverified_minutes)} unverified). Time won back: ${dur(s.day.time_won_back_minutes)}${s.day.time_won_back.reason ? ` (${s.day.time_won_back.reason})` : ""}.`,
     targetText(s),
     `Balance: ${s.areas
@@ -137,11 +141,11 @@ function scoreText(s: Score): string {
           `${a.area} ${pct(a.score_pct)} (floor ${a.floor_pct}%${a.target_pct == null ? "" : `, target ${a.target_pct}%`}${a.meets_floor == null ? "" : a.meets_floor ? ", met" : ", not met"})`,
       )
       .join("; ")}.`,
-    `Free time left this week, outside fixed commitments and sleep: ${dur(s.free_minutes_left)}.`,
+    `Free time left this week, outside fixed commitments, sleep and the time your standing instructions protect: ${dur(s.free_minutes_left)}.`,
     "Goals this week:",
     ...s.goals.map((g) =>
       g.scored
-        ? `- ${g.area} "${g.title}": budget ${dur(g.budget_minutes)}, planned ${dur(g.planned_minutes)}, spent ${dur(g.spent_minutes)}, lost ${dur(g.lost_minutes)}, ${pct(g.score_pct)}; ${dur(g.minutes_left)} left, ${g.open_blocks} ${g.open_blocks === 1 ? "block" : "blocks"} still open`
+        ? `- ${g.area} "${g.title}": budget ${dur(g.budget_minutes)}, planned ${dur(g.planned_minutes)}, spent ${dur(g.spent_minutes)}${g.logged_minutes ? `, plus ${dur(g.logged_minutes)} logged outside its blocks (counts toward the budget, not the score)` : ""}, lost ${dur(g.lost_minutes)}, ${pct(g.score_pct)} of planned time spent (not of the budget); ${dur(g.minutes_left)} left, ${g.open_blocks} ${g.open_blocks === 1 ? "block" : "blocks"} still open`
         : g.count
           ? `- ${g.area} "${g.title}": ${g.count.done} of ${g.count.target} this week, ${g.count.days_left} ${g.count.days_left === 1 ? "day" : "days"} left (outside the time score)`
           : g.checklist
@@ -504,6 +508,23 @@ export function createMcpServer(): McpServer {
   );
 
   server.registerTool(
+    "get_week_review",
+    {
+      title: "Get the week's review",
+      description:
+        "Michael's review of a week (Monday to Sunday, Europe/Athens), the Sunday evening moment: the week's score with the maths and the usual week, time won back, each goal kept or behind against its budget, personal records set, the biggest thief of time with its minutes, what the user logged and the daily outcomes done, one lesson, next week's target and the first move for next week. Use it for \"how was my week\". Give `week` as any day of an earlier week; default this week.",
+      inputSchema: {
+        week: LocalDayInput.optional().describe("Any day of the week, YYYY-MM-DD. Default this week"),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    safe(async ({ week }) => {
+      const r = await weekReviewFor({ week });
+      return reply(weekReviewText(r), r as Record<string, unknown>);
+    }),
+  );
+
+  server.registerTool(
     "get_memories",
     {
       title: "Get memories",
@@ -521,13 +542,28 @@ export function createMcpServer(): McpServer {
     }),
   );
 
+  server.registerTool(
+    "what_you_know",
+    {
+      title: "What Michael knows about the user",
+      description:
+        "Everything Michael uses about the user, in plain words: what they told him (memories, check in answers, standing instructions, setup), what each connection sends and when it last did, what he never keeps, and how often agents asked today. Use it when the user asks what Michael or you know about them. The user can forget any item in the app under You, Privacy.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+    },
+    safe(async () => {
+      const k = await knowledgeFor();
+      return reply(knowledgeText(k), k as Record<string, unknown>);
+    }),
+  );
+
   // ---------- write ----------
 
   server.registerTool(
     "log_done",
     {
       title: "Log time spent on a goal",
-      description: `Log time the user already spent on one of their goals ("I took a bath for 40 minutes at 13:00", "an hour of reading this morning"). It counts as confirmed goal time in the score at once; no calendar block is needed. Name the goal by goal_id or by the user's words (goal). Give minutes, plus start when the user said when (without it, it ends now), or start and end. Past only, the last 14 days. Can be undone with undo_recommendation for 24 hours. ${TZ_NOTE}`,
+      description: `Log time the user already spent on one of their goals ("I took a bath for 40 minutes at 13:00", "an hour of reading this morning"). Inside one of the goal's blocks it confirms that block; outside every block it counts toward the goal's weekly budget at once but not the score, which is planned time only. No calendar block is needed. Name the goal by goal_id or by the user's words (goal). Give minutes, plus start when the user said when (without it, it ends now), or start and end. Past only, the last 14 days. Can be undone with undo_recommendation for 24 hours. ${TZ_NOTE}`,
       inputSchema: {
         goal_id: Id.optional().describe("Goal id from get_goals"),
         goal: z.string().min(1).max(200).optional().describe("The goal in the user's words, e.g. 'bath'"),
@@ -582,6 +618,28 @@ export function createMcpServer(): McpServer {
     safe(async (input) => {
       const out = await settleBlock(input, "mcp", executeRecommendation);
       return reply(`${out.message} Undo with undo_recommendation ${out.recommendation.id}.`, { ...out });
+    }),
+  );
+
+  server.registerTool(
+    "focus_now",
+    {
+      title: "Start a focus session now",
+      description:
+        "Start a Focus now session for one of the user's goals, from this minute: \"let's focus on University for 45 minutes\". It runs in the user's own block (the goal block running now, or a new block), mutes distracting apps on their Mac when it is connected, and shows a countdown on their phone. When it ends on time their watch buzzes and the time counts as confirmed goal time; they can end it early or add 15 minutes in Michael. One session at a time. Name the goal by goal_id or by the user's words (goal). minutes 5 to 180, usually 25, 45, 60 or 90 (default 45, or the rest of the goal block running now).",
+      inputSchema: {
+        goal_id: Id.optional().describe("Goal id from get_goals"),
+        goal: z.string().min(1).max(200).optional().describe("The goal in the user's words"),
+        minutes: z.number().int().min(5).max(180).optional(),
+      },
+    },
+    safe(async (input) => {
+      const s = await startFocus(input, "mcp");
+      const until = zone.clock(Date.parse(s.end_at));
+      const mac = s.guarded ? " Distracting apps on their Mac are muted." : "";
+      return reply(`Focusing on ${s.goal_title} until ${until}, ${s.minutes} min.${mac}`, {
+        session: s,
+      });
     }),
   );
 
@@ -891,7 +949,9 @@ export function createMcpServer(): McpServer {
           .min(1)
           .max(200)
           .optional()
-          .describe('Calendar title, e.g. "Focus: pitch deck". Default "Focus block"'),
+          .describe(
+            'Calendar title, e.g. "Focus: pitch deck". Default: named after the goal ("University"), else "Focus block"',
+          ),
         goal_id: Id.optional().describe("The goal it serves, from get_goals"),
       },
     },

@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 import type Anthropic from "@anthropic-ai/sdk";
-import { LogTimeResponse, Recommendation } from "@michael/shared";
+import { CONFIRMATIONS, LogTimeResponse, Recommendation } from "@michael/shared";
 import { matchGoal, weekMaths } from "../actions/log";
 import { app } from "../app";
 import { runAsUser } from "../context";
+import { demoGoals } from "../demo/week";
 import { withoutInstructions } from "../instructions/testkit";
 import { DEFAULT_TIMEZONE } from "../patterns";
 import { Zone } from "../patterns/time";
@@ -17,6 +18,11 @@ import { askMichael, setChatClientForTests } from "./chat";
 
 const MIN = 60_000;
 const iso = (ms: number) => new Date(ms).toISOString();
+// Any of Michael's phrasings of "Logged 40 min." (one per user per day, #398).
+const LOGGED = `(?:${CONFIRMATIONS.logged
+  .map((l) => l.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace("\\{x\\}", "\\d+ min"))
+  .join("|")})`;
+
 const zone = new Zone(DEFAULT_TIMEZONE);
 
 /** A fresh user with one goal, "Everything bath", 60 minutes a week, and nothing else. */
@@ -70,6 +76,39 @@ test("matchGoal finds a goal by the user's words, and asks rather than guesses b
   assert.throws(() => matchGoal(goals, { goal: "piano" }), /No goal called "piano"/);
 });
 
+test("matchGoal reads the user's words against titles, calendar titles and descriptions (#364)", () => {
+  // The demo plan: "I took a bath for 40 minutes" lands on 70.3 (recovery is in its description).
+  const plan = demoGoals;
+  assert.equal(matchGoal(plan, { goal: "bath" }).title, "70.3");
+  assert.equal(matchGoal(plan, { goal: "I took a bath for 40 minutes" }).title, "70.3");
+  assert.equal(matchGoal(plan, { goal: "ice bath after the ride" }).title, "70.3");
+  assert.equal(matchGoal(plan, { goal: "a swim" }).title, "70.3");
+  assert.equal(matchGoal(plan, { goal: "bike ride" }).title, "70.3");
+  assert.equal(matchGoal(plan, { goal: "revision for the exams" }).title, "University");
+  assert.equal(matchGoal(plan, { goal: "cold outreach calls" }).title, "The company");
+  // Sleep is measured by nights, never logged; nothing else fits a nap.
+  assert.throws(() => matchGoal(plan, { goal: "a nap" }), /No goal called "a nap"/);
+
+  const g = (title: string, description: string | null, calendar_titles?: string[]) =>
+    ({
+      id: randomUUID(),
+      title,
+      category: "personal",
+      description,
+      target: calendar_titles ? { calendar_titles } : null,
+      weekly_budget_minutes: 60,
+      active: true,
+      created_at: iso(0),
+      updated_at: iso(0),
+    }) as const;
+  // A word in a title beats the same word in a description.
+  const two = [g("Mobility", "Ten minutes a day"), g("Running", "Easy runs, then mobility work")];
+  assert.equal(matchGoal(two, { goal: "foam rolling" }).title, "Mobility");
+  // Two goals that fit equally well are a question.
+  const tie = [g("Yoga", null), g("Recovery", null)];
+  assert.throws(() => matchGoal(tie, { goal: "stretching" }), /Yoga or Recovery/);
+});
+
 test("weekMaths shows the maths the user reads", () => {
   assert.equal(weekMaths(40, 60), "40 of 60 min this week");
   assert.equal(weekMaths(130, 540), "2h 10 of 9h this week");
@@ -113,7 +152,7 @@ test("logTime and settleBlock through the store: the entry, the maths, undo", ()
     assert.equal(out.recommendation.status, "done");
     assert.equal(out.recommendation.action?.kind, "log_time");
     // The maths, as the score has it (the bath may straddle midnight on a test run near it).
-    assert.match(out.message, /^Logged\. Everything bath \d+ of 60 min this week\.$/);
+    assert.match(out.message, new RegExp(`^${LOGGED} Everything bath: \\d+ of 60 min this week\\.$`));
 
     // The future is refused.
     await assert.rejects(
@@ -159,7 +198,7 @@ test("logTime and settleBlock through the store: the entry, the maths, undo", ()
     );
     assert.equal(settled.entry.data.log, "didnt");
     assert.equal(settled.entry.data.goal_id, gym.id);
-    assert.match(settled.message, /^Noted, counted as lost\. Gym/);
+    assert.match(settled.message, /^Noted\. I've counted it as lost\. Gym/);
     await assert.rejects(
       settleBlock({ event_id: block.id, did: true }, "app", executeRecommendation),
       /already settled/,
@@ -211,7 +250,7 @@ test("the bath: 'I took a bath for 40 minutes at 13:00' is logged, with the math
     const start = zone.at(day, 13 * 60);
     const { client, requests } = fakeClaude([
       { tool: { name: "log_done", input: { goal: "bath", minutes: 40, start_at: iso(start) } } },
-      { text: "Logged. Everything bath 40 of 60 min this week. Undo" },
+      { text: "Logged 40 min. Everything bath: 40 of 60 min this week. Undo" },
     ]);
     setChatClientForTests(client);
     try {
@@ -223,15 +262,9 @@ test("the bath: 'I took a bath for 40 minutes at 13:00' is logged, with the math
       const system = JSON.stringify(requests[0]?.system);
       assert.ok(requests[0]?.tools?.some((t) => "name" in t && t.name === "log_done"));
       assert.match(system, /You can always log time against a goal/);
-      // The result the model read carries the maths.
-      const last = requests[1]?.messages.at(-1);
-      const result = (Array.isArray(last?.content) ? last.content : []).find(
-        (b) => b.type === "tool_result",
-      ) as Anthropic.ToolResultBlockParam | undefined;
-      assert.equal(result?.is_error, undefined);
-      assert.match(String(result?.content), /Logged\. Everything bath \d+ of 60 min this week\./);
-
-      assert.equal(answer, "Logged. Everything bath 40 of 60 min this week. Undo");
+      // A plain statement: the tool's own line is the answer, without a second model call (#364).
+      assert.equal(requests.length, 1);
+      assert.match(answer, new RegExp(`^${LOGGED} Everything bath: \\d+ of 60 min this week\\. Undo$`));
       const rec = Recommendation.parse(actions[0]);
       assert.equal(rec.action?.kind, "log_time");
       assert.equal(rec.status, "done");
@@ -240,6 +273,33 @@ test("the bath: 'I took a bath for 40 minutes at 13:00' is logged, with the math
       ).filter((e) => e.data.goal_id === bathId);
       assert.equal(entry?.start_at, iso(start));
       assert.equal(entry?.end_at, iso(start + 40 * MIN));
+    } finally {
+      setChatClientForTests(null);
+    }
+  }));
+
+test("a log with a question still gets the model's answer after the tool (#364)", () =>
+  freshUser(async () => {
+    const { client, requests } = fakeClaude([
+      { tool: { name: "log_done", input: { goal: "bath", minutes: 20 } } },
+      { text: "Logged 20 min. Everything bath: 20 of 60 min this week. Undo. You are on track." },
+    ]);
+    setChatClientForTests(client);
+    try {
+      const { answer } = await askMichael(
+        [{ role: "user", content: "Had a 20 minute bath, am I on track?" }],
+        "context",
+      );
+      assert.equal(requests.length, 2);
+      const last = requests[1]?.messages.at(-1);
+      const result = (Array.isArray(last?.content) ? last.content : []).find(
+        (b) => b.type === "tool_result",
+      ) as Anthropic.ToolResultBlockParam | undefined;
+      assert.match(
+        String(result?.content),
+        new RegExp(`${LOGGED} Everything bath: \\d+ of 60 min this week\\.`),
+      );
+      assert.match(answer, /You are on track/);
     } finally {
       setChatClientForTests(null);
     }

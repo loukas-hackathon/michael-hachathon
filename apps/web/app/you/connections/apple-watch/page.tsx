@@ -6,9 +6,8 @@ import { getConnection } from "@/lib/connections-status";
 
 export const metadata = { title: "Apple Watch · Michael" };
 
-// ?preview=1 shows the steps while CONNECTOR_STATUS still says Coming soon, so a person can prove
-// the whole path on production (a real event arrives) before switching it on (#306). Nothing links
-// here with it: everyone else sees Coming soon.
+// Live for everyone. ?preview=1 is kept harmless: it only matters if CONNECTOR_STATUS switches this
+// back to Coming soon, when it still shows the steps so the path can be proven on production (#306).
 export default async function AppleWatchPage({
   searchParams,
 }: {

@@ -48,13 +48,13 @@ async function swap(token: string): Promise<KeyResult> {
   if (res.status === 401 || res.status === 400) {
     return { error: "This setup link has expired or was used. Make a new one in Michael." };
   }
-  if (!res.ok) return { error: "I could not reach Michael. Try again in a minute." };
+  if (!res.ok) return { error: "I couldn't reach Michael. Try again in a minute." };
   const body = SetupTokenExchanged.parse(await res.json());
   return { secret: body.secret, apiBase: body.api_url.replace(/\/$/, "") };
 }
 
 const message = (e: unknown) =>
-  e instanceof Error && e.message === SIGN_IN ? SIGN_IN : "I could not set this up. Sign in again and retry.";
+  e instanceof Error && e.message === SIGN_IN ? SIGN_IN : "I couldn't set this up. Sign in again and retry.";
 
 /** A device key for the device this page is open on. */
 export async function connectHere(connection: SetupConnection): Promise<KeyResult> {
@@ -95,6 +95,6 @@ export async function exchangeSetupToken(token: string): Promise<KeyResult> {
   try {
     return await swap(token);
   } catch {
-    return { error: "I could not reach Michael. Try again in a minute." };
+    return { error: "I couldn't reach Michael. Try again in a minute." };
   }
 }

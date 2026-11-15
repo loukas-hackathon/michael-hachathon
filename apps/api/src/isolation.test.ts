@@ -7,7 +7,12 @@ import { Hono } from "hono";
 import { app, v1Routes } from "./app";
 import { type AuthMethod, runAsUser } from "./context";
 import { seedDemoWeek } from "./demo/sync";
-import { DEMO_VISITOR_HEADER, DEMO_VISITOR_MESSAGE, demoVisitorMay } from "./demo/visitor";
+import {
+  DEMO_PRESENTER_HEADER,
+  DEMO_VISITOR_HEADER,
+  DEMO_VISITOR_MESSAGE,
+  demoVisitorMay,
+} from "./demo/visitor";
 import { env } from "./env";
 import { errorResponse, HttpError } from "./http";
 import { createMcpServer } from "./mcp";
@@ -89,12 +94,15 @@ const READS = [
   () => "/v1/telegram",
   () => "/v1/goals/suggestions",
   () => "/v1/focus-guards/active",
+  () => "/v1/focus/active",
   () => "/v1/voice",
   () => "/v1/places/suggestions",
   () => "/v1/records",
   () => "/v1/sources/status",
+  () => "/v1/me/knowledge",
   () => "/v1/targets/current",
   () => `/v1/checklist?date=${day}`,
+  () => "/v1/meetings/active",
 ];
 
 const ids: {
@@ -189,20 +197,15 @@ test("A writes through every write route", async () => {
     }),
     "PUT /v1/places",
   );
-  // Where A was: a visit titled with A's place label, and a Wi-Fi network named after A.
+  // Where A was: a visit from A's phone position.
   await ok(
     await request(asA, "POST", "/v1/location/signals", {
-      signals: [
-        { kind: "point", at: new Date(Date.now() - 600_000).toISOString(), lat: 37.98, lng: 23.72 },
-        { kind: "wifi", at: new Date(Date.now() - 540_000).toISOString(), network: MARK, name: MARK },
-      ],
+      signals: [{ kind: "point", at: new Date(Date.now() - 600_000).toISOString(), lat: 37.98, lng: 23.72 }],
     }),
     "POST /v1/location/signals",
   );
-  await ok(
-    await request(asA, "PUT", "/v1/location/networks", { network: MARK, place_key: "home" }),
-    "PUT /v1/location/networks",
-  );
+  // Meetings mode (#400): A's session must not show for, or open conversations of, anyone else.
+  await ok(await request(asA, "POST", "/v1/meetings/start", { consent: true }), "POST /v1/meetings/start");
   await ok(
     await request(asA, "PUT", "/v1/privacy/off-the-record", { off_the_record: true }),
     "off the record",
@@ -253,6 +256,8 @@ for (const [name, who] of [
     assert.equal(privacy.off_the_record, false, `A's off the record must not apply to ${name}`);
     const push = await (await request(who, "GET", "/v1/push")).json();
     assert.equal(push.devices, 0, `${name} must not count A's device`);
+    const meetings = await (await request(who, "GET", "/v1/meetings/active")).json();
+    assert.equal(meetings.active, null, `A's meeting must not run for ${name}`);
   });
 
   test(`${name} cannot change or delete A's data`, async () => {
@@ -348,8 +353,10 @@ for (const [name, userId] of [
         ["get_moments", { kind: "evening" }],
         ["propose_goals", {}],
         ["get_records", {}],
+        ["get_week_review", {}],
         ["get_check_in", {}],
         ["get_memories", {}],
+        ["what_you_know", {}],
         ["list_drafts", {}],
         ["get_checklist", { date: day }],
       ];
@@ -493,6 +500,14 @@ test("demo visitors can still chat, act on recommendations and turn on nudges", 
   );
   assert.notEqual((await request(visitor1, "POST", `/v1/recommendations/${rec.id}/execute`)).status, 403);
   assert.notEqual((await request(visitor1, "POST", `/v1/recommendations/${rec.id}/undo`)).status, 403);
+  // Book on Goals is a stage beat: undoable like Do it, so a visitor may press it (and Undo it).
+  const { goals } = await ok(await request(visitor1, "GET", "/v1/goals"), "goals");
+  const goal = (goals as { id: string }[])[0];
+  assert.ok(goal, "the demo account has goals");
+  const book = await request(visitor1, "POST", `/v1/goals/${goal.id}/book`, { minutes: 30 });
+  assert.notEqual(book.status, 403, `Book as a demo visitor: ${book.status}`);
+  assert.ok(demoVisitorMay("POST", `/v1/goals/${goal.id}/book`));
+  assert.ok(!demoVisitorMay("POST", "/v1/goals"));
   const push = await request(visitor1, "POST", "/v1/push/subscriptions", {
     endpoint: `https://push.example.com/${randomUUID()}`,
     keys: { p256dh: "k", auth: "a" },
@@ -565,6 +580,94 @@ test("the demo reseed puts goals and standing instructions back to the plan", as
   );
 });
 
+// ---------- the presenter (#343) ----------
+
+const PRESENTER_KEY = "test-presenter-key"; // test-env.ts
+
+/** A pending claude.ai connect request, made the way claude.ai makes one. Returns its id. */
+async function pendingConnectRequest(): Promise<string> {
+  const reg = await app.request("/oauth/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      client_name: "Claude",
+      redirect_uris: ["https://claude.ai/api/mcp/auth_callback"],
+    }),
+  });
+  const { client_id } = (await reg.json()) as { client_id: string };
+  const q = new URLSearchParams({
+    response_type: "code",
+    client_id,
+    redirect_uri: "https://claude.ai/api/mcp/auth_callback",
+    code_challenge: "x".repeat(43),
+    code_challenge_method: "S256",
+    state: "s",
+  });
+  const res = await app.request(`/oauth/authorize?${q}`);
+  const id = new URL(res.headers.get("location") ?? "").searchParams.get("request");
+  assert.ok(id, `authorize: ${res.status}`);
+  return id;
+}
+
+/** A connect decision with the given headers (the API key is added unless `key` is given). */
+const decide = (id: string, headers: Record<string, string>) =>
+  app.request(`/v1/connect/requests/${id}`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${env.API_KEY}`, "content-type": "application/json", ...headers },
+    body: JSON.stringify({ allow: true }),
+  });
+
+test("the presenter may answer the claude.ai consent; a plain visitor may not", async () => {
+  const id = await pendingConnectRequest();
+  const visitor = { [DEMO_VISITOR_HEADER]: randomUUID() };
+  assert.equal((await decide(id, visitor)).status, 403);
+  const res = await decide(id, { ...visitor, [DEMO_PRESENTER_HEADER]: PRESENTER_KEY });
+  const { redirect_to } = await ok(res, "presenter allows");
+  assert.ok(new URL(redirect_to).searchParams.get("code"), "a code goes back to claude.ai");
+  // Nothing else opens up for the presenter: the shared account stays as it is.
+  const goal = await app.request("/v1/goals", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${env.API_KEY}`,
+      "content-type": "application/json",
+      ...visitor,
+      [DEMO_PRESENTER_HEADER]: PRESENTER_KEY,
+    },
+    body: JSON.stringify({ category: "rest", title: "presenter goal" }),
+  });
+  assert.equal(goal.status, 403);
+});
+
+test("a visitor cannot escalate: a wrong, empty or borrowed presenter key is still a visitor", async () => {
+  const id = await pendingConnectRequest();
+  const visitor = { [DEMO_VISITOR_HEADER]: randomUUID() };
+  for (const wrong of ["", "wrong", `${PRESENTER_KEY}x`, env.API_KEY, PRESENTER_KEY.toUpperCase()]) {
+    const res = await decide(id, { ...visitor, [DEMO_PRESENTER_HEADER]: wrong });
+    assert.equal(res.status, 403, `presenter header ${JSON.stringify(wrong)}: ${res.status}`);
+  }
+  // Still pending: none of those answered it.
+  const read = await request(asDemo, "GET", `/v1/connect/requests/${id}`);
+  assert.equal(read.status, 200);
+});
+
+test("the presenter key means nothing without the API key", async () => {
+  const id = await pendingConnectRequest();
+  const presenter = { [DEMO_PRESENTER_HEADER]: PRESENTER_KEY, [DEMO_VISITOR_HEADER]: randomUUID() };
+  // No credentials, the presenter key in place of the API key, or a made up token: unauthorised.
+  for (const authorization of [undefined, `Bearer ${PRESENTER_KEY}`, "Bearer not-a-token"]) {
+    const headers: Record<string, string> = { "content-type": "application/json", ...presenter };
+    if (authorization) headers.authorization = authorization;
+    const res = await app.request(`/v1/connect/requests/${id}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ allow: true }),
+    });
+    assert.equal(res.status, 401, `${authorization ?? "no auth"}: ${res.status}`);
+  }
+  const read = await request(asDemo, "GET", `/v1/connect/requests/${id}`);
+  assert.equal(read.status, 200, "still pending");
+});
+
 test("demo visitors may save the ritual and log time on stage; the reseed puts both back to the plan", async () => {
   const { demoGoals } = await import("./demo/week");
   await runAsUser(DEMO, () => seedDemoWeek(store, { overwriteGoals: true }), "api_key");
@@ -623,9 +726,92 @@ test("the visitor rules fail closed for routes nobody listed", () => {
   assert.equal(demoVisitorMay("POST", "/v1/ritual/morning"), true);
   assert.equal(demoVisitorMay("POST", "/v1/ritual/evening/skip"), true);
   assert.equal(demoVisitorMay("POST", "/v1/ritual/other"), false);
+  // The chat screen warming Michael up (#364): it only reads.
+  assert.equal(demoVisitorMay("POST", "/v1/chat/warm"), true);
+  assert.equal(demoVisitorMay("POST", "/v1/chat/other"), false);
   assert.equal(demoVisitorMay("POST", "/v1/connect/requests/x"), false);
+  assert.equal(demoVisitorMay("POST", "/v1/connect/requests/x", true), true);
+  assert.equal(demoVisitorMay("POST", "/v1/goals", true), false);
+  assert.equal(demoVisitorMay("POST", "/mcp", true), false);
+  // Off the record: the presenter's privacy beat on stage, never a plain visitor.
+  assert.equal(demoVisitorMay("PUT", "/v1/privacy/off-the-record"), false);
+  assert.equal(demoVisitorMay("PUT", "/v1/privacy/off-the-record", true), true);
+  assert.equal(demoVisitorMay("PATCH", "/v1/privacy/sources/apple_health", true), false);
   assert.equal(demoVisitorMay("POST", "/v1/something-new"), false);
   assert.equal(demoVisitorMay("DELETE", "/v1/me/data"), false);
   assert.equal(demoVisitorMay("GET", "/v1/goals"), true);
   assert.equal(demoVisitorMay("POST", "/v1/chat/"), true);
+});
+
+test("focus sessions (#397): only their owner sees, extends or ends one; visitors keep their own", async () => {
+  const goalOf = async (who: Who, title: string) =>
+    (
+      await ok(
+        await request(who, "POST", "/v1/goals", {
+          category: "personal",
+          title,
+          description: null,
+          target: null,
+          weekly_budget_minutes: 300,
+          active: true,
+        }),
+        `goal ${title}`,
+      )
+    ).id as string;
+  const aGoal = await goalOf(asA, `Focus ${MARK}`);
+  const bGoal = await goalOf(asB, "Focus of B");
+  // A is off the record from the first test: nothing is kept, so no session either.
+  assert.equal((await request(asA, "POST", "/v1/focus/start", { goal_id: aGoal })).status, 409);
+  await ok(await request(asA, "PUT", "/v1/privacy/off-the-record", { off_the_record: false }), "A back on");
+  const started = await request(asA, "POST", "/v1/focus/start", { goal_id: aGoal, minutes: 25 });
+  assert.equal(started.status, 201, await started.clone().text());
+  const session = (await started.json()) as { id: string; event_id: string };
+
+  // B cannot read, extend or end A's session, nor start one on A's goal.
+  const bActive = await ok(await request(asB, "GET", "/v1/focus/active"), "B active");
+  assert.equal(bActive.session, null);
+  assert.ok(!JSON.stringify(bActive).includes(MARK));
+  assert.equal((await request(asB, "POST", `/v1/focus/${session.id}/extend`, {})).status, 404);
+  assert.equal((await request(asB, "POST", `/v1/focus/${session.id}/end`, { count: true })).status, 404);
+  assert.equal((await request(asB, "POST", "/v1/focus/start", { goal_id: aGoal })).status, 404);
+  // B's own session runs beside A's: one per user, not one in all.
+  assert.equal((await request(asB, "POST", "/v1/focus/start", { goal_id: bGoal, minutes: 25 })).status, 201);
+  // A second one for A is refused.
+  assert.equal((await request(asA, "POST", "/v1/focus/start", { goal_id: aGoal, minutes: 25 })).status, 409);
+
+  // Demo visitors: allowed, one each, never another's.
+  await runAsUser(DEMO, () => seedDemoWeek(store, { overwriteGoals: true }), "api_key");
+  const { demoGoals } = await import("./demo/week");
+  const uni = demoGoals.find((g) => g.title === "University") ?? demoGoals[0];
+  const v1Start = await request(visitor1, "POST", "/v1/focus/start", { goal_id: uni?.id, minutes: 25 });
+  assert.equal(v1Start.status, 201, await v1Start.clone().text());
+  const v1Session = (await v1Start.json()) as { id: string; event_id: string };
+  const v2Active = await ok(await request(visitor2, "GET", "/v1/focus/active"), "visitor 2 active");
+  assert.equal(v2Active.session, null);
+  assert.equal((await request(visitor2, "POST", `/v1/focus/${v1Session.id}/end`, {})).status, 404);
+  const accountActive = await ok(await request(asDemo, "GET", "/v1/focus/active"), "account active");
+  assert.equal(accountActive.session, null);
+  const extended = await ok(
+    await request(visitor1, "POST", `/v1/focus/${v1Session.id}/extend`, {}),
+    "extend",
+  );
+  assert.equal(extended.minutes, 40);
+
+  // The reseed clears visitors' sessions and the blocks they made on the demo day.
+  await runAsUser(DEMO, () => seedDemoWeek(store, { overwriteGoals: true }), "api_key");
+  const after = await ok(await request(visitor1, "GET", "/v1/focus/active"), "visitor 1 after reseed");
+  assert.equal(after.session, null);
+  assert.equal(await runAsUser(DEMO, () => store.getEvent(v1Session.event_id), "api_key"), null);
+
+  // A's session is untouched by all of it, and A can end it.
+  const aActive = await ok(await request(asA, "GET", "/v1/focus/active"), "A active");
+  assert.equal(aActive.session?.id, session.id);
+  const ended = await ok(
+    await request(asA, "POST", `/v1/focus/${session.id}/end`, { count: false }),
+    "A end",
+  );
+  assert.equal(ended.status, "ended");
+  assert.equal(demoVisitorMay("POST", "/v1/focus/start"), true);
+  assert.equal(demoVisitorMay("POST", "/v1/focus/x/end"), true);
+  assert.equal(demoVisitorMay("POST", "/v1/focus/x/delete"), false);
 });
