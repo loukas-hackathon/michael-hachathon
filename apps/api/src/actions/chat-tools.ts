@@ -11,6 +11,7 @@ import {
 import { z } from "zod";
 import { answerCheckIn } from "../checkin/service";
 import { HttpError } from "../http";
+import { knowledgeFor, knowledgeText } from "../knowledge";
 import { forget, remember } from "../memory";
 import { DEFAULT_TIMEZONE } from "../patterns";
 import { Zone } from "../patterns/time";
@@ -211,6 +212,12 @@ export const CHAT_TOOLS: Anthropic.Tool[] = [
       properties: { memory_id: { type: "string" } },
       required: ["memory_id"],
     },
+  },
+  {
+    name: "what_you_know",
+    description:
+      "Everything you know and use about the user, in plain words: what they told you (memories, check in answers, standing instructions, setup), what each connection sends, what you never keep and how often agents asked today. Call it when the user asks what you know about them.",
+    input_schema: { type: "object", properties: {} },
   },
   ...PROPOSAL_TOOLS,
   ...WRITE_TOOLS,
@@ -509,6 +516,8 @@ export async function runChatTool(
         return await keep(input);
       case "forget_memory":
         return await drop(input);
+      case "what_you_know":
+        return { content: knowledgeText(await knowledgeFor()), isError: false };
       case "draft_follow_up":
         return await draftFollowUp(input);
       default:
