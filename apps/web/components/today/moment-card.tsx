@@ -1,7 +1,9 @@
 import type { Moment, MomentKind, MomentMove } from "@michael/shared";
+import Link from "next/link";
 import { formatTime, hm } from "@/lib/format";
 import { lastTime, lastTimeSentence } from "@/lib/moment-risk";
 import { getMoment } from "@/lib/moments";
+import { weekdayName } from "@/lib/week";
 import { Fold } from "./fold";
 
 /** `said`: a line the card has just said above; a move whose reason is that same line shows only its title. */
@@ -89,6 +91,18 @@ export function MomentView({ moment }: { moment: Moment }) {
           ))}
           {moment.first_move ? <Move move={moment.first_move} label="Tomorrow:" /> : null}
         </ul>
+      ) : null}
+      {/* Sunday's Evening review closes the week too (#376). */}
+      {moment.kind === "evening" && weekdayName(moment.day) === "Sunday" ? (
+        <Link
+          href="/week"
+          className="press -mx-2 flex h-11 items-center justify-between px-2 text-subhead font-semibold"
+        >
+          The whole week, and next week's first move
+          <span aria-hidden="true" className="text-label-2">
+            ›
+          </span>
+        </Link>
       ) : null}
     </Fold>
   );

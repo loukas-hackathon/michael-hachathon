@@ -80,8 +80,8 @@ const cache = new Map<string, string>();
 const CACHE_MAX = 500;
 let client: Anthropic | null = null;
 
-/** Claude, when a key is set. */
-function askClaude(): AskModel | null {
+/** Claude, when a key is set. `system` lets another card (Your week, #376) give its own task. */
+export function askClaude(system = SYSTEM): AskModel | null {
   const apiKey = env.ANTHROPIC_API_KEY;
   if (!apiKey) return null;
   return (facts) => {
@@ -92,7 +92,7 @@ function askClaude(): AskModel | null {
         max_tokens: MAX_TOKENS,
         // A single short line: latency matters more than depth here.
         output_config: { effort: "low" },
-        system: SYSTEM,
+        system,
         messages: [{ role: "user", content: facts }],
       },
       { timeout: TIMEOUT_MS, maxRetries: 0 },

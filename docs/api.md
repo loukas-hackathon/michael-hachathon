@@ -1604,6 +1604,104 @@ semicolon, keeps the voice rules and every number in it appears in the facts; ot
 `phrased_by` is `template`. Lines are cached in memory per user, kind, day and facts, and checked
 again when read.
 
+### Your week (#376)
+
+| Method | Path                                   | Body                   | Response                                  | Status |
+| ------ | -------------------------------------- | ---------------------- | ----------------------------------------- | ------ |
+| GET    | `/v1/week/review?week=<day>&now=<iso>` |                        | `200 WeekReview`; `400` on a day not real | live   |
+| POST   | `/v1/week/plan`                        | `{ goal_id, minutes }` | `201 Recommendation`; `400`, `404`, `409` | live   |
+
+The Sunday evening review, on demand any time: one calm screen (`/week` on the web), reachable from
+Today on Sunday evening and from the Evening moment on Sundays, folded under "More from Michael" the
+rest of the week. `week` is any day of the week (default this week); `now` replays it. Read only:
+records are read, never synced, and no offers are made.
+
+```ts
+type WeekReviewGoal = {
+  goal_id: string;
+  title: string;
+  area: GoalArea;
+  kind: "time" | "count";
+  done: number; // time: held in blocks + logged outside them (minutes); count: sessions
+  budget: number; // time: weekly budget (minutes); count: sessions a week
+  planned_ahead: number; // time: still booked this week
+  kept: boolean; // done >= budget
+  short: number; // budget - done, never below 0
+};
+type WeekReviewMove = {
+  title: string; // "Book 90 minutes for University, Monday 07:00" or "University, Tuesday 09:00"
+  rationale: string; // the maths
+  status: "booked" | "book"; // already on the calendar, or Plan next week books it
+  goal_id: string;
+  minutes: number;
+  start_at: string;
+  end_at: string;
+};
+type WeekReview = {
+  week_start: string; // Monday
+  week_end: string; // Sunday
+  timezone: string;
+  generated_at: string;
+  complete: boolean; // the week has ended
+  score: {
+    pct: number | null; // the score's week: spent / elapsed
+    planned_minutes: number;
+    elapsed_minutes: number;
+    spent_minutes: number;
+    lost_minutes: number;
+    ahead_minutes: number;
+    unverified_minutes: number;
+    usual_pct: number | null; // median of the full weeks before (at most 4); null with fewer than 2
+    usual_weeks: number;
+    target_pct: number | null; // the week's target, when it had one
+    on_target: boolean | null; // the score's balanced week
+  };
+  won_back_minutes: number; // the score's time won back
+  logged_outside_minutes: number; // the score's logged_minutes (#372)
+  goals: WeekReviewGoal[];
+  records: PersonalRecord[]; // new bests set in the week; baselines left out
+  best_block: { goal_id: string; goal_title: string; day: string; minutes: number } | null; // longest verified run in one block
+  thief: { what: string; kind: "app" | "site"; minutes: number; share_pct: number } | null; // lost_by[0]
+  logged: { entries: number; minutes: number }; // done time entries (#317) that start in the week
+  outcomes: { set: number; done: number }; // the ritual's outcomes (#318), moved ones left out
+  lesson: string;
+  phrased_by: "template" | "model";
+  next_week: {
+    week_start: string;
+    target_pct: number | null;
+    status: "proposed" | "accepted" | null;
+    reason: string | null;
+  };
+  next_move: WeekReviewMove | null;
+};
+```
+
+**The review rule** (`apps/api/src/week/review.ts`, pure, with tests; the two change together):
+
+- **One source.** Every number is the score's week (`GET /v1/score`), the target rule, the records,
+  the done time log or the ritual; the review picks and words them and never counts again.
+- **Goals:** time goals with a budget (held plus logged outside blocks, the budget maths of #372)
+  and count goals (sessions done of sessions a week). Targets (sleep) and checklists are left out.
+- **Next week's target:** the target stored for next Monday, else Michael's proposal by the target
+  rule, reading the reviewed week as full from its Sunday on; else `reason` says why there is none
+  yet ("I need two full weeks of scores before I set a target. I have one."). Never stored here:
+  accepting it is `PUT /v1/targets/:week_start`.
+- **Next move:** next week's first goal block when one is already booked (`booked`). Otherwise the
+  goal furthest short this week (ties: the bigger budget), a fifth of its budget in quarter hours,
+  30 to 90 minutes, in the first free slot from next Monday that Book would take (`book`).
+- **Lesson:** the thief when it took 15 minutes or more ("Instagram took 2h 32 of your goal blocks,
+  51% of all you lost. Keep it out of next week's blocks."), else the goal furthest short, else a
+  plain line. Only `lesson` may be phrased by Claude, with the moments' checks: a finished reply,
+  a full stop, no semicolon, the voice rules, and every number in it appears in the facts (which
+  hold no dates); otherwise `phrased_by` is `template`.
+- **Plan next week:** `POST /v1/week/plan` books `minutes` for the goal (an active time goal, else
+  `404`) in the first free slot of next week, through Book (#309): same waking day, calendar and
+  standing instructions, the shorter block when the length no longer fits, `409` with the reason
+  when nothing does. A `create_focus_block` recommendation, undoable until it starts. Demo
+  visitors may use it, as they may Book.
+- **Chat and MCP:** the chat tool and the MCP tool `get_week_review` (scope `score`) answer "how
+  was my week" from the same review.
+
 ### Voice
 
 | Method | Path                   | Body                                                                                                                                         | Response                                                                                                                                                                                                                                                                                                 | Status |
@@ -3096,6 +3194,7 @@ offset. A refused or failed call returns `isError: true` with one plain sentence
 | `list_recommendations`   | `recommendations` | `{ status?: RecommendationStatus }`                                                     | `{ recommendations: Recommendation[] }`                                                    |
 | `get_nudges`             | `recommendations` | `{ date?: LocalDay }` (default today)                                                   | `{ day, nudges: Nudge[] }`                                                                 |
 | `get_moments`            | `score`           | `{ kind?: MomentKind }` (default morning before 15:00 local, evening after)             | `Moment`                                                                                   |
+| `get_week_review`        | `score`           | `{ week?: LocalDay }` (any day of the week; default this week)                          | `WeekReview` (as `GET /v1/week/review`)                                                    |
 | `get_memories`           | `timeline`        | `{}`                                                                                    | `{ memories: { id, text, at, from: "chat" \| "agent" }[] }` (newest first, at most 40)     |
 | `remember`               | `write_events`    | `{ fact: string (1..280) }`                                                             | `{ memory }` (same fact twice is kept once; `null` when off the record)                    |
 | `add_event`              | `write_events`    | `EventInput`                                                                            | `{ inserted, duplicates, ignored, events: Event[] }`                                       |

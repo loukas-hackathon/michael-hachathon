@@ -38,14 +38,22 @@ export interface GoalSlotInput {
   /** Calendar events from now to the end of the week. */
   events: Event[];
   instructions: Instruction[];
+  /** The local days to search, in order. Default: today to Sunday. Plan next week passes next week's (#376). */
+  days?: string[];
 }
 
-/** Every calendar free slot of `minutes` from now to Sunday night, in order, until `take` says yes. */
-function searchWeek(input: GoalSlotInput, minutes: number, take: (slot: Span) => boolean): Span | null {
+/** The days a booking searches: the ones given, else today to Sunday night. */
+export const searchDays = (input: Pick<GoalSlotInput, "now" | "days">): string[] => {
+  if (input.days) return input.days;
   const today = todayOf(input.now);
+  return scoreRange(today, athens.name).days.filter((d) => d >= today);
+};
+
+/** Every calendar free slot of `minutes` in the search days, in order, until `take` says yes. */
+function searchWeek(input: GoalSlotInput, minutes: number, take: (slot: Span) => boolean): Span | null {
   const busy = busySpans(input.events);
   const waking = wakingDay(input.goals.filter((g) => g.active));
-  for (const day of scoreRange(today, athens.name).days.filter((d) => d >= today)) {
+  for (const day of searchDays(input)) {
     const slot = freeSlot(busy, day, input.now + LEAD_MS, minutes, waking, athens, take);
     if (slot) return slot;
   }
@@ -97,9 +105,9 @@ export function goalBooking(input: GoalSlotInput): GoalBooking {
 }
 
 /** Why nothing was booked, in Michael's words: the instruction that keeps the time, then the fact. */
-export function noSlotLine(minutes: number, kept: Instruction | null): string {
-  const none = `no ${voiceDuration(minutes)} are left this week.`;
-  if (!kept) return `No free ${voiceDuration(minutes)} left this week.`;
+export function noSlotLine(minutes: number, kept: Instruction | null, week = "this week"): string {
+  const none = `no ${voiceDuration(minutes)} are left ${week}.`;
+  if (!kept) return `No free ${voiceDuration(minutes)} left ${week}.`;
   switch (kept.kind) {
     case "clear_day":
       return kept.days?.length
@@ -114,14 +122,18 @@ export function noSlotLine(minutes: number, kept: Instruction | null): string {
   }
 }
 
+/** `nextWeek`: search next Monday to Sunday instead of the rest of this week (Plan next week, #376). */
 export async function bookGoalTime(
   goalId: string,
   minutes: number,
   now = Date.now(),
+  opts: { nextWeek?: boolean } = {},
 ): Promise<Recommendation> {
   const goal = await store.getGoal(goalId);
   if (!goal?.active) throw new HttpError("not_found", "Goal not found");
-  const week = scoreRange(todayOf(now), athens.name);
+  const thisWeek = scoreRange(todayOf(now), athens.name);
+  const week = opts.nextWeek ? scoreRange(athens.dayOf(thisWeek.to), athens.name) : thisWeek;
+  const days = opts.nextWeek ? week.days : undefined;
   const [goals, events, instructions] = await Promise.all([
     store.listGoals(),
     store.listEvents({
@@ -132,8 +144,9 @@ export async function bookGoalTime(
     store.listInstructions(),
   ]);
   const title = goalBlockTitle(goal);
-  const found = goalBooking({ now, minutes, title, goals, events, instructions });
-  if (!found.slot) throw new HttpError("conflict", noSlotLine(minutes, found.kept));
+  const found = goalBooking({ now, minutes, title, goals, events, instructions, days });
+  const which = opts.nextWeek ? "next week" : "this week";
+  if (!found.slot) throw new HttpError("conflict", noSlotLine(minutes, found.kept, which));
   return bookFocusBlock({
     start_at: new Date(found.slot.start).toISOString(),
     end_at: new Date(found.slot.end).toISOString(),
@@ -144,7 +157,7 @@ export async function bookGoalTime(
     // A shorter block than asked for says so where the user reads why.
     note:
       found.minutes < minutes
-        ? `No free ${voiceDuration(minutes)} left this week, so I took ${voiceDuration(found.minutes)}.`
+        ? `No free ${voiceDuration(minutes)} left ${which}, so I took ${voiceDuration(found.minutes)}.`
         : undefined,
   });
 }
