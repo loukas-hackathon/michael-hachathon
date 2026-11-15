@@ -23,6 +23,7 @@ import {
   type InstructionUpdate,
   type Integration,
   type IntegrationProvider,
+  type MeetingSession,
   mockAnalysisRun,
   mockEvents,
   mockGoals,
@@ -49,7 +50,7 @@ import { env } from "./env";
 import { HttpError } from "./http";
 import { guardRecommendation, guardRecommendations } from "./instructions/guard";
 import type { GeocodeHit } from "./integrations/maps";
-import { type PrivacyBackend, type PrivacyRules, screenEvents } from "./privacy";
+import { type MeetingWindow, type PrivacyBackend, type PrivacyRules, screenEvents } from "./privacy";
 import type { NewRecord } from "./score/records";
 import { SupabaseStore } from "./supabase-store";
 import { noteWrite } from "./writes";
@@ -197,6 +198,21 @@ export interface DueFocusSession {
   visitor_id: string | null;
 }
 export const ONE_ACTIVE_FOCUS = "You are already in a focus session. End it first.";
+export type NewMeetingSession = Pick<MeetingSession, "started_at" | "ends_at">;
+
+// How many of the latest meetings mode sessions ingest checks: a conversation arrives minutes after
+// it ends, so the latest ones are all that matter (and a retry of an older one still finds its own).
+export const MEETING_LOOKBACK = 100;
+
+/** The windows ingest checks: each session from its start to its end (by hand, or by itself). */
+export const meetingWindows = (sessions: MeetingSession[]): MeetingWindow[] =>
+  sessions.map((m) => ({
+    start: m.started_at,
+    end: m.ended_at && Date.parse(m.ended_at) < Date.parse(m.ends_at) ? m.ended_at : m.ends_at,
+  }));
+
+/** A session still running at `at`: not ended by hand and not run out. */
+export const isRunning = (m: MeetingSession, at = Date.now()) => !m.ended_at && Date.parse(m.ends_at) > at;
 
 export type EventPatch = Partial<Pick<Event, "start_at" | "end_at" | "title" | "data">>;
 
@@ -335,8 +351,15 @@ export interface Store extends PrivacyBackend {
   // Geocoding cache, per user, keyed by the normalised query (integrations/maps.ts).
   cachedGeocode(query: string): Promise<GeocodeHit | null>;
   saveGeocode(query: string, hit: GeocodeHit): Promise<void>;
-  // Privacy (privacy.ts holds the rules; insertEvents applies them).
+  // Privacy (privacy.ts holds the rules; insertEvents applies them). Going off the record also
+  // ends a running meetings mode session.
   setOffTheRecord(on: boolean): Promise<PrivacyRules>;
+  // Meetings mode sessions (#400, meetings/meetings.ts), newest first; `since`: started at or after.
+  listMeetingSessions(filter: { since?: string; limit: number }): Promise<MeetingSession[]>;
+  createMeetingSession(input: NewMeetingSession): Promise<MeetingSession>;
+  updateMeetingSession(id: string, patch: { ended_at: string }): Promise<MeetingSession | null>;
+  /** Removes every session of the caller (the demo reseed), so the consent notice shows again. */
+  clearMeetingSessions(): Promise<number>;
   /**
    * Chat threads, pinned first then latest activity first. Chat is per demo visitor on the demo
    * account (`currentDemoVisitor()`): a visitor sees only their own threads and lines, everyone
@@ -389,6 +412,8 @@ export interface Store extends PrivacyBackend {
   /** Null when this key was already used on that day (the dedupe guard). */
   createNudge(input: NudgeCreate): Promise<Nudge | null>;
   updateNudgeStatus(id: string, status: NudgeStatus): Promise<Nudge | null>;
+  /** One nudge of the current user, or null (a button on it was tapped, #399). */
+  getNudge(id: string): Promise<Nudge | null>;
   // Web Push devices of the current user.
   listPushDevices(): Promise<PushDevice[]>;
   /** Saves the device for the current user (a device belongs to whoever subscribed it last). */
@@ -594,6 +619,7 @@ export class MemoryStore implements Store {
       checkIns: StoredCheckIn[];
       checklist: ChecklistItem[];
       rituals: DayRitual[];
+      meetings: MeetingSession[];
     }
   >();
   private fresh(sample: boolean) {
@@ -622,6 +648,7 @@ export class MemoryStore implements Store {
       checkIns: [] as StoredCheckIn[],
       checklist: [] as ChecklistItem[],
       rituals: [] as DayRitual[],
+      meetings: [] as MeetingSession[],
     };
   }
   private get d() {
@@ -675,7 +702,8 @@ export class MemoryStore implements Store {
   }
 
   async privacyRules() {
-    return structuredClone(this.d.privacy);
+    const recent = await this.listMeetingSessions({ limit: MEETING_LOOKBACK });
+    return { ...structuredClone(this.d.privacy), meetings: meetingWindows(recent) };
   }
 
   async setOffTheRecord(on: boolean) {
@@ -684,7 +712,36 @@ export class MemoryStore implements Store {
       p.offTheRecord = on;
       p.since = on ? now() : null;
     }
-    return structuredClone(p);
+    if (on) for (const m of this.d.meetings) if (isRunning(m)) m.ended_at = now();
+    return this.privacyRules();
+  }
+
+  async listMeetingSessions(f: { since?: string; limit: number }) {
+    const since = f.since ? Date.parse(f.since) : -Infinity;
+    return this.d.meetings
+      .filter((m) => Date.parse(m.started_at) >= since)
+      .sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at))
+      .slice(0, f.limit)
+      .map((m) => ({ ...m }));
+  }
+
+  async createMeetingSession(input: NewMeetingSession) {
+    const m: MeetingSession = { id: crypto.randomUUID(), ...input, ended_at: null };
+    this.d.meetings.push(m);
+    return { ...m };
+  }
+
+  async updateMeetingSession(id: string, patch: { ended_at: string }) {
+    const m = this.d.meetings.find((x) => x.id === id);
+    if (!m) return null;
+    m.ended_at = patch.ended_at;
+    return { ...m };
+  }
+
+  async clearMeetingSessions() {
+    const n = this.d.meetings.length;
+    this.d.meetings = [];
+    return n;
   }
 
   async setSourceEnabled(source: Source, enabled: boolean): Promise<SourceSetting> {
@@ -1143,6 +1200,10 @@ export class MemoryStore implements Store {
     return nudge;
   }
 
+  async getNudge(id: string) {
+    return this.d.nudges.find((n) => n.id === id) ?? null;
+  }
+
   async listPushDevices() {
     return structuredClone(this.d.push);
   }
@@ -1489,6 +1550,7 @@ export class MemoryStore implements Store {
         records: d.records.length,
         checklist_items: d.checklist.length,
         day_rituals: d.rituals.length,
+        meeting_sessions: d.meetings.length,
       };
       // An empty account, not the sample day a first visit gets.
       this.data.set(userId, this.fresh(false));

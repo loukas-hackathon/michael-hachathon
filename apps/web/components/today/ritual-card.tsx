@@ -6,7 +6,7 @@ import { saveEvening, saveMorning, skipHalf } from "@/app/ritual-actions";
 import { haptic } from "@/components/haptics";
 import { hm } from "@/lib/format";
 
-// The daily ritual on Today (#318). Morning: "What do you want to get done today?" Up to three
+// The daily ritual on Today (#318). Morning: "What would make today a win?" Up to three
 // outcomes in your own words, each optionally for a goal, with a rough estimate; Michael suggests
 // one or two. Evening: "What did you get done?" Done, partly or not; carry the rest to tomorrow;
 // log the time for the goal; then one line with the maths. "Not today" hides it; no streaks.
@@ -101,7 +101,7 @@ function MorningPlan({ ritual }: { ritual: RitualToday }) {
           goal_id: d.goal_id,
           estimate_minutes: d.estimate_minutes,
         })),
-      }).catch(() => ({ ok: false as const, message: "I could not reach the server. Nothing changed." }));
+      }).catch(() => ({ ok: false as const, message: "I lost the line. Nothing changed." }));
       if (res.ok) haptic();
       setError(res.ok ? null : res.message);
     });
@@ -111,8 +111,8 @@ function MorningPlan({ ritual }: { ritual: RitualToday }) {
     <section aria-label="Morning plan" className="mt-6" data-ritual="morning">
       <Header
         eyebrow="Morning"
-        title="What do you want to get done today?"
-        note={room === MAX ? "Up to three, in your own words." : `Room for ${room} more. Three is the most.`}
+        title="What would make today a win?"
+        note={room === MAX ? "Up to three, in your own words." : `Room for ${room} more. Three is plenty.`}
       />
 
       <form
@@ -250,7 +250,7 @@ function MorningPlan({ ritual }: { ritual: RitualToday }) {
             onClick={() =>
               startSkip(async () => {
                 const res = await skipHalf("morning").catch(() => null);
-                setError(res?.ok ? null : (res?.message ?? "I could not reach the server. Nothing changed."));
+                setError(res?.ok ? null : (res?.message ?? "I lost the line. Nothing changed."));
               })
             }
             className={quiet}
@@ -312,7 +312,7 @@ function EveningLog({ ritual }: { ritual: RitualToday }) {
             minutes: a.result !== "not" ? a.minutes : null,
           };
         }),
-      }).catch(() => ({ ok: false as const, message: "I could not reach the server. Nothing changed." }));
+      }).catch(() => ({ ok: false as const, message: "I lost the line. Nothing changed." }));
       if (res.ok) haptic();
       setError(res.ok ? null : res.message);
     });
@@ -320,7 +320,11 @@ function EveningLog({ ritual }: { ritual: RitualToday }) {
 
   return (
     <section aria-label="Evening log" className="mt-6" data-ritual="evening">
-      <Header eyebrow="Evening" title="What did you get done?" note="One tap each. A no is fine." />
+      <Header
+        eyebrow="Evening"
+        title="What did you get done?"
+        note="One tap each. An honest no beats a hopeful yes."
+      />
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -416,7 +420,7 @@ function EveningLog({ ritual }: { ritual: RitualToday }) {
             onClick={() =>
               startSkip(async () => {
                 const res = await skipHalf("evening").catch(() => null);
-                setError(res?.ok ? null : (res?.message ?? "I could not reach the server. Nothing changed."));
+                setError(res?.ok ? null : (res?.message ?? "I lost the line. Nothing changed."));
               })
             }
             className={quiet}

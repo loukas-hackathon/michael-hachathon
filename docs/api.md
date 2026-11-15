@@ -267,7 +267,8 @@ Response `200`: `Health`.
 - `200`: `{ from, to, events: Event[] }`. `400` on bad dates or unknown enum values.
 
 `POST /v1/events` body `EventInput` → `201 { inserted: number, duplicates: number, ignored: number, events: Event[] }`.
-`ignored` counts events dropped because their source is switched off or the user is off the record.
+`ignored` counts events dropped because their source is switched off, the user is off the record,
+or (for a conversation) meetings mode was not on at its start (see Meetings mode).
 A duplicate `(source, external_id)` is skipped and counted in `duplicates` (not an error).
 
 `POST /v1/events/batch` body `{ events: EventInput[] }` (1..1000) → same response as above.
@@ -316,6 +317,8 @@ event, `start_at`/`end_at` = `started_at`/`finished_at`, `title` = `structured.t
 `duration_min`. `external_id` = `omi:<id>`. Only those fields are read: transcript segments, speaker
 names, app results and folders are never stored. A `discarded` conversation, a real time transcript
 batch (a JSON array) or any other Omi payload answers `200` with nothing inserted.
+A conversation is kept only when meetings mode was on at its `started_at` (#400, see Meetings
+mode); otherwise it answers `200` with `ignored: 1` and nothing is stored.
 
 `POST /v1/webhooks/ios-shortcuts` takes our own tiny body, sent by a Shortcuts personal automation
 ("App is opened" / "App is closed", then "Get Contents of URL"). Setup: `docs/sources/ios-shortcuts.md`.
@@ -968,9 +971,19 @@ without calling any model.
 
 ### Patterns
 
-| Method | Path                               | Response            | Status |
-| ------ | ---------------------------------- | ------------------- | ------ |
-| GET    | `/v1/patterns?from=<iso>&to=<iso>` | `200 PatternReport` | live   |
+| Method | Path                               | Response                 | Status |
+| ------ | ---------------------------------- | ------------------------ | ------ |
+| GET    | `/v1/patterns?from=<iso>&to=<iso>` | `200 PatternReport`      | live   |
+| GET    | `/v1/patterns/phone-cadence`       | `200 PhoneCadenceReport` | live   |
+
+`/v1/patterns/phone-cadence` is the one detector Today reads (#298): the 7 days ending now, read
+from the iPhone's app usage and the nights only, so it is a fraction of the full report's work.
+`{ from, to, timezone, generated_at, phone_cadence }`, where `phone_cadence` equals the full
+report's for the same window.
+
+The score, a pattern report and a moment are kept for a few seconds per user (20 s, 60 s, 20 s;
+`apps/api/src/memo.ts`) and computed again at once after any write of that user's through the
+store. Replays with `now` or `at` are always computed.
 
 `from`, `to` optional; default is the 7 days ending now. `400` on bad dates, `to` not after `from`,
 or a range over 92 days. Computed on request by pure functions in `apps/api/src/patterns` (plain
@@ -2153,6 +2166,68 @@ MCP). `manual` events, typed by the user, are always kept. `since` is when colle
 `null`. Never set sources show `updated_at` as `1970-01-01T00:00:00.000Z`. The check lives in
 `apps/api/src/privacy.ts` and runs inside `Store.insertEvents`.
 
+Conversations need one more thing: meetings mode (below). Any `conversation` event, and every event
+from a conversation source (`omi`), is dropped and counted in `ignored` unless a meetings mode
+session covered its `start_at`. Off the record and the source switch are checked first and still
+win. `manual` events are the user's own and never need it. Rule: `decideEvent` in `privacy.ts`.
+
+### Meetings mode
+
+Conversations are kept only while the user has started meetings mode (#400, Build Hub n10). Only
+the user starts it, from You (Privacy) or the Mi sheet, after a one time consent notice: "Only you
+start this. Tell the people in the room you're recording. I keep a short summary and your own
+commitments; the audio and full transcript are never kept." It ends when the user taps End, by
+itself after 2 hours or at the end of the calendar block it began in (a block running at the start
+with 10 minutes or more left, or one starting within 15 minutes; all day events do not count),
+whichever is first, and when the user goes off the record. Michael never stores other speakers'
+words: the Omi mapper keeps only the summary and the user's own action items.
+
+```ts
+const MEETING_MAX_MINUTES = 120;
+const MEETING_RECAP_HOURS = 12;
+type MeetingSession = {
+  id: string;
+  started_at: string;
+  ends_at: string; // when it ends by itself (2 hours, or the calendar block's end)
+  ended_at: string | null; // when the user (or off the record) ended it
+};
+type MeetingStart = { consent?: boolean }; // true the first time
+type MeetingCommitment = { text: string; event_id: string }; // the conversation it came from
+type MeetingRecap = {
+  session_id: string;
+  started_at: string;
+  ended_at: string; // ended_at, or ends_at when it ran out
+  conversation_ids: string[];
+  commitments: MeetingCommitment[]; // the user's own, never other speakers'
+  lesson: string | null; // a conversation's `data.lesson`, when one carried it
+};
+type MeetingsState = {
+  consented: boolean; // a session was started before: the notice was read
+  active: MeetingSession | null;
+  last: MeetingRecap | null; // the latest session that ended in the last 12 hours
+};
+```
+
+| Method | Path                       | Body                 | Response                                                  | Status |
+| ------ | -------------------------- | -------------------- | --------------------------------------------------------- | ------ |
+| GET    | `/v1/meetings/active`      |                      | `200 MeetingsState`                                       | live   |
+| POST   | `/v1/meetings/start`       | `MeetingStart` (opt) | `200 MeetingsState`; `409` without consent the first time | live   |
+| POST   | `/v1/meetings/end`         |                      | `200 MeetingsState` (nothing running: nothing changes)    | live   |
+| POST   | `/v1/meetings/commitments` | `{ text: string }`   | `201 { item: ChecklistItem }`; `409` when today is full   | live   |
+
+- Start is idempotent: while a session runs it answers that session. Off the record answers `409`.
+- The gate: a conversation is kept when its `start_at` lies inside a session, from 2 minutes before
+  `started_at` (the recorder often starts a breath before the tap) to `ended_at`, or `ends_at`
+  when it ran out. Ingest reads the latest 100 sessions.
+- `commitments` puts one commitment on today's outcomes (the checklist goal "Today's outcomes",
+  made when missing; at most three open a day). A follow up for the conversation is
+  `POST /v1/drafts/generate { event_id }` (Follow up drafts).
+- Sessions live in `meeting_sessions` and go with "Delete everything". Demo visitors may start,
+  end and add commitments; the demo reseed clears the sessions, so the notice shows again.
+- Web: a "Meetings mode" row under Privacy on You (the Mi sheet), the consent sheet before the
+  first start, and while on, a pill "Meeting on · 12 min · End" above the tab bar on every screen.
+  The recap card on Today ("Meeting at 14:00: 2 commitments", from `last`) comes next.
+
 ### Your data: deletion and retention
 
 ```ts
@@ -2184,7 +2259,7 @@ Deletion really deletes: rows are removed from the database, not hidden. `DELETE
 no parameters removes every row of the account: events, event summaries, goals, recommendations,
 analysis runs, nudges, chat messages, standing instructions, the Telegram chat, integrations (Google is revoked first), push subscriptions,
 device keys, agents with their query log, OAuth grants and tokens, places, the geocode cache, source
-switches, the off the record state and the profile. Then the Supabase Auth user itself is deleted,
+switches, the off the record state, meetings mode sessions and the profile. Then the Supabase Auth user itself is deleted,
 so the next sign in starts a new, empty account. With any of `source`, `from`, `to` (ISO date times,
 `from` < `to`) only the matching timeline events (`start_at` in `[from, to)`) and the summaries of
 the days they cover are removed (`scope: "timeline"`).
@@ -2693,6 +2768,68 @@ type PushSubscriptionInput = {
 type PushConfig = { enabled: boolean; public_key: string | null; devices: number };
 ```
 
+#### Nudges you can act on (#399)
+
+A nudge can carry up to two buttons, the action first, so the user acts without opening the app.
+
+| Kind             | Buttons                                                                     |
+| ---------------- | --------------------------------------------------------------------------- |
+| `block_soon`     | "Snooze 10 min" (the same nudge again in 10 minutes), "Open"                |
+| `focus_drift`    | "Mute Instagram 30 min" (a `block_mac_app` guard, 30 min from now), "Open"  |
+| `recovery_block` | "Do it" (executes its recommendation, undoable in the app as usual), "Open" |
+| others           | none: tapping opens the card                                                |
+
+`focus_drift` offers Mute only when the top distractor was an allowlisted app in front on the Mac
+(`BLOCKABLE_MAC_APPS`), so the Mac is connected and the guard can act; sites and phone apps get no
+button. "Start focus" on `block_soon` waits for Focus now (branch `focus-now`). The buttons are not
+stored (no database change before the pitch): a tap works them out again from the stored nudge
+(`offeredActions`, the Mac app read back from the line).
+
+```ts
+type NudgeActionId = "open" | "snooze" | "mute_app" | "do_it";
+type NudgeAction = { id: NudgeActionId; label: string; app?: string }; // app: mute_app only
+type NudgeActInput = { action: "snooze" | "mute_app" | "do_it"; token: string };
+type NudgeActResult = {
+  action: NudgeActionId;
+  text: string; // "Done. Undo in the app until 15:00." / "Instagram is off until 14:30. Undo in the app." / "Snoozed. Back at 17:58."
+  undo_until: string | null; // null for a snooze
+  url: string; // where tapping the follow up goes
+  nudge_id: string;
+};
+```
+
+| Method | Path                 | Body            | Response                                                       | Status |
+| ------ | -------------------- | --------------- | -------------------------------------------------------------- | ------ |
+| POST   | `/v1/nudges/:id/act` | `NudgeActInput` | `200 NudgeActResult`; `401` bad or expired token; `404`; `409` | live   |
+
+- No session: the service worker has none. The push payload carries `token`, signed (HMAC, key
+  derived from `API_KEY`) for that nudge id and user id, valid 3 hours (`apps/api/src/nudges/token.ts`).
+  The user only ever comes from the signature.
+- Single use: the first tap marks the nudge acted on, whichever channel got there first; a second
+  tap is `409 "Already done."`. A snooze clears it when the nudge comes back (new push, fresh token,
+  same buttons). A refused action (say the slot has started, `409` with the executor's reason)
+  clears it too, so it can be tried in the app. The mark lives in the API process (no database
+  change before the pitch): after a restart a tap could run again, which stays safe (Do it on a
+  done recommendation is `409`, a second mute only adds a guard on the user's own Mac).
+- `409` also when the nudge does not offer that action. Snoozes are timers in the API process: a
+  deploy within those 10 minutes loses the snooze (the nudge is still on Today). A snooze is not a
+  new nudge: it never counts towards the 5 a day.
+- Push payload (`PushPayload`, `apps/api/src/nudges/push.ts`): `{ title, body, tag, url, actions?:
+  { action, title }[], act_url?, token? }`. `url` is the exact card (`nudgeUrl` in
+  `@michael/shared`): `/timeline?day=<day>&block=<event id>` for `block_soon` and `focus_drift`,
+  `/?card=<recommendation id>` for a nudge with a recommendation, else `/`. The web app scrolls to
+  that block or card and rings it briefly (`components/deep-link-focus.tsx`).
+- The worker (`apps/web/public/sw.js`) shows the buttons as notification actions. A button posts
+  `{ action, token }` to `act_url` and shows the result as a second notification (`tag:
+  nudge-done`); a refusal shows its message, no connection says "No connection. Open Michael to do
+  it there.". "Open" and the body open `url` (same origin only).
+- Where buttons show: Chrome on Android and desktop (Chrome, Edge, Firefox) show two. Safari on
+  iPhone, iPad and Mac shows no web push buttons, and the Apple Watch mirrors the iPhone's
+  notification, so there the tap opens the exact card and the action is one tap away in the app.
+  Telegram shows the same buttons on the iPhone, Android and desktop (below).
+- `POST /v1/nudges/test` (the stage moment) carries the same buttons as a real nudge of its kind;
+  its key is `test:<press>:<the real key>` so the tap still opens the block.
+
 ### Web push
 
 iOS 16.4+ delivers Web Push to Michael installed on the Home Screen, and mirrors it to the Apple
@@ -2735,6 +2872,14 @@ type TelegramLinkResponse = { url: string };
   `TELEGRAM_WEBHOOK_SECRET` (default: derived from the bot token) and answers `401` otherwise,
   `404` when there is no bot. Only private chats. `/stop` unbinds the chat. A chat belongs to
   whoever bound it last (`telegram_chats`, one row per user).
+- Buttons (#399): a nudge's actions ride along as one row of an inline keyboard. Snooze, Mute and
+  Do it are callback buttons (`callback_data: na:<nudge id>:<action>`, at most 48 bytes); Open is a
+  link to the exact card, only when the web app's address is https. A tap arrives at the same
+  webhook as a `callback_query` (`allowed_updates: ["message", "callback_query"]`): the chat's owner
+  (bound with a signed start link) must own the nudge, and the action runs through the same logic as
+  `POST /v1/nudges/:id/act`, once. The webhook answers with `answerCallbackQuery` (the result as a
+  toast), takes the buttons off the message once acted on (`editMessageReplyMarkup`) and sends the
+  result as a new message so the watch buzzes with it.
 - Delivery: `sendMessage` with the nudge text. `sent` when Telegram took it, `failed` when it
   refused; a `403` (the user blocked the bot) also unbinds the chat.
 - On start, with a token, the API calls `setWebhook` to `${PUBLIC_API_URL}/v1/webhooks/telegram`
@@ -3218,7 +3363,7 @@ start has finished, a demo request waits for it at most 2 s, since the week from
 the database) (the first refresh after a deploy resets the goals to the Build Hub plan,
 later ones keep edits; `DEMO_WEEK=off` turns it off). `POST /v1/demo/reseed` also resets the goals.
 Any other account gets `403 forbidden`. The reseed (and the first refresh after a deploy) also
-deletes all demo visitor chat, turns off the record off, removes goals that are not in the plan
+deletes all demo visitor chat, turns off the record off, clears meetings mode sessions, removes goals that are not in the plan
 clears the week's ritual and every logged entry that is not the demo week's own (the plan's ritual is written again), and replaces the standing instructions with the plan's (`demoInstructions`: only "Nothing between
 23:00 and 07:00", so a Saturday or Sunday evening stays bookable for the live demo); every refresh deletes visitor chat
 older than a day. Off the record, nothing changes. Per source switches are

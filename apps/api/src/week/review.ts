@@ -131,19 +131,20 @@ export function usualScore(history: ScoreHistory, weekStart: string): { pct: num
 export function lessonFor(r: Omit<ReviewCore, "lesson">): string {
   const t = r.thief;
   if (t && t.minutes >= REVIEW_RULES.thiefMinMinutes) {
-    return `${t.what} took ${voiceDuration(t.minutes)} of your goal blocks, ${t.share_pct}% of all you lost. Keep it out of next week's blocks.`;
+    return `${t.what} took ${voiceDuration(t.minutes)} of your goal blocks, ${t.share_pct}% of all you lost. That's the one to beat next week.`;
   }
   const behind = [...r.goals]
     .filter((g) => g.kind === "time" && !g.kept)
     .sort((a, b) => b.short - a.short)[0];
   if (behind && r.complete) {
-    return `${behind.title} ended ${voiceDuration(behind.short)} short. Book it before anything else next week.`;
+    return `${behind.title} ended ${voiceDuration(behind.short)} short. Next week it goes in the calendar first.`;
   }
   if (behind) return `${behind.title} is ${voiceDuration(behind.short)} short with the week nearly done.`;
   if (r.score.planned_minutes === 0)
-    return "No goal time was booked this week. Book next week before Monday starts.";
-  if (r.goals.length > 0) return "Every goal kept. Book next week the same way.";
-  return "Nothing lost from your goal blocks. Book next week the same way.";
+    return "No goal time booked this week. A clean week starts Monday: book it tonight.";
+  if (r.goals.length > 0)
+    return `Every goal kept, ${r.goals.length} of ${r.goals.length}. That's the week to copy.`;
+  return "Nothing lost from your goal blocks. Do that again.";
 }
 
 /** Next week's first move: the first goal block already booked, else one to book. */

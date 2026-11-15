@@ -4,6 +4,7 @@ import {
   budgetMinutesDone,
   countsTowardsCap,
   type Event,
+  findBlockableMacApp,
   type Goal,
   type GoalCategory,
   isSleepGoal,
@@ -139,6 +140,8 @@ export interface Candidate {
   reason: string;
   /** The recommendation the nudge is about (a recovery offer). */
   recommendation_id?: string;
+  /** focus_drift: the top distractor when it is an app on the user's Mac it may close (#399). */
+  mac_app?: string;
 }
 
 export type Decision =
@@ -260,6 +263,8 @@ function focusDrift(w: World): Candidate | null {
   if (!block) return null;
   const from = Math.max(block.start, w.now - LIMITS.driftWindowMs);
   const byApp = new Map<string, number>();
+  // The Mac app behind each name, when the time was on the Mac in an app (not a site or the phone).
+  const macApp = new Map<string, string>();
   let total = 0;
   // Off purpose for this goal (score/purpose.ts): mail inside a sales block is not a drift.
   const purpose = purposeFor(block.goal);
@@ -268,6 +273,10 @@ function focusDrift(w: World): Candidate | null {
     const ms = s.end - s.start;
     total += ms;
     byApp.set(s.name, (byApp.get(s.name) ?? 0) + ms);
+    if (s.device === "mac" && s.kind === "app") {
+      const app = findBlockableMacApp(s.key) ?? findBlockableMacApp(s.name);
+      if (app) macApp.set(s.name, app.name);
+    }
   }
   if (total < LIMITS.driftMinMs) return null;
   const top = [...byApp.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "Distractions";
@@ -280,6 +289,7 @@ function focusDrift(w: World): Candidate | null {
     goal_id: block.goal.id,
     text: `${minutes} min on ${top} in your focus block. Back to it until ${until}.`,
     reason: `${minutes} of the last ${window} min on distractions, mostly ${top}; the block runs ${w.zone.clock(block.start)} to ${until} for ${block.goal.title}.`,
+    ...(macApp.has(top) ? { mac_app: macApp.get(top) } : {}),
   };
 }
 
@@ -322,7 +332,7 @@ function windDown(w: World): Candidate | null {
     kind: "wind_down",
     key: "wind_down",
     goal_id: rest.id,
-    text: `Screens off by ${night}. Sleep is on the plan.`,
+    text: `Screens off by ${night}. Sleep is a goal too.`,
     reason: `${Math.round(screenMs / MINUTE)} of the last ${LIMITS.driftWindowMs / MINUTE} min on screens; quiet hours start at ${night} for ${rest.title}.`,
   };
 }

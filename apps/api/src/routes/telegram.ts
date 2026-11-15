@@ -1,6 +1,7 @@
 import type { TelegramLinkResponse, TelegramStatus } from "@michael/shared";
 import { Hono } from "hono";
 import { HttpError } from "../http";
+import { handleTelegramCallback } from "../nudges/actions";
 import { handleUpdate, secretMatches, startLink, TelegramUpdate, telegramConfig } from "../nudges/telegram";
 import { store } from "../store";
 
@@ -39,6 +40,12 @@ export const telegramWebhook = new Hono().post("/", async (c) => {
   const parsed = TelegramUpdate.safeParse(await c.req.json().catch(() => null));
   // Always 200 for updates we do not read, or Telegram retries them for a day.
   if (!parsed.success) return c.json({ ok: true });
+  const cb = parsed.data.callback_query;
+  if (cb) {
+    // A nudge's button (#399): the toast answers the tap; the result goes to the chat as a line.
+    const toast = await handleTelegramCallback(cb);
+    return c.json({ method: "answerCallbackQuery", callback_query_id: cb.id, text: toast.slice(0, 200) });
+  }
   const reply = await handleUpdate(parsed.data);
   const chat = parsed.data.message?.chat.id;
   if (!reply || chat === undefined) return c.json({ ok: true });

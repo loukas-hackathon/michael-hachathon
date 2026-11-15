@@ -7,7 +7,7 @@ import { SOURCE_LABEL } from "@/lib/connections";
 import { saveSource } from "@/lib/privacy-actions";
 import { useAction } from "@/lib/use-action";
 
-const SAVE_ERROR = "I could not save that. It is as it was.";
+const SAVE_ERROR = "I couldn't save that. It's as it was.";
 
 /** One source's switch: flips at once, flips back with a reason and a retry if the save fails. */
 function SourceSwitch({

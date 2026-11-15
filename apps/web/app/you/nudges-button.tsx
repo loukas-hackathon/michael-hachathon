@@ -20,7 +20,7 @@ export function NudgesButton() {
       const r = await sendTestNudge();
       setNote(r.delivered > 0 ? `Sent: "${r.text}"` : "No device took it. Turn nudges on again.");
     } catch {
-      setNote("I could not send that. Try again.");
+      setNote("I couldn't send that. Try again.");
     } finally {
       setTesting(false);
     }

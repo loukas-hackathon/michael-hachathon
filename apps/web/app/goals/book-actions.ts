@@ -18,7 +18,7 @@ const ID = /^[0-9a-f-]{36}$/i;
 export async function bookGoalAction(goalId: string, minutes: number, nextWeek = false): Promise<BookResult> {
   const parsed = GoalBook.safeParse({ minutes });
   if (typeof goalId !== "string" || !ID.test(goalId) || !parsed.success)
-    return { ok: false, error: "I could not book that. Nothing changed." };
+    return { ok: false, error: "I couldn't book that. Nothing changed." };
   let r: Awaited<ReturnType<typeof bookGoal>>;
   try {
     r = await (nextWeek ? planWeek : bookGoal)(goalId, parsed.data.minutes);
@@ -29,7 +29,7 @@ export async function bookGoalAction(goalId: string, minutes: number, nextWeek =
     const refused = await demoRefusal(r.status);
     if (refused) return { ok: false, error: refused };
     if (r.status === 409 && r.message) return { ok: false, error: `${r.message.replace(/\.$/, "")}.` };
-    if (r.status === 0) return { ok: false, error: "I could not reach the server. Nothing changed." };
+    if (r.status === 0) return { ok: false, error: "I lost the line. Nothing changed." };
     if (r.status === 501) return { ok: false, error: "Booking needs the live calendar. Nothing changed." };
     return { ok: false, error: "That did not work on my side. Nothing changed. Try again in a minute." };
   }

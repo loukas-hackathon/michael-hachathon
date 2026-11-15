@@ -15,13 +15,13 @@ export function ritualNudgeText(
   let text: string;
   if (kind === "morning") {
     if (today.some((i) => !i.carried_from)) return null;
-    text = "What do you want to get done today? Up to three.";
+    text = "What would make today a win? Up to three.";
   } else {
     if (today.length === 0) return null;
     text =
       today.length === 1
-        ? "One outcome today. What did you get done?"
-        : `${today.length} outcomes today. What did you get done?`;
+        ? "One outcome today. Did you land it?"
+        : `${today.length} outcomes today. Which ones did you land?`;
   }
   return isValidCopy(text) ? text : null;
 }

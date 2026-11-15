@@ -101,6 +101,7 @@ const READS = [
   () => "/v1/me/knowledge",
   () => "/v1/targets/current",
   () => `/v1/checklist?date=${day}`,
+  () => "/v1/meetings/active",
 ];
 
 const ids: {
@@ -195,6 +196,8 @@ test("A writes through every write route", async () => {
     }),
     "PUT /v1/places",
   );
+  // Meetings mode (#400): A's session must not show for, or open conversations of, anyone else.
+  await ok(await request(asA, "POST", "/v1/meetings/start", { consent: true }), "POST /v1/meetings/start");
   await ok(
     await request(asA, "PUT", "/v1/privacy/off-the-record", { off_the_record: true }),
     "off the record",
@@ -245,6 +248,8 @@ for (const [name, who] of [
     assert.equal(privacy.off_the_record, false, `A's off the record must not apply to ${name}`);
     const push = await (await request(who, "GET", "/v1/push")).json();
     assert.equal(push.devices, 0, `${name} must not count A's device`);
+    const meetings = await (await request(who, "GET", "/v1/meetings/active")).json();
+    assert.equal(meetings.active, null, `A's meeting must not run for ${name}`);
   });
 
   test(`${name} cannot change or delete A's data`, async () => {

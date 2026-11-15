@@ -47,6 +47,8 @@ export async function seedDemoWeek(
   );
   if (resetState) {
     await store.setOffTheRecord(false);
+    // Meetings mode back to never started, so the next visitor sees the consent notice (#400).
+    await store.clearMeetingSessions();
     await resetToPlan(store, week.days);
   }
 

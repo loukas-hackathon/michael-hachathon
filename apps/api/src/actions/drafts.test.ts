@@ -16,7 +16,7 @@ import { app } from "../app";
 import { runAsUser } from "../context";
 import { env } from "../env";
 import { createMcpServer } from "../mcp";
-import { MemoryStore, store } from "../store";
+import { MemoryStore, type Store, store } from "../store";
 import { executeRecommendation, undoRecommendation } from "./calendar";
 import { runChatTool } from "./chat-tools";
 import { candidates, DRAFT_INSTRUCTIONS, generateDrafts, seedDemoDrafts, templateDraft } from "./drafts";
@@ -66,8 +66,18 @@ const MODEL_DRAFT = JSON.stringify({
   body: "Hi,\n\nThanks for the call today — really useful. I will send the onboarding write up and pricing by Monday. 🚀\n\nBest,",
 });
 
+// Conversations are kept only inside meetings mode (#400): a session opens around each one first.
+async function inMeetings(db: Store, inputs: Input[]) {
+  for (const i of inputs) {
+    if (i.type !== "conversation") continue;
+    const end = i.end_at ?? iso(Date.parse(i.start_at) + HOUR);
+    await db.createMeetingSession({ started_at: i.start_at, ends_at: end });
+  }
+  return db.insertEvents(inputs);
+}
+
 async function add(...inputs: Input[]) {
-  const { inserted } = await store.insertEvents(inputs);
+  const { inserted } = await inMeetings(store, inputs);
   return inserted;
 }
 
@@ -304,7 +314,7 @@ test("MCP and chat tools draft and list follow ups", () =>
 test("the demo week shows its two latest conversations as drafts, once", async () => {
   const db = new MemoryStore();
   await runAsUser(randomUUID(), async () => {
-    await db.insertEvents([
+    await inMeetings(db, [
       customerCall(NOW - 50 * HOUR),
       { ...customerCall(NOW - 4 * HOUR), title: "Hackathon planning: scope" },
       customerCall(NOW - 120 * HOUR),
@@ -329,7 +339,7 @@ test("a reseed that replaces a conversation rewrites its waiting draft; sent and
     await db.deleteEvents((await db.listEvents(all)).map((e) => e.id));
     const old = { ...customerCall(NOW - 4 * HOUR), title: "Hackathon planning: scope" };
     old.data = { ...old.data, action_items: ["Seed a realistic demo week"] };
-    const { inserted } = await db.insertEvents([old, customerCall(NOW - 50 * HOUR)]);
+    const { inserted } = await inMeetings(db, [old, customerCall(NOW - 50 * HOUR)]);
     const [oldPlanning, call] = inserted;
     assert.equal(await seedDemoDrafts(db, NOW, 7), 2);
     const before = await db.listDrafts();
@@ -340,7 +350,7 @@ test("a reseed that replaces a conversation rewrites its waiting draft; sent and
 
     // The reseed: the conversation's words changed, so its row is replaced (a new id).
     await db.deleteEvents([oldPlanning?.id as string, call?.id as string]);
-    await db.insertEvents([
+    await inMeetings(db, [
       {
         ...old,
         data: { ...old.data, action_items: ["Send them the pitch outline tonight"] },

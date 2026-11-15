@@ -110,6 +110,7 @@ function Card({
 
   return (
     <li
+      data-rec-id={card.id}
       className={`flex flex-col gap-1.5 ${
         primary || booked
           ? "rounded-card bg-fill px-4 pt-3.5 pb-4"
@@ -244,7 +245,7 @@ export function RecommendationList({
     const r = await ACTIONS[op](card.id).catch(
       (): RecActionResult => ({
         ok: false,
-        error: "I could not reach the server. Nothing changed.",
+        error: "I lost the line. Nothing changed.",
         gone: false,
       }),
     );

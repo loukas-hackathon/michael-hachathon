@@ -1,5 +1,6 @@
 import type { Goal, Recommendation } from "@michael/shared";
 import { formatTime, hm } from "./format";
+import { undoneLine } from "./say";
 
 // How the Today panel reads a recommendation: what Michael suggests, the goal it protects, the maths,
 // and when the change can still be taken back. Pure, so the server and the browser agree.
@@ -133,7 +134,7 @@ export function travelCard(rec: Recommendation, now: Date): Partial<RecCard> | n
             ? `Wins ${wonMinutes} min on the road.`
             : null,
       drives,
-      undoneNote: "Undone. Every block is back where it was.",
+      undoneNote: undoneLine("Every block is back where it was.", now),
     };
   }
   if (a.kind === "reminder" && /^leave at/i.test(rec.title)) {
@@ -195,8 +196,8 @@ export function toCard(rec: Recommendation, goals: Goal[], now: Date): RecCard {
     status: rec.status,
     undoUntil: undoDeadline(rec),
     undoneNote: isGuard(rec)
-      ? `Undone. ${guardedApps(rec)} can open again.`
-      : "Undone. Your calendar is back as it was.",
+      ? undoneLine(`${guardedApps(rec)} can open again.`, now)
+      : undoneLine("Your calendar is back as it was.", now),
     ...travelCard(rec, now),
   };
 }
@@ -248,7 +249,7 @@ export function recError(status: number, message: string): string {
   if (status === 404) return "That suggestion is gone. I have taken it off the list.";
   if (status === 501) return "I cannot do that one myself yet. Take it as advice.";
   if (status === 409) return message.endsWith(".") ? message : `${message}.`;
-  if (status === 0) return "I could not reach the server. Nothing changed.";
+  if (status === 0) return "I lost the line. Nothing changed.";
   return "That did not work on my side. Nothing changed. Try again in a minute.";
 }
 

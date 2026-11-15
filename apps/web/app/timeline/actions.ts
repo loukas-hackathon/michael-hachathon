@@ -23,7 +23,7 @@ function done(res: Awaited<ReturnType<typeof postBlock>>): BlockEdit {
   };
 }
 
-const invalid = { ok: false, message: "That change does not look right." } as const;
+const invalid = { ok: false, message: "That change doesn't look right." } as const;
 
 export async function addBlock(input: BlockCreate): Promise<BlockEdit> {
   const p = BlockCreate.safeParse(input);

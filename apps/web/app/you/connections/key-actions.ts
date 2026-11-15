@@ -22,6 +22,6 @@ export async function createDeviceKey(name: string): Promise<KeyResult> {
     const { secret } = (await res.json()) as PersonalTokenCreated;
     return { secret, apiBase: (process.env.PUBLIC_API_URL ?? API_URL).replace(/\/$/, "") };
   } catch {
-    return { error: "I could not make your key. Sign in again and retry." };
+    return { error: "I couldn't make your key. Sign in again and retry." };
   }
 }

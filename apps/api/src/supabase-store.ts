@@ -18,6 +18,7 @@ import type {
   InstructionCreate,
   InstructionUpdate,
   IntegrationProvider,
+  MeetingSession,
   Nudge,
   NudgeStatus,
   PersonalRecord,
@@ -52,6 +53,9 @@ import {
   type InsertResult,
   type IntegrationPatch,
   type IntegrationRecord,
+  isRunning,
+  MEETING_LOOKBACK,
+  meetingWindows,
   NEW_THREAD_TITLE,
   type NewAnalysis,
   type NewCheckIn,
@@ -59,6 +63,7 @@ import {
   type NewDraft,
   type NewFocusGuard,
   type NewFocusSession,
+  type NewMeetingSession,
   type NewRecommendation,
   type NudgeCreate,
   ONE_ACTIVE_FOCUS,
@@ -353,6 +358,13 @@ const toDraft = (r: Record<string, unknown>): Draft => ({
   updated_at: iso(r.updated_at as string) as string,
 });
 
+const toMeetingSession = (r: Record<string, unknown>): MeetingSession => ({
+  id: r.id as string,
+  started_at: iso(r.started_at as string) as string,
+  ends_at: iso(r.ends_at as string) as string,
+  ended_at: iso((r.ended_at as string | null) ?? null),
+});
+
 function check<T>(res: { data: T; error: { message: string; code?: string } | null }): T {
   if (res.error) throw new HttpError("upstream_error", `Database error: ${res.error.message}`);
   return res.data;
@@ -375,6 +387,7 @@ export const USER_TABLES = [
   "analysis_runs",
   "checklist_items",
   "day_rituals",
+  "meeting_sessions",
   "goals",
   "events",
   "event_summaries",
@@ -608,15 +621,17 @@ export class SupabaseStore implements Store {
 
   async privacyRules(): Promise<PrivacyRules> {
     const userId = currentUserId();
-    const [state, settings] = await Promise.all([
+    const [state, settings, meetings] = await Promise.all([
       this.db.from("privacy_state").select("off_the_record, since").eq("user_id", userId).maybeSingle(),
       this.db.from("source_settings").select("source, enabled, updated_at").eq("user_id", userId),
+      this.listMeetingSessions({ limit: MEETING_LOOKBACK }),
     ]);
     const s = check(state);
     const rules: PrivacyRules = {
       offTheRecord: s?.off_the_record ?? false,
       since: iso(s?.since ?? null),
       sources: {},
+      meetings: meetingWindows(meetings),
     };
     for (const r of check(settings) ?? []) {
       rules.sources[r.source as Source] = {
@@ -640,7 +655,57 @@ export class SupabaseStore implements Store {
       current.offTheRecord = on;
       current.since = since;
     }
+    // Off the record ends a running meetings mode session (#400).
+    if (on) {
+      const running = (await this.listMeetingSessions({ limit: 5 })).filter((m) => isRunning(m));
+      if (running.length) {
+        const at = new Date().toISOString();
+        for (const m of running) await this.updateMeetingSession(m.id, { ended_at: at });
+        return this.privacyRules();
+      }
+    }
     return current;
+  }
+
+  async listMeetingSessions(f: { since?: string; limit: number }): Promise<MeetingSession[]> {
+    let q = this.db
+      .from("meeting_sessions")
+      .select("id, started_at, ends_at, ended_at")
+      .eq("user_id", currentUserId());
+    if (f.since) q = q.gte("started_at", f.since);
+    const rows = check(await q.order("started_at", { ascending: false }).limit(f.limit));
+    return (rows ?? []).map(toMeetingSession);
+  }
+
+  async createMeetingSession(input: NewMeetingSession): Promise<MeetingSession> {
+    const row = check(
+      await this.db
+        .from("meeting_sessions")
+        .insert({ user_id: currentUserId(), started_at: input.started_at, ends_at: input.ends_at })
+        .select("id, started_at, ends_at, ended_at")
+        .single(),
+    ) as Record<string, unknown>;
+    return toMeetingSession(row);
+  }
+
+  async updateMeetingSession(id: string, patch: { ended_at: string }): Promise<MeetingSession | null> {
+    const row = check(
+      await this.db
+        .from("meeting_sessions")
+        .update({ ended_at: patch.ended_at })
+        .eq("user_id", currentUserId())
+        .eq("id", id)
+        .select("id, started_at, ends_at, ended_at")
+        .maybeSingle(),
+    );
+    return row ? toMeetingSession(row) : null;
+  }
+
+  async clearMeetingSessions(): Promise<number> {
+    const rows = check(
+      await this.db.from("meeting_sessions").delete().eq("user_id", currentUserId()).select("id"),
+    );
+    return (rows ?? []).length;
   }
 
   async setSourceEnabled(source: Source, enabled: boolean): Promise<SourceSetting> {
@@ -1558,6 +1623,13 @@ export class SupabaseStore implements Store {
         .eq("id", id)
         .select("*")
         .maybeSingle(),
+    );
+    return row ? toNudge(row) : null;
+  }
+
+  async getNudge(id: string) {
+    const row = check(
+      await this.db.from("nudges").select("*").eq("user_id", currentUserId()).eq("id", id).maybeSingle(),
     );
     return row ? toNudge(row) : null;
   }

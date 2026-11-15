@@ -117,8 +117,8 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
         insight
           ? undefined
           : failed
-            ? "Google Calendar did not connect. Try once more below."
-            : "Each one is optional. One tap each."
+            ? "Google Calendar didn't connect. Try once more below."
+            : "All optional, one tap each. The more I see, the better I coach."
       }
       left={
         <Link

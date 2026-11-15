@@ -28,8 +28,9 @@ import { integrations, oauth } from "./routes/integrations";
 import { knowledge } from "./routes/knowledge";
 import { log } from "./routes/log";
 import { meData } from "./routes/me-data";
+import { meetings } from "./routes/meetings";
 import { moments } from "./routes/moments";
-import { nudges } from "./routes/nudges";
+import { nudgeActPublic, nudges } from "./routes/nudges";
 import { connect, oauthPublic } from "./routes/oauth";
 import { patterns } from "./routes/patterns";
 import { places } from "./routes/places";
@@ -91,6 +92,7 @@ export const v1Routes = new Hono()
   .route("/", voice)
   .route("/", integrations)
   .route("/", privacy)
+  .route("/", meetings)
   .route("/", sources)
   .route("/", nudges)
   .route("/", push)
@@ -150,6 +152,8 @@ export const app = new Hono()
   .route("/v1/webhooks", webhooksApp)
   // One tap setup: the token exchange and the Mac installer carry no user; the setup token is the key.
   .route("/v1", setupPublic)
+  // A notification's button: the signed token in the push is the key (no session in the worker).
+  .route("/v1", nudgeActPublic)
   .route("/v1", v1)
   // claude.ai signs in with OAuth (routes/oauth.ts); the API key and ?key= keep working.
   .all("/mcp", requireUser({ mcp: true }), (c) => handleMcpRequest(c.req.raw))
