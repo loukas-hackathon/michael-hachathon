@@ -109,7 +109,7 @@ test("without Google: create with a goal, move, rename, remove, and undo each", 
     assert.equal(back[0]?.data.goal_id, goal.id);
   }));
 
-test("refuses the past, events with other people, and removing the user's own events", () =>
+test("refuses the past and events with other people; the user's own event is removed with undo (#457)", () =>
   asNewUser(async () => {
     const past = await call("POST", "/blocks", { start_at: iso(Date.now() - HOUR), end_at: iso(Date.now()) });
     assert.equal(past.status, 409);
@@ -137,12 +137,20 @@ test("refuses the past, events with other people, and removing the user's own ev
     const move = await call("PATCH", `/blocks/${board.id}`, { start_at: iso(at(16)) });
     assert.equal(move.status, 409);
     assert.match(move.json.error?.message ?? "", /other people/);
-    const remove = await call("DELETE", `/blocks/${mine.id}`);
-    assert.equal(remove.status, 409);
-    assert.ok(await store.getEvent(mine.id), "never deletes the user's own events");
+    const boardGone = await call("DELETE", `/blocks/${board.id}`);
+    assert.equal(boardGone.status, 409);
+    assert.ok(await store.getEvent(board.id), "never removes an event with other people");
     // The user's own solo block still moves.
     const ok = await call("PATCH", `/blocks/${mine.id}`, { start_at: iso(at(17)) });
     assert.equal(ok.status, 200, JSON.stringify(ok.json));
+    // And it can be removed, with undo until it starts: it comes back as theirs.
+    const remove = await call("DELETE", `/blocks/${mine.id}`);
+    assert.equal(remove.status, 200, JSON.stringify(remove.json));
+    assert.equal(await store.getEvent(mine.id), null);
+    await v1Routes.request(`/v1/recommendations/${remove.json.recommendation_id}/undo`, { method: "POST" });
+    const back = (await day()).find((e) => e.title === "My own thing");
+    assert.equal(back?.source, "manual");
+    assert.equal(Date.parse(back?.start_at ?? ""), at(17));
   }));
 
 test("with Google: the block, its goal and the move land in Google; remove and undo too", () =>
@@ -188,8 +196,16 @@ test("with Google: the block, its goal and the move land in Google; remove and u
     const back = [...g.events.values()].find((e) => e.summary === "Run");
     assert.ok(back, "undo puts the block back in Google");
     assert.equal(back?.extendedProperties?.private?.goal_id, goal.id);
-    // The user's own solo event in Google is never removed.
+    // The user's own solo event in Google is removed too (#457), and undo puts it back as theirs.
+    await syncGoogleCalendar();
     const solo = (await day()).find((e) => e.external_id === "solo");
-    if (solo) assert.equal((await call("DELETE", `/blocks/${solo.id}`)).status, 409);
-    assert.ok(g.events.has("solo"));
+    assert.ok(solo);
+    const soloGone = await call("DELETE", `/blocks/${solo.id}`);
+    assert.equal(soloGone.status, 200, JSON.stringify(soloGone.json));
+    assert.equal(g.events.has("solo"), false);
+    await v1Routes.request(`/v1/recommendations/${soloGone.json.recommendation_id}/undo`, { method: "POST" });
+    const soloBack = [...g.events.values()].find((e) => e.summary === solo.title && e.id !== "solo");
+    assert.ok(soloBack, "undo puts the user's event back in Google");
+    assert.equal(Date.parse(soloBack?.start?.dateTime ?? ""), Date.parse(solo.start_at));
+    assert.equal(soloBack?.extendedProperties?.private?.michael, undefined, "still the user's own");
   }));

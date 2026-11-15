@@ -21,7 +21,7 @@ import { weekReviewFor } from "../routes/week";
 import { goalBlockTitle } from "../score/match";
 import { store } from "../store";
 import { weekReviewText } from "../week/text";
-import { bookedLine, executeRecommendation, undoRecommendation } from "./calendar";
+import { bookedLine, executeRecommendation, removeOwnBlock, undoRecommendation } from "./calendar";
 import { runWriteTool, WRITE_TOOLS } from "./chat-write-tools";
 import { draftText, generateDrafts } from "./drafts";
 import { guardMacApps } from "./mac-apps";
@@ -30,8 +30,8 @@ import { PROPOSAL_TOOLS, runProposalTool } from "./proposals";
 // Tools the chat model can call so Michael acts, not only advises. Each action is a recommendation
 // (source "chat") carried out by the same code as POST /v1/recommendations/:id/execute and undone by
 // the same code as /undo, so it shows on Today and keeps every guard rail: only the user's own
-// solo blocks, nothing that has started, undo until the block starts, never a delete of the user's
-// own events.
+// solo blocks, nothing that has started, undo until the block starts. Removing one of the user's
+// own events (#457) is undone the same way: it comes back with the same time and title.
 
 const MAX_RANGE_MS = 8 * 24 * 3600_000;
 const MAX_BLOCKS = 40;
@@ -84,6 +84,21 @@ export const CHAT_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "remove_calendar_block",
+    description:
+      "Remove one of the user's own calendar blocks when they ask ('delete my Boatspace block', 'cancel tonight's gym'): a block made in Michael or a calendar event with nobody else on it. Refused for events with other people and for blocks that have started. It can be undone with undo_action until the block starts, and comes back with the same time and title. Find the event_id in today's list or with find_calendar_blocks first.",
+    input_schema: {
+      type: "object",
+      properties: {
+        event_id: {
+          type: "string",
+          description: "The block's id, from today's list or find_calendar_blocks",
+        },
+      },
+      required: ["event_id"],
+    },
+  },
+  {
     name: "block_mac_app",
     description:
       "Close distracting apps on the user's Mac for a stretch of time, for example WhatsApp or Slack during a focus block. While it runs, the app is closed when it comes to the front and the user sees why. Only chat, social, music, video and game apps can be named (WhatsApp, Telegram, Messages, Slack, Discord, Mail, Instagram, X, Spotify, Music, TV, Netflix, Steam and similar). Only when the user asked for it or clearly agreed. It can be undone until it ends.",
@@ -112,7 +127,7 @@ export const CHAT_TOOLS: Anthropic.Tool[] = [
   {
     name: "undo_action",
     description:
-      "Take back something Michael did on the calendar or the Mac (a block he created or moved, or apps he muted), by its recommendation id from the list of things that can still be undone or from an earlier tool result.",
+      "Take back something Michael did on the calendar or the Mac (a block he created, moved, changed or removed, or apps he muted), by its recommendation id from the list of things that can still be undone or from an earlier tool result.",
     input_schema: {
       type: "object",
       properties: { recommendation_id: { type: "string" } },
@@ -313,6 +328,7 @@ const MoveInput = z.object({
   end_at: IsoDateTime.nullish(),
   new_title: z.string().trim().min(1).max(200).nullish(),
 });
+const RemoveInput = z.object({ event_id: z.uuid() });
 const UndoInput = z.object({ recommendation_id: z.uuid() });
 const DraftInput = z.object({ event_id: z.uuid().nullish() });
 const GuardInput = z.object({
@@ -388,7 +404,7 @@ async function findBlocks(input: unknown): Promise<ToolOutcome> {
         ? "with other people, advice only"
         : start <= now
           ? "already started"
-          : "yours, can move";
+          : "yours, can move or remove";
       return `- ${when} ${e.title} (id ${e.id}; ${rule})`;
     });
   return { content: lines.length ? lines.join("\n") : "No calendar blocks in that range.", isError: false };
@@ -443,6 +459,20 @@ async function moveBlock(input: unknown): Promise<ToolOutcome> {
     source: "chat",
   });
   return carryOut(rec);
+}
+
+/** #457: removes one of the user's own blocks; undo_action puts it back until it starts. */
+async function removeBlock(input: unknown): Promise<ToolOutcome> {
+  const p = RemoveInput.safeParse(input);
+  if (!p.success) return invalid(p.error);
+  const done = await removeOwnBlock(p.data.event_id);
+  const until = undoLine(done);
+  return {
+    content: `Done: ${done.title}. ${until ?? "No undo deadline"}. Recommendation id ${done.id}.`,
+    isError: false,
+    action: done,
+    reply: `${done.title}.${until ? ` ${until}.` : ""}`,
+  };
 }
 
 async function guardApps(input: unknown): Promise<ToolOutcome> {
@@ -513,6 +543,8 @@ export async function runChatTool(
         return await createBlock(input);
       case "move_calendar_block":
         return await moveBlock(input);
+      case "remove_calendar_block":
+        return await removeBlock(input);
       case "block_mac_app":
         return await guardApps(input);
       case "undo_action":

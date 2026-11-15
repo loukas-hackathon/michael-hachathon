@@ -1576,8 +1576,18 @@ start_at, end_at?, new_title? }`, `block_mac_app { apps: string[], start_at, end
 recommendation with `source: "chat"` that is carried out at once by the same code as
 `POST /v1/recommendations/:id/execute` (and `/undo`), so every guard rail holds: events with other
 people and anything already started are refused (the model hears the 409 and advises instead;
-the refused recommendation is stored as `dismissed`), Michael never deletes the user's events, and
-undo works until the block starts. `ChatResponse.actions` lists what was done (`status: "done"`,
+the refused recommendation is stored as `dismissed`), Michael removes only the user's own events, and
+undo works until the block starts.
+
+**Chat removes the user's own blocks (#457).** `remove_calendar_block { event_id }` removes a block
+made in Michael or a calendar event with nobody else on it (Google Calendar too, through the same
+executor as `DELETE /v1/blocks/:id`). An event with other people is refused in one line before
+anything is stored; a block that has started is refused. It is a done recommendation (`source:
+"chat"`, kind `remove_calendar_block`, title `Removed Boatspace, 15:00 to 16:00`), and `undo_action`
+puts the block back with the same time and title until it starts (in Google with its description
+and location, still the user's own, not tagged as Michael's). Step label `Removing Boatspace` (the
+user's own block title), else `Removing your block`. The reply says what was removed and
+`Undo until HH:MM.` `ChatResponse.actions` lists what was done (`status: "done"`,
 deadline in `action.undo_until`) or undone in this answer, and the reply always ends with
 "Undo until HH:MM." for each thing done. The context gives Claude ids only for the user's own blocks
 that have not started, goal ids, and the things that can still be undone.
@@ -2007,7 +2017,7 @@ active user) and goes out as a `recovery_block` nudge with `recommendation_id` s
 same cap, quiet hours and dedupe as every nudge.
 
 Rules: act only on the user's own calendar blocks and Mac; never touch events with other people;
-never delete the user's events; never send in the user's name.
+remove only the user's own events, with undo until the event starts; never send in the user's name.
 
 - With Google Calendar connected the change happens in the calendar (a created block carries the
   private extended property `michael=1`) and the timeline mirror follows at once. Without it, the
@@ -2018,7 +2028,8 @@ never delete the user's events; never send in the user's name.
   itself now shows someone else on it (checked live before every write); the block or the new
   time has already started; it is an all day event.
 - Undo: a moved block goes back to its original time and title; a created block is deleted, and
-  only if Google still marks it as Michael's. Allowed until the earliest of `undo_until`, the
+  only if Google still marks it as Michael's; a removed block is put back with the same time and
+  title (#457). Allowed until the earliest of `undo_until`, the
   block's original start and its new start; afterwards `409`. Undo of anything not `done` is `409`.
 - What was changed is kept on the recommendation (`execution`, internal, never returned).
 - `block_mac_app` creates a focus guard (below). A window that has begun starts now; `409` when it
@@ -2052,8 +2063,8 @@ through the store's `createRecommendation`, so the instruction guard has the las
 The user adds, moves, resizes, renames, gives a goal to, or removes blocks on their own time. Each
 write is stored as a recommendation with `source: "user"` and carried out at once by the same
 executor as Michael's actions, so the same rules hold: never an event with other people (`409`),
-nothing that has started (`409`), and only blocks made in Michael can be removed (the user's own
-events are never deleted). With Google Calendar connected the change is made there and mirrored;
+nothing that has started (`409`). A block made in Michael or the user's own solo event can be
+removed (#457), and undo puts it back with the same time and title until it starts. With Google Calendar connected the change is made there and mirrored;
 without it, the block lives on the timeline (`source: "agent"`, `data.michael: true`). Standing
 instructions bind Michael, not the user, so they do not refuse these. `source: "user"`
 recommendations are left out of `GET /v1/recommendations` and the MCP `list_recommendations`.
@@ -2875,7 +2886,7 @@ type AgentQuery = {
 - Scope per tool: `get_timeline`, `get_patterns`, `get_insights` = `timeline`; `get_goals`, `add_goal`,
   `update_goal`, `propose_goals`, `get_checklist`, `add_checklist_item`, `set_day_outcomes`, `log_day` = `goals`; `list_recommendations`, `update_recommendation`, `get_nudges`,
   `list_drafts`, `draft_follow_up` = `recommendations`; `get_score`, `get_records`, `get_moments` = `score`; `add_event`, `execute_recommendation`,
-  `undo_recommendation`, `create_focus_block`, `block_mac_app`, `plan_travel`, `log_done`,
+  `undo_recommendation`, `create_focus_block`, `remove_calendar_block`, `block_mac_app`, `plan_travel`, `log_done`,
   `confirm_block`, `focus_now` = `write_events`;
   `suggest_app_mute` = `recommendations`; `get_memories`, `what_you_know` = `timeline`; `remember` = `write_events`.
   Memories are events of type `memory` (source `manual` from chat, `agent` from MCP); Michael's
@@ -2884,7 +2895,7 @@ type AgentQuery = {
   list needs `timeline` if it is read only, else `write_events` (`apps/api/src/mcp-guard.ts`).
 - `queries`: `from` defaults to local midnight today (Europe/Athens), `to` to now; newest first,
   at most 500.
-- A change an agent made (`execute_recommendation`, `create_focus_block`, `block_mac_app`, `log_done`, `confirm_block`) carries
+- A change an agent made (`execute_recommendation`, `create_focus_block`, `remove_calendar_block`, `block_mac_app`, `log_done`, `confirm_block`) carries
   `recommendation_id`. `undo_until` is set while that change can still be undone (the
   recommendation is `done` and its block has not started; a mute: has not ended), else `null`. The
   Agents screen shows Undo next to the line and calls `POST /v1/recommendations/:id/undo`.
@@ -3755,6 +3766,7 @@ offset. A refused or failed call returns `isError: true` with one plain sentence
 | `execute_recommendation` | `write_events`    | `{ id }`                                                                                | `{ recommendation, undo_until }`                                                                |
 | `undo_recommendation`    | `write_events`    | `{ id }`                                                                                | `{ recommendation }`                                                                            |
 | `create_focus_block`     | `write_events`    | `{ start: TimeInput, end: TimeInput, title?, goal_id? }`                                | `{ recommendation, undo_until }`                                                                |
+| `remove_calendar_block`  | `write_events`    | `{ event_id }` (the user's own block, from `get_timeline`)                              | `{ recommendation, undo_until }`; other people on it or started: refused                        |
 | `block_mac_app`          | `write_events`    | `{ apps: string[], start?: TimeInput, end: TimeInput, goal_id? }` (start default now)   | `{ recommendation, undo_until }`                                                                |
 | `log_done`               | `write_events`    | `{ goal_id? \| goal?, minutes?, start?: TimeInput, end?: TimeInput, note? }`            | `LogTimeResponse` (see Done time)                                                               |
 | `confirm_block`          | `write_events`    | `{ event_id, did: boolean, minutes?, reason? }`                                         | `LogTimeResponse`                                                                               |
@@ -3766,7 +3778,7 @@ offset. A refused or failed call returns `isError: true` with one plain sentence
 
 - `execute_recommendation` / `undo_recommendation` call the same functions as
   `POST /v1/recommendations/:id/execute` and `/undo` (`apps/api/src/actions/calendar.ts`), with the
-  same rules: own time only, never an event with other people, never deletes the user's events,
+  same rules: own time only, never an event with other people, removes only the user's own events,
   undo until the block starts.
 - `create_focus_block` books straight away: it saves a recommendation (`source: "chat"`, `status: "done"`, rationale
   "University, 90 minutes, booked by <agent name>. Undo until 07:00.") and carries it out like any other, so the block
