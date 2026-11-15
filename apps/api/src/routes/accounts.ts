@@ -4,22 +4,16 @@ import { createConfirmedUser } from "../auth";
 import { currentAuthMethod } from "../context";
 import { HttpError, jsonBody, parse } from "../http";
 
-/** The visitor's IP, set by the web server (trusted: only the API key reaches this route). */
-export const CLIENT_IP_HEADER = "x-michael-client-ip";
-
-// admin.createUser skips Supabase's own sign up rate limits, so the API keeps its own (one
-// replica, in memory): at most PER_IP accounts an hour from one address, and TOTAL across everyone
-// as a backstop. Only accounts really created count, so failed tries use up nothing.
+// admin.createUser skips Supabase's own sign up rate limits, so the API keeps one backstop (one
+// replica, in memory): at most TOTAL new accounts an hour across everyone. No per address limit: a
+// whole venue shares one wifi address. Only accounts really created count. Sign in is never limited.
 const HOUR = 3_600_000;
-const PER_IP = 5;
-const TOTAL = 60;
-const created: { at: number; ip: string }[] = [];
+const TOTAL = 500;
+const created: number[] = [];
 
 const prune = (now: number) => {
-  while ((created[0]?.at ?? now) <= now - HOUR) created.shift();
+  while ((created[0] ?? now) <= now - HOUR) created.shift();
 };
-const full = (ip: string, now: number) =>
-  created.length >= TOTAL || created.filter((c) => c.ip === ip).length >= PER_IP;
 
 // POST /v1/accounts (#475): an email and password account, created already confirmed. Only the web
 // app's server may call it (the API key, no visitor), so nobody can mint accounts from outside.
@@ -28,14 +22,20 @@ export const accounts = new Hono().post("/accounts", async (c) => {
     throw new HttpError("forbidden", "Accounts are created from the sign in page");
   }
   const { email, password } = parse(AccountCreate, await jsonBody(c));
-  const ip = c.req.header(CLIENT_IP_HEADER)?.trim().slice(0, 64) || "unknown";
   const now = Date.now();
   prune(now);
-  if (full(ip, now)) throw new HttpError("rate_limited", "Too many new accounts this hour. Try again later");
-  const result = await createConfirmedUser(email.trim().toLowerCase(), password);
+  if (created.length >= TOTAL)
+    throw new HttpError("rate_limited", "Too many new accounts this hour. Try again later");
+  // Reserve the slot before waiting on Supabase, so parallel requests cannot all pass the check;
+  // give it back when no account was made.
+  created.push(now);
+  const result = await createConfirmedUser(email.trim().toLowerCase(), password).catch((err) => {
+    created.splice(created.indexOf(now), 1);
+    throw err;
+  });
+  if (result !== "created") created.splice(created.indexOf(now), 1);
   if (result === "exists") throw new HttpError("conflict", "An account with this email already exists");
   if (result === "off") throw new HttpError("unavailable", "Sign in is not configured on this server");
-  created.push({ at: now, ip });
   const body: AccountCreated = { created: true };
   return c.json(body, 201);
 });

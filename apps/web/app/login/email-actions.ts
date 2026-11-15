@@ -1,7 +1,7 @@
 "use server";
 
 import { createHash, randomUUID } from "node:crypto";
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
 import { E2E_COOKIE } from "@/lib/auth-mode";
 import {
   checkEmailForm,
@@ -29,8 +29,6 @@ async function createAccount(
     headers: {
       authorization: `Bearer ${API_KEY}`,
       "content-type": "application/json",
-      // The visitor's address, for the API's per address limit (Vercel sets x-forwarded-for).
-      "x-michael-client-ip": (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim() ?? "",
     },
     body: JSON.stringify({ email, password }),
     cache: "no-store",
