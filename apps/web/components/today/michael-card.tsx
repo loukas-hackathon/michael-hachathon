@@ -135,8 +135,21 @@ export function MichaelCard({
         <Rich parts={lead.insight} strongClass="font-semibold text-label" />
       </p>
       {phone ? cost : null}
-      {lead.evidence.kind === "cadence" ? <CadenceStrip evidence={lead.evidence} /> : null}
-      {lead.evidence.kind === "hours" ? <HoursStrip evidence={lead.evidence} /> : null}
+      {/* The proof is one tap away, so the card reads in two lines on a first look. */}
+      {lead.evidence.kind !== "none" ? (
+        <details className="group">
+          <summary className="press inline-flex min-h-9 cursor-pointer list-none items-center gap-1 text-subhead font-semibold text-tint-text [&::-webkit-details-marker]:hidden">
+            {phone ? "See when your phone opened" : "See the proof"}
+            <span aria-hidden="true" className="transition-transform group-open:rotate-90">
+              ›
+            </span>
+          </summary>
+          <div className="mt-2">
+            {lead.evidence.kind === "cadence" ? <CadenceStrip evidence={lead.evidence} /> : null}
+            {lead.evidence.kind === "hours" ? <HoursStrip evidence={lead.evidence} /> : null}
+          </div>
+        </details>
+      ) : null}
       {lead.fix.length ? (
         <p className="text-subhead">
           <Rich parts={lead.fix} strongClass="font-semibold" />

@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { Suspense } from "react";
+import { AskClaude, AskClaudeRow } from "@/components/claude/ask-claude";
 import { Evidence } from "@/components/learnt/evidence";
 import { FixRow } from "@/components/learnt/fix-button";
 import { PatternCard } from "@/components/learnt/pattern-card";
@@ -32,6 +34,8 @@ export default async function NumberPage({
   const patterns = view ? patternsFor(def.key, sortInsights(view.insights).patterns) : [];
   const top = patterns[0];
   const back = `/${preview && demo ? `?demo=${demo}` : ""}`;
+  // (Brand)
+  const prompt = `Using my Michael connector, explain my ${(series?.label ?? def.key).toLowerCase()} over the last two weeks against my usual: what moves it, and what I should do about it.`;
 
   return (
     <main className="screen screen-mid">
@@ -128,6 +132,13 @@ export default async function NumberPage({
               </div>
             </section>
           ) : null}
+
+          <Suspense fallback={null}>
+            <AskClaudeRow prompt={prompt} demo={demo} />
+          </Suspense>
+          <Suspense fallback={null}>
+            <AskClaude place={`number:${def.key}`} prompt={prompt} demo={demo} />
+          </Suspense>
 
           <section aria-labelledby="how-measured" className="mt-8">
             <h2 id="how-measured" className={sectionTitle}>
