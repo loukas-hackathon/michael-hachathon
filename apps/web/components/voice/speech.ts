@@ -280,6 +280,133 @@ export function onSpeechBeat(l: () => void): () => void {
   return () => beats.delete(l);
 }
 
+// ---------- how loud he is, for the living voice ----------
+
+// The ElevenLabs reply is never routed through Web Audio: on iOS a media element source plays by
+// the ringer switch and, once the microphone has been used, through the earpiece instead of the
+// speaker. Instead the same audio is decoded on the side (an offline context makes no sound and
+// needs no tap) into a loudness envelope, read against the element's own clock while it plays.
+// The browser voice has no stream at all, so each word it says is a beat that decays naturally.
+
+/** Envelope frames per second: one per screen frame. */
+export const ENVELOPE_FPS = 60;
+
+/**
+ * Loudness of a voice as 0..1 per frame: the root mean square of each 1/fps slice, scaled so the
+ * loud part of his speech (the 95th percentile) reaches 1, and gently compressed so quiet
+ * syllables still show. Pure, so it is tested alone.
+ */
+export function envelopeOf(samples: ArrayLike<number>, sampleRate: number, fps = ENVELOPE_FPS): Float32Array {
+  const size = Math.max(1, Math.round(sampleRate / fps));
+  const frames = Math.ceil(samples.length / size);
+  const env = new Float32Array(frames);
+  for (let f = 0; f < frames; f++) {
+    let sum = 0;
+    const end = Math.min(samples.length, (f + 1) * size);
+    for (let i = f * size; i < end; i++) {
+      const s = samples[i] ?? 0;
+      sum += s * s;
+    }
+    env[f] = Math.sqrt(sum / Math.max(1, end - f * size));
+  }
+  const sorted = Array.from(env).sort((a, b) => a - b);
+  const peak = sorted[Math.floor((sorted.length - 1) * 0.95)] ?? 0;
+  if (peak <= 1e-4) return env.fill(0);
+  for (let f = 0; f < frames; f++) env[f] = Math.min(1, ((env[f] ?? 0) / peak) ** 0.7);
+  return env;
+}
+
+/** The envelope at a moment of playback, between frames. 0 outside it. */
+export function levelAt(env: ArrayLike<number>, seconds: number, fps = ENVELOPE_FPS): number {
+  if (!env.length || !(seconds >= 0)) return 0;
+  const x = seconds * fps;
+  const i = Math.floor(x);
+  if (i >= env.length) return 0;
+  const a = env[i] ?? 0;
+  const b = env[i + 1] ?? a;
+  return a + (b - a) * (x - i);
+}
+
+/**
+ * The browser voice's loudness from its words: a swell on each word that dies away over about a
+ * third of a second. Voices that report no words (some Chrome voices) get a soft syllable rhythm
+ * instead, so he never looks frozen while he talks.
+ */
+export function beatLevel(sinceBeatMs: number, sinceStartMs: number): number {
+  if (sinceBeatMs < 900) return 0.85 * Math.exp(-sinceBeatMs / 170);
+  const t = sinceStartMs / 1000;
+  return 0.2 + 0.35 * Math.abs(Math.sin(t * Math.PI * 4.3)) * (0.6 + 0.4 * Math.sin(t * Math.PI * 0.9));
+}
+
+/** Decodes a reply on the side into its envelope. Null where the browser cannot decode it. */
+async function decodeEnvelope(blob: Blob): Promise<Float32Array | null> {
+  try {
+    const w = window as unknown as {
+      OfflineAudioContext?: typeof OfflineAudioContext;
+      webkitOfflineAudioContext?: typeof OfflineAudioContext;
+    };
+    const Offline = w.OfflineAudioContext ?? w.webkitOfflineAudioContext;
+    if (!Offline) return null;
+    const ctx = new Offline(1, 1, 44100);
+    const data = await blob.arrayBuffer();
+    // The callback form: older Safari has no promise from decodeAudioData.
+    const buffer = await new Promise<AudioBuffer>((resolve, reject) => {
+      const p = ctx.decodeAudioData(data, resolve, reject) as Promise<AudioBuffer> | undefined;
+      p?.catch?.(reject);
+    });
+    return envelopeOf(buffer.getChannelData(0), buffer.sampleRate);
+  } catch {
+    return null;
+  }
+}
+
+type Voice =
+  | { kind: "audio"; player: HTMLAudioElement; env: Float32Array | null }
+  | { kind: "browser"; started: number; beat: number };
+let speaking: Voice | null = null;
+const levels = new Set<(level: number) => void>();
+let levelFrame = 0;
+
+/**
+ * How loud Michael is right now, 0..1, once per frame while he speaks (and one 0 when he stops).
+ * Returns the unsubscribe.
+ */
+export function onSpeechLevel(l: (level: number) => void): () => void {
+  levels.add(l);
+  return () => levels.delete(l);
+}
+
+function emitLevel(level: number) {
+  for (const l of levels) l(level);
+}
+
+function levelTick() {
+  levelFrame = 0;
+  const v = speaking;
+  if (!v) return emitLevel(0);
+  const now = performance.now();
+  emitLevel(
+    v.kind === "audio"
+      ? v.env
+        ? levelAt(v.env, v.player.currentTime)
+        : 0
+      : beatLevel(now - v.beat, now - v.started),
+  );
+  levelFrame = requestAnimationFrame(levelTick);
+}
+
+function setVoice(next: Voice | null) {
+  speaking = next;
+  if (next && !levelFrame && typeof requestAnimationFrame === "function") {
+    levelFrame = requestAnimationFrame(levelTick);
+  }
+  if (!next) {
+    if (levelFrame) cancelAnimationFrame(levelFrame);
+    levelFrame = 0;
+    emitLevel(0);
+  }
+}
+
 // Settles the reply being spoken, so whoever waits on speakReply carries on when it is cut short.
 let settle: (() => void) | null = null;
 // Bumped by every stop: a reply still loading when it was stopped is never played.
@@ -289,6 +416,7 @@ export function stopSpeaking(): void {
   if (typeof window === "undefined") return;
   if ("speechSynthesis" in window) window.speechSynthesis.cancel();
   if (audio) audio.pause();
+  if (speaking) setVoice(null);
   generation++;
   settle?.();
   settle = null;
@@ -313,16 +441,27 @@ function speakWithBrowser(text: string, gen: number, opts: SpeakOptions = {}): P
         u.lang = voice?.lang ?? "en-GB";
         u.rate = 0.95;
         u.pitch = 0.8; // lower and calmer than the default
-        if (i === 0 && opts.onStart) {
+        if (i === 0) {
           const start = opts.onStart;
-          u.onstart = () => start(null);
+          u.onstart = () => {
+            if (gen !== generation) return;
+            const now = performance.now();
+            setVoice({ kind: "browser", started: now, beat: now - 10_000 });
+            start?.(null);
+          };
         }
         u.onboundary = (e) => {
-          if (e.name === "word") for (const l of beats) l();
+          if (e.name !== "word") return;
+          if (speaking?.kind === "browser") speaking.beat = performance.now();
+          for (const l of beats) l();
         };
         if (i === pieces.length - 1) {
-          u.onend = () => resolve();
-          u.onerror = () => resolve();
+          const done = () => {
+            if (speaking?.kind === "browser") setVoice(null);
+            resolve();
+          };
+          u.onend = done;
+          u.onerror = done;
         }
         synth.speak(u);
       });
@@ -357,10 +496,16 @@ async function speakWithElevenLabs(text: string, gen: number, opts: SpeakOptions
     const player = audio;
     player.src = audioUrl;
     await player.play();
+    const playing: Voice = { kind: "audio", player, env: null };
+    if (gen === generation) setVoice(playing);
+    void decodeEnvelope(blob).then((env) => {
+      playing.env = env;
+    });
     opts.onStart?.(Number.isFinite(player.duration) ? player.duration * 1000 : null);
     // Resolves when the reply has been said, or was cut short.
     await new Promise<void>((resolve) => {
       const done = () => {
+        if (speaking === playing) setVoice(null);
         player.removeEventListener("ended", done);
         player.removeEventListener("pause", done);
         player.removeEventListener("error", done);
