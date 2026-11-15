@@ -5,6 +5,7 @@ import { MotionScript } from "@/components/count-up";
 import { DeepLinkFocus } from "@/components/deep-link-focus";
 import { Haptics } from "@/components/haptics";
 import { MeetingPill } from "@/components/meetings";
+import { NudgeOpened } from "@/components/nudge-opened";
 import { ServiceWorker } from "@/components/service-worker";
 import { Splash } from "@/components/splash";
 import { TabBar } from "@/components/tab-bar";
@@ -43,6 +44,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <div className="mx-auto w-full max-w-[560px] lg:max-w-[720px]">{children}</div>
         </div>
         <MeetingPill />
+        <NudgeOpened />
         <TabBar />
         <ServiceWorker />
         <DeepLinkFocus />
