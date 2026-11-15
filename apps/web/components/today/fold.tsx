@@ -61,6 +61,7 @@ export function Fold({
   meta,
   label,
   wideOpen = false,
+  reservePreview = false,
   children,
 }: {
   title: string;
@@ -71,6 +72,8 @@ export function Fold({
   /** Starts open on a laptop inside "More from Michael": short rows (moment, watch, brief). Long
    * ones (suggestions, drafts) and forms stay shut, so the right column stays in proportion. */
   wideOpen?: boolean;
+  /** Keeps both preview lines' room, for a preview that is about to be replaced. */
+  reservePreview?: boolean;
   children: ReactNode;
 }) {
   const wideGroup = useContext(WideOpen) && wideOpen;
@@ -100,7 +103,11 @@ export function Fold({
           </span>
           {preview ? (
             <Collapse as="span" open={!open} className="m-fold-preview">
-              <span className="line-clamp-2 text-footnote text-label-2">{preview}</span>
+              <span
+                className={`line-clamp-2 text-footnote text-label-2 ${reservePreview ? "min-h-[2lh]" : ""}`}
+              >
+                {preview}
+              </span>
             </Collapse>
           ) : null}
         </span>

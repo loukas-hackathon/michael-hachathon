@@ -1,12 +1,14 @@
 import type { Health } from "@michael/shared";
-import { Hono } from "hono";
+import { Hono, type MiddlewareHandler } from "hono";
 import { compress } from "hono/compress";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { requireUser } from "./auth";
+import { currentUserId } from "./context";
 import { env } from "./env";
 import { errorResponse, HttpError } from "./http";
 import { handleMcpRequest } from "./mcp";
+import { prewarmAfterWrite } from "./moments/prewarm";
 import { actions } from "./routes/actions";
 import { agents } from "./routes/agents";
 import { analysis } from "./routes/analysis";
@@ -50,9 +52,22 @@ import { runTimed, serverTimingEntries } from "./timing";
 
 export const VERSION = "0.1.0";
 
+/**
+ * After a successful write, the user's moment line is phrased again in the background a minute
+ * later (#378), so the next open of Today finds it ready. Only where the scheduler runs.
+ */
+const afterWrite: MiddlewareHandler = async (c, next) => {
+  await next();
+  if (!env.SCHEDULER_ENABLED || c.req.method === "GET" || c.res.status >= 300) return;
+  prewarmAfterWrite(currentUserId());
+};
+
 // Webhook senders often cannot set headers, so they may pass ?key=. Mounted BEFORE v1 so the
 // header-only middleware below never sees /v1/webhooks/* requests.
-const webhooksApp = new Hono().use(requireUser({ allowQueryKey: true })).route("/", webhooks);
+const webhooksApp = new Hono()
+  .use(requireUser({ allowQueryKey: true }))
+  .use(afterWrite)
+  .route("/", webhooks);
 
 // Every /v1 route, without the auth in front (the isolation test mounts it as several users).
 export const v1Routes = new Hono()
@@ -94,7 +109,7 @@ export const v1Routes = new Hono()
   .route("/", knowledge)
   .route("/", demo);
 
-const v1 = new Hono().use(requireUser()).route("/", v1Routes);
+const v1 = new Hono().use(requireUser()).use(afterWrite).route("/", v1Routes);
 
 export const app = new Hono()
   .use(logger())

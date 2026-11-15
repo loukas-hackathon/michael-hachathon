@@ -16,7 +16,14 @@ export function momentKindFor(day: Pick<DayView, "sample" | "moment" | "now">): 
   return momentKindAt(day.now);
 }
 
-export async function getMoment(kind: MomentKind, sample: boolean): Promise<Moment> {
+/**
+ * The moment. Today asks with `cached` (#378): the API never waits for the model then, and marks a
+ * line still being written (`phrase_pending`); components/today/moment-phrase.tsx fetches it after.
+ */
+export async function getMoment(kind: MomentKind, sample: boolean, { cached = false } = {}): Promise<Moment> {
   if (sample) return kind === "morning" ? sampleMorningMoment : sampleEveningMoment;
-  return get<Moment>(`/v1/moments/${kind}`);
+  return get<Moment>(cached ? momentCachedPath(kind) : `/v1/moments/${kind}`);
 }
+
+/** The read Today preloads and the card makes: identical, so Next answers both with one request. */
+export const momentCachedPath = (kind: MomentKind) => `/v1/moments/${kind}?phrase=cached`;

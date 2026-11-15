@@ -265,6 +265,51 @@ test("a reply cut by the token cap falls back to the template", async () => {
   assert.equal(asked, 1);
 });
 
+test("without waiting the model is never on the request's path (#378)", async () => {
+  const m = morning([...history(), ...todayPlan()]);
+  const template = templateHeadline(m);
+  const good = "Two hours of goal time today. Guard 10:00 to 12:00.";
+  let release: () => void = () => {};
+  const gate = new Promise<void>((r) => {
+    release = r;
+  });
+  let asked = 0;
+  const slow = async () => {
+    asked++;
+    await gate;
+    return { stop_reason: "end_turn", content: [{ type: "text", text: good }] };
+  };
+  // Cold: the template at once, the model call running behind it.
+  const first = await phraseHeadline(m, "u:cold", slow, { wait: false });
+  assert.deepEqual(first, { headline: template, phrased_by: "template", phrase_pending: true });
+  // A second open and a waiting read share the same call.
+  const again = await phraseHeadline(m, "u:cold", slow, { wait: false });
+  assert.equal(again.phrase_pending, true);
+  const waiting = phraseHeadline(m, "u:cold", slow);
+  release();
+  assert.deepEqual(await waiting, { headline: good, phrased_by: "model" });
+  assert.equal(asked, 1);
+  // Warm: the cached line, nothing pending.
+  assert.deepEqual(await phraseHeadline(m, "u:cold", slow, { wait: false }), {
+    headline: good,
+    phrased_by: "model",
+  });
+
+  // A failed call is not asked again on every open.
+  let failures = 0;
+  const down = async () => {
+    failures++;
+    throw new Error("model is down");
+  };
+  await phraseHeadline(m, "u:fail", down, { wait: false });
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(await phraseHeadline(m, "u:fail", down, { wait: false }), {
+    headline: template,
+    phrased_by: "template",
+  });
+  assert.equal(failures, 1);
+});
+
 test("a half line that was already cached is never served again", async () => {
   const m = morning([...history(), ...todayPlan()]);
   cacheLineForTest(m, "u:old", "Today holds 2 hours of goal time; guard Deep work from 10:00 to 12:");
