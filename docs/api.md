@@ -517,6 +517,16 @@ when Michael set the hours because none were said), up to four `notes` on how th
 rules) or `rules` (word lists, when there is no key or the model fails). Nothing is saved: the app
 shows what was heard, the user edits it, then creates the goals. 10 calls a minute per caller.
 
+#### The onboarding conversation (voice agent)
+
+`POST /v1/onboarding/turn` (`OnboardingTurnRequest` -> `200 OnboardingTurnResponse`) runs the
+first talk. With no turns it returns Michael's opener: from the user's own calendar when Google
+Calendar is connected (`from_calendar: true`, "Gym three times last week and deep work only on
+Monday. Is that a normal week?"), otherwise a warm open question. Each later call sends every turn
+so far and gets one short reaction plus one follow up, or `done: true` with the line that hands
+over to the review. The app then reads the user's turns with `POST /v1/goals/from-words`. Nothing
+is saved. `source: "script"` when the fixed questions stand in (no key, model failed or slow).
+
 #### Goals from the calendar (#134)
 
 People already live by goals they never wrote down. `GET /v1/goals/suggestions` reads the user's own

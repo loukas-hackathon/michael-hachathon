@@ -1205,6 +1205,35 @@ export const GoalWordsResponse = z.object({
 });
 export type GoalWordsResponse = z.infer<typeof GoalWordsResponse>;
 
+// ---------- the onboarding conversation (voice agent) ----------
+
+// One turn of the first talk: what Michael said, or what the user said (a live transcript the user
+// may have corrected, or typed words). `skipped` marks a question the user passed on.
+export const OnboardingTurn = z.object({
+  role: z.enum(["michael", "user"]),
+  text: z.string().trim().max(1200),
+  skipped: z.boolean().optional(),
+});
+export type OnboardingTurn = z.infer<typeof OnboardingTurn>;
+
+// POST /v1/onboarding/turn. No turns yet: Michael's opener (from the calendar when it is connected).
+export const OnboardingTurnRequest = z.object({ turns: z.array(OnboardingTurn).max(24) });
+export type OnboardingTurnRequest = z.infer<typeof OnboardingTurnRequest>;
+
+export const OnboardingTurnResponse = z.object({
+  // What Michael says next, in his voice, spoken and shown: one short reaction and one question,
+  // or, when done, the line that hands over to the review ("That's plenty. Here's what I heard.").
+  line: z.string().min(1).max(320),
+  // True when he has enough (goals with some sense of time, and where time goes) or the user is
+  // tired of talking: the app reads the user's turns with POST /v1/goals/from-words.
+  done: z.boolean(),
+  // True when the line uses the user's calendar (the opener and follow ups about their real week).
+  from_calendar: z.boolean(),
+  // model: Claude wrote the line; script: the fixed questions (no key, the model failed or was slow).
+  source: z.enum(["model", "script"]),
+});
+export type OnboardingTurnResponse = z.infer<typeof OnboardingTurnResponse>;
+
 export const GoalSuggestionsResponse = z.object({
   from: IsoDateTime,
   to: IsoDateTime,
