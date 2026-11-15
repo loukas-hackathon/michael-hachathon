@@ -76,7 +76,7 @@ export function ScreenHeader({
         data-scrolled={pinned ? scrolled : undefined}
         className={
           pinned
-            ? "sticky top-0 z-20 -mx-4 -mt-[env(safe-area-inset-top)] flex min-h-11 items-center justify-between gap-3 bg-bg px-4 lg:mx-0 lg:px-0 pt-[calc(env(safe-area-inset-top)+8px)] shadow-[0_0.5px_0_transparent] transition-shadow duration-[var(--m-dur-ui)] data-[scrolled=true]:shadow-[0_0.5px_0_var(--m-separator)]"
+            ? "sticky top-0 z-20 -mx-4 -mt-[var(--m-safe-top)] flex min-h-11 items-center justify-between gap-3 bg-bg px-4 lg:mx-0 lg:px-0 pt-[calc(var(--m-safe-top)+8px)] shadow-[0_0.5px_0_transparent] transition-shadow duration-[var(--m-dur-ui)] data-[scrolled=true]:shadow-[0_0.5px_0_var(--m-separator)]"
             : "flex min-h-11 items-center justify-between gap-3"
         }
       >

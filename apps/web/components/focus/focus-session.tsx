@@ -162,7 +162,7 @@ export function FocusSessionView({
       role="dialog"
       aria-modal="true"
       aria-labelledby="focus-goal"
-      className="fixed inset-0 z-50 flex flex-col bg-bg px-4 pt-[calc(12px+env(safe-area-inset-top))] pb-[calc(24px+env(safe-area-inset-bottom))]"
+      className="fixed inset-0 z-50 flex flex-col bg-bg px-4 pt-[calc(12px+var(--m-safe-top))] pb-[calc(24px+env(safe-area-inset-bottom))]"
     >
       <div className="flex h-11 items-center justify-between">
         <button type="button" onClick={onHide} className={plain.replace("text-tint-text", "text-label-2")}>
@@ -269,7 +269,7 @@ export function FocusResult({ session, onClose }: { session: FocusSession; onClo
       role="dialog"
       aria-modal="true"
       aria-labelledby="focus-result"
-      className="fixed inset-0 z-50 flex flex-col bg-bg px-4 pt-[calc(12px+env(safe-area-inset-top))] pb-[calc(24px+env(safe-area-inset-bottom))]"
+      className="fixed inset-0 z-50 flex flex-col bg-bg px-4 pt-[calc(12px+var(--m-safe-top))] pb-[calc(24px+env(safe-area-inset-bottom))]"
     >
       <div className="flex flex-1 flex-col items-center justify-center text-center">
         <p className="text-footnote font-semibold text-label-2">{session.goal_title}</p>

@@ -9,6 +9,7 @@ import { Haptics } from "@/components/haptics";
 import { LocationPing } from "@/components/location/location-ping";
 import { MeetingPill } from "@/components/meetings";
 import { NudgeOpened } from "@/components/nudge-opened";
+import { SafeTopScript } from "@/components/safe-top";
 import { ServiceWorker } from "@/components/service-worker";
 import { Splash } from "@/components/splash";
 import { TabBar } from "@/components/tab-bar";
@@ -40,6 +41,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     // The inline motion script marks <html> before hydration (data-counted, data-splashing).
     <html lang="en-GB" className={figtree.variable} suppressHydrationWarning>
       <body>
+        <SafeTopScript />
         <Splash />
         <MotionScript />
         <Haptics />

@@ -45,7 +45,7 @@ export function OnboardingFrame({
   footer: ReactNode;
 }) {
   return (
-    <main className="flex min-h-dvh flex-col pt-[env(safe-area-inset-top)] pr-[max(16px,env(safe-area-inset-right))] pb-[calc(16px+env(safe-area-inset-bottom))] pl-[max(16px,env(safe-area-inset-left))]">
+    <main className="flex min-h-dvh flex-col pt-[var(--m-safe-top)] pr-[max(16px,env(safe-area-inset-right))] pb-[calc(16px+env(safe-area-inset-bottom))] pl-[max(16px,env(safe-area-inset-left))]">
       <nav aria-label="Getting started" className="flex min-h-11 items-center gap-2 pt-2">
         <div className="w-16">{left}</div>
         <Progress step={step} />

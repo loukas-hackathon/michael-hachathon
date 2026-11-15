@@ -29,10 +29,13 @@ import {
 import { say as confirm } from "@/lib/say";
 import {
   type Block,
+  badgeOnTitle,
   blockTitle,
+  loggedTitle,
   lostMinutesOf,
   makeTime,
   makeY,
+  michaelBadges,
   openSegments,
   type Plan,
   planFor,
@@ -555,7 +558,8 @@ export function DayTimeline({
   };
   const planTitleShown = (p: Plan) => {
     const top = y(p.start);
-    const covered = [...day.blocks, ...workouts, ...naps].some(
+    // Logged time too (#448): its own title sits there, so the plan's would be drawn on top of it.
+    const covered = [...day.blocks, ...(day.logged ?? []), ...workouts, ...naps].some(
       (b) => y(b.start) < top + 18 && y(b.end) > top + 2,
     );
     return !covered && y(p.end) - top >= 17;
@@ -574,6 +578,15 @@ export function DayTimeline({
         .map((p) => ({ key: `pt${p.start}${p.title}`, top: y(p.start) + 4, bottom: y(p.start) + 20 })),
     ],
   );
+  // Michael's badges, never two on top of each other (#448), and the titles they share a line with
+  // stop short of them.
+  const badges = michaelBadges(
+    plans
+      .filter((p) => p.michael)
+      .map((p) => ({ key: `calt${p.start}${p.title}`, top: y(p.start), bottom: y(p.end) })),
+  );
+  const clearOfBadge = (start: number) =>
+    badgeOnTitle(y(start), badges.values()) ? { right: 66 } : undefined;
   const half = (key: string) => (aside.has(key) ? (key.startsWith("d") ? RIGHT_HALF : LEFT_HALF) : undefined);
 
   // Loss labels never collide: each keeps clear of its block's title lines and of the label above.
@@ -796,6 +809,7 @@ export function DayTimeline({
                 {h >= 17 ? (
                   <span
                     className={`absolute top-1 right-5 left-1 flex text-footnote leading-4 font-semibold ${ink}`}
+                    style={clearOfBadge(b.start)}
                   >
                     <span className={`max-w-full truncate rounded-[4px] px-1 ${chip}`}>
                       {title}
@@ -841,11 +855,14 @@ export function DayTimeline({
               data-live-key={`log${l.start}-${l.end}`}
               className="pointer-events-none absolute right-(--lane-r) left-[50px] overflow-hidden rounded-block bg-spark"
               style={{ top, height: h, ...half(`log${l.start}`) }}
-              title={`${l.title}, logged, ${span(l.start, l.end)}`}
+              title={`${loggedTitle(l.title)}, logged, ${span(l.start, l.end)}`}
             >
               {h >= 17 ? (
-                <p className="absolute top-1 right-2 left-2 truncate text-footnote leading-4 font-semibold text-[#000]">
-                  {l.title}
+                <p
+                  className="absolute top-1 right-2 left-2 truncate text-footnote leading-4 font-semibold text-[#000]"
+                  style={clearOfBadge(l.start)}
+                >
+                  {loggedTitle(l.title)}
                 </p>
               ) : null}
               {h >= 36 ? (
@@ -871,7 +888,10 @@ export function DayTimeline({
               title={`${w.name}, ${formatTime(iso(w.start))} to ${formatTime(iso(w.end))}`}
             >
               {h >= 17 ? (
-                <p className="absolute top-1 right-2 left-2 truncate text-footnote leading-4 font-semibold text-[#000]">
+                <p
+                  className="absolute top-1 right-2 left-2 truncate text-footnote leading-4 font-semibold text-[#000]"
+                  style={clearOfBadge(Math.max(w.start, day.dayStart))}
+                >
                   {w.name}
                 </p>
               ) : null}
@@ -904,10 +924,10 @@ export function DayTimeline({
           );
         })}
 
-        {/* Plan titles where nothing happened over their first lines, and Michael's marker always. */}
+        {/* Plan titles where nothing happened over their first lines, and Michael's marker (one per line). */}
         {plans.map((p) => {
           const top = y(p.start);
-          const h = y(p.end) - top;
+          const badge = badges.get(`calt${p.start}${p.title}`);
           return (
             <div key={`calt${p.start}${p.title}`} aria-hidden="true" className="pointer-events-none">
               {planTitleShown(p) ? (
@@ -918,10 +938,10 @@ export function DayTimeline({
                   {p.title}
                 </p>
               ) : null}
-              {p.michael ? (
+              {badge != null ? (
                 <span
                   className="absolute right-[calc(var(--lane-r)+6px)] rounded-[4px] bg-bg px-1 text-caption font-semibold text-tint-text"
-                  style={{ top: top + (h >= 17 ? 3 : -8) }}
+                  style={{ top: badge }}
                 >
                   Michael
                 </span>
