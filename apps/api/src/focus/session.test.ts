@@ -31,9 +31,11 @@ async function freshUser<T>(fn: (goalId: string) => Promise<T>): Promise<T> {
   return runAsUser(randomUUID(), async () => {
     await withoutInstructions(store);
     for (const g of await store.listGoals()) await store.deleteGoal(g.id);
+    // Every event, not only the last day's: a fresh user starts with the sample events, and once
+    // their fixed day is over a day old they stayed and read as a connected Mac (created_at is new).
     for (const e of await store.listEvents({
-      from: iso(Date.now() - 86_400_000),
-      to: iso(Date.now() + 86_400_000),
+      from: "2000-01-01T00:00:00.000Z",
+      to: iso(Date.now() + 365 * 86_400_000),
     }))
       await store.deleteEvents([e.id]);
     const goal = await store.createGoal({
