@@ -2620,6 +2620,68 @@ type PushSubscriptionInput = {
 type PushConfig = { enabled: boolean; public_key: string | null; devices: number };
 ```
 
+#### Nudges you can act on (#399)
+
+A nudge can carry up to two buttons, the action first, so the user acts without opening the app.
+
+| Kind             | Buttons                                                                     |
+| ---------------- | --------------------------------------------------------------------------- |
+| `block_soon`     | "Snooze 10 min" (the same nudge again in 10 minutes), "Open"                |
+| `focus_drift`    | "Mute Instagram 30 min" (a `block_mac_app` guard, 30 min from now), "Open"  |
+| `recovery_block` | "Do it" (executes its recommendation, undoable in the app as usual), "Open" |
+| others           | none: tapping opens the card                                                |
+
+`focus_drift` offers Mute only when the top distractor was an allowlisted app in front on the Mac
+(`BLOCKABLE_MAC_APPS`), so the Mac is connected and the guard can act; sites and phone apps get no
+button. "Start focus" on `block_soon` waits for Focus now (branch `focus-now`). The buttons are not
+stored (no database change before the pitch): a tap works them out again from the stored nudge
+(`offeredActions`, the Mac app read back from the line).
+
+```ts
+type NudgeActionId = "open" | "snooze" | "mute_app" | "do_it";
+type NudgeAction = { id: NudgeActionId; label: string; app?: string }; // app: mute_app only
+type NudgeActInput = { action: "snooze" | "mute_app" | "do_it"; token: string };
+type NudgeActResult = {
+  action: NudgeActionId;
+  text: string; // "Done. Undo in the app until 15:00." / "Instagram is off until 14:30. Undo in the app." / "Snoozed. Back at 17:58."
+  undo_until: string | null; // null for a snooze
+  url: string; // where tapping the follow up goes
+  nudge_id: string;
+};
+```
+
+| Method | Path                 | Body            | Response                                                       | Status |
+| ------ | -------------------- | --------------- | -------------------------------------------------------------- | ------ |
+| POST   | `/v1/nudges/:id/act` | `NudgeActInput` | `200 NudgeActResult`; `401` bad or expired token; `404`; `409` | live   |
+
+- No session: the service worker has none. The push payload carries `token`, signed (HMAC, key
+  derived from `API_KEY`) for that nudge id and user id, valid 3 hours (`apps/api/src/nudges/token.ts`).
+  The user only ever comes from the signature.
+- Single use: the first tap marks the nudge acted on, whichever channel got there first; a second
+  tap is `409 "Already done."`. A snooze clears it when the nudge comes back (new push, fresh token,
+  same buttons). A refused action (say the slot has started, `409` with the executor's reason)
+  clears it too, so it can be tried in the app. The mark lives in the API process (no database
+  change before the pitch): after a restart a tap could run again, which stays safe (Do it on a
+  done recommendation is `409`, a second mute only adds a guard on the user's own Mac).
+- `409` also when the nudge does not offer that action. Snoozes are timers in the API process: a
+  deploy within those 10 minutes loses the snooze (the nudge is still on Today). A snooze is not a
+  new nudge: it never counts towards the 5 a day.
+- Push payload (`PushPayload`, `apps/api/src/nudges/push.ts`): `{ title, body, tag, url, actions?:
+  { action, title }[], act_url?, token? }`. `url` is the exact card (`nudgeUrl` in
+  `@michael/shared`): `/timeline?day=<day>&block=<event id>` for `block_soon` and `focus_drift`,
+  `/?card=<recommendation id>` for a nudge with a recommendation, else `/`. The web app scrolls to
+  that block or card and rings it briefly (`components/deep-link-focus.tsx`).
+- The worker (`apps/web/public/sw.js`) shows the buttons as notification actions. A button posts
+  `{ action, token }` to `act_url` and shows the result as a second notification (`tag:
+  nudge-done`); a refusal shows its message, no connection says "No connection. Open Michael to do
+  it there.". "Open" and the body open `url` (same origin only).
+- Where buttons show: Chrome on Android and desktop (Chrome, Edge, Firefox) show two. Safari on
+  iPhone, iPad and Mac shows no web push buttons, and the Apple Watch mirrors the iPhone's
+  notification, so there the tap opens the exact card and the action is one tap away in the app.
+  Telegram shows the same buttons on the iPhone, Android and desktop (below).
+- `POST /v1/nudges/test` (the stage moment) carries the same buttons as a real nudge of its kind;
+  its key is `test:<press>:<the real key>` so the tap still opens the block.
+
 ### Web push
 
 iOS 16.4+ delivers Web Push to Michael installed on the Home Screen, and mirrors it to the Apple
@@ -2662,6 +2724,14 @@ type TelegramLinkResponse = { url: string };
   `TELEGRAM_WEBHOOK_SECRET` (default: derived from the bot token) and answers `401` otherwise,
   `404` when there is no bot. Only private chats. `/stop` unbinds the chat. A chat belongs to
   whoever bound it last (`telegram_chats`, one row per user).
+- Buttons (#399): a nudge's actions ride along as one row of an inline keyboard. Snooze, Mute and
+  Do it are callback buttons (`callback_data: na:<nudge id>:<action>`, at most 48 bytes); Open is a
+  link to the exact card, only when the web app's address is https. A tap arrives at the same
+  webhook as a `callback_query` (`allowed_updates: ["message", "callback_query"]`): the chat's owner
+  (bound with a signed start link) must own the nudge, and the action runs through the same logic as
+  `POST /v1/nudges/:id/act`, once. The webhook answers with `answerCallbackQuery` (the result as a
+  toast), takes the buttons off the message once acted on (`editMessageReplyMarkup`) and sends the
+  result as a new message so the watch buzzes with it.
 - Delivery: `sendMessage` with the nudge text. `sent` when Telegram took it, `failed` when it
   refused; a `403` (the user blocked the bot) also unbinds the chat.
 - On start, with a token, the API calls `setWebhook` to `${PUBLIC_API_URL}/v1/webhooks/telegram`

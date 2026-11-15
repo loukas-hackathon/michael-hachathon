@@ -1426,6 +1426,44 @@ export const NudgeKind = z.enum([
 ]);
 export type NudgeKind = z.infer<typeof NudgeKind>;
 
+// What a nudge lets the user do without opening the app (#399): buttons on the notification
+// (Chrome, Android, desktop) and on the Telegram message. `open` only opens the card (no request);
+// the others go to POST /v1/nudges/:id/act. Each nudge can be acted on once (per API process).
+//   snooze    the same nudge again in 10 minutes (block_soon)
+//   mute_app  close `app` on the user's Mac for 30 minutes (focus_drift, Mac reporting, allowlisted app)
+//   do_it     carry out the nudge's recommendation (recovery_block), undoable in the app
+export const NudgeActionId = z.enum(["open", "snooze", "mute_app", "do_it"]);
+export type NudgeActionId = z.infer<typeof NudgeActionId>;
+
+export const NudgeAction = z.object({
+  id: NudgeActionId,
+  // The button, short: "Snooze 10 min", "Mute Instagram 30 min", "Do it".
+  label: z.string().min(1).max(40),
+  // mute_app only: the allowlisted Mac app (packages/shared/src/mac-apps.ts).
+  app: z.string().max(40).optional(),
+});
+export type NudgeAction = z.infer<typeof NudgeAction>;
+
+/** Minutes a snooze waits, and a mute lasts. */
+export const NUDGE_SNOOZE_MINUTES = 10;
+export const NUDGE_MUTE_MINUTES = 30;
+
+/**
+ * Where tapping a nudge goes: the exact card. A block nudge opens that block on the Timeline, a
+ * recovery offer its card on Today, anything else Today.
+ */
+export function nudgeUrl(n: Pick<Nudge, "kind" | "key" | "day" | "recommendation_id">): string {
+  // block_soon:<event id> and focus_drift:<event id>; a test nudge carries the real key after
+  // `test:<press>:` (routes/nudges.ts).
+  const key = n.key.replace(/^test:[^:]*:/, "");
+  const eventId = key.startsWith(`${n.kind}:`) ? key.slice(n.kind.length + 1) : "";
+  if ((n.kind === "block_soon" || n.kind === "focus_drift") && eventId) {
+    return `/timeline?day=${n.day}&block=${encodeURIComponent(eventId)}`;
+  }
+  if (n.recommendation_id) return `/?card=${n.recommendation_id}`;
+  return "/";
+}
+
 // At most 5 per day, under 15 words, never during quiet hours, each tied to a goal.
 export const Nudge = z.object({
   id: z.uuid(),
@@ -1445,6 +1483,29 @@ export const Nudge = z.object({
   sent_at: IsoDateTime.nullable(),
 });
 export type Nudge = z.infer<typeof Nudge>;
+
+// A nudge on its way out with its buttons (#399). The buttons are worked out again from the stored
+// nudge when one is tapped (no database change before the pitch), so they are not stored.
+export type OutgoingNudge = Nudge & { actions?: NudgeAction[] };
+
+// POST /v1/nudges/:id/act. No session: `token` is the signed, single use token the push carried.
+export const NudgeActInput = z.object({
+  action: NudgeActionId.exclude(["open"]),
+  token: z.string().min(1).max(512),
+});
+export type NudgeActInput = z.infer<typeof NudgeActInput>;
+
+export const NudgeActResult = z.object({
+  action: NudgeActionId,
+  // The follow up line, under 15 words: "Done. Undo in the app until 15:00."
+  text: z.string().min(1),
+  // Until when it can be undone in the app (do_it, mute_app); null for a snooze.
+  undo_until: IsoDateTime.nullable(),
+  // Where tapping the follow up goes.
+  url: z.string(),
+  nudge_id: z.uuid(),
+});
+export type NudgeActResult = z.infer<typeof NudgeActResult>;
 
 export const NudgesQuery = z.object({ from: IsoDateTime.optional(), to: IsoDateTime.optional() });
 export type NudgesQuery = z.infer<typeof NudgesQuery>;

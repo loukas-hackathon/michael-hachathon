@@ -266,6 +266,12 @@ async function forgetPersonal() {
 
 // ---------------------------------------------------------------------------------------------
 // Web Push
+//
+// A nudge may carry buttons (#399): "Snooze 10 min", "Mute Instagram 30 min", "Do it". Chrome,
+// Android and desktop browsers show them; iPhone and the Apple Watch do not show web push buttons,
+// so there the tap opens the exact card (`url`) and the button is one tap away in the app.
+// A button posts { action, token } to the API (`act_url`): the token is signed for that nudge and
+// user, so no session is needed here. The result comes back as a second notification.
 
 self.addEventListener("push", (event) => {
   let data = {};
@@ -274,31 +280,84 @@ self.addEventListener("push", (event) => {
   } catch {
     data = { body: event.data ? event.data.text() : "" };
   }
-  const title = data.title || "Michael";
-  event.waitUntil(
-    self.registration.showNotification(title, {
-      body: data.body || "",
-      tag: data.tag || "nudge",
-      renotify: true,
-      icon: "/icon-180.png",
-      badge: "/icon-180.png",
-      data: { url: data.url || "/" },
-    }),
-  );
+  event.waitUntil(self.registration.showNotification(data.title || "Michael", nudgeOptions(data)));
 });
+
+/** What showNotification gets for a push payload (apps/api/src/nudges/push.ts PushPayload). */
+function nudgeOptions(data) {
+  const actions = Array.isArray(data.actions)
+    ? data.actions
+        .filter((a) => a && typeof a.action === "string" && typeof a.title === "string")
+        .slice(0, 2)
+        .map((a) => ({ action: a.action, title: a.title }))
+    : [];
+  const options = {
+    body: data.body || "",
+    tag: data.tag || "nudge",
+    renotify: true,
+    icon: "/icon-180.png",
+    badge: "/icon-180.png",
+    data: {
+      url: data.url || "/",
+      act_url: typeof data.act_url === "string" ? data.act_url : null,
+      token: typeof data.token === "string" ? data.token : null,
+    },
+  };
+  if (actions.length) options.actions = actions;
+  return options;
+}
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = new URL(event.notification.data?.url || "/", self.location.origin).href;
-  event.waitUntil(
-    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
-      for (const w of windows) {
-        if (w.url.startsWith(self.location.origin) && "focus" in w) {
-          w.navigate(url);
-          return w.focus();
-        }
-      }
-      return self.clients.openWindow(url);
-    }),
-  );
+  const data = event.notification.data || {};
+  const action = event.action || "";
+  if (!action || action === "open" || !data.act_url || !data.token) {
+    event.waitUntil(openUrl(data.url));
+    return;
+  }
+  event.waitUntil(actOnNudge(data, action));
 });
+
+/** Posts the button to the API and shows what happened, under the same tag. */
+async function actOnNudge(data, action) {
+  let body = "That did not work. Open Michael to do it there.";
+  let url = data.url || "/";
+  try {
+    const res = await fetch(data.act_url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, token: data.token }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (res.ok && typeof json.text === "string") {
+      body = json.text;
+      if (typeof json.url === "string") url = json.url;
+    } else if (json.error && typeof json.error.message === "string") {
+      body = json.error.message;
+    }
+  } catch {
+    body = "No connection. Open Michael to do it there.";
+  }
+  await self.registration.showNotification("Michael", {
+    body,
+    tag: "nudge-done",
+    icon: "/icon-180.png",
+    badge: "/icon-180.png",
+    data: { url },
+  });
+}
+
+function openUrl(raw) {
+  const url = new URL(raw || "/", self.location.origin);
+  // Only Michael's own pages: a payload can never send the tap elsewhere.
+  const href = url.origin === self.location.origin ? url.href : new URL("/", self.location.origin).href;
+  return self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
+    for (const w of windows) {
+      if (w.url.startsWith(self.location.origin) && "focus" in w) {
+        w.navigate(href);
+        return w.focus();
+      }
+    }
+    return self.clients.openWindow(href);
+  });
+}
