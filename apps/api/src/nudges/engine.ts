@@ -322,7 +322,7 @@ function windDown(w: World): Candidate | null {
     kind: "wind_down",
     key: "wind_down",
     goal_id: rest.id,
-    text: `Screens off by ${night}. Sleep is on the plan.`,
+    text: `Screens off by ${night}. Sleep is a goal too.`,
     reason: `${Math.round(screenMs / MINUTE)} of the last ${LIMITS.driftWindowMs / MINUTE} min on screens; quiet hours start at ${night} for ${rest.title}.`,
   };
 }

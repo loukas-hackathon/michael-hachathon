@@ -161,7 +161,7 @@ export default async function KnowledgePage() {
         </>
       ) : (
         <p role="alert" className="mt-6 rounded-group bg-fill px-4 py-3 text-subhead text-label-2">
-          I could not load this. Pull to refresh.
+          I couldn't load this. Pull to refresh.
         </p>
       )}
     </main>

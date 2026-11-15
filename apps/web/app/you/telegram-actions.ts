@@ -9,7 +9,7 @@ export async function disconnectTelegramChat(): Promise<ActionResult> {
   try {
     await disconnectTelegram();
   } catch {
-    return { ok: false, message: "I could not disconnect. Nothing changed." };
+    return { ok: false, message: "I couldn't disconnect. Nothing changed." };
   }
   revalidatePath("/you", "layout");
   return { ok: true, message: "Disconnected." };
@@ -21,6 +21,6 @@ export async function sendTelegramTest(): Promise<ActionResult> {
     await postTestNudge();
     return { ok: true, message: "Sent. Check Telegram." };
   } catch {
-    return { ok: false, message: "I could not send it. Try again in a minute." };
+    return { ok: false, message: "I couldn't send it. Try again in a minute." };
   }
 }

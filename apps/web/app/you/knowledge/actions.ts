@@ -11,7 +11,7 @@ import { demoRefusal } from "@/lib/demo-refusal";
 
 export type ForgetResult = { ok: true } | { ok: false; error: string };
 
-const FAILED = "I could not forget that. It is still here.";
+const FAILED = "I couldn't forget that. It's still here.";
 
 async function remove(path: string): Promise<number> {
   const res = await fetch(`${API_URL}${path}`, {
@@ -55,7 +55,7 @@ export async function forgetItem(kind: string, id: string): Promise<ForgetResult
             ? await remove(`/v1/instructions/${ref}`)
             : await dropFromProfile(id);
   } catch {
-    return { ok: false, error: "I could not reach the server. It is still here." };
+    return { ok: false, error: "I lost the line. It's still here." };
   }
   if (status < 300) {
     revalidatePath("/you/knowledge");

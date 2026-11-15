@@ -244,7 +244,7 @@ export function RecommendationList({
     const r = await ACTIONS[op](card.id).catch(
       (): RecActionResult => ({
         ok: false,
-        error: "I could not reach the server. Nothing changed.",
+        error: "I lost the line. Nothing changed.",
         gone: false,
       }),
     );

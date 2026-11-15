@@ -106,7 +106,7 @@ test("half an hour before the night, screens on, the rest goal speaks", () => {
   assert.equal(d.action, "send");
   if (d.action !== "send") return;
   assert.equal(d.candidate.kind, "wind_down");
-  assert.equal(d.candidate.text, "Screens off by 22:00. Sleep is on the plan.");
+  assert.equal(d.candidate.text, "Screens off by 22:00. Sleep is a goal too.");
   // Screen off: nothing to say.
   assert.deepEqual(decide(input("21:40", [], [REST])), { action: "skip", skipped: "nothing_to_say" });
 });

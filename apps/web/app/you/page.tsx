@@ -30,7 +30,7 @@ export default async function YouPage({
     params.connected === "google_calendar"
       ? { ok: true, text: "Google Calendar connected. Your plans are on the timeline." }
       : params.integration_error === "google_calendar"
-        ? { ok: false, text: "Google Calendar did not connect. Try again." }
+        ? { ok: false, text: "Google Calendar didn't connect. Try again." }
         : null;
 
   return (

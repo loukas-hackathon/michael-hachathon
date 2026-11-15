@@ -8,7 +8,7 @@ export type ActionResult = { ok: boolean; message: string } | null;
 /**
  * One button that runs a server action with honest feedback (michael-feedback R1, R4): the label
  * becomes the pending verb at once, the button cannot send twice, and the result lands as one line
- * under it ("Synced at 14:02." or "I could not reach Google. Try again.").
+ * under it ("Synced at 14:02." or "I couldn't reach Google. Try again.").
  */
 export function ActionButton({
   action,
@@ -28,7 +28,7 @@ export function ActionButton({
     try {
       return await action();
     } catch {
-      return { ok: false, message: "I could not reach the server. Nothing changed." };
+      return { ok: false, message: "I lost the line. Nothing changed." };
     }
   }, null);
 

@@ -132,5 +132,5 @@ test("the moment's nudge line is under 15 words with no dashes", () => {
   const morning = momentNudge(computeMoment({ kind: "morning", events, goals, now: at("07:30") }));
   assert.equal(morning.text, "Today holds 2h of goal time.");
   const empty = momentNudge(computeMoment({ kind: "evening", events: [], goals: [], now: at("21:00") }));
-  assert.equal(empty.text, "No goal time booked today. Book tomorrow before you sleep.");
+  assert.equal(empty.text, "No goal time today. Put tomorrow's in before bed.");
 });

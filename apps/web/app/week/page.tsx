@@ -46,7 +46,7 @@ export default async function WeekPage({ searchParams }: { searchParams: Promise
       {review ? (
         <Review review={review} />
       ) : (
-        <p className="mt-4 text-body">I could not read your week just now. Pull to refresh in a minute.</p>
+        <p className="mt-4 text-body">I couldn't read your week just now. Pull to refresh in a minute.</p>
       )}
     </main>
   );

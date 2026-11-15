@@ -40,7 +40,7 @@ export function ApprovalCard({ id, name, wants }: { id: string; name: string; wa
       <p className="-mt-1.5 text-subhead text-label-2">
         Only that, and only while you allow it. Every question it asks shows below.
       </p>
-      {failed ? <p className="text-footnote text-danger">I could not save that. Try again.</p> : null}
+      {failed ? <p className="text-footnote text-danger">I couldn't save that. Try again.</p> : null}
       {answer ? (
         <p role="status" className="m-swap flex min-h-9 items-center text-subhead text-label-2">
           {result[answer]}

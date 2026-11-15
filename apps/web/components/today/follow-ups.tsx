@@ -31,7 +31,7 @@ function DraftItem({ draft, local, set }: { draft: Draft; local: Local; set: (l:
       set({
         ...local,
         copied: false,
-        error: "I could not reach the clipboard. Select the text and copy it.",
+        error: "I couldn't reach the clipboard. Select the text and copy it.",
       });
     }
   }
@@ -41,7 +41,7 @@ function DraftItem({ draft, local, set }: { draft: Draft; local: Local; set: (l:
     const before = local;
     set({ ...local, busy: true, hidden: true, error: undefined });
     let ok = false;
-    let line = "I could not save that. Nothing changed.";
+    let line = "I couldn't save that. Nothing changed.";
     try {
       const r = await markDraft(draft.id, status);
       ok = r.ok;

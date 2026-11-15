@@ -27,7 +27,7 @@ test("morning outcomes saved, evening ticked and logged", async ({ page, context
 
   await page.goto("/?ritual=morning");
   const morning = page.getByRole("region", { name: "Morning plan" });
-  await expect(morning.getByRole("heading", { name: "What do you want to get done today?" })).toBeVisible();
+  await expect(morning.getByRole("heading", { name: "What would make today a win?" })).toBeVisible();
   const first = morning.getByLabel("Outcome 1");
   await fillReady(first, "Send the deck");
   await fillReady(morning.getByLabel("Outcome 2"), "Long swim");
