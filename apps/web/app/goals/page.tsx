@@ -6,6 +6,7 @@ import { BookTime } from "@/components/goals/book-time";
 import { ExpandRow } from "@/components/goals/expand-row";
 import { GoalBar, SleepBars, SplitBar, WeekBars } from "@/components/goals/goal-charts";
 import { AddGoal, EditGoal, type GoalDraft, NewGoalButton } from "@/components/goals/goal-sheets";
+import { StarterGoals } from "@/components/goals/starter-goals";
 import { LogTimeButton } from "@/components/log-time";
 import { Tween } from "@/components/motion-ui";
 import { ProgressBar } from "@/components/progress-bar";
@@ -31,6 +32,7 @@ import {
 } from "@/lib/goals-view";
 import { MiConcerned } from "@/lib/mi-mood";
 import { openRecommendations, type RecCard, toCard } from "@/lib/recommendations";
+import { STARTER_GOALS } from "@/lib/starter-goals";
 
 // Goals answers one question at a glance (#309): which goal needs me most this week, and by how
 // much. The hero names it with the maths and one continuous bar with the pace tick, then the one
@@ -90,6 +92,14 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
         .find((c) => c.executable) ?? null)
     : null;
   const toGo = daysLeft + 1;
+  // A brand new account's first goals (#478): nothing spent and no day learnt yet, so no "behind
+  // pace", no empty bars and no zeros. Each goal says its week and the one thing to do is Book.
+  const fresh =
+    !week.sample &&
+    !demo &&
+    (week.explain?.learning ?? false) &&
+    (week.explain?.daysLearnt ?? 0) === 0 &&
+    week.goals.every((g) => g.spentMinutes === 0);
 
   return (
     <main className="screen m-wide">
@@ -100,19 +110,33 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
       />
 
       {empty ? (
-        <section className="mt-6 flex flex-col gap-2 rounded-card bg-fill px-4 pt-4 pb-5">
-          <h2 className="text-title3 font-bold">No goals yet.</h2>
-          <p className="max-w-[46ch] text-subhead text-label-2">
-            {suggestions.length > 0
-              ? `Your calendar already shows ${countWord(suggestions.length)}. Keep ${suggestions.length === 1 ? "it" : "them"} in one tap and I start counting today.`
-              : "Tell me what you're working towards and how many hours a week it needs. I count it from today."}
-          </p>
-          <div className="mt-2">
-            <NewGoalButton className={btnFilled}>
-              {suggestions.length > 0 ? "See what I found" : "Set your first goal"}
+        suggestions.length > 0 || demo ? (
+          <section className="mt-6 flex flex-col gap-2 rounded-card bg-fill px-4 pt-4 pb-5">
+            <h2 className="text-title3 font-bold">No goals yet.</h2>
+            <p className="max-w-[46ch] text-subhead text-label-2">
+              {suggestions.length > 0
+                ? `Your calendar already shows ${countWord(suggestions.length)}. Keep ${suggestions.length === 1 ? "it" : "them"} in one tap and I start counting today.`
+                : "Tell me what you're working towards and how many hours a week it needs. I count it from today."}
+            </p>
+            <div className="mt-2">
+              <NewGoalButton className={btnFilled}>
+                {suggestions.length > 0 ? "See what I found" : "Set your first goal"}
+              </NewGoalButton>
+            </div>
+          </section>
+        ) : (
+          // A brand new account (#478): one goal per area, each one tap, then anything else.
+          <section className="mt-6 flex flex-col gap-2 rounded-card bg-fill px-4 pt-4 pb-2">
+            <h2 className="text-title3 font-bold">Pick your first goal.</h2>
+            <p className="max-w-[46ch] text-subhead text-label-2">
+              One tap each. I count it from today and you change the hours any time.
+            </p>
+            <StarterGoals starters={STARTER_GOALS} />
+            <NewGoalButton className="press flex min-h-11 items-center self-start px-1 text-subhead font-semibold text-tint-text">
+              Something else
             </NewGoalButton>
-          </div>
-        </section>
+          </section>
+        )
       ) : (
         <div className="xl:grid xl:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] xl:items-start xl:gap-x-10">
           <div>
@@ -126,6 +150,7 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
                 drafts={drafts}
                 personalReady={personalReady}
                 canLog={canLog}
+                fresh={fresh}
               />
             ) : ranked.length > 0 ? (
               <section aria-label="This week" className="mt-3">
@@ -148,7 +173,7 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
 
             <TheWeek week={week} />
 
-            {week.freeMinutesLeft != null && need > week.freeMinutesLeft ? (
+            {!fresh && week.freeMinutesLeft != null && need > week.freeMinutesLeft ? (
               <section className="mt-6">
                 <h2 className="mb-2 text-title3 font-bold">The maths</h2>
                 <div className="rounded-group bg-fill px-4 pt-3 pb-3.5">
@@ -182,7 +207,7 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
                 <section key={c} className="mt-6 xl:mt-0 xl:mb-6">
                   <div className="mb-2 flex items-baseline justify-between gap-3">
                     <h2 className="text-title3 font-bold">{CATEGORY_TITLE[c]}</h2>
-                    {budget > 0 ? (
+                    {budget > 0 && !fresh ? (
                       <p className="text-footnote text-label-2 tnum">
                         <Tween value={spent} format="hm" /> of <Tween value={budget} format="hm" />
                       </p>
@@ -208,6 +233,7 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
                           draft={drafts.get(r.goal.id)}
                           personalReady={personalReady}
                           canLog={canLog}
+                          fresh={fresh}
                         />
                       </li>
                     ))}
@@ -277,6 +303,7 @@ function Hero({
   drafts,
   personalReady,
   canLog,
+  fresh = false,
 }: {
   status: GoalStatus;
   pace: number;
@@ -287,6 +314,8 @@ function Hero({
   drafts: Map<string, GoalDraft>;
   personalReady: boolean;
   canLog: boolean;
+  /** A brand new account: the goal's week, no pace and no empty bar. */
+  fresh?: boolean;
 }) {
   const { goal, behind, leftMinutes } = status;
   const due = paceMinutes(goal.budgetMinutes, p);
@@ -298,7 +327,12 @@ function Hero({
     <section aria-label="Needs you most" className="mt-3">
       <h2 className="text-insight text-label-2">
         <b className="font-semibold text-label">{goal.title}</b>{" "}
-        {behind ? (
+        {fresh ? (
+          <>
+            first: <b className="font-semibold text-label tnum">{hm(goal.budgetMinutes)}</b> this week,
+            counted from today.
+          </>
+        ) : behind ? (
           <>
             needs you most: <b className="font-semibold text-label tnum">{hm(gap)}</b> behind pace.
             {/* The Mi button shows concerned while this line is on screen (#319). */}
@@ -312,24 +346,28 @@ function Hero({
         )}
       </h2>
 
-      <div className="mt-5">
-        <GoalBar
-          size="lg"
-          budget={goal.budgetMinutes}
-          spent={goal.spentMinutes}
-          unverified={goal.unverifiedMinutes}
-          planned={goal.plannedMinutes}
-          pace={p}
-          label={`${hm(goal.spentMinutes)} of ${hm(goal.budgetMinutes)}. On pace would be ${hm(due)} by now.`}
-        />
+      <div className={fresh ? "mt-3" : "mt-5"}>
+        {fresh ? null : (
+          <GoalBar
+            size="lg"
+            budget={goal.budgetMinutes}
+            spent={goal.spentMinutes}
+            unverified={goal.unverifiedMinutes}
+            planned={goal.plannedMinutes}
+            pace={p}
+            label={`${hm(goal.spentMinutes)} of ${hm(goal.budgetMinutes)}. On pace would be ${hm(due)} by now.`}
+          />
+        )}
         <div className="mt-2.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-3 text-footnote text-label-2 tnum xl:flex-col xl:flex-nowrap xl:gap-2">
           {/* The actions go under the sentence when it would get less than 15rem beside them (a
               390px phone with the logged line), and always on a laptop's narrower column. */}
-          <p className="min-w-0 flex-[1_1_15rem] xl:flex-none">
-            <b className="font-semibold text-label">{hm(goal.spentMinutes)}</b> of {hm(goal.budgetMinutes)}.
-            On pace: {hm(due)} by now.
-            {goal.loggedMinutes ? ` ${loggedLine(goal.loggedMinutes)}` : ""}
-          </p>
+          {fresh ? null : (
+            <p className="min-w-0 flex-[1_1_15rem] xl:flex-none">
+              <b className="font-semibold text-label">{hm(goal.spentMinutes)}</b> of {hm(goal.budgetMinutes)}.
+              On pace: {hm(due)} by now.
+              {goal.loggedMinutes ? ` ${loggedLine(goal.loggedMinutes)}` : ""}
+            </p>
+          )}
           <span className="-mx-1 -my-2 flex shrink-0 items-baseline gap-3">
             {/* "I did 30 min" (#317): time spent off the calendar counts too. */}
             {canLog ? (
@@ -428,6 +466,7 @@ function GoalRow({
   draft,
   personalReady,
   canLog,
+  fresh = false,
 }: {
   status: GoalStatus;
   first: boolean;
@@ -440,6 +479,8 @@ function GoalRow({
   draft: GoalDraft | undefined;
   personalReady: boolean;
   canLog: boolean;
+  /** A brand new account: the goal's week in words, no empty bar and no pace. */
+  fresh?: boolean;
 }) {
   const { goal, behind, leftMinutes } = status;
   const close = closeState(goal.budgetMinutes, goal.spentMinutes, leftMinutes);
@@ -447,7 +488,14 @@ function GoalRow({
   // What is true about the time left: how much is booked ahead and how much is still open after it.
   const split = bookedSplit(leftMinutes, booked);
   const line = bookedLine(leftMinutes, booked);
-  const summary = (
+  const summary = fresh ? (
+    <>
+      <h3 className="text-body font-semibold">{goal.title}</h3>
+      <p className="mt-0.5 text-footnote text-label-2 tnum">
+        {hm(goal.budgetMinutes)} a week, counted from today.
+      </p>
+    </>
+  ) : (
     <>
       <div className="flex items-baseline justify-between gap-3">
         <h3 className="text-body font-semibold">{goal.title}</h3>

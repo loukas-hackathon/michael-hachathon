@@ -22,11 +22,14 @@ export function Studying({ studied, href }: { studied: Insights["studied"]; href
   const body = (
     <>
       <p className="text-title3 font-bold tnum">
-        Studying. {have} of {needed} nights so far.
+        {have === 0 ? "Studying starts tonight." : `Studying. ${have} of ${needed} nights so far.`}
       </p>
-      <div className="mt-3">
-        <NightsBar have={have} needed={needed} />
-      </div>
+      {/* No row of empty nights before the first one: the sentence says it. */}
+      {have > 0 ? (
+        <div className="mt-3">
+          <NightsBar have={have} needed={needed} />
+        </div>
+      ) : null}
       <p className="mt-3 text-subhead text-label-2">
         {/* (Brand) */}I need {needed} nights of sleep, phone and calendar before I can say what costs you the
         next day. Anything I see 4 times becomes a pattern.

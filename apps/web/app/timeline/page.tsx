@@ -31,6 +31,17 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
   const plans = day?.plans ?? [];
   const heartHidden = (await cookies()).get(HEART_COOKIE)?.value === "off";
   const isToday = date === today;
+  // A brand new account (#478): nothing on today and no calendar yet. One line says what will
+  // appear here, and connecting the calendar is the one action.
+  const firstDay =
+    isToday &&
+    screen.source === "live" &&
+    screen.calendarConnected === false &&
+    day != null &&
+    !day.sample &&
+    day.blocks.length === 0 &&
+    day.phone.length === 0 &&
+    plans.length === 0;
   const dayHref = (d: string) => `/timeline?day=${d}${sampleParam ? "&demo=sample" : ""}`;
   const strip = (
     <WeekStrip
@@ -74,7 +85,19 @@ export default async function TimelinePage({ searchParams }: { searchParams: Pro
         ) : null}
       </div>
 
-      {day ? (
+      {firstDay ? (
+        <div className="mt-1">
+          <p className="max-w-[46ch] text-subhead text-label-2">
+            Your calendar blocks show here, with where the time really went around them.
+          </p>
+          <Link href="/integrations/google/connect" className={`${tinted} mt-3`}>
+            Connect your calendar
+          </Link>
+        </div>
+      ) : null}
+
+      {/* No empty grid of "No screens" under it: the line above already says what comes. */}
+      {firstDay ? null : day ? (
         <>
           <p className="mt-1 text-subhead text-label-2">
             {day.sample ? (

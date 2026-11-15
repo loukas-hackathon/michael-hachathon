@@ -5,7 +5,7 @@ import { LiveCheckIn } from "@/components/chat/live-check-in";
 import { getChatHistory, getChatThreads, getCheckIn, getScore, getVoiceEnabled } from "@/lib/api";
 import { SAMPLE_QUESTIONS } from "@/lib/check-in-data";
 import { Chat } from "./chat";
-import { startersFrom } from "./starters";
+import { FIRST_LINE, FIRST_STARTERS, isFirstChat, startersFrom } from "./starters";
 
 export const metadata = { title: "Chat with Michael" };
 
@@ -36,6 +36,8 @@ export default async function ChatPage({ searchParams }: { searchParams: Promise
   const score =
     history.messages.length === 0 ? getScore().catch((): Score | null => null) : Promise.resolve(null);
   const [elevenlabs, today, day] = await Promise.all([voice, checkIn, score]);
+  // A brand new account: one line on what Michael can do and three things to ask (#478).
+  const first = history.messages.length === 0 && isFirstChat(day, threads.length);
 
   return (
     <main className="screen m-dash m-panes flex min-h-dvh flex-col">
@@ -44,7 +46,8 @@ export default async function ChatPage({ searchParams }: { searchParams: Promise
         initial={history.messages}
         initialActions={history.actions}
         threads={threads}
-        starters={startersFrom(day)}
+        starters={first ? FIRST_STARTERS : startersFrom(day)}
+        intro={first ? FIRST_LINE : undefined}
         elevenlabs={elevenlabs}
         talk={talk === "1"}
         checkIn={

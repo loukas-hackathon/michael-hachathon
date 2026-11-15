@@ -42,7 +42,7 @@ const TITLES: Record<SetupKey, string> = {
 };
 
 const WHY: Record<SetupKey, string> = {
-  goals: "Tell me what you're working towards. Five minutes.",
+  goals: "Pick two or three. Under a minute.",
   calendar: "Your planned blocks are what I measure against.",
   watch: "Sleep and workouts, so I know when to push and when to rest.",
   mac: "App time, so I can see where the hours went.",
