@@ -182,3 +182,20 @@ test("each answer on its own line stays its own clause", () => {
   );
   assert.deepEqual(read.notes, ["I lose my evenings on my phone"]);
 });
+
+test("how often, said as people say it", () => {
+  const gym = { session: 60, title: "Training" };
+  assert.equal(minutesIn("gym twice a week", gym), 120);
+  assert.equal(minutesIn("run once a week", gym), 60);
+  assert.equal(minutesIn("a couple of times a week", gym), 120);
+  assert.equal(minutesIn("every weekday morning", { session: 120, title: "Deep work" }), 600);
+  assert.equal(minutesIn("tennis on weekends", gym), 120);
+  assert.equal(minutesIn("an hour and a half, three times a week", gym), 270);
+  assert.equal(minutesIn("half an hour of reading a day", { session: 30, title: "Reading" }), 210);
+  assert.equal(minutesIn("two hours three times a week", gym), 360);
+});
+
+test("a couple of hours is time, not a count", () => {
+  assert.equal(minutesIn("a couple of hours on the thesis", { session: 120, title: "Study" }), 120);
+  assert.equal(minutesIn("a few hours a day", { session: 120, title: "Deep work" }), 3 * 60 * 7);
+});
