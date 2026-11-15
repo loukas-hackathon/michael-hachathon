@@ -6,6 +6,7 @@ import {
   type Recording,
   releaseMic,
   startRecording,
+  startSideMeter,
   transcribeRecording,
 } from "./recorder";
 import {
@@ -86,6 +87,13 @@ function recognisedTurn(h: TurnHandlers, opts: TurnOptions): Turn {
   const quietTimer = setTimeout(() => {
     if (!heard.trim()) end(() => h.onQuiet?.());
   }, quietMs);
+  // The living voice follows the microphone where a side meter can run (onMicLevel), not onLevel:
+  // the recogniser ends the turn, so nothing here re-renders twenty times a second.
+  let sideMeter: (() => void) | null = null;
+  void startSideMeter().then((stop) => {
+    if (over) stop();
+    else sideMeter = stop;
+  });
 
   function drop() {
     const r = rec;
@@ -107,6 +115,7 @@ function recognisedTurn(h: TurnHandlers, opts: TurnOptions): Turn {
     clearTimeout(pauseTimer);
     clearTimeout(quietTimer);
     drop();
+    sideMeter?.();
     then();
   }
 

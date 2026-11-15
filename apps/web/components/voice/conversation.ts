@@ -10,6 +10,7 @@ import {
   type Recording,
   releaseMic,
   startRecording,
+  startSideMeter,
   transcribeErrorCopy,
   transcribeRecording,
 } from "./recorder";
@@ -98,6 +99,8 @@ export function useConversation(): Conversation {
 }
 
 let rec: Recognition | null = null;
+// The living voice's level meter beside the recogniser (never while Michael speaks: it would hear him).
+let sideMeter: (() => void) | null = null;
 let recording: Recording | null = null;
 let pauseTimer: ReturnType<typeof setTimeout> | undefined;
 let quietTimer: ReturnType<typeof setTimeout> | undefined;
@@ -119,6 +122,8 @@ function clearTimers() {
 
 /** Stops the recogniser without letting its last events act. */
 function dropRecogniser() {
+  sideMeter?.();
+  sideMeter = null;
   const r = rec;
   rec = null;
   if (!r) return;
@@ -302,6 +307,13 @@ function listen(overSpeech = false) {
   } catch {
     rec = null;
     if (!overSpeech) endConversation(recognitionErrorCopy("unknown"));
+    return;
+  }
+  if (!overSpeech) {
+    void startSideMeter().then((stop) => {
+      if (mine === gen && rec === r && !sideMeter) sideMeter = stop;
+      else stop();
+    });
   }
 }
 

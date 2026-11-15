@@ -1,7 +1,7 @@
 "use client";
 
 import type { Recommendation } from "@michael/shared";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { ActionChips } from "@/app/chat/action-chips";
 import {
   chatLineCount,
@@ -12,7 +12,6 @@ import {
 } from "@/app/chat/chat-session";
 import { currentStep } from "@/components/chat/steps";
 import { markHintSeen } from "@/components/hint";
-import { Michael } from "@/components/michael";
 import { Sheet } from "@/components/sheet";
 import {
   endConversation,
@@ -22,7 +21,8 @@ import {
   tapConversation,
   useConversation,
 } from "./conversation";
-import { DICTATE_COPY, hasTouchKeyboard, isIosHomeScreenApp, onSpeechBeat, UNSUPPORTED_COPY } from "./speech";
+import { LivingVoice, type VoiceMood } from "./living-voice";
+import { DICTATE_COPY, hasTouchKeyboard, isIosHomeScreenApp, UNSUPPORTED_COPY } from "./speech";
 
 // Voice mode is a conversation, not a transcript (#458): the centre of the sheet is Michael, the
 // living Mi mark, and nothing he or the user says is written on screen. The only words are the
@@ -98,20 +98,6 @@ export function TalkButton({ onTalk, disabled }: { onTalk: () => void; disabled?
   );
 }
 
-const still = () =>
-  typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-/** One short swell of an element (a word said, a word heard). Nothing under reduced motion. */
-function pulse(el: HTMLElement | null, scale: number) {
-  if (!el || still() || typeof el.animate !== "function") return;
-  const css = getComputedStyle(el);
-  const dur = Number.parseFloat(css.getPropertyValue("--m-dur-ui")) || 200;
-  el.animate([{ transform: "scale(1)" }, { transform: `scale(${scale})` }, { transform: "scale(1)" }], {
-    duration: dur * 1.4,
-    easing: css.getPropertyValue("--m-ease-out").trim() || "ease-out",
-  });
-}
-
 function ConversationSheet({
   open,
   from,
@@ -161,21 +147,13 @@ function ConversationSheet({
       ? `I can't listen in this app. ${DICTATE_COPY}`
       : UNSUPPORTED_COPY;
 
-  // The mark pulses with each word Michael says, and with each word the recogniser hears.
-  const beat = useRef<HTMLSpanElement>(null);
-  const heard = useRef<HTMLSpanElement>(null);
-  useEffect(() => onSpeechBeat(() => pulse(beat.current, 1.05)), []);
+  // His living voice follows his own voice and the microphone; each word heard swells it a little.
   const words = talk.heard.trim() ? talk.heard.trim().split(/\s+/).length : 0;
-  useEffect(() => {
-    if (words) pulse(heard.current, 1.08);
-  }, [words]);
-
-  const mi =
-    talk.phase === "listening" && talk.muted
-      ? "asleep"
-      : talk.phase === "listening" || talk.phase === "thinking" || talk.phase === "speaking"
-        ? talk.phase
-        : "idle";
+  const mood: VoiceMood = talk.muted
+    ? "muted"
+    : talk.phase === "listening" || talk.phase === "thinking" || talk.phase === "speaking"
+      ? talk.phase
+      : "idle";
 
   return (
     <Sheet open={open} onClose={close} title="Talk to Michael" closeLabel="Done">
@@ -200,34 +178,15 @@ function ConversationSheet({
                 disabled={talk.phase === "thinking"}
                 className="press relative grid size-52 place-items-center rounded-full"
               >
-                {talk.phase === "listening" && !talk.muted && !talk.recorded ? (
-                  <span
-                    aria-hidden="true"
-                    className="m-listen-ring pointer-events-none absolute inset-4 rounded-full bg-tint"
-                  />
-                ) : null}
-                {talk.phase === "listening" && !talk.muted && talk.recorded ? (
-                  // A recorded turn: the ring follows the microphone level, live.
-                  <span
-                    aria-hidden="true"
-                    data-testid="voice-level"
-                    className="pointer-events-none absolute inset-4 rounded-full bg-tint opacity-25 transition-transform duration-75 motion-reduce:transition-none"
-                    style={{ transform: `scale(${1 + Math.min(talk.level * 3, 0.35)})` }}
-                  />
-                ) : null}
-                <span ref={heard} className="relative grid place-items-center rounded-full">
-                  <span ref={beat} className="grid place-items-center rounded-full">
-                    <span
-                      className={`grid size-36 place-items-center rounded-full bg-label text-bg transition-opacity duration-[var(--m-dur-ui)] ease-[var(--m-ease-out)] ${
-                        talk.phase === "speaking" ? "m-speak-breath" : ""
-                      } ${talk.phase === "thinking" ? "m-think-soft" : ""} ${
-                        ended || talk.muted ? "opacity-60" : ""
-                      }`}
-                    >
-                      <Michael state={mi} className="block h-auto w-[4.5rem]" />
-                    </span>
-                  </span>
-                </span>
+                <LivingVoice
+                  mood={ended ? "muted" : mood}
+                  mi={ended ? "idle" : undefined}
+                  level={talk.level}
+                  words={words}
+                  levelTestId={
+                    talk.phase === "listening" && !talk.muted && talk.recorded ? "voice-level" : undefined
+                  }
+                />
               </button>
               <p
                 className="mt-8 flex min-h-5 items-center text-footnote text-label-2"
