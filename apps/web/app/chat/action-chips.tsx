@@ -3,7 +3,7 @@
 import type { Recommendation } from "@michael/shared";
 import { useState } from "react";
 import { ActionError } from "@/components/action-feedback";
-import { formatTime } from "@/lib/format";
+import { formatUntil } from "@/lib/format";
 import { useAction } from "@/lib/use-action";
 import { undoAction } from "./actions";
 import { ProposalCard } from "./proposal-card";
@@ -55,7 +55,7 @@ function DoneChip({ action }: { action: Recommendation }) {
         onClick={() => void undo.run()}
         className="press min-h-9 rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-3.5 text-subhead font-semibold text-tint-text disabled:opacity-40"
       >
-        Done. Undo{until ? ` until ${formatTime(until)}` : ""}
+        Done. Undo{until ? ` until ${formatUntil(until)}` : ""}
       </button>
       <ActionError error={undo.error} onRetry={undo.retry} className="px-1" />
     </div>

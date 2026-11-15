@@ -47,6 +47,18 @@ export function formatWhen(iso: string | Date, now: Date = new Date()) {
   return shortDateFmt.format(d);
 }
 
+/**
+ * An undo deadline after "until": "15:00" today, "tomorrow 06:43" the next day, else the weekday.
+ * A logged entry can be undone for 24 hours, so a bare clock read as already over.
+ */
+export function formatUntil(iso: string | Date, now: Date = new Date()) {
+  const d = typeof iso === "string" ? new Date(iso) : iso;
+  const days = Math.round((Date.parse(athensDay.format(d)) - Date.parse(athensDay.format(now))) / 86_400_000);
+  if (days <= 0) return formatTime(d);
+  if (days === 1) return `tomorrow ${formatTime(d)}`;
+  return `${formatWeekday(d)} ${formatTime(d)}`;
+}
+
 /** In a sentence: "47 minutes", "1 minute", "2h 15", "3h". */
 export function minutesPhrase(minutes: number) {
   const m = Math.round(minutes);

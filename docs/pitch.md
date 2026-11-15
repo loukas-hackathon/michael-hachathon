@@ -1,146 +1,169 @@
 # Pitch: three minutes
 
-One speaker talks, one drives. Everything below is on `main` and was checked in code on Sat 14 Nov
-(commit `e906d43`). Run `docs/demo-runbook.md` first. Lines in quotes are said out loud; numbers are
-read off the screen, never from this page, because the demo week follows the clock.
+One speaker talks, one drives. Rehearsed end to end against production on Sun 15 Nov 06:40 Athens
+(commit `8f65dde` plus this branch, Playwright at 390x844 and `/stage` at 1920x1080; issue #253).
+Run `docs/demo-runbook.md` first. Lines in quotes are said out loud. Numbers are read off the
+screen, never from this page: the demo week follows the clock, and the examples below are what the
+screen said at rehearsal.
 
-**Setup on stage.** Laptop on the projector, signed in to the demo week, tabs open in the runbook's
-order. Speaker wears the Apple Watch; the paired iPhone is locked in a pocket. A second phone or the
-laptop has claude.ai with the Michael connector on.
+**Setup on stage.** Laptop on the projector, the presenter link opened once in its browser (so the
+laptop is the demo week and may connect Claude and switch Off the record), tabs open in the
+runbook's order. Speaker wears the Apple Watch; the paired iPhone is locked in a pocket.
 
-**Every screen used** is the demo account: the web app through "See the demo week" (`/auth/demo`),
-and the claude.ai connector authorised from that same browser, so Claude, Today, the stage and the
-watch all see one day.
+| Time      | Beat                      | Screen                  | Measured on production                |
+| --------- | ------------------------- | ----------------------- | ------------------------------------- |
+| 0:00 0:15 | The problem               | `/stage`                | loads in 1.7 s                        |
+| 0:15 0:25 | The promise               | `/stage`                |                                       |
+| 0:25 0:50 | The day, and how I count  | Today, How I count      | Today 2.3 s, sheet instant            |
+| 0:50 1:10 | The evening log           | Today `?ritual=evening` | Log the day: 3 to 8 s                 |
+| 1:10 1:30 | Talk to him: the ice bath | Chat, Talk to Michael   | typed reply 11 to 12 s; voice by hand |
+| 1:30 1:50 | Claude books the block    | claude.ai, then Today   | not run: presenter key not set        |
+| 1:50 2:05 | Drag it like Calendar     | Timeline                | drag and save 3 s, Undo 2.5 s         |
+| 2:05 2:25 | The watch buzzes          | `/stage`, press N       | not pressed at dawn (see note)        |
+| 2:25 2:45 | Privacy                   | You                     | needs this branch + presenter         |
+| 2:45 3:00 | Close                     | `/stage`                |                                       |
 
-| Time      | Beat                     | Screen                          |
-| --------- | ------------------------ | ------------------------------- |
-| 0:00 0:20 | The problem              | `/stage`                        |
-| 0:20 0:30 | The promise              | `/stage`                        |
-| 0:30 1:05 | One day, the maths       | Today, Timeline, Goals          |
-| 1:05 1:45 | Claude reads and books   | claude.ai, then Today           |
-| 1:45 2:00 | Voice                    | claude.ai voice mode (or /chat) |
-| 2:00 2:20 | The watch buzzes         | `/stage`, press N               |
-| 2:20 2:35 | Who asked about me today | Agents                          |
-| 2:35 2:52 | Privacy                  | You                             |
-| 2:52 3:00 | Close                    | `/stage`                        |
+**Cut to fit three minutes** (all still work; use them in questions or as fallbacks): the Goals
+tab ("University needs you most", Book 1h 30), the real Thursday on Timeline, the Agents tab (the
+stage ticker shows Claude asking instead), asking Claude "how is my day going" before booking,
+undoing in claude.ai, and Claude app voice mode.
 
 ---
 
-## 0:00 to 0:20 · The problem
+## 0:00 to 0:15 · The problem
 
-Screen: `/stage` (big score, today's tape, latest nudge, agents ticker along the bottom).
+Screen: `/stage` (date, big score or "Your first block starts at HH:MM", Michael's latest nudge,
+"Agents asking about me" along the bottom).
 
-> "Your calendar says what you planned. Your watch knows how you slept. Your Mac knows where the
-> afternoon went. Nobody puts them together, so every day you lose an hour or two and never see
-> where. Calendars plan. Trackers count. Nobody coaches."
+> "Your calendar says what you planned. Your watch knows how you slept. Your phone knows where the
+> afternoon went. Nobody puts them together, so every day you lose an hour and never see where."
 
-Fallback: none needed; the stage view renders "Today is not in yet" if the API is down. Keep talking.
+Fallback: none needed. Keep talking.
 
-## 0:20 to 0:30 · The promise
+## 0:15 to 0:25 · The promise
 
-> "This is Michael. Michael finds the time you lose every day and gives it back to your goals.
-> He is on your side."
+> "This is Michael. He finds the time you lose every day and gives it back to your goals. He is
+> on your side."
 
-## 0:30 to 1:05 · One day, the maths
+## 0:25 to 0:50 · The day, and how I count
 
-1. **Today** tab (`/`). Point at the big number.
-   > "This is Manolis' real week, private names removed. Today he is at [score]% of his goal time.
-   > Pink is time spent on a goal, the grey drops are time that leaked away, the outlines are still
-   > ahead."
-   The tape key reads e.g. "2h 10 spent, 35 min lost, 1h 30 ahead". Read it. If the "won back"
-   line shows, read it too: "[n] minutes won back today."
-2. **Timeline** tab. It opens on Thursday 12 November, one of Manolis' real days.
-   > "Here is where it went. One timeline: calendar, Mac, iPhone, browser, Claude Code. Every cut
-   > inside a block is a distraction, named."
-   Point at a lost stretch and the longest uninterrupted stretch.
-3. **Goals** tab.
-   > "Each goal has a weekly budget. This one is behind. And here is the maths: these goals need
-   > [x] more this week, you have [y] free. Which one gives? Michael shows the sums, not vibes."
-   ("The maths" card only shows when the week is over budget; if it is missing, read one goal's
-   spent of budget instead.)
+Screen: **Today** (`/`).
 
-Fallback: if any screen errors, add `?demo=sample` to the URL (Today, Goals, Agents and `/stage`
-accept it) and say "Same screen on yesterday's snapshot."
+1. Point at the big number under "Optimisation score" and the seven day columns.
+   > "This is Manolis' real week, private names removed. [76]% of his goal time this week, two
+   > days kept in a row. A day is kept at 70%."
+2. Point at the lost line: "[4h 57] lost from your goal blocks this week. [Instagram] took [2h 32]
+   of it." Read it as it is.
+3. Tap **How I count**. The sheet reads e.g. "15h 23 spent of 20h 20 gone by", Planned 21h 50,
+   Spent 15h 23, Lost 4h 57, Still ahead, Time won back.
+   > "No vibes. Spent plus lost is the time gone by. Every number adds up." Tap **Cancel**.
 
-## 1:05 to 1:45 · Claude reads and books
+## 0:50 to 1:10 · The evening log
 
-Screen: claude.ai, a fresh chat, Michael connector switched on in the tools menu.
+Screen: Today with `?ritual=evening` (tab 3 in the runbook; after about 19:00 Today shows it by
+itself). The morning plan already set three outcomes (at rehearsal: Statistics past paper, Call
+three leads, Yoga before bed).
 
-1. Type:
-   > `Use Michael. How is my day going against my goals? Show me the numbers.`
-   Claude calls `get_score` (and maybe `get_goals`) and answers with the same percentage as Today.
-   > "Claude is reading the same day, through our MCP connector. One link, one tap to allow."
-   Glance at the projector tab later: the agents ticker on `/stage` lists "Claude" asking.
-2. Type (use the free slot picked at T minus 15 in the runbook):
-   > `Book me a 45 minute focus block today at HH:MM called Sales focus.`
-   Claude calls `create_focus_block`; the answer ends with "undo until HH:MM".
-   > "Michael acts on his own time only: his blocks, never a meeting with other people, never
-   > deletes, and everything can be undone until it starts."
-3. Switch to **Today** and refresh: "Michael suggests" shows the block with "Done. Undo until HH:MM."
-4. Back in claude.ai, type:
-   > `Undo that block.`
-   Claude calls `undo_recommendation`. "Undone."
+> "Every morning Michael asks for three outcomes. Every evening, one tap each."
 
-Fallback: if Claude is slow or the connector errors, say "Same thing from inside Michael" and do it
-in **/chat** (You, Chat with Michael): `Book a 45 minute focus block at HH:MM`, then tap **Undo**
-on the "Done" chip. If chat fails too: Today's "Michael suggests" card, tap **Do it**, then **Undo**.
+Tap **Done** on the second, **Partly** on the first, **Not** on the third, then **Log the day**.
+It reads "The day, logged. 1 of 3 done, 1 partly. 45 min logged for The company."
 
-## 1:45 to 2:00 · Voice
+> "That 45 minutes now counts towards the company goal. No timers, no forms."
 
-Built on `main`: the claude.ai connector also works in the Claude iPhone app's voice mode. Push to
-talk inside Michael (`/chat`) is PR #146; use it only if it has merged by pitch time.
+Fallback: if the card is not there, the evening was already logged in rehearsal: the logged card
+shows instead; read it. Reseed fixes it for next time.
 
-- Claude app, voice mode, Michael connector on. Say:
-  > "Ask Michael how much time I lost today, and to what."
-- Or, with #146 merged: `/chat`, hold the mic, say the same line, let go. Michael answers aloud.
+## 1:10 to 1:30 · Talk to him: the ice bath
 
-> "Same coach, hands free. On the bike, in the car, between meetings."
+Screen: **Chat** on the laptop (Chrome listens; the projector shows it). Tap the wave button
+(**Talk to Michael**), left of the plus. Say:
 
-Fallback: skip the beat and say "And you can just talk to him." Do not wait on a microphone.
+> "I took an ice bath for 40 minutes after the ride."
 
-## 2:00 to 2:20 · The watch buzzes
+About 12 seconds later he answers aloud, with the words on screen: "I logged the 40 minute ice
+bath to 70.3, so you're at [7h 51] of 9h this week." A **Done. Undo until tomorrow HH:MM** chip
+sits under it. Tap **End**.
 
-Screen: `/stage` tab, full screen. Speaker raises the wrist.
+> "Same coach, hands free. He logs it, and shows the maths."
 
-1. Driver presses **N**. `POST /v1/nudges/test` sends the best current nudge to every device with
-   nudges on. The watch buzzes and the same line slides in on the projector with its reason
-   underneath; the status line reads "Sent to 1 of 1 device".
-   > "That is Michael on my wrist. Under fifteen words, tied to a goal, and at most five a day,
-   > never in quiet hours."
-2. Read the nudge and its reason off the projector.
+Say the ice bath line exactly: "I took a bath for 40 minutes" on its own makes him ask which goal
+it belongs to (he asks only when unsure; no goal mentions baths).
 
-Fallback: if the watch stays still, the projector still shows the nudge ("Shown here. No device has
-nudges on." means the phone is not subscribed). Say: "On a normal day that lands on the watch;
-the stage Wi-Fi is not on my side." Press N once more, no more than that.
+Fallback: type the same line into Chat and press **Send** (same answer, no voice). Talk over the
+wait: "He is checking it against the week."
 
-## 2:20 to 2:35 · Who asked about me today
+## 1:30 to 1:50 · Claude books the block
 
-Screen: **Agents** tab.
+Screen: claude.ai, a fresh chat, Michael switched on in the tools menu. Type (slot from the card
+picked at T minus 15; on Sunday evening the finalists slot 20:00 to 21:00 has other people in it,
+so take 21:15):
 
-> "Any AI can ask Michael about you, but only with one tap of approval, only the scopes you
-> allow, and every question is logged."
+> `Use Michael. University is behind. Book me 45 minutes tonight at 21:15 called Statistics.`
 
-Point at "Who asked about you today: Claude." and the Today list of Claude's questions, then at
-**Allowed** with its scopes and revoke.
+Claude calls `create_focus_block`; the answer ends with "undo until 21:15".
 
-Fallback: `/agents?demo=sample` shows the same layout with sample agents.
+> "Claude is reading and writing the same day, through our connector. One link, one tap to allow.
+> He acts only on my own time: never a meeting with other people, never deletes, and everything
+> can be undone until it starts."
 
-## 2:35 to 2:52 · Privacy
+Switch to **Today**: the block sits at the top, "Statistics, 21:15 to 22:00. Asked for in chat.
+Wins 45 min for University. Done. Undo until 21:15."
 
-Screen: tap the Mi button (top right) to open **You**.
+Fallback: in **Chat** type `Book a 45 minute focus block today at 21:15 called Statistics` (at
+rehearsal: "I booked Sales focus from 15:00 to 15:45 today under The company ... Undo until
+15:00"). If chat fails too: **Goals**, **Book 1h 30** on University.
 
-> "Health data is yours. Each source is off until you switch it on. One tap and Michael is off the
-> record: every source stops." (Tap **Off the record** on, then off again.)
-> "Your data lives in the EU. And three promises: one client, open book, he coaches you and
-> forgets everyone else."
+## 1:50 to 2:05 · Drag it like Calendar
 
-Point at the Sources switches and the Three promises.
+Screen: **Timeline**, today. The Statistics block is there.
 
-Fallback: say it over the Today screen; nothing here needs the network to be believed.
+Long press it, drag half an hour down, let go. "Moved to 21:45." with **Undo**.
+
+> "And if the plan changes, I just move it. Like Calendar on the iPhone."
+
+Tap **Undo** ("Undone.") so the stage stays as Claude booked it.
+
+Fallback: no booked block (the Claude beat failed)? Tap a free hour after now ("Open these hours to
+plan", then the hour), type a title, **Add**, then drag that one.
+
+## 2:05 to 2:25 · The watch buzzes
+
+Screen: `/stage`, full screen. Click the page once so N reaches it. Speaker raises the wrist.
+
+1. Driver presses **N**. The watch buzzes and the same line slides in on the projector with its
+   reason underneath; the status line reads "Sent to [2] of [2] devices" (push and Telegram).
+   With this branch the line is the goal furthest behind, at any hour, e.g. "Work 1h 30 behind
+   this week. Book 60 min today." with "University: ... done; the pace by now is ...". (On `main`
+   before this branch, after 19:00 it fell back to "Nudges are on. At most five a day, only when
+   it matters.")
+   > "That is Michael on my wrist. Under fifteen words, tied to a goal, at most five a day, never
+   > in quiet hours."
+2. Point at the bottom line: "Agents asking about me: Claude". "And every question an AI asks
+   about me is logged."
+
+Fallback: the projector shows the nudge even if the watch stays still ("Shown here. No device has
+nudges on." means nothing is subscribed). Say: "On a normal day that lands on the watch." Press N
+once more, no more. Telegram on the iPhone is the second channel: it buzzes the watch too.
+
+## 2:25 to 2:45 · Privacy
+
+Screen: tap the Mi button (top right) on Today to open **You**.
+
+> "Health data is yours. Each connection is off until you switch it on. One tap and Michael is off
+> the record: nothing is collected." Tap **Off the record** on ("Nothing is being collected since
+> HH:MM."), then off again.
+> "Your data lives in the EU, conversations only when you start them, raw audio deleted once it
+> is transcribed."
+
+Off the record needs the presenter link on this laptop: a plain demo visitor gets "This is the
+demo week. Sign in with Google to make it yours." and the switch flips back (rehearsal finding,
+fixed on this branch for the presenter). If that line appears, do not tap again; say the line over
+the screen.
 
 **Turn Off the record back off.** It stops nudges and collection.
 
-## 2:52 to 3:00 · Close
+## 2:45 to 3:00 · Close
 
 Screen: `/stage`.
 
@@ -154,7 +177,8 @@ Screen: `/stage`.
 Open `https://michael-zeta-sand.vercel.app/?demo=sample`, `/goals?demo=sample`,
 `/agents?demo=sample` and `/stage?demo=sample`: these render from fixtures in the web app, with no
 API. Timeline always renders (it reads Manolis' real anonymised days from the web app). Say once:
-"Live link is down, so this is this morning's snapshot", then run the same beats without Claude.
+"Live link is down, so this is this morning's snapshot", then run the same beats without Claude,
+chat and the watch.
 
 ## Questions we expect
 
@@ -162,7 +186,8 @@ API. Timeline always renders (it reads Manolis' real anonymised days from the we
   the Mac collector (ActivityWatch), iPhone Shortcuts, the Chrome extension, Claude Code hooks,
   Omi. All post into one timeline (`docs/data-sources.md`).
 - **How is the score worked out?** Share of planned goal time actually spent. Spent plus lost
-  equals elapsed, elapsed plus ahead equals planned, every total is the sum of its parts
-  (`docs/api.md`, Score).
-- **Can an agent go rogue?** Scoped OAuth tokens, revocable in one tap, every query logged, no tool
-  deletes or sends anything, nothing touches an event with other people.
+  equals time gone by, plus still ahead equals planned. Open How I count on Today.
+- **Which goal needs me?** Goals: "University needs you most: 3h 22 behind pace", one tap
+  **Book 1h 30**, Undo until it starts.
+- **Can an agent go rogue?** Scoped OAuth tokens, revocable in one tap on Agents, every query
+  logged, nothing deletes or sends in your name, nothing touches an event with other people.

@@ -63,8 +63,12 @@ const ALLOWED: [string, RegExp][] = [
 ];
 
 // What the presenter may do on top: answer the claude.ai consent, which connects Claude to the demo
-// account with write access. Everything else stays as for any visitor.
-const PRESENTER_ALLOWED: [string, RegExp][] = [["POST", /^\/v1\/connect\/requests\/[^/]+$/]];
+// account with write access, and switch Off the record on and off for the privacy beat of the pitch
+// (docs/pitch.md; the reseed turns it off again). Everything else stays as for any visitor.
+const PRESENTER_ALLOWED: [string, RegExp][] = [
+  ["POST", /^\/v1\/connect\/requests\/[^/]+$/],
+  ["PUT", /^\/v1\/privacy\/off-the-record$/],
+];
 
 // Never for a visitor, not even to read: device keys, ingest and MCP belong to real callers.
 const NEVER: RegExp[] = [/^\/mcp$/, /^\/v1\/webhooks(\/|$)/, /^\/v1\/tokens(\/|$)/];
