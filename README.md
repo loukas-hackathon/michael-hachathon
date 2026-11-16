@@ -21,13 +21,16 @@ event with other people.
 
 | Try it                | Link                                                                                                                           |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| The app               | https://michael-zeta-sand.vercel.app                                                                                           |
-| **Try the demo week** | https://michael-zeta-sand.vercel.app/auth/demo (no sign in; Manolis' real week, names removed)                                 |
-| Stage view            | https://michael-zeta-sand.vercel.app/stage (press N to buzz the watch)                                                         |
+| The app               | https://web-production-c3b495e1.up.railway.app                                                                                 |
+| **Try the demo week** | https://web-production-c3b495e1.up.railway.app/auth/demo (no sign in; Manolis' real week, names removed)                       |
+| Stage view            | https://web-production-c3b495e1.up.railway.app/stage (press N to buzz the watch)                                               |
 | **Connect Claude**    | claude.ai, Settings > Connectors > Add custom connector, paste `https://api-production-16521a26.up.railway.app/mcp`, tap Allow |
 
 Pitch script: [`docs/pitch.md`](docs/pitch.md). Pre-stage checklist:
 [`docs/demo-runbook.md`](docs/demo-runbook.md).
+
+The old address, https://michael-zeta-sand.vercel.app, is not available any more: Vercel no
+longer serves it on the free plan. The app now runs on Railway at the links above.
 
 Built at the Gen AI Summit Hackathon, Athens, 14 and 15 November 2026.
 
@@ -45,7 +48,7 @@ Built at the Gen AI Summit Hackathon, Athens, 14 and 15 November 2026.
                                  Supabase Postgres (events, goals,
                                  analysis_runs, recommendations, integrations)
                                           ^
-          apps/web (Next.js, Vercel) -----+ reads via the API, server-side only
+          apps/web (Next.js, Railway) ----+ reads via the API, server-side only
 ```
 
 | Path                  | What                                                   |
@@ -129,14 +132,15 @@ on your own list, and one switch takes it off the record. Rules and permissions:
 
 ## Live services (everything deploys from `main`)
 
-| What                           | URL                                                                             | Dashboard                                                        |
-| ------------------------------ | ------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| Web app (Vercel)               | https://michael-zeta-sand.vercel.app                                            | https://vercel.com/loukas-hackathon/michael                      |
-| API (Railway)                  | https://api-production-16521a26.up.railway.app                                  | https://railway.com/project/85b0188b-6790-41ef-8529-3f669c8f7955 |
-| Health check                   | https://api-production-16521a26.up.railway.app/health (`commit` = deployed SHA) |                                                                  |
-| MCP server                     | https://api-production-16521a26.up.railway.app/mcp                              |                                                                  |
-| Database (Supabase, Frankfurt) | project `michael`, ref `kpcoadbgevifyvvlhdbt`                                   | https://supabase.com/dashboard/project/kpcoadbgevifyvvlhdbt      |
-| Repo and automation            | https://github.com/loukas-hackathon/michael-hachathon                           | https://github.com/loukas-hackathon/michael-hachathon/actions    |
+| What                                | URL                                                                             | Dashboard                                                        |
+| ----------------------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| Web app (Railway)                   | https://web-production-c3b495e1.up.railway.app                                  | https://railway.com/project/85b0188b-6790-41ef-8529-3f669c8f7955 |
+| Old web app (Vercel, not available) | https://michael-zeta-sand.vercel.app                                            | https://vercel.com/loukas-hackathon/michael                      |
+| API (Railway)                       | https://api-production-16521a26.up.railway.app                                  | https://railway.com/project/85b0188b-6790-41ef-8529-3f669c8f7955 |
+| Health check                        | https://api-production-16521a26.up.railway.app/health (`commit` = deployed SHA) |                                                                  |
+| MCP server                          | https://api-production-16521a26.up.railway.app/mcp                              |                                                                  |
+| Database (Supabase, Frankfurt)      | project `michael`, ref `kpcoadbgevifyvvlhdbt`                                   | https://supabase.com/dashboard/project/kpcoadbgevifyvvlhdbt      |
+| Repo and automation                 | https://github.com/loukas-hackathon/michael-hachathon                           | https://github.com/loukas-hackathon/michael-hachathon/actions    |
 
 What happens on merge, with no human involved:
 
@@ -145,11 +149,11 @@ What happens on merge, with no human involved:
 | PR opened, CI green, no conflicts             | `Auto-merge` action squash-merges it                          |
 | API, `packages/shared` or root config changed | `Deploy API` action deploys to Railway, then checks `/health` |
 | new file in `supabase/migrations/`            | `Migrate database` action applies it to production            |
-| anything on `main`                            | Vercel rebuilds the web app (every PR also gets a preview)    |
+| web, `packages/shared` or root config changed | `Deploy web` action deploys to Railway (service `web`)        |
 
 Everything runs in the EU next to the database (Frankfurt): the API on Railway in Amsterdam
-(`railway.json` `multiRegionConfig`, `europe-west4-drams3a`), the web functions on Vercel in
-Frankfurt (`apps/web/vercel.json` `regions: ["fra1"]`). Keep them there: a US region adds a
+(`railway.json` `multiRegionConfig`, `europe-west4-drams3a`), the web app on Railway in
+Amsterdam too (service `web`, same region). Keep them there: a US region adds a
 transatlantic round trip to every query. The API's `Server-Timing` header shows its time and region.
 
 Where configuration lives (values are never committed):
