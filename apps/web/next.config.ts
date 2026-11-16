@@ -5,6 +5,8 @@ import type { NextConfig } from "next";
 // Saved back to the environment so build workers that load this file again agree on it.
 const buildId = (
   process.env.VERCEL_GIT_COMMIT_SHA ??
+  process.env.RAILWAY_GIT_COMMIT_SHA ??
+  process.env.GIT_COMMIT_SHA ??
   process.env.NEXT_PUBLIC_BUILD_ID ??
   Date.now().toString(36)
 ).slice(0, 12);
