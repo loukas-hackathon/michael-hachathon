@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { E2E_COOKIE } from "@/lib/auth-mode";
 import { NEXT_COOKIE, safeNext } from "@/lib/next-path";
 import { PRESENTER_COOKIE } from "@/lib/presenter";
+import { publicUrl } from "@/lib/public-origin";
 import { authEnabled, DEMO_COOKIE, supabaseServer } from "@/lib/supabase/server";
 
 // Sign out never waits longer than this on Supabase: the cookies go regardless (#459).
@@ -26,7 +27,7 @@ export async function GET(request: NextRequest) {
     }
   }
   const next = safeNext(request.nextUrl.searchParams.get("next"));
-  const login = new URL("/login", request.url);
+  const login = publicUrl("/login", request);
   if (next) login.searchParams.set("next", next);
   const response = NextResponse.redirect(login, 303);
   response.headers.set("cache-control", "no-store");

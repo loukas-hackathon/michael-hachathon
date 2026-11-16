@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { DEMO_COOKIE, demoVisitorId } from "@/lib/auth-mode";
 import { NEXT_COOKIE, safeNext } from "@/lib/next-path";
+import { publicUrl } from "@/lib/public-origin";
 import { authEnabled, supabaseServer } from "@/lib/supabase/server";
 
 // "See the demo week": browse the demo account without signing in. Each visitor gets an anonymous
@@ -14,7 +15,7 @@ export async function GET(request: NextRequest) {
     if (data.user) await supabase.auth.signOut();
   }
   const response = NextResponse.redirect(
-    new URL(safeNext(request.nextUrl.searchParams.get("next")) ?? "/", request.url),
+    publicUrl(safeNext(request.nextUrl.searchParams.get("next")) ?? "/", request),
   );
   // Coming back keeps the same visitor (and their chat); a new visitor gets a new id.
   const visitor = demoVisitorId(request.cookies.get(DEMO_COOKIE)?.value) ?? crypto.randomUUID();

@@ -8,6 +8,7 @@ import {
   presenterKeyMatches,
   presenterTryAllowed,
 } from "@/lib/presenter";
+import { publicUrl } from "@/lib/public-origin";
 import { authEnabled, supabaseServer } from "@/lib/supabase/server";
 
 // The presenter link (#343): /auth/presenter?key=<DEMO_PRESENTER_KEY>, opened once on the laptop
@@ -20,7 +21,7 @@ export async function GET(request: NextRequest) {
   const ok = presenterTryAllowed(address) && presenterKeyMatches(request.nextUrl.searchParams.get("key"));
 
   if (!ok) {
-    const demo = new URL("/auth/demo", request.url);
+    const demo = publicUrl("/auth/demo", request);
     if (next) demo.searchParams.set("next", next);
     const response = NextResponse.redirect(demo);
     response.cookies.delete(PRESENTER_COOKIE);
@@ -34,7 +35,7 @@ export async function GET(request: NextRequest) {
     const { data } = await supabase.auth.getUser();
     if (data.user) await supabase.auth.signOut();
   }
-  const response = NextResponse.redirect(new URL(next ?? "/", request.url));
+  const response = NextResponse.redirect(publicUrl(next ?? "/", request));
   // The key was in the address: never pass it on as a referrer.
   response.headers.set("referrer-policy", "no-referrer");
   const cookie = {
