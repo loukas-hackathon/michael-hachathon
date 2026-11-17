@@ -66,7 +66,8 @@ export function WaitlistTrend({ w }: { w: TractionWaitingList }) {
             <span className="tnum font-semibold text-label">{fmt(w.total)}</span>
             {w.first_day ? ` since ${dayLabel(w.first_day)}.` : "."}
           </figcaption>
-          <LineChart points={line} />
+          {/* One day is a point, not a trend: the sentence says it alone until there are two. */}
+          {line.length > 1 ? <LineChart points={line} /> : null}
         </figure>
         <figure>
           <figcaption className="mb-3 text-subhead text-label-2" data-testid="traction-momentum">
@@ -85,7 +86,7 @@ export function WaitlistTrend({ w }: { w: TractionWaitingList }) {
               </>
             )}
           </figcaption>
-          {inRange > 0 ? <DailyBars days={shown} /> : null}
+          {inRange > 0 && shown.length > 1 ? <DailyBars days={shown} /> : null}
         </figure>
       </div>
     </section>
@@ -155,7 +156,6 @@ function LineChart({ points }: { points: { day: string; value: number }[] }) {
 function DailyBars({ days }: { days: { day: string; sign_ups: number }[] }) {
   const max = Math.max(1, ...days.map((d) => d.sign_ups));
   const dense = days.length > 31;
-  const peak = days.reduce((b, d, i) => (d.sign_ups > (days[b]?.sign_ups ?? -1) ? i : b), 0);
   return (
     <div>
       <div className={`relative ${CHART_H}`}>
@@ -171,15 +171,6 @@ function DailyBars({ days }: { days: { day: string; sign_ups: number }[] }) {
                 key={d.day}
                 className={`relative flex h-full items-end ${dense ? "min-w-0 flex-1" : "w-1.5"}`}
               >
-                {i === peak && d.sign_ups > 0 ? (
-                  <span
-                    aria-hidden="true"
-                    className="absolute left-1/2 -translate-x-1/2 text-caption font-medium text-label tnum"
-                    style={{ bottom: `calc(${(d.sign_ups / max) * 100}% + 4px)` }}
-                  >
-                    {d.sign_ups}
-                  </span>
-                ) : null}
                 <span
                   aria-hidden="true"
                   className={`block w-full rounded-t-[2px] ${recent ? "bg-label" : "bg-context"}`}

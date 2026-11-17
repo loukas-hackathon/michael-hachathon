@@ -1307,8 +1307,9 @@ figcaption {
     m-fade-in var(--m-dur-press) var(--m-ease-out) both;
   transition: opacity var(--m-dur-ui) var(--m-ease-out);
 }
-/* Heard, not yet sure: the island comes in quietly at 60%, no bloom, no sound. */
-.m-island[data-heard] {
+/* Heard, not yet sure: the island comes in quietly, its voice and word at 60% (the capsule stays
+ * solid so nothing under it shows through), no bloom, no sound. */
+.m-island[data-heard] > * {
   opacity: 0.6;
 }
 .m-island[data-closing] {

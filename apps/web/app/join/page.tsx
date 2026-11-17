@@ -13,6 +13,8 @@ export const metadata: Metadata = {
 // question, one pink button. On a 390x844 phone the button sits above the fold; the rest (what he
 // does, the privacy promises, the demo week) is below it. On a laptop: the story left, the form
 // right, as on /login. Nothing animates on load: the headline is the largest paint, system font.
+// No sidebar on public pages: the column moves back by half its width (the root layout keeps
+// room for the sidebar at lg), so it sits in the middle of the window.
 // `?ref=CODE` (a friend's invite link) and `utm_source` (or the referring site) ride along.
 
 const CODE = /^[A-Za-z0-9_-]{4,32}$/;
@@ -55,7 +57,7 @@ export default async function JoinPage({
 
   return (
     <main className="screen screen-wide pb-[calc(32px+env(safe-area-inset-bottom))] lg:flex lg:min-h-dvh lg:items-center lg:pb-16">
-      <div className="mx-auto w-full max-w-[440px] lg:grid lg:max-w-[1000px] lg:grid-cols-[minmax(0,1fr)_360px] lg:items-center lg:gap-x-24">
+      <div className="mx-auto w-full max-w-[440px] lg:relative lg:-left-32 lg:grid lg:max-w-[1000px] lg:grid-cols-[minmax(0,1fr)_360px] lg:items-center lg:gap-x-24">
         <header className="pt-6 lg:pt-0">
           <Wordmark className="h-7 w-auto text-label" />
           <h1 className="mt-6 text-large-title font-bold tracking-[-0.01em] lg:mt-10 lg:text-display lg:tracking-[-0.02em]">

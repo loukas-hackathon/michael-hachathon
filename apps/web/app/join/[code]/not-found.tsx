@@ -5,7 +5,7 @@ import { Wordmark } from "@/components/brand";
 export default function NotFound() {
   return (
     <main className="screen">
-      <div className="mx-auto w-full max-w-[440px] pt-6">
+      <div className="mx-auto w-full max-w-[440px] lg:relative lg:-left-32 pt-6">
         <Wordmark className="h-7 w-auto text-label" />
         <h1 className="mt-8 text-large-title font-bold tracking-[-0.01em]">Not on the list</h1>
         <p className="mt-2 text-body text-label-2">That link doesn't open a place.</p>

@@ -48,7 +48,7 @@ export default async function JoinedPage({
 
   return (
     <main className="screen pb-[calc(32px+env(safe-area-inset-bottom))] lg:pb-16">
-      <div className="mx-auto w-full max-w-[440px]">
+      <div className="mx-auto w-full max-w-[440px] lg:relative lg:-left-32">
         <header className="pt-6">
           <Wordmark className="h-7 w-auto text-label" />
           <p className="mt-8 text-footnote font-semibold text-label-2">You're on the list</p>

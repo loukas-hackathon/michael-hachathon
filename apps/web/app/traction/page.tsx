@@ -66,8 +66,9 @@ export default async function TractionPage() {
       </div>
       <p className="mt-8 text-footnote text-label-2">
         Real users only: the demo account, its visitors and the judges&apos; copies, and our own addresses are
-        left out ({t.excluded_accounts} accounts, {w.excluded} on the waiting list). {t.active.rule} Weeks run
-        Monday to Sunday, Athens time. Hours lost are self reported.
+        left out ({t.excluded_accounts} {t.excluded_accounts === 1 ? "account" : "accounts"}, {w.excluded} on
+        the waiting list). {t.active.rule} Weeks run Monday to Sunday, Athens time. Hours lost are self
+        reported.
       </p>
     </Shell>
   );

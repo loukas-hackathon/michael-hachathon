@@ -7,7 +7,7 @@ import { Wordmark } from "@/components/brand";
 export default function Loading() {
   return (
     <main className="screen m-skeleton" aria-busy="true" aria-label="Loading your place">
-      <div className="mx-auto w-full max-w-[440px] pt-6" aria-hidden="true">
+      <div className="mx-auto w-full max-w-[440px] lg:relative lg:-left-32 pt-6" aria-hidden="true">
         <Wordmark className="h-7 w-auto text-label" />
         <p className="mt-8 text-footnote font-semibold text-label-2">You're on the list</p>
         <span className="m-bone mt-1 block h-[70px] w-[7rem] rounded-control" />

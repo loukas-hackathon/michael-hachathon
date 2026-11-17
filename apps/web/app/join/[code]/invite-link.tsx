@@ -67,7 +67,7 @@ export function InviteLink({ link }: { link: string }) {
         onFocus={(e) => e.currentTarget.select()}
         className="h-11 w-full min-w-0 truncate rounded-control bg-fill px-4 text-subhead text-label outline-none"
       />
-      <div className="mt-3 flex gap-3">
+      <div className="mt-3 flex items-center gap-3">
         {phone ? (
           <>
             <button type="button" onClick={share} className={`${button} ${FILLED}`}>
@@ -78,9 +78,26 @@ export function InviteLink({ link }: { link: string }) {
             </button>
           </>
         ) : (
-          <button type="button" onClick={copy} className={`${button} ${FILLED}`}>
-            Copy link
-          </button>
+          <>
+            <button type="button" onClick={copy} className={`${button} ${FILLED}`}>
+              Copy link
+            </button>
+            {/* Plain links beside it: the other two ways to send it from a laptop. */}
+            <a
+              href={mail}
+              className="press inline-flex h-11 shrink-0 items-center rounded-control px-2 text-body font-semibold text-label"
+            >
+              Email
+            </a>
+            <a
+              href={tweet}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="press -mr-2 inline-flex h-11 shrink-0 items-center rounded-control px-2 text-body font-semibold text-label"
+            >
+              Post on X
+            </a>
+          </>
         )}
       </div>
       <p role="status" className="m-swap mt-2 min-h-[18px] px-4 text-footnote text-label-2" key={state}>
@@ -90,24 +107,6 @@ export function InviteLink({ link }: { link: string }) {
             ? "Press and hold the link to copy it."
             : ""}
       </p>
-      {phone ? null : (
-        <div className="-ml-2 flex gap-2">
-          <a
-            href={mail}
-            className="press inline-flex h-11 items-center rounded-control px-2 text-body font-semibold text-label"
-          >
-            Email it
-          </a>
-          <a
-            href={tweet}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="press inline-flex h-11 items-center rounded-control px-2 text-body font-semibold text-label"
-          >
-            Post on X
-          </a>
-        </div>
-      )}
     </div>
   );
 }

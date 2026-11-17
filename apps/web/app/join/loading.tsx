@@ -4,7 +4,7 @@ import { Wordmark } from "@/components/brand";
 export default function Loading() {
   return (
     <main className="screen" aria-busy="true" aria-label="Loading">
-      <div className="mx-auto w-full max-w-[440px] pt-6">
+      <div className="mx-auto w-full max-w-[440px] lg:relative lg:-left-32 pt-6">
         <Wordmark className="h-7 w-auto text-label" />
       </div>
     </main>
