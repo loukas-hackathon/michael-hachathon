@@ -2994,12 +2994,13 @@ export type PersonalTokenCreated = z.infer<typeof PersonalTokenCreated>;
 // exchanged for a device key for one connection. It is what goes into a QR code, an install
 // command or a downloaded file, so the long lived device key never sits in a URL or a shell history.
 
-export const SetupConnection = z.enum(["mac", "apple-watch", "iphone"]);
+export const SetupConnection = z.enum(["mac", "windows", "apple-watch", "iphone"]);
 export type SetupConnection = z.infer<typeof SetupConnection>;
 
 /** The device key name each connection gets, as listed on the Connections pages. */
 export const SETUP_KEY_NAMES: Record<SetupConnection, string> = {
   mac: "Mac collector",
+  windows: "Windows collector",
   "apple-watch": "Health Auto Export",
   iphone: "iPhone Shortcuts",
 };
@@ -3013,7 +3014,8 @@ export const SetupTokenCreated = z.object({
   expires_at: IsoDateTime,
   // The web page that finishes setup on another device (the QR code opens it on the iPhone).
   setup_url: z.string(),
-  // Mac only: the one line for Terminal. Fetches the public installer and passes the token to it.
+  // Mac and Windows only: the one line for Terminal (Mac) or PowerShell (Windows). Fetches the
+  // public installer and passes the token to it.
   install_command: z.string().nullable(),
 });
 export type SetupTokenCreated = z.infer<typeof SetupTokenCreated>;

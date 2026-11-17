@@ -86,6 +86,7 @@ const CONNECT_NAMES: Record<ConnectorId, string> = {
   nudges: "nudges",
   "apple-watch": "their Apple Watch",
   mac: "their Mac",
+  windows: "their Windows PC",
   iphone: "their iPhone apps",
   travel: "their location",
 };

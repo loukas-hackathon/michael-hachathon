@@ -9,6 +9,9 @@ test("connect intent: the person's own words pick the connection", () => {
   assert.equal(connectIntent("set up telegram please"), "telegram");
   assert.equal(connectIntent("How do I connect Claude?"), "claude");
   assert.equal(connectIntent("turn on notifications"), "nudges");
+  assert.equal(connectIntent("connect my Windows PC"), "windows");
+  assert.equal(connectIntent("set up my pc"), "windows");
+  assert.equal(connectIntent("connect my laptop"), "mac");
 });
 
 test("connect intent: questions about the day get no button", () => {

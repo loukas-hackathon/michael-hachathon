@@ -225,7 +225,7 @@ test("POST /v1/chat/stream sends deltas, then the stored reply", async () => {
 test("Michael points to the Connect button for every live connection (#307)", () => {
   assert.match(
     CONNECT_LINE,
-    /connect their calendar, Claude, Telegram, nudges, their Apple Watch, their Mac, their iPhone apps or their location, the app shows/,
+    /connect their calendar, Claude, Telegram, nudges, their Apple Watch, their Mac, their Windows PC, their iPhone apps or their location, the app shows/,
   );
   assert.doesNotMatch(CONNECT_LINE, /coming soon/);
   assert.match(CONNECT_LINE, /Never give steps, links or keys\./);

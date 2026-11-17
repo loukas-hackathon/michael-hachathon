@@ -12,6 +12,11 @@ export type ReaderContext = {
 
 export type ReaderResult = {
   events: EventInput[];
+  /**
+   * Bodies for a source's own ingest route, for readers that forward a provider's format as is
+   * (ActivityWatch to /v1/webhooks/activitywatch). `count` is what the log says was read.
+   */
+  posts?: { path: string; body: unknown; count: number }[];
   /** Saved only after the events were posted successfully. */
   cursor: string | null;
 };
@@ -26,5 +31,7 @@ export type Reader = {
   source: Source;
   /** One line for `--list`: what it reads and what permission it needs. */
   describe: string;
+  /** The systems it can read on; left out, every system. */
+  platforms?: NodeJS.Platform[];
   read: (ctx: ReaderContext) => Promise<ReaderResult>;
 };

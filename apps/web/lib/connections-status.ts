@@ -10,6 +10,7 @@ import {
   PlacesResponse,
   PushConfig,
   pickIphoneKey,
+  SETUP_KEY_NAMES,
   SourcesStatusResponse,
   TelegramStatus,
 } from "@michael/shared";
@@ -104,6 +105,8 @@ type Inputs = {
   noMac?: boolean;
   /** The iPhone shortcut's device key, newest first; null when there is none or it cannot be read. */
   iphoneKey?: PersonalToken | null;
+  /** A Windows PC was set up here (its installer's device key exists). */
+  windowsKey?: boolean;
 };
 
 /** Live iPhone data, from the Shortcuts automation (Screen Time history needs a Mac). */
@@ -123,9 +126,10 @@ export const SOON_LINE = "Coming soon. I will tell you when it is ready.";
 export const QUIET_MS = DEVICE_QUIET_MS;
 
 /** The exact fix when a device source has gone quiet: one line, the one thing to do. */
-export const QUIET_FIX: Record<"apple-watch" | "mac" | "iphone", string> = {
+export const QUIET_FIX: Record<"apple-watch" | "mac" | "windows" | "iphone", string> = {
   "apple-watch": "Open Health Auto Export and tap Export Now on Michael health.",
   mac: "Wake your Mac and open Michael there, or set it up again below.",
+  windows: "Wake your PC and check ActivityWatch runs, or set it up again below.",
   iphone: "Open an app you picked. If nothing arrives, check its automation in Shortcuts.",
 };
 
@@ -181,6 +185,7 @@ export function statusFor(c: Connection, x: Inputs, now = Date.now()): Connectio
     }
     case "apple-watch":
     case "mac":
+    case "windows":
     case "iphone": {
       if (!src) return unknown(c);
       if (last && switchedOff)
@@ -221,7 +226,23 @@ export function statusFor(c: Connection, x: Inputs, now = Date.now()): Connectio
           action: setUp(),
           note: "Shortcut added",
         };
-      if (c.id === "mac" && (x.noMac || iphoneSends(src)))
+      // Most people have a Mac or a Windows PC, not both: the other one is never the next step.
+      if (c.id === "windows")
+        return x.windowsKey
+          ? {
+              ...c,
+              state: "none",
+              line: "Set up. Waiting for the first app time from ActivityWatch.",
+              action: setUp(),
+              note: "Set up",
+            }
+          : {
+              ...c,
+              state: "optional",
+              line: "Optional. For a Windows PC.",
+              action: setUp(),
+            };
+      if (c.id === "mac" && (x.noMac || iphoneSends(src) || x.windowsKey))
         return {
           ...c,
           state: "optional",
@@ -362,6 +383,7 @@ export const getConnections = cache(async (preview?: ConnectionId): Promise<Conn
     }),
   ]);
   const iphoneKey = pickIphoneKey(tokens);
+  const windowsKey = Boolean(tokens?.some((t) => t.name === SETUP_KEY_NAMES.windows));
   const inputs: Inputs = {
     sources,
     calendar: integrations
@@ -374,6 +396,7 @@ export const getConnections = cache(async (preview?: ConnectionId): Promise<Conn
     noMac,
     location,
     iphoneKey,
+    windowsKey,
   };
   const rows = CONNECTIONS.map((c) => statusFor(c.id === preview ? { ...c, live: true } : c, inputs));
   return {
