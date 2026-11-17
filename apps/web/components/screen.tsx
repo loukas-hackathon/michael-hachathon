@@ -7,23 +7,30 @@ import { useMiState } from "@/lib/mi-mood";
 import { useOffTheRecord } from "@/lib/off-the-record";
 import { useWakeArmed } from "@/lib/wake-word";
 import { Michael } from "./michael";
+import { useHoldToTalk } from "./voice/hold-to-talk";
 
 /**
  * The Mi button: top right on every tab. Opens the You sheet. Dimmed while off the record. Its dot
  * lifts when an outcome is ticked done, tilts beside a goal behind pace, rests in quiet hours.
+ * Press and hold it to talk to Michael (components/voice/hold-to-talk.tsx); a tap opens You.
  */
 export function MiButton({ size = 30 }: { size?: number }) {
   const { on } = useOffTheRecord();
   const mi = useMiState();
   // "Yo Michael" is listening for his name: a still ring 2px outside the circle, the privacy sign.
   const armed = useWakeArmed();
+  const { style: holdStyle, ...hold } = useHoldToTalk();
   return (
     <Link
       href="/you"
       aria-label={on ? "You, off the record" : armed ? "You. Listening for my name" : "You"}
+      aria-description={on ? undefined : "Hold to talk"}
       data-armed={armed || undefined}
+      data-testid="mi-button"
       className="press grid shrink-0 place-items-center rounded-full"
+      {...hold}
       style={{
+        ...holdStyle,
         width: Math.max(size, 44),
         height: Math.max(size, 44),
         margin: size < 44 ? -(44 - size) / 2 : 0,
@@ -60,12 +67,15 @@ export function ScreenHeader({
   context,
   title,
   actions,
+  miHint,
   pinned = false,
 }: {
   context: ReactNode;
   title: string;
   /** Extra buttons left of the Mi button, as in Apple's navigation bars. */
   actions?: ReactNode;
+  /** A one time callout under the Mi button (Chat: "Hold me to talk."). */
+  miHint?: ReactNode;
   /**
    * The context line and the buttons stay at the top while the page scrolls (Chat: New chat and the
    * conversations are always one tap away). The large title scrolls away under them, and a hairline
@@ -89,8 +99,9 @@ export function ScreenHeader({
         <div className="flex items-center gap-3.5">
           {actions}
           {/* Laptop: the Mi sits at the foot of the sidebar instead (components/tab-bar.tsx). */}
-          <div className="contents lg:hidden">
+          <div className="relative lg:hidden">
             <MiButton />
+            {miHint}
           </div>
         </div>
       </div>

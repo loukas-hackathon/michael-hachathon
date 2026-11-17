@@ -9,6 +9,7 @@ import { useOffTheRecord } from "@/lib/off-the-record";
 import { MiMark, Wordmark } from "./brand";
 import { SHOW_SHORTCUTS } from "./desktop";
 import { AgentsIcon, ChatIcon, GoalsIcon, TimelineIcon, TodayIcon } from "./icons";
+import { useHoldToTalk } from "./voice/hold-to-talk";
 
 const TABS: { href: string; label: string; Icon: ComponentType<{ className?: string }> }[] = [
   { href: "/", label: "Today", Icon: TodayIcon },
@@ -178,12 +179,17 @@ function SidebarFoot({ pathname }: { pathname: string }) {
 /** You at the foot of the sidebar, quietly marked while off the record. */
 function YouLink({ active, className }: { active: boolean; className: string }) {
   const { on } = useOffTheRecord();
+  // Hold the Mi here to talk, as on the phone's Mi button; a click opens You.
+  const { style, ...hold } = useHoldToTalk();
   return (
     <Link
       href="/you"
       aria-current={active ? "page" : undefined}
       aria-label={on ? "You, off the record" : "You"}
+      aria-description={on ? undefined : "Hold to talk"}
       className={className}
+      style={style}
+      {...hold}
     >
       <span
         className={`m-tab-icon grid size-6 place-items-center rounded-full text-bg ${

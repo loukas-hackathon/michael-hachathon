@@ -87,13 +87,30 @@ On iPhone the sentence is recorded, sent once to be transcribed (ElevenLabs Spee
 dropped: the audio is never stored or logged by us, only the words are kept, as in typed chat. The
 voice out is generated from Michael's reply text (never the user's voice) and played once.
 
-## Say Michael to talk (wake word in the app)
+## Yo Michael: say his name, or hold the Mi button
 
-You, under Talk to Michael: the switch **Say Michael to talk**. Off by default, kept per device.
-While it is on and the app is open and visible, a small pill at the top says "Listening for
-Michael". Say "Michael", "hey Michael" or "yo Michael": a soft chime and a haptic, Chat opens and
-the hands free conversation (Script C) starts. "Michael, how is my day going" sends the request
-straight away; the name alone gets "Go on. I'm listening." and he listens.
+Two ways in, both from any screen, the island at the top answers (the screen stays as it is):
+
+- **Say his name.** The first time Chat opens (or on Today after a day, if Chat was never opened)
+  Michael offers it once: "Want to just say my name to talk to me?" with Turn on and Not now. Turn
+  on is the tap that allows the microphone and, on iPhone, his voice. It is also the switch **Yo
+  Michael** on You. While on and the app is open, the Mi button wears a still ring. Say "Michael",
+  "hey Michael" or "yo Michael": a chime and a tick, and he listens. "Michael, how is my day going"
+  sends the request straight away.
+- **Hold the Mi button** (top right; at the foot of the sidebar on a laptop), like the side button
+  for Siri. Works everywhere the microphone does, the iPhone Home Screen app included (the turn is
+  recorded and transcribed by the API there). Hold: the island opens listening; let go: he
+  answers, and the answer stays six seconds. A short tap still opens You. After his first answer in
+  Chat a one time hint under Mi says "Hold me to talk."
+
+Where saying his name cannot work, the offer and the You row say why in one line instead of a
+switch that does nothing: the Home Screen app "On iPhone, hold the Mi button to talk. Saying my name
+needs Safari or Chrome."; no recogniser "This browser can't listen for my name. Hold the Mi button
+to talk."; a blocked microphone says where to allow it for that browser.
+
+**Debugging on a phone.** Open any screen with `?debug=voice` (it stays for the visit; `?debug=off`
+hides it). While armed a small island says "Armed" and the session count; tap it for the last words
+the recogniser heard, how the last session ended and the restart gap.
 
 **How it works.** `apps/web/lib/wake-word.ts` matches the name at the start of a phrase on the
 browser's own transcript (case and punctuation ignored; "Michaela", "Michael's" and a name in the
@@ -101,8 +118,10 @@ middle of a sentence do not count; "Micheal", "Michel", "Mikael" do). The loop i
 `components/voice/wake-word-host.tsx` runs the Web Speech API recogniser (continuous, interim
 results) and stops at once when the app is hidden, off the record, in a meeting, while push to
 talk or a conversation holds the microphone, and while Michael speaks, so he never wakes himself.
-Browsers end a session every minute or so: the next starts at once. Errors and sessions that end
-straight away back off (1, 2, 4 ... 32 seconds); after six in a row it rests until the app is
+Browsers end a session on their own (Safari every few seconds, Chrome after about a minute): the
+next starts within 100ms (`components/voice/wake-loop.ts`), and a session that ends with the name
+in an unfinished phrase still wakes him. Errors back off (1, 2, 4 ... 32 seconds); quick clean ends
+restart at once four times before they back off; after six failures it rests until the app is
 opened again. No second voice stack: the wake only starts `startConversation` in
 `components/voice/conversation.ts`.
 
@@ -123,8 +142,8 @@ in `e2e/tests/wake-word.spec.ts`; not yet on real phones):
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | Chrome, laptop and Android | Yes. On device with a language pack, else Google's speech service.                                                                    |
 | Safari, iPhone and Mac     | Tries. `webkitSpeechRecognition` ends sessions often and the mic indicator may blink on each restart; Apple decides where audio goes. |
-| iPhone Home Screen app     | Usually refused by iOS (`service-not-allowed`): the switch turns off and says to open Michael in Safari.                              |
-| Firefox                    | No recogniser: the switch is hidden.                                                                                                  |
+| iPhone Home Screen app     | Refused by iOS: the switch is off and says to hold the Mi button (which works there) or use Safari.                                   |
+| Firefox                    | No recogniser: the switch is off and says to hold the Mi button.                                                                      |
 
 Before trying it on stage: turn the switch on once by hand (that tap allows the microphone and, on
 iPhone, his voice), then leave the phone unlocked with the app in front. A screen lock or another
