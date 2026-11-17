@@ -11,6 +11,7 @@ import { handleMcpRequest } from "./mcp";
 import { prewarmAfterWrite } from "./moments/prewarm";
 import { accounts } from "./routes/accounts";
 import { actions } from "./routes/actions";
+import { admin } from "./routes/admin";
 import { agents } from "./routes/agents";
 import { analysis } from "./routes/analysis";
 import { blocks } from "./routes/blocks";
@@ -52,6 +53,7 @@ import { targets } from "./routes/targets";
 import { telegram, telegramWebhook } from "./routes/telegram";
 import { tokens } from "./routes/tokens";
 import { voice } from "./routes/voice";
+import { waitlistAdmin, waitlistPublic } from "./routes/waitlist";
 import { webhooks } from "./routes/webhooks";
 import { week } from "./routes/week";
 import { store } from "./store";
@@ -121,7 +123,9 @@ export const v1Routes = new Hono()
   .route("/", location)
   .route("/", meData)
   .route("/", knowledge)
-  .route("/", demo);
+  .route("/", demo)
+  .route("/", waitlistAdmin)
+  .route("/", admin);
 
 const v1 = new Hono().use(requireUser()).use(afterWrite).route("/", v1Routes);
 
@@ -164,6 +168,8 @@ export const app = new Hono()
   .route("/v1", setupPublic)
   // A notification's button: the signed token in the push is the key (no session in the worker).
   .route("/v1", nudgeActPublic)
+  // The waiting list: joining and looking up a code are public (the admin list sits in v1).
+  .route("/v1", waitlistPublic)
   .route("/v1", v1)
   // claude.ai signs in with OAuth (routes/oauth.ts); the API key and ?key= keep working.
   .all("/mcp", requireUser({ mcp: true }), (c) => handleMcpRequest(c.req.raw))

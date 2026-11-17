@@ -40,6 +40,7 @@ import {
   type RitualKind,
   type Source,
   type SourceSetting,
+  type WaitlistEntry,
   type WeeklyTarget,
 } from "@michael/shared";
 import type { z } from "zod";
@@ -519,7 +520,83 @@ export interface Store extends PrivacyBackend {
   ): Promise<StoredCheckIn | null>;
   /** Really deletes one question and its answer (and its follow ups). */
   deleteCheckIn(id: string): Promise<boolean>;
+
+  // ---- the public waiting list (routes/waitlist.ts). NOT scoped to a user: nobody on it has one ----
+  /** Null when that email is already on the list (the caller reads the existing entry). */
+  addWaitlistEntry(entry: NewWaitlistEntry): Promise<WaitlistEntry | null>;
+  /** One entry by its (lowercased) email or its referral code. */
+  getWaitlistEntry(by: { email: string } | { code: string }): Promise<WaitlistEntry | null>;
+  /** Every entry, oldest first. */
+  listWaitlist(): Promise<WaitlistEntry[]>;
+  // ---- traction (admin only: admin.ts, traction/) ----
+  /** The current user's sign in email (lower case), or null when there is none. Scoped. */
+  currentAccountEmail(): Promise<string | null>;
+  /**
+   * NOT scoped: every account (sign up) with its email and sign up time. Only GET
+   * /v1/admin/traction calls it, behind isAdmin(), and only aggregates leave the API.
+   */
+  listAllAccounts(): Promise<AccountRow[]>;
+  /**
+   * NOT scoped: per user facts for these users, for the traction aggregates only (same caller and
+   * rule as listAllAccounts). Users with no data at all may be left out.
+   */
+  tractionFacts(userIds: string[], opts: TractionFactsOptions): Promise<TractionUserFacts[]>;
 }
+
+/** One account, as Supabase Auth holds it. Internal: never sent to a client. */
+export interface AccountRow {
+  id: string;
+  email: string | null;
+  created_at: string;
+}
+
+export interface TractionFactsOptions {
+  /** Active days are counted from this instant on. */
+  since: string;
+  /** Days are local days in this IANA zone. */
+  timezone: string;
+  /** Sources whose first event counts as connecting a real source. */
+  sources: Source[];
+}
+
+/**
+ * What the traction numbers need about one user. Seeded rows never count: events whose
+ * external_id starts with "demo:" (the demo week) and, in memory, the sample day.
+ */
+export interface TractionUserFacts {
+  user_id: string;
+  /** First event of one of `sources`, or the first integration connected, whichever came first. */
+  first_source_at: string | null;
+  /** Local days since `since` with an event received or a chat line typed by the user. */
+  active_days: string[];
+  /** Recommendations carried out (status done or undone). */
+  actions_done: number;
+  actions_undone: number;
+  /** Chat lines typed or said by the user (never by demo visitors). */
+  chat_messages: number;
+  nudges_sent: number;
+}
+
+/** The external_id prefix of seeded demo rows (demo/week.ts DEMO_PREFIX). */
+export const SEEDED_PREFIX = "demo:";
+
+const dayFormats = new Map<string, Intl.DateTimeFormat>();
+/** YYYY-MM-DD of an instant in an IANA zone. */
+export function localDayIn(iso: string, timezone: string): string {
+  let f = dayFormats.get(timezone);
+  if (!f) {
+    f = new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    dayFormats.set(timezone, f);
+  }
+  return f.format(new Date(iso));
+}
+
+export type NewWaitlistEntry = Omit<WaitlistEntry, "id" | "created_at" | "invited_at">;
 
 export type TargetInput = Omit<WeeklyTarget, "created_at" | "updated_at">;
 
@@ -594,8 +671,18 @@ const overlaps = (e: Event, from: number, to: number) => {
   return start <= to && end >= from;
 };
 
+// The sample day every memory user starts with (shared mocks): never counted as the user's data.
+const SAMPLE_EVENT_IDS = new Set(mockEvents.map((e) => e.id));
+
 export class MemoryStore implements Store {
   readonly kind = "memory" as const;
+  // Sign ups (Supabase Auth in production). Here: accounts added by tests, plus every user the
+  // store has seen, from the moment it first saw them.
+  private accounts = new Map<string, { email: string | null; created_at: string }>();
+  /** Tests only: registers an account with its email and sign up time. */
+  addAccount(id: string, email: string | null, created_at = new Date().toISOString()) {
+    this.accounts.set(id, { email: email?.toLowerCase() ?? null, created_at });
+  }
   // One copy of the mock day per user, created on first access, so users never see each other's data.
   // The demo account starts empty instead: the demo week (src/demo) fills it on its first request.
   private data = new Map<
@@ -669,6 +756,7 @@ export class MemoryStore implements Store {
         ...(demo ? { events: [], goals: [], runs: [], recommendations: demoWeekRecommendations() } : {}),
       };
       this.data.set(userId, x);
+      if (!this.accounts.has(userId)) this.accounts.set(userId, { email: null, created_at: now() });
     }
     return x;
   }
@@ -834,6 +922,43 @@ export class MemoryStore implements Store {
   async saveProfile(profile: Profile) {
     this.profiles.set(currentUserId(), structuredClone(profile));
     return structuredClone(profile);
+  }
+
+  // The waiting list: one list for the whole process, never per user.
+  private waitlist: WaitlistEntry[] = [];
+
+  async addWaitlistEntry(entry: NewWaitlistEntry) {
+    if (this.waitlist.some((e) => e.email === entry.email)) return null;
+    if (this.waitlist.some((e) => e.referral_code === entry.referral_code)) {
+      throw new HttpError("conflict", "That referral code is taken");
+    }
+    const referred_by =
+      entry.referred_by && this.waitlist.some((e) => e.referral_code === entry.referred_by)
+        ? entry.referred_by
+        : null;
+    // Strictly increasing, so two sign ups in the same millisecond still have an order.
+    const last = this.waitlist.at(-1)?.created_at;
+    const at = Math.max(Date.now(), last ? Date.parse(last) + 1 : 0);
+    const row: WaitlistEntry = {
+      ...entry,
+      referred_by,
+      id: crypto.randomUUID(),
+      created_at: new Date(at).toISOString(),
+      invited_at: null,
+    };
+    this.waitlist.push(row);
+    return structuredClone(row);
+  }
+
+  async getWaitlistEntry(by: { email: string } | { code: string }) {
+    const hit = this.waitlist.find((e) =>
+      "email" in by ? e.email === by.email : e.referral_code === by.code,
+    );
+    return structuredClone(hit ?? null);
+  }
+
+  async listWaitlist() {
+    return structuredClone(this.waitlist);
   }
 
   private insightRuns = new Map<string, Record<string, unknown>>();
@@ -1657,6 +1782,48 @@ export class MemoryStore implements Store {
     return structuredClone(c);
   }
 
+  async currentAccountEmail() {
+    return this.accounts.get(currentUserId())?.email ?? null;
+  }
+
+  async listAllAccounts() {
+    return [...this.accounts.entries()].map(([id, a]) => ({ id, ...a }));
+  }
+
+  async tractionFacts(userIds: string[], opts: TractionFactsOptions): Promise<TractionUserFacts[]> {
+    const since = Date.parse(opts.since);
+    const sources = new Set(opts.sources);
+    const out: TractionUserFacts[] = [];
+    for (const userId of userIds) {
+      const x = this.data.get(userId);
+      if (!x) continue;
+      // Seeded rows never count: the demo week, and the sample day every memory user starts with.
+      const events = x.events.filter(
+        (e) => !SAMPLE_EVENT_IDS.has(e.id) && !e.external_id?.startsWith(SEEDED_PREFIX),
+      );
+      const firsts = [
+        ...events.filter((e) => sources.has(e.source)).map((e) => e.created_at),
+        ...x.integrations.flatMap((i) => (i.connected_at ? [i.connected_at] : [])),
+      ].sort((a, b) => Date.parse(a) - Date.parse(b));
+      const lines = x.chat.filter((m) => m.role === "user" && !m.visitor);
+      const days = new Set(
+        [...events.map((e) => e.created_at), ...lines.map((m) => m.created_at)]
+          .filter((t) => Date.parse(t) >= since)
+          .map((t) => localDayIn(t, opts.timezone)),
+      );
+      out.push({
+        user_id: userId,
+        first_source_at: firsts[0] ?? null,
+        active_days: [...days].sort(),
+        actions_done: x.recommendations.filter((r) => r.status === "done" || r.status === "undone").length,
+        actions_undone: x.recommendations.filter((r) => r.status === "undone").length,
+        chat_messages: lines.length,
+        nudges_sent: x.nudges.filter((n) => n.status === "sent").length,
+      });
+    }
+    return out;
+  }
+
   async deleteCheckIn(id: string) {
     const before = this.d.checkIns.length;
     this.d.checkIns = this.d.checkIns.filter((c) => c.id !== id && c.follow_up_of !== id);
@@ -1681,7 +1848,14 @@ export class MemoryStore implements Store {
 // threads' titles, which may lag by the context cache's two minutes), nor on our geocoding cache.
 const WRITES =
   /^(add|answer|bind|clear|create|delete|insert|mark|record|remove|replace|save|seed|set|sync|unbind|update|upsert)[A-Z]/;
-const QUIET_WRITES = new Set(["addChatMessage", "createChatThread", "updateChatThread", "saveGeocode"]);
+// The waiting list belongs to no user, so a sign up changes nobody's data.
+const QUIET_WRITES = new Set([
+  "addChatMessage",
+  "createChatThread",
+  "updateChatThread",
+  "saveGeocode",
+  "addWaitlistEntry",
+]);
 
 /** The store, noting each write before and after it, so caches of a user's data know to read again. */
 function noticingWrites(inner: Store): Store {

@@ -106,7 +106,8 @@ test("every table with user rows is deleted by DELETE /v1/me/data", () => {
     for (const m of sql.matchAll(/create table (?:if not exists )?(\w+)/gi)) if (m[1]) tables.add(m[1]);
   }
   // Shared by every user of a client / deleted by tokens.ts / deleted by setup-tokens.ts.
-  const elsewhere = new Set(["oauth_clients", "personal_tokens", "setup_tokens"]);
+  // The waiting list holds people without an account, so no user owns its rows.
+  const elsewhere = new Set(["oauth_clients", "personal_tokens", "setup_tokens", "waitlist"]);
   const missing = [...tables].filter(
     (t) => !elsewhere.has(t) && !(USER_TABLES as readonly string[]).includes(t),
   );

@@ -14,6 +14,8 @@ interface RequestUser {
   agent?: AgentClient;
   /** The anonymous demo visitor, only with `via: "demo_visitor"`. Scopes the demo chat. */
   visitor?: string;
+  /** The signed-in session's email (lowercased), when the sign in carries one. Only for admin checks. */
+  email?: string;
 }
 
 const requestUser = new AsyncLocalStorage<RequestUser>();
@@ -25,13 +27,20 @@ export const runAsUser = <T>(
   via: AuthMethod = "script",
   agent?: AgentClient,
   visitor?: string,
-): T => requestUser.run({ userId, via, agent, visitor }, fn);
+  email?: string,
+): T => requestUser.run({ userId, via, agent, visitor, email }, fn);
 
 export const currentAuthMethod = (): AuthMethod | null => requestUser.getStore()?.via ?? null;
 
 export const currentAgent = (): AgentClient | null => requestUser.getStore()?.agent ?? null;
 
 /** The demo visitor this request is for, or null for everyone else (their own account). */
+/** The email of a signed-in session (never of a key or an agent), lowercased; null otherwise. */
+export const currentSessionEmail = (): string | null => {
+  const ctx = requestUser.getStore();
+  return ctx?.via === "session" && ctx.email ? ctx.email : null;
+};
+
 export const currentDemoVisitor = (): string | null => requestUser.getStore()?.visitor ?? null;
 
 export function currentUserId(): string {

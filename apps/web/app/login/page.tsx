@@ -56,6 +56,12 @@ export default async function LoginPage({
             See the demo week
           </a>
           <InstallApp />
+          <a
+            href="/join"
+            className="press mx-auto mt-1 flex h-11 items-center rounded-control px-4 text-footnote text-label-2"
+          >
+            Not in yet? Join the waiting list
+          </a>
         </section>
       </div>
     </main>

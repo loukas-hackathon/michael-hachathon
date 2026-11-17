@@ -17,7 +17,7 @@ const TABS: { href: string; label: string; Icon: ComponentType<{ className?: str
   { href: "/chat", label: "Chat", Icon: ChatIcon },
 ];
 
-const SIGNED_OUT = /^\/(login|auth)(\/|$)/;
+const SIGNED_OUT = /^\/(login|auth|join)(\/|$)/;
 
 function isActive(pathname: string, href: string) {
   return href === "/" ? pathname === "/" : pathname.startsWith(href);

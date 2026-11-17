@@ -15,7 +15,7 @@ const RESUME_AFTER_MS = 2 * 60 * 1000;
 // A copy younger than this is fresh enough to show without the line.
 const QUIET_UNDER_MS = 60 * 1000;
 // Signed out screens have nothing of anyone's day to refresh.
-const SIGNED_OUT = /^\/(login|auth|setup|connect|stage)(\/|$)/;
+const SIGNED_OUT = /^\/(login|auth|join|setup|connect|stage)(\/|$)/;
 
 const hhmm = (at: number) =>
   new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false }).format(at);

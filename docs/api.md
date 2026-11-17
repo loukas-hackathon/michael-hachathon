@@ -3973,6 +3973,108 @@ From 08:30 on a Monday `GET /v1/score` has a day and a week to read (about 70%, 
 lost, Instagram first). A Mac "Screen off" replayed from one day ends where the next day's Mac use
 begins.
 
+### Waiting list
+
+The public waiting list (web: `/join`, `/join/[code]`, admin `/waitlist`). People on it have no
+account, so the `waitlist` table belongs to no user (RLS on, no policies: only the API's service
+role reads it). Schemas in `packages/shared/src/waitlist.ts`.
+
+```ts
+type WaitlistRole = "founder" | "executive" | "employee" | "student" | "other";
+type WaitlistJoin = {
+  email: string; // trimmed and lowercased; unique
+  name: string; // 1 to 120 characters
+  role: WaitlistRole;
+  hours_lost_per_week: number; // their own guess, 0 to 80
+  computer: "mac" | "windows" | "linux";
+  phone: "iphone" | "android";
+  calendar: "google" | "outlook" | "other";
+  founding_member?: boolean; // interest in prepaying €15 a month for life; no payment is taken
+  ref?: string | null; // the inviter's referral code (?ref=); ignored when it matches nobody
+  source?: string | null; // utm_source or the referrer, up to 200 characters
+  website?: string; // honeypot: must be empty
+};
+type WaitlistStanding = { referral_code: string; position: number; total: number; referrals: number };
+type WaitlistEntry = WaitlistJoin fields + {
+  id: string; referral_code: string; referred_by: string | null; source: string | null;
+  created_at: string; invited_at: string | null;
+};
+type WaitlistAdmin = {
+  stats: {
+    total: number;
+    last_7_days: number;
+    by_role: Record<WaitlistRole, number>;
+    by_computer: Record<"mac" | "windows" | "linux", number>;
+    founding_members: number;
+    top_referrers: { referral_code: string; name: string; email: string; referrals: number }[]; // up to 10
+  };
+  entries: (WaitlistEntry & { position: number; referrals: number })[]; // newest first
+};
+```
+
+| Method | Path                 | Auth                      | Body           | Response                                                            | Status |
+| ------ | -------------------- | ------------------------- | -------------- | ------------------------------------------------------------------- | ------ |
+| POST   | `/v1/waitlist`       | none                      | `WaitlistJoin` | `201 WaitlistStanding` new, `200` already on the list, `400`, `429` | live   |
+| GET    | `/v1/waitlist/:code` | none                      |                | `200 WaitlistStanding`, `404` unknown code                          | live   |
+| GET    | `/v1/waitlist`       | signed in, `ADMIN_EMAILS` |                | `200 WaitlistAdmin`; `404` for everyone else                        | live   |
+
+- **Position:** everyone starts at their place by join time (`created_at`). Each person who joins
+  with your code moves you up 5 places: the list is sorted by `place - 5 × referrals`, a tie goes
+  to the one with more referrals, then to whoever joined first (`waitlistStandings`). Position 1
+  is the front; you never pass the front.
+- Joining twice with the same email returns the existing entry's standing (`200`), never an error,
+  and changes nothing. The public answers carry the code, position, total and referral count only:
+  never an email or a name.
+- A filled in honeypot (`website`) is a `400` and nothing is stored. At most 10 sign ups an hour
+  per client address (in memory, per API process). The web app joins server to server and passes
+  the visitor's address in `X-Michael-Client-IP`, which counts only next to the API key; anyone
+  else is counted by `X-Real-IP` or the first `X-Forwarded-For`.
+- Admin: a signed in session (never a key or an agent) whose email is in `ADMIN_EMAILS` (comma
+  separated, case insensitive). Unset means nobody. Everyone else gets the same `404` as a missing
+  route.
+
+### Traction (admin)
+
+| Method | Path                 | Auth        | Response                   | Status |
+| ------ | -------------------- | ----------- | -------------------------- | ------ |
+| GET    | `/v1/admin/traction` | admins only | `Traction` (shared schema) | live   |
+
+The founders' numbers for investors, shown on the web app's `/traction`. **Admin:** a signed in
+session (never the API key, a demo visitor, a device key or an agent) whose account email is in
+the API's `ADMIN_EMAILS` (comma separated, any case; empty means nobody), `apps/api/src/admin.ts`.
+Everyone else gets the same `404 not_found` as a route that does not exist. Computed on demand
+across all real users and cached for 5 minutes; only counts, sums and shares leave the API, never
+one user's events, name, email or id. Weeks run Monday to Sunday in `timezone` (Europe/Athens).
+
+- **Real users:** every Supabase Auth account except the demo account (`DEMO_USER_ID`: the API key,
+  every demo visitor and the judges' login all act as it) and any address at `michael.app` (demo,
+  judges, team). Their count is `excluded_accounts`. Seeded rows never count for anyone: events
+  whose `external_id` starts with `demo:`.
+- **Sign ups:** accounts by creation time; `sign_ups.weeks` is the last 8 weeks, oldest first,
+  each with its sign ups and the users active in it.
+- **Activation:** an account that connected a real source at least once: any integration
+  connected (Google Calendar, WHOOP) or any event from a source other than `manual`, `agent` and
+  `maps`. `median_minutes_to_first_source` is the median from sign up to that first source.
+- **Active:** a user is active on a local day when an event was received for them that day or they
+  wrote to Michael in chat (`active.rule`). Opening the app is not logged, so it does not count.
+  `daily` is today, `daily_average_7d` the mean of the last 7 days, `weekly` anyone in the last 7.
+- **Retention:** for each sign up week of the last 8, the share of that cohort active in the 1st,
+  2nd and 4th calendar week after it. A cell is `null` until its week has begun and
+  `complete: false` while it runs. `week_1`, `week_2` and `week_4` pool complete cells only,
+  weighted by cohort size.
+- **Goal time:** the score (`GET /v1/score`, the same computation) for this week and last, for
+  users active in either week (the most active 200 when there are more: `capped`). Summed over the
+  users with planned goal time: `planned_minutes` (whole week), `elapsed_minutes` (planned time
+  already passed), `spent_minutes`, `share` = spent / elapsed, and `won_back_minutes`, the score's
+  time won back against each user's usual week.
+- **Engagement (all time):** `actions_done` recommendations carried out (status `done` or later
+  `undone`), `actions_undone`, `chat_messages` lines users wrote (not demo visitors), `nudges_sent`
+  (status `sent`), `connector_queries` tool calls logged from connected agents (claude.ai among them).
+
+Reads: Supabase Auth's user list (service role) and two service role functions,
+`traction_user_facts` and `traction_agent_queries` (migration `20261117200000_traction.sql`), one
+call per 500 users, answered from per user indexes.
+
 ## MCP server
 
 Streamable HTTP at `POST /mcp` (stateless, JSON responses). Auth: `Authorization: Bearer <token>`,

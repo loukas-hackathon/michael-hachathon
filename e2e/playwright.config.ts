@@ -73,6 +73,8 @@ export default defineConfig({
         // The presenter link (#343), the same value as on the web app below and in tests/fixtures.ts.
         DEMO_PRESENTER_KEY: "e2e-presenter-key",
         E2E_TEST_AUTH: "on",
+        // One test user may read the waiting list (tests/waitlist.spec.ts, WAITLIST_ADMIN).
+        ADMIN_EMAILS: "0000a0a0-0000-4000-8000-00000000a0a0@e2e.michael.test",
         WEB_ORIGIN: WEB_URL,
         PUBLIC_API_URL: API_URL,
         SCHEDULER_ENABLED: "false",

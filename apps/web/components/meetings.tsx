@@ -129,7 +129,7 @@ export function MeetingsRow({ first = false }: { first?: boolean }) {
 }
 
 // Screens without the tab bar, and signed out ones: no pill, and no call to the API either.
-const HIDDEN_ON = ["/onboarding", "/connect", "/stage", "/setup", "/login", "/auth"];
+const HIDDEN_ON = ["/onboarding", "/connect", "/stage", "/setup", "/login", "/auth", "/join"];
 
 /** "Meeting on · 12 min · End": calm, above the tab bar, on every screen while it runs. */
 export function MeetingPill() {

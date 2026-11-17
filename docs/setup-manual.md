@@ -76,6 +76,17 @@ secret link. Set the same secret in two places (never paste it into a chat or co
    for the presenters. Opening it once on the stage laptop is enough for 3 days
    (`docs/demo-runbook.md`). To revoke it, change the value in both places.
 
+## 2c. Admins: the waiting list and the traction page (Loukas, 1 min, once)
+
+`/waitlist` (who joined at `/join`, with a CSV) and `/traction` (the investor numbers: sign ups,
+activation, retention, goal time) open for admins only.
+
+1. Railway: service `api` > **Variables** > add `ADMIN_EMAILS` with the founders' sign in emails,
+   comma separated (for example `loukas@example.com,manolis@example.com`). Railway redeploys by
+   itself. Empty means nobody.
+2. Sign in to the app with one of those emails and open `/waitlist` or `/traction`. Anyone else
+   sees "not found".
+
 ## 3. Google Calendar (Loukas, 3 min, same Google project as step 1)
 
 1. https://console.cloud.google.com/apis/library/calendar-json.googleapis.com, project `Michael`,
