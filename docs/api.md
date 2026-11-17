@@ -3973,6 +3973,48 @@ From 08:30 on a Monday `GET /v1/score` has a day and a week to read (about 70%, 
 lost, Instagram first). A Mac "Screen off" replayed from one day ends where the next day's Mac use
 begins.
 
+### Traction (admin)
+
+| Method | Path                 | Auth        | Response                   | Status |
+| ------ | -------------------- | ----------- | -------------------------- | ------ |
+| GET    | `/v1/admin/traction` | admins only | `Traction` (shared schema) | live   |
+
+The founders' numbers for investors, shown on the web app's `/traction`. **Admin:** a signed in
+session (never the API key, a demo visitor, a device key or an agent) whose account email is in
+the API's `ADMIN_EMAILS` (comma separated, any case; empty means nobody), `apps/api/src/admin.ts`.
+Everyone else gets the same `404 not_found` as a route that does not exist. Computed on demand
+across all real users and cached for 5 minutes; only counts, sums and shares leave the API, never
+one user's events, name, email or id. Weeks run Monday to Sunday in `timezone` (Europe/Athens).
+
+- **Real users:** every Supabase Auth account except the demo account (`DEMO_USER_ID`: the API key,
+  every demo visitor and the judges' login all act as it) and any address at `michael.app` (demo,
+  judges, team). Their count is `excluded_accounts`. Seeded rows never count for anyone: events
+  whose `external_id` starts with `demo:`.
+- **Sign ups:** accounts by creation time; `sign_ups.weeks` is the last 8 weeks, oldest first,
+  each with its sign ups and the users active in it.
+- **Activation:** an account that connected a real source at least once: any integration
+  connected (Google Calendar, WHOOP) or any event from a source other than `manual`, `agent` and
+  `maps`. `median_minutes_to_first_source` is the median from sign up to that first source.
+- **Active:** a user is active on a local day when an event was received for them that day or they
+  wrote to Michael in chat (`active.rule`). Opening the app is not logged, so it does not count.
+  `daily` is today, `daily_average_7d` the mean of the last 7 days, `weekly` anyone in the last 7.
+- **Retention:** for each sign up week of the last 8, the share of that cohort active in the 1st,
+  2nd and 4th calendar week after it. A cell is `null` until its week has begun and
+  `complete: false` while it runs. `week_1`, `week_2` and `week_4` pool complete cells only,
+  weighted by cohort size.
+- **Goal time:** the score (`GET /v1/score`, the same computation) for this week and last, for
+  users active in either week (the most active 200 when there are more: `capped`). Summed over the
+  users with planned goal time: `planned_minutes` (whole week), `elapsed_minutes` (planned time
+  already passed), `spent_minutes`, `share` = spent / elapsed, and `won_back_minutes`, the score's
+  time won back against each user's usual week.
+- **Engagement (all time):** `actions_done` recommendations carried out (status `done` or later
+  `undone`), `actions_undone`, `chat_messages` lines users wrote (not demo visitors), `nudges_sent`
+  (status `sent`), `connector_queries` tool calls logged from connected agents (claude.ai among them).
+
+Reads: Supabase Auth's user list (service role) and two service role functions,
+`traction_user_facts` and `traction_agent_queries` (migration `20261117090000_traction.sql`), one
+call per 500 users, answered from per user indexes.
+
 ## MCP server
 
 Streamable HTTP at `POST /mcp` (stateless, JSON responses). Auth: `Authorization: Bearer <token>`,

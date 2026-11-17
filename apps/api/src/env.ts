@@ -12,6 +12,9 @@ const Env = z.object({
   // presenter (one laptop) may answer the claude.ai consent for the demo account; demo visitors
   // never can. Empty = no presenter.
   DEMO_PRESENTER_KEY: z.string().optional(),
+  // Comma-separated emails of the founders' accounts (admin.ts): a signed in caller with one of
+  // these emails may read the admin routes (GET /v1/admin/traction). Empty: nobody.
+  ADMIN_EMAILS: z.string().default(""),
   // End-to-end tests only (e2e/): "on" accepts `Bearer e2e_<uuid>` as that user, so the suite can
   // sign in a fresh, non demo user without Supabase. Ignored unless the store is in memory.
   E2E_TEST_AUTH: z.enum(["on", "off"]).default("off"),
