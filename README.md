@@ -10,7 +10,7 @@ Built in 36 hours at the Gen AI Summit Hackathon, Athens, 14 and 15 November 202
 
 ## Try it in one minute
 
-**App:** https://michael-zeta-sand.vercel.app
+**App:** https://web-production-c3b495e1.up.railway.app (the old Vercel address no longer updates)
 
 **Best on your phone, as an app.** Open the link in Safari on an iPhone (or Chrome on Android), tap
 **Get the app**, and add Michael to your Home Screen. It opens full screen like a native app, with

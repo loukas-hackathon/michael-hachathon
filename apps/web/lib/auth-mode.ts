@@ -15,9 +15,10 @@ export const demoVisitorId = (value: string | undefined): string | null =>
 
 /**
  * Without Supabase env every request would act as the demo account. That is only acceptable on a
- * developer's machine, never on a deployment (Vercel sets VERCEL_ENV).
+ * developer's machine, never on a deployment (Vercel sets VERCEL_ENV, Railway sets RAILWAY_ENVIRONMENT).
  */
-export const localFallbackAllowed = () => process.env.NODE_ENV !== "production" || !process.env.VERCEL_ENV;
+export const localFallbackAllowed = () =>
+  process.env.NODE_ENV !== "production" || !(process.env.VERCEL_ENV || process.env.RAILWAY_ENVIRONMENT);
 
 export const AUTH_MISSING_MESSAGE =
   "Sign in is not set up on this deployment. Michael is closed until it is.";

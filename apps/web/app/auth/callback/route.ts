@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { NEXT_COOKIE, safeNext } from "@/lib/next-path";
+import { publicUrl } from "@/lib/public-origin";
 import { DEMO_COOKIE, supabaseServer } from "@/lib/supabase/server";
 
 // Google sends the user back here with a one time code; swap it for a session cookie.
@@ -12,7 +13,7 @@ export async function GET(request: NextRequest) {
   const oauthError = params.get("error");
 
   const fail = (reason: "cancelled" | "failed") => {
-    const login = new URL("/login", request.url);
+    const login = publicUrl("/login", request);
     login.searchParams.set("error", reason);
     return NextResponse.redirect(login);
   };
@@ -29,7 +30,7 @@ export async function GET(request: NextRequest) {
   }
 
   const next = safeNext(request.cookies.get(NEXT_COOKIE)?.value) ?? "/";
-  const response = NextResponse.redirect(new URL(next, request.url));
+  const response = NextResponse.redirect(publicUrl(next, request));
   response.cookies.delete(DEMO_COOKIE);
   response.cookies.delete(NEXT_COOKIE);
   return response;

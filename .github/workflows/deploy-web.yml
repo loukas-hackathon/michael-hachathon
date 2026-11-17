@@ -1,0 +1,39 @@
+# Deploys the web app to Railway (service "web") on every merge to main that touches web code.
+# Replaces Vercel's Git integration: Vercel Hobby refused deploys whose commit author was not the
+# account owner. Same project token as Deploy API (secret RAILWAY_TOKEN).
+# Build and start commands live on the service as RAILPACK_BUILD_CMD and RAILPACK_START_CMD
+# (Railway no longer lets a second service use its own railway.json).
+name: Deploy web
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/web/**"
+      - "packages/shared/**"
+      - "pnpm-lock.yaml"
+      - "package.json"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: deploy-web
+  cancel-in-progress: true
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install -g @railway/cli@5.74.0
+      # CLI uploads carry no git metadata; the SHA names the build (service worker cache).
+      - run: railway variables --service web --set "GIT_COMMIT_SHA=$GITHUB_SHA" --skip-deploys
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      - run: railway up --service web --ci
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      - name: Verify
+        run: curl -fsS -o /dev/null -w "%{http_code} %{time_total}s\n" https://web-production-c3b495e1.up.railway.app/login
