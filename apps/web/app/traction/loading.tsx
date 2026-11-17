@@ -1,31 +1,29 @@
-import { Group, Lines, RowRule, Skeleton } from "@/components/skeleton";
+import { Lines, Skeleton } from "@/components/skeleton";
 
-/** Traction, loading: the sign ups headline and its four rows, then the copy button, as on the page. */
+/**
+ * Traction, loading: the final layout, so nothing shifts when the numbers land. The headline
+ * number and its sentence, the copy button, then the two growth charts at their exact heights.
+ */
 export default function Loading() {
   return (
     <Skeleton
-      header={{ kind: "back", back: "Today", title: "Traction" }}
+      header={{ kind: "back", back: "Today", title: "Waiting list" }}
       label="Loading traction"
-      className="screen-mid"
+      className="screen-wide"
     >
       <section aria-hidden="true" className="mt-3">
         <Lines text="score" widths={["6rem"]} />
-        <Lines text="title3" widths={["14rem"]} />
-        <Group className="mt-4">
-          {[0, 1, 2, 3].map((i) => (
-            <div key={i} className="relative flex min-h-12 items-center justify-between gap-3 px-4 py-2.5">
-              {i > 0 ? <RowRule /> : null}
-              <span>
-                <Lines text="body" widths={["8rem"]} />
-                <Lines text="footnote" widths={["10rem"]} />
-              </span>
-              <Lines text="body" widths={["3rem"]} />
-            </div>
-          ))}
-        </Group>
+        <Lines text="insight" widths={["16rem", "11rem"]} />
+        <span className="m-bone mt-4 block h-11 w-[190px] rounded-full" />
+        <span className="mt-2 block h-[18px]" />
       </section>
-      <div className="mt-4">
-        <span className="m-bone block h-11 w-[180px] rounded-full" />
+      <div aria-hidden="true" className="mt-8 grid gap-8 lg:grid-cols-2 lg:gap-6">
+        {[0, 1].map((i) => (
+          <div key={i}>
+            <Lines text="subhead" widths={["10rem"]} />
+            <span className="m-bone mt-3 block h-40 w-full rounded-control lg:h-[200px]" />
+          </div>
+        ))}
       </div>
     </Skeleton>
   );

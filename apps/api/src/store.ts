@@ -528,6 +528,8 @@ export interface Store extends PrivacyBackend {
   getWaitlistEntry(by: { email: string } | { code: string }): Promise<WaitlistEntry | null>;
   /** Every entry, oldest first. */
   listWaitlist(): Promise<WaitlistEntry[]>;
+  /** Changes what the holder of a code may change (founding member interest); null for no such code. */
+  updateWaitlistEntry(code: string, patch: { founding_member: boolean }): Promise<WaitlistEntry | null>;
   // ---- traction (admin only: admin.ts, traction/) ----
   /** The current user's sign in email (lower case), or null when there is none. Scoped. */
   currentAccountEmail(): Promise<string | null>;
@@ -959,6 +961,13 @@ export class MemoryStore implements Store {
 
   async listWaitlist() {
     return structuredClone(this.waitlist);
+  }
+
+  async updateWaitlistEntry(code: string, patch: { founding_member: boolean }) {
+    const hit = this.waitlist.find((e) => e.referral_code === code);
+    if (!hit) return null;
+    hit.founding_member = patch.founding_member;
+    return structuredClone(hit);
   }
 
   private insightRuns = new Map<string, Record<string, unknown>>();
@@ -1855,6 +1864,7 @@ const QUIET_WRITES = new Set([
   "updateChatThread",
   "saveGeocode",
   "addWaitlistEntry",
+  "updateWaitlistEntry",
 ]);
 
 /** The store, noting each write before and after it, so caches of a user's data know to read again. */

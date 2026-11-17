@@ -13,9 +13,9 @@ import {
 import { currentStep } from "@/components/chat/steps";
 import { markHintSeen } from "@/components/hint";
 import { Sheet } from "@/components/sheet";
-import { onWake, READY_LINE, takeWake } from "@/lib/wake-word";
 import {
   endConversation,
+  isWakeConversation,
   type Phase,
   setMuted,
   startConversation,
@@ -75,21 +75,8 @@ export function useTalk(elevenlabs: boolean) {
     setFrom(chatLineCount());
     setOpen(true);
   };
-  // Woken by his name anywhere in the app (lib/wake-word.ts): the host brings the user here and
-  // the conversation starts with what followed the name, or his ready line.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: subscribed once; the setters are stable.
-  useEffect(() => {
-    const woken = () => {
-      const w = takeWake();
-      if (!w) return;
-      setFrom(chatLineCount());
-      setOpen(true);
-      markHintSeen(TALK_HINT);
-      startConversation(w.first ? { elevenlabs, first: w.first } : { elevenlabs, greet: READY_LINE });
-    };
-    woken();
-    return onWake(woken);
-  }, []);
+  // Woken by his name ("Yo Michael"), he answers in the island at the top of the screen
+  // (components/voice/wake-island.tsx), not in this sheet.
   const sheet = <ConversationSheet open={open} from={from} onStart={begin} onClose={() => setOpen(false)} />;
   return { start, show, sheet };
 }
@@ -128,7 +115,13 @@ function ConversationSheet({
   const talk = useConversation();
   const session = useChatSession();
   // Leaving Chat ends the conversation; closing the sheet does too (close below).
-  useEffect(() => () => endConversation(), []);
+  // A conversation woken by name lives in the island and carries on across screens.
+  useEffect(
+    () => () => {
+      if (!isWakeConversation()) endConversation();
+    },
+    [],
+  );
 
   const close = () => {
     endConversation();

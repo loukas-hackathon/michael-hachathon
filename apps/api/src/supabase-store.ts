@@ -2127,6 +2127,18 @@ export class SupabaseStore implements Store {
     return r ? toWaitlistEntry(r as Record<string, unknown>) : null;
   }
 
+  async updateWaitlistEntry(code: string, patch: { founding_member: boolean }) {
+    const r = check(
+      await this.db
+        .from("waitlist")
+        .update({ founding_member: patch.founding_member })
+        .eq("referral_code", code)
+        .select("*")
+        .maybeSingle(),
+    );
+    return r ? toWaitlistEntry(r as Record<string, unknown>) : null;
+  }
+
   async listWaitlist() {
     // PostgREST answers at most 1000 rows a call: page through, oldest first.
     const out: WaitlistEntry[] = [];

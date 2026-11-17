@@ -1,4 +1,4 @@
-import { type Traction, voiceDuration } from "@michael/shared";
+import { type Traction, type TractionWaitingList, voiceDuration } from "@michael/shared";
 
 // The words and figures of /traction (GET /v1/admin/traction): pure, so the page and the
 // "Copy for investors" text say exactly the same thing.
@@ -75,6 +75,8 @@ export function investorSummary(t: Traction, today = new Date(t.generated_at)): 
   const lines = [
     `Michael traction, ${date}`,
     "",
+    ...waitingListLines(t.waiting_list),
+    "",
     `Sign ups: ${t.sign_ups.total.toLocaleString("en-GB")} in all, ${thisWeek} this week, ${lastWeek} last week.`,
     `Activation: ${pct(t.activation.share) ?? "none yet"} connected a real source (${t.activation.activated} of ${t.sign_ups.total})${
       t.activation.median_minutes_to_first_source === null
@@ -94,4 +96,94 @@ export function investorSummary(t: Traction, today = new Date(t.generated_at)): 
     "Real users only: the demo account and our own addresses are left out.",
   ];
   return lines.filter((l): l is string => l !== null).join("\n");
+}
+
+// ---------- the waiting list (Traction.waiting_list): numbers only, never a name or an email ----------
+
+/** The founding member price, a month, in euros: what "stated intent" is worth if they all pay. */
+export const FOUNDING_PRICE_EUR = 15;
+
+/** Whole percent of a part, or 0 when there is no whole. */
+const share = (part: number, whole: number) => (whole > 0 ? Math.round((part / whole) * 100) : 0);
+
+/**
+ * The week on week change in words, or null when it would mislead: "First week." while the list
+ * is younger than a week; nothing when the week before was empty.
+ */
+export function weekChange(w: TractionWaitingList, today: string): string | null {
+  if (!w.first_day) return null;
+  const days = (Date.parse(`${today}T12:00:00Z`) - Date.parse(`${w.first_day}T12:00:00Z`)) / 86_400_000;
+  if (days < 7) return "First week.";
+  if (w.previous_7_days === 0) return null;
+  const change = Math.round(((w.last_7_days - w.previous_7_days) / w.previous_7_days) * 100);
+  if (change === 0) return "the same as the week before";
+  return change > 0 ? `${change}% more than the week before` : `${-change}% fewer than the week before`;
+}
+
+/** "16 Nov" for a local day. */
+export const dayLabel = (day: string): string => weekLabel(day);
+
+/** "Sunday" for a local day. */
+export const weekdayOf = (day: string): string =>
+  new Intl.DateTimeFormat("en-GB", { weekday: "long", timeZone: "UTC" }).format(new Date(`${day}T12:00:00Z`));
+
+const ROLE_WORDS: Record<string, [string, string]> = {
+  founder: ["founder", "founders"],
+  executive: ["executive", "executives"],
+  employee: ["employee", "employees"],
+  student: ["student", "students"],
+  other: ["other", "others"],
+};
+
+/** The biggest two roles as shares: "54% founders, 22% executives". Null with nobody. */
+export function rolesPhrase(w: TractionWaitingList): string | null {
+  if (w.total === 0) return null;
+  return Object.entries(w.by_role)
+    .filter(([, n]) => n > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 2)
+    .map(([role, n]) => `${share(n, w.total)}% ${ROLE_WORDS[role]?.[1] ?? role}`)
+    .join(", ");
+}
+
+/** "71% on Mac, 64% on iPhone, 80% on Google Calendar." */
+export function setupPhrase(w: TractionWaitingList): string | null {
+  if (w.total === 0) return null;
+  return `${share(w.by_computer.mac ?? 0, w.total)}% on Mac, ${share(w.by_phone.iphone ?? 0, w.total)}% on iPhone, ${share(w.by_calendar.google ?? 0, w.total)}% on Google Calendar.`;
+}
+
+/** "X 41%, LinkedIn 22%, direct 19%": the top three. */
+export function sourcesPhrase(w: TractionWaitingList): string | null {
+  if (w.total === 0 || w.by_source.length === 0) return null;
+  return w.by_source
+    .slice(0, 3)
+    .map((s) => `${s.source} ${share(s.sign_ups, w.total)}%`)
+    .join(", ");
+}
+
+/** The hours as people say them: "6 hours", "4.5 hours". */
+export const hoursPhrase = (h: number): string =>
+  `${Number.isInteger(h) ? h : h.toFixed(1)} ${h === 1 ? "hour" : "hours"}`;
+
+/** The waiting list's lines in the investor text: the same numbers as the page, in its order. */
+export function waitingListLines(w: TractionWaitingList): string[] {
+  if (w.total === 0) return ["Waiting list: nobody yet."];
+  const vsBefore =
+    w.previous_7_days > 0 && w.last_7_days !== w.previous_7_days
+      ? `, ${w.last_7_days > w.previous_7_days ? "up" : "down"} ${Math.abs(Math.round(((w.last_7_days - w.previous_7_days) / w.previous_7_days) * 100))}% on the week before`
+      : "";
+  const lines = [
+    `Waiting list: ${plural(w.total, "person", "people")} waiting. ${w.last_7_days} joined in the last 7 days${vsBefore}.`,
+  ];
+  if (w.founding_members > 0) {
+    lines.push(
+      `${w.founding_members} would prepay €${FOUNDING_PRICE_EUR} a month as founding ${w.founding_members === 1 ? "member" : "members"} (€${(w.founding_members * FOUNDING_PRICE_EUR).toLocaleString("en-GB")} a month of stated intent).`,
+    );
+  }
+  lines.push(`${share(w.referred, w.total)}% joined through a friend.`);
+  const roles = rolesPhrase(w);
+  lines.push(
+    `${w.median_hours === null ? "" : `Median self reported time lost: ${hoursPhrase(w.median_hours)} a week. `}${roles ? `${roles}.` : ""}`.trim(),
+  );
+  return lines;
 }

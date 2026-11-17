@@ -121,7 +121,7 @@ export function FocusHost() {
         type="button"
         onClick={() => setHidden(false)}
         aria-label={`${session.goal_title}, ${left} min left. Open Focus now`}
-        className={`press fixed z-30 flex min-h-11 items-center gap-3 rounded-full bg-[var(--m-glass)] px-4 text-left shadow-[0_0_0_0.5px_var(--m-separator),0_6px_18px_-8px_rgb(0_0_0/0.25)] backdrop-blur-xl ${place}`}
+        className={`press fixed z-30 flex min-h-11 items-center gap-3 m-float rounded-full px-4 text-left ${place}`}
       >
         <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-spark" />
         <span className="min-w-0 flex-1 truncate text-subhead font-semibold">{session.goal_title}</span>

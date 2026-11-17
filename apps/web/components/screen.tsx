@@ -5,6 +5,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import { formatTime } from "@/lib/format";
 import { useMiState } from "@/lib/mi-mood";
 import { useOffTheRecord } from "@/lib/off-the-record";
+import { useWakeArmed } from "@/lib/wake-word";
 import { Michael } from "./michael";
 
 /**
@@ -14,10 +15,13 @@ import { Michael } from "./michael";
 export function MiButton({ size = 30 }: { size?: number }) {
   const { on } = useOffTheRecord();
   const mi = useMiState();
+  // "Yo Michael" is listening for his name: a still ring 2px outside the circle, the privacy sign.
+  const armed = useWakeArmed();
   return (
     <Link
       href="/you"
-      aria-label={on ? "You, off the record" : "You"}
+      aria-label={on ? "You, off the record" : armed ? "You. Listening for my name" : "You"}
+      data-armed={armed || undefined}
       className="press grid shrink-0 place-items-center rounded-full"
       style={{
         width: Math.max(size, 44),
@@ -26,7 +30,8 @@ export function MiButton({ size = 30 }: { size?: number }) {
       }}
     >
       <span
-        className={`grid place-items-center rounded-full transition-[background-color,color] duration-[var(--m-dur-ui)] ease-[var(--m-ease-out)] ${
+        data-testid={armed ? "wake-armed" : undefined}
+        className={`grid place-items-center rounded-full transition-[background-color,color] duration-[var(--m-dur-ui)] ease-[var(--m-ease-out)] ${armed ? "m-armed" : ""} ${
           on ? "bg-label-2 text-bg" : "bg-label text-bg"
         }`}
         style={{ width: size, height: size }}

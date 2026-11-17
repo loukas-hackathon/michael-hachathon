@@ -1,19 +1,37 @@
-import type { Traction, TractionCohort, TractionGoalWeek } from "@michael/shared";
+import type { Traction, TractionCohort, TractionGoalWeek, TractionWaitingList } from "@michael/shared";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import type { ReactNode } from "react";
 import { BarLabel, ProgressBar } from "@/components/progress-bar";
-import { CopySummary } from "@/components/traction/copy-summary";
-import { headlineRows, investorSummary, pct, total, weekLabel } from "@/lib/traction";
+import { CopyJoinLink, CopySummary } from "@/components/traction/copy-summary";
+import { HoursChart, RolesBar, SourcesList, WaitlistTrend } from "@/components/traction/waitlist-charts";
+import {
+  FOUNDING_PRICE_EUR,
+  headlineRows,
+  hoursPhrase,
+  investorSummary,
+  pct,
+  rolesPhrase,
+  setupPhrase,
+  sourcesPhrase,
+  total,
+  weekChange,
+  weekLabel,
+} from "@/lib/traction";
 import { getTraction } from "@/lib/traction-data";
 
-// Traction (admins only): the founders' numbers for investors, from GET /v1/admin/traction. Real
-// users only, aggregates only. Anyone else meets a calm not found, the same as a page that is not
-// there. Read top down: sign ups as the one headline, the four numbers investors ask next, sign ups
-// by week, retention by cohort, goal time and what Michael did.
+// Traction (admins only): the founders' numbers for investors, from GET /v1/admin/traction. Numbers
+// and charts only, no names and no emails anywhere, so it is safe on a projector or a shared
+// screen (the names live on /waitlist). Anyone else meets a calm not found, the same as a page that
+// is not there. Number first: the waiting list as the one headline and its sentence, Copy for
+// investors, then the evidence, each block a sentence first and a chart second; then the app's own
+// accounts, retention, goal time and what Michael did. No pink above the app section: pink is goal
+// time and there is none on a waiting list.
 
 export const metadata = { title: "Traction", robots: { index: false, follow: false } };
 
 const sectionTitle = "mb-2 text-title3 font-bold";
+const sentence = "mb-3 text-subhead text-label-2";
 
 export default async function TractionPage() {
   let t: Traction | null;
@@ -22,16 +40,25 @@ export default async function TractionPage() {
   } catch (err) {
     console.error("traction:", err);
     return (
-      <Shell>
+      <Shell context="Traction">
         <p className="mt-4 text-body">I could not read the numbers just now. Try again in a minute.</p>
       </Shell>
     );
   }
   if (!t) notFound();
+  const at = new Date(t.generated_at);
+  const stamp = `${at.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: t.timezone })}, ${at.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: t.timezone })}`;
+  const w = t.waiting_list;
   return (
-    <Shell>
+    <Shell context={`Traction · ${stamp}`}>
       <Headline t={t} />
-      <div className="lg:grid lg:grid-cols-2 lg:gap-x-10">
+      {w.total > 0 ? <Evidence w={w} /> : null}
+
+      <h2 className="mt-12 text-large-title font-bold tracking-[0.01em]" id="in-the-app">
+        In the app
+      </h2>
+      <AppHeadline t={t} />
+      <div className="lg:grid lg:grid-cols-2 lg:gap-x-6">
         <SignUpChart t={t} />
         <Retention cohorts={t.retention.cohorts} />
         <GoalTime t={t} />
@@ -39,22 +66,18 @@ export default async function TractionPage() {
       </div>
       <p className="mt-8 text-footnote text-label-2">
         Real users only: the demo account, its visitors and the judges&apos; copies, and our own addresses are
-        left out ({t.excluded_accounts}). {t.active.rule} Weeks run Monday to Sunday, Athens time. Updated{" "}
-        {new Date(t.generated_at).toLocaleTimeString("en-GB", {
-          hour: "2-digit",
-          minute: "2-digit",
-          timeZone: t.timezone,
-        })}
-        .
+        left out ({t.excluded_accounts} {t.excluded_accounts === 1 ? "account" : "accounts"}, {w.excluded} on
+        the waiting list). {t.active.rule} Weeks run Monday to Sunday, Athens time. Hours lost are self
+        reported.
       </p>
     </Shell>
   );
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+function Shell({ context, children }: { context: string; children: ReactNode }) {
   return (
-    <main className="screen screen-mid">
-      <header className="flex min-h-11 items-center pt-2">
+    <main className="screen screen-wide">
+      <header className="flex min-h-11 items-center justify-between gap-3 pt-2">
         <Link
           href="/"
           className="press -ml-2 flex h-11 items-center gap-1 px-2 text-body font-semibold text-tint-text"
@@ -71,29 +94,164 @@ function Shell({ children }: { children: React.ReactNode }) {
           </svg>
           Today
         </Link>
+        <p className="min-w-0 truncate text-footnote font-semibold text-label-2 tnum">{context}</p>
       </header>
-      <h1 className="text-large-title font-bold tracking-[0.01em]">Traction</h1>
+      <h1 className="text-large-title font-bold tracking-[0.01em]">Waiting list</h1>
       {children}
     </main>
   );
 }
 
+const athensDay = (iso: string, timezone: string) =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date(iso));
+
+/** The one headline number: people waiting, and the sentence that says what it means. */
 function Headline({ t }: { t: Traction }) {
+  const w = t.waiting_list;
+  if (w.total === 0) {
+    return (
+      <section aria-label="Headline" className="mt-3">
+        <p className="text-insight text-label-2">Nobody yet. Share /join and the first names land here.</p>
+        <CopyJoinLink />
+      </section>
+    );
+  }
+  const change = weekChange(w, athensDay(t.generated_at, t.timezone));
+  return (
+    <section aria-label="Headline" className="mt-3" data-testid="traction-headline">
+      <p className="font-num text-score font-extrabold tracking-[-0.02em] tnum [font-size:min(var(--text-score),24vw)]">
+        {w.total.toLocaleString("en-GB")}
+      </p>
+      <p className="mt-1 max-w-[34ch] text-insight text-label-2">
+        {w.total === 1 ? "person" : "people"} waiting.{" "}
+        <span className="tnum font-semibold text-label">{w.last_7_days}</span> joined this week
+        {change === "First week." || change === null ? "." : <>, {change}.</>}
+        {change === "First week." ? " First week." : null}
+      </p>
+      <CopySummary text={investorSummary(t)} />
+    </section>
+  );
+}
+
+function Block({
+  id,
+  title,
+  line,
+  children,
+}: {
+  id: string;
+  title: string;
+  line: ReactNode;
+  children?: ReactNode;
+}) {
+  return (
+    <section aria-labelledby={id} className="mt-8">
+      <h2 id={id} className={sectionTitle}>
+        {title}
+      </h2>
+      <p className={sentence}>{line}</p>
+      {children}
+    </section>
+  );
+}
+
+const Num = ({ children }: { children: ReactNode }) => (
+  <span className="tnum font-semibold text-label">{children}</span>
+);
+
+/** The evidence, each block a sentence first and a chart second: two columns on a laptop. */
+function Evidence({ w }: { w: TractionWaitingList }) {
+  const referredShare = w.total ? w.referred / w.total : 0;
+  const perReferrer = w.referrers ? Math.round((w.referred / w.referrers) * 10) / 10 : 0;
+  const roles = rolesPhrase(w);
+  const sources = sourcesPhrase(w);
+  return (
+    <div className="lg:grid lg:grid-cols-2 lg:gap-x-6">
+      <WaitlistTrend w={w} />
+      <Block
+        id="time-lost"
+        title="Time lost"
+        line={
+          w.median_hours === null ? (
+            "Nobody said yet."
+          ) : (
+            <>
+              They lose a median of <Num>{hoursPhrase(w.median_hours)}</Num> a week.
+            </>
+          )
+        }
+      >
+        <HoursChart w={w} />
+        <p className="mt-2 text-footnote text-label-2">Self reported, when they joined.</p>
+      </Block>
+      <div>
+        <Block
+          id="intent"
+          title="Founding members"
+          line={
+            w.founding_members === 0 ? (
+              "Nobody has said they would prepay yet."
+            ) : (
+              <>
+                <Num>{w.founding_members}</Num> would prepay as founding{" "}
+                {w.founding_members === 1 ? "member" : "members"}. That&apos;s{" "}
+                <Num>€{(w.founding_members * FOUNDING_PRICE_EUR).toLocaleString("en-GB")}</Num> a month of
+                stated intent.
+              </>
+            )
+          }
+        >
+          <p className="-mt-1 text-footnote text-label-2">Stated intent, not revenue.</p>
+        </Block>
+        <Block
+          id="referrals"
+          title="Referrals"
+          line={
+            w.referred === 0 ? (
+              "Nobody has joined through a friend yet."
+            ) : (
+              <>
+                <Num>{Math.round(referredShare * 100)}%</Num> joined through a friend. Each referrer brought{" "}
+                <Num>{perReferrer}</Num>.
+              </>
+            )
+          }
+        >
+          {w.referred > 0 ? (
+            <ProgressBar value={referredShare} size="sm" label="Joined through a friend" />
+          ) : null}
+        </Block>
+      </div>
+      <Block id="who" title="Who" line={roles ? `${roles}.` : "Nobody yet."}>
+        <RolesBar w={w} />
+      </Block>
+      <div>
+        <Block id="setup" title="Setup" line={setupPhrase(w) ?? "Nobody yet."} />
+        <Block id="sources" title="Sources" line={sources ? `Top sources: ${sources}.` : "Nobody yet."}>
+          <SourcesList w={w} />
+        </Block>
+      </div>
+    </div>
+  );
+}
+
+/** The app's own accounts: the four numbers investors ask next, under the waiting list. */
+function AppHeadline({ t }: { t: Traction }) {
   const thisWeek = t.sign_ups.weeks.at(-1)?.sign_ups ?? 0;
   return (
-    <section aria-label="Headline numbers" className="mt-3 lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-10">
-      <div className="lg:col-start-1 lg:row-start-1">
-        <h2 className="flex flex-col">
-          <span className="font-num text-score font-extrabold tracking-[-0.02em] tnum [font-size:min(var(--text-score),24vw)]">
-            {t.sign_ups.total.toLocaleString("en-GB")}
-          </span>
-          <span className="text-title3 font-semibold">
-            {t.sign_ups.total === 1 ? "person signed up" : "people signed up"}
-            {thisWeek > 0 ? `, ${thisWeek} this week.` : "."}
-          </span>
-        </h2>
-      </div>
-      <ul className="mt-4 rounded-group bg-fill lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:mt-2">
+    <section aria-label="Accounts" className="mt-2">
+      <p className="text-insight text-label-2">
+        <Num>{t.sign_ups.total.toLocaleString("en-GB")}</Num>{" "}
+        {t.sign_ups.total === 1 ? "person signed up" : "people signed up"}
+        {thisWeek > 0 ? (
+          <>
+            , <Num>{thisWeek}</Num> this week.
+          </>
+        ) : (
+          "."
+        )}
+      </p>
+      <ul className="mt-4 rounded-group bg-fill lg:max-w-[calc(50%-12px)]">
         {headlineRows(t).map((r) => (
           <li
             key={r.label}
@@ -107,9 +265,6 @@ function Headline({ t }: { t: Traction }) {
           </li>
         ))}
       </ul>
-      <div className="lg:col-start-1 lg:row-start-2">
-        <CopySummary text={investorSummary(t)} />
-      </div>
     </section>
   );
 }

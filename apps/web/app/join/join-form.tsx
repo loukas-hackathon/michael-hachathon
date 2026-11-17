@@ -7,12 +7,16 @@ import {
   WAITLIST_ROLE_LABELS,
 } from "@michael/shared/waitlist-labels";
 import { useRouter } from "next/navigation";
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { input, Row, Segmented } from "@/components/form-controls";
+import { Collapse } from "@/components/motion-ui";
 import { joinWaitlist } from "./actions";
 
-// The sign up (/join). One field set, one primary button. The pending label shows at once, the
-// button holds still while the server answers, and an error is one line under it.
+// The sign up (/join): the fewest fields that still qualify. The hours question is the hook and
+// the qualifier at once (chips, one tap, no keyboard), then email and an optional name, then the
+// setup folded into one row most people never open (guessed from the device). Founding member is
+// asked on the thank you page, where it is a reward, not a hurdle. One pink button; the pending
+// label shows at once and holds until the next page paints; an error is one line under it.
 
 type Role = keyof typeof WAITLIST_ROLE_LABELS;
 type Computer = keyof typeof WAITLIST_COMPUTER_LABELS;
@@ -22,20 +26,50 @@ type Calendar = keyof typeof WAITLIST_CALENDAR_LABELS;
 const options = <T extends string>(labels: Record<T, string>) =>
   (Object.keys(labels) as T[]).map((value) => ({ value, label: labels[value] }));
 
+/** The chips, and what each sends: "10h+" is sent as 12. */
+const HOURS = [
+  { value: "2", label: "2h" },
+  { value: "4", label: "4h" },
+  { value: "6", label: "6h" },
+  { value: "8", label: "8h" },
+  { value: "12", label: "10h+" },
+] as const;
+type Hours = (typeof HOURS)[number]["value"];
+
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** The setup most visitors have, read from this device: a Windows laptop, an Android phone. */
+function guessDevice(ua: string): { computer: Computer; phone: Phone } {
+  const android = /Android/i.test(ua);
+  const computer: Computer = /Windows/i.test(ua)
+    ? "windows"
+    : /Linux/i.test(ua) && !android
+      ? "linux"
+      : "mac";
+  return { computer, phone: android ? "android" : "iphone" };
+}
 
 export function JoinForm({ referral, source }: { referral: string | null; source: string | null }) {
   const id = useId();
   const router = useRouter();
+  const [hours, setHours] = useState<Hours | "">("");
+  const [role, setRole] = useState<Role>("founder");
   const [computer, setComputer] = useState<Computer>("mac");
   const [phone, setPhone] = useState<Phone>("iphone");
   const [calendar, setCalendar] = useState<Calendar>("google");
-  const [founding, setFounding] = useState(false);
+  const [setupOpen, setSetupOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [line, setLine] = useState<string | null>(null);
-  const [invalid, setInvalid] = useState<"email" | "name" | "hours" | null>(null);
+  const [invalid, setInvalid] = useState<"email" | "hours" | null>(null);
   // One submission at a time: a ref, so a second tap before the re-render is ignored too.
   const inFlight = useRef(false);
+
+  // Smart defaults: the setup row reads true for most visitors without a tap.
+  useEffect(() => {
+    const guess = guessDevice(navigator.userAgent);
+    setComputer(guess.computer);
+    setPhone(guess.phone);
+  }, []);
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -43,19 +77,19 @@ export function JoinForm({ referral, source }: { referral: string | null; source
     const form = new FormData(e.currentTarget);
     const email = String(form.get("email") ?? "").trim();
     const name = String(form.get("name") ?? "").trim();
-    const hoursRaw = String(form.get("hours") ?? "").trim();
-    const hours = Number(hoursRaw);
-    const check = !EMAIL.test(email)
-      ? { field: "email" as const, text: "That email doesn't look right." }
-      : !name
-        ? { field: "name" as const, text: "Tell me your name." }
-        : !hoursRaw || !Number.isInteger(hours) || hours < 0 || hours > 80
-          ? { field: "hours" as const, text: "Your best guess of the hours you lose a week, 0 to 80." }
-          : null;
+    const check = !hours
+      ? { field: "hours" as const, text: "Pick your best guess." }
+      : !EMAIL.test(email)
+        ? { field: "email" as const, text: "That email doesn't look right." }
+        : null;
     if (check) {
       setInvalid(check.field);
       setLine(check.text);
-      document.getElementById(`${id}-${check.field}`)?.focus();
+      const target =
+        check.field === "hours"
+          ? document.getElementById(`${id}-hours`)?.querySelector("input")
+          : document.getElementById(`${id}-email`);
+      target?.focus();
       return;
     }
     inFlight.current = true;
@@ -65,20 +99,20 @@ export function JoinForm({ referral, source }: { referral: string | null; source
     try {
       const result = await joinWaitlist({
         email,
-        name,
-        role: String(form.get("role")) as Role,
-        hours_lost_per_week: hours,
+        name: name || null,
+        role,
+        hours_lost_per_week: Number(hours),
         computer,
         phone,
         calendar,
-        founding_member: founding,
+        founding_member: false,
         ref: referral,
         source,
         website: String(form.get("website") ?? ""),
       });
       if (result.ok) {
-        // Keep the pending label until the next page is on screen.
-        router.push(`/join/${result.code}`);
+        // Keep the pending label until the next page is on screen; it counts up once from here.
+        router.push(`/join/${result.code}?new=1`);
         return;
       }
       setLine(result.line);
@@ -89,16 +123,42 @@ export function JoinForm({ referral, source }: { referral: string | null; source
     setBusy(false);
   }
 
+  const summary = [
+    WAITLIST_ROLE_LABELS[role],
+    WAITLIST_COMPUTER_LABELS[computer],
+    WAITLIST_PHONE_LABELS[phone],
+    WAITLIST_CALENDAR_LABELS[calendar],
+  ].join(" · ");
+
   return (
-    <form onSubmit={submit} noValidate aria-labelledby={`${id}-title`} className="mt-10">
-      <h2 id={`${id}-title`} className="mb-2 text-title3 font-bold">
-        Get in early
-      </h2>
+    <form onSubmit={submit} noValidate aria-label="Join the waiting list" className="mt-8 lg:mt-0">
       {referral ? (
         <p className="mb-3 text-subhead text-label-2">A friend sent you. They move up when you join.</p>
       ) : null}
+      <h2 id={`${id}-hours-q`} className="text-title3 font-bold">
+        How many hours a week do you lose?
+      </h2>
+      <div
+        id={`${id}-hours`}
+        className={`mt-3 rounded-[9px] ${invalid === "hours" ? "shadow-[0_0_0_1.5px_var(--m-danger)]" : ""}`}
+      >
+        <Segmented
+          name="hours"
+          size="lg"
+          labelledBy={`${id}-hours-q`}
+          options={HOURS.map((h) => ({ value: h.value, label: h.label }))}
+          value={hours}
+          onChange={(v) => {
+            setHours(v);
+            if (invalid === "hours") {
+              setInvalid(null);
+              setLine(null);
+            }
+          }}
+        />
+      </div>
 
-      <div className="rounded-group bg-fill">
+      <div className="mt-4 rounded-group bg-fill">
         <Row label="Email" htmlFor={`${id}-email`}>
           <input
             id={`${id}-email`}
@@ -120,81 +180,82 @@ export function JoinForm({ referral, source }: { referral: string | null; source
             id={`${id}-name`}
             name="name"
             autoComplete="name"
-            enterKeyHint="next"
-            placeholder="Your name"
+            enterKeyHint="done"
+            placeholder="Optional"
             maxLength={120}
-            aria-invalid={invalid === "name" || undefined}
             className={`${input} h-11`}
           />
         </Row>
-        <Row label="Role" htmlFor={`${id}-role`}>
-          <select
-            id={`${id}-role`}
-            name="role"
-            defaultValue="founder"
-            className="h-11 min-w-0 appearance-none bg-transparent text-right text-body text-label outline-none"
+        <div className="relative before:absolute before:inset-x-0 before:top-0 before:ml-4 before:h-[0.5px] before:bg-separator before:content-['']">
+          <button
+            type="button"
+            aria-expanded={setupOpen}
+            aria-controls={`${id}-setup`}
+            onClick={() => setSetupOpen((o) => !o)}
+            className="flex min-h-11 w-full items-center gap-3 rounded-group px-4 text-left active:bg-[color-mix(in_srgb,var(--m-label)_6%,transparent)]"
           >
-            {options(WAITLIST_ROLE_LABELS).map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </Row>
-        <Row label="Hours you lose a week" htmlFor={`${id}-hours`}>
-          <input
-            id={`${id}-hours`}
-            name="hours"
-            type="number"
-            inputMode="numeric"
-            min={0}
-            max={80}
-            step={1}
-            placeholder="6"
-            aria-invalid={invalid === "hours" || undefined}
-            className={`${input} tnum h-11 w-16`}
-          />
-        </Row>
+            <span className="shrink-0 text-body">Setup</span>
+            <span
+              className="min-w-0 flex-1 truncate text-right text-body text-label-2"
+              data-testid="join-setup"
+            >
+              {summary}
+            </span>
+            <span
+              aria-hidden="true"
+              className={`shrink-0 text-label-2 transition-transform duration-[var(--m-dur-ui)] ease-[var(--m-ease-out)] motion-reduce:transition-none ${setupOpen ? "rotate-90" : ""}`}
+            >
+              ›
+            </span>
+          </button>
+        </div>
       </div>
 
-      <Choice label="Computer">
-        <Segmented
-          name="computer"
-          options={options(WAITLIST_COMPUTER_LABELS)}
-          value={computer}
-          onChange={setComputer}
-        />
-      </Choice>
-      <Choice label="Phone">
-        <Segmented name="phone" options={options(WAITLIST_PHONE_LABELS)} value={phone} onChange={setPhone} />
-      </Choice>
-      <Choice label="Calendar">
-        <Segmented
-          name="calendar"
-          options={options(WAITLIST_CALENDAR_LABELS)}
-          value={calendar}
-          onChange={setCalendar}
-        />
-      </Choice>
-
-      <div className="mt-6 rounded-group bg-fill">
-        <label htmlFor={`${id}-founding`} className="flex min-h-11 items-center gap-3 px-4 py-2.5">
-          <span className="min-w-0 flex-1">
-            <span className="block text-body">Founding member</span>
-            <span className="block text-footnote text-label-2">€15 a month for life. No payment now.</span>
-          </span>
-          <input
-            id={`${id}-founding`}
-            name="founding"
-            type="checkbox"
-            role="switch"
-            checked={founding}
-            aria-checked={founding}
-            onChange={(e) => setFounding(e.currentTarget.checked)}
-            className="hit m-switch shrink-0"
-          />
-        </label>
-      </div>
+      <Collapse open={setupOpen} id={`${id}-setup`}>
+        <div className="pt-4">
+          <div className="rounded-group bg-fill">
+            <Row label="Role" htmlFor={`${id}-role`}>
+              <select
+                id={`${id}-role`}
+                name="role"
+                value={role}
+                onChange={(e) => setRole(e.currentTarget.value as Role)}
+                className="h-11 min-w-0 appearance-none bg-transparent text-right text-body text-label outline-none"
+              >
+                {options(WAITLIST_ROLE_LABELS).map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </Row>
+          </div>
+          <Choice label="Computer">
+            <Segmented
+              name="computer"
+              options={options(WAITLIST_COMPUTER_LABELS)}
+              value={computer}
+              onChange={setComputer}
+            />
+          </Choice>
+          <Choice label="Phone">
+            <Segmented
+              name="phone"
+              options={options(WAITLIST_PHONE_LABELS)}
+              value={phone}
+              onChange={setPhone}
+            />
+          </Choice>
+          <Choice label="Calendar">
+            <Segmented
+              name="calendar"
+              options={options(WAITLIST_CALENDAR_LABELS)}
+              value={calendar}
+              onChange={setCalendar}
+            />
+          </Choice>
+        </div>
+      </Collapse>
 
       {/* The honeypot: hidden from people and from screen readers, only a bot fills it in. */}
       <div aria-hidden="true" className="absolute -left-[9999px] h-px w-px overflow-hidden">
@@ -206,12 +267,15 @@ export function JoinForm({ referral, source }: { referral: string | null; source
         type="submit"
         disabled={busy}
         aria-busy={busy || undefined}
-        className="press mt-8 flex h-12 w-full items-center justify-center rounded-full bg-tint px-6 text-body font-semibold text-on-tint transition-opacity duration-200 disabled:opacity-60"
+        className="press mt-6 flex h-[50px] w-full items-center justify-center rounded-full bg-tint px-6 text-body font-semibold text-on-tint transition-opacity duration-[var(--m-dur-ui)] disabled:opacity-60"
       >
         {busy ? "Joining" : "Join the waiting list"}
       </button>
-      <p role="alert" className="mt-2 min-h-[18px] text-center text-footnote text-danger">
+      <p role="alert" className="mt-2 text-center text-footnote text-danger">
         {line}
+      </p>
+      <p className="mt-1 text-center text-footnote text-label-2">
+        One email when it's your turn. Nothing else.
       </p>
     </form>
   );
@@ -219,7 +283,7 @@ export function JoinForm({ referral, source }: { referral: string | null; source
 
 function Choice({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <fieldset className="mt-5">
+    <fieldset className="mt-4">
       <legend className="mb-2 px-4 text-footnote text-label-2">{label}</legend>
       {children}
     </fieldset>

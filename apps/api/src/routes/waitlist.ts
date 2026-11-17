@@ -1,5 +1,6 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import {
+  nameFromEmail,
   type WaitlistAdmin,
   type WaitlistAdminEntry,
   WaitlistCode,
@@ -9,6 +10,8 @@ import {
   WaitlistRole,
   type WaitlistStanding,
   type WaitlistStats,
+  type WaitlistTotal,
+  WaitlistUpdate,
   waitlistStandings,
 } from "@michael/shared";
 import { type Context, Hono } from "hono";
@@ -25,8 +28,14 @@ import { store } from "../store";
 /** Sign ups per client IP per hour. */
 export const JOINS_PER_HOUR = 10;
 const joins = rateLimiter(JOINS_PER_HOUR, 60 * 60 * 1000);
+/** Changes to one entry per hour (PATCH): generous, a switch is flipped by hand. */
+export const UPDATES_PER_HOUR = 30;
+const updates = rateLimiter(UPDATES_PER_HOUR, 60 * 60 * 1000);
 /** Tests only: start each test with a fresh allowance. */
-export const resetWaitlistLimit = () => joins.reset();
+export const resetWaitlistLimit = () => {
+  joins.reset();
+  updates.reset();
+};
 
 // The web app joins server to server, so the request's own address is the web server's. It passes
 // the visitor's address in this header, which counts only next to the API key (the web server
@@ -55,8 +64,16 @@ const newCode = () => randomBytes(6).toString("base64url");
 async function standingOf(code: string): Promise<WaitlistStanding | null> {
   const all = await store.listWaitlist();
   const at = waitlistStandings(all).get(code);
-  if (!at) return null;
-  return { referral_code: code, position: at.position, total: all.length, referrals: at.referrals };
+  const mine = all.find((e) => e.referral_code === code);
+  if (!at || !mine) return null;
+  return {
+    referral_code: code,
+    position: at.position,
+    total: all.length,
+    referrals: at.referrals,
+    hours_lost_per_week: mine.hours_lost_per_week,
+    founding_member: mine.founding_member,
+  };
 }
 
 export const waitlistPublic = new Hono()
@@ -76,7 +93,7 @@ export const waitlistPublic = new Hono()
       try {
         entry = await store.addWaitlistEntry({
           email: input.email,
-          name: input.name,
+          name: input.name?.trim() || nameFromEmail(input.email),
           role: input.role,
           hours_lost_per_week: input.hours_lost_per_week,
           computer: input.computer,
@@ -101,9 +118,33 @@ export const waitlistPublic = new Hono()
     c.header("cache-control", "no-store");
     return c.json(standing, created ? 201 : 200);
   })
+  // How many are waiting, and nothing else: /join says it once it is worth saying (100 and more).
+  // Registered before /:code; a code is 8 characters, so it can never be "total".
+  .get("/waitlist/total", async (c) => {
+    const all = await store.listWaitlist();
+    const body: WaitlistTotal = { total: all.length };
+    c.header("cache-control", "public, max-age=60");
+    return c.json(body);
+  })
   .get("/waitlist/:code", async (c) => {
     const code = WaitlistCode.safeParse(c.req.param("code"));
     const standing = code.success ? await standingOf(code.data) : null;
+    if (!standing) throw new HttpError("not_found", "No one on the list has that code");
+    c.header("cache-control", "no-store");
+    return c.json(standing);
+  })
+  // The holder of a code (the code is the secret: 48 random bits) may change their founding
+  // member interest from the thank you page. Nothing else about the entry can change.
+  .patch("/waitlist/:code", async (c) => {
+    const code = WaitlistCode.safeParse(c.req.param("code"));
+    const patch = parse(WaitlistUpdate, await jsonBody(c));
+    if (!code.success) throw new HttpError("not_found", "No one on the list has that code");
+    if (!updates.take(code.data)) {
+      throw new HttpError("rate_limited", "Too many changes. Try again in an hour.");
+    }
+    const updated = await store.updateWaitlistEntry(code.data, patch);
+    if (!updated) throw new HttpError("not_found", "No one on the list has that code");
+    const standing = await standingOf(code.data);
     if (!standing) throw new HttpError("not_found", "No one on the list has that code");
     c.header("cache-control", "no-store");
     return c.json(standing);

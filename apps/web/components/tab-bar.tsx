@@ -101,7 +101,7 @@ export function TabBar() {
     <nav
       aria-label="Michael"
       style={{ viewTransitionName: "tabbar" }}
-      className="fixed inset-x-[14px] bottom-[calc(16px+env(safe-area-inset-bottom))] z-20 h-[var(--m-tabbar-h)] rounded-full bg-[var(--m-glass)] shadow-[0_0_0_0.5px_var(--m-separator),0_6px_18px_-8px_rgb(0_0_0/0.25)] backdrop-blur-xl backdrop-saturate-150 lg:inset-x-auto lg:top-0 lg:bottom-0 lg:left-0 lg:flex lg:h-auto lg:w-64 lg:flex-col lg:rounded-none lg:bg-bg lg:shadow-[0.5px_0_0_var(--m-separator)] lg:backdrop-blur-none"
+      className="fixed inset-x-[14px] bottom-[calc(16px+env(safe-area-inset-bottom))] z-20 h-[var(--m-tabbar-h)] m-float rounded-full lg:inset-x-auto lg:top-0 lg:bottom-0 lg:left-0 lg:flex lg:h-auto lg:w-64 lg:flex-col lg:rounded-none lg:bg-bg lg:shadow-[0.5px_0_0_var(--m-separator)] lg:backdrop-blur-none"
     >
       <div className="hidden px-6 pt-8 pb-6 lg:block">
         <Link href="/" aria-label="Michael, Today" className="inline-block rounded-block">

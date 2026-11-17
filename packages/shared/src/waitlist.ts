@@ -19,7 +19,8 @@ export const WaitlistCode = z.string().regex(/^[A-Za-z0-9_-]{4,32}$/);
 
 export const WaitlistJoin = z.object({
   email: z.string().trim().toLowerCase().pipe(z.email().max(320)),
-  name: z.string().trim().min(1).max(120),
+  // Optional: left out or blank, the API keeps a display name made from the email.
+  name: z.string().trim().max(120).optional().nullable(),
   role: WaitlistRole,
   // Their own guess of the hours they lose a week.
   hours_lost_per_week: z.coerce.number().int().min(0).max(80),
@@ -43,8 +44,32 @@ export const WaitlistStanding = z.object({
   position: z.number().int().positive(),
   total: z.number().int().nonnegative(),
   referrals: z.number().int().nonnegative(),
+  // What they told us when they joined, echoed on their own page: the hours they lose a week and
+  // whether they would prepay. Only ever their own, never a name or an email.
+  hours_lost_per_week: z.number().int().nonnegative(),
+  founding_member: z.boolean(),
 });
 export type WaitlistStanding = z.infer<typeof WaitlistStanding>;
+
+/** GET /v1/waitlist/total: how many are waiting, nothing else (public). */
+export const WaitlistTotal = z.object({ total: z.number().int().nonnegative() });
+export type WaitlistTotal = z.infer<typeof WaitlistTotal>;
+
+/** PATCH /v1/waitlist/:code: what the holder of a code may change after joining. */
+export const WaitlistUpdate = z.object({
+  founding_member: z.boolean(),
+});
+export type WaitlistUpdate = z.infer<typeof WaitlistUpdate>;
+
+/** A display name from an email when none was given: "ada.lovelace@x.com" is "Ada Lovelace". */
+export function nameFromEmail(email: string): string {
+  const local = (email.split("@")[0] ?? "").replace(/\+.*$/, "");
+  const words = local
+    .split(/[._-]+/)
+    .filter((w) => /[a-z]/i.test(w))
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+  return (words.join(" ") || local || "Friend").slice(0, 120);
+}
 
 export const WaitlistEntry = z.object({
   id: z.uuid(),
