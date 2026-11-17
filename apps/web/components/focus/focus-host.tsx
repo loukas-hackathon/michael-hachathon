@@ -14,7 +14,7 @@ import { FocusResult, FocusSessionView } from "./focus-session";
 // again (remembered on this device).
 
 // Screens with no signed in app around them.
-const OUTSIDE = /^\/(login|auth|onboarding|connect|setup|stage|live)(\/|$)/;
+const OUTSIDE = /^\/(login|auth|join|onboarding|connect|setup|stage|live)(\/|$)/;
 const SEEN_KEY = "michael:focus-seen";
 
 function seen(id: string): boolean {

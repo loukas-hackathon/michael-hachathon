@@ -39,7 +39,7 @@ const PRECACHE = [SHELL_URL, "/manifest.webmanifest", "/icon-180.png", "/icon-51
 const NAV_TIMEOUT_MS = 700;
 // Pages with their own loading screen and no tab bar: the skeleton shell would be the wrong shape,
 // and a brand new account's first page (onboarding) is exactly the slow one (#544).
-const OUTSIDE_SHELL = /^\/(onboarding|connect|setup|integrations|stage|live)(\/|$)/;
+const OUTSIDE_SHELL = /^\/(onboarding|connect|setup|integrations|stage|live|join|waitlist)(\/|$)/;
 // The shell adds this when it waited too long for the hand over (iOS can stop the worker that held
 // the request, and then no answer ever comes): that load goes straight to the network.
 const NET_PARAM = "m-net";
