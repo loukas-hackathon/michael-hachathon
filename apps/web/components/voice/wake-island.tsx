@@ -26,8 +26,10 @@ import {
   useConversation,
 } from "./conversation";
 import { playEarcon, primeEarcons } from "./earcons";
+import { holdElevenlabs } from "./hold-to-talk";
 import { LivingVoice, type VoiceMood } from "./living-voice";
 import { UNSUPPORTED_COPY } from "./speech";
+import { WakeDebugPill } from "./wake-debug";
 
 // "Yo Michael": where Michael answers when woken by his name. A small black capsule at the top of
 // the screen, the island, with his living voice inside and one word for the state; under it, when
@@ -36,7 +38,8 @@ import { UNSUPPORTED_COPY } from "./speech";
 // the edge of the screen (720ms, once) and the island opening from its top edge. He listens,
 // thinks and speaks from here; a tap does the one obvious thing; swipe up, Escape or a tap outside
 // closes it. It closes on its own after a quiet wake (4s), after the follow up window (5s), and
-// 6s after a line that something went wrong.
+// 6s after a line that something went wrong. Holding the Mi button opens it too (hold-to-talk.tsx):
+// it listens while held, answers once let go, and keeps the answer on screen for 6s.
 
 const STATUS: Record<Phase, string> = {
   off: "Tap to retry",
@@ -97,13 +100,18 @@ export function WakeIsland() {
       .catch(() => {});
   }, [setting.mode]);
 
-  const begin = (first: string | null) => {
+  const begin = (first: string | null, held = false) => {
     clearLater();
     setHold(null);
     setFrom(chatLineCount());
     ran.current = false;
     asked.current = !!first;
-    startConversation({ elevenlabs: elevenlabs.current, wake: true, ...(first ? { first } : {}) });
+    startConversation({
+      elevenlabs: elevenlabs.current || holdElevenlabs(),
+      wake: true,
+      ...(held ? { hold: true } : {}),
+      ...(first ? { first } : {}),
+    });
   };
 
   const close = () => {
@@ -130,7 +138,7 @@ export function WakeIsland() {
       playEarcon("wake");
       setBloom((b) => b + 1);
       setStage("open");
-      begin(w.first);
+      begin(w.first, w.hold === true);
     };
     woken();
     return onWake(woken);
@@ -156,6 +164,9 @@ export function WakeIsland() {
     if (asked.current || talk.turns > 0) playEarcon("end");
     if (talk.note) {
       setHold(talk.note);
+      later(close, HOLD_MS);
+    } else if (talk.hold && talk.turns > 0) {
+      // Held: one answer, kept on screen to read; the next hold asks again.
       later(close, HOLD_MS);
     } else close();
   }, [talk.phase, stage]);
@@ -189,7 +200,9 @@ export function WakeIsland() {
       if (e.key === "Escape") close();
     };
     // A tap outside the island and its card closes it; the tap still reaches what it was on.
+    // A press on the Mi button is the next hold, not a tap outside: the island stays for it.
     const onDown = (e: globalThis.PointerEvent) => {
+      if (e.target instanceof Element && e.target.closest("[data-hold-talk]")) return;
       if (root.current && e.target instanceof Node && !root.current.contains(e.target)) close();
     };
     document.addEventListener("visibilitychange", onHide);
@@ -206,7 +219,14 @@ export function WakeIsland() {
   useEffect(() => () => clearLater(), []);
 
   const dim = stage === "closed" && heard;
-  if (stage === "closed" && !heard) return <Bloom n={bloom} />;
+  if (stage === "closed" && !heard) {
+    return (
+      <>
+        <Bloom n={bloom} />
+        <WakeDebugPill />
+      </>
+    );
+  }
 
   const phase = talk.phase;
   const ended = phase === "off" || phase === "unavailable";
@@ -307,7 +327,7 @@ export function WakeIsland() {
           <div
             data-testid="wake-card"
             data-closing={stage === "closing" || undefined}
-            className="m-float m-island-card m-pop-in pointer-events-auto mt-2 w-full max-w-[360px] rounded-card px-4 py-3.5"
+            className="m-float m-solid m-island-card m-pop-in pointer-events-auto mt-2 w-full max-w-[360px] rounded-card px-4 py-3.5"
           >
             {you ? (
               <p

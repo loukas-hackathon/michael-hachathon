@@ -6,26 +6,22 @@ import { meetingEndsAt, useMeetings } from "@/lib/meetings";
 import { useOffTheRecord } from "@/lib/off-the-record";
 import {
   emitWake,
-  isFatalWakeError,
-  isQuietWakeError,
+  HOME_SCREEN_LINE,
   isWakeHeld,
-  matchWake,
-  restartDelay,
-  SHORT_SESSION_MS,
+  micBlockedLine,
+  NO_RECOGNISER_LINE,
   setWakeArmed,
   setWakeHeard,
   setWakeSetting,
   subscribeWakeHold,
   useWakeHeld,
   useWakeSetting,
-  WAKE_SETTLE_MS,
-  type Wake,
   type WakeSetting,
-  wakeIn,
 } from "@/lib/wake-word";
 import { useConversation } from "./conversation";
 import { earconContext, primeEarcons } from "./earcons";
-import { isIosHomeScreenApp, markRefused, type Recognition, recognitionCtor, unlockAudio } from "./speech";
+import { isIosHomeScreenApp, markRefused, unlockAudio } from "./speech";
+import { listenForWake } from "./wake-loop";
 
 // The wake word's listening loop (lib/wake-word.ts has the matching and the rules). Mounted once in
 // the root layout; Michael answers in the island (wake-island.tsx). While it listens, the Mi button
@@ -50,9 +46,6 @@ import { isIosHomeScreenApp, markRefused, type Recognition, recognitionCtor, unl
 /** Screens where Michael already holds the microphone or there is no user yet. */
 const HIDDEN_ON = ["/onboarding", "/connect", "/stage", "/setup", "/login", "/auth", "/join"];
 
-const MIC_COPY = "I need the microphone to hear my name.";
-const REFUSED_COPY = "This browser won't let me listen for my name.";
-const HOME_SCREEN_COPY = "The Home Screen app can't listen for my name. Open me in Safari.";
 const LOCAL_GONE_COPY = "On device listening stopped here. Switch on again to choose.";
 
 export function WakeWordHost() {
@@ -138,13 +131,13 @@ function WakeListener({ setting }: { setting: Exclude<WakeSetting, { mode: "off"
       },
       onFatal: (code) => {
         if (code === "not-allowed" && !isIosHomeScreenApp()) {
-          setWakeSetting({ mode: "off" }, MIC_COPY);
+          setWakeSetting({ mode: "off" }, micBlockedLine(navigator.userAgent));
         } else if (mode === "local") {
           // Never fall back to the cloud on our own: the user agreed to on device listening.
           setWakeSetting({ mode: "off" }, LOCAL_GONE_COPY);
         } else {
           markRefused();
-          setWakeSetting({ mode: "off" }, isIosHomeScreenApp() ? HOME_SCREEN_COPY : REFUSED_COPY);
+          setWakeSetting({ mode: "off" }, isIosHomeScreenApp() ? HOME_SCREEN_LINE : NO_RECOGNISER_LINE);
         }
       },
     });
@@ -160,138 +153,4 @@ function WakeListener({ setting }: { setting: Exclude<WakeSetting, { mode: "off"
   }, [listening, lang, mode]);
 
   return null;
-}
-
-// ---------- the loop ----------
-
-type LoopOptions = {
-  lang: string;
-  /** On device only (Chrome's processLocally): audio never leaves the device. */
-  local: boolean;
-  onWake: (w: Wake) => void;
-  /** The name is in an unfinished phrase (true), or that candidate is gone (false). */
-  onHeard?: (on: boolean) => void;
-  /** Listening cannot run here (microphone refused, no recogniser, no language pack). */
-  onFatal: (code: string) => void;
-  /** Too many failures in a row: the loop has stopped trying. */
-  onRest: () => void;
-};
-
-/**
- * Listens for the name until stopped, woken or refused. One recogniser at a time; each one the
- * browser ends is followed by the next, at once after a normal end and with a growing pause after
- * errors or sessions that end straight away, up to MAX_FAILURES, then it rests until the app is
- * opened again. Returns the stop, which drops the recogniser without letting it act.
- */
-export function listenForWake(opts: LoopOptions): () => void {
-  let stopped = false;
-  let failures = 0;
-  let rec: Recognition | null = null;
-  let restart: ReturnType<typeof setTimeout> | undefined;
-  let settle: ReturnType<typeof setTimeout> | undefined;
-  let candidate: string | null = null;
-
-  const drop = () => {
-    const r = rec;
-    rec = null;
-    if (!r) return;
-    r.onresult = null;
-    r.onerror = null;
-    r.onend = null;
-    try {
-      r.abort();
-    } catch {
-      // Already stopped.
-    }
-  };
-
-  const stop = () => {
-    stopped = true;
-    clearTimeout(restart);
-    clearTimeout(settle);
-    if (candidate) opts.onHeard?.(false);
-    drop();
-  };
-
-  const fire = () => {
-    clearTimeout(settle);
-    const w = candidate ? matchWake(candidate) : null;
-    candidate = null;
-    if (!w || stopped) {
-      opts.onHeard?.(false);
-      return;
-    }
-    stop();
-    opts.onWake(w);
-  };
-
-  const schedule = () => {
-    const wait = restartDelay(failures);
-    if (wait === null) {
-      stopped = true;
-      return opts.onRest();
-    }
-    restart = setTimeout(begin, wait);
-  };
-
-  function begin() {
-    if (stopped) return;
-    const Ctor = recognitionCtor();
-    if (!Ctor) {
-      stop();
-      return opts.onFatal("service-not-allowed");
-    }
-    const r = new Ctor() as Recognition & { processLocally?: boolean };
-    r.lang = opts.lang;
-    r.continuous = true;
-    r.interimResults = true;
-    r.maxAlternatives = 1;
-    if (opts.local) r.processLocally = true;
-    const startedAt = Date.now();
-    let heard = false;
-    let errored = false;
-    let fatal: string | null = null;
-    r.onresult = (e) => {
-      heard = true;
-      const hit = wakeIn(e);
-      if (!hit) return;
-      // The name is in: wait for the rest of the sentence, or act now if the phrase is finished.
-      // Two stages: a quiet, dim island now, the full wake once the phrase is settled.
-      if (!candidate && !hit.final) opts.onHeard?.(true);
-      candidate = hit.phrase;
-      clearTimeout(settle);
-      if (hit.final) fire();
-      else settle = setTimeout(fire, WAKE_SETTLE_MS);
-    };
-    r.onerror = (e) => {
-      if (isQuietWakeError(e.error)) return;
-      if (isFatalWakeError(e.error)) fatal = e.error;
-      else errored = true;
-    };
-    r.onend = () => {
-      if (rec !== r) return;
-      rec = null;
-      if (stopped) return;
-      if (fatal) {
-        stop();
-        return opts.onFatal(fatal);
-      }
-      // Ended mid phrase, after the name: act on what was heard.
-      if (candidate) return fire();
-      const short = !heard && Date.now() - startedAt < SHORT_SESSION_MS;
-      failures = errored || short ? failures + 1 : 0;
-      schedule();
-    };
-    rec = r;
-    try {
-      r.start();
-    } catch {
-      rec = null;
-      failures++;
-      schedule();
-    }
-  }
-
-  begin();
-  return stop;
 }

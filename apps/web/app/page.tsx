@@ -33,6 +33,7 @@ import { TravelCard } from "@/components/today/travel-card";
 import { WatchLine } from "@/components/today/watch-line";
 import { WeekCard } from "@/components/today/week-card";
 import { WeekGlance } from "@/components/today/week-glance";
+import { WakeOffer } from "@/components/voice/wake-offer";
 import {
   getChecklist,
   getGoals,
@@ -156,6 +157,7 @@ export default async function TodayPage({
         title={TITLE[day.moment]}
       />
       <DemoWeekLine />
+      <WakeOffer place="today" className="mt-4" />
       <RecommendationsPanel slot="booked" />
 
       {empty && firstDay ? (

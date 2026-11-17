@@ -3,6 +3,7 @@
 import { useSyncExternalStore } from "react";
 import { sendLine } from "@/app/chat/chat-session";
 import { hapticTwice } from "@/components/haptics";
+import { micBlockedLine } from "@/lib/wake-word";
 import { playEarcon } from "./earcons";
 import {
   checkRecorderPath,
@@ -73,6 +74,12 @@ export type Conversation = {
   turns: number;
   /** Turns heard with no words in them, woken by name: one is said, the second offers typing. */
   misses: number;
+  /**
+   * Held: the Mi button is pressed and held (hold-to-talk.ts), like the side button for Siri. He
+   * listens for as long as it is held, with no pause or quiet limit, answers once it is let go, and
+   * does not listen again: the next hold is the next question.
+   */
+  hold: boolean;
 };
 
 /** A pause this long after the user's words ends their turn. */
@@ -93,6 +100,12 @@ export const MISSED_COPY = "I didn't catch that. Say it again.";
 export const TYPE_COPY = "Type it instead.";
 export const WAKE_MIC_COPY = "I can't hear you. Allow the microphone in Settings.";
 export const OFFLINE_COPY = "No connection. I'll answer when you're back.";
+/** Held: let go before anything was recorded. */
+export const HOLD_SHORT_COPY = "Hold me while you speak, then let go.";
+/** Held: let go with no words in it. */
+export const HOLD_MISSED_COPY = "I didn't catch that. Hold me and speak.";
+/** Held: the recogniser has this long after the release to hand over its last words. */
+const RELEASE_GRACE_MS = 1500;
 
 const OFF: Conversation = {
   phase: "off",
@@ -105,6 +118,7 @@ const OFF: Conversation = {
   wake: false,
   turns: 0,
   misses: 0,
+  hold: false,
 };
 let state = OFF;
 const listeners = new Set<() => void>();
@@ -138,6 +152,9 @@ let elevenlabs = false;
 let saying = "";
 // When listening ends for want of words; kept across the browser's own restarts of the recogniser.
 let quietAt = 0;
+// Held: the Mi button has been let go, so the turn ends as soon as the last words are in.
+let released = false;
+let releaseTimer: ReturnType<typeof setTimeout> | undefined;
 
 /** Woken by name: the island shows it, not the sheet (which leaves it running when it unmounts). */
 export const isWakeConversation = (): boolean => state.wake && state.phase !== "off";
@@ -150,6 +167,7 @@ const phase = (): Phase => state.phase;
 function clearTimers() {
   clearTimeout(pauseTimer);
   clearTimeout(quietTimer);
+  clearTimeout(releaseTimer);
 }
 
 /** Stops the recogniser without letting its last events act. */
@@ -187,8 +205,13 @@ export function startConversation(opts: {
   greet?: string;
   /** Woken by name: the island's timings and lines (see Conversation.wake). */
   wake?: boolean;
+  /** Held on the Mi button: listens until releaseHold (see Conversation.hold). */
+  hold?: boolean;
 }): void {
   elevenlabs = opts.elevenlabs;
+  released = false;
+  // A new hold cuts in on whatever he was saying.
+  if (opts.hold) stopSpeaking();
   unlockAudio();
   // Inside the tap too: the level meter's audio context may only start in a gesture on iOS.
   primeRecorder();
@@ -199,7 +222,14 @@ export function startConversation(opts: {
     return;
   }
   const recorded = mode === "recorder";
-  set({ ...OFF, recorded, bargeIn: !recorded && !isIos(), wake: opts.wake === true });
+  const hold = opts.hold === true;
+  set({
+    ...OFF,
+    recorded,
+    bargeIn: !recorded && !isIos() && !hold,
+    wake: opts.wake === true || hold,
+    hold,
+  });
   const first = opts.first?.trim();
   if (first) {
     const mine = ++gen;
@@ -304,17 +334,22 @@ function listen(overSpeech = false) {
   const mine = gen;
   dropRecogniser();
   clearTimers();
+  // Held: the browser may end a session mid hold; the words so far stay and the next adds to them.
+  const before = state.hold ? state.heard.trim() : "";
   if (!overSpeech) {
     if (state.phase !== "listening") quietAt = Date.now() + quietMs();
-    set({ phase: "listening", heard: "" });
-    quietTimer = setTimeout(
-      () => {
-        if (mine === gen && !state.heard.trim()) endConversation(quietNote());
-      },
-      Math.max(0, quietAt - Date.now()),
-    );
+    set({ phase: "listening", heard: before });
+    // Held, there is no quiet limit: the hand on the button says when it is over.
+    if (!state.hold) {
+      quietTimer = setTimeout(
+        () => {
+          if (mine === gen && !state.heard.trim()) endConversation(quietNote());
+        },
+        Math.max(0, quietAt - Date.now()),
+      );
+    }
   }
-  let heard = "";
+  let heard = before;
   const r = new Ctor();
   r.lang = "en-GB";
   r.continuous = true;
@@ -332,10 +367,12 @@ function listen(overSpeech = false) {
       listen();
       return;
     }
-    heard = text;
+    heard = before && text ? `${before} ${text}` : before || text;
     set({ heard, note: null });
     clearTimeout(quietTimer);
     clearTimeout(pauseTimer);
+    // Held, a pause does not end the turn: letting go does.
+    if (state.hold) return;
     pauseTimer = setTimeout(() => {
       if (mine === gen) void finishTurn();
     }, pauseMs());
@@ -352,14 +389,21 @@ function listen(overSpeech = false) {
       endConversation(micCopy(e.error));
       return;
     }
-    // Speech, but no words in it: said once when woken by name, then typing is offered.
-    if (e.error === "no-match" && !overSpeech) missed(mine);
+    // Speech, but no words in it: said once when woken by name, then typing is offered. Held, the
+    // release decides.
+    if (e.error === "no-match" && !overSpeech && !state.hold) missed(mine);
     // no-speech, network and aborted: onend decides what happens next.
   };
   r.onend = () => {
     if (mine !== gen || rec !== r) return;
     rec = null;
     if (overSpeech) return;
+    if (state.hold) {
+      // Let go: the last words are in. Still held: the browser ended the session, listen on.
+      if (released) return void finishHeld();
+      if (phase() === "listening") listen();
+      return;
+    }
     // Browsers stop listening on their own after a pause: finish the turn, or keep listening.
     if (heard.trim()) void finishTurn();
     else if (phase() === "listening") listen();
@@ -388,6 +432,7 @@ function listenRecorded() {
   clearTimers();
   if (state.phase !== "listening") quietAt = Date.now() + quietMs();
   set({ phase: "listening", heard: "", level: 0 });
+  const held = state.hold;
   let spoke = false;
   startRecording({
     onLevel: (level) => {
@@ -398,7 +443,8 @@ function listenRecorded() {
       clearTimeout(quietTimer);
     },
     onPause: () => {
-      if (mine === gen) void finishRecordedTurn();
+      // Held, a pause is only a breath: letting go ends the turn.
+      if (mine === gen && !held) void finishRecordedTurn();
     },
     onLimit: () => {
       if (mine === gen) void finishRecordedTurn();
@@ -407,6 +453,11 @@ function listenRecorded() {
     .then((r) => {
       if (mine !== gen || state.phase !== "listening") return r.cancel();
       recording = r;
+      // Let go while the microphone was still opening: the turn ends now.
+      if (held) {
+        if (released) void finishRecordedTurn();
+        return;
+      }
       // Without a level there is no telling silence from speech: the user taps when done.
       if (!r.metered) return;
       quietTimer = setTimeout(
@@ -435,12 +486,14 @@ async function finishRecordedTurn() {
   releaseMic();
   if (mine !== gen) return;
   if (!blob) {
+    if (state.hold) return heldMiss(HOLD_SHORT_COPY);
     set({ phase: "listening" });
     return listen();
   }
   const res = await transcribeRecording(blob);
   if (mine !== gen) return;
   if (!res.ok) return endConversation(transcribeErrorCopy(res.code));
+  if (!res.text && state.hold) return heldMiss(HOLD_MISSED_COPY);
   if (!res.text) {
     // Only noise: keep listening, within the same quiet limit (woken by name, it says so once).
     if (missed(mine)) return;
@@ -476,7 +529,57 @@ async function answer(text: string, mine: number) {
   if (mine !== gen || phase() !== "speaking") return;
   // One calm line stays on screen for what went wrong (no network, a refusal); he has just said it.
   if (!res.ok) return endConversation(saying);
+  // Held: one question, one answer. The answer stays on screen; the next hold asks again.
+  if (state.hold) return endConversation();
   listen();
+}
+
+/**
+ * The Mi button was let go: the turn ends once its last words are in. A recording stops and goes
+ * to the API; the browser's recogniser is asked to stop, and its end hands over the final words
+ * (with a short grace in case a browser never says it has ended).
+ */
+export function releaseHold(): void {
+  if (!state.hold || released) return;
+  released = true;
+  // The release is a tap: the moment iOS lets his voice be unlocked for the reply.
+  unlockAudio();
+  if (state.phase !== "listening") return;
+  if (state.recorded) {
+    // Still opening the microphone: listenRecorded ends the turn once it has it.
+    if (recording) void finishRecordedTurn();
+    return;
+  }
+  const r = rec;
+  if (!r) return void finishHeld();
+  const mine = gen;
+  releaseTimer = setTimeout(() => {
+    if (mine === gen && state.phase === "listening") {
+      dropRecogniser();
+      void finishHeld();
+    }
+  }, RELEASE_GRACE_MS);
+  try {
+    r.stop();
+  } catch {
+    dropRecogniser();
+    void finishHeld();
+  }
+}
+
+/** Held and let go, by the recogniser: send what was said, or say nothing was caught. */
+async function finishHeld() {
+  clearTimeout(releaseTimer);
+  if (state.phase !== "listening") return;
+  if (state.heard.trim()) return finishTurn();
+  heldMiss(HOLD_MISSED_COPY);
+}
+
+/** Held, nothing to send: two ticks, the missed earcon, and the line stays on the island. */
+function heldMiss(copy: string) {
+  hapticTwice();
+  playEarcon("missed");
+  endConversation(copy);
 }
 
 /** The quiet limit for the listening that starts now: shorter after a wake, the follow up after an answer. */
@@ -493,7 +596,9 @@ const pauseMs = (): number => (state.wake && state.turns === 0 ? WAKE_PAUSE_MS :
 
 /** The line for a microphone that will not open, in the island's words when woken by name. */
 function micCopy(code: string): string | null {
-  if (state.wake && (code === "not-allowed" || code === "service-not-allowed")) return WAKE_MIC_COPY;
+  if (state.wake && (code === "not-allowed" || code === "service-not-allowed")) {
+    return typeof navigator === "undefined" ? WAKE_MIC_COPY : micBlockedLine(navigator.userAgent);
+  }
   return recognitionErrorCopy(code);
 }
 
