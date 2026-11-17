@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { beforeEach, test } from "node:test";
-import { Traction } from "@michael/shared";
+import { Traction, type WaitlistEntry } from "@michael/shared";
 import { Hono } from "hono";
 import { isAdmin, isAdminEmail } from "../admin";
 import { app, v1Routes } from "../app";
@@ -12,6 +12,7 @@ import { DEFAULT_TIMEZONE } from "../patterns";
 import { type MemoryStore, store, type TractionUserFacts } from "../store";
 import { clearTractionCache, isExcludedAccount } from ".";
 import { computeTraction, median, sumGoalWeek, weekStarts } from "./compute";
+import { sourceName, waitingList } from "./waiting-list";
 
 // GET /v1/admin/traction: who may read it, who is never counted, and the maths.
 
@@ -280,4 +281,85 @@ test("sumGoalWeek: only users with planned goal time; share is spent over elapse
     won_back_minutes: 20,
   });
   assert.equal(sumGoalWeek("2026-11-16", []).share, null);
+});
+
+const entry = (over: Partial<WaitlistEntry>): WaitlistEntry => ({
+  id: randomUUID(),
+  email: `${randomUUID().slice(0, 8)}@example.com`,
+  name: "Someone",
+  role: "founder",
+  hours_lost_per_week: 6,
+  computer: "mac",
+  phone: "iphone",
+  calendar: "google",
+  founding_member: false,
+  referral_code: randomUUID().slice(0, 8),
+  referred_by: null,
+  source: null,
+  created_at: "2026-11-16T09:00:00Z",
+  invited_at: null,
+  ...over,
+});
+
+test("waitingList: days, sources, the hours spread and intent, never a name or an email", () => {
+  const inviter = entry({ referral_code: "inviter1", created_at: "2026-11-05T09:00:00Z", source: "t.co" });
+  const list = [
+    inviter,
+    entry({ created_at: "2026-11-06T09:00:00Z", source: "https://www.linkedin.com/feed", hours_lost_per_week: 2 }),
+    entry({ created_at: "2026-11-09T09:00:00Z", source: "x.com", hours_lost_per_week: 3, founding_member: true }),
+    entry({ created_at: "2026-11-16T09:00:00Z", referred_by: "inviter1", source: "x.com", hours_lost_per_week: 10 }),
+    entry({ created_at: "2026-11-17T08:00:00Z", hours_lost_per_week: 40, role: "executive", phone: "android" }),
+    // Ours: never counted.
+    entry({ email: "team@michael.app", created_at: "2026-11-17T08:30:00Z" }),
+  ];
+  const w = waitingList(list, { now: NOW, timezone: DEFAULT_TIMEZONE });
+  assert.equal(w.total, 5);
+  assert.equal(w.excluded, 1);
+  // The last 7 days run back to 10 Nov 10:00: 16 and 17 Nov. The 7 before: 5, 6 and 9 Nov.
+  assert.equal(w.last_7_days, 2);
+  assert.equal(w.previous_7_days, 3);
+  assert.equal(w.first_day, "2026-11-05");
+  assert.equal(w.by_day.length, 13, "5 to 17 November, every day");
+  assert.equal(w.by_day[0]?.sign_ups, 1);
+  assert.equal(w.by_day.at(-1)?.day, "2026-11-17");
+  assert.equal(w.by_day.reduce((s, d) => s + d.sign_ups, 0), 5);
+  assert.deepEqual(w.by_source, [
+    { source: "X", sign_ups: 2 },
+    { source: "a friend", sign_ups: 1 },
+    { source: "direct", sign_ups: 1 },
+    { source: "LinkedIn", sign_ups: 1 },
+  ]);
+  assert.deepEqual(
+    w.hours.map((h) => [h.up_to, h.people]),
+    [
+      [2, 1],
+      [4, 1],
+      [6, 1],
+      [8, 0],
+      [null, 2],
+    ],
+  );
+  assert.equal(w.median_hours, 6);
+  assert.equal(w.founding_members, 1);
+  assert.equal(w.referred, 1);
+  assert.equal(w.referrers, 1);
+  assert.equal(w.by_role.executive, 1);
+  assert.equal(w.by_phone.android, 1);
+  assert.doesNotMatch(JSON.stringify(w), /@|Someone|inviter1/);
+
+  const empty = waitingList([], { now: NOW, timezone: DEFAULT_TIMEZONE });
+  assert.equal(empty.total, 0);
+  assert.equal(empty.first_day, null);
+  assert.deepEqual(empty.by_day, []);
+  assert.equal(empty.median_hours, null);
+  assert.equal(empty.hours.length, 5);
+});
+
+test("sourceName: what people call the places they came from", () => {
+  assert.equal(sourceName("t.co", false), "X");
+  assert.equal(sourceName("twitter", false), "X");
+  assert.equal(sourceName("lnkd.in", false), "LinkedIn");
+  assert.equal(sourceName(null, false), "direct");
+  assert.equal(sourceName("x.com", true), "a friend");
+  assert.equal(sourceName("blog.example.com", false), "blog.example.com");
 });

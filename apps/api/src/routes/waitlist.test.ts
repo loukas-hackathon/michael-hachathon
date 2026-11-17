@@ -46,7 +46,16 @@ test("joining needs no sign in and answers with a code and a position", async ()
   assert.match(body.referral_code, /^[A-Za-z0-9_-]{8}$/);
   assert.equal(body.position, body.total);
   assert.equal(body.referrals, 0);
-  assert.deepEqual(Object.keys(body).sort(), ["position", "referral_code", "referrals", "total"]);
+  assert.deepEqual(Object.keys(body).sort(), [
+    "founding_member",
+    "hours_lost_per_week",
+    "position",
+    "referral_code",
+    "referrals",
+    "total",
+  ]);
+  assert.equal(body.hours_lost_per_week, 6);
+  assert.equal(body.founding_member, false);
 });
 
 test("joining again with the same email returns the same entry, never an error", async () => {
@@ -139,4 +148,52 @@ test("only an admin sees the full list; everyone else gets a 404", async () => {
   assert.ok(
     body.stats.top_referrers.some((r) => r.referral_code === inviter.referral_code && r.referrals === 1),
   );
+});
+
+test("the name is optional: a display name is made from the email", async () => {
+  const res = await join(person({ email: "ada.lovelace+list@example.com", name: undefined }));
+  assert.equal(res.status, 201);
+  const blank = await join(person({ email: "grace_hopper@example.com", name: "  " }));
+  assert.equal(blank.status, 201);
+  const list = await app.request("/v1/waitlist", { headers: { authorization: `Bearer e2e_${ADMIN}` } });
+  const body = (await list.json()) as WaitlistAdmin;
+  const names = new Map(body.entries.map((e) => [e.email, e.name]));
+  assert.equal(names.get("ada.lovelace+list@example.com"), "Ada Lovelace");
+  assert.equal(names.get("grace_hopper@example.com"), "Grace Hopper");
+});
+
+test("the holder of a code can say they would be a founding member, and nothing else", async () => {
+  const me = await joined(person({ hours_lost_per_week: 9 }));
+  assert.equal(me.founding_member, false);
+  assert.equal(me.hours_lost_per_week, 9);
+  const patch = (code: string, body: unknown) =>
+    app.request(`/v1/waitlist/${code}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  const on = await patch(me.referral_code, { founding_member: true });
+  assert.equal(on.status, 200);
+  const after = (await on.json()) as WaitlistStanding;
+  assert.equal(after.founding_member, true);
+  assert.equal(after.position, me.position);
+  const read = (await (await app.request(`/v1/waitlist/${me.referral_code}`)).json()) as WaitlistStanding;
+  assert.equal(read.founding_member, true);
+  // Back off again.
+  assert.equal(((await (await patch(me.referral_code, { founding_member: false })).json()) as WaitlistStanding).founding_member, false);
+  // Only that field, only a boolean, only a real code.
+  assert.equal((await patch(me.referral_code, { founding_member: "yes" })).status, 400);
+  assert.equal((await patch(me.referral_code, {})).status, 400);
+  assert.equal((await patch("nobody12", { founding_member: true })).status, 404);
+  const sneaky = await patch(me.referral_code, { founding_member: true, hours_lost_per_week: 80 });
+  assert.equal(((await sneaky.json()) as WaitlistStanding).hours_lost_per_week, 9);
+});
+
+test("the public total says how many are waiting, and nothing else", async () => {
+  const me = await joined(person());
+  const res = await app.request("/v1/waitlist/total");
+  assert.equal(res.status, 200);
+  const body = (await res.json()) as { total: number };
+  assert.deepEqual(Object.keys(body), ["total"]);
+  assert.ok(body.total >= me.total);
 });

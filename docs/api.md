@@ -3983,7 +3983,7 @@ role reads it). Schemas in `packages/shared/src/waitlist.ts`.
 type WaitlistRole = "founder" | "executive" | "employee" | "student" | "other";
 type WaitlistJoin = {
   email: string; // trimmed and lowercased; unique
-  name: string; // 1 to 120 characters
+  name?: string | null; // up to 120 characters; left out or blank, made from the email ("Ada Lovelace")
   role: WaitlistRole;
   hours_lost_per_week: number; // their own guess, 0 to 80
   computer: "mac" | "windows" | "linux";
@@ -3994,7 +3994,15 @@ type WaitlistJoin = {
   source?: string | null; // utm_source or the referrer, up to 200 characters
   website?: string; // honeypot: must be empty
 };
-type WaitlistStanding = { referral_code: string; position: number; total: number; referrals: number };
+type WaitlistStanding = {
+  referral_code: string;
+  position: number;
+  total: number;
+  referrals: number;
+  hours_lost_per_week: number; // what this code's holder said when joining, echoed on their page
+  founding_member: boolean; // their own founding member interest
+};
+type WaitlistUpdate = { founding_member: boolean }; // the only thing a code's holder can change
 type WaitlistEntry = WaitlistJoin fields + {
   id: string; referral_code: string; referred_by: string | null; source: string | null;
   created_at: string; invited_at: string | null;
@@ -4016,6 +4024,8 @@ type WaitlistAdmin = {
 | ------ | -------------------- | ------------------------- | -------------- | ------------------------------------------------------------------- | ------ |
 | POST   | `/v1/waitlist`       | none                      | `WaitlistJoin` | `201 WaitlistStanding` new, `200` already on the list, `400`, `429` | live   |
 | GET    | `/v1/waitlist/:code` | none                      |                | `200 WaitlistStanding`, `404` unknown code                          | live   |
+| GET    | `/v1/waitlist/total` | none                      |                | `200 { total: number }` (cached 60s)                               | live   |
+| PATCH  | `/v1/waitlist/:code` | none (the code)           | `WaitlistUpdate` | `200 WaitlistStanding`, `400`, `404` unknown code, `429`          | live   |
 | GET    | `/v1/waitlist`       | signed in, `ADMIN_EMAILS` |                | `200 WaitlistAdmin`; `404` for everyone else                        | live   |
 
 - **Position:** everyone starts at their place by join time (`created_at`). Each person who joins
@@ -4023,8 +4033,12 @@ type WaitlistAdmin = {
   to the one with more referrals, then to whoever joined first (`waitlistStandings`). Position 1
   is the front; you never pass the front.
 - Joining twice with the same email returns the existing entry's standing (`200`), never an error,
-  and changes nothing. The public answers carry the code, position, total and referral count only:
-  never an email or a name.
+  and changes nothing. The public answers carry the code, position, total and referral count, plus
+  that code holder's own hours and founding member answer (for their thank you page): never an
+  email or a name, never anyone else's answers.
+- `PATCH /v1/waitlist/:code` lets the holder of a code (48 random bits, the only secret) switch
+  their founding member interest on or off from the thank you page. Nothing else can change; other
+  fields in the body are ignored. At most 30 changes an hour per code.
 - A filled in honeypot (`website`) is a `400` and nothing is stored. At most 10 sign ups an hour
   per client address (in memory, per API process). The web app joins server to server and passes
   the visitor's address in `X-Michael-Client-IP`, which counts only next to the API key; anyone
@@ -4070,6 +4084,15 @@ one user's events, name, email or id. Weeks run Monday to Sunday in `timezone` (
 - **Engagement (all time):** `actions_done` recommendations carried out (status `done` or later
   `undone`), `actions_undone`, `chat_messages` lines users wrote (not demo visitors), `nudges_sent`
   (status `sent`), `connector_queries` tool calls logged from connected agents (claude.ai among them).
+- **Waiting list (`waiting_list`, `TractionWaitingList`):** numbers only, never a name, an email
+  or a code, so `/traction` is safe on a shared screen. Our own addresses (any at `michael.app`)
+  are left out (`excluded`). `total`; `last_7_days` and `previous_7_days` (rolling, for the week
+  on week change); `first_day` and `by_day` (every local day from the first sign up to today,
+  at most 365, oldest first); `by_source` (up to 8, most first: utm_source or the referring site
+  grouped as people say it, "X", "LinkedIn", "direct" when nothing came with them, "a friend" for
+  an invite link); `hours` (their own guess in five buckets: `up_to` 2, 4, 6, 8, then `null` for
+  10 and more) and `median_hours`; `founding_members` (stated interest, not revenue); `referred`
+  and `referrers`; counts `by_role`, `by_computer`, `by_phone`, `by_calendar`.
 
 Reads: Supabase Auth's user list (service role) and two service role functions,
 `traction_user_facts` and `traction_agent_queries` (migration `20261117200000_traction.sql`), one

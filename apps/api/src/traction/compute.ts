@@ -1,7 +1,14 @@
-import type { Traction, TractionCohort, TractionGoalWeek, TractionRetentionCell } from "@michael/shared";
+import type {
+  Traction,
+  TractionCohort,
+  TractionGoalWeek,
+  TractionRetentionCell,
+  WaitlistEntry,
+} from "@michael/shared";
 import { Zone } from "../patterns/time";
 import { mondayOf } from "../score/score";
 import type { AccountRow, TractionUserFacts } from "../store";
+import { waitingList } from "./waiting-list";
 
 // The traction numbers (GET /v1/admin/traction), as pure maths over rows the loader read
 // (traction/index.ts). Every output is a count, a sum or a share: nothing per user leaves here.
@@ -20,6 +27,8 @@ export interface TractionInput {
   facts: TractionUserFacts[];
   connectorQueries: number;
   goalTime: Traction["goal_time"];
+  /** Every waiting list entry (our own addresses are left out in waitingList). */
+  waitlist?: WaitlistEntry[];
 }
 
 /** The Monday of every week in the window, oldest first, ending with this week's. */
@@ -118,6 +127,7 @@ export function computeTraction(input: TractionInput): Traction {
     },
     retention: { cohorts, week_1: retained(1), week_2: retained(2), week_4: retained(4) },
     goal_time: input.goalTime,
+    waiting_list: waitingList(input.waitlist ?? [], { now: input.now, timezone: input.timezone }),
     engagement: {
       actions_done: sum((f) => f.actions_done),
       actions_undone: sum((f) => f.actions_undone),

@@ -62,9 +62,10 @@ async function buildTraction(now: number): Promise<Traction> {
   const ids = accounts.map((a) => a.id);
   const mondays = weekStarts(now, timezone);
   const since = new Date(zone.startOfDay(mondays[0] as string)).toISOString();
-  const [facts, queries] = await Promise.all([
+  const [facts, queries, waitlist] = await Promise.all([
     store.tractionFacts(ids, { since, timezone, sources: REAL_SOURCES }),
     agentsStore.queryCountsFor(ids),
+    store.listWaitlist(),
   ]);
 
   // Goal time: the existing score (routes/score.ts loadWeek), this week and last, for users active
@@ -104,6 +105,7 @@ async function buildTraction(now: number): Promise<Traction> {
     excluded: all.length - accounts.length,
     facts,
     connectorQueries: Object.values(queries).reduce((s, n) => s + n, 0),
+    waitlist,
     goalTime: {
       this_week: sumGoalWeek(thisMonday, thisWeek),
       last_week: sumGoalWeek(lastMonday, lastWeek),
