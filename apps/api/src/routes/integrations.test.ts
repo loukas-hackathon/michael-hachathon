@@ -288,3 +288,29 @@ test("onboarding: the callback goes straight back and the page reads four weeks 
   const result = CalendarSyncResult.parse(await (await sync("?past_days=28")).json());
   assert.ok(Date.parse(result.from) <= now - 27 * 24 * HOUR);
 });
+
+test("a second landing of Google's redirect (code already spent) still reads as connected", async () => {
+  const g = fakeGoogle();
+  setGoogleFetch(g.fetch);
+  const res = await app.request("/v1/integrations/google_calendar/connect", {
+    method: "POST",
+    headers: { ...auth, "content-type": "application/json" },
+    body: JSON.stringify({ return_to: "/onboarding?step=talk" }),
+  });
+  const state = new URL(OAuthConnectResponse.parse(await res.json()).url).searchParams.get("state") ?? "";
+  const land = () => app.request(`/oauth/google/callback?state=${encodeURIComponent(state)}&code=auth-code`);
+  const ok = "https://web.example.test/onboarding?step=talk&connected=google_calendar&sync=pending";
+  assert.equal((await land()).headers.get("location"), ok);
+  g.failTokenWith = "invalid_grant";
+  assert.equal((await land()).headers.get("location"), ok);
+
+  // Long after a connect, a spent code is a real failure again.
+  await runAsUser(DEMO, () =>
+    store.saveIntegration("google_calendar", { connected_at: new Date(Date.now() - HOUR).toISOString() }),
+  );
+  g.failTokenWith = "invalid_grant";
+  assert.match(
+    (await land()).headers.get("location") ?? "",
+    /integration_error=google_calendar&reason=token/,
+  );
+});
