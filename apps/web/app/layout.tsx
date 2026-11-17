@@ -15,6 +15,7 @@ import { SessionFresh } from "@/components/session-fresh";
 import { Splash } from "@/components/splash";
 import { StaleScreen } from "@/components/stale-screen";
 import { TabBar } from "@/components/tab-bar";
+import { WakeWordHost } from "@/components/voice/wake-word-host";
 import "./globals.css";
 
 // SF Pro comes from the device. Figtree is only the fallback for devices without it.
@@ -52,6 +53,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <div className="m-content mx-auto w-full max-w-[560px] lg:max-w-none">{children}</div>
         </div>
         <MeetingPill />
+        <WakeWordHost />
         <NudgeOpened />
         <TabBar />
         <FocusHost />

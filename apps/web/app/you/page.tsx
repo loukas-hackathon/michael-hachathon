@@ -10,6 +10,7 @@ import { arrivedFrom } from "@/lib/live-connections";
 import { DeleteDataRow } from "./delete-data-row";
 import { OffTheRecordSwitch } from "./off-the-record-switch";
 import { SignOutRow } from "./sign-out-row";
+import { WakeWordSwitch } from "./wake-word-switch";
 
 const separator = "absolute inset-x-0 top-0 ml-4 h-[0.5px] bg-separator";
 
@@ -75,6 +76,8 @@ export default async function YouPage({
             ›
           </span>
         </Link>
+        {/* The wake word: hands free from any screen while the app is open. Hidden without voice. */}
+        <WakeWordSwitch />
         {/* Laptop: Agents has its own place in the sidebar, so the row would say it twice. */}
         <Link
           href="/agents"
