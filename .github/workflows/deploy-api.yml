@@ -11,7 +11,6 @@ on:
       - "pnpm-lock.yaml"
       - "package.json"
       - "railway.json"
-      - ".github/workflows/deploy-api.yml"
   workflow_dispatch:
 permissions:
   contents: read
@@ -28,12 +27,8 @@ jobs:
         with:
           node-version: 22
       - run: npm install -g @railway/cli@5.74.0
-      # CLI uploads carry no git metadata, so record the SHA for /health first. WEB_URL is where
-      # Google sends the browser back after Connect Google Calendar: the Vercel app, never the old
-      # Railway web copy it pointed at before.
-      - run: >-
-          railway variables --service api --set "GIT_COMMIT_SHA=$GITHUB_SHA"
-          --set "WEB_URL=https://michael-zeta-sand.vercel.app" --skip-deploys
+      # CLI uploads carry no git metadata, so record the SHA for /health first.
+      - run: railway variables --service api --set "GIT_COMMIT_SHA=$GITHUB_SHA" --skip-deploys
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
       - run: railway up --service api --ci
