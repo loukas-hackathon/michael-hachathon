@@ -146,6 +146,18 @@ test("guards starting more than 10 minutes ahead are not sent yet", () =>
 test("the chat tool mutes apps through the same execute path and undo_action takes it back", () =>
   asNewUser(async () => {
     const { runChatTool } = await import("../actions/chat-tools");
+    // A live Mac (#483): data in the last 48 hours, written here rather than borrowed from a demo
+    // week that ages out.
+    await store.insertEvents([
+      {
+        source: "macos_usage",
+        type: "app_usage",
+        start_at: iso(Date.now() - 10 * 60_000),
+        end_at: iso(Date.now() - 5 * 60_000),
+        title: "Xcode",
+        data: { app: "Xcode" },
+      },
+    ]);
     const out = await runChatTool("block_mac_app", {
       apps: ["WhatsApp"],
       start_at: iso(Date.now() + HOUR),

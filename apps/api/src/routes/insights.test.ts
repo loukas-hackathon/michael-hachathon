@@ -11,7 +11,8 @@ import {
 } from "@michael/shared";
 import { app, v1Routes } from "../app";
 import { runAsUser } from "../context";
-import { forgetStudy, insightsText, learntAbout, topInsightFor } from "../insights/service";
+import { HttpError } from "../http";
+import { applyFix, forgetStudy, insightsText, learntAbout, topInsightFor } from "../insights/service";
 import { plantedMonth } from "../insights/testkit";
 import { store } from "../store";
 
@@ -130,8 +131,8 @@ test("the fix: unknown id is 404, an insight without a one tap action is 409", a
     });
     // The API key is the demo account, which has no such insight: the route itself is checked below.
     assert.equal(res.status, 404);
-    const own = await v1Routes.request(`/insights/${encodeURIComponent(plain.id)}/fix`, { method: "POST" });
-    assert.equal(own.status, 409);
+    // v1Routes alone has no error handler (app maps HttpError to a status), so check the error.
+    await assert.rejects(applyFix(plain.id), (e) => e instanceof HttpError && e.code === "conflict");
   });
 });
 
