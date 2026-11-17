@@ -256,7 +256,7 @@ function recordedTurn(h: TurnHandlers, opts: TurnOptions): Turn {
       if (over) return;
       over = true;
       const code = err instanceof MicError ? err.code : "unknown";
-      h.onError(code === "unknown" ? "failed" : code);
+      h.onError(code === "unknown" || code === "timeout" ? "failed" : code);
     });
 
   return turn;

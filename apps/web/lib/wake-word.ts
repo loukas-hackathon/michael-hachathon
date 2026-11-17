@@ -451,9 +451,11 @@ export type WakeDebug = {
   lastEnd: string;
   /** From the last end to the next start, in ms. */
   gapMs: number | null;
+  /** The last steps of a hold or a turn ("mic open 420 ms", "sent 38 KB", "heard: ..."), newest last. */
+  steps: string[];
 };
 
-let debug: WakeDebug = { heard: "", heardAt: 0, sessions: 0, lastEnd: "", gapMs: null };
+let debug: WakeDebug = { heard: "", heardAt: 0, sessions: 0, lastEnd: "", gapMs: null, steps: [] };
 const debugListeners = new Set<() => void>();
 
 export function noteWakeDebug(patch: Partial<WakeDebug>): void {
@@ -462,6 +464,13 @@ export function noteWakeDebug(patch: Partial<WakeDebug>): void {
 }
 
 export const readWakeDebug = (): WakeDebug => debug;
+
+/** One step of a voice turn for the diagnostic, with the time of day; keeps the last 12. */
+export function traceVoice(step: string): void {
+  const t = new Date();
+  const at = `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}:${String(t.getSeconds()).padStart(2, "0")}`;
+  noteWakeDebug({ steps: [...debug.steps, `${at} ${step}`].slice(-12) });
+}
 
 export function useWakeDebug(): WakeDebug {
   return useSyncExternalStore(

@@ -8,6 +8,7 @@ import {
   meansNoVoiceHere,
   type RecognitionEvent,
   recognitionErrorCopy,
+  replyCeilingMs,
   speakable,
   speechChunks,
   transcriptOf,
@@ -101,4 +102,11 @@ test("beatLevel swells on a word and dies away, with a rhythm when no words are 
   const rhythm = [1000, 1100, 1200, 1300].map((t) => beatLevel(5000, t));
   assert.ok(rhythm.every((v) => v > 0 && v < 0.6));
   assert.ok(new Set(rhythm.map((v) => v.toFixed(3))).size > 1);
+});
+
+test("a reply can never hold the conversation for good: its ceiling grows with the line, up to 90 s", () => {
+  assert.equal(replyCeilingMs(""), 6000);
+  assert.equal(replyCeilingMs("Train at 18:00."), 6000 + 15 * 120);
+  assert.ok(replyCeilingMs("x".repeat(400)) > 50_000);
+  assert.equal(replyCeilingMs("x".repeat(5000)), 90_000);
 });

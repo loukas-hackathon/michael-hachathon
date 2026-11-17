@@ -173,7 +173,7 @@ export function silenceDetector(opts: { threshold?: number; speechMs?: number; p
 
 /** Why the microphone could not start, in the recogniser's own codes so the copy is shared. */
 export class MicError extends Error {
-  constructor(public code: "not-allowed" | "audio-capture" | "unknown") {
+  constructor(public code: "not-allowed" | "audio-capture" | "timeout" | "unknown") {
     super(code);
   }
 }
@@ -205,6 +205,13 @@ export function primeRecorder(): void {
       window.AudioContext ??
       (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!Ctx) return;
+    // iOS can leave a context "interrupted" (a call, Siri, another app's audio) or closed: make a
+    // fresh one rather than meter a stream that never moves.
+    const state = ctx?.state as string | undefined;
+    if (ctx && (state === "closed" || state === "interrupted")) {
+      void ctx.close().catch(() => {});
+      ctx = null;
+    }
     ctx ??= new Ctx();
     if (ctx.state === "suspended") void ctx.resume().catch(() => {});
   } catch {
@@ -212,19 +219,56 @@ export function primeRecorder(): void {
   }
 }
 
+/** iOS can leave getUserMedia pending for good (after the app was in the background): give up here. */
+export const MIC_OPEN_TIMEOUT_MS = 6000;
+
 async function getMic(): Promise<MediaStream> {
-  if (mic?.getAudioTracks().some((t) => t.readyState === "live")) return mic;
+  if (mic?.getAudioTracks().some((t) => t.readyState === "live" && !t.muted)) return mic;
+  releaseMic();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let gaveUp = false;
   try {
-    mic = await navigator.mediaDevices.getUserMedia({
+    const opening = navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     });
+    const timedOut = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        gaveUp = true;
+        reject(new MicError("timeout"));
+      }, MIC_OPEN_TIMEOUT_MS);
+    });
+    // A stream that arrives after the timeout is stopped at once, never left open.
+    opening.then(
+      (late) => {
+        if (gaveUp) for (const t of late.getTracks()) t.stop();
+      },
+      () => {},
+    );
+    mic = await Promise.race([opening, timedOut]);
     return mic;
   } catch (err) {
+    if (err instanceof MicError) throw err;
     const name = err instanceof Error ? err.name : "";
     if (name === "NotAllowedError" || name === "SecurityError") throw new MicError("not-allowed");
     if (name === "NotFoundError" || name === "OverconstrainedError") throw new MicError("audio-capture");
     throw new MicError("unknown");
+  } finally {
+    clearTimeout(timer);
   }
+}
+
+/**
+ * After a turn that failed on the phone (no microphone, nothing recorded, the API refused): drop the
+ * microphone and the meter's audio context, so the next hold starts from nothing.
+ */
+export function resetVoiceAudio(): void {
+  releaseMic();
+  try {
+    void ctx?.close().catch(() => {});
+  } catch {
+    // Already closed.
+  }
+  ctx = null;
 }
 
 /** Turns the microphone off (the browser's mic indicator goes away). */
