@@ -52,6 +52,36 @@ export const TractionGoalWeek = z.object({
 });
 export type TractionGoalWeek = z.infer<typeof TractionGoalWeek>;
 
+// The waiting list, as numbers only (no name, no email, no code): what /traction shows investors.
+// Our own addresses (any at michael.app) are left out, as for accounts.
+export const TractionWaitingList = z.object({
+  total: Count,
+  // Joined in the last 7 days, and in the 7 days before that (for "up 54% on the week before").
+  last_7_days: Count,
+  previous_7_days: Count,
+  // Local day of the first sign up; null while nobody has joined.
+  first_day: LocalDay.nullable(),
+  // Every local day from first_day to today, oldest first (at most the last 365).
+  by_day: z.array(z.object({ day: LocalDay, sign_ups: Count })),
+  // Where they came from (utm_source or the referring site, grouped: "X", "LinkedIn", "direct"
+  // when nothing was given, "a friend" when they came with an invite link), most first, up to 8.
+  by_source: z.array(z.object({ source: z.string(), sign_ups: Count })),
+  // Their own guess of the hours they lose a week, in buckets: up to 2, 4, 6, 8, then 10 and more
+  // (`up_to` null). Always five buckets, in that order.
+  hours: z.array(z.object({ up_to: z.number().int().positive().nullable(), people: Count })),
+  median_hours: z.number().nonnegative().nullable(),
+  founding_members: Count,
+  // Joined with someone's invite link, and how many different people brought them.
+  referred: Count,
+  referrers: Count,
+  by_role: z.record(z.string(), Count),
+  by_computer: z.record(z.string(), Count),
+  by_phone: z.record(z.string(), Count),
+  by_calendar: z.record(z.string(), Count),
+  excluded: Count,
+});
+export type TractionWaitingList = z.infer<typeof TractionWaitingList>;
+
 export const Traction = z.object({
   generated_at: IsoDateTime,
   timezone: z.string(),
@@ -95,6 +125,7 @@ export const Traction = z.object({
     users_scored: Count,
     capped: z.boolean(),
   }),
+  waiting_list: TractionWaitingList,
   // All time totals across real users.
   engagement: z.object({
     // Recommendations Michael carried out (done, including those later undone).

@@ -1,6 +1,6 @@
 "use server";
 
-import { type WaitlistJoin, WaitlistStanding } from "@michael/shared";
+import { WaitlistCode, type WaitlistJoin, WaitlistStanding } from "@michael/shared";
 import { headers } from "next/headers";
 import { API_KEY, API_URL } from "@/lib/mode";
 
@@ -35,4 +35,25 @@ export async function joinWaitlist(input: WaitlistJoin): Promise<JoinResult> {
   const standing = WaitlistStanding.safeParse(await res.json().catch(() => null));
   if (!standing.success) return { ok: false, line: "I could not add you just now. Try again in a minute." };
   return { ok: true, code: standing.data.referral_code };
+}
+
+/**
+ * Founding member, from the thank you page (PATCH /v1/waitlist/:code). The code is the only key:
+ * whoever holds the link may change this one answer, nothing else.
+ */
+export async function setFoundingMember(code: string, on: boolean): Promise<{ ok: boolean }> {
+  if (!WaitlistCode.safeParse(code).success) return { ok: false };
+  try {
+    const res = await fetch(`${API_URL}/v1/waitlist/${encodeURIComponent(code)}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ founding_member: on }),
+      cache: "no-store",
+    });
+    if (!res.ok) return { ok: false };
+    const standing = WaitlistStanding.safeParse(await res.json().catch(() => null));
+    return { ok: standing.success && standing.data.founding_member === on };
+  } catch {
+    return { ok: false };
+  }
 }

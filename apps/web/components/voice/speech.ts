@@ -414,10 +414,41 @@ let settle: (() => void) | null = null;
 // Bumped by every stop: a reply still loading when it was stopped is never played.
 let generation = 0;
 
-export function stopSpeaking(): void {
+/** How long his voice takes to go quiet when cut in on: a ramp, never a hard cut (which clicks). */
+export const CUT_FADE_MS = 120;
+
+/** Takes the audio's volume to 0 over CUT_FADE_MS, then pauses it (unless it moved on meanwhile). */
+function fadeOut(player: HTMLAudioElement) {
+  const src = player.src;
+  const from = player.volume;
+  const start = performance.now();
+  const step = (now: number) => {
+    if (player.src !== src || player.paused) {
+      player.volume = from;
+      return;
+    }
+    const p = Math.min(1, (now - start) / CUT_FADE_MS);
+    player.volume = from * (1 - p);
+    if (p < 1) requestAnimationFrame(step);
+    else {
+      player.pause();
+      player.volume = from;
+    }
+  };
+  requestAnimationFrame(step);
+}
+
+/**
+ * Stops his voice. `fade`: cut in on (a tap or the user's voice), so the audio ramps to silence in
+ * 120ms instead of stopping dead. The browser's own voice cannot fade; it stops at once.
+ */
+export function stopSpeaking(opts: { fade?: boolean } = {}): void {
   if (typeof window === "undefined") return;
   if ("speechSynthesis" in window) window.speechSynthesis.cancel();
-  if (audio) audio.pause();
+  if (audio) {
+    if (opts.fade && !audio.paused) fadeOut(audio);
+    else audio.pause();
+  }
   if (speaking) setVoice(null);
   generation++;
   settle?.();

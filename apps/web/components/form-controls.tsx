@@ -11,18 +11,25 @@ export function Segmented<T extends string>({
   value,
   onChange,
   disabled = [],
+  size = "md",
+  labelledBy,
 }: {
   name: string;
   options: { value: T; label: string }[];
-  value: T;
+  /** Nothing chosen yet: a value no option has (no pill shows). */
+  value: T | "";
   onChange: (v: T) => void;
   disabled?: T[];
+  /** "lg": 44px segments for a question that leads a screen (the /join hours). */
+  size?: "md" | "lg";
+  labelledBy?: string;
 }) {
   const n = options.length;
   const index = options.findIndex((o) => o.value === value);
   return (
     <div
       role="radiogroup"
+      aria-labelledby={labelledBy}
       className="relative grid gap-[2px] rounded-[9px] bg-fill p-[2px]"
       style={{ gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))` }}
     >
@@ -40,7 +47,7 @@ export function Segmented<T extends string>({
       {options.map((o) => (
         <label
           key={o.value}
-          className={`relative flex min-h-9 items-center justify-center rounded-[7px] active:opacity-60 px-1 text-center text-footnote font-semibold text-label ${disabled.includes(o.value) ? "opacity-40" : ""}`}
+          className={`relative flex items-center justify-center rounded-[7px] active:opacity-60 px-1 text-center font-semibold text-label ${size === "lg" ? "min-h-11 text-subhead tnum" : "min-h-9 text-footnote"} ${disabled.includes(o.value) ? "opacity-40" : ""}`}
         >
           <input
             type="radio"

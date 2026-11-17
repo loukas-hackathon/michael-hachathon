@@ -33,6 +33,16 @@ export function haptic() {
   iosSwitch.click();
 }
 
+/** Two ticks 90ms apart: Michael did not catch it, or something failed (never a buzz). */
+export function hapticTwice() {
+  if (typeof navigator.vibrate === "function") {
+    navigator.vibrate([8, 90, 8]);
+    return;
+  }
+  haptic();
+  setTimeout(haptic, 90);
+}
+
 /** Mounted once in the root layout: listens for presses on primary buttons anywhere in the app. */
 export function Haptics() {
   useEffect(() => {

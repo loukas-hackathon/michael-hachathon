@@ -20,7 +20,8 @@ import { onSpeechLevel } from "./speech";
 // can be interrupted at any point. Drawn on a canvas, one frame per screen refresh, colours from
 // the theme tokens. Reduced motion: one still frame per state, no loop.
 
-export type VoiceMood = "idle" | "listening" | "thinking" | "speaking" | "muted";
+/** `follow`: listening for a follow up after his answer, the light held lower (glow 0.7). */
+export type VoiceMood = "idle" | "listening" | "follow" | "thinking" | "speaking" | "muted";
 
 type Params = {
   /** Size of the light around the core. */
@@ -48,6 +49,17 @@ const MOODS: Record<VoiceMood, Params> = {
   listening: {
     aura: 1.1,
     glow: 0.9,
+    morph: 0.07,
+    spin: 0.32,
+    orbit: 0,
+    core: 0.97,
+    coreAlpha: 1,
+    breath: 0.5,
+    gain: 1,
+  },
+  follow: {
+    aura: 1.1,
+    glow: 0.7,
     morph: 0.07,
     spin: 0.32,
     orbit: 0,
@@ -376,7 +388,7 @@ export function LivingVoice({
       const raw =
         m === "speaking"
           ? speech
-          : m === "listening"
+          : m === "listening" || m === "follow"
             ? Math.max(micShape(Math.max(mic, propLevel.current)), heard.current * 0.6)
             : 0;
       // Quick to rise, slower to fall: a voice, not a meter.
@@ -464,9 +476,11 @@ export function LivingVoice({
     mi ??
     (mood === "muted"
       ? "asleep"
-      : mood === "listening" || mood === "thinking" || mood === "speaking"
-        ? mood
-        : "idle");
+      : mood === "follow"
+        ? "listening"
+        : mood === "listening" || mood === "thinking" || mood === "speaking"
+          ? mood
+          : "idle");
 
   return (
     <span aria-hidden="true" className="pointer-events-none absolute inset-0">

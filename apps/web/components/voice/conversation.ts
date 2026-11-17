@@ -2,6 +2,8 @@
 
 import { useSyncExternalStore } from "react";
 import { sendLine } from "@/app/chat/chat-session";
+import { hapticTwice } from "@/components/haptics";
+import { playEarcon } from "./earcons";
 import {
   checkRecorderPath,
   currentInputMode,
@@ -62,6 +64,15 @@ export type Conversation = {
   level: number;
   /** The user muted the microphone: Michael still answers, but nothing is heard until unmuted. */
   muted: boolean;
+  /**
+   * Woken by his name ("Yo Michael", components/voice/wake-island.tsx), not started from the
+   * sheet: shorter pauses and silences, misses said out loud, and it closes quietly.
+   */
+  wake: boolean;
+  /** Answers given in this conversation (0 while the first request is still being made). */
+  turns: number;
+  /** Turns heard with no words in them, woken by name: one is said, the second offers typing. */
+  misses: number;
 };
 
 /** A pause this long after the user's words ends their turn. */
@@ -69,6 +80,19 @@ export const TURN_PAUSE_MS = 1300;
 /** Nothing said for this long while listening ends the conversation. */
 export const QUIET_MS = 9000;
 export const QUIET_COPY = "I'll be here when you need me.";
+
+// Woken by name, a one shot request should feel like Siri: the turn ends on a shorter pause, an
+// unused wake closes sooner, and after his answer a short window lets the user follow up.
+/** End of the first turn after a wake. */
+export const WAKE_PAUSE_MS = 1000;
+/** Nothing said this long after a wake: it closes, quietly, with no line. */
+export const WAKE_QUIET_MS = 4000;
+/** After his answer, this long to follow up before it closes. */
+export const FOLLOW_UP_MS = 5000;
+export const MISSED_COPY = "I didn't catch that. Say it again.";
+export const TYPE_COPY = "Type it instead.";
+export const WAKE_MIC_COPY = "I can't hear you. Allow the microphone in Settings.";
+export const OFFLINE_COPY = "No connection. I'll answer when you're back.";
 
 const OFF: Conversation = {
   phase: "off",
@@ -78,6 +102,9 @@ const OFF: Conversation = {
   recorded: false,
   level: 0,
   muted: false,
+  wake: false,
+  turns: 0,
+  misses: 0,
 };
 let state = OFF;
 const listeners = new Set<() => void>();
@@ -111,6 +138,11 @@ let elevenlabs = false;
 let saying = "";
 // When listening ends for want of words; kept across the browser's own restarts of the recogniser.
 let quietAt = 0;
+
+/** Woken by name: the island shows it, not the sheet (which leaves it running when it unmounts). */
+export const isWakeConversation = (): boolean => state.wake && state.phase !== "off";
+/** The phase now, for callbacks that must not read a stale render. */
+export const conversationPhase = (): Phase => state.phase;
 
 // Read fresh: the phase changes under an await, which TypeScript cannot see.
 const phase = (): Phase => state.phase;
@@ -149,7 +181,13 @@ function dropRecording() {
  * Woken by his name (lib/wake-word.ts) there is no tap: `first` is what the user said after the
  * name, answered at once; `greet` is his short ready line when they said only the name.
  */
-export function startConversation(opts: { elevenlabs: boolean; first?: string; greet?: string }): void {
+export function startConversation(opts: {
+  elevenlabs: boolean;
+  first?: string;
+  greet?: string;
+  /** Woken by name: the island's timings and lines (see Conversation.wake). */
+  wake?: boolean;
+}): void {
   elevenlabs = opts.elevenlabs;
   unlockAudio();
   // Inside the tap too: the level meter's audio context may only start in a gesture on iOS.
@@ -161,7 +199,7 @@ export function startConversation(opts: { elevenlabs: boolean; first?: string; g
     return;
   }
   const recorded = mode === "recorder";
-  set({ ...OFF, recorded, bargeIn: !recorded && !isIos() });
+  set({ ...OFF, recorded, bargeIn: !recorded && !isIos(), wake: opts.wake === true });
   const first = opts.first?.trim();
   if (first) {
     const mine = ++gen;
@@ -202,7 +240,7 @@ export function endConversation(note: string | null = null): void {
 export function tapConversation(): void {
   if (state.phase === "speaking") {
     gen++;
-    stopSpeaking();
+    stopSpeaking({ fade: true });
     dropRecogniser();
     listen();
   } else if (state.phase === "listening" && state.muted) {
@@ -267,11 +305,11 @@ function listen(overSpeech = false) {
   dropRecogniser();
   clearTimers();
   if (!overSpeech) {
-    if (state.phase !== "listening") quietAt = Date.now() + QUIET_MS;
+    if (state.phase !== "listening") quietAt = Date.now() + quietMs();
     set({ phase: "listening", heard: "" });
     quietTimer = setTimeout(
       () => {
-        if (mine === gen && !state.heard.trim()) endConversation(QUIET_COPY);
+        if (mine === gen && !state.heard.trim()) endConversation(quietNote());
       },
       Math.max(0, quietAt - Date.now()),
     );
@@ -289,18 +327,18 @@ function listen(overSpeech = false) {
       if (isEcho(text, saying)) return;
       // The user spoke over Michael: he stops, and a fresh turn starts (his echo left behind).
       gen++;
-      stopSpeaking();
+      stopSpeaking({ fade: true });
       dropRecogniser();
       listen();
       return;
     }
     heard = text;
-    set({ heard });
+    set({ heard, note: null });
     clearTimeout(quietTimer);
     clearTimeout(pauseTimer);
     pauseTimer = setTimeout(() => {
       if (mine === gen) void finishTurn();
-    }, TURN_PAUSE_MS);
+    }, pauseMs());
   };
   r.onerror = (e) => {
     if (mine !== gen) return;
@@ -311,8 +349,11 @@ function listen(overSpeech = false) {
       return;
     }
     if (e.error === "not-allowed" || e.error === "audio-capture") {
-      endConversation(recognitionErrorCopy(e.error));
+      endConversation(micCopy(e.error));
+      return;
     }
+    // Speech, but no words in it: said once when woken by name, then typing is offered.
+    if (e.error === "no-match" && !overSpeech) missed(mine);
     // no-speech, network and aborted: onend decides what happens next.
   };
   r.onend = () => {
@@ -345,7 +386,7 @@ function listenRecorded() {
   dropRecogniser();
   dropRecording();
   clearTimers();
-  if (state.phase !== "listening") quietAt = Date.now() + QUIET_MS;
+  if (state.phase !== "listening") quietAt = Date.now() + quietMs();
   set({ phase: "listening", heard: "", level: 0 });
   let spoke = false;
   startRecording({
@@ -370,14 +411,14 @@ function listenRecorded() {
       if (!r.metered) return;
       quietTimer = setTimeout(
         () => {
-          if (mine === gen && !spoke) endConversation(QUIET_COPY);
+          if (mine === gen && !spoke) endConversation(quietNote());
         },
         Math.max(0, quietAt - Date.now()),
       );
     })
     .catch((err: unknown) => {
       if (mine !== gen) return;
-      endConversation(recognitionErrorCopy(err instanceof MicError ? err.code : "unknown"));
+      endConversation(micCopy(err instanceof MicError ? err.code : "unknown"));
     });
 }
 
@@ -401,11 +442,12 @@ async function finishRecordedTurn() {
   if (mine !== gen) return;
   if (!res.ok) return endConversation(transcribeErrorCopy(res.code));
   if (!res.text) {
-    // Only noise: keep listening, within the same quiet limit.
+    // Only noise: keep listening, within the same quiet limit (woken by name, it says so once).
+    if (missed(mine)) return;
     set({ phase: "listening" });
     return listen();
   }
-  set({ heard: res.text });
+  set({ heard: res.text, note: null });
   await answer(res.text, mine);
 }
 
@@ -424,12 +466,58 @@ async function answer(text: string, mine: number) {
   const res = await sendLine(text, { spoken: true });
   if (mine !== gen) return;
   if (!res) return endConversation();
-  saying = res.ok ? res.reply : res.error;
-  set({ phase: "speaking", heard: "" });
+  // Woken by name and offline: the line says so plainly, as the island shows it.
+  const error =
+    !res.ok && state.wake && typeof navigator !== "undefined" && !navigator.onLine ? OFFLINE_COPY : null;
+  saying = res.ok ? res.reply : (error ?? res.error);
+  set({ phase: "speaking", heard: "", turns: state.turns + 1, misses: 0 });
   if (state.bargeIn) listen(true);
   await speakReply(saying, res.ok && elevenlabs);
   if (mine !== gen || phase() !== "speaking") return;
   // One calm line stays on screen for what went wrong (no network, a refusal); he has just said it.
-  if (!res.ok) return endConversation(res.error);
+  if (!res.ok) return endConversation(saying);
   listen();
+}
+
+/** The quiet limit for the listening that starts now: shorter after a wake, the follow up after an answer. */
+function quietMs(): number {
+  if (!state.wake) return QUIET_MS;
+  return state.turns === 0 ? WAKE_QUIET_MS : FOLLOW_UP_MS;
+}
+
+/** A wake that goes quiet closes with no line; the sheet's conversation says it will be there. */
+const quietNote = (): string | null => (state.wake ? null : QUIET_COPY);
+
+/** The pause that ends a turn: shorter for the one shot request after a wake. */
+const pauseMs = (): number => (state.wake && state.turns === 0 ? WAKE_PAUSE_MS : TURN_PAUSE_MS);
+
+/** The line for a microphone that will not open, in the island's words when woken by name. */
+function micCopy(code: string): string | null {
+  if (state.wake && (code === "not-allowed" || code === "service-not-allowed")) return WAKE_MIC_COPY;
+  return recognitionErrorCopy(code);
+}
+
+/**
+ * Woken by name, a turn came back with no words in it. The first time he says so (on screen and
+ * aloud, two ticks and the missed earcon, before the microphone opens again) and listens once more;
+ * the second time he offers typing and closes. Returns whether it handled the miss.
+ */
+function missed(mine: number): boolean {
+  if (!state.wake || mine !== gen) return false;
+  const misses = state.misses + 1;
+  // The ticks and the earcon play before listening restarts: never while a sentence is recorded.
+  hapticTwice();
+  playEarcon("missed");
+  if (misses >= 2) {
+    endConversation(TYPE_COPY);
+    set({ misses });
+    void speakReply(TYPE_COPY, elevenlabs);
+    return true;
+  }
+  clearTimers();
+  dropRecogniser();
+  dropRecording();
+  set({ misses, note: MISSED_COPY });
+  void greet(MISSED_COPY, ++gen);
+  return true;
 }
