@@ -8,6 +8,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { setWakeHold } from "@/lib/wake-word";
 import {
   checkRecorderPath,
   currentInputMode,
@@ -38,6 +39,9 @@ import {
   UNSUPPORTED_COPY,
   unlockAudio,
 } from "./speech";
+
+/** Why the wake word is paused while this button listens (lib/wake-word.ts). */
+const WAKE_HOLD = "push-to-talk";
 
 type Props = {
   disabled?: boolean;
@@ -106,12 +110,15 @@ export function PushToTalk({
       recording.current = null;
       held.current = false;
       releaseMic();
+      setWakeHold(WAKE_HOLD, false);
     };
   }, []);
 
   function setOn(on: boolean) {
     setListening(on);
     onListeningChange?.(on);
+    // The wake word pauses while the button holds the microphone (two recognisers fight over it).
+    setWakeHold(WAKE_HOLD, on);
   }
 
   function setBusy(on: boolean) {
@@ -179,12 +186,15 @@ export function PushToTalk({
       else if (tapped.current && !erred.current) onError(TAPPED_COPY);
     };
     rec.current = r;
+    // Before the recogniser starts, so the wake word has let go of the microphone.
+    setWakeHold(WAKE_HOLD, true);
     try {
       r.start();
       setOn(true);
     } catch {
       held.current = false;
       rec.current = null;
+      setWakeHold(WAKE_HOLD, false);
       onError(recognitionErrorCopy("unknown") as string);
     }
   }

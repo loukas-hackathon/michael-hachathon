@@ -2,6 +2,8 @@
 // Michael only ever receives text. Where it cannot run, recorder.ts records the sentence for the
 // API to transcribe; that audio is dropped once it is text.
 
+import { setWakeHold } from "../../lib/wake-word";
+
 // ---------- speech in ----------
 
 // Not in TypeScript's DOM lib yet: the small part of the Web Speech API we use.
@@ -535,6 +537,17 @@ export async function speakReply(text: string, elevenlabs: boolean, opts: SpeakO
     if (elevenlabs && (await speakWithElevenLabs(line, gen, opts))) return;
     await speakWithBrowser(line, gen, opts);
   })();
-  if ((await Promise.race([said, stopped])) === "stopped") return;
-  settle = null;
+  // The wake word never listens while he talks: he must not wake himself.
+  voicesOut++;
+  setWakeHold("speaking", true);
+  try {
+    if ((await Promise.race([said, stopped])) === "stopped") return;
+    settle = null;
+  } finally {
+    voicesOut--;
+    if (voicesOut === 0) setWakeHold("speaking", false);
+  }
 }
+
+// Replies being said right now (a new one can start before a cut one has settled).
+let voicesOut = 0;
