@@ -140,7 +140,10 @@ test("chat renders and says calmly that it cannot talk without a key", async ({ 
   await enterDemo(page);
   await page.goto("/chat");
   await expect(page.getByRole("heading", { level: 1, name: "Chat" })).toBeVisible();
-  await tap(page.getByRole("button", { name: "How is my day going?" }));
+  // The starters come from the day (a lost slot, a goal), so they change as the demo week ages:
+  // tap whichever is first.
+  const starters = page.getByText("Ask me about your day.").locator("xpath=following-sibling::ul");
+  await tap(starters.getByRole("button").first());
   // The line comes from the app's own copy, so wording changes never break the test.
   await expect(page.getByText(copyFor("unavailable"))).toBeVisible();
 });
