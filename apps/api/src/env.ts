@@ -12,20 +12,12 @@ const Env = z.object({
   // presenter (one laptop) may answer the claude.ai consent for the demo account; demo visitors
   // never can. Empty = no presenter.
   DEMO_PRESENTER_KEY: z.string().optional(),
+  // Comma-separated emails of the founders' accounts (admin.ts): a signed in caller with one of
+  // these emails may read the admin routes (GET /v1/admin/traction, GET /v1/waitlist). Empty: nobody.
+  ADMIN_EMAILS: z.string().default(""),
   // End-to-end tests only (e2e/): "on" accepts `Bearer e2e_<uuid>` as that user, so the suite can
   // sign in a fresh, non demo user without Supabase. Ignored unless the store is in memory.
   E2E_TEST_AUTH: z.enum(["on", "off"]).default("off"),
-  // Comma-separated emails of the people who may read the waiting list (GET /v1/waitlist). They
-  // sign in to the web app as usual. Empty: nobody is an admin.
-  ADMIN_EMAILS: z
-    .string()
-    .optional()
-    .transform((v) =>
-      (v ?? "")
-        .split(",")
-        .map((s) => s.trim().toLowerCase())
-        .filter(Boolean),
-    ),
   // Comma-separated origins allowed by CORS (the web app).
   WEB_ORIGIN: z.string().default("http://localhost:3000"),
   // Public base URL of this API, used for OAuth redirect URIs.

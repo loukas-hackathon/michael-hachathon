@@ -25,6 +25,11 @@ export interface AgentsStore {
   /** Logs one tool call and marks the agent as seen. */
   logQuery(q: QueryLog): Promise<void>;
   listQueries(range: { from: string; to: string }): Promise<AgentQuery[]>;
+  /**
+   * NOT scoped: how many tool calls agents made for each of these users, all time. Only GET
+   * /v1/admin/traction calls it (behind isAdmin()), and only the total leaves the API.
+   */
+  queryCountsFor(userIds: string[]): Promise<Record<string, number>>;
 }
 
 const now = () => new Date().toISOString();
@@ -93,6 +98,9 @@ export class MemoryAgentsStore implements AgentsStore {
     return this.myQueries
       .filter((q) => Date.parse(q.created_at) >= f && Date.parse(q.created_at) <= t)
       .sort((a, b) => b.created_at.localeCompare(a.created_at));
+  }
+  async queryCountsFor(userIds: string[]) {
+    return Object.fromEntries(userIds.map((u) => [u, this.queries.get(u)?.length ?? 0]));
   }
 }
 
@@ -258,6 +266,17 @@ export class SupabaseAgentsStore implements AgentsStore {
     if (res.error?.message.includes("recommendation_id")) res = await read(base);
     const rows = check(res) as unknown as Record<string, unknown>[] | null;
     return (rows ?? []).map(toQuery);
+  }
+  async queryCountsFor(userIds: string[]) {
+    // traction_agent_queries (20261117200000_traction.sql): one count per user, batched.
+    const out: Record<string, number> = {};
+    for (let i = 0; i < userIds.length; i += 500) {
+      const rows = check(await this.db.rpc("traction_agent_queries", { users: userIds.slice(i, i + 500) })) as
+        | Record<string, unknown>[]
+        | null;
+      for (const r of rows ?? []) out[r.user_id as string] = Number(r.queries ?? 0);
+    }
+    return out;
   }
 }
 

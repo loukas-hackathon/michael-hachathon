@@ -12,7 +12,7 @@ import {
   waitlistStandings,
 } from "@michael/shared";
 import { type Context, Hono } from "hono";
-import { currentSessionEmail } from "../context";
+import { isAdmin } from "../admin";
 import { env } from "../env";
 import { HttpError, jsonBody, parse } from "../http";
 import { rateLimiter } from "../rate-limit";
@@ -109,11 +109,6 @@ export const waitlistPublic = new Hono()
     return c.json(standing);
   });
 
-const isAdmin = () => {
-  const email = currentSessionEmail();
-  return Boolean(email && env.ADMIN_EMAILS.includes(email));
-};
-
 export function waitlistStats(entries: WaitlistAdminEntry[], now = Date.now()): WaitlistStats {
   const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
   const by_role = Object.fromEntries(WaitlistRole.options.map((r) => [r, 0])) as WaitlistStats["by_role"];
@@ -141,7 +136,7 @@ export function waitlistStats(entries: WaitlistAdminEntry[], now = Date.now()): 
 // Behind auth (mounted in v1). Anyone who is not an admin gets the same 404 as a missing route,
 // so the list's existence says nothing.
 export const waitlistAdmin = new Hono().get("/waitlist", async (c) => {
-  if (!isAdmin()) throw new HttpError("not_found", `No route for GET ${c.req.path}`);
+  if (!(await isAdmin())) throw new HttpError("not_found", `No route for GET ${c.req.path}`);
   const all = await store.listWaitlist();
   const standings = waitlistStandings(all);
   const entries: WaitlistAdminEntry[] = all

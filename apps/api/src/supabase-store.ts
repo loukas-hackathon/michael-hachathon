@@ -72,6 +72,7 @@ import {
   type PushDevice,
   previewOf,
   type RecommendationActionUpdate,
+  SEEDED_PREFIX,
   type SeedResult,
   type Store,
   type StoredCheckIn,
@@ -81,6 +82,8 @@ import {
   type TargetInput,
   type TelegramChat,
   type TimelineFilter,
+  type TractionFactsOptions,
+  type TractionUserFacts,
   threadOrder,
   toInstruction,
   type UpsertResult,
@@ -2148,4 +2151,78 @@ export class SupabaseStore implements Store {
       typeof r === "string" ? r : String((r as Record<string, unknown>).users_with_events_before),
     );
   }
+
+  // ---- traction (admin only) ----
+
+  async currentAccountEmail() {
+    const userId = currentUserId();
+    const hit = emailCache.get(userId);
+    if (hit && hit.until > Date.now()) return hit.email;
+    const { data, error } = await this.db.auth.admin.getUserById(userId);
+    if (error) return null;
+    const email = data.user?.email?.toLowerCase() ?? null;
+    emailCache.set(userId, { email, until: Date.now() + EMAIL_TTL_MS });
+    return email;
+  }
+
+  async listAllAccounts() {
+    // Supabase Auth, 1000 accounts a page: a few round trips for a few thousand sign ups.
+    const out: { id: string; email: string | null; created_at: string }[] = [];
+    for (let page = 1; ; page++) {
+      const { data, error } = await this.db.auth.admin.listUsers({ page, perPage: AUTH_PAGE });
+      if (error) throw new HttpError("upstream_error", `Auth error: ${error.message}`);
+      for (const u of data.users) {
+        out.push({
+          id: u.id,
+          email: u.email?.toLowerCase() ?? null,
+          created_at: iso(u.created_at) as string,
+        });
+      }
+      if (data.users.length < AUTH_PAGE) return out;
+    }
+  }
+
+  async tractionFacts(userIds: string[], opts: TractionFactsOptions): Promise<TractionUserFacts[]> {
+    // One RPC per batch of users (traction_user_facts, 20261117200000_traction.sql), each answered
+    // from per user indexes; batches stay under PostgREST's row cap.
+    const batches: string[][] = [];
+    for (let i = 0; i < userIds.length; i += FACTS_BATCH) batches.push(userIds.slice(i, i + FACTS_BATCH));
+    const out: TractionUserFacts[] = [];
+    for (let i = 0; i < batches.length; i += FACTS_PARALLEL) {
+      const results = await Promise.all(
+        batches.slice(i, i + FACTS_PARALLEL).map(async (users) =>
+          check(
+            await this.db.rpc("traction_user_facts", {
+              users,
+              since: opts.since,
+              tz: opts.timezone,
+              sources: opts.sources,
+              seeded_prefix: SEEDED_PREFIX,
+            }),
+          ),
+        ),
+      );
+      for (const rows of results) {
+        for (const r of (rows ?? []) as Record<string, unknown>[]) {
+          out.push({
+            user_id: r.user_id as string,
+            first_source_at: iso((r.first_source_at as string | null) ?? null),
+            active_days: ((r.active_days as string[] | null) ?? []).map(String).sort(),
+            actions_done: Number(r.actions_done ?? 0),
+            actions_undone: Number(r.actions_undone ?? 0),
+            chat_messages: Number(r.chat_messages ?? 0),
+            nudges_sent: Number(r.nudges_sent ?? 0),
+          });
+        }
+      }
+    }
+    return out;
+  }
 }
+
+const AUTH_PAGE = 1000;
+const FACTS_BATCH = 500;
+const FACTS_PARALLEL = 4;
+// A sign in email does not change during a session; the admin check reads it on every admin call.
+const EMAIL_TTL_MS = 5 * 60_000;
+const emailCache = new Map<string, { email: string | null; until: number }>();

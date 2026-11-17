@@ -11,6 +11,7 @@ import { handleMcpRequest } from "./mcp";
 import { prewarmAfterWrite } from "./moments/prewarm";
 import { accounts } from "./routes/accounts";
 import { actions } from "./routes/actions";
+import { admin } from "./routes/admin";
 import { agents } from "./routes/agents";
 import { analysis } from "./routes/analysis";
 import { blocks } from "./routes/blocks";
@@ -123,7 +124,8 @@ export const v1Routes = new Hono()
   .route("/", meData)
   .route("/", knowledge)
   .route("/", demo)
-  .route("/", waitlistAdmin);
+  .route("/", waitlistAdmin)
+  .route("/", admin);
 
 const v1 = new Hono().use(requireUser()).use(afterWrite).route("/", v1Routes);
 
