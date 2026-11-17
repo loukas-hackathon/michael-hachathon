@@ -18,6 +18,9 @@ test("the composer shows Talk, with a one time hint, and it opens the conversati
   await expect(talk).toBeVisible();
   await expect(talk).toHaveText("Talk");
   await expect(page.getByRole("button", { name: "Hold to dictate" })).toBeVisible();
+  // The first visit: Michael's offer to listen for his name comes first (yo-michael.spec.ts), then
+  // the hint.
+  await tap(page.getByTestId("wake-offer").getByRole("button", { name: "Not now" }));
   const hint = page.getByTestId("hint-talk");
   await expect(hint).toContainText("Tap Talk to speak with me");
 

@@ -24,6 +24,9 @@ export async function stubSpeech(page: Page, mode: Mode = {}) {
       recs: [] as Fake[],
       spoken: [] as string[],
       started: 0,
+      /** When each recogniser started and when each ended (performance.now), for restart timing. */
+      starts: [] as number[],
+      ends: [] as number[],
       primed: 0,
       cancelled: 0,
       /** Lines still being said (holdSpeech). */
@@ -47,6 +50,7 @@ export async function stubSpeech(page: Page, mode: Mode = {}) {
       results: { isFinal: boolean; 0: { transcript: string }; length: number }[] = [];
       start() {
         state.started++;
+        state.starts.push(performance.now());
         state.recs.push(this);
       }
       stop() {
@@ -61,6 +65,7 @@ export async function stubSpeech(page: Page, mode: Mode = {}) {
       end() {
         if (this.ended) return;
         this.ended = true;
+        state.ends.push(performance.now());
         this.onend?.({});
       }
       say(text: string) {

@@ -1281,6 +1281,16 @@ body::before {
       backdrop-filter: none;
     }
   }
+  /*
+   * Floating text that must read cleanly over whatever scrolls beneath it (the island's answer
+   * card, the hint under Mi, the voice diagnostic): the material's own fallback, solid --m-fill on
+   * light and dark. Its hairline and shadow still lift it off the page; nothing shows through.
+   */
+  .m-float.m-solid {
+    background: var(--m-fill);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }
 
 /*

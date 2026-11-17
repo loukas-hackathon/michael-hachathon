@@ -99,12 +99,21 @@ test("on device where the browser can: the pack is installed on the tap, and aud
   expect(await voice<string>(page, "r.lang")).toBe("en-GB");
 });
 
-test("hidden where the browser cannot recognise speech", async ({ page }) => {
+test("where the browser cannot recognise speech, the row says so and points to holding Mi", async ({
+  page,
+}) => {
   await stubSpeech(page, { recognition: false });
   await enterDemo(page);
   await page.goto("/you");
   await expect(page.getByText("Talk to Michael")).toBeVisible();
-  await expect(page.getByTestId("wake-word-row")).toHaveCount(0);
+  const row = page.getByTestId("wake-word-row");
+  await expect(row).toHaveAttribute("data-support", "no-recogniser");
+  await expect(page.getByTestId("wake-word-line")).toHaveText(
+    "This browser can't listen for my name. Hold the Mi button to talk.",
+  );
+  // Never a switch that does nothing: it is off and cannot be turned on here.
+  await expect(page.getByRole("checkbox", { name: SWITCH })).toBeDisabled();
+  await expect(page.getByRole("checkbox", { name: SWITCH })).not.toBeChecked();
 });
 
 test("his name and a request on Today: the island answers there, then closes", async ({ page }) => {
@@ -191,6 +200,52 @@ test("stops when the app is hidden, and listens again when it is back", async ({
   await expect.poll(() => live(page)).toBe(1);
 });
 
+test("listens again within 300ms of the browser ending a session, and a wake straight after is heard", async ({
+  page,
+}) => {
+  await streamReply(page, REPLY);
+  await switchedOn(page);
+  await expect.poll(() => live(page)).toBe(1);
+  await page.waitForTimeout(2100);
+  const before = await voice<number>(page, "v.started");
+  await page.evaluate(() => {
+    const v = (window as unknown as { __voice: { recs: { ended: boolean; end(): void }[] } }).__voice;
+    v.recs
+      .filter((r) => !r.ended)
+      .at(-1)
+      ?.end();
+  });
+  await expect.poll(() => voice<number>(page, "v.started")).toBe(before + 1);
+  const gap = await voice<number>(page, "v.starts.at(-1) - v.ends.at(-1)");
+  expect(gap).toBeLessThan(300);
+  // Half a second into the new session: "yo Michael" and a request, not lost to the restart.
+  await page.waitForTimeout(500);
+  const asked = page.waitForRequest("**/chat/stream");
+  await say(page, "yo Michael what is next");
+  expect((await asked).postDataJSON()).toMatchObject({ message: "What is next" });
+  await expect(page.getByTestId("wake-reply")).toHaveText(REPLY);
+});
+
+test("?debug=voice: tapping the armed island shows what the recogniser last heard", async ({ page }) => {
+  await switchedOn(page);
+  await expect.poll(() => live(page)).toBe(1);
+  // Hidden unless asked for.
+  await expect(page.getByTestId("wake-debug")).toHaveCount(0);
+  await page.goto("/?debug=voice");
+  await expect.poll(() => live(page)).toBe(1);
+  const pill = page.getByTestId("wake-debug");
+  await expect(pill).toContainText("Armed");
+  await say(page, "we were talking about the gym");
+  await tap(pill);
+  const card = page.getByTestId("wake-debug-card");
+  await expect(card).toContainText('"we were talking about the gym"');
+  await expect(card).toContainText("Sessions");
+  // Stays for the visit, without the parameter.
+  await page.goto("/timeline");
+  await expect.poll(() => live(page)).toBe(1);
+  await expect(page.getByTestId("wake-debug")).toBeVisible();
+});
+
 test("restarts after the browser ends a session, and backs off after errors", async ({ page }) => {
   await switchedOn(page);
   await expect.poll(() => live(page)).toBe(1);
@@ -220,6 +275,9 @@ test("a refused microphone turns it off and says why", async ({ page }) => {
   await voice(page, "r.fail('not-allowed')");
   await expect(armed(page)).toHaveCount(0);
   await page.goto("/you");
-  await expect(page.getByTestId("wake-word-row")).toContainText("I need the microphone to hear my name.");
+  // What to do, in one line, for this browser (Chrome on a laptop here).
+  await expect(page.getByTestId("wake-word-line")).toHaveText(
+    "Microphone blocked. Click the icon left of the address and allow it.",
+  );
   await expect(page.getByRole("checkbox", { name: SWITCH })).not.toBeChecked();
 });
