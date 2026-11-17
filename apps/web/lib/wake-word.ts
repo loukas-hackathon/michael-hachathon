@@ -210,10 +210,10 @@ export function useWakeHeld(): boolean {
   );
 }
 
-// ---------- the wake, from the host to the chat ----------
+// ---------- the wake, from the host to the island ----------
 
-// The host hears the name anywhere in the app; the conversation lives on Chat. The wake waits here
-// until Chat is mounted (straight away when it already is) and takes it.
+// The host hears the name anywhere in the app; Michael answers in the island at the top of the
+// screen (components/voice/wake-island.tsx), which is mounted once in the root layout and takes it.
 let pending: Wake | null = null;
 const wakeListeners = new Set<() => void>();
 
@@ -234,5 +234,41 @@ export function onWake(l: () => void): () => void {
   return () => wakeListeners.delete(l);
 }
 
-/** Michael's line when woken by his name alone. */
-export const READY_LINE = "Go on. I'm listening.";
+// ---------- armed and heard: the quiet signs before a wake ----------
+
+/** A small store of one boolean, read with useSyncExternalStore. */
+function flag() {
+  let value = false;
+  const listeners = new Set<() => void>();
+  const subscribe = (l: () => void) => {
+    listeners.add(l);
+    return () => listeners.delete(l);
+  };
+  return {
+    set(next: boolean) {
+      if (next === value) return;
+      value = next;
+      for (const l of listeners) l();
+    },
+    get: () => value,
+    use: () =>
+      useSyncExternalStore(
+        subscribe,
+        () => value,
+        () => false,
+      ),
+  };
+}
+
+// Armed: the wake word is listening for the name right now. The Mi button shows a still ring
+// (the privacy sign); it goes in the same frame listening stops.
+const armed = flag();
+export const setWakeArmed = armed.set;
+export const useWakeArmed = armed.use;
+
+// Heard: the recogniser has the name in an unfinished phrase. The island comes in at 60% with no
+// bloom and no sound, and either opens fully when the phrase is confirmed or fades away.
+const heard = flag();
+export const setWakeHeard = heard.set;
+export const isWakeHeard = heard.get;
+export const useWakeHeard = heard.use;

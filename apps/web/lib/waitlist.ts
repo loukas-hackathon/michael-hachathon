@@ -1,5 +1,5 @@
 import "server-only";
-import { WaitlistAdmin, WaitlistCode, WaitlistStanding } from "@michael/shared";
+import { WaitlistAdmin, WaitlistCode, WaitlistStanding, WaitlistTotal } from "@michael/shared";
 import { authHeaders } from "./caller";
 import { API_URL } from "./mode";
 
@@ -14,6 +14,17 @@ export async function getStanding(code: string): Promise<WaitlistStanding | null
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`GET /v1/waitlist/:code failed: ${res.status}`);
   return WaitlistStanding.parse(await res.json());
+}
+
+/** How many are waiting, or null when the API cannot say (the page then says nothing). */
+export async function getWaitlistTotal(): Promise<number | null> {
+  try {
+    const res = await fetch(`${API_URL}/v1/waitlist/total`, { next: { revalidate: 60 } });
+    if (!res.ok) return null;
+    return WaitlistTotal.parse(await res.json()).total;
+  } catch {
+    return null;
+  }
 }
 
 /** The full list and its numbers for an admin; null for everyone else (signed out included). */

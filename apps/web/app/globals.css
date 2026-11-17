@@ -103,6 +103,10 @@
   --text-score--line-height: 70px;
   --text-large-title: 34px;
   --text-large-title--line-height: 41px;
+  /* Public pages only (/join, login at lg): 52/56, tracking -0.02em. */
+  --text-display: 52px;
+  --text-display--line-height: 56px;
+  --text-display--letter-spacing: -0.02em;
   --text-insight: 22px;
   --text-insight--line-height: 27px;
   --text-title3: 20px;
@@ -1246,6 +1250,156 @@ body::before {
 }
 @media (prefers-reduced-motion: reduce) {
   .m-pop-in {
+    animation: none;
+  }
+}
+
+/*
+ * Layer 2, floating controls (the tab bar, the Focus pill, the meeting pill, Michael's answer card
+ * under the island): one recipe, the HIG's glass for the control layer only, never on content and
+ * never glass on glass. Where the browser cannot blur, or the user asked for less transparency
+ * (Chromium only), it is the solid fill, so it stays legible either way.
+ */
+@layer components {
+  .m-float {
+    background: var(--m-glass);
+    -webkit-backdrop-filter: blur(24px) saturate(1.5);
+    backdrop-filter: blur(24px) saturate(1.5);
+    box-shadow:
+      0 0 0 0.5px var(--m-separator),
+      0 6px 18px -8px rgb(0 0 0 / 0.25);
+  }
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .m-float {
+      background: var(--m-fill);
+    }
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    .m-float {
+      background: var(--m-fill);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+  }
+}
+
+/* Paragraphs avoid a lone last word; headings are balanced (above). */
+p,
+li,
+figcaption {
+  text-wrap: pretty;
+}
+
+/*
+ * "Yo Michael" (components/voice/wake-island.tsx). The island is a place, not a control: solid
+ * black in both themes, like the Dynamic Island, with Michael's living voice inside. It opens from
+ * its top edge on the spring (scale 0.6 to 1) while its opacity comes in fast; it leaves quicker
+ * than it came. Inside it, the theme is always the dark one, so his voice draws on black.
+ */
+.m-island {
+  --m-bg: #000000;
+  --m-label: #ffffff;
+  --m-label-2: #98989f;
+  --m-fill: #1c1c1e;
+  transform-origin: 50% 0;
+  animation:
+    m-island-in var(--m-dur-spring) var(--m-spring) both,
+    m-fade-in var(--m-dur-press) var(--m-ease-out) both;
+  transition: opacity var(--m-dur-ui) var(--m-ease-out);
+}
+/* Heard, not yet sure: the island comes in quietly at 60%, no bloom, no sound. */
+.m-island[data-heard] {
+  opacity: 0.6;
+}
+.m-island[data-closing] {
+  animation: m-island-out var(--m-dur-exit) var(--m-ease-out) both;
+}
+@keyframes m-island-in {
+  from {
+    transform: scale(0.6);
+  }
+}
+@keyframes m-island-out {
+  to {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+}
+:root[data-theme="dark"] .m-island {
+  box-shadow: 0 0 0 0.5px #38383a;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .m-island {
+    box-shadow: 0 0 0 0.5px #38383a;
+  }
+}
+.m-island-card {
+  transform-origin: 50% 0;
+}
+.m-island-card[data-closing] {
+  animation: m-leave var(--m-dur-exit) var(--m-ease-out) both;
+}
+
+/*
+ * The one edge bloom when Michael wakes (design guide, Don'ts: the one exception besides his living
+ * voice). Pink light round the screen's edge, once, 720ms, opacity only. It never loops and never
+ * shows outside the wake. In the installed app it follows the screen's corners.
+ */
+.m-wake-bloom {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 60;
+  border-radius: var(--m-screen-radius, 0);
+  box-shadow:
+    inset 0 0 0 1.5px color-mix(in srgb, var(--m-tint) 75%, transparent),
+    inset 0 0 28px 6px color-mix(in srgb, var(--m-tint) 32%, transparent);
+  opacity: 0;
+}
+.m-wake-bloom[data-on] {
+  animation: m-wake-bloom 720ms var(--m-ease-out) both;
+}
+@keyframes m-wake-bloom {
+  0% {
+    opacity: 0;
+  }
+  17% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@media (display-mode: standalone) {
+  :root {
+    --m-screen-radius: 44px;
+  }
+}
+
+/* The armed wake word: a still ring round the Mi button. No loop, no pink, no dot. */
+.m-armed {
+  box-shadow:
+    0 0 0 2px var(--m-bg),
+    0 0 0 3.5px var(--m-label-2);
+}
+
+/* A place on the waiting list counts up once, only when arriving from the form (?new=1). */
+.m-count.m-count-fresh {
+  animation: m-count-up var(--m-dur-count) var(--m-ease-out) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .m-island {
+    animation: m-fade-in var(--m-dur-ui) linear both;
+  }
+  .m-island[data-closing],
+  .m-island-card[data-closing] {
+    animation: m-leave-fade var(--m-dur-exit) linear both;
+  }
+  .m-wake-bloom[data-on] {
+    animation-duration: 400ms;
+  }
+  .m-count.m-count-fresh {
     animation: none;
   }
 }

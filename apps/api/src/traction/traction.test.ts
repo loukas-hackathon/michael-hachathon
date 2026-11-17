@@ -305,10 +305,29 @@ test("waitingList: days, sources, the hours spread and intent, never a name or a
   const inviter = entry({ referral_code: "inviter1", created_at: "2026-11-05T09:00:00Z", source: "t.co" });
   const list = [
     inviter,
-    entry({ created_at: "2026-11-06T09:00:00Z", source: "https://www.linkedin.com/feed", hours_lost_per_week: 2 }),
-    entry({ created_at: "2026-11-09T09:00:00Z", source: "x.com", hours_lost_per_week: 3, founding_member: true }),
-    entry({ created_at: "2026-11-16T09:00:00Z", referred_by: "inviter1", source: "x.com", hours_lost_per_week: 10 }),
-    entry({ created_at: "2026-11-17T08:00:00Z", hours_lost_per_week: 40, role: "executive", phone: "android" }),
+    entry({
+      created_at: "2026-11-06T09:00:00Z",
+      source: "https://www.linkedin.com/feed",
+      hours_lost_per_week: 2,
+    }),
+    entry({
+      created_at: "2026-11-09T09:00:00Z",
+      source: "x.com",
+      hours_lost_per_week: 3,
+      founding_member: true,
+    }),
+    entry({
+      created_at: "2026-11-16T09:00:00Z",
+      referred_by: "inviter1",
+      source: "x.com",
+      hours_lost_per_week: 10,
+    }),
+    entry({
+      created_at: "2026-11-17T08:00:00Z",
+      hours_lost_per_week: 40,
+      role: "executive",
+      phone: "android",
+    }),
     // Ours: never counted.
     entry({ email: "team@michael.app", created_at: "2026-11-17T08:30:00Z" }),
   ];
@@ -322,7 +341,10 @@ test("waitingList: days, sources, the hours spread and intent, never a name or a
   assert.equal(w.by_day.length, 13, "5 to 17 November, every day");
   assert.equal(w.by_day[0]?.sign_ups, 1);
   assert.equal(w.by_day.at(-1)?.day, "2026-11-17");
-  assert.equal(w.by_day.reduce((s, d) => s + d.sign_ups, 0), 5);
+  assert.equal(
+    w.by_day.reduce((s, d) => s + d.sign_ups, 0),
+    5,
+  );
   assert.deepEqual(w.by_source, [
     { source: "X", sign_ups: 2 },
     { source: "a friend", sign_ups: 1 },

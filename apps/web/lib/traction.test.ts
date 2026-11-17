@@ -1,7 +1,20 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { type Traction, voiceProblems } from "@michael/shared";
-import { headlineRows, investorSummary, pct, waitPhrase, weekLabel } from "./traction";
+import {
+  headlineRows,
+  hoursPhrase,
+  investorSummary,
+  pct,
+  rolesPhrase,
+  setupPhrase,
+  sourcesPhrase,
+  waitingListLines,
+  waitPhrase,
+  weekChange,
+  weekdayOf,
+  weekLabel,
+} from "./traction";
 
 const goalWeek = (week_start: string, users: number) => ({
   week_start,
@@ -32,6 +45,34 @@ const sample: Traction = {
     last_week: goalWeek("2026-11-09", 0),
     users_scored: 4,
     capped: false,
+  },
+  waiting_list: {
+    total: 412,
+    last_7_days: 63,
+    previous_7_days: 41,
+    first_day: "2026-11-12",
+    by_day: [],
+    by_source: [
+      { source: "X", sign_ups: 169 },
+      { source: "LinkedIn", sign_ups: 91 },
+      { source: "direct", sign_ups: 78 },
+    ],
+    hours: [
+      { up_to: 2, people: 40 },
+      { up_to: 4, people: 100 },
+      { up_to: 6, people: 150 },
+      { up_to: 8, people: 70 },
+      { up_to: null, people: 52 },
+    ],
+    median_hours: 6,
+    founding_members: 38,
+    referred: 111,
+    referrers: 53,
+    by_role: { founder: 222, executive: 91, employee: 60, student: 20, other: 19 },
+    by_computer: { mac: 292, windows: 100, linux: 20 },
+    by_phone: { iphone: 264, android: 148 },
+    by_calendar: { google: 330, outlook: 70, other: 12 },
+    excluded: 2,
   },
   engagement: {
     actions_done: 18,
@@ -85,4 +126,36 @@ test("headlineRows: four rows, each with a value and a note", () => {
     ],
   );
   for (const r of rows) assert.deepEqual(voiceProblems(`${r.label} ${r.value} ${r.note}`), []);
+});
+
+test("the waiting list in the investor text: five plain lines, real numbers, no names", () => {
+  const lines = waitingListLines(sample.waiting_list);
+  assert.deepEqual(lines, [
+    "Waiting list: 412 people waiting. 63 joined in the last 7 days, up 54% on the week before.",
+    "38 would prepay €15 a month as founding members (€570 a month of stated intent).",
+    "27% joined through a friend.",
+    "Median self reported time lost: 6 hours a week. 54% founders, 22% executives.",
+  ]);
+  for (const l of lines) assert.deepEqual(voiceProblems(l), []);
+  assert.match(investorSummary(sample), /\nWaiting list: 412 people waiting\./);
+  const empty = { ...sample.waiting_list, total: 0, first_day: null, median_hours: null };
+  assert.deepEqual(waitingListLines(empty), ["Waiting list: nobody yet."]);
+});
+
+test("weekChange: First week while young, nothing against an empty week, else the change", () => {
+  const w = sample.waiting_list;
+  assert.equal(weekChange(w, "2026-11-17"), "First week.");
+  assert.equal(weekChange(w, "2026-11-20"), "54% more than the week before");
+  assert.equal(weekChange({ ...w, last_7_days: 20 }, "2026-11-20"), "51% fewer than the week before");
+  assert.equal(weekChange({ ...w, previous_7_days: 0 }, "2026-11-20"), null);
+  assert.equal(weekChange({ ...w, first_day: null }, "2026-11-20"), null);
+});
+
+test("the sentences on /traction", () => {
+  const w = sample.waiting_list;
+  assert.equal(rolesPhrase(w), "54% founders, 22% executives");
+  assert.equal(setupPhrase(w), "71% on Mac, 64% on iPhone, 80% on Google Calendar.");
+  assert.equal(sourcesPhrase(w), "X 41%, LinkedIn 22%, direct 19%");
+  assert.equal(weekdayOf("2026-11-15"), "Sunday");
+  assert.equal(hoursPhrase(4.5), "4.5 hours");
 });

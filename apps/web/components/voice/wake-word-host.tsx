@@ -1,8 +1,7 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { haptic } from "@/components/haptics";
 import { meetingEndsAt, useMeetings } from "@/lib/meetings";
 import { useOffTheRecord } from "@/lib/off-the-record";
 import {
@@ -13,6 +12,8 @@ import {
   matchWake,
   restartDelay,
   SHORT_SESSION_MS,
+  setWakeArmed,
+  setWakeHeard,
   setWakeSetting,
   subscribeWakeHold,
   useWakeHeld,
@@ -23,10 +24,12 @@ import {
   wakeIn,
 } from "@/lib/wake-word";
 import { useConversation } from "./conversation";
+import { earconContext, primeEarcons } from "./earcons";
 import { isIosHomeScreenApp, markRefused, type Recognition, recognitionCtor, unlockAudio } from "./speech";
 
 // The wake word's listening loop (lib/wake-word.ts has the matching and the rules). Mounted once in
-// the root layout. It listens only while every one of these holds: the switch is on, the app is
+// the root layout; Michael answers in the island (wake-island.tsx). While it listens, the Mi button
+// wears a still ring (the privacy sign), gone in the same frame listening stops. It listens only while every one of these holds: the switch is on, the app is
 // visible, not off the record, no meeting running, no conversation or push to talk in progress,
 // and Michael is not speaking. Any of them changing stops the recogniser at once.
 //
@@ -72,7 +75,6 @@ const useVisible = () =>
   );
 
 function WakeListener({ setting }: { setting: Exclude<WakeSetting, { mode: "off" }> }) {
-  const router = useRouter();
   const { on: offTheRecord } = useOffTheRecord();
   const meetings = useMeetings();
   const talk = useConversation();
@@ -102,14 +104,21 @@ function WakeListener({ setting }: { setting: Exclude<WakeSetting, { mode: "off"
     return () => clearTimeout(t);
   }, [woken]);
 
+  // The armed ring on the Mi button follows listening exactly.
+  useEffect(() => {
+    setWakeArmed(listening);
+    return () => setWakeArmed(false);
+  }, [listening]);
+
   // iOS lets a page make sound only after a tap: the first tap anywhere unlocks his voice and the
-  // chime, so a wake later (with no tap) can be heard.
+  // earcons, so a wake later (with no tap) can be heard.
   useEffect(() => {
     const unlock = () => {
       unlockAudio();
-      void chimeContext()
+      void earconContext()
         ?.resume()
         .catch(() => {});
+      primeEarcons();
     };
     document.addEventListener("pointerup", unlock, { once: true, capture: true });
     return () => document.removeEventListener("pointerup", unlock, { capture: true });
@@ -121,12 +130,11 @@ function WakeListener({ setting }: { setting: Exclude<WakeSetting, { mode: "off"
       lang,
       local: mode === "local",
       onRest: () => setResting(true),
+      onHeard: setWakeHeard,
       onWake: (w) => {
         setWoken(true);
-        chime();
-        haptic();
+        // The island takes it: haptic, earcon, bloom and the island in the same frame.
         emitWake(w);
-        if (!window.location.pathname.startsWith("/chat")) router.push("/chat");
       },
       onFatal: (code) => {
         if (code === "not-allowed" && !isIosHomeScreenApp()) {
@@ -147,30 +155,11 @@ function WakeListener({ setting }: { setting: Exclude<WakeSetting, { mode: "off"
     return () => {
       unhold();
       stop();
+      setWakeHeard(false);
     };
-  }, [listening, lang, mode, router]);
+  }, [listening, lang, mode]);
 
-  return listening ? <WakePill /> : null;
-}
-
-/** "Listening for Michael": quiet, at the top, on every screen while the wake word listens. */
-function WakePill() {
-  return (
-    <div
-      className="pointer-events-none fixed inset-x-0 top-[calc(env(safe-area-inset-top)+6px)] z-30 flex justify-center px-4 lg:pl-64"
-      data-testid="wake-pill"
-    >
-      <span className="flex h-7 items-center gap-1.5 rounded-full bg-[var(--m-glass)] px-3 text-footnote text-label-2 shadow-[0_0_0_0.5px_var(--m-separator)] backdrop-blur-xl">
-        <svg viewBox="0 0 24 24" className="size-3.5" aria-hidden="true">
-          <g fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="9" y="3" width="6" height="11" rx="3" />
-            <path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" />
-          </g>
-        </svg>
-        Listening for Michael
-      </span>
-    </div>
-  );
+  return null;
 }
 
 // ---------- the loop ----------
@@ -180,6 +169,8 @@ type LoopOptions = {
   /** On device only (Chrome's processLocally): audio never leaves the device. */
   local: boolean;
   onWake: (w: Wake) => void;
+  /** The name is in an unfinished phrase (true), or that candidate is gone (false). */
+  onHeard?: (on: boolean) => void;
   /** Listening cannot run here (microphone refused, no recogniser, no language pack). */
   onFatal: (code: string) => void;
   /** Too many failures in a row: the loop has stopped trying. */
@@ -218,6 +209,7 @@ export function listenForWake(opts: LoopOptions): () => void {
     stopped = true;
     clearTimeout(restart);
     clearTimeout(settle);
+    if (candidate) opts.onHeard?.(false);
     drop();
   };
 
@@ -225,7 +217,10 @@ export function listenForWake(opts: LoopOptions): () => void {
     clearTimeout(settle);
     const w = candidate ? matchWake(candidate) : null;
     candidate = null;
-    if (!w || stopped) return;
+    if (!w || stopped) {
+      opts.onHeard?.(false);
+      return;
+    }
     stop();
     opts.onWake(w);
   };
@@ -261,6 +256,8 @@ export function listenForWake(opts: LoopOptions): () => void {
       const hit = wakeIn(e);
       if (!hit) return;
       // The name is in: wait for the rest of the sentence, or act now if the phrase is finished.
+      // Two stages: a quiet, dim island now, the full wake once the phrase is settled.
+      if (!candidate && !hit.final) opts.onHeard?.(true);
       candidate = hit.phrase;
       clearTimeout(settle);
       if (hit.final) fire();
@@ -297,49 +294,4 @@ export function listenForWake(opts: LoopOptions): () => void {
 
   begin();
   return stop;
-}
-
-// ---------- the chime ----------
-
-let ctx: AudioContext | null = null;
-
-function chimeContext(): AudioContext | null {
-  if (ctx) return ctx;
-  const w = window as unknown as {
-    AudioContext?: typeof AudioContext;
-    webkitAudioContext?: typeof AudioContext;
-  };
-  const Ctx = w.AudioContext ?? w.webkitAudioContext;
-  if (!Ctx) return null;
-  try {
-    ctx = new Ctx();
-  } catch {
-    ctx = null;
-  }
-  return ctx;
-}
-
-/** Two soft rising notes: he heard his name. Silent where the browser will not play sound yet. */
-function chime() {
-  const c = chimeContext();
-  if (!c) return;
-  try {
-    void c.resume().catch(() => {});
-    const now = c.currentTime;
-    [660, 880].forEach((hz, i) => {
-      const at = now + i * 0.09;
-      const osc = c.createOscillator();
-      const gain = c.createGain();
-      osc.type = "sine";
-      osc.frequency.value = hz;
-      gain.gain.setValueAtTime(0, at);
-      gain.gain.linearRampToValueAtTime(0.06, at + 0.015);
-      gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.16);
-      osc.connect(gain).connect(c.destination);
-      osc.start(at);
-      osc.stop(at + 0.18);
-    });
-  } catch {
-    // No sound: the sheet opening is the sign.
-  }
 }

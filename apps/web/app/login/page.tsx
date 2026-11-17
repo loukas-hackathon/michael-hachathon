@@ -37,7 +37,7 @@ export default async function LoginPage({
       <div className="mx-auto flex min-h-full w-full max-w-[400px] flex-col px-[max(24px,env(safe-area-inset-left))] pt-[var(--m-safe-top)] pb-[calc(16px+env(safe-area-inset-bottom))] lg:max-w-[1000px] lg:flex-row lg:items-center lg:gap-24 lg:px-12">
         <section className="flex flex-1 flex-col items-center justify-center py-12 text-center lg:items-start lg:text-left">
           <Michael state="idle" className="h-auto w-[76px] text-label lg:w-[112px]" />
-          <h1 className="mt-8 text-large-title font-bold tracking-[-0.01em] lg:mt-10 lg:text-[52px] lg:leading-[56px] lg:tracking-[-0.02em]">
+          <h1 className="mt-8 text-large-title font-bold tracking-[-0.01em] lg:mt-10 lg:text-display lg:tracking-[-0.02em]">
             On your side.
           </h1>
           <p className="mt-3 max-w-[300px] text-body text-label-2 lg:max-w-[380px] lg:text-insight">

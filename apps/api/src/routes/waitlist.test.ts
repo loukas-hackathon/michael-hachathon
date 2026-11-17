@@ -180,7 +180,11 @@ test("the holder of a code can say they would be a founding member, and nothing 
   const read = (await (await app.request(`/v1/waitlist/${me.referral_code}`)).json()) as WaitlistStanding;
   assert.equal(read.founding_member, true);
   // Back off again.
-  assert.equal(((await (await patch(me.referral_code, { founding_member: false })).json()) as WaitlistStanding).founding_member, false);
+  assert.equal(
+    ((await (await patch(me.referral_code, { founding_member: false })).json()) as WaitlistStanding)
+      .founding_member,
+    false,
+  );
   // Only that field, only a boolean, only a real code.
   assert.equal((await patch(me.referral_code, { founding_member: "yes" })).status, 400);
   assert.equal((await patch(me.referral_code, {})).status, 400);

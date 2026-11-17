@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { primeEarcons } from "@/components/voice/earcons";
 import { hasOnDeviceApi, prepareOnDevice } from "@/components/voice/on-device";
 import { readRefused, recognitionCtor, unlockAudio } from "@/components/voice/speech";
 import { setWakeSetting, useWakeNote, useWakeSetting } from "@/lib/wake-word";
@@ -16,7 +17,7 @@ const NO_LOCAL = "I couldn't get on device listening. Switch on again to use the
 type Support = "unsupported" | "maybe-local" | "cloud";
 
 /**
- * "Say Michael to talk": the wake word (lib/wake-word.ts), off by default, per device. The line
+ * "Yo Michael": the wake word (lib/wake-word.ts), off by default, per device. The line
  * under it says where the audio goes before and after it is on, so the user decides with the facts.
  * Hidden where the browser has no speech recognition.
  */
@@ -42,6 +43,7 @@ export function WakeWordSwitch() {
     if (!next) return setWakeSetting({ mode: "off" });
     // The tap: iOS lets his voice play later only after sound inside one.
     unlockAudio();
+    primeEarcons();
     if (support !== "maybe-local") return setWakeSetting({ mode: "cloud", lang: "en-GB" });
     setPending(true);
     try {
@@ -74,7 +76,8 @@ export function WakeWordSwitch() {
     >
       <span className={separator} />
       <span className="flex flex-col">
-        <span className="text-body">Say Michael to talk</span>
+        <span className="text-body">Yo Michael</span>
+        <span className="text-subhead text-label-2">Listen for my name while the app is open.</span>
         <span key={line} className="m-swap text-footnote text-label-2" aria-live="polite">
           {line}
         </span>

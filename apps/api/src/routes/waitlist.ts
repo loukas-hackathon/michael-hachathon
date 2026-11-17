@@ -1,5 +1,6 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import {
+  nameFromEmail,
   type WaitlistAdmin,
   type WaitlistAdminEntry,
   WaitlistCode,
@@ -11,7 +12,6 @@ import {
   type WaitlistStats,
   type WaitlistTotal,
   WaitlistUpdate,
-  nameFromEmail,
   waitlistStandings,
 } from "@michael/shared";
 import { type Context, Hono } from "hono";

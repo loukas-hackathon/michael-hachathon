@@ -102,7 +102,10 @@ Inside the app, the system font. Outside the app (slides, film, website, brand p
   no noise rules: `.claude/skills/michael-ui/SKILL.md`.
 - Elevation: groups sit on `--m-fill` with no border and no shadow. Only floating things (tab bar,
   sheets) get a shadow, and only with a tight blur. Never a border and a soft wide shadow together.
-- Blur only on the floating tab bar and sheet backdrops, as on iOS.
+- Blur only on floating controls and sheet backdrops, as on iOS: one recipe, `.m-float` in
+  `globals.css` (tab bar, Focus pill, meeting pill, the answer card under Michael's island), with a
+  solid `--m-fill` fallback where the browser cannot blur or the user asks for less transparency.
+  Never glass on glass, never glass on content. The island itself is solid black, a place.
 
 ## Components
 
@@ -272,7 +275,8 @@ Buttons say the action and keep the word ("Undo until 09:00", then "Undone").
 
 - Rings, donuts, dials, radial gauges.
 - KPI tile rows, up and down arrows with percentages, "Welcome back" greetings.
-- Gradients, glow, glass on anything but the tab bar.
+- Gradients, glow, glass on anything but the floating controls (`.m-float`). Exception: Michael's
+  living voice, and the one 720ms edge bloom when he wakes ("Yo Michael"), may glow.
 - Cards inside cards, coloured side stripes, icons in tinted squares, pulsing dots.
 - Their fonts (Geist, Outfit, Cal Sans) or Inter in the app.
 - Pink for errors, warnings or decoration.

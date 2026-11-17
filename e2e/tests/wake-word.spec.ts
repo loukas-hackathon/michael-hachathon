@@ -1,11 +1,12 @@
 import type { Page } from "@playwright/test";
-import { READY_LINE } from "../../apps/web/lib/wake-word";
 import { enterDemo, expect, tap, test } from "./fixtures";
 import { live, type Mode, streamReply, stubSpeech, voice } from "./speech-stub";
 
-// "Say Michael to talk": the in app wake word (lib/wake-word.ts, components/voice/wake-word-host.tsx)
-// with the scripted recogniser from speech-stub.ts. Off by default; once on, a recogniser listens
-// on every screen, and his name starts the existing hands free conversation on Chat.
+// "Yo Michael": the in app wake word (lib/wake-word.ts, components/voice/wake-word-host.tsx) with
+// the scripted recogniser from speech-stub.ts. Off by default; once on, a recogniser listens on
+// every screen and the Mi button wears a still ring. His name opens the island at the top of the
+// screen (components/voice/wake-island.tsx), where he listens, answers and closes, on the screen
+// the user is on.
 
 test.use({
   launchOptions: { args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream"] },
@@ -13,6 +14,7 @@ test.use({
 });
 
 const REPLY = "Sixty two percent of goal time so far. Gym at 18:00 keeps it on track.";
+const SWITCH = /Yo Michael/;
 
 /** The switch already on (cloud), as a returning user who turned it on has it. */
 async function switchedOn(page: Page, mode: Mode = {}) {
@@ -26,7 +28,7 @@ async function switchedOn(page: Page, mode: Mode = {}) {
   await enterDemo(page);
 }
 
-/** The wake recogniser: the newest one still running. */
+/** The newest recogniser still running hears these words (not final yet, as a phrase in progress). */
 const say = (page: Page, text: string) =>
   page.evaluate((t) => {
     const v = (window as unknown as { __voice: { recs: { ended: boolean; say(t: string): void }[] } })
@@ -37,26 +39,37 @@ const say = (page: Page, text: string) =>
       ?.say(t);
   }, text);
 
+/** The armed ring on the Mi button: the sign that the wake word is listening. */
+const armed = (page: Page) => page.locator('[data-testid="wake-armed"]:visible');
+const island = (page: Page) => page.getByTestId("wake-island");
+
 test("off by default; the switch on You turns it on and says where the audio goes", async ({ page }) => {
   await stubSpeech(page);
   await enterDemo(page);
-  await expect(page.getByTestId("wake-pill")).toHaveCount(0);
+  await expect(armed(page)).toHaveCount(0);
   expect(await live(page)).toBe(0);
 
   await page.goto("/you");
   const row = page.getByTestId("wake-word-row");
-  await expect(row).toContainText("Say Michael to talk");
+  await expect(row).toContainText("Yo Michael");
+  await expect(row).toContainText("Listen for my name while the app is open.");
   // The scripted recogniser has no on device call: the cloud line, before it is on.
   await expect(row).toContainText("Your browser's speech service hears what is said while I listen.");
-  await tap(page.getByRole("checkbox", { name: /Say Michael to talk/ }));
-  await expect(page.getByTestId("wake-pill")).toHaveText("Listening for Michael");
+  await tap(page.getByRole("checkbox", { name: SWITCH }));
   await expect.poll(() => live(page)).toBe(1);
   expect(await voice<boolean>(page, "r.continuous && r.interimResults")).toBe(true);
 
-  // Off again: the recogniser stops and the pill goes.
-  await page.getByRole("checkbox", { name: /Say Michael to talk/ }).click();
-  await expect(page.getByTestId("wake-pill")).toHaveCount(0);
+  // Armed: a still ring round the Mi button on the tabs, and its name says so.
+  await page.goto("/");
+  await expect(armed(page)).toHaveCount(1);
+  await expect(page.getByRole("link", { name: "You. Listening for my name" }).first()).toBeAttached();
+
+  // Off again: the recogniser stops and the ring goes.
+  await page.goto("/you");
+  await page.getByRole("checkbox", { name: SWITCH }).click();
   await expect.poll(() => live(page)).toBe(0);
+  await page.goto("/");
+  await expect(armed(page)).toHaveCount(0);
 });
 
 test("on device where the browser can: the pack is installed on the tap, and audio stays here", async ({
@@ -79,7 +92,7 @@ test("on device where the browser can: the pack is installed on the tap, and aud
   await page.goto("/you");
   const row = page.getByTestId("wake-word-row");
   await expect(row).toContainText("On this device where Chrome can, else its speech service hears it.");
-  await tap(page.getByRole("checkbox", { name: /Say Michael to talk/ }));
+  await tap(page.getByRole("checkbox", { name: SWITCH }));
   await expect(row).toContainText("Heard on this device, only while the app is open.");
   await expect.poll(() => live(page)).toBe(1);
   expect(await voice<unknown>(page, "r.processLocally")).toBe(true);
@@ -94,13 +107,13 @@ test("hidden where the browser cannot recognise speech", async ({ page }) => {
   await expect(page.getByTestId("wake-word-row")).toHaveCount(0);
 });
 
-test("his name and a request from Today: Chat opens and he answers the request", async ({ page }) => {
+test("his name and a request on Today: the island answers there, then closes", async ({ page }) => {
   await streamReply(page, REPLY);
   await switchedOn(page);
-  await expect(page.getByTestId("wake-pill")).toBeVisible();
+  await expect(armed(page)).toHaveCount(1);
   await expect.poll(() => live(page)).toBe(1);
 
-  // Words that do not start with his name send nothing.
+  // Words that do not start with his name send nothing and show nothing.
   let sent = 0;
   page.on("request", (r) => {
     if (r.url().includes("/chat/stream")) sent++;
@@ -108,32 +121,59 @@ test("his name and a request from Today: Chat opens and he answers the request",
   await say(page, "I told Michael about the gym");
   await page.waitForTimeout(1200);
   expect(sent).toBe(0);
+  await expect(island(page)).toHaveCount(0);
 
   const asked = page.waitForRequest("**/chat/stream");
   await say(page, "hey Michael how is my day going");
+  // Two stages: the island comes in dim while the phrase is unfinished, then wakes.
+  await expect(island(page)).toHaveAttribute("data-phase", "heard");
   expect((await asked).postDataJSON()).toMatchObject({ message: "How is my day going", spoken: true });
-  await expect(page).toHaveURL(/\/chat$/);
-  await expect(page.getByTestId("conversation")).toBeVisible();
-  await expect(page.getByTestId("conversation-orb")).toHaveAttribute("data-phase", "speaking");
+  // Still on Today: no screen change, the island answers at the top.
+  await expect(page).not.toHaveURL(/\/chat/);
+  await expect(island(page)).toHaveAttribute("data-phase", "speaking");
+  await expect(island(page)).toHaveAccessibleName("Tap to cut in");
+  await expect(page.getByTestId("wake-reply")).toHaveText(REPLY);
   await expect.poll(async () => (await voice<string[]>(page, "v.spoken")).join(" ")).toBe(REPLY);
-  // While he speaks or the conversation runs, the wake word is not listening.
-  await expect(page.getByTestId("wake-pill")).toHaveCount(0);
+  // While he speaks or listens, the wake word is not listening: no ring.
+  await expect(armed(page)).toHaveCount(0);
 
-  // The conversation ends: the wake word listens again.
-  await page.getByRole("button", { name: "End", exact: true }).click();
-  await expect(page.getByTestId("wake-pill")).toBeVisible();
+  // A tap cuts in: he stops and listens for the follow up.
+  await tap(island(page));
+  await expect(island(page)).toHaveAttribute("data-phase", "listening");
+  expect(await voice<number>(page, "v.held()")).toBe(0);
+
+  // Escape closes it: the wake word listens again.
+  await page.keyboard.press("Escape");
+  await expect(island(page)).toHaveCount(0);
+  await expect(armed(page)).toHaveCount(1);
   await expect.poll(() => live(page)).toBe(1);
 });
 
-test("his name alone: a short ready line, then he listens", async ({ page }) => {
+test("his name alone: he listens at once, and a quiet wake closes with no line", async ({ page }) => {
   await switchedOn(page);
   await page.goto("/chat");
   await expect.poll(() => live(page)).toBe(1);
   await say(page, "Michael");
-  await expect(page.getByTestId("conversation")).toBeVisible();
-  await expect.poll(() => voice<string[]>(page, "v.spoken")).toEqual([READY_LINE]);
+  await expect(island(page)).toHaveAttribute("data-phase", "listening");
+  await expect(page.getByTestId("conversation")).toHaveCount(0);
+  // Nothing said for 4 seconds: it closes, quietly.
+  await expect(island(page)).toHaveCount(0, { timeout: 8000 });
+  expect(await voice<string[]>(page, "v.spoken")).toEqual([]);
+});
+
+test("not caught: he says so once, then offers typing", async ({ page }) => {
+  await switchedOn(page);
+  await expect.poll(() => live(page)).toBe(1);
+  await say(page, "yo Michael");
+  await expect(island(page)).toHaveAttribute("data-phase", "listening");
+  await voice(page, "r.fail('no-match')");
+  await expect(page.getByTestId("wake-note")).toHaveText("I didn't catch that. Say it again.");
+  await expect.poll(() => voice<string[]>(page, "v.spoken")).toEqual(["I didn't catch that. Say it again."]);
   await voice(page, "v.finish()");
-  await expect(page.getByTestId("conversation-orb")).toHaveAttribute("data-phase", "listening");
+  await expect(island(page)).toHaveAttribute("data-phase", "listening");
+  await voice(page, "r.fail('no-match')");
+  await expect(page.getByTestId("wake-note")).toHaveText("Type it instead.");
+  await expect(page.getByRole("link", { name: "Open the keyboard" })).toBeVisible();
 });
 
 test("stops when the app is hidden, and listens again when it is back", async ({ page }) => {
@@ -146,6 +186,7 @@ test("stops when the app is hidden, and listens again when it is back", async ({
     }, state);
   await visibility("hidden");
   await expect.poll(() => live(page)).toBe(0);
+  await expect(armed(page)).toHaveCount(0);
   await visibility("visible");
   await expect.poll(() => live(page)).toBe(1);
 });
@@ -177,8 +218,8 @@ test("a refused microphone turns it off and says why", async ({ page }) => {
   await switchedOn(page);
   await expect.poll(() => live(page)).toBe(1);
   await voice(page, "r.fail('not-allowed')");
-  await expect(page.getByTestId("wake-pill")).toHaveCount(0);
+  await expect(armed(page)).toHaveCount(0);
   await page.goto("/you");
   await expect(page.getByTestId("wake-word-row")).toContainText("I need the microphone to hear my name.");
-  await expect(page.getByRole("checkbox", { name: /Say Michael to talk/ })).not.toBeChecked();
+  await expect(page.getByRole("checkbox", { name: SWITCH })).not.toBeChecked();
 });

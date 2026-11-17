@@ -27,7 +27,11 @@ export function sourceName(raw: string | null, referred: boolean): string {
   if (referred) return "a friend";
   const s = (raw ?? "").trim().toLowerCase();
   if (!s) return "direct";
-  const host = s.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0] ?? s;
+  const host =
+    s
+      .replace(/^https?:\/\//, "")
+      .replace(/^www\./, "")
+      .split("/")[0] ?? s;
   if (/^(x|twitter)(\.com)?$|^t\.co$|^(mobile\.)?twitter\.com$/.test(host)) return "X";
   if (/linkedin|^lnkd\.in$/.test(host)) return "LinkedIn";
   if (/^(news\.)?ycombinator\.com$|^hn$|hacker ?news/.test(host)) return "Hacker News";
@@ -40,7 +44,8 @@ export function sourceName(raw: string | null, referred: boolean): string {
   return host;
 }
 
-const count = (keys: readonly string[]) => Object.fromEntries(keys.map((k) => [k, 0])) as Record<string, number>;
+const count = (keys: readonly string[]) =>
+  Object.fromEntries(keys.map((k) => [k, 0])) as Record<string, number>;
 
 export function waitingList(
   all: WaitlistEntry[],

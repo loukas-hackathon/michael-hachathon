@@ -4020,13 +4020,13 @@ type WaitlistAdmin = {
 };
 ```
 
-| Method | Path                 | Auth                      | Body           | Response                                                            | Status |
-| ------ | -------------------- | ------------------------- | -------------- | ------------------------------------------------------------------- | ------ |
-| POST   | `/v1/waitlist`       | none                      | `WaitlistJoin` | `201 WaitlistStanding` new, `200` already on the list, `400`, `429` | live   |
-| GET    | `/v1/waitlist/:code` | none                      |                | `200 WaitlistStanding`, `404` unknown code                          | live   |
-| GET    | `/v1/waitlist/total` | none                      |                | `200 { total: number }` (cached 60s)                               | live   |
-| PATCH  | `/v1/waitlist/:code` | none (the code)           | `WaitlistUpdate` | `200 WaitlistStanding`, `400`, `404` unknown code, `429`          | live   |
-| GET    | `/v1/waitlist`       | signed in, `ADMIN_EMAILS` |                | `200 WaitlistAdmin`; `404` for everyone else                        | live   |
+| Method | Path                 | Auth                      | Body             | Response                                                            | Status |
+| ------ | -------------------- | ------------------------- | ---------------- | ------------------------------------------------------------------- | ------ |
+| POST   | `/v1/waitlist`       | none                      | `WaitlistJoin`   | `201 WaitlistStanding` new, `200` already on the list, `400`, `429` | live   |
+| GET    | `/v1/waitlist/:code` | none                      |                  | `200 WaitlistStanding`, `404` unknown code                          | live   |
+| GET    | `/v1/waitlist/total` | none                      |                  | `200 { total: number }` (cached 60s)                                | live   |
+| PATCH  | `/v1/waitlist/:code` | none (the code)           | `WaitlistUpdate` | `200 WaitlistStanding`, `400`, `404` unknown code, `429`            | live   |
+| GET    | `/v1/waitlist`       | signed in, `ADMIN_EMAILS` |                  | `200 WaitlistAdmin`; `404` for everyone else                        | live   |
 
 - **Position:** everyone starts at their place by join time (`created_at`). Each person who joins
   with your code moves you up 5 places: the list is sorted by `place - 5 × referrals`, a tie goes
