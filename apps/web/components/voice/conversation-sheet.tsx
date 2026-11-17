@@ -13,6 +13,7 @@ import {
 import { currentStep } from "@/components/chat/steps";
 import { markHintSeen } from "@/components/hint";
 import { Sheet } from "@/components/sheet";
+import { onWake, READY_LINE, takeWake } from "@/lib/wake-word";
 import {
   endConversation,
   type Phase,
@@ -74,6 +75,21 @@ export function useTalk(elevenlabs: boolean) {
     setFrom(chatLineCount());
     setOpen(true);
   };
+  // Woken by his name anywhere in the app (lib/wake-word.ts): the host brings the user here and
+  // the conversation starts with what followed the name, or his ready line.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: subscribed once; the setters are stable.
+  useEffect(() => {
+    const woken = () => {
+      const w = takeWake();
+      if (!w) return;
+      setFrom(chatLineCount());
+      setOpen(true);
+      markHintSeen(TALK_HINT);
+      startConversation(w.first ? { elevenlabs, first: w.first } : { elevenlabs, greet: READY_LINE });
+    };
+    woken();
+    return onWake(woken);
+  }, []);
   const sheet = <ConversationSheet open={open} from={from} onStart={begin} onClose={() => setOpen(false)} />;
   return { start, show, sheet };
 }

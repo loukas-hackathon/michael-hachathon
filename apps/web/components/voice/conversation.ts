@@ -144,8 +144,12 @@ function dropRecording() {
   releaseMic();
 }
 
-/** One tap starts it. Must run inside the tap: that is when iOS lets Michael's voice play later. */
-export function startConversation(opts: { elevenlabs: boolean }): void {
+/**
+ * One tap starts it. Must run inside the tap: that is when iOS lets Michael's voice play later.
+ * Woken by his name (lib/wake-word.ts) there is no tap: `first` is what the user said after the
+ * name, answered at once; `greet` is his short ready line when they said only the name.
+ */
+export function startConversation(opts: { elevenlabs: boolean; first?: string; greet?: string }): void {
   elevenlabs = opts.elevenlabs;
   unlockAudio();
   // Inside the tap too: the level meter's audio context may only start in a gesture on iOS.
@@ -158,6 +162,24 @@ export function startConversation(opts: { elevenlabs: boolean }): void {
   }
   const recorded = mode === "recorder";
   set({ ...OFF, recorded, bargeIn: !recorded && !isIos() });
+  const first = opts.first?.trim();
+  if (first) {
+    const mine = ++gen;
+    set({ phase: "thinking", heard: first });
+    void answer(first, mine);
+  } else if (opts.greet) {
+    void greet(opts.greet, ++gen);
+  } else {
+    listen();
+  }
+}
+
+/** His short ready line, then he listens: woken by his name alone. */
+async function greet(line: string, mine: number) {
+  saying = line;
+  set({ phase: "speaking", heard: "" });
+  await speakReply(line, elevenlabs);
+  if (mine !== gen || phase() !== "speaking") return;
   listen();
 }
 

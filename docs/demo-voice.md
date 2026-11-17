@@ -86,3 +86,53 @@ Where the browser can, speech recognition runs in the browser and Michael only r
 On iPhone the sentence is recorded, sent once to be transcribed (ElevenLabs Speech to Text) and
 dropped: the audio is never stored or logged by us, only the words are kept, as in typed chat. The
 voice out is generated from Michael's reply text (never the user's voice) and played once.
+
+## Say Michael to talk (wake word in the app)
+
+You, under Talk to Michael: the switch **Say Michael to talk**. Off by default, kept per device.
+While it is on and the app is open and visible, a small pill at the top says "Listening for
+Michael". Say "Michael", "hey Michael" or "yo Michael": a soft chime and a haptic, Chat opens and
+the hands free conversation (Script C) starts. "Michael, how is my day going" sends the request
+straight away; the name alone gets "Go on. I'm listening." and he listens.
+
+**How it works.** `apps/web/lib/wake-word.ts` matches the name at the start of a phrase on the
+browser's own transcript (case and punctuation ignored; "Michaela", "Michael's" and a name in the
+middle of a sentence do not count; "Micheal", "Michel", "Mikael" do). The loop in
+`components/voice/wake-word-host.tsx` runs the Web Speech API recogniser (continuous, interim
+results) and stops at once when the app is hidden, off the record, in a meeting, while push to
+talk or a conversation holds the microphone, and while Michael speaks, so he never wakes himself.
+Browsers end a session every minute or so: the next starts at once. Errors and sessions that end
+straight away back off (1, 2, 4 ... 32 seconds); after six in a row it rests until the app is
+opened again. No second voice stack: the wake only starts `startConversation` in
+`components/voice/conversation.ts`.
+
+**Privacy.** Nothing reaches Michael's API until the name is heard; the match runs in the browser.
+Where Chrome has an on device English pack (`SpeechRecognition.available` and `install` with
+`processLocally`, Chrome 139 and later) the switch downloads it on the first tap and audio never
+leaves the device; the line under the switch says "Heard on this device". Where only the browser's
+cloud service exists, the line says so before it is switched on: "Your browser's speech service
+hears what is said while I listen." If the pack cannot be had, or on device listening later stops
+working, the switch turns off and says so rather than moving to the cloud by itself. `available()`
+is only called inside the switch's tap: in headless Chromium it crashes the tab, so it is never
+called on page load.
+
+**Browser support** (checked against MDN and the spec, and in Chromium with a scripted recogniser
+in `e2e/tests/wake-word.spec.ts`; not yet on real phones):
+
+| Where                      | Wake word                                                                                                                             |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Chrome, laptop and Android | Yes. On device with a language pack, else Google's speech service.                                                                    |
+| Safari, iPhone and Mac     | Tries. `webkitSpeechRecognition` ends sessions often and the mic indicator may blink on each restart; Apple decides where audio goes. |
+| iPhone Home Screen app     | Usually refused by iOS (`service-not-allowed`): the switch turns off and says to open Michael in Safari.                              |
+| Firefox                    | No recogniser: the switch is hidden.                                                                                                  |
+
+Before trying it on stage: turn the switch on once by hand (that tap allows the microphone and, on
+iPhone, his voice), then leave the phone unlocked with the app in front. A screen lock or another
+app stops listening; coming back starts it again.
+
+**From everywhere, later (not built).** The in app wake word only hears while Michael is open. The
+routes to "Michael" from anywhere: a Siri Shortcut ("Hey Siri, ask Michael") that opens
+`/chat?talk=1` or calls the API; the iPhone Action Button bound to that Shortcut; an Apple Watch
+complication or Shortcut on the wrist; a Mac menu bar app with an on device wake word (Porcupine or
+openWakeWord) that opens the conversation; and an Android assistant app action. Each one only
+starts the same conversation.
