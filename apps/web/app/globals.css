@@ -1283,11 +1283,16 @@ body::before {
   }
 }
 
-/* Paragraphs avoid a lone last word; headings are balanced (above). */
-p,
-li,
-figcaption {
-  text-wrap: pretty;
+/*
+ * Paragraphs avoid a lone last word (in the base layer, so a text-balance utility still wins);
+ * headings are balanced (above). Not inside absolutely placed
+ * boxes (timeline blocks and their labels): their room is fixed, and a rewrap there can push a
+ * second line onto the next label.
+ */
+@layer base {
+  :where(p, li, figcaption):not(.absolute, .absolute *) {
+    text-wrap: pretty;
+  }
 }
 
 /*
