@@ -12,8 +12,9 @@ import { Fold } from "./fold";
 // into "Copied", Done and Not now hide the draft at once and bring it back with a line if they fail.
 
 const tinted =
-  "press min-h-9 min-w-[84px] rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-4 text-subhead font-semibold text-tint-text disabled:opacity-60";
-const plain = "press min-h-9 rounded-full px-3 text-subhead font-semibold text-tint-text disabled:opacity-60";
+  "hit press min-h-9 min-w-[84px] rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-4 text-subhead font-semibold text-tint-text disabled:opacity-60";
+const plain =
+  "hit press min-h-9 rounded-full px-3 text-subhead font-semibold text-tint-text disabled:opacity-60";
 
 type Local = { copied?: boolean; hidden?: boolean; busy?: boolean; error?: string };
 

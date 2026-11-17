@@ -6,6 +6,7 @@ import { runAsUser } from "../context";
 import { env } from "../env";
 import { scoreWithHistory } from "../score";
 import { MemoryStore } from "../store";
+import { SHORT_NIGHT_MINUTES } from "./body";
 import {
   buildDemoHistory,
   HISTORY_DAYS,
@@ -13,7 +14,6 @@ import {
   historyDay,
   isDemoHistory,
   measuredSources,
-  SHORT_NIGHT_MINUTES,
 } from "./history";
 import { seedDemoWeek } from "./sync";
 import { addDays, athensMidnight, localDate, weekday } from "./time";
@@ -52,8 +52,11 @@ for (const now of NOWS) {
       assert.ok(isDemoHistory(e));
       assert.ok(!keys.has(key(e)), `duplicate ${key(e)}`);
       keys.add(key(e));
-      // All of it has happened, and none of it reaches into the seven days ending now.
-      assert.ok(endOf(e) <= now.getTime() - 7 * 24 * HOUR, `${e.title} ends ${e.end_at}`);
+      // All of it has happened, and all of it is before the week starts (the week takes over there).
+      assert.ok(
+        endOf(e) <= athensMidnight(addDays(localDate(now.getTime()), -(7 - 1))),
+        `${e.title} ends ${e.end_at}`,
+      );
       const day = (e.external_id ?? "").slice(HISTORY_PREFIX.length, HISTORY_PREFIX.length + 10);
       perDay.set(day, (perDay.get(day) ?? 0) + 1);
     }
@@ -137,14 +140,15 @@ test("a history day is the same whenever it is built, and later runs keep earlie
     assert.deepEqual(laterKeys.get(key(e)), e, `${key(e)} changed`);
   }
   assert.deepEqual(historyDay("2026-09-23"), historyDay("2026-09-23"));
-  // The same day, later the same day: nothing is lost, the last evening fills in.
+  // The same day, later the same day: nothing is lost.
   const evening = buildDemoHistory(new Date("2026-11-15T23:30:00+02:00"));
   const eveningKeys = new Set(evening.events.map(key));
   assert.deepEqual(
     first.events.filter((e) => !eveningKeys.has(key(e))),
     [],
   );
-  assert.ok(evening.events.length > first.events.length);
+  // The history ends where the week starts, so it does not change through the day at all.
+  assert.deepEqual(evening.events, first.events);
 });
 
 test("days his own numbers cover are built from them", () => {

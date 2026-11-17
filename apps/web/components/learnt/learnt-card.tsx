@@ -31,7 +31,9 @@ export function LearntCard({
       ? watching.length
         ? `${watching.length} ${watching.length === 1 ? "thing" : "things"} seen, none held ${bar} times yet.`
         : `Nothing has held ${bar} times yet.`
-      : `${have} of ${needed} nights so far.`;
+      : have === 0
+        ? `I start tonight and need ${needed} nights.`
+        : `${have} of ${needed} nights so far.`;
     return (
       <Link
         href={href}

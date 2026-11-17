@@ -5,6 +5,7 @@ import {
   type Goal,
   type PatternReport,
   type Recommendation,
+  voiceShortDuration,
 } from "@michael/shared";
 import { HttpError, parse } from "../http";
 import { DEFAULT_TIMEZONE } from "../patterns";
@@ -141,7 +142,7 @@ export function offenderSuggestion(input: OffenderInput): NewRecommendation | nu
   return {
     goal_id: goal?.id ?? null,
     title: `Mute ${name} ${z.clock(start)} to ${z.clock(end)}`,
-    rationale: `${name} broke your focus ${top.o.disruptions} times on ${top.o.days} days last week and took ${mins} min. I close it when it comes to the front, until ${z.clock(end)}.`,
+    rationale: `${name} broke your focus ${top.o.disruptions} times on ${top.o.days} days last week and took ${voiceShortDuration(mins)}. I close it when it comes to the front, until ${z.clock(end)}.`,
     action: {
       kind: "block_mac_app",
       payload: {

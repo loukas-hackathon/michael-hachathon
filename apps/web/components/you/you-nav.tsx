@@ -2,16 +2,53 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { useWide } from "@/components/use-wide";
+import { STATE_WORDS } from "@/lib/connection-words";
 import type { ConnectionId } from "@/lib/connections";
+import type { ConnectionState } from "@/lib/connections-status";
+import { isOn } from "@/lib/live-connections";
 import { ConnectionIcon } from "./connection-icon";
+import { useLiveConnection } from "./connections-live";
 
 // You on a laptop (#285): the list stays on the left while the section or connection page opens on
 // the right, so moving between Mac, iPhone and Privacy never leaves the list. The layout keeps it
 // mounted across those pages. Phones never render it: there You is the list, one page at a time.
 
-export type NavRow = { id: ConnectionId; name: string; href: string; state: string; on: boolean };
+export type NavRow = {
+  id: ConnectionId;
+  name: string;
+  href: string;
+  state: string;
+  on: boolean;
+  /** The state to follow live (#466); none for the demo week's replayed rows. */
+  live?: ConnectionState;
+};
+
+/** The icon and the state word, following the live status when there is one. */
+function NavState({ r }: { r: NavRow }) {
+  const live = useLiveConnection(r.id, r.live ?? "unknown");
+  const on = r.live ? isOn(live.state) : r.on;
+  const word = r.live ? STATE_WORDS[live.state] : r.state;
+  const popped = r.live !== undefined && live.arrived;
+  return (
+    <>
+      <span className={on ? "text-label" : "text-label-2"}>
+        <ConnectionIcon id={r.id} className="size-5" />
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-body">{r.name}</span>
+        <span
+          key={word}
+          style={popped ? ({ "--m-origin": "0 50%" } as CSSProperties) : undefined}
+          className={`text-footnote text-label-2 ${popped ? "m-pop-in" : ""}`}
+        >
+          {word}
+        </span>
+      </span>
+    </>
+  );
+}
 
 const SECTIONS = [
   { href: "/you#privacy", label: "Privacy" },
@@ -60,13 +97,7 @@ export function YouNav({ rows }: { rows: NavRow[] }) {
                   aria-current={here ? "page" : undefined}
                   className={`${row} ${here ? current : ""}`}
                 >
-                  <span className={r.on ? "text-label" : "text-label-2"}>
-                    <ConnectionIcon id={r.id} className="size-5" />
-                  </span>
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate text-body">{r.name}</span>
-                    <span className="text-footnote text-label-2">{r.state}</span>
-                  </span>
+                  <NavState r={r} />
                 </Link>
               </li>
             );

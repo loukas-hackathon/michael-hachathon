@@ -66,6 +66,9 @@ function actionTimes(rec: Recommendation) {
 // A Mac app guard keeps working until its window ends, so it can be undone (and is still worth
 // doing) until then; a calendar change only until the block starts.
 const isGuard = (rec: Recommendation) => rec.action?.kind === "block_mac_app";
+// Do Not Disturb (#447, #432): like a guard it holds for a span, so it stays and can be undone until its end.
+const isDnd = (rec: Recommendation) => rec.action?.kind === "do_not_disturb";
+const holdsSpan = (rec: Recommendation) => isGuard(rec) || isDnd(rec);
 
 /** The apps a block_mac_app suggestion names ("WhatsApp and Slack"). */
 export function guardedApps(rec: Recommendation): string {
@@ -80,7 +83,7 @@ export function guardedApps(rec: Recommendation): string {
 
 export function undoDeadline(rec: Recommendation): string | null {
   const { start, end } = actionTimes(rec);
-  if (isGuard(rec)) return end ?? rec.action?.undo_until ?? null;
+  if (holdsSpan(rec)) return end ?? rec.action?.undo_until ?? null;
   const until = [rec.action?.undo_until ?? null, start].filter((x): x is string => Boolean(x));
   if (until.length === 0) return null;
   return new Date(Math.min(...until.map((x) => Date.parse(x)))).toISOString();
@@ -93,6 +96,7 @@ const EXECUTABLE = new Set([
   "move_calendar_block",
   "move_calendar_blocks",
   "block_mac_app",
+  "do_not_disturb",
 ]);
 
 const leg = (v: unknown): { at: string; minutes: number } | null => {
@@ -167,6 +171,19 @@ export function bookedRationale(rec: Recommendation): string {
   return [m[1] ? `Booked by ${m[1]}.` : "", (m[2] ?? "").trim()].filter(Boolean).join(" ");
 }
 
+/**
+ * A plan Claude proposed in chat carries the model's note and a machine summary with ISO dates
+ * ("User asked to plan Monday. Proposed in chat: new Yoga 2026-11-16 21:30 to 22:00."). The title,
+ * the time line and the maths already say it, so the summary goes, and so does a note written
+ * about the user in the third person. Any other rationale is left as it is.
+ */
+export function chatRationale(rationale: string): string {
+  const cut = rationale.indexOf(" Proposed in chat: ");
+  if (cut < 0 && !rationale.startsWith("Proposed in chat: ")) return rationale;
+  const reason = cut < 0 ? "" : rationale.slice(0, cut).trim();
+  return /^(the )?user\b/i.test(reason) ? "" : reason;
+}
+
 export function toCard(rec: Recommendation, goals: Goal[], now: Date): RecCard {
   const goal = goalName(goals.find((g) => g.id === rec.goal_id));
   const { start, end } = actionTimes(rec);
@@ -180,12 +197,12 @@ export function toCard(rec: Recommendation, goals: Goal[], now: Date): RecCard {
   return {
     id: rec.id,
     title: rec.title,
-    rationale: rec.status === "done" ? bookedRationale(rec) : rec.rationale,
+    rationale: chatRationale(rec.status === "done" ? bookedRationale(rec) : rec.rationale),
     goal,
     maths,
     // The title often says the times already ("Block 09:30 to 11:00 for ..."): then only the day.
     when: start
-      ? creates || isGuard(rec)
+      ? creates || holdsSpan(rec)
         ? rec.title.includes(span)
           ? day
           : `${day}, ${span}`
@@ -197,7 +214,9 @@ export function toCard(rec: Recommendation, goals: Goal[], now: Date): RecCard {
     undoUntil: undoDeadline(rec),
     undoneNote: isGuard(rec)
       ? undoneLine(`${guardedApps(rec)} can open again.`, now)
-      : undoneLine("Your calendar is back as it was.", now),
+      : isDnd(rec)
+        ? undoneLine("Do Not Disturb is off.", now)
+        : undoneLine("Your calendar is back as it was.", now),
     ...travelCard(rec, now),
   };
 }
@@ -215,10 +234,11 @@ export function openRecommendations(recs: Recommendation[], now: Date, limit = 3
       if (r.status === "dismissed") return false;
       if (r.status === "undone" && r.source === "chat") return false;
       const t = actionTimes(r);
-      return ahead((isGuard(r) ? t.end : t.start) ?? r.action?.undo_until ?? null);
+      return ahead((holdsSpan(r) ? t.end : t.start) ?? r.action?.undo_until ?? null);
     })
     .sort((a, b) => {
-      const ex = (r: Recommendation) => (r.action && !r.action.involves_others ? 0 : 1);
+      // What Michael can do for a goal first, then Do Not Disturb for the busiest hours, then advice.
+      const ex = (r: Recommendation) => (!r.action || r.action.involves_others ? 2 : isDnd(r) ? 1 : 0);
       return ex(a) - ex(b) || Date.parse(b.created_at) - Date.parse(a.created_at);
     })
     .slice(0, limit);

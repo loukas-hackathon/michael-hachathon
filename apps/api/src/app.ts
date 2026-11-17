@@ -9,6 +9,7 @@ import { env } from "./env";
 import { errorResponse, HttpError } from "./http";
 import { handleMcpRequest } from "./mcp";
 import { prewarmAfterWrite } from "./moments/prewarm";
+import { accounts } from "./routes/accounts";
 import { actions } from "./routes/actions";
 import { agents } from "./routes/agents";
 import { analysis } from "./routes/analysis";
@@ -18,6 +19,7 @@ import { chatThreads } from "./routes/chat-threads";
 import { checkIn } from "./routes/check-in";
 import { checklist } from "./routes/checklist";
 import { demo } from "./routes/demo";
+import { dnd } from "./routes/dnd";
 import { drafts } from "./routes/drafts";
 import { events } from "./routes/events";
 import { focus } from "./routes/focus";
@@ -34,6 +36,7 @@ import { meetings } from "./routes/meetings";
 import { moments } from "./routes/moments";
 import { nudgeActPublic, nudges } from "./routes/nudges";
 import { connect, oauthPublic } from "./routes/oauth";
+import { onboarding } from "./routes/onboarding";
 import { patterns } from "./routes/patterns";
 import { places } from "./routes/places";
 import { privacy } from "./routes/privacy";
@@ -75,8 +78,10 @@ const webhooksApp = new Hono()
 
 // Every /v1 route, without the auth in front (the isolation test mounts it as several users).
 export const v1Routes = new Hono()
+  .route("/", accounts)
   .route("/", events)
   .route("/", goals)
+  .route("/", onboarding)
   .route("/", checklist)
   .route("/", ritual)
   .route("/", instructions)
@@ -102,6 +107,7 @@ export const v1Routes = new Hono()
   .route("/", actions)
   .route("/", blocks)
   .route("/", focusGuards)
+  .route("/", dnd)
   .route("/", focus)
   .route("/", drafts)
   .route("/", profile)

@@ -1,11 +1,15 @@
 import { headers } from "next/headers";
 import Link from "next/link";
+import { AutomationApp } from "@/components/setup/automation-app";
+import { FocusShortcutSetup } from "@/components/setup/focus-shortcut-setup";
 import { IPhoneShortcutSetup } from "@/components/setup/iphone-shortcut-setup";
 import { ConnectionPage, SetupSection } from "@/components/you/connection-page";
 import { KeySetup } from "@/components/you/key-setup";
 import { SourcePrivacy } from "@/components/you/source-privacy";
+import { getProfile } from "@/lib/api";
 import { CONNECTION_ROUTES, connection } from "@/lib/connections";
 import { getConnection } from "@/lib/connections-status";
+import { focusShortcutUrl } from "@/lib/dnd";
 import { isIPhone, shortcutUrl } from "@/lib/one-tap";
 
 export const metadata = { title: "iPhone · Michael" };
@@ -22,7 +26,10 @@ export default async function IPhonePage({
   searchParams: Promise<{ from?: string; preview?: string }>;
 }) {
   const [{ from, preview }, h] = await Promise.all([searchParams, headers()]);
-  const { row, view } = await getConnection("iphone", { preview: preview === "1" });
+  const [{ row, view }, profile] = await Promise.all([
+    getConnection("iphone", { preview: preview === "1" }),
+    getProfile().catch(() => null),
+  ]);
   const c = connection("iphone");
   const mac = view.rows.find((r) => r.id === "mac");
   const hasMac = mac?.state === "on" || mac?.state === "paused";
@@ -41,6 +48,7 @@ export default async function IPhonePage({
       ) : null}
       <IPhoneShortcutSetup
         shortcutUrl={shortcutUrl()}
+        live={row.state === "on"}
         fallback={
           <KeySetup
             keyName="iPhone Shortcuts"
@@ -52,6 +60,8 @@ export default async function IPhonePage({
           />
         }
       />
+      {/* Apple passes an App automation no app name: the app it is for, one tap (#539). */}
+      {profile ? <AutomationApp initial={profile.default_app} /> : null}
     </SetupSection>
   );
 
@@ -81,9 +91,20 @@ export default async function IPhonePage({
     </SetupSection>
   );
 
+  // Do Not Disturb, asked then done (#447): a second shortcut, next to the first.
+  const doNotDisturb = (
+    <SetupSection
+      key="dnd"
+      title="Do Not Disturb, when you say yes"
+      note="I ask in a nudge. One tap and it is on until your block ends, or until morning at night."
+    >
+      <FocusShortcutSetup url={focusShortcutUrl()} />
+    </SetupSection>
+  );
+
   return (
     <ConnectionPage row={row} from={from}>
-      {leadIPhone ? [live, screenTime] : [screenTime, live]}
+      {leadIPhone ? [live, doNotDisturb, screenTime] : [screenTime, live, doNotDisturb]}
       <SourcePrivacy sources={c.sources} />
     </ConnectionPage>
   );

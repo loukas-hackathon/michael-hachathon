@@ -1,6 +1,7 @@
 import type { Source } from "@michael/shared";
 import { SourceSwitches } from "@/app/you/source-switches";
 import { getPrivacy } from "@/lib/api";
+import { sourceSwitchOn } from "@/lib/source-switch";
 import { SetupSection } from "./connection-page";
 
 // The privacy switches a connection owns, on its own page: one place per source.
@@ -12,7 +13,11 @@ export async function SourcePrivacy({ sources, note }: { sources: Source[]; note
       note={note ?? "Switch one off and I stop reading it at once. Off the record on You stops everything."}
     >
       {privacy ? (
-        <SourceSwitches initial={privacy.sources} sources={sources} />
+        <SourceSwitches
+          // No saved rule means collected, so it reads On (#512).
+          initial={privacy.sources.map((s) => ({ ...s, enabled: sourceSwitchOn(s) }))}
+          sources={sources}
+        />
       ) : (
         <p className="rounded-group bg-fill px-4 py-3 text-subhead text-label-2">
           I couldn't load these switches. Pull to refresh.

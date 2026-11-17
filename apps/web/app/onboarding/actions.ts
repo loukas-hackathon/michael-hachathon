@@ -1,8 +1,26 @@
 "use server";
 
-import { GoalCategory, ProfileUpdate } from "@michael/shared";
+import {
+  GoalCategory,
+  GoalWordsRequest,
+  type GoalWordsResponse,
+  HeardGoal,
+  MemoryCreate,
+  OnboardingTurnRequest,
+  type OnboardingTurnResponse,
+  ProfileUpdate,
+} from "@michael/shared";
 import { revalidatePath } from "next/cache";
-import { acceptGoalSuggestion, createGoal, getGoals, patchGoal, putProfile } from "@/lib/api";
+import {
+  acceptGoalSuggestion,
+  createGoal,
+  getGoals,
+  goalsFromWords,
+  onboardingTurn,
+  patchGoal,
+  putProfile,
+  rememberNote,
+} from "@/lib/api";
 import { isDemoVisitor } from "@/lib/caller";
 
 // Server functions behind the onboarding talk. Only the server talks to the API, with the signed in
@@ -14,10 +32,14 @@ export type KeptSuggestion = { id: string; weekly_minutes: number };
 /** A goal in the user's own words (Manolis, #190): Business, a time goal, hours changed on Goals. */
 export type OwnGoal = { title: string; weekly_minutes: number };
 export type Answers = {
-  goals: GoalAnswer[];
+  goals?: GoalAnswer[];
   own?: OwnGoal;
   /** Calendar suggestions to keep, by id. */
   kept?: KeptSuggestion[];
+  /** Goals heard in the talk, as the user left them on the review screen. */
+  heard?: HeardGoal[];
+  /** How the user works, in their words, kept as memories. */
+  notes?: string[];
   /** Usual week and quiet hours are no longer asked: the API defaults stand until You changes them. */
   profile?: Omit<ProfileUpdate, "onboarded_at">;
 };
@@ -84,8 +106,34 @@ function targetFor(g: GoalAnswer, gymDays: number): Record<string, unknown> {
  * its weekly budget updated (Redo setup), never a duplicate. Goals left unpicked are not touched:
  * Michael never deletes.
  */
+const HeardList = HeardGoal.array().max(5);
+/** Notes are memories: the same rules POST /v1/memories applies. */
+const Notes = MemoryCreate.shape.text.array().max(4);
+
+/**
+ * What Michael heard in the talk: the answers, as they came, read into goals by the API. Nothing is
+ * saved. Null when the API could not answer; the screen then offers the list of usual goals.
+ */
+export async function hearGoals(text: string): Promise<GoalWordsResponse | null> {
+  const parsed = GoalWordsRequest.safeParse({ text: typeof text === "string" ? text.slice(0, 4000) : "" });
+  if (!parsed.success) return null;
+  return goalsFromWords(parsed.data.text);
+}
+
+/**
+ * Michael's next line in the talk, from the API. Null when it cannot answer (not deployed yet, no
+ * model, slow, down): the screen then asks its own script. Nothing is saved.
+ */
+export async function nextTurn(turns: unknown): Promise<OnboardingTurnResponse | null> {
+  const parsed = OnboardingTurnRequest.safeParse({ turns });
+  if (!parsed.success) return null;
+  return onboardingTurn(parsed.data);
+}
+
 export async function finishOnboarding(input: Answers): Promise<{ ok: boolean }> {
-  const goals = parseGoals(input?.goals);
+  const goals = parseGoals(input?.goals ?? []);
+  const heard = HeardList.parse(input?.heard ?? []);
+  const notes = Notes.parse(input?.notes ?? []);
   const kept = parseKept(input?.kept);
   const own = parseOwn(input?.own);
   const profile = ProfileUpdate.parse({ ...input?.profile, onboarded_at: new Date().toISOString() });
@@ -122,6 +170,21 @@ export async function finishOnboarding(input: Answers): Promise<{ ok: boolean }>
         weekly_budget_minutes: own.weekly_minutes,
       });
     }
+    // Heard in the talk: never twice under the same name (Redo setup), never touching an existing goal.
+    const taken = new Set(current.filter((x) => x.active).map((x) => x.title.toLowerCase()));
+    for (const h of heard) {
+      if (taken.has(h.title.toLowerCase())) continue;
+      taken.add(h.title.toLowerCase());
+      await createGoal({
+        category: h.category,
+        title: h.title,
+        description: h.evidence ? `In your words: ${h.evidence}` : null,
+        target: h.target,
+        weekly_budget_minutes: h.weekly_budget_minutes,
+      });
+    }
+    // Best effort: a note not kept never stops the goals.
+    for (const n of notes) await rememberNote(n);
     await putProfile(profile);
     revalidatePath("/");
     revalidatePath("/goals");

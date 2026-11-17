@@ -93,6 +93,13 @@ const backToWeb = (params: Record<string, string>, returnTo = "/you") => {
   return u.toString();
 };
 
+const JUST_NOW_MS = 5 * 60_000;
+async function connectedJustNow(provider: IntegrationProvider): Promise<boolean> {
+  const rec = await store.getIntegration(provider).catch(() => null);
+  const at = rec?.connected_at ? Date.parse(rec.connected_at) : Number.NaN;
+  return rec?.status === "connected" && Date.now() - at < JUST_NOW_MS;
+}
+
 // Browser redirect from Google, mounted at /oauth/google/callback (the redirect URI registered in
 // Google Cloud). No auth header, so the signed `state` says who it is for.
 export const oauth = new Hono().get("/oauth/google/callback", async (c) => {
@@ -123,8 +130,12 @@ export const oauth = new Hono().get("/oauth/google/callback", async (c) => {
         error: null,
       });
     } catch (err) {
-      console.error("oauth callback", err);
-      return c.redirect(backToWeb({ integration_error: provider, reason: "token" }, state.returnTo));
+      // Google's redirect can land twice (a double tap on Continue, a browser reload): the first
+      // exchange connects, the second finds the code spent. That is a success, not an error.
+      if (!(await connectedJustNow(provider))) {
+        console.error("oauth callback", err);
+        return c.redirect(backToWeb({ integration_error: provider, reason: "token" }, state.returnTo));
+      }
     }
     const back: Record<string, string> = { connected: provider };
     // Onboarding reads the four weeks itself, on its own screen with a status line, so the user is

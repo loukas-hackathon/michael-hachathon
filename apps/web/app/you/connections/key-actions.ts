@@ -9,7 +9,7 @@ export type KeyResult = { secret: string; apiBase: string } | { error: string };
 // Creates a device key for the signed-in person. Demo visitors can't: keys are personal.
 export async function createDeviceKey(name: string): Promise<KeyResult> {
   if (await isDemoVisitor()) {
-    return { error: "Sign in with Google to connect your own devices." };
+    return { error: "Sign in to connect your own devices." };
   }
   try {
     const res = await fetch(`${API_URL}/v1/tokens`, {

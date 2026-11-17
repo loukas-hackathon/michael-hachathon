@@ -1,5 +1,6 @@
 import "server-only";
 import { InsightsResponse, mockInsights } from "@michael/shared";
+import { cache } from "react";
 import { API_URL, ApiFailure } from "./api";
 import { authHeaders } from "./caller";
 import { devLatency } from "./dev-latency";
@@ -36,7 +37,7 @@ function withApplied(view: Insights): Insights {
   };
 }
 
-export async function getInsights(variant?: string): Promise<Insights | null> {
+async function loadInsights(variant?: string): Promise<Insights | null> {
   await devLatency();
   const preview = variant ? PREVIEWS[variant] : undefined;
   if (preview) return withApplied(preview);
@@ -65,3 +66,6 @@ export async function applyInsightFix(id: string, preview: boolean): Promise<voi
   });
   if (!res.ok) throw new ApiFailure(`POST /v1/insights/${id}/fix failed: ${res.status}`, res.status);
 }
+
+/** Read once per request: Today's numbers and the learnt card share one answer. */
+export const getInsights = cache(loadInsights);

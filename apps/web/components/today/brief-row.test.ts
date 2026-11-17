@@ -9,6 +9,10 @@ const now = new Date("2026-11-15T06:12:00+02:00");
 test("brief row: no brief says so in one line, never filler about what a brief is", () => {
   assert.deepEqual(briefRow(null, now), { preview: NO_BRIEF, when: null });
   assert.doesNotMatch(NO_BRIEF, /tell you what matters/);
+  // Today passes a line from the person's week; it stands in until the first brief.
+  const mine = "None yet. I start with the 2h 32 Instagram took this week.";
+  assert.equal(briefRow(null, now, mine).preview, mine);
+  assert.equal(briefRow(run({}), now, mine).preview, "Solid morning.");
 });
 
 test("brief row: the first line previews; a brief from yesterday says Yesterday, not 14:30", () => {

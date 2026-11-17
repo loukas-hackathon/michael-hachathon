@@ -17,6 +17,7 @@ export async function getFocusActive(): Promise<FocusActiveResponse | null> {
     const res = await fetch(`${API_URL}/v1/focus/active`, {
       headers: await authHeaders(),
       cache: "no-store",
+      signal: AbortSignal.timeout(6_000),
     });
     if (!res.ok) return null;
     const parsed = FocusActiveResponse.safeParse(await res.json());
@@ -36,6 +37,8 @@ export async function focusCall(path: string, body: unknown): Promise<FocusResul
       headers: { ...(await authHeaders()), "content-type": "application/json" },
       body: JSON.stringify(body),
       cache: "no-store",
+      // Never hang a session screen on a slow API: the screen checks the state after this.
+      signal: AbortSignal.timeout(7_000),
     });
   } catch {
     return { ok: false, status: 0, message: "" };

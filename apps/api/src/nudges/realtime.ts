@@ -2,8 +2,12 @@ import {
   type Event,
   type Goal,
   isSleepGoal,
+  LATE_PHONE_KEY,
   type Nudge,
   type NudgeTestTrigger,
+  nudgeRuleKey,
+  nudgeTrigger,
+  PHONE_DRIFT_SUFFIX,
   voiceDuration,
 } from "@michael/shared";
 import type { LiveSignal } from "../ingest/phone-live";
@@ -79,10 +83,27 @@ export interface Learnt {
 
 export type RealtimeTrigger = NudgeTestTrigger;
 
-const LATE_KEY = "late_phone:";
+// Which trigger a nudge is, read from its key (packages/shared: `nudgeTrigger`), never from its
+// line: the copy can change, the key cannot.
 
-/** The phone before sleep, among the `wind_down` nudges. */
-export const isLatePhone = (n: { key: string }) => n.key.replace(/^test:[^:]*:/, "").startsWith(LATE_KEY);
+/** The phone before sleep, among the `wind_down` nudges: its key is `late_phone:<night>`. */
+export const isLatePhone = (n: { key: string }) =>
+  nudgeTrigger({ kind: "wind_down", key: n.key }) === "late_phone";
+
+/** The phone inside a block, among the `focus_drift` nudges: its key ends with `:phone`. */
+export const isPhoneBlock = (n: { kind: string; key: string }) =>
+  n.kind === "focus_drift" && nudgeTrigger({ kind: "focus_drift", key: n.key }) === "phone_block";
+
+/**
+ * The key a nudge is deduplicated by. Both drifts of a block (the Mac's `focus_drift:<event>` and
+ * the phone's `focus_drift:<event>:phone`) share one, so a block gets one drift nudge.
+ */
+export const dedupeKey = (key: string): string => {
+  const rule = nudgeRuleKey(key);
+  return rule.startsWith("focus_drift:") && rule.endsWith(PHONE_DRIFT_SUFFIX)
+    ? rule.slice(0, -PHONE_DRIFT_SUFFIX.length)
+    : rule;
+};
 
 // ---------- the phone, live ----------
 
@@ -143,21 +164,21 @@ export function phoneUse(events: Event[], live: LiveSignal[], from: number, to: 
 
 // ---------- the phone inside a block ----------
 
-/** At most this many words of a goal's title, so the line stays under 15 words. */
-const TITLE_WORDS = 5;
-const nameOf = (goal: Goal): string =>
-  goal.title
+/**
+ * At most this many words name the block, so the line stays under 15 words: the goal's own title
+ * when it is that short, else the block by its start, the way the voice sheet says it ("in the
+ * 10:30 block").
+ */
+const NAME_WORDS = 3;
+const blockName = (goal: Goal, start: string): string => {
+  const words = goal.title
     .replace(/[-–—!]+/g, " ")
     .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, TITLE_WORDS)
-    .join(" ") || "this block";
+    .filter(Boolean);
+  return words.length > 0 && words.length <= NAME_WORDS ? words.join(" ") : `the ${start} block`;
+};
 
-/** The phone inside a block, among the `focus_drift` nudges (its line starts with the count of opens). */
-export const isPhoneBlock = (n: { kind: string; text: string }) =>
-  n.kind === "focus_drift" && /^\d+ phone opens? in /.test(n.text);
-
-const times = (n: number) => `${n} phone ${n === 1 ? "open" : "opens"}`;
+const times = (n: number) => `${n} ${n === 1 ? "time" : "times"}`;
 
 export function phoneInBlock(w: World): Candidate | null {
   const test = w.realtime.test === "phone_block";
@@ -173,12 +194,15 @@ export function phoneInBlock(w: World): Candidate | null {
   const learnt = w.realtime.learnt?.phone_block;
   return {
     kind: "focus_drift",
-    // The block's drift key: one nudge a block, from the Mac or from the phone.
-    key: `focus_drift:${block.eventId}`,
+    // The block's drift key plus the trigger: the engine dedupes both drifts of a block as one
+    // (`dedupeKey`), so a block gets one drift nudge, from the Mac or from the phone.
+    key: `focus_drift:${block.eventId}${PHONE_DRIFT_SUFFIX}`,
     goal_id: block.goal.id,
-    text: `${times(opens.length)} in ${nameOf(block.goal)}. Put it down until ${until}.`,
+    // The voice sheet's own shape ("Your phone opened 9 times in the 10:30 block."), then the fix.
+    // Do Not Disturb is the nudge's button, and what its tap offers on an iPhone (#447).
+    text: `Your phone opened ${times(opens.length)} in ${blockName(block.goal, since)}. Put it down until ${until}.`,
     reason: [
-      `${times(opens.length)} since ${since}, the last at ${w.zone.clock(opens[opens.length - 1] as number)}; the block runs ${since} to ${until} for ${block.goal.title}.`,
+      `Your phone opened ${times(opens.length)} since ${since}, the last at ${w.zone.clock(opens[opens.length - 1] as number)}; the block runs ${since} to ${until} for ${block.goal.title}.`,
       ...(learnt ? [learnt.reason] : []),
     ].join(" "),
   };
@@ -229,7 +253,7 @@ export function latePhone(w: World, bedtime: number | null): Candidate | null {
       }
     : real;
   if (!night) return null;
-  const key = `${LATE_KEY}${night.day}`;
+  const key = `${LATE_PHONE_KEY}${night.day}`;
   if (w.realtime.earlierKeys?.includes(key)) return null;
   const use = phoneUse(w.events, w.realtime.live ?? [], night.from, w.now);
   const first = use[0];

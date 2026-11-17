@@ -19,6 +19,7 @@
     "categories:extension": "pnpm --filter @michael/api exec tsx scripts/extension-categories.ts",
     "env:copy": "node scripts/copy-env.mjs",
     "shortcut": "node scripts/shortcut/build.mjs --sign",
+    "shortcut:focus": "node scripts/shortcut/build.mjs --sign --only-focus",
     "shortcut:inspect": "osascript -l JavaScript scripts/shortcut/inspect.jxa.js scripts/shortcut/out/Michael.shortcut",
     "collect": "pnpm --silent --filter @michael/collector start",
     "start": "pnpm --filter @michael/api start"

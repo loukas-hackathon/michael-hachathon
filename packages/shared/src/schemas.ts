@@ -117,6 +117,9 @@ export const ActionKind = z.enum([
   "settle_block",
   // The user removed one of Michael's blocks on the Timeline (#271). Undo puts it back.
   "remove_calendar_block",
+  // Do Not Disturb, asked then done (#447): on until `end_at`, by the Michael Focus shortcut on the
+  // user's Mac or iPhone. It ends by itself; undo ends it now.
+  "do_not_disturb",
 ]);
 export type ActionKind = z.infer<typeof ActionKind>;
 
@@ -673,6 +676,9 @@ export const FocusGuardsResponse = z.object({
   off_the_record: z.boolean(),
   // Running now, or starting within the next 10 minutes (the collector checks the times itself).
   guards: z.array(FocusGuard),
+  // Do Not Disturb the user asked for and that has not ended or been undone (#447): the Mac
+  // collector switches it on until `until` with the Michael Focus shortcut, and off when it is gone.
+  dnd: z.object({ id: z.uuid(), until: IsoDateTime }).nullable().optional(),
 });
 export type FocusGuardsResponse = z.infer<typeof FocusGuardsResponse>;
 
@@ -711,7 +717,9 @@ export const FocusSession = z.object({
   apps: z.array(z.string()),
   // The log_time recommendation that confirmed the time (undo takes it back for 24 hours).
   log_recommendation_id: z.uuid().nullable(),
-  // Michael's line for the result: "Done. 45 min for University."
+  // Michael's line for the result: "Done. 45 min for University." While active, set only when
+  // Michael started the session himself because a synced goal block began ("Your University block
+  // started. Focus is on until 12:00.").
   message: z.string().nullable(),
   created_at: IsoDateTime,
 });
@@ -1157,6 +1165,75 @@ export const GoalSuggestion = z.object({
 });
 export type GoalSuggestion = z.infer<typeof GoalSuggestion>;
 
+// ---------- goals from the user's own words (onboarding talk) ----------
+
+// What the user said or typed about their goals, as it came: a voice transcript or a messy note.
+export const GoalWordsRequest = z.object({ text: z.string().trim().min(1).max(4000) });
+export type GoalWordsRequest = z.infer<typeof GoalWordsRequest>;
+
+// One goal heard in the user's words, ready to POST to /v1/goals as it is (nothing is saved here).
+export const HeardGoal = z.object({
+  title: z.string().min(1).max(60),
+  // Always one of the three areas for a new goal (#131).
+  category: GoalArea,
+  // Per week. A sleep goal holds the nights: 7 x hours.
+  weekly_budget_minutes: z
+    .number()
+    .int()
+    .min(0)
+    .max(7 * 24 * 60),
+  target: z.object({
+    kind: z.enum(["time", "target"]),
+    calendar_titles: z.array(z.string().min(1)).optional(),
+    sleep_hours: z.number().positive().max(12).optional(),
+  }),
+  // The user's own words it came from, short: "gym three times a week".
+  evidence: z.string().min(1).max(200),
+  // False when the user named the time ("ten hours"); true when Michael set a starting budget.
+  estimated: z.boolean(),
+});
+export type HeardGoal = z.infer<typeof HeardGoal>;
+
+export const GoalWordsResponse = z.object({
+  goals: z.array(HeardGoal).max(5),
+  // How the user works, in their words, worth remembering ("Loses evenings to the phone").
+  notes: z.array(z.string().min(1).max(200)).max(4),
+  // Michael's reply in his voice: what he heard, or the one question he still needs answered.
+  line: z.string().min(1),
+  // model: Claude read it; rules: the word lists did (no key, or the model failed).
+  source: z.enum(["model", "rules"]),
+});
+export type GoalWordsResponse = z.infer<typeof GoalWordsResponse>;
+
+// ---------- the onboarding conversation (voice agent) ----------
+
+// One turn of the first talk: what Michael said, or what the user said (a live transcript the user
+// may have corrected, or typed words). `skipped` marks a question the user passed on.
+export const OnboardingTurn = z.object({
+  role: z.enum(["michael", "user"]),
+  text: z.string().trim().max(1200),
+  skipped: z.boolean().optional(),
+});
+export type OnboardingTurn = z.infer<typeof OnboardingTurn>;
+
+// POST /v1/onboarding/turn. No turns yet: Michael's opener (from the calendar when it is connected).
+export const OnboardingTurnRequest = z.object({ turns: z.array(OnboardingTurn).max(24) });
+export type OnboardingTurnRequest = z.infer<typeof OnboardingTurnRequest>;
+
+export const OnboardingTurnResponse = z.object({
+  // What Michael says next, in his voice, spoken and shown: one short reaction and one question,
+  // or, when done, the line that hands over to the review ("That's plenty. Here's what I heard.").
+  line: z.string().min(1).max(320),
+  // True when he has enough (goals with some sense of time, and where time goes) or the user is
+  // tired of talking: the app reads the user's turns with POST /v1/goals/from-words.
+  done: z.boolean(),
+  // True when the line uses the user's calendar (the opener and follow ups about their real week).
+  from_calendar: z.boolean(),
+  // model: Claude wrote the line; script: the fixed questions (no key, the model failed or was slow).
+  source: z.enum(["model", "script"]),
+});
+export type OnboardingTurnResponse = z.infer<typeof OnboardingTurnResponse>;
+
 export const GoalSuggestionsResponse = z.object({
   from: IsoDateTime,
   to: IsoDateTime,
@@ -1206,6 +1283,9 @@ export const Profile = z.object({
   // Calendar titles Michael never moves, even though they are the user's own blocks ("PT session",
   // booked outside the calendar). Matched like goal calendar titles: equal, or the title starts with it.
   fixed_titles: z.array(z.string().min(1).max(200)).max(50),
+  // The app the user's iPhone App automation is for ("Instagram"). Apple passes the shortcut no app
+  // name, so an open with none is stored as this app (data.app_assumed: true); null: "An app".
+  default_app: z.string().trim().min(1).max(80).nullable(),
   // Set when onboarding is finished or skipped; null means Today should offer onboarding.
   onboarded_at: IsoDateTime.nullable(),
   // null until the user saves anything (the response is then the defaults).
@@ -1224,6 +1304,7 @@ export const DEFAULT_PROFILE: Profile = {
   gym_days: [],
   weak_spots: [],
   fixed_titles: [],
+  default_app: null,
   onboarded_at: null,
   updated_at: null,
 };
@@ -1568,7 +1649,11 @@ export type NudgeKind = z.infer<typeof NudgeKind>;
 //   mute_app  close `app` on the user's Mac for 30 minutes (focus_drift, Mac reporting, allowlisted app)
 //   do_it     carry out the nudge's recommendation (recovery_block), undoable in the app
 //   focus     start a Focus now session on the block's goal, from now to the block's end (block_soon, #397)
-export const NudgeActionId = z.enum(["open", "snooze", "mute_app", "do_it", "focus"]);
+//   dnd       Do Not Disturb until the block ends, or until the night's quiet hours end (focus_drift
+//             and the phone before sleep, #447). Done at once on a Mac that has the Michael Focus
+//             shortcut; otherwise the answer's `url` is the page that hands over to the shortcut
+//             on the iPhone, or offers to add it.
+export const NudgeActionId = z.enum(["open", "snooze", "mute_app", "do_it", "focus", "dnd"]);
 export type NudgeActionId = z.infer<typeof NudgeActionId>;
 
 export const NudgeAction = z.object({
@@ -1585,14 +1670,44 @@ export const NUDGE_SNOOZE_MINUTES = 10;
 export const NUDGE_MUTE_MINUTES = 30;
 
 /**
+ * The phone inside a block (#438) is a `focus_drift` whose key ends with this: the block's own
+ * drift key plus the trigger, so the trigger is known without reading the line.
+ */
+export const PHONE_DRIFT_SUFFIX = ":phone";
+/** The phone before sleep (#438) is a `wind_down` whose key starts with this, then the night's day. */
+export const LATE_PHONE_KEY = "late_phone:";
+
+/** A nudge's key as the engine made it: a test nudge carries it after `test:<press>:`. */
+export const nudgeRuleKey = (key: string): string => key.replace(/^test:[^:]*:/, "");
+
+/** The calendar block a `block_soon` or `focus_drift` nudge is about (its event id), or "". */
+export function nudgeBlockId(n: Pick<Nudge, "kind" | "key">): string {
+  const key = nudgeRuleKey(n.key);
+  if (!key.startsWith(`${n.kind}:`)) return "";
+  const rest = key.slice(n.kind.length + 1);
+  return rest.endsWith(PHONE_DRIFT_SUFFIX) ? rest.slice(0, -PHONE_DRIFT_SUFFIX.length) : rest;
+}
+
+/** Which of the two real time triggers a nudge is, read from its key; null for every other nudge. */
+export function nudgeTrigger(n: Pick<Nudge, "kind" | "key">): "phone_block" | "late_phone" | null {
+  const key = nudgeRuleKey(n.key);
+  if (n.kind === "focus_drift" && key.endsWith(PHONE_DRIFT_SUFFIX)) return "phone_block";
+  if (n.kind === "wind_down" && key.startsWith(LATE_PHONE_KEY)) return "late_phone";
+  return null;
+}
+
+/** True for the nudges that offer Do Not Disturb (#447): any drift out of a block, and the phone before sleep. */
+export const nudgeOffersDnd = (n: Pick<Nudge, "kind" | "key">): boolean =>
+  n.kind === "focus_drift" || nudgeTrigger(n) === "late_phone";
+
+/**
  * Where tapping a nudge goes: the exact card. A block nudge opens that block on the Timeline, a
  * recovery offer its card on Today, anything else Today.
  */
 export function nudgeUrl(n: Pick<Nudge, "kind" | "key" | "day" | "recommendation_id">): string {
-  // block_soon:<event id> and focus_drift:<event id>; a test nudge carries the real key after
-  // `test:<press>:` (routes/nudges.ts).
-  const key = n.key.replace(/^test:[^:]*:/, "");
-  const eventId = key.startsWith(`${n.kind}:`) ? key.slice(n.kind.length + 1) : "";
+  // block_soon:<event id> and focus_drift:<event id>, the latter with `:phone` after it for the
+  // phone inside a block; a test nudge carries the real key after `test:<press>:` (routes/nudges.ts).
+  const eventId = nudgeBlockId(n);
   if ((n.kind === "block_soon" || n.kind === "focus_drift") && eventId) {
     return `/timeline?day=${n.day}&block=${encodeURIComponent(eventId)}`;
   }
@@ -1634,8 +1749,10 @@ export type NudgeActInput = z.infer<typeof NudgeActInput>;
 export const NudgeActResult = z.object({
   action: NudgeActionId,
   // The follow up line, under 15 words: "Done. Undo in the app until 15:00."
+  // dnd: "Do Not Disturb is on until 14:00. Tap to end it." when the Mac did it; otherwise what
+  // one more tap does ("Tap to switch on Do Not Disturb until 14:00.").
   text: z.string().min(1),
-  // Until when it can be undone in the app (do_it, mute_app); null for a snooze.
+  // Until when it can be undone in the app (do_it, mute_app, a dnd that is on); null for a snooze.
   undo_until: IsoDateTime.nullable(),
   // Where tapping the follow up goes.
   url: z.string(),
@@ -1684,6 +1801,52 @@ export const NudgeTestResult = z.object({
   nudge: Nudge,
 });
 export type NudgeTestResult = z.infer<typeof NudgeTestResult>;
+
+// ---------- Do Not Disturb, asked then done (#447) ----------
+
+// A Do Not Disturb the user asked for. `id` is its recommendation (kind do_not_disturb), so it
+// shows on Today and POST /v1/recommendations/:id/undo ends it.
+export const Dnd = z.object({
+  id: z.uuid(),
+  until: IsoDateTime,
+  // "14:00", Europe/Athens.
+  until_label: z.string(),
+  // What the Michael Focus shortcut is run with.
+  shortcut_input: z.string(),
+  // True when the user's Mac has the shortcut and is switching it on (it reports in within 20 s).
+  mac: z.boolean(),
+  // Michael's line: "Do Not Disturb is on until 14:00. Tap to end it."
+  text: z.string(),
+});
+export type Dnd = z.infer<typeof Dnd>;
+
+// GET /v1/dnd?nudge=<id>: what the hand over page shows before the tap.
+export const DndOffer = z.object({
+  // The one running now, if any.
+  active: Dnd.nullable(),
+  // What a tap would switch on: until the nudge's block ends, or until the night's quiet hours
+  // end. Null when the nudge offers none (unknown, another kind, the block is over).
+  offer: z
+    .object({
+      nudge_id: z.uuid(),
+      until: IsoDateTime,
+      until_label: z.string(),
+      shortcut_input: z.string(),
+      // The nudge's own line.
+      text: z.string(),
+    })
+    .nullable(),
+  // The Mac: `ready` it reports in and has the shortcut, `no_shortcut` it reports in without it,
+  // `away` no Mac has reported in the last two minutes.
+  mac: z.enum(["ready", "no_shortcut", "away"]),
+});
+export type DndOffer = z.infer<typeof DndOffer>;
+
+// POST /v1/dnd: the tap. From a nudge (until its block or the night ends), or until a given time.
+export const DndStartInput = z
+  .object({ nudge_id: z.uuid().optional(), until: IsoDateTime.optional() })
+  .refine((v) => Boolean(v.nudge_id) !== Boolean(v.until), "Give nudge_id or until, not both");
+export type DndStartInput = z.infer<typeof DndStartInput>;
 
 // ---------- web push (iPhone, Apple Watch mirror, desktop browsers) ----------
 
@@ -3355,3 +3518,14 @@ export const DraftGenerateResult = z.object({
   skipped: z.number().int().nonnegative(),
 });
 export type DraftGenerateResult = z.infer<typeof DraftGenerateResult>;
+
+// Email and password accounts (#475): the web app creates them server to server, already confirmed,
+// so no confirmation email and no Supabase setting stand in the way. The web then signs in itself.
+export const AccountCreate = z.object({
+  email: z.email().max(320),
+  password: z.string().min(8).max(200),
+});
+export type AccountCreate = z.infer<typeof AccountCreate>;
+
+export const AccountCreated = z.object({ created: z.literal(true) });
+export type AccountCreated = z.infer<typeof AccountCreated>;

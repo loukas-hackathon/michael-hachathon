@@ -3,6 +3,8 @@
 // the user's own app name and minutes are read from the input, and the user's own goal name when
 // the call points at a goal by its id (looked up in their goals, never the model's words).
 
+import { voiceShortDuration } from "@michael/shared";
+
 /** The opening step, sent the moment the stream opens. */
 export const OPENING_STEP = { id: "open", label: "Reading your day" } as const;
 
@@ -16,6 +18,7 @@ const LABELS: Record<string, string> = {
   block_mac_app: "Blocking distracting apps",
   draft_follow_up: "Drafting a follow up",
   undo_action: "Undoing that",
+  accept_recommendation: "Doing what I offered",
   answer_check_in: "Noting your answer",
   set_day_outcomes: "Setting today's outcomes",
   log_day: "Logging your day",
@@ -55,14 +58,14 @@ const WITH_GOAL: Record<string, (goal: string, args: Record<string, unknown>) =>
   block_mac_app: (g) => `Guarding ${g} time`,
   log_done: (g, a) => {
     const m = minutesOf(a.minutes);
-    return m ? `Logging ${m} min to ${g}` : `Logging time to ${g}`;
+    return m ? `Logging ${voiceShortDuration(m)} to ${g}` : `Logging time to ${g}`;
   },
   update_goal: (g) => `Updating ${g}`,
   propose_goal_change: (g) => `Weighing a change to ${g}`,
   add_checklist_item: (g) => `Adding it to ${g}`,
   focus_now: (g, a) => {
     const m = minutesOf(a.minutes);
-    return m ? `Starting ${m} min on ${g}` : `Starting focus on ${g}`;
+    return m ? `Starting ${voiceShortDuration(m)} on ${g}` : `Starting focus on ${g}`;
   },
 };
 
@@ -117,10 +120,10 @@ export function stepLabel(name: string, input: unknown, goalTitle?: string, bloc
   const withGoal = WITH_GOAL[name];
   if (goal && withGoal) return withGoal(goal, args);
   const minutes = minutesOf(args.minutes);
-  if (name === "log_done" && minutes) return `Logging ${minutes} min`;
+  if (name === "log_done" && minutes) return `Logging ${voiceShortDuration(minutes)}`;
   if (name === "log_day" && Array.isArray(args.results)) {
     const total = args.results.reduce<number>((sum, it) => sum + (minutesOf(obj(it).minutes) ?? 0), 0);
-    if (total > 0) return `Logging ${total} min`;
+    if (total > 0) return `Logging ${voiceShortDuration(total)}`;
   }
   return LABELS[name] ?? FALLBACK_STEP;
 }

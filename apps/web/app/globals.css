@@ -21,6 +21,9 @@
   --m-hatch: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='6'%3E%3Cpath d='M-1 7 7 -1M-1 1 1 -1M5 7 7 5' stroke='%236C6C70' stroke-width='1'/%3E%3C/svg%3E");
   --m-dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='6'%3E%3Ccircle cx='3' cy='3' r='0.8' fill='%23AEAEB2'/%3E%3C/svg%3E");
   --m-tabbar-h: 60px;
+  /* Booked but not spent on the one bar (progress-bar.tsx): hollow on light, a lifted grey on dark,
+   * where a hollow of the black page read as a black line. Derived from the tokens above. */
+  --m-bar-ahead: var(--m-bg);
 
   /* Motion tokens (docs/design-guide.md, "Motion"). Animate transform and opacity only. */
   --m-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -68,6 +71,7 @@
     --m-tint-text: #ff4fa3;
     --m-danger: #ff453a;
     --m-glass: rgb(30 30 32 / 0.82);
+    --m-bar-ahead: color-mix(in srgb, var(--m-label) 24%, var(--m-context));
     --m-hatch: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='6'%3E%3Cpath d='M-1 7 7 -1M-1 1 1 -1M5 7 7 5' stroke='%2398989F' stroke-width='1'/%3E%3C/svg%3E");
     --m-dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='6'%3E%3Ccircle cx='3' cy='3' r='0.8' fill='%23545458'/%3E%3C/svg%3E");
   }
@@ -83,6 +87,7 @@
   --m-tint-text: #ff4fa3;
   --m-danger: #ff453a;
   --m-glass: rgb(30 30 32 / 0.82);
+  --m-bar-ahead: color-mix(in srgb, var(--m-label) 24%, var(--m-context));
   --m-hatch: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='6'%3E%3Cpath d='M-1 7 7 -1M-1 1 1 -1M5 7 7 5' stroke='%2398989F' stroke-width='1'/%3E%3C/svg%3E");
   --m-dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='6'%3E%3Ccircle cx='3' cy='3' r='0.8' fill='%23545458'/%3E%3C/svg%3E");
 }
@@ -405,20 +410,6 @@ body::before {
   animation: m-listen 1.8s ease-in-out infinite;
 }
 
-/* Conversation: the Mi symbol breathes slowly while Michael speaks. */
-@keyframes m-speak {
-  0%,
-  100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.06);
-  }
-}
-.m-speak-breath {
-  animation: m-speak 2.4s ease-in-out infinite;
-}
-
 /* Michael is thinking (components/thinking.tsx, #378): the Mi mark breathes, slower and quieter. */
 @keyframes m-think {
   0%,
@@ -433,6 +424,33 @@ body::before {
 }
 .m-think {
   animation: m-think 2.4s ease-in-out infinite;
+}
+/* A gentle breath at full size (used by Focus now below). */
+@keyframes m-think-soft {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(0.96);
+    opacity: 0.78;
+  }
+}
+/* Focus now (#534): the Mi breathes at resting pace (about 12 breaths a minute) while you focus,
+ * and the ring drains linearly to empty at the session's end (duration set inline). */
+.m-focus-breath {
+  animation: m-think-soft 5s ease-in-out infinite;
+}
+@keyframes m-ring-drain {
+  to {
+    stroke-dashoffset: var(--m-ring-empty);
+  }
+}
+.m-ring-drain {
+  animation-name: m-ring-drain;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
 }
 
 /* Michael's character (components/michael.tsx, #319): only the dot of the i moves. Units are the
@@ -512,9 +530,11 @@ body::before {
     transform: scale(1.3);
     opacity: 0.25;
   }
-  .m-speak-breath,
   .m-think,
-  .m-mi .m-mi-dot {
+  .m-focus-breath,
+  .m-ring-drain,
+  /* [data-mi] matches the state rules above, or the idle blink outranks this and keeps going. */
+  .m-mi[data-mi] .m-mi-dot {
     animation: none;
     transition: none;
   }
@@ -524,6 +544,40 @@ body::before {
   .m-switch::after {
     transition: none;
     transform: none;
+  }
+}
+
+/* Onboarding (talk.tsx): Michael introduces himself, his words arriving one by one, once, on the
+ * spring. The one orchestrated moment of the first run; the words are in the DOM from the start. */
+@keyframes m-word-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.m-word-in {
+  animation: m-word-in var(--m-dur-spring) var(--m-spring) both;
+}
+/* With his voice, the intro's words light up roughly as he says them, like lyrics: dimmed until his
+ * voice starts, then each word comes up to full on its own delay. Opacity only. */
+@keyframes m-word-lit {
+  from {
+    opacity: 0.28;
+  }
+}
+.m-word-wait {
+  opacity: 0.28;
+}
+.m-word-lit {
+  animation: m-word-lit var(--m-dur-ui) var(--m-ease-out) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .m-word-in,
+  .m-word-lit {
+    animation: none;
+  }
+  .m-word-wait {
+    opacity: 1;
   }
 }
 
@@ -932,6 +986,64 @@ body::before {
   }
 }
 
+/*
+ * Onboarding, one screen to the next (app/onboarding/frame.tsx): the one orchestrated moment. The
+ * new screen's heading rises 10px and fades in on the spring, its body a beat later, its action
+ * last, so the eye lands on what Michael says, then on what to do. Only on a step change the user
+ * caused; nothing on a cold load.
+ */
+.m-step-in .m-step-part {
+  animation: m-step-rise var(--m-dur-spring) var(--m-spring) both;
+}
+.m-step-in .m-step-part:nth-child(2) {
+  animation-delay: calc(var(--m-stagger) * 2);
+}
+.m-step-in .m-step-part:nth-child(3) {
+  animation-delay: calc(var(--m-stagger) * 4);
+}
+@keyframes m-step-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+/* A thinking screen (onboarding loading, Michael reading): nothing for 200ms, so a fast step never
+ * flashes it, then it fades in. */
+.m-wait-in {
+  animation: m-fade-in var(--m-dur-ui) var(--m-ease-out) 200ms both;
+}
+/* The pinned action's top edge (frame-footer.tsx): a hairline only while content runs under it,
+ * as an iOS toolbar's scroll edge does. Never a band, never a gradient. */
+.m-edge {
+  opacity: 0;
+  transition: opacity var(--m-dur-ui) var(--m-ease-out);
+}
+[data-under] > .m-edge {
+  opacity: 1;
+}
+/* The question Michael is answering dims while he thinks of the next one. */
+.m-dim {
+  transition: opacity var(--m-dur-ui) var(--m-ease-out);
+}
+.m-dim[data-dim] {
+  opacity: 0.4;
+}
+@media (prefers-reduced-motion: reduce) {
+  .m-step-in .m-step-part {
+    animation: m-fade-in var(--m-dur-ui) linear both;
+  }
+  .m-step-in .m-step-part:nth-child(n) {
+    animation-delay: 0ms;
+  }
+  .m-wait-in {
+    animation-timing-function: linear;
+  }
+  .m-edge,
+  .m-dim {
+    transition-timing-function: linear;
+  }
+}
+
 /* A status line or value that just changed in place ("Done. Undo until 09:00."). */
 .m-swap {
   animation: m-fade-in var(--m-dur-ui) var(--m-ease-out) both;
@@ -1119,5 +1231,21 @@ body::before {
     line-height: 1;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
+  }
+}
+
+/* The Ask Claude card (components/claude): rises a little into place, once. */
+@keyframes m-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+}
+.m-pop-in {
+  animation: m-pop-in 260ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .m-pop-in {
+    animation: none;
   }
 }

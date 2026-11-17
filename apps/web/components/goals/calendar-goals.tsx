@@ -93,7 +93,7 @@ export function CalendarGoals({
             type="button"
             disabled={pending}
             onClick={() => keep(open.map((s) => s.id))}
-            className="press h-9 shrink-0 text-subhead font-semibold text-tint-text disabled:opacity-40"
+            className="hit press h-9 shrink-0 text-subhead font-semibold text-tint-text disabled:opacity-40"
           >
             Keep all
           </button>
@@ -117,7 +117,7 @@ export function CalendarGoals({
                   aria-pressed={on}
                   disabled={on || pending}
                   onClick={() => keep([s.id])}
-                  className={`press h-9 shrink-0 rounded-full px-4 text-subhead font-semibold ${
+                  className={`hit press h-9 shrink-0 rounded-full px-4 text-subhead font-semibold ${
                     on
                       ? "text-label-2"
                       : tone === "filled"

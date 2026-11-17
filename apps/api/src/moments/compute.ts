@@ -426,11 +426,20 @@ export function computeMoment(input: MomentInput): MomentCore {
       const n = top.count === 1 ? "1 interruption" : `${top.count} interruptions`;
       return `${top.name} cost ${voiceDuration(Math.round(top.minutes))} in ${n} today.`;
     }
-    if (planned === 0) return "No goal blocks today. Time you do not book goes elsewhere.";
+    // The person's own goal by name, never a general rule (the same line every empty evening).
+    if (planned === 0)
+      return gap
+        ? `No goal blocks today. ${gap.title} has ${voiceDuration(gap.unplanned_minutes ?? 0)} unbooked this week.`
+        : "No goal blocks today. Time you do not book goes elsewhere.";
     if (lostToday > 0) return `${voiceDuration(lostToday)} of planned goal time lost today.`;
     if (day.ahead_minutes > 0)
       return `Nothing lost so far. ${voiceDuration(day.ahead_minutes)} of goal time still ahead today.`;
-    return "Every planned minute held. Book tomorrow the same way.";
+    const held = goalLines
+      .filter((l) => !l.sleep && l.spent_today_minutes > 0)
+      .sort((a, b) => b.spent_today_minutes - a.spent_today_minutes)[0];
+    return held
+      ? `Every planned minute held. ${held.title} got ${voiceDuration(held.spent_today_minutes)} of it.`
+      : "Every planned minute held. Book tomorrow the same way.";
   }
 
   function firstMove(): MomentMove | null {
@@ -469,7 +478,15 @@ export function templateHeadline(m: MomentCore): string {
     return `Nothing booked for your goals today.${move ? ` ${move.title}.` : guard}`;
   }
   // Evening. Held plus lost is what has elapsed; with what is still ahead they make the plan.
-  if (t.planned_minutes === 0) return "No goal time today. Put tomorrow's in before bed.";
+  if (t.planned_minutes === 0) {
+    // The goal with the most budget still unbooked, by name: an empty evening is never generic.
+    const open = m.goals
+      .filter((g) => !g.sleep && (g.unplanned_minutes ?? 0) > 0)
+      .sort((a, b) => (b.unplanned_minutes ?? 0) - (a.unplanned_minutes ?? 0))[0];
+    return open
+      ? `No goal time today. ${open.title} has ${voiceDuration(open.unplanned_minutes ?? 0)} left to book.`
+      : "No goal time today. Put tomorrow's in before bed.";
+  }
   const ahead = Math.max(0, t.planned_minutes - t.spent_minutes - t.lost_minutes);
   if (ahead === t.planned_minutes)
     return `${voiceDuration(t.planned_minutes)} of goal time still ahead today.`;

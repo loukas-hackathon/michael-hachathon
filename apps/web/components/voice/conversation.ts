@@ -10,6 +10,7 @@ import {
   type Recording,
   releaseMic,
   startRecording,
+  startSideMeter,
   transcribeErrorCopy,
   transcribeRecording,
 } from "./recorder";
@@ -59,6 +60,8 @@ export type Conversation = {
   recorded: boolean;
   /** Microphone level 0..1 while a turn is recorded, for the orb. */
   level: number;
+  /** The user muted the microphone: Michael still answers, but nothing is heard until unmuted. */
+  muted: boolean;
 };
 
 /** A pause this long after the user's words ends their turn. */
@@ -67,7 +70,15 @@ export const TURN_PAUSE_MS = 1300;
 export const QUIET_MS = 9000;
 export const QUIET_COPY = "I'll be here when you need me.";
 
-const OFF: Conversation = { phase: "off", heard: "", note: null, bargeIn: false, recorded: false, level: 0 };
+const OFF: Conversation = {
+  phase: "off",
+  heard: "",
+  note: null,
+  bargeIn: false,
+  recorded: false,
+  level: 0,
+  muted: false,
+};
 let state = OFF;
 const listeners = new Set<() => void>();
 
@@ -88,6 +99,8 @@ export function useConversation(): Conversation {
 }
 
 let rec: Recognition | null = null;
+// The living voice's level meter beside the recogniser (never while Michael speaks: it would hear him).
+let sideMeter: (() => void) | null = null;
 let recording: Recording | null = null;
 let pauseTimer: ReturnType<typeof setTimeout> | undefined;
 let quietTimer: ReturnType<typeof setTimeout> | undefined;
@@ -109,6 +122,8 @@ function clearTimers() {
 
 /** Stops the recogniser without letting its last events act. */
 function dropRecogniser() {
+  sideMeter?.();
+  sideMeter = null;
   const r = rec;
   rec = null;
   if (!r) return;
@@ -168,6 +183,8 @@ export function tapConversation(): void {
     stopSpeaking();
     dropRecogniser();
     listen();
+  } else if (state.phase === "listening" && state.muted) {
+    setMuted(false);
   } else if (state.phase === "listening" && state.recorded && recording) {
     // A recorded turn: a tap says "done" (the only way where the level cannot be read).
     void finishRecordedTurn();
@@ -179,10 +196,45 @@ export function tapConversation(): void {
 }
 
 /**
+ * Mute: the microphone goes off (a turn half said is dropped) and stays off, also after Michael
+ * answers, until unmuted. Michael still speaks. Unmuting listens again with a fresh quiet limit.
+ */
+export function setMuted(on: boolean): void {
+  if (state.muted === on || state.phase === "off" || state.phase === "unavailable") return;
+  if (on) {
+    if (state.phase === "listening") {
+      gen++;
+      clearTimers();
+    }
+    // While he speaks only the barge in recogniser is dropped: his answer carries on.
+    dropRecogniser();
+    if (state.phase === "listening") dropRecording();
+    set({ muted: true, heard: "", level: 0 });
+    return;
+  }
+  set({ muted: false });
+  if (state.phase === "listening") {
+    quietAt = Date.now() + QUIET_MS;
+    listen();
+  } else if (state.phase === "speaking" && state.bargeIn) {
+    listen(true);
+  }
+}
+
+/**
  * Starts the recogniser. `overSpeech`: Michael is talking, so only a voice that is not his own
  * (barge in) counts, and it stops him.
  */
 function listen(overSpeech = false) {
+  if (state.muted) {
+    // Muted: his turn is over, but nothing listens until the user unmutes.
+    if (!overSpeech) {
+      clearTimers();
+      dropRecogniser();
+      set({ phase: "listening", heard: "", level: 0 });
+    }
+    return;
+  }
   if (state.recorded) {
     if (!overSpeech) listenRecorded();
     return;
@@ -255,6 +307,13 @@ function listen(overSpeech = false) {
   } catch {
     rec = null;
     if (!overSpeech) endConversation(recognitionErrorCopy("unknown"));
+    return;
+  }
+  if (!overSpeech) {
+    void startSideMeter().then((stop) => {
+      if (mine === gen && rec === r && !sideMeter) sideMeter = stop;
+      else stop();
+    });
   }
 }
 
@@ -348,6 +407,7 @@ async function answer(text: string, mine: number) {
   if (state.bargeIn) listen(true);
   await speakReply(saying, res.ok && elevenlabs);
   if (mine !== gen || phase() !== "speaking") return;
-  if (!res.ok) return endConversation();
+  // One calm line stays on screen for what went wrong (no network, a refusal); he has just said it.
+  if (!res.ok) return endConversation(res.error);
   listen();
 }

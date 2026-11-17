@@ -4,11 +4,16 @@
 // 2. Instant start: keeps the app shell (hashed JS and CSS, fonts, icons, a neutral skeleton page)
 //    on the device so the installed app paints at once and stays calm on a bad network.
 //
-// Privacy rule: nothing personal ever goes into Cache Storage. Pages, RSC payloads, API calls and
-// anything under /auth are rendered per person, so they always come from the network. The only
-// HTML kept is public/shell.html, which holds no data at all. The one exception is in memory only:
-// a page that arrived after the shell was shown is handed over once, to the same browser, within
-// 30 seconds, and dropped on sign out.
+// 3. Last known screen (#502): the last good page of each main tab (Today, Timeline, Goals, Chat)
+//    for the person signed in on this device. A cold open shows it at once, marked "Updated 10:41"
+//    (components/stale-screen.tsx), while the page refreshes itself in place behind it.
+//
+// Privacy rule: the last known screens are the only personal thing in Cache Storage. They belong to
+// one person (the proxy names them in x-michael-viewer, a hash, never the id), are dropped the
+// moment a page answers for someone else or for nobody, and on every /auth or /login request (sign
+// in, sign out, demo, switching account) and #462's forget. RSC payloads, API calls, POSTs and
+// anything under /auth always come from the network. public/shell.html holds no data at all.
+// In memory only: a page that arrived after the shell was shown is handed over once, within 30 s.
 //
 // The build id arrives as ?v= on the script URL (components/service-worker.tsx), so every deploy
 // installs a fresh worker with fresh cache names and deletes the old ones.
@@ -16,13 +21,28 @@
 const VERSION = new URL(self.location.href).searchParams.get("v") || "dev";
 const STATIC_CACHE = `michael-static-${VERSION}`; // hashed /_next/static files: immutable
 const SHELL_CACHE = `michael-shell-${VERSION}`; // shell page, icons, manifest, launch images
+const USER_CACHE = `michael-user-${VERSION}`; // last known screens, one person, this build only
 const SHELL_URL = "/shell.html";
+// The tabs a cold open may show from the device. Their pages, nothing under them.
+const SNAPSHOT_PATHS = new Set(["/", "/timeline", "/goals", "/chat"]);
+const VIEWER_KEY = "/__michael/viewer"; // the entry naming whose screens these are
+// A page that comes back this soon after its last known screen was shown goes to the network: a
+// reload, or Next reloading after a deploy, must never loop on the same old screen.
+const SNAPSHOT_GUARD_MS = 20_000;
+/** path -> when its last known screen was last shown */
+const snapshotShown = new Map();
 const PRECACHE = [SHELL_URL, "/manifest.webmanifest", "/icon-180.png", "/icon-512.png"];
 
 // How long a page may take before the skeleton shell paints instead. The real page still loads
 // behind it and replaces the shell the moment its first bytes arrive (the rest streams in), so
 // showing the shell early costs nothing: 700 ms keeps a cold open from ever looking frozen.
 const NAV_TIMEOUT_MS = 700;
+// Pages with their own loading screen and no tab bar: the skeleton shell would be the wrong shape,
+// and a brand new account's first page (onboarding) is exactly the slow one (#544).
+const OUTSIDE_SHELL = /^\/(onboarding|connect|setup|integrations|stage|live)(\/|$)/;
+// The shell adds this when it waited too long for the hand over (iOS can stop the worker that held
+// the request, and then no answer ever comes): that load goes straight to the network.
+const NET_PARAM = "m-net";
 const HANDOFF_TTL_MS = 30_000;
 
 /** url -> { promise: Promise<Response|null>, response?: Response|null, at: number } */
@@ -45,7 +65,7 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
-      const keep = new Set([STATIC_CACHE, SHELL_CACHE]);
+      const keep = new Set([STATIC_CACHE, SHELL_CACHE, USER_CACHE]);
       for (const name of await caches.keys()) {
         if (name.startsWith("michael-") && !keep.has(name)) await caches.delete(name);
       }
@@ -93,6 +113,12 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (request.mode === "navigate") {
+    // Never the Today shaped stand in for pages outside the tab bar (getting started, setup), and
+    // never when the stand in itself gave up waiting (?m-net=1, below): straight to the network.
+    if (OUTSIDE_SHELL.test(url.pathname) || url.searchParams.has(NET_PARAM)) {
+      event.respondWith(passThrough(event));
+      return;
+    }
     event.respondWith(navigate(event, url));
     return;
   }
@@ -201,19 +227,35 @@ async function navigate(event, url) {
     if (held.response) return held.response;
   }
 
+  const tab = snapshotPath(url);
   const network = (async () => {
+    let response = null;
     try {
-      const preloaded = await event.preloadResponse;
-      if (preloaded) return preloaded;
+      response = (await event.preloadResponse) || null;
     } catch {
       // Fall through to a normal fetch.
     }
-    try {
-      return await fetch(event.request);
-    } catch {
-      return null; // offline or the connection dropped
+    if (!response) {
+      try {
+        response = await fetch(event.request);
+      } catch {
+        return null; // offline or the connection dropped
+      }
     }
+    // Keep a copy as this tab's last known screen (or drop them all if it says nobody is here).
+    if (tab) event.waitUntil(keepSnapshot(tab, response.clone()).catch(() => {}));
+    return response;
   })();
+
+  // Last known screen first: shown at once, the real page refreshes it in place (stale-screen.tsx).
+  if (tab && Date.now() - (snapshotShown.get(tab) || 0) > SNAPSHOT_GUARD_MS) {
+    const snapshot = await snapshotResponse(tab);
+    if (snapshot) {
+      snapshotShown.set(tab, Date.now());
+      event.waitUntil(network);
+      return snapshot;
+    }
+  }
 
   let timer;
   const timeout = new Promise((resolve) => {
@@ -278,6 +320,62 @@ async function navigate(event, url) {
   return shellResponse();
 }
 
+/** The main tab this navigation may show from the device, or null. Plain paths only. */
+function snapshotPath(url) {
+  return SNAPSHOT_PATHS.has(url.pathname) && !url.search ? url.pathname : null;
+}
+
+/**
+ * Keeps a tab's page as its last known screen, only when it is a whole page for a signed in person
+ * of this very build. Anything else (a redirect to /login, an error, another person) drops them all.
+ */
+async function keepSnapshot(path, response) {
+  const viewer = response.headers.get("x-michael-viewer");
+  const build = response.headers.get("x-michael-build");
+  const html = (response.headers.get("Content-Type") || "").includes("text/html");
+  if (response.type !== "basic" || response.status !== 200 || !viewer || !html) {
+    // Redirected (signed out) or answered for nobody: nothing of anyone stays.
+    if (response.type === "opaqueredirect" || (html && response.status === 200 && !viewer))
+      await forgetPersonal();
+    return;
+  }
+  const cache = await caches.open(USER_CACHE);
+  const owner = await cache.match(VIEWER_KEY);
+  if (!owner || (await owner.text()) !== viewer) {
+    await forgetPersonal();
+    await (await caches.open(USER_CACHE)).put(VIEWER_KEY, new Response(viewer));
+  }
+  if (build !== VERSION) return; // another build's page needs another build's files
+  const body = await response.text();
+  if (!body.includes("</html>")) return; // cut off mid stream: never show half a page
+  const current = await caches.open(USER_CACHE);
+  // Still the same person once the page had streamed (no sign out meanwhile).
+  const still = await current.match(VIEWER_KEY);
+  if (!still || (await still.text()) !== viewer) return;
+  await current.put(
+    path,
+    new Response(body, {
+      headers: { "Content-Type": "text/html; charset=utf-8", "x-michael-snapshot-at": String(Date.now()) },
+    }),
+  );
+}
+
+/** The tab's last known screen, marked with when it was drawn, or null. */
+async function snapshotResponse(path) {
+  try {
+    const cache = await caches.open(USER_CACHE);
+    const hit = await cache.match(path);
+    if (!hit) return null;
+    const at = hit.headers.get("x-michael-snapshot-at") || "0";
+    const body = (await hit.text()).replace("<html", `<html data-m-snapshot="${Number(at)}"`);
+    return new Response(body, {
+      headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
+    });
+  } catch {
+    return null;
+  }
+}
+
 async function shellResponse() {
   const cache = await caches.open(SHELL_CACHE);
   const shell = await cache.match(SHELL_URL);
@@ -313,7 +411,8 @@ function withoutHash(href) {
 
 async function forgetPersonal() {
   handoffs.clear();
-  // No personal cache exists today; this keeps the promise if one is ever added under this prefix.
+  snapshotShown.clear();
+  // The last known screens (#502), of every build.
   for (const name of await caches.keys()) {
     if (name.startsWith("michael-user-")) await caches.delete(name);
   }

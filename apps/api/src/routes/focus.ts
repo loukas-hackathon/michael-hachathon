@@ -19,8 +19,9 @@ const optionalBody = async (c: Parameters<typeof jsonBody>[0]) => {
 };
 
 export const focus = new Hono()
-  // GET /v1/focus/active  200 FocusActiveResponse (a session whose end passed is finished first)
-  .get("/focus/active", async (c) => c.json(await activeFocus()))
+  // GET /v1/focus/active  200 FocusActiveResponse (a session whose end passed is finished first;
+  // with a synced goal block running now and no session yet, focus turns itself on)
+  .get("/focus/active", async (c) => c.json(await activeFocus(Date.now(), { autoStart: true })))
   // POST /v1/focus/start { goal_id | goal | event_id, minutes? }  201 FocusSession; 409 one is running
   .post("/focus/start", async (c) => c.json(await startFocus(await jsonBody(c), "app"), 201))
   // POST /v1/focus/:id/extend { minutes? }  200 FocusSession (+15 by default)

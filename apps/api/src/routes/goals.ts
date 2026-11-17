@@ -1,10 +1,16 @@
-import { GoalBook, GoalCreate, GoalSuggestionAccept, GoalUpdate } from "@michael/shared";
+import { GoalBook, GoalCreate, GoalSuggestionAccept, GoalUpdate, GoalWordsRequest } from "@michael/shared";
 import { Hono } from "hono";
 import { revertExpiredGoalChanges } from "../actions/calendar";
+import { currentDemoVisitor, currentUserId } from "../context";
 import { bookGoalTime } from "../goals/book";
+import { goalsFromWords } from "../goals/from-words";
 import { acceptSuggestion, currentSuggestions } from "../goals/suggestions";
 import { HttpError, jsonBody, parse } from "../http";
+import { rateLimiter } from "../rate-limit";
 import { store } from "../store";
+
+// Reading words costs a model call: a talk is a few answers, so this is plenty per caller.
+export const fromWordsLimit = rateLimiter(10, 60_000);
 
 export const goals = new Hono()
   .get("/goals", async (c) => {
@@ -28,6 +34,14 @@ export const goals = new Hono()
     const goal = await acceptSuggestion(c.req.param("id"), edits);
     if (!goal) throw new HttpError("not_found", "Your calendar no longer suggests that goal");
     return c.json(goal, 201);
+  })
+  // Goals heard in the user's own words (onboarding talk). Reads only: nothing is saved here.
+  .post("/goals/from-words", async (c) => {
+    const { text } = parse(GoalWordsRequest, await jsonBody(c));
+    if (!fromWordsLimit.take(currentDemoVisitor() ?? currentUserId())) {
+      throw new HttpError("rate_limited", "Give me a minute, then tell me again.");
+    }
+    return c.json(await goalsFromWords(text), 200, { "cache-control": "no-store" });
   })
   .get("/goals/:id", async (c) => {
     const goal = await store.getGoal(c.req.param("id"));

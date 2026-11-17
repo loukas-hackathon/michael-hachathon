@@ -57,12 +57,12 @@ export default async function ConnectPage({
       <main className="screen flex min-h-dvh flex-col justify-center pb-24">
         <Wordmark className="h-8 w-auto text-label" />
         <h1 className="mt-6 text-insight font-bold">This is the demo week.</h1>
-        <p className="mt-2 text-body text-label-2">Sign in with Google to make it yours.</p>
+        <p className="mt-2 text-body text-label-2">Sign in to make it yours.</p>
         <a
           href="/auth/signout"
           className="press mt-8 flex h-12 items-center justify-center rounded-group bg-tint text-body font-semibold text-on-tint"
         >
-          Sign in with Google
+          Sign in
         </a>
         <p className="mt-6 text-footnote text-label-2">
           {presenterConfigured()

@@ -173,7 +173,8 @@ export function plansOf(events: Event[], dayStart: number, dayEnd: number, now =
         goalId: typeof e.data.goal_id === "string" ? e.data.goal_id : null,
         // Blocks that cross midnight stay read only: the day shows only part of them.
         editable: !withOthers && start > now && start >= dayStart && end <= dayEnd,
-        removable: isMichaelBlock(e),
+        // #457: the user's own blocks (Michael's or their own solo events) can be removed, with undo.
+        removable: !withOthers && start > now,
         htmlLink: typeof e.data.html_link === "string" ? e.data.html_link : undefined,
       };
     })
@@ -297,7 +298,10 @@ export function buildTimeline(
       })
       .filter((m) => m.end > m.start)
       .sort((a, b) => a.start - b.start);
-  const phone = marks((e) => e.source === "iphone_usage" && e.type === "app_usage");
+  // Screen Time (a day behind, through the Mac) and the live opens the Michael shortcut sends.
+  const phone = marks(
+    (e) => (e.source === "iphone_usage" || e.source === "ios_shortcuts") && e.type === "app_usage",
+  );
   const ai = marks((e) => e.type === "ai_session");
   // Done time the user logged (#317): goal time, drawn pink like a workout.
   const logged = marks((e) => e.source === "manual" && e.type === "focus_session" && e.data.log === "done");
@@ -480,23 +484,65 @@ export function lostMinutesOf(b: Block): number {
 /** A drawn stretch of the day in pixels, for working out what would sit on top of what. */
 export type DrawnSpan = { key: string; top: number; bottom: number };
 
+/** Where one item sits across the lane: column `col` of `cols`, side by side as in Calendar. */
+export type Spot = { col: number; cols: number };
+
+/** Items past the last column of a busy stretch: one "+N more" in that column's place. */
+export type More = { key: string; top: number; bottom: number; col: number; cols: number; hidden: string[] };
+
 /**
- * Generated drives step aside for real activity (#393): a drive that overlaps anything that really
- * happened moves to the right half of the day, and everything it overlaps takes the left half, as
- * Calendar does with two events at once. Neither ever covers the other's title. Returns the keys of
- * the drives and of the real stretches that share their time.
+ * Side by side columns for things drawn at the same time (#463), as Calendar does it. Items that
+ * overlap each other, directly or through a chain, form a group; each takes the first column free
+ * at its time, and the whole group shares the widest count, so no title is ever drawn on another.
+ * `late` items (generated drives, #393) are placed after the others, so they take the right side.
+ * At most `max` columns: when a group needs more, the last column holds "+N more" for the rest.
+ * Items alone at their time get no spot (full width). Touching edges are not an overlap.
  */
-export function sideBySide(drives: DrawnSpan[], real: DrawnSpan[]): Set<string> {
-  const keys = new Set<string>();
-  for (const d of drives) {
-    for (const r of real) {
-      if (r.top < d.bottom && r.bottom > d.top) {
-        keys.add(d.key);
-        keys.add(r.key);
-      }
-    }
+export function columns(
+  items: (DrawnSpan & { late?: boolean })[],
+  max = 3,
+): { spots: Map<string, Spot>; more: More[] } {
+  const meets = (a: DrawnSpan, b: DrawnSpan) => a.top < b.bottom && b.top < a.bottom;
+  const byTime = (a: DrawnSpan, b: DrawnSpan) => a.top - b.top || b.bottom - a.bottom;
+  const order = [...items.filter((i) => !i.late).sort(byTime), ...items.filter((i) => i.late).sort(byTime)];
+  const placed: { item: DrawnSpan; col: number }[] = [];
+  for (const item of order) {
+    let col = 0;
+    while (placed.some((p) => p.col === col && meets(p.item, item))) col++;
+    placed.push({ item, col });
   }
-  return keys;
+  // Groups: everything joined by an overlap, however long the chain.
+  const group = placed.map((_, i) => i);
+  const root = (i: number): number => (group[i] === i ? i : root(group[i] as number));
+  for (let i = 0; i < placed.length; i++)
+    for (let j = i + 1; j < placed.length; j++)
+      if (meets((placed[i] as (typeof placed)[0]).item, (placed[j] as (typeof placed)[0]).item))
+        group[root(j)] = root(i);
+  const groups = new Map<number, typeof placed>();
+  placed.forEach((p, i) => {
+    const g = groups.get(root(i)) ?? [];
+    g.push(p);
+    groups.set(root(i), g);
+  });
+  const spots = new Map<string, Spot>();
+  const more: More[] = [];
+  for (const g of groups.values()) {
+    const need = Math.max(...g.map((p) => p.col)) + 1;
+    if (need === 1) continue;
+    const cols = Math.min(need, max);
+    const hidden = need > max ? g.filter((p) => p.col >= max - 1) : [];
+    for (const p of g) if (!hidden.includes(p)) spots.set(p.item.key, { col: p.col, cols });
+    if (hidden.length > 0)
+      more.push({
+        key: `more${hidden[0]?.item.key}`,
+        top: Math.min(...hidden.map((h) => h.item.top)),
+        bottom: Math.max(...hidden.map((h) => h.item.bottom)),
+        col: max - 1,
+        cols,
+        hidden: hidden.map((h) => h.item.key),
+      });
+  }
+  return { spots, more };
 }
 
 /** Height of one label line on the timeline (footnote and caption, leading 4 = 16px). */
@@ -509,16 +555,43 @@ const LINE = 16;
  * a line of one already placed is left out (both say "Michael"; one is enough), as with Walk and
  * Boatspace on a real iPhone, which read "Michael Michael" at their boundary.
  */
-export function michaelBadges(blocks: DrawnSpan[]): Map<string, number> {
+export function michaelBadges(blocks: DrawnSpan[], taken: number[] = []): Map<string, number> {
   const wanted = blocks.map((b) => ({ key: b.key, inside: b.bottom - b.top >= 17, top: b.top }));
   wanted.sort((a, b) => Number(b.inside) - Number(a.inside) || a.top - b.top);
   const placed = new Map<string, number>();
+  for (const [i, at] of taken.entries()) placed.set(`taken${i}`, at);
   for (const w of wanted) {
     const at = w.inside ? w.top + 3 : w.top - 8;
     if ([...placed.values()].some((p) => Math.abs(p - at) < LINE)) continue;
     placed.set(w.key, at);
   }
+  for (const i of taken.keys()) placed.delete(`taken${i}`);
   return placed;
+}
+
+/** A line of text drawn across the lane, in px from the top of the day: [top, bottom). */
+export type Band = readonly [number, number];
+
+/**
+ * The quiet labels on the right edge (#463): loss labels and place captions, each one line tall at
+ * `top`. A label is kept only when it lands on no title or subline (`bands`, which can run the
+ * whole width) and within a line of no label already there (`taken`: Michael's badges, "+N more",
+ * and the labels kept before it, in order). Returns the keys kept.
+ */
+export function edgeLabels(
+  wanted: { key: string; top: number }[],
+  bands: Band[],
+  taken: number[],
+): Set<string> {
+  const kept = new Set<string>();
+  const tops = [...taken];
+  for (const w of wanted) {
+    if (bands.some(([a, b]) => a < w.top + LINE && b > w.top)) continue;
+    if (tops.some((t) => Math.abs(t - w.top) < LINE)) continue;
+    kept.add(w.key);
+    tops.push(w.top);
+  }
+  return kept;
 }
 
 /**

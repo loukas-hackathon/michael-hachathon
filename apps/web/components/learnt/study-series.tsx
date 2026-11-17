@@ -51,25 +51,51 @@ export function spanLabel(series: Series[]): string | null {
 
 const hasLine = (s: Series) => s.points.filter((p) => p.value != null).length >= 2;
 
+/** Past this many days a daily line is mostly night to night noise, so the lines show a weekly mean. */
+const SMOOTH_FROM = 28;
+
+/**
+ * A trailing 7 day mean: each day the mean of the readings in it and the 6 days before, kept only
+ * when at least 4 of the 7 have one, so a week without the watch stays a gap.
+ */
+function weekly(s: Series): Series {
+  const points = s.points.map((p, i) => {
+    const window = s.points
+      .slice(Math.max(0, i - 6), i + 1)
+      .map((q) => q.value)
+      .filter((v): v is number => v != null);
+    const value = window.length >= 4 ? window.reduce((a, b) => a + b, 0) / window.length : null;
+    return { day: p.day, value: value == null ? null : Math.round(value * 10) / 10 };
+  });
+  return { ...s, points };
+}
+
 function Multiple({
   s,
   marks,
   span,
   short,
+  smooth,
 }: {
   s: Series;
   marks: Set<string>;
   span: string;
   short: boolean;
+  smooth: boolean;
 }) {
   const values = s.points.map((p) => p.value).filter((v): v is number => v != null);
   if (values.length < 2) return null;
-  const lo = Math.min(...values);
-  const hi = Math.max(...values);
+  // The figures are the real readings: the last night and the usual. Only the drawn line is smoothed.
   const last = [...s.points].reverse().find((p) => p.value != null)?.value;
   const usual = Math.round(values.reduce((a, b) => a + b, 0) / values.length);
-  const { runs, x, y } = segments(s, lo, hi);
-  const marked = s.points.map((p, i) => ({ p, i })).filter(({ p }) => p.value != null && marks.has(p.day));
+  const drawn = smooth ? weekly(s) : s;
+  const shownValues = drawn.points.map((p) => p.value).filter((v): v is number => v != null);
+  const lo = Math.min(...(shownValues.length ? shownValues : values));
+  const hi = Math.max(...(shownValues.length ? shownValues : values));
+  const { runs, x, y } = segments(drawn, lo, hi);
+  const marked = drawn.points
+    .map((p, i) => ({ p, i }))
+    .filter(({ p }) => p.value != null && marks.has(p.day));
   return (
     <figure className="min-w-0">
       <figcaption className="flex flex-col">
@@ -94,7 +120,7 @@ function Multiple({
         preserveAspectRatio="none"
         className="mt-1.5 block h-11 w-full overflow-visible"
         role="img"
-        aria-label={`${s.label} over ${span}: usually ${usual}${UNIT[s.unit] ?? ""}, lowest ${lo}, highest ${hi}, last ${last}.`}
+        aria-label={`${s.label} over ${span}${smooth ? ", as a 7 day average" : ""}: usually ${usual}${UNIT[s.unit] ?? ""}, last ${last}.`}
       >
         {marked.map(({ p, i }) => (
           <line
@@ -134,11 +160,12 @@ function Multiple({
 export function StudySeries({
   series,
   triggerDays,
-  triggerLabel,
+  occasion,
 }: {
   series: Series[];
   triggerDays?: string[];
-  triggerLabel?: string;
+  /** How the marked nights are named: "nights with 30 minutes or more on your phone after 23:45". */
+  occasion?: string;
 }) {
   const shown = ORDER.map((k) => series.find((s) => s.key === k)).filter(
     (s): s is Series => Boolean(s) && hasLine(s as Series),
@@ -150,6 +177,8 @@ export function StudySeries({
   const [from, to] = [read[0] ?? "", read[read.length - 1] ?? ""];
   const lines = shown.map((x) => ({ ...x, points: x.points.filter((p) => p.day >= from && p.day <= to) }));
   const three = shown.length === 3;
+  const days = Math.round((Date.parse(`${to}T12:00:00Z`) - Date.parse(`${from}T12:00:00Z`)) / 86_400_000) + 1;
+  const smooth = days > SMOOTH_FROM;
   // A trigger is an evening; its sleep is scored the morning after.
   const marks = new Set((triggerDays ?? []).map((d) => addDays(d, 1)));
   return (
@@ -161,15 +190,15 @@ export function StudySeries({
             s={s}
             span={span}
             short={three}
+            smooth={smooth}
             marks={s.key === "sleep_score" ? marks : new Set()}
           />
         ))}
       </div>
       <p className="mt-2 px-4 text-footnote text-label-2">
-        {span.charAt(0).toUpperCase() + span.slice(1)}.
-        {marks.size && triggerLabel
-          ? ` Dashed on sleep: the morning after each of the ${marks.size} nights with ${triggerLabel}.`
-          : null}
+        {span.charAt(0).toUpperCase() + span.slice(1)}
+        {smooth ? ", each line a 7 day average." : "."}
+        {marks.size && occasion ? ` Dashed on sleep: the ${marks.size} ${occasion}.` : null}
       </p>
     </section>
   );

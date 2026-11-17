@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { sleepScore } from "@michael/shared";
+import { LATE_WORKOUT_MINUTE, recoveryPct, SHORT_NIGHT_MINUTES } from "./body";
 import { addDays, athensMidnight, DEMO_TZ, iso, localDate, weekday } from "./time";
 import {
   DEMO_DAYS,
@@ -43,8 +44,6 @@ export const HISTORY_PREFIX = `${DEMO_PREFIX}past:`;
 /** True for an event of the stage account's history. */
 export const isDemoHistory = (e: { external_id?: string | null }) =>
   !!e.external_id?.startsWith(HISTORY_PREFIX);
-/** Under this many minutes asleep a night is short (6h 40). */
-export const SHORT_NIGHT_MINUTES = 400;
 /** The slow trend is counted in weeks before this Monday (the pitch). */
 const TREND_ANCHOR = "2026-11-16";
 
@@ -233,8 +232,6 @@ const SATURDAY_RUN: Training = {
   max: 171,
   km: 12.6,
 };
-/** A workout that ends after this is a late one. */
-const LATE_WORKOUT = hm("21:30");
 
 const MEETING_TITLES = [
   "Customer call",
@@ -321,7 +318,13 @@ function drivers(date: string): Drivers {
       const shift = early ? hm("19:22") - hm(plan.from) : 0;
       const from = hm(plan.from) + shift + Math.floor(d(3) * 7) - 3;
       const to = hm(plan.to) + shift + Math.floor(d(4) * 9) - 4 - (early ? 8 : 0);
-      workout = { plan, from, to, lateHard: !!plan.hard && to > LATE_WORKOUT, morning: to < hm("12:00") };
+      workout = {
+        plan,
+        from,
+        to,
+        lateHard: !!plan.hard && to > LATE_WORKOUT_MINUTE,
+        morning: to < hm("12:00"),
+      };
     }
   }
 
@@ -576,11 +579,7 @@ export function body(date: string): Body {
   const score = drivers(date).ordinary ? 80 + (a - 0.5) * 16 : n.score;
   const lateHard = !!drivers(addDays(date, -1)).workout?.lateHard;
   return {
-    recovery: clamp(
-      Math.round(64 + 1.45 * (score - 85) - (twoShort ? 9 : 0) - (lateHard ? 3 : 0) + (a - 0.5) * 10),
-      8,
-      97,
-    ),
+    recovery: recoveryPct({ score, twoShort, lateHard, noise: a }),
     hrv: Math.round(63 - 0.45 * w + 0.55 * (score - 85) - (twoShort ? 5 : 0) + (b - 0.5) * 6),
     resting: Math.round(51.8 + 0.25 * w - 0.16 * (score - 85) + (twoShort ? 2 : 0) + (c - 0.5) * 2),
     twoShort,
@@ -1048,12 +1047,21 @@ export function buildDemoHistory(now: Date = new Date()): DemoHistory {
   const first = addDays(today, -(DEMO_DAYS - 1) - HISTORY_DAYS);
   const days = Array.from({ length: HISTORY_DAYS }, (_, i) => addDays(first, i));
   const last = days.at(-1) as string;
-  const cut = Math.min(wall(last, hm("22:30")), now.getTime() - DEMO_DAYS * 24 * HOUR);
+  // The history ends where the week starts: the last day is whole, its evening included (so the
+  // engine's late phone reads it), and a screen that runs past midnight is cut at the week's first
+  // minute and its seconds counted to match.
+  const weekStart = athensMidnight(addDays(today, -(DEMO_DAYS - 1)));
   const events: EventRow[] = [];
   for (const day of days) {
     for (const e of historyDay(day)) {
-      if (day === last && Date.parse(e.end_at ?? e.start_at) > cut) continue;
-      events.push(e);
+      const start = Date.parse(e.start_at);
+      if (start >= weekStart) continue;
+      if (Date.parse(e.end_at ?? e.start_at) <= weekStart || day !== last) {
+        events.push(e);
+        continue;
+      }
+      const seconds = Math.round((weekStart - start) / 1000);
+      events.push({ ...e, end_at: iso(weekStart), data: { ...e.data, seconds } });
     }
   }
   events.sort((a, b) => Date.parse(a.start_at) - Date.parse(b.start_at));

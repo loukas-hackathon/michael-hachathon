@@ -1,10 +1,12 @@
 "use client";
 
+import { voiceShortDuration } from "@michael/shared/voice";
 import { useRef, useState } from "react";
 import { startFocusAction } from "@/app/focus-actions";
 import { Sheet } from "@/components/sheet";
 import { formatTime } from "@/lib/format";
 import { announceFocus, LENGTHS } from "./focus-events";
+import { runIphoneFocus } from "./iphone-focus";
 
 // Focus now (#397): one tap starts a session. Each length is its own button, so choosing how long
 // is the tap that starts it; with a goal block running now, "Until 12:00" uses that block. Not
@@ -42,6 +44,8 @@ export function FocusLengths({
       if (r.ok) {
         onStarted?.();
         announceFocus(r.session);
+        // The tap that started it also hands over to Michael Focus: the iPhone's Focus until the end.
+        runIphoneFocus(r.session.end_at);
       } else setError(r.error);
     } catch {
       setError("I could not reach the server. Nothing changed.");
@@ -75,7 +79,7 @@ export function FocusLengths({
             aria-label={`Focus for ${m} minutes`}
             className={chip}
           >
-            {busy === String(m) ? "Starting" : `${m} min`}
+            {busy === String(m) ? "Starting" : voiceShortDuration(m)}
           </button>
         ))}
       </fieldset>

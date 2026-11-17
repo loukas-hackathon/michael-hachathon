@@ -1,23 +1,18 @@
-import { Bone, BoneGroup } from "@/components/skeleton";
-import { OnboardingFrame } from "./frame";
-import { ReadingStatus } from "./reading-status";
+import { Suspense } from "react";
+import { WaitFor, WaitScreen } from "./wait";
 
 /**
- * Onboarding, loading: the same frame as both screens, bones where the goals land, and a status line
- * that says what is happening. Straight back from Google this covers the four week read, so the
- * wait sits here, on our screen, and never on Google's (#270).
+ * Onboarding, loading: Michael thinking, saying what he is doing for the screen that comes next
+ * (the talk, the usual goals, the week and its connections). Straight back from Google this covers
+ * the four week read, so the wait sits here, on our screen, and never on Google's (#270). Invisible
+ * for its first 200ms, so a quick step never flashes it.
  */
 export default function Loading() {
   return (
-    <div className="m-skeleton" aria-busy="true">
-      <OnboardingFrame
-        step={0}
-        title={<Bone className="mt-1 h-9 w-64 max-w-full" />}
-        line={<ReadingStatus />}
-        footer={<Bone className="h-[50px] w-full rounded-full" />}
-      >
-        <BoneGroup rows={4} rowHeight={68} />
-      </OnboardingFrame>
+    <div className="m-wait-in" aria-busy="true">
+      <Suspense fallback={<WaitScreen kind="talk" />}>
+        <WaitFor />
+      </Suspense>
     </div>
   );
 }

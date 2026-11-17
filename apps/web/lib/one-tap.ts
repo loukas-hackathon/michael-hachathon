@@ -68,8 +68,66 @@ export const SHORTCUT_NAME = "Michael";
  */
 export const SHORTCUT_FILE = `/${SHORTCUT_NAME}.shortcut`;
 
-/** Where "Add the shortcut" goes: the iCloud link in MICHAEL_SHORTCUT_URL if set, else our own file. Server only. */
-export const shortcutUrl = () => process.env.MICHAEL_SHORTCUT_URL || SHORTCUT_FILE;
+/** The iCloud link of the Michael shortcut (public, shared from Loukas' iPhone, 15 Nov). */
+export const SHORTCUT_ICLOUD = "https://www.icloud.com/shortcuts/c0c2a08d12f74e5392e41b195ba2bd57";
+
+/**
+ * Where "Add the shortcut" goes: MICHAEL_SHORTCUT_URL if set, else the iCloud link above, which
+ * opens Shortcuts on Add Shortcut with no browser. Our own file is the fallback behind "Shortcuts
+ * did not open?". Server only.
+ */
+export const shortcutUrl = () => process.env.MICHAEL_SHORTCUT_URL || SHORTCUT_ICLOUD;
+
+/**
+ * The plain absolute URL "Add the shortcut" opens. Never shortcuts://import-shortcut: Shortcuts
+ * takes only iCloud links there and says "The shortcut URL provided was invalid" for a file URL
+ * (Loukas' iPhone, 15 Nov).
+ */
+export function shortcutAddLink(url: string, origin: string): string {
+  return new URL(url, origin).href;
+}
+
+/** An iCloud link (www.icloud.com/shortcuts/...), which opens in Shortcuts itself. */
+export function isICloudLink(link: string): boolean {
+  try {
+    return /(^|\.)icloud\.com$/.test(new URL(link).hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether Add opens in a new context (target=_blank). Only an iCloud link from the installed app,
+ * which Shortcuts takes over. Our own signed file opens in the same window, in the installed app
+ * too: iOS previews it there with Open in Shortcuts and the import works, while the in-app sheet a
+ * new context opens stayed blank and Safari saved it to Files (Loukas, 15 Nov, #497, #508).
+ */
+export function shortcutAddInNewContext(link: string, standalone: boolean): boolean {
+  return standalone && isICloudLink(link);
+}
+
+/** The server hop that redirects to the Telegram bot with a one-time start token. */
+export const TELEGRAM_CONNECT = "/integrations/telegram/connect";
+
+/**
+ * The Telegram app's own link for a t.me bot link (https://t.me/<bot>?start=<token>), so the
+ * installed app hands over to Telegram instead of loading t.me in its own window. Null for
+ * anything that is not a t.me bot link.
+ */
+export function telegramAppLink(url: string): string | null {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return null;
+  }
+  const bot = u.pathname.replace(/^\/+|\/+$/g, "");
+  if (u.protocol !== "https:" || !/^(www\.)?(t|telegram)\.me$/.test(u.hostname) || !/^\w+$/.test(bot)) {
+    return null;
+  }
+  const start = u.searchParams.get("start");
+  return `tg://resolve?domain=${bot}${start ? `&start=${encodeURIComponent(start)}` : ""}`;
+}
 
 /**
  * Runs the installed Michael shortcut with the device key as its input. The shortcut saves the key
@@ -77,6 +135,12 @@ export const shortcutUrl = () => process.env.MICHAEL_SHORTCUT_URL || SHORTCUT_FI
  */
 export const shortcutConnectLink = (key: string) =>
   `shortcuts://run-shortcut?name=${encodeURIComponent(SHORTCUT_NAME)}&input=text&text=${encodeURIComponent(key)}`;
+
+/**
+ * Runs the Michael shortcut once with no input, as a hand run in Shortcuts does: the test (#466).
+ * It posts with the saved key and no app, so the iPhone row turns Connected when it lands.
+ */
+export const shortcutTestLink = () => `shortcuts://run-shortcut?name=${encodeURIComponent(SHORTCUT_NAME)}`;
 
 export const isIPhone = (ua: string) => /iPhone|iPod/.test(ua);
 export const isMac = (ua: string) => /Macintosh/.test(ua) && !/iPhone|iPad/.test(ua);

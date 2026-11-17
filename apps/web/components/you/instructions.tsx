@@ -118,7 +118,7 @@ function InstructionForm({
               onChange={(e) => setText(e.target.value)}
               rows={3}
               maxLength={140}
-              placeholder="No calls during school pick up"
+              placeholder="No calls during the school run"
               className="w-full resize-none bg-transparent text-body text-label outline-none placeholder:text-label-2"
             />
           </div>
@@ -322,7 +322,7 @@ export function StandingInstructions({
                   setAdding(null);
                 }
               }}
-              className="press flex h-9 shrink-0 items-center rounded-full bg-tint/14 px-4 text-subhead font-semibold text-tint-text disabled:opacity-60"
+              className="hit press flex h-9 shrink-0 items-center rounded-full bg-tint/14 px-4 text-subhead font-semibold text-tint-text disabled:opacity-60"
             >
               {adding === r.index ? "Adding" : "Add"}
             </button>

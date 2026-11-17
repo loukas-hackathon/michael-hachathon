@@ -5,6 +5,19 @@ import { formatTime, hm } from "@/lib/format";
 const FALLBACK = ["How is my day going?", "Where did my time go today?", "What should I do next?"];
 const TRAINING = /gym|train|run|swim|bike|cycl|ride|lift|strength|70\.3|tri|marathon|sport|yoga/i;
 
+/** A brand new account (#478): what Michael can do, before there is a day to ask about. */
+export const FIRST_LINE = "I plan your week around your goals and book the time in your calendar.";
+export const FIRST_STARTERS = [
+  "Plan my week",
+  "Book 2 hours for deep work tomorrow",
+  "What do you know about me",
+];
+
+/** Nothing to ask about yet: no conversation so far and no block on today's score. */
+export function isFirstChat(score: Score | null, conversations: number): boolean {
+  return conversations === 0 && (!score || score.day.blocks.length === 0);
+}
+
 /**
  * Three questions from the user's real day: the biggest loss inside a goal block, tomorrow's
  * training, and the goal furthest from its budget. Pure: the same score gives the same questions.

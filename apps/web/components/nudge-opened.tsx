@@ -82,7 +82,7 @@ export function NudgeOpened() {
             <Link
               href={action.href}
               onClick={dismiss}
-              className="press inline-flex min-h-9 items-center rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint"
+              className="hit press inline-flex min-h-9 items-center rounded-full bg-tint px-4 text-subhead font-semibold text-on-tint"
             >
               {action.label}
             </Link>
@@ -90,7 +90,7 @@ export function NudgeOpened() {
           <button
             type="button"
             onClick={dismiss}
-            className="press inline-flex min-h-9 items-center rounded-full bg-fill px-4 text-subhead font-semibold"
+            className="hit press inline-flex min-h-9 items-center rounded-full bg-fill px-4 text-subhead font-semibold"
           >
             Got it
           </button>

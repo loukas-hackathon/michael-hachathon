@@ -75,7 +75,11 @@ test("actions: each kind offers what Michael may do, at most two, the action fir
     actionsFor({ kind: "block_soon" }).map((a) => a.id),
     ["focus", "snooze"],
   );
-  assert.deepEqual(actionsFor({ kind: "focus_drift" }), []);
+  // A drift with no Mac app to mute still offers quiet (#447).
+  assert.deepEqual(
+    actionsFor({ kind: "focus_drift" }).map((a) => a.id),
+    ["dnd", "open"],
+  );
   assert.deepEqual(actionsFor({ kind: "focus_drift", mac_app: "Instagram" })[0], {
     id: "mute_app",
     label: "Mute Instagram 30 min",
@@ -102,7 +106,7 @@ test("buttons are worked out again from the stored line", () => {
       text: "4 min on WhatsApp in your focus block. Back to it until 12:00.",
       recommendation_id: null,
     }).map((a) => a.label),
-    ["Mute WhatsApp 30 min", "Open"],
+    ["Mute WhatsApp 30 min", "Do Not Disturb"],
   );
 });
 

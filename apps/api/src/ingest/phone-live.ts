@@ -1,13 +1,13 @@
 import type { ShortcutsPayload } from "./ios-shortcuts";
 
 // The phone, as it happens. The iPhone shortcut posts every app open within a second or two
-// (docs/sources/ios-shortcuts.md), but an open only becomes a stored `app_usage` event when the
-// next open (or a close) ends it: the app in front right now is not in the database yet, and the
-// same app opened again is not a new event at all. The real time nudges (nudges/realtime.ts) need
-// both, so every signal is also kept here, in memory, for a few hours.
+// (docs/sources/ios-shortcuts.md). Each open is stored at once (#488), but the same app opened
+// again is not a new event, and the app in front has only a provisional minute until the next
+// signal. The real time nudges (nudges/realtime.ts) need every signal, so each is also kept here,
+// in memory, for a few hours.
 //
-// In memory on purpose, like the pairer's held open: a restart loses the signals of the last hours,
-// and the stored events still carry every open that was closed by the next one.
+// In memory on purpose: a restart loses the signals of the last hours, and the stored events still
+// carry every open.
 
 export interface LiveSignal {
   app: string;

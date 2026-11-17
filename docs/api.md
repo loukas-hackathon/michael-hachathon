@@ -26,7 +26,7 @@ returns `501 not_implemented`, `planned` = not routed yet. Update the status whe
     account's own), and only these writes are allowed: `POST /v1/chat`, `/v1/chat/stream`, `/v1/chat/warm`,
     `POST /v1/chat/threads`, `PATCH|DELETE /v1/chat/threads/:id` (their own threads),
     `/v1/recommendations/:id/execute|undo`, `PATCH /v1/recommendations/:id`, `POST /v1/analysis/run`,
-    `/v1/travel/plan`, `/v1/focus-guards/suggest`, Focus now (`POST /v1/focus/start`, `/v1/focus/:id/extend|end`, one session per visitor, cleared with the blocks it made by the reseed), `/v1/voice/speak`, `/v1/voice/transcribe`, `/v1/records/:id/announced`, `POST|DELETE /v1/push/subscriptions`, `POST /v1/nudges/test`, the daily ritual (`POST /v1/ritual/morning|evening`, `/v1/ritual/:kind/skip`) and done time (`POST /v1/log`, `/v1/log/block`, `DELETE /v1/log/:id`), which the reseed puts back to the plan.
+    `/v1/travel/plan`, `/v1/focus-guards/suggest`, Focus now (`POST /v1/focus/start`, `/v1/focus/:id/extend|end`, one session per visitor, cleared with the blocks it made by the reseed), `/v1/voice/speak`, `/v1/voice/transcribe`, `POST /v1/goals/from-words` (reads only), `/v1/records/:id/announced`, `POST|DELETE /v1/push/subscriptions`, `POST /v1/nudges/test`, the daily ritual (`POST /v1/ritual/morning|evening`, `/v1/ritual/:kind/skip`) and done time (`POST /v1/log`, `/v1/log/block`, `DELETE /v1/log/:id`), which the reseed puts back to the plan.
     Anything else that writes (privacy, goals, instructions, places, profile, integrations,
     Telegram, agents, connecting an agent, keys, data deletion, ingest, `/mcp`) answers
     `403 forbidden` with the message "This is the demo week. Sign in with Google to make it yours."
@@ -35,8 +35,11 @@ returns `501 not_implemented`, `planned` = not routed yet. Update the status whe
   - The presenter (#343): a demo visitor whose request also carries
     `X-Michael-Demo-Presenter: <DEMO_PRESENTER_KEY>` (server to server, from the web app's presenter
     link). On top of a visitor's writes it may answer `POST /v1/connect/requests/:id`, so the stage
-    laptop connects claude.ai to the demo week in one tap. A wrong key, no key configured, or the
-    header without `API_KEY` grants nothing.
+    laptop connects claude.ai to the demo week in one tap, switch Off the record
+    (`PUT /v1/privacy/off-the-record`), and say yes to Do Not Disturb (`POST /v1/dnd`, #447: it
+    switches a real device's Focus, so no other visitor may, and a signed button on a nudge of the
+    demo account never does). A wrong key, no key configured, or the header without `API_KEY`
+    grants nothing.
 - **Shared secret details:**
   Send `Authorization: Bearer <API_KEY>`. Applies to everything under `/v1/*` and `/mcp`, except
   `/health` and the OAuth callback redirect (`/oauth/google/callback`). Only `/v1/webhooks/*` and `/mcp` also accept
@@ -77,7 +80,7 @@ Enums:
 - `GoalKind`: `time | target | count | checklist` (in `goal.target.kind`; `time` when absent)
 - `InstructionKind`: `clear_day | home_by | quiet_hours | custom`
 - `RecommendationStatus`: `proposed | accepted | dismissed | done | undone` (`done` = action executed)
-- `ActionKind`: `move_calendar_block | move_calendar_blocks | create_focus_block | block_mac_app | draft_follow_up | reminder | change_goal | plan_change | remove_calendar_block | log_time | settle_block`
+- `ActionKind`: `move_calendar_block | move_calendar_blocks | create_focus_block | block_mac_app | draft_follow_up | reminder | change_goal | plan_change | remove_calendar_block | log_time | settle_block | do_not_disturb`
 - `AnalysisStatus`: `queued | running | succeeded | failed`
 - `AnalysisTrigger`: `manual | scheduled | mcp | morning | evening`
 - `AgentScope`: `timeline | goals | recommendations | score | write_events`
@@ -325,21 +328,28 @@ mode); otherwise it answers `200` with `ignored: 1` and nothing is stored.
 
 ```ts
 type ShortcutsPayload = {
-  app: string; // the Shortcuts "App" value, e.g. "Instagram"
+  app?: string; // the Shortcuts "App" value, e.g. "Instagram"; empty or missing = a test run
   action?: "open" | "close"; // "opened", "closed", any case also accepted; missing = "open"
   at?: string; // ISO 8601; missing or unreadable = time of arrival
   bundle_id?: string; // optional, e.g. "com.burbn.instagram"
 };
 ```
 
-- An `open` is held until its `close`; the pair becomes one `app_usage` event (`source:
-  ios_shortcuts`, `title` = app, `data`: `app`, `device: "iphone"`, `seconds`, `bundle_id?`,
-  `external_id` = `sc:<app lowercased>:<start, UTC second>`). The open alone answers `200` with
-  nothing inserted.
-- Opening another app closes the held one at that moment. A close with no open, or a session longer
-  than two hours, is dropped. Held opens live in the API's memory, so a deploy in the middle of a
-  session loses that session.
-- While off the record or with the source off, a call answers `ignored: 1` and an open is not held.
+- An `open` is stored at once as one `app_usage` event (`source: ios_shortcuts`, `title` = app,
+  `data`: `app`, `device: "iphone"`, `seconds`, `bundle_id?`, `open: true`, `external_id` =
+  `sc:<app lowercased>:<start, UTC second>`), with a provisional end one minute after the open
+  (`seconds: 60`). The answer has `inserted: 1` and the event (#488).
+- Its `close`, or the next app's `open`, updates that same event (by `external_id`) to the real end
+  and `seconds` and drops `open`; the answer lists the updated event in `events`. The same app
+  opened again while its open stands is a duplicate and changes nothing. An open with nothing after
+  it keeps its minute; one older than two hours is never extended, and a close with no open
+  standing is dropped. Opens live in the database, so a deploy loses nothing. One "Is Opened"
+  automation per app is enough; adding "Is Closed" makes durations exact.
+- While off the record or with the source off, a call answers `ignored: 1` and nothing is stored,
+  with a `message` that says why.
+- No `app` (the shortcut run by hand in Shortcuts, with no automation as its input) is the test run
+  (#466): `200` with `test: true`, `inserted: 0` and a `message`; nothing is stored. The device key's
+  `last_used_at` records it, which is what turns the iPhone connection Connected.
 - The patterns layer uses these sessions for the hours the Biome backfill (`iphone_usage`) has not
   covered yet, and steps aside once it has (see "One timeline first").
 
@@ -460,16 +470,17 @@ AI tool events (`ai_session`, `ai_prompt`) from `claude_code`:
 
 ### Goals
 
-| Method | Path                               | Body                              | Response                      | Status |
-| ------ | ---------------------------------- | --------------------------------- | ----------------------------- | ------ |
-| GET    | `/v1/goals`                        |                                   | `200 { goals: Goal[] }`       | live   |
-| GET    | `/v1/goals/:id`                    |                                   | `200 Goal`, `404`             | live   |
-| POST   | `/v1/goals`                        | `GoalCreate`                      | `201 Goal`                    | live   |
-| PATCH  | `/v1/goals/:id`                    | `GoalUpdate`                      | `200 Goal`, `404`             | live   |
-| DELETE | `/v1/goals/:id`                    |                                   | `204`, `404`                  | live   |
-| GET    | `/v1/goals/suggestions`            |                                   | `200 GoalSuggestionsResponse` | live   |
-| POST   | `/v1/goals/suggestions/:id/accept` | `GoalSuggestionAccept` (optional) | `201 Goal`, `404`             | live   |
-| POST   | `/v1/goals/:id/book`               | `GoalBook` (optional)             | `201 Recommendation`, `409`   | live   |
+| Method | Path                               | Body                              | Response                       | Status |
+| ------ | ---------------------------------- | --------------------------------- | ------------------------------ | ------ |
+| GET    | `/v1/goals`                        |                                   | `200 { goals: Goal[] }`        | live   |
+| GET    | `/v1/goals/:id`                    |                                   | `200 Goal`, `404`              | live   |
+| POST   | `/v1/goals`                        | `GoalCreate`                      | `201 Goal`                     | live   |
+| PATCH  | `/v1/goals/:id`                    | `GoalUpdate`                      | `200 Goal`, `404`              | live   |
+| DELETE | `/v1/goals/:id`                    |                                   | `204`, `404`                   | live   |
+| GET    | `/v1/goals/suggestions`            |                                   | `200 GoalSuggestionsResponse`  | live   |
+| POST   | `/v1/goals/suggestions/:id/accept` | `GoalSuggestionAccept` (optional) | `201 Goal`, `404`              | live   |
+| POST   | `/v1/goals/from-words`             | `GoalWordsRequest`                | `200 GoalWordsResponse`, `429` | live   |
+| POST   | `/v1/goals/:id/book`               | `GoalBook` (optional)             | `201 Recommendation`, `409`    | live   |
 
 #### Book time for a goal (#309)
 
@@ -492,6 +503,49 @@ this week." when a standing instruction keeps the time that would have fitted ("
 21:00, so ...", "Your quiet hours cover the rest, so ..."), else "No free 90 minutes left this
 week." The same protected time is left out of `free_minutes_left`, so "The maths" and Book agree.
 Pure slot logic: `goalSlot`, `goalBooking` and `noSlotLine` in `apps/api/src/goals/book.ts`.
+
+#### Goals from the user's own words (onboarding talk)
+
+`POST /v1/goals/from-words` takes what the
+user said or typed (`{ text }`, up to 4000 characters, a messy voice transcript is fine, English or
+Greek) and returns at most five `HeardGoal`s (each a ready `GoalCreate`: `title`, `category` one of
+the three areas, `weekly_budget_minutes`, `target` of kind `time` with `calendar_titles` or of kind
+`target` with `sleep_hours`, plus `evidence`, the user's words it came from, and `estimated`, true
+when Michael set the hours because none were said), up to four `notes` on how the user works
+("Loses evenings to the phone", saved by the app as memories once the user keeps them), Michael's
+`line`, and `source`: `model` (Claude, low effort, 25 second cap, line checked against the voice
+rules) or `rules` (word lists, when there is no key or the model fails). Nothing is saved: the app
+shows what was heard, the user edits it, then creates the goals. 10 calls a minute per caller.
+
+#### The onboarding conversation (voice agent)
+
+`POST /v1/onboarding/turn` (`OnboardingTurnRequest` -> `200 OnboardingTurnResponse`) runs the
+first talk. With no turns it returns Michael's opener: from the user's own calendar when Google
+Calendar shows anything (`from_calendar: true`, "Gym three times last week and deep work only on
+Monday. Is that a normal week?"), otherwise a warm open question. The app has already introduced
+Michael out loud, so the opener never says hello or who he is again. Each later call sends every turn
+so far and gets one short reaction plus one follow up, or `done: true` with the line that hands
+over to the review. The app then reads the user's turns with `POST /v1/goals/from-words`. Nothing
+is saved. `source: "script"` when the fixed questions stand in (no key, model failed or slow).
+Code: `apps/api/src/onboarding/turn.ts`. Demo visitors may call it; 20 calls a minute per caller.
+
+- **Calendar facts.** Computed, never counted by the model: the user's own recurring blocks over
+  the last four weeks (the goal suggestions' clustering), meetings with other people, weekday
+  mornings with nothing before 12:00 and evenings with something after 22:00 in the last 7 days.
+  The model phrases them; a line with a number that is in neither the facts nor the user's words
+  is dropped.
+- **Done** when the user's words already hold goals with a time and something about what gets in
+  the way, after 5 user turns, after two skips in a row, or when the user says so ("that's it").
+  The model may also finish early once there is an answer. A `skipped: true` turn is never asked
+  again.
+- **Checks.** Max 320 characters, ends with a full stop or question mark, `voiceProblems` clean; a
+  turn that is not done must ask a question and a done line must not. Anything else, a model
+  error, or no answer within 6 seconds gives the script.
+- **Script.** The opener (from the calendar when it shows a recurring block), then "What are you
+  working towards right now?", "What would make this a good week? Roughly how much time does each
+  thing need?", "Where does your time go that you wish it didn't?", skipping any already asked or
+  answered, then "That's plenty. Here's what I heard."
+- **Model.** `ANTHROPIC_FAST_MODEL` (default `claude-haiku-5-5`), effort `low`, no retries.
 
 #### Goals from the calendar (#134)
 
@@ -1558,6 +1612,14 @@ Hypothesise, then verify: the model is free to be creative and can never be wron
    (`voiceProblems`), the shape (a title without a full stop, a line that starts with a number
    and ends with a full stop, a short fix), or carry any number that is not among the verified
    ones. A fix with a one tap action always keeps the template's words.
+   A hypothesis with two conditions (`and`) is worded as a pair, never as "hit harder": the title
+   names both ("Late training and a late dinner"), the line says both ("14 of 14 days with
+   training after 19:00 and a last meal at 20:45 or later gave less deep sleep that night: 49
+   minutes against 61 minutes."), and the first step names both ("Training after 19:00 and last
+   meal after 20:45", "14 of 69 days"). The line closes with "Late training alone costs less."
+   only when one condition alone does clearly less (the margin of the plain trigger rule), or when
+   it is the plain relation the rules already show. Every time of day in a test and in its words
+   is on the quarter hour, as the late cut off is, so the words describe exactly the days counted.
 4. What is stored is the test and its words, never its numbers: table `insight_runs`, one jsonb
    document per user (`ran_at`, `data_day`, `model`, up to 12 `discoveries`), RLS like every
    table, deleted with the account. Every study runs the stored tests again on the current
@@ -1677,6 +1739,10 @@ user's own block title), else `Removing your block`. The reply says what was rem
   `POST /v1/focus/:id/end` and `/extend`.
 - `meetings_mode { on }`: `POST /v1/meetings/start` and `/end`. Michael never gives consent: the
   first start is refused with the consent notice until the user has started it once in the app.
+- `accept_recommendation { recommendation_id }`: "do it" on a Today card, the same path as the MCP
+  `execute_recommendation` (`POST /v1/recommendations/:id/execute`), same refusals and undo. The
+  context lists Michael's offers waiting for a yes (`proposed` or `accepted`, an action of the
+  user's own time, not a Timeline edit) with their ids.
 - `go_off_the_record {}`: off the record ON (`PUT /v1/privacy/off-the-record { off_the_record:
   true }`). No tool turns it off; that switch is the user's own.
 
@@ -2158,7 +2224,7 @@ The user adds, moves, resizes, renames, gives a goal to, or removes blocks on th
 write is stored as a recommendation with `source: "user"` and carried out at once by the same
 executor as Michael's actions, so the same rules hold: never an event with other people (`409`),
 nothing that has started (`409`). A block made in Michael or the user's own solo event can be
-removed (#457), and undo puts it back with the same time and title until it starts. With Google Calendar connected the change is made there and mirrored;
+removed (#457), and undo puts it back with the same time and title until it starts. The Timeline offers Remove on every block of the user's own that has not started, never on an event with other people. With Google Calendar connected the change is made there and mirrored;
 without it, the block lives on the timeline (`source: "agent"`, `data.michael: true`). Standing
 instructions bind Michael, not the user, so they do not refuse these. `source: "user"`
 recommendations are left out of `GET /v1/recommendations` and the MCP `list_recommendations`.
@@ -2197,7 +2263,12 @@ type FocusGuard = {
   back_to: string | null; // "Back to The company."
   created_at: string;
 };
-type FocusGuardsResponse = { now: string; off_the_record: boolean; guards: FocusGuard[] };
+type FocusGuardsResponse = {
+  now: string;
+  off_the_record: boolean;
+  guards: FocusGuard[];
+  dnd?: { id: string; until: string } | null; // Do Not Disturb the user asked for (below)
+};
 ```
 
 | Method | Path                       | Response                                                         | Status |
@@ -2222,6 +2293,90 @@ type FocusGuardsResponse = { now: string; off_the_record: boolean; guards: Focus
   no block: "Mute WhatsApp 14:00 to 16:00", rationale "... took 47 min.". It is a `proposed`
   recommendation (`source: "analysis"`); nothing happens until Do it. Not repeated while an open one
   for the same app has not ended.
+
+### Do Not Disturb, asked then done (#447)
+
+Michael asks in a nudge, one tap switches it on, it ends by itself (when the block ends, or when
+the night's quiet hours end), and the user can end it sooner. Nothing is switched on without that
+tap. No server or app may set a Focus, so a signed shortcut does it: **Michael Focus**
+(`scripts/shortcut/build.mjs`, `pnpm shortcut:focus`, served at `/MichaelFocus.shortcut`), one
+Set Focus action on Do Not Disturb. Its text input is a date and time (`"2026-11-17 14:00"`: on
+until then), `off` (off) or `check` (nothing).
+
+```ts
+type Dnd = {
+  id: string; // the recommendation (kind do_not_disturb): on Today, ended by its undo
+  until: string;
+  until_label: string; // "14:00", Europe/Athens
+  shortcut_input: string; // "2026-11-17 14:00", what Michael Focus is run with
+  mac: boolean; // a Mac with the shortcut is switching it on
+  text: string; // "Do Not Disturb is on until 14:00. Tap to end it."
+};
+type DndOffer = {
+  active: Dnd | null; // the one on now
+  offer: {
+    nudge_id: string;
+    until: string;
+    until_label: string;
+    shortcut_input: string;
+    text: string;
+  } | null;
+  mac: "ready" | "no_shortcut" | "away";
+};
+type DndStartInput = { nudge_id: string } | { until: string };
+```
+
+| Method | Path                           | Body            | Response                                               | Status |
+| ------ | ------------------------------ | --------------- | ------------------------------------------------------ | ------ |
+| GET    | `/v1/dnd?nudge=<id>`           |                 | `200 DndOffer`                                         | live   |
+| POST   | `/v1/dnd`                      | `DndStartInput` | `201 Dnd`; `400`; `403` on the demo week; `404`; `409` | live   |
+| POST   | `/v1/recommendations/:id/undo` |                 | ends it now (the recommendation's own undo, see above) | live   |
+
+- Which nudges offer it (`nudgeOffersDnd` in `@michael/shared`): every `focus_drift` (until the
+  block's end) and the phone before sleep (until the night's quiet hours end, the profile's
+  `quiet_hours.end`, default 07:00). The button is `dnd`, label "Do Not Disturb"; a drift that
+  names a Mac app shows "Mute <app> 30 min" first, then it.
+- The tap is a `do_not_disturb` recommendation (`source: "chat"`, payload `{ end_at }`) carried
+  out at once: title "Do Not Disturb until 14:00", done, `undo_until` the time it ends. So it is
+  logged like every other action, shows on Today, and its undo ends it. At least a minute, at most
+  12 hours. One at a time: a newer one replaces the one before.
+- **The busiest hours, offered ahead** (`apps/api/src/dnd/window.ts`, #432): with the day's other
+  offers (when Today reads the score), Michael looks at the phone cadence's `by_hour` over the last
+  7 days, takes the two hours of the working day with the most opens (at least 3 days of data and 3
+  opens a day in them), and offers Do Not Disturb for them the next time they come round: today
+  while 20 minutes or more of them are left, else tomorrow. A proposed `do_not_disturb`
+  recommendation, `source: "analysis"`, payload `{ start_at, end_at, window: "busiest_hours", day }`,
+  title "Do Not Disturb today, 11:00 to 13:00.", rationale "11:00 to 13:00 is when your phone pulls
+  hardest: 8 opens a day this week, one every 15 minutes. ...". One per day, never twice. Do it
+  sets it ahead: `GET /v1/focus-guards/active` returns it as `dnd` only from `start_at` to
+  `end_at`, so the Mac switches it on when its hour comes; undo ends it, before or during.
+  Never set more than a day ahead. Off the record: no offer.
+- The Mac: Michael for Mac (`apps/collector/src/dnd.ts`) looks at
+  `GET /v1/focus-guards/active?dnd=ready|missing` every 15 seconds (`ready`: `shortcuts list`
+  names Michael Focus), reads `dnd`, and runs `shortcuts run "Michael Focus"` with the time in the
+  Mac's own zone. It runs once per `id`, switches off only what it switched on (when `dnd` is gone
+  before its time), and does nothing once the time has passed. Focus is shared across the person's
+  devices by default, so the iPhone follows. `mac` in the answers: `ready` when a Mac looked in the
+  last two minutes with the shortcut, `no_shortcut` without it, `away` otherwise (kept in the API
+  process). `dnd` is answered whatever the privacy switch says: the user asked for it. Run for real
+  on macOS 26.6 (15 Nov 2026): Do Not Disturb came on with the right end time and went off again,
+  each within two seconds, but `shortcuts run` did not return while Shortcuts had a window titled
+  Privacy open (a first run question nobody was there to answer). The collector therefore gives a
+  run a minute and counts one it had to stop as sent, so it never repeats it on every look.
+- The iPhone: Safari shows no notification buttons, so the tap on either real time line opens
+  `/dnd?nudge=<id>` (the push's `url`). The page asks once more, the tap posts `{ nudge_id }` and
+  then opens `shortcuts://run-shortcut?name=Michael%20Focus&input=text&text=<shortcut_input>`.
+  End it there: the undo, then the shortcut with `off`. A device that has not added the shortcut
+  (remembered in the browser, never on the server) is offered "Add Michael Focus" first.
+- `POST /v1/nudges/:id/act` with `dnd`: with a Mac that is `ready` it is switched on and the
+  answer is `"Do Not Disturb is on until 14:00. Tap to end it."`, `undo_until` set, `url`
+  `/dnd?id=<id>`. Otherwise nothing is switched on: `"Tap to switch on Do Not Disturb until
+  14:00."`, `undo_until: null`, `url` `/dnd?nudge=<id>`, and the button can be tapped again. In
+  Telegram that line carries a "Switch it on" link to the page and the buttons stay.
+- The demo week: a button on a demo nudge and a demo visitor's `POST /v1/dnd` are refused with
+  `403 "This is the demo week. Sign in with Google to make it yours."`. The API key itself may.
+- What is on is kept in the API process and read back once from the done recommendations after a
+  restart.
 
 ### Focus now (#397)
 
@@ -2273,6 +2428,13 @@ type FocusActiveResponse = { now: string; session: FocusSession | null; last: Fo
   Reddit, TikTok, Netflix) are muted for the window through a focus guard (a `block_mac_app`
   recommendation, "Muted distracting apps until 12:45"). Without a Mac this is skipped silently and
   `guarded` is false, so the app never claims a guard that is not there.
+- **Focus turns itself on:** `GET /v1/focus/active` with no session running and the user's own goal
+  block from the synced calendar running now (at least 5 minutes left, nobody else in it) starts the
+  session to the block's end, as if the user had tapped it. Once per block: a session that ran or
+  ended during the block means the user decided, so it never starts again. Never off the record,
+  never on the demo account (its week is replayed, not synced).
+  While it runs its `message` says so: "Your University block started. Focus is on until 12:00."
+  Chat and MCP reads never start one.
 - **+15:** moves `end_at`, the block the session made, and adds a guard for the extra minutes. At
   most 4 hours in all (`409` after). A block the user made is never changed: time past its end is
   logged outside it and counts toward the goal's budget.
@@ -2495,6 +2657,17 @@ type MeetingsState = {
   the consent sheet before the first start, and while on, a pill "Meeting on · 12 min · End" above
   the tab bar on every screen. After it, a card on Today ("Meeting at 14:00: 2 commitments", from
   `last`): Add to today per commitment, the lesson, Draft a follow up, and Dismiss (per device).
+
+### Accounts (#475)
+
+| Method | Path           | Auth                          | Response                                                              | Status |
+| ------ | -------------- | ----------------------------- | --------------------------------------------------------------------- | ------ |
+| POST   | `/v1/accounts` | API key only (the web server) | `201 { created: true }`; `409 conflict` when the email has an account | live   |
+
+Body `AccountCreate`: `{ email, password }`, password 8 to 200 characters. Creates a Supabase Auth
+user already confirmed, so the person is signed in at once with no email to click; the web app then
+signs in with the password itself. Any other caller (a session, a demo visitor, a device key, MCP)
+gets `403`. `429 rate_limited` past 500 new accounts an hour in all (a backstop; sign in is never limited) (admin.createUser skips Supabase's own sign up limits). `503 unavailable` when Auth is not configured (in-memory store).
 
 ### Your data: deletion and retention
 
@@ -2730,6 +2903,7 @@ type Profile = {
   gym_days: Weekday[]; // default []
   weak_spots: WeakSpot[]; // default []
   fixed_titles: string[]; // calendar titles Michael never moves ("PT session"); default []
+  default_app: string | null; // the app the iPhone App automation is for ("Instagram"); default null
   onboarded_at: string | null; // set when onboarding is finished or skipped
   updated_at: string | null; // null until first saved
 };
@@ -2744,6 +2918,11 @@ type ProfileUpdate = Partial<Omit<Profile, "updated_at">>; // arrays are replace
 The web app sends a new user (no goals and `onboarded_at: null`) from Today to `/onboarding`.
 Stored as one jsonb document per user (`user_profiles`); a missing or invalid field reads as its
 default.
+
+`default_app` (You > Connections > iPhone, "My automation is for"): Apple passes an App automation
+no app name, so an `ios_shortcuts` open with none (after the first test) is stored with this title
+and `data.app_assumed: true` instead of `An app`. Saving a name also renames the user's own
+`data.app_unknown` opens from today (Athens) the same way.
 
 ### Places and travel
 
@@ -3042,10 +3221,10 @@ Two kinds have a second trigger that speaks at the moment something happens
 (`apps/api/src/nudges/realtime.ts`, thresholds in `REALTIME`, #438). They keep the kind, so the
 voice, the cap of 5 and the 20 minute gap are the same:
 
-| Kind          | Second trigger                                                                                                                                                                   | Example                                                                  |
-| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `focus_drift` | the phone inside a block: 5+ phone opens inside a running goal block (any goal but training). Key `focus_drift:<event id>`, shared with the Mac drift: one drift nudge per block | "5 phone opens in Ship the pitch. Put it down until 14:00."              |
-| `wind_down`   | the phone before sleep: 40+ minutes of phone after the late cut off (23:00, or one hour before the usual bedtime), the phone in use in the last 10 min. Key `late_phone:<night>` | "40 minutes on your phone since 23:10. Stop here. First block at 09:00." |
+| Kind          | Second trigger                                                                                                                                                                                                                              | Example                                                                  |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `focus_drift` | the phone inside a block: 5+ phone opens inside a running goal block (any goal but training). Key `focus_drift:<event id>:phone`; the engine counts it and the Mac drift's `focus_drift:<event id>` as one, so a block gets one drift nudge | "Your phone opened 5 times in University. Put it down until 14:00."      |
+| `wind_down`   | the phone before sleep: 40+ minutes of phone after the late cut off (23:00, or one hour before the usual bedtime), the phone in use in the last 10 min. Key `late_phone:<night>`                                                            | "40 minutes on your phone since 23:10. Stop here. First block at 09:00." |
 
 - An open: where Apple's own log covers the hour (`iphone_usage`, about a day behind) it is a pick
   up, the rule of the phone cadence. Otherwise it is one run of the iPhone shortcut (an app the
@@ -3155,9 +3334,9 @@ stored (no database change before the pitch): a tap works them out again from th
 (`offeredActions`, the Mac app read back from the line).
 
 ```ts
-type NudgeActionId = "open" | "snooze" | "mute_app" | "do_it" | "focus";
+type NudgeActionId = "open" | "snooze" | "mute_app" | "do_it" | "focus" | "dnd"; // dnd: Do Not Disturb, see above (#447)
 type NudgeAction = { id: NudgeActionId; label: string; app?: string }; // app: mute_app only
-type NudgeActInput = { action: "snooze" | "mute_app" | "do_it" | "focus"; token: string };
+type NudgeActInput = { action: "snooze" | "mute_app" | "do_it" | "focus" | "dnd"; token: string };
 type NudgeActResult = {
   action: NudgeActionId;
   text: string; // "Done. Undo in the app until 15:00." / "Instagram is off until 14:30. Undo in the app." / "Snoozed. Back at 17:58."
@@ -3187,7 +3366,8 @@ type NudgeActResult = {
   { action, title }[], act_url?, token? }`. `url` is the exact card (`nudgeUrl` in
   `@michael/shared`): `/timeline?day=<day>&block=<event id>` for `block_soon` and `focus_drift`,
   `/?card=<recommendation id>` for a nudge with a recommendation, else `/`. The web app scrolls to
-  that block or card and rings it briefly (`components/deep-link-focus.tsx`).
+  that block or card and rings it briefly (`components/deep-link-focus.tsx`). The two real time
+  lines (the phone inside a block, the phone before sleep) open `/dnd?nudge=<id>` instead (#447).
 - The worker (`apps/web/public/sw.js`) shows the buttons as notification actions. A button posts
   `{ action, token }` to `act_url` and shows the result as a second notification (`tag:
   nudge-done`); a refusal shows its message, no connection says "No connection. Open Michael to do
@@ -3754,15 +3934,17 @@ inside the first goal block, the evening, the phone after 23:00), meals. Built f
 per day numbers where this Mac had them (`history-facts.json`: dates, minutes, clock times, counts,
 names of well known apps and sites) and drawn in his measured range where it had none; the body's
 answer comes from a small model with noise. Their `external_id` starts `demo:past:`, so the same
-reseed covers them. Nothing of it falls inside the seven days ending now. The score and the
+reseed covers them. The history ends where the week starts, so the week's own days are never shared with it. The score and the
 Morning and Evening moments leave these rows out (`isDemoHistory`), so the usual day, the target
 and the records read what they read before.
 
-- A `sleep` event may carry `score` (0 to 100) in `data` when its source sends one; the history's
-  nights do. A reader uses it when present and works one out from the stages otherwise.
-- The history's mornings carry a `recovery` event (source `health_auto_export`):
-  `{ recovery_pct, hrv_ms, resting_hr }`, dated when the night ends, next to the watch's hourly
-  `heart_rate_variability` and `resting_heart_rate` with the same values.
+- A `sleep` event may carry `score` (0 to 100) in `data` when its source sends one; the stage
+  account's nights do, the week's and the history's alike. A reader uses it when present and works
+  one out from the stages otherwise.
+- Every stage account morning carries a `recovery` event (source `health_auto_export`):
+  `{ recovery_pct, hrv_ms, resting_hr }`, dated six minutes after the night ends, next to the
+  watch's hourly `heart_rate_variability` and `resting_heart_rate` with the same values. The rule
+  is `demo/body.ts`, shared by the week and the history.
 
 Travel in the demo is precomputed (`apps/api/src/demo/travel.ts`), never asked of Google: five
 neighbourhood level places (saved when the account has none), some blocks with a location (the

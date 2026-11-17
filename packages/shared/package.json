@@ -7,6 +7,7 @@
     ".": "./src/index.ts",
     "./categories": "./src/categories.ts",
     "./connectors": "./src/connectors.ts",
+    "./focus-shortcut": "./src/focus-shortcut.ts",
     "./goal-areas": "./src/goal-areas.ts",
     "./plain-text": "./src/plain-text.ts",
     "./sleep": "./src/sleep.ts",

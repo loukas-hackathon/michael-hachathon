@@ -1,18 +1,32 @@
 # iPhone app opens through Shortcuts
 
-The live iPhone signal: a personal automation tells Michael when a chosen app opens. Michael pairs
-each open with the next one (or a close) into one `app_usage` event with its duration.
+The live iPhone signal: a personal automation tells Michael when a chosen app opens. Each open is
+stored the moment it arrives, as an `app_usage` event one minute long for now; the next open (or a
+close) then sets its real end and duration (#488). One "Is Opened" automation is enough; adding an
+"Is Closed" automation makes the durations exact.
 
 ## How fast it arrives, and what the real time nudges read (#438)
 
 One request per app open, a second or two after the app comes to the front; nothing is batched.
-But an open only becomes a stored `app_usage` event when the next open (or a close) ends it, so the
-app in front right now is not in the database, and the same app opened twice in a row is one event.
-The API therefore also keeps every signal in memory for 12 hours (`apps/api/src/ingest/phone-live.ts`)
-and the two real time nudges (`apps/api/src/nudges/realtime.ts`) read both. Two limits follow from
+The open is in the database at once (chat can answer "when did I open Instagram"), but the same app
+opened twice in a row is one event, and the app in front has only a provisional minute until the
+next signal. The API therefore also keeps every signal in memory for 12 hours
+(`apps/api/src/ingest/phone-live.ts`) and the two real time nudges (`apps/api/src/nudges/realtime.ts`)
+read those. Two limits follow from
 the automation reporting opens only, of the chosen apps only: an app that was not chosen is never
 seen, and the minutes of the app in front are counted up to now (at most 45) because nothing says
 when the phone was put down.
+
+## The second shortcut: Michael Focus (#447)
+
+`pnpm shortcut:focus` writes and signs `apps/web/public/MichaelFocus.shortcut` (the name of the
+file is the name iOS and macOS give it, and the app and the Mac collector run it by that name).
+It receives Text and has one job, Set Focus on Do Not Disturb: a date and time (`2026-11-17 14:00`)
+switches it on until then, `off` switches it off, `check` does nothing. It sends nothing anywhere
+and reads no file. The app runs it with
+`shortcuts://run-shortcut?name=Michael%20Focus&input=text&text=...` after the person's tap; the Mac
+collector with `shortcuts run "Michael Focus" --input-path <file>`. The set up and the phone test:
+`docs/setup-manual.md` section 8c.
 
 ## With only an iPhone (no Mac)
 
@@ -70,10 +84,27 @@ What the shortcut does (`scripts/shortcut/build.mjs` is the source of truth):
    - **Get Contents of URL**
      `https://api-production-16521a26.up.railway.app/v1/webhooks/ios-shortcuts`, Method **POST**,
      Header `Authorization` = `Bearer ` followed by the file (as Text), Request Body **JSON**: `app` =
-     Shortcut Input (Name), `action` = `open`.
+     Shortcut Input (Name), `input` = Shortcut Input (as Text), `action` = `open`. The API takes
+     `app`, else `input`. `input` is in `build.mjs` since 15 Nov and reaches phones once
+     `pnpm shortcut` has signed it again on a Mac (the signed file in `apps/web/public` still sends
+     `app` only).
 
-Opens alone are enough: opening the next app closes the one before, and a session over two hours is
-dropped. The person's automation: Automation, **+**, **App**, pick the apps, tick **Is Opened** and
+**The automation names the app (production, 15 Nov).** On current iOS an App automation hands the
+shortcut no input: Loukas' "Opened Instagram" and "any of 2 apps" automations both arrived with an
+empty `app`. Such opens are stored as **An app**. To name it, one automation per app:
+
+1. Shortcuts, Automation, **+**, **App**: choose the app, tick **Is Opened** and **Run Immediately**,
+   **Next**.
+2. Add the action **Text** and type the app's name (`Instagram`).
+3. Add the action **Run Shortcut** and choose **Michael**. Shortcuts chains actions, so the Text is
+   its input; tap the arrow on Run Shortcut and check Input reads Text.
+
+The shortcut reads the Text as Text (`input`, above); the signed file from before reads its Name
+(`app`), which may come through empty for Text. A multi app automation cannot name the app.
+
+Opens alone are enough: each open is stored at once, opening the next app ends the one before, and
+an open with nothing after it for two hours keeps its provisional minute. A second **Is Closed**
+automation (with `action` = `close`) makes every duration exact. The person's automation: Automation, **+**, **App**, pick the apps, tick **Is Opened** and
 **Run Immediately**, then choose **Michael**.
 
 ### How the file is made, and what was checked
@@ -136,8 +167,19 @@ Date, ISO 8601) is optional too; without it the time of arrival is used.
 ```
 
 `action` is `open` or `close` (`opened`, `closed`, any case also work); missing means `open`. `bundle_id` is optional.
-Opening another app closes the one before it. A close without an open, or a session over two
-hours, is dropped. Full rules: `docs/api.md`, "Source webhooks". Sample sequence:
+
+`app` empty or missing (also `Text` or `Shortcut Input`, the names of an empty variable): the first
+such call with a new device key is the hand run test, answered with `test: true` and never stored.
+Every later one is an App automation that passed the shortcut no input, which is what current iOS
+does (production, 15 Nov: "When any of 2 apps are opened, run Michael" sent an empty app every time).
+It is stored as an open titled `An app` with `data.app_unknown: true`, so Timeline shows it and
+Michael says "An app opened at 15:08; name the app in the automation to see which". Two unnamed
+opens less than a minute apart are one. Callers without a device key (the API key, curl) keep the
+old rule: no app is always a test. With "My automation is for" set on You > Connections > iPhone
+(`profile.default_app`), an unnamed open is stored as that app with `data.app_assumed: true`, and
+saving it renames today's unnamed opens. Any other text in `app` is the app's name as it is.
+An open is stored at once (one minute, `data.open: true`); its close, or opening another app, sets
+the real end on that same event. A close without an open standing in the last two hours is dropped. Full rules: `docs/api.md`, "Source webhooks". Sample sequence:
 `apps/api/src/ingest/fixtures/ios-shortcuts.json`.
 
 ## Try it

@@ -28,6 +28,10 @@ export const DEMO_VISITOR_MESSAGE = "This is the demo week. Sign in with Google 
 // Writes a demo visitor may make: [method, path pattern]. Reads (GET, HEAD) are allowed.
 const ALLOWED: [string, RegExp][] = [
   ["POST", /^\/v1\/chat(\/stream|\/warm)?$/],
+  // The onboarding talk reads words into goals and saves nothing.
+  ["POST", /^\/v1\/goals\/from-words$/],
+  // The onboarding talk's next line: read only, nothing saved.
+  ["POST", /^\/v1\/onboarding\/turn$/],
   // Their own threads (stored per visitor, like the lines in them).
   ["POST", /^\/v1\/chat\/threads$/],
   ["PATCH", /^\/v1\/chat\/threads\/[^/]+$/],
@@ -72,11 +76,14 @@ const ALLOWED: [string, RegExp][] = [
 ];
 
 // What the presenter may do on top: answer the claude.ai consent, which connects Claude to the demo
-// account with write access, and switch Off the record on and off for the privacy beat of the pitch
-// (docs/pitch.md; the reseed turns it off again). Everything else stays as for any visitor.
+// account with write access, switch Off the record on and off for the privacy beat of the pitch
+// (docs/pitch.md; the reseed turns it off again), and say yes to Do Not Disturb from a nudge (#447:
+// it switches a real device's Focus, so never for any visitor; it ends by itself and can be undone).
+// Everything else stays as for any visitor.
 const PRESENTER_ALLOWED: [string, RegExp][] = [
   ["POST", /^\/v1\/connect\/requests\/[^/]+$/],
   ["PUT", /^\/v1\/privacy\/off-the-record$/],
+  ["POST", /^\/v1\/dnd$/],
 ];
 
 // Never for a visitor, not even to read: device keys, ingest and MCP belong to real callers.

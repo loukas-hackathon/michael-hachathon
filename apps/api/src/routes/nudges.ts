@@ -10,6 +10,7 @@ import {
 import { Hono } from "hono";
 import { z } from "zod";
 import { runAsUser } from "../context";
+import { isDemoHistory } from "../demo/history";
 import { HttpError, jsonBody, parse } from "../http";
 import { momentNudge } from "../moments/nudge";
 import { actionsFor, actOnNudge } from "../nudges/actions";
@@ -56,7 +57,9 @@ export async function checkNudges(): Promise<NudgeCheckResult> {
   const now = new Date().toISOString();
   const win = engineWindow(now);
   const [events, goals, today, privacy, profile] = await Promise.all([
-    store.listEvents({ from: win.from, to: win.dayEnd }),
+    store
+      .listEvents({ from: win.from, to: win.dayEnd })
+      .then((rows) => rows.filter((e) => !isDemoHistory(e))),
     store.listGoals(),
     store.listNudges({ from: win.dayStart, to: win.dayEnd }),
     store.privacyRules(),

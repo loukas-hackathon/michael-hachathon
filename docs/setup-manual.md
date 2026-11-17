@@ -39,6 +39,14 @@ Google Cloud console has renamed menus over time; both names are given.
 
 Done when: you are signed in as yourself. Tick "google-oauth-client" on the board.
 
+## 1b. Email and password sign in (nothing to do, #475)
+
+Sign in is email and password only; the Google button is gone. The API creates each account already
+confirmed (`POST /v1/accounts`, with the service role), so no Supabase setting and no confirmation
+email are needed. Email sign in is on by default in Supabase. Test: a private window, **Continue
+with email**, a new address, 8 characters or more, **Create account**: you land in Getting started,
+with Google Calendar as a Connect row.
+
 ## 2. Your Claude connector (Loukas and Manolis, 2 min each, after step 1)
 
 No key: Claude signs in to Michael like any built-in connector, and sees only your own data.
@@ -171,16 +179,73 @@ On the stage iPhone, in **Safari** (latest iOS), signed in to Michael with Googl
 Passed on both: change `iphone: "soon"` to `"live"` in `packages/shared/src/connectors.ts` with the
 proof in the comment, note it on the Build Hub findings, and tick #303.
 
-If step 2 feels like too many taps: on the phone that now has Michael, open **Shortcuts**, hold
-**Michael**, **Share**, **Copy iCloud Link**, and set `MICHAEL_SHORTCUT_URL` to that link in
-Vercel (project **michael**, **Settings > Environment Variables**, all environments, then
-**Redeploy**). An iCloud link opens Shortcuts directly on **Add Shortcut**. The shortcut behind the
-link is the same generated one, so it is still never built by hand.
+Done by default (15 Nov): **Add the shortcut** opens the iCloud link Loukas shared
+(`SHORTCUT_ICLOUD` in `apps/web/lib/one-tap.ts`), which opens Shortcuts directly on **Add
+Shortcut**, from Safari, the installed app and the laptop QR alike. `/Michael.shortcut` stays the
+fallback behind **Shortcuts did not open?**. After rebuilding the shortcut, share a new link: on
+the phone, open **Shortcuts**, hold **Michael**, **Share**, **Copy iCloud Link**, and either update
+the constant or set `MICHAEL_SHORTCUT_URL` to that link in Vercel (project **michael**, **Settings >
+Environment Variables**, all environments, then **Redeploy**).
 
 If it fails: write on #303 which step, what the phone showed (a screenshot helps) and the iOS
 version. To change the shortcut: edit `scripts/shortcut/build.mjs`, run `pnpm shortcut` on a Mac
 signed in to iCloud, commit `apps/web/public/Michael.shortcut`. On the phone, delete the old
 Michael shortcut before adding the new one, or iOS names it Michael 2 and Connect runs the old one.
+
+## 8c. Do Not Disturb, asked then done: the Michael Focus shortcut (Manolis, 10 min)
+
+Michael asks in a nudge ("Your phone opened 5 times in University."), one tap, and Do Not Disturb
+is on until the block ends, or until morning at night (#447). No app may set a Focus, so a second
+signed shortcut does it: **Michael Focus** (`pnpm shortcut:focus` writes and signs it, the app
+serves it at `/MichaelFocus.shortcut`). It is added once per device. As for Michael, **Add Michael
+Focus** opens its shared iCloud link (`FOCUS_SHORTCUT_ICLOUD` in `apps/web/lib/dnd.ts`) directly
+in Shortcuts on **Add Shortcut**, with the file as the fallback. To change it: **Shortcuts**, hold
+**Michael Focus**, **Share**, **Copy iCloud Link**, then update the constant or set
+`MICHAEL_FOCUS_SHORTCUT_URL` in Vercel the same way. Focus is shared across your
+devices by default (Settings, Focus, Share Across Devices), so the Mac alone also quiets the iPhone.
+
+**On the Mac** (with Michael for Mac running, section 8):
+
+1. Open `https://michael-zeta-sand.vercel.app/you/connections/iphone` in Safari on the Mac, find
+   **Do Not Disturb, when you say yes**, click **Add Michael Focus**. Open the downloaded
+   `Michael Focus.shortcut`: Shortcuts shows it, click **Add Shortcut**. It must be named exactly
+   **Michael Focus** (delete an older one first, or macOS names it Michael Focus 2).
+2. In Terminal: `shortcuts list | grep "Michael Focus"` prints the name. Within 15 seconds Michael
+   for Mac tells the API it is there; restart it if it was started before this change
+   (`[dnd]` lines appear in its log when it switches something on or off).
+3. The first run asks a question. In Terminal:
+   `printf off > /tmp/michael-focus.txt && shortcuts run "Michael Focus" --input-path /tmp/michael-focus.txt`
+   (it switches Do Not Disturb off, so it changes nothing when none is on). Shortcuts shows a
+   window titled **Privacy**: allow it for good (the usual choice is **Always Allow**). Pass: the
+   command returns, and a second run returns at once with no window. Seen on macOS 26.6 on 15 Nov
+   2026 from a session that could not see the screen: Do Not Disturb was switched on and off
+   within two seconds each time, but the command did not return while that window was up, and the
+   window closed when the command was stopped. Until someone answers it, Michael for Mac still
+   switches Do Not Disturb on and off; it only waits a minute on each run and says so in its log.
+   If the window says something else, or the second run still waits, write it on #447.
+
+**The phone test (five steps, on the stage iPhone, signed in to Michael, the home screen app):**
+
+1. In Safari open `https://michael-zeta-sand.vercel.app/you/connections/iphone`, scroll to **Do Not
+   Disturb, when you say yes**, tap **Add Michael Focus**, **Download**, open it from Downloads, tap
+   **Add Shortcut**. Pass: Shortcuts lists **Michael Focus** (exactly that name).
+2. Back on the page tap **Try it**, then **Open** if Safari asks. Pass: Shortcuts opens for a
+   second, the moon shows in the status bar, and it is gone again within two minutes. If iOS asks
+   whether the shortcut may change your Focus, tap **Allow** and tap **Try it** once more.
+3. Open one of the apps your Michael automation watches (section 8b) for a minute, come back to
+   the page and tap **Send me the nudge**. Pass: the page shows **Sent:** and the line, and the
+   iPhone (and the watch) shows "... minutes on your phone since ... Stop here." If the line is
+   about something else, there was no phone use in the last hour to count: repeat this step.
+4. Tap the notification. Pass: Michael opens on **Do Not Disturb until 07:00?** with the nudge's
+   line above it. Tap **Switch it on**: Shortcuts opens for a second, the moon shows, and back in
+   Michael the page reads **Do Not Disturb is on until 07:00.** Today lists it with Undo.
+5. Tap **End it now**. Pass: Shortcuts opens for a second and the moon is gone; the page reads
+   **Do Not Disturb is off.**
+
+If a step fails, write on #447 which step, what the phone showed and the iOS version. What only
+this test can tell: whether iOS adds the file without a question, whether "Set Focus" reads the
+time the link passes (`2026-11-17 14:00`), whether running it from the home screen app needs the
+**Open** confirmation, and whether the notification tap lands on the page inside the app.
 
 ## 9. Team access (Loukas, 2 min)
 

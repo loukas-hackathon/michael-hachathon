@@ -4,6 +4,7 @@ import type { LocationStatus } from "@michael/shared";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { refreshLocation } from "@/app/you/connections/travel/actions";
+import { useArriveConnection } from "@/components/you/connections-live";
 import { ON_KEY, sendHere } from "./location-ping";
 
 // The Location page's "Where you are" (#267): one tap to let this phone say where you are when
@@ -23,6 +24,7 @@ function PhoneAsk() {
   const [state, setState] = useState<"idle" | "finding" | "done" | "denied" | "failed">("idle");
   const [at, setAt] = useState<string | null>(null);
   const [, startTransition] = useTransition();
+  const arrive = useArriveConnection("travel");
 
   useEffect(() => {
     try {
@@ -43,6 +45,8 @@ function PhoneAsk() {
         const where = await sendHere(true);
         setAt(where);
         setState("done");
+        // The position landed: the Location row says Connected at once (#466).
+        if (where !== null) arrive();
         await refreshLocation();
         startTransition(() => router.refresh());
       },
@@ -67,7 +71,7 @@ function PhoneAsk() {
           <button
             type="button"
             onClick={stop}
-            className="press min-h-9 shrink-0 text-subhead font-semibold text-tint-text"
+            className="hit press min-h-9 shrink-0 text-subhead font-semibold text-tint-text"
           >
             Stop
           </button>

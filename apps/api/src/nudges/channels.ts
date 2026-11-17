@@ -1,4 +1,10 @@
-import { type NudgeChannel, type NudgeStatus, nudgeUrl, type OutgoingNudge } from "@michael/shared";
+import {
+  type NudgeChannel,
+  type NudgeStatus,
+  nudgeTrigger,
+  nudgeUrl,
+  type OutgoingNudge,
+} from "@michael/shared";
 import { currentUserId } from "../context";
 import { env } from "../env";
 import { type PushPayload, pushConfig, pushToCurrentUser } from "./push";
@@ -34,7 +40,10 @@ const apiBase = () => env.PUBLIC_API_URL.replace(/\/$/, "");
  * with a token signed for this nudge and the current user (#399).
  */
 export function nudgePayload(n: OutgoingNudge, now = Date.now()): PushPayload {
-  const payload: PushPayload = { title: "Michael", body: n.text, tag: n.kind, url: nudgeUrl(n) };
+  // The two real time lines offer Do Not Disturb (#447). An iPhone shows no buttons, so there the
+  // tap itself opens the page that asks once more and hands over to the shortcut.
+  const url = nudgeTrigger(n) ? `/dnd?nudge=${n.id}` : nudgeUrl(n);
+  const payload: PushPayload = { title: "Michael", body: n.text, tag: n.kind, url };
   if (!n.actions?.length) return payload;
   return {
     ...payload,

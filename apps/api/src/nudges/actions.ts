@@ -6,11 +6,16 @@ import {
   type NudgeAction,
   type NudgeActionId,
   type NudgeActResult,
+  nudgeBlockId,
+  nudgeOffersDnd,
   nudgeUrl,
 } from "@michael/shared";
 import { executeRecommendation, undoDeadline } from "../actions/calendar";
+import { macState } from "../actions/dnd";
+import { dndTapLine, dndUrl, refuseDemoDnd, startDnd, untilForNudge } from "../actions/dnd-ask";
 import { guardMacApps } from "../actions/mac-apps";
 import { currentUserId, runAsUser } from "../context";
+import { webUrl } from "../env";
 import { startFocus } from "../focus/session";
 import { HttpError } from "../http";
 import { DEFAULT_TIMEZONE } from "../patterns/context";
@@ -28,9 +33,13 @@ import { parseCallbackData, type TelegramUpdate, telegramApi } from "./telegram"
 const athens = new Zone(DEFAULT_TIMEZONE);
 
 const OPEN: NudgeAction = { id: "open", label: "Open" };
+// Asked, then done (#447): on a drift out of a block, and on the phone before sleep.
+const DND: NudgeAction = { id: "dnd", label: "Do Not Disturb" };
 
 /** The buttons for a nudge about to go out. */
-export function actionsFor(c: Pick<Candidate, "kind" | "recommendation_id" | "mac_app">): NudgeAction[] {
+export function actionsFor(
+  c: Pick<Candidate, "kind" | "recommendation_id" | "mac_app"> & { key?: string },
+): NudgeAction[] {
   switch (c.kind) {
     case "block_soon":
       // Focus now (#397): the action first; the body still opens the block.
@@ -39,9 +48,13 @@ export function actionsFor(c: Pick<Candidate, "kind" | "recommendation_id" | "ma
         { id: "snooze", label: `Snooze ${NUDGE_SNOOZE_MINUTES} min` },
       ];
     case "focus_drift":
+      // Two buttons at most (Chrome shows two): the app that pulled the user away, then quiet.
       return c.mac_app
-        ? [{ id: "mute_app", label: `Mute ${c.mac_app} ${NUDGE_MUTE_MINUTES} min`, app: c.mac_app }, OPEN]
-        : [];
+        ? [{ id: "mute_app", label: `Mute ${c.mac_app} ${NUDGE_MUTE_MINUTES} min`, app: c.mac_app }, DND]
+        : [DND, OPEN];
+    case "wind_down":
+      // Only the phone before sleep: the line before the night asks for nothing.
+      return c.key && nudgeOffersDnd({ kind: c.kind, key: c.key }) ? [DND, OPEN] : [];
     case "recovery_block":
       return c.recommendation_id ? [{ id: "do_it", label: "Do it" }, OPEN] : [];
     default:
@@ -101,9 +114,12 @@ export function driftApp(text: string): string | null {
  * The buttons of a stored nudge, worked out again when one is tapped (they are not stored). The
  * same rule as at send time, with the Mac app read back from the line.
  */
-export const offeredActions = (n: Pick<Nudge, "kind" | "text" | "recommendation_id">): NudgeAction[] =>
+export const offeredActions = (
+  n: Pick<Nudge, "kind" | "text" | "recommendation_id"> & { key?: string },
+): NudgeAction[] =>
   actionsFor({
     kind: n.kind,
+    ...(n.key ? { key: n.key } : {}),
     ...(n.recommendation_id ? { recommendation_id: n.recommendation_id } : {}),
     ...(n.kind === "focus_drift" && driftApp(n.text) ? { mac_app: driftApp(n.text) as string } : {}),
   });
@@ -163,8 +179,7 @@ export async function actOnNudge(
     }
     if (action === "focus") {
       // block_soon:<event id> (a test nudge carries the real key after test:<press>:).
-      const key = nudge.key.replace(/^test:[^:]*:/, "");
-      const eventId = key.startsWith("block_soon:") ? key.slice("block_soon:".length) : "";
+      const eventId = nudgeBlockId(nudge);
       if (!eventId) throw new HttpError("conflict", "No block on this nudge.");
       const s = await startFocus({ event_id: eventId }, "app");
       return {
@@ -174,6 +189,25 @@ export async function actOnNudge(
         url: "/",
         nudge_id: nudge.id,
       };
+    }
+    if (action === "dnd") {
+      refuseDemoDnd();
+      const until = await untilForNudge(nudge, now);
+      if (!until) throw new HttpError("conflict", "That block is over. Nothing to protect now.");
+      // A Mac with the shortcut does it within seconds. Without one nothing is switched on here:
+      // the answer opens the page that hands over to the shortcut on the iPhone, or offers to add it.
+      if (macState(now) !== "ready") {
+        release(nudge.id);
+        return {
+          action,
+          text: dndTapLine(until),
+          undo_until: null,
+          url: dndUrl(nudge.id),
+          nudge_id: nudge.id,
+        };
+      }
+      const on = await startDnd({ until, goal_id: nudge.goal_id, requested_by: "a nudge" });
+      return { action, text: on.text, undo_until: on.until, url: `/dnd?id=${on.id}`, nudge_id: nudge.id };
     }
     // do_it
     if (!nudge.recommendation_id) throw new HttpError("conflict", "Nothing to do on this nudge.");
@@ -211,10 +245,17 @@ export async function handleTelegramCallback(cb: CallbackQuery): Promise<string>
   if (!owner) return "This chat is not connected.";
   let line: string;
   let done = false;
+  // Do Not Disturb with no Mac to do it (#447): one more tap, on the page that hands over to the
+  // shortcut on the iPhone. The buttons stay, since nothing was switched on yet.
+  let handOver: string | null = null;
   try {
     const result = await runAsUser(owner, () => actOnNudge(parsed.nudgeId, parsed.action));
     line = result.text;
     done = true;
+    if (result.action === "dnd" && result.undo_until === null) {
+      done = false;
+      handOver = webUrl().startsWith("https://") ? `${webUrl()}${result.url}` : null;
+    }
   } catch (err) {
     line = err instanceof HttpError ? err.message : "That did not work. Open Michael.";
     if (!(err instanceof HttpError)) console.error("[telegram] nudge action failed", err);
@@ -228,6 +269,10 @@ export async function handleTelegramCallback(cb: CallbackQuery): Promise<string>
       reply_markup: { inline_keyboard: [] },
     });
   }
-  await telegramApi("sendMessage", { chat_id: chat.id, text: line });
+  await telegramApi("sendMessage", {
+    chat_id: chat.id,
+    text: line,
+    ...(handOver ? { reply_markup: { inline_keyboard: [[{ text: "Switch it on", url: handOver }]] } } : {}),
+  });
   return line;
 }

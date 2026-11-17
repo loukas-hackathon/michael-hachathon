@@ -104,6 +104,8 @@ export async function runNudgeChecks(now = Date.now()): Promise<UserCheck[] | nu
 }
 
 let demoCookie: string | null = null;
+/** The tabs besides Today, asked as the router asks on a tap (RSC). */
+const WARM_TABS = ["/timeline", "/goals", "/chat"];
 
 /**
  * Keeps the web app's Today warm (#378): opens the demo week as one anonymous visitor, read only,
@@ -134,7 +136,30 @@ export async function warmWeb(base = webUrl()): Promise<number | null> {
     await res.arrayBuffer();
     // Redirected (the cookie expired): ask for a new visitor next time.
     if (res.status !== 200) demoCookie = null;
-    return Math.round(performance.now() - start);
+    const took = Math.round(performance.now() - start);
+    // Coming back after hours (#502): the first taps are RSC requests for the other tabs, and a
+    // signed out phone opens /login. Keep those paths warm too. Read only, the same visitor.
+    const cookie = demoCookie;
+    await Promise.all(
+      [...WARM_TABS.map((path) => ({ path, rsc: true })), { path: "/login", rsc: false }].map(
+        async ({ path, rsc }) => {
+          try {
+            const r = await fetch(`${base}${path}`, {
+              headers: {
+                "user-agent": "michael-warm",
+                ...(rsc && cookie ? { cookie, rsc: "1" } : {}),
+              },
+              redirect: "manual",
+              signal: AbortSignal.timeout(30_000),
+            });
+            await r.arrayBuffer();
+          } catch {
+            // One slow path never fails the warm-up.
+          }
+        },
+      ),
+    );
+    return took;
   } catch (err) {
     console.warn("[scheduler] web warm failed", err instanceof Error ? err.message : err);
     return null;

@@ -1,7 +1,27 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Recommendation } from "@michael/shared";
-import { bookedAhead, bookedRationale, openRecommendations, previewTitle } from "./recommendations";
+import {
+  bookedAhead,
+  bookedRationale,
+  chatRationale,
+  openRecommendations,
+  previewTitle,
+} from "./recommendations";
+
+test("a plan proposed in chat shows no machine summary and no third person note", () => {
+  assert.equal(
+    chatRationale(
+      "User asked to plan Monday's training. Proposed in chat: new Easy run 2026-11-16 07:00 to 08:00.",
+    ),
+    "",
+  );
+  assert.equal(
+    chatRationale("Your swim fits after the ride. Proposed in chat: new Swim 2026-11-16 19:00 to 20:00."),
+    "Your swim fits after the ride.",
+  );
+  assert.equal(chatRationale("Instagram took 2h 32."), "Instagram took 2h 32.");
+});
 
 // Sunday 15 November 2026, 12:00 in Athens.
 const now = new Date("2026-11-15T10:00:00.000Z");
@@ -108,4 +128,32 @@ test("a folded suggestion for another day says which day (#385)", () => {
     previewTitle({ title: "Move Gym to tomorrow", when: "Moves to tomorrow" }),
     "Move Gym to tomorrow",
   );
+});
+
+test("Do Not Disturb for the busiest hours: doable, kept until its end, after Michael's goal actions", () => {
+  // Inside its window (10:00 to 12:00 UTC, it is 10:00): still open, since it holds until 12:00.
+  const dnd = block({
+    status: "proposed",
+    source: "analysis",
+    title: "Do Not Disturb now, until 14:00.",
+    created_at: "2026-11-15T09:59:00.000Z",
+    action: {
+      kind: "do_not_disturb",
+      payload: {
+        start_at: "2026-11-15T10:00:00.000Z",
+        end_at: "2026-11-15T12:00:00.000Z",
+        window: "busiest_hours",
+      },
+      involves_others: false,
+      undo_until: "2026-11-15T12:00:00.000Z",
+    },
+  });
+  const focus = block({ status: "proposed", source: "analysis", created_at: "2026-11-15T08:00:00.000Z" });
+  // Newer, but the goal's block leads.
+  assert.deepEqual(
+    openRecommendations([dnd, focus], now).map((r) => r.id),
+    [focus.id, dnd.id],
+  );
+  // Past its end it is gone.
+  assert.deepEqual(openRecommendations([dnd], new Date("2026-11-15T12:01:00.000Z")), []);
 });

@@ -25,6 +25,14 @@ export interface CauseDef {
   title: string;
   /** The days the trigger was there, plural, taking the threshold in words ("30 minutes or more"). */
   occasion: (amount: string, t: Terms) => string;
+  /**
+   * The trigger as what a day had, after "days with", taking the threshold in words: "a last meal
+   * at 20:45 or later", "30 minutes or more on your phone after 23:45". Two conditions are joined
+   * with "and" ("days with training after 19:00 and a last meal at 20:45 or later").
+   */
+  with: (amount: string, t: Terms) => string;
+  /** The trigger in a few words for a title that names two conditions; default `title`. */
+  short?: string;
   /** The thing itself, for the plain fix ("Hold your phone after 23:00 under 30 minutes."). */
   noun?: (t: Terms) => string;
   /**
@@ -94,6 +102,7 @@ export const FEATURES: FeatureDef[] = [
       side: "high",
       at: 30,
       title: "Late phone",
+      with: (a, t) => `${a} on your phone after ${t.cutoff}`,
       occasion: (a, t) => `nights with ${a} on your phone after ${t.cutoff}`,
       fix: "phone_down",
     },
@@ -111,6 +120,7 @@ export const FEATURES: FeatureDef[] = [
       side: "high",
       at: 30,
       title: "Late screens",
+      with: (a, t) => `${a} on screens after ${t.cutoff}`,
       occasion: (a, t) => `nights with ${a} on screens after ${t.cutoff}`,
       fix: "phone_down",
     },
@@ -128,6 +138,7 @@ export const FEATURES: FeatureDef[] = [
       side: "high",
       at: 20,
       title: "Phone before sleep",
+      with: (a) => `${a} on your phone in the hour before sleep`,
       occasion: (a) => `nights with ${a} on your phone in the hour before sleep`,
       fix: "phone_down",
     },
@@ -143,6 +154,8 @@ export const FEATURES: FeatureDef[] = [
     cause: {
       side: "high",
       title: "Late bedtime",
+      with: (a) => `a bedtime ${a}`,
+      short: "a late bedtime",
       occasion: (a) => `nights you went to bed ${a}`,
       fix: "phone_down",
     },
@@ -159,6 +172,7 @@ export const FEATURES: FeatureDef[] = [
     cause: {
       side: "high",
       title: "Two late nights in a row",
+      with: () => "a second late night in a row",
       occasion: () => "second late nights in a row",
       avoid: "After one late night, make the next one an early one.",
       fix: "phone_down",
@@ -176,6 +190,8 @@ export const FEATURES: FeatureDef[] = [
     cause: {
       side: "low",
       title: "Low sleep score",
+      with: (a) => `a sleep score ${a}`,
+      short: "a low sleep score",
       occasion: (a) => `nights with a sleep score ${a}`,
       avoid: MORNING_AFTER,
     },
@@ -191,6 +207,7 @@ export const FEATURES: FeatureDef[] = [
     cause: {
       side: "low",
       title: "Short sleep",
+      with: (a) => `${a} of sleep`,
       occasion: (a) => `nights with ${a} of sleep`,
       avoid: MORNING_AFTER,
     },
@@ -226,6 +243,8 @@ export const FEATURES: FeatureDef[] = [
     cause: {
       side: "high",
       title: "Short night",
+      with: () => "a night under 6 hours",
+      short: "a short night",
       occasion: () => "nights under 6 hours",
       avoid: MORNING_AFTER,
     },
@@ -241,6 +260,7 @@ export const FEATURES: FeatureDef[] = [
     cause: {
       side: "low",
       title: "Low heart rate variability",
+      with: (a) => `heart rate variability ${a}`,
       occasion: (a) => `mornings with heart rate variability ${a}`,
       avoid: "On mornings like that, keep the first block short and the day light.",
     },
@@ -265,6 +285,7 @@ export const FEATURES: FeatureDef[] = [
     cause: {
       side: "low",
       title: "Low recovery",
+      with: (a) => `recovery ${a}`,
       occasion: (a) => `mornings with recovery ${a}`,
       avoid: "On mornings like that, keep the first block short and the day light.",
     },
@@ -281,6 +302,7 @@ export const FEATURES: FeatureDef[] = [
     cause: {
       side: "high",
       title: "Phone opened often",
+      with: (a) => `${a} phone opens`,
       occasion: (a) => `days your phone opened ${a} times`,
       avoid: "Phone in another room for the first block.",
     },
@@ -296,6 +318,8 @@ export const FEATURES: FeatureDef[] = [
     cause: {
       side: "high",
       title: "Heavy phone day",
+      with: (a) => `${a} on your phone`,
+      short: "a heavy phone day",
       occasion: (a) => `days with ${a} on your phone`,
       avoid: "Phone in another room for the first block.",
     },
@@ -318,6 +342,8 @@ export const FEATURES: FeatureDef[] = [
     cause: {
       side: "high",
       title: "Training day",
+      with: () => "training",
+      short: "training",
       occasion: () => "days you trained",
       avoid: "Keep the session, and keep the evening after it clear.",
       keep: "Keep training on the plan.",
@@ -336,6 +362,8 @@ export const FEATURES: FeatureDef[] = [
     cause: {
       side: "high",
       title: "Evening training",
+      with: () => "training after 19:00",
+      short: "late training",
       occasion: () => "days you trained after 19:00",
       avoid: "Train before 19:00.",
       keep: "Keep the evening session.",
@@ -353,6 +381,7 @@ export const FEATURES: FeatureDef[] = [
     cause: {
       side: "high",
       title: "Day after training",
+      with: () => "training the day before",
       occasion: () => "days after training",
       avoid: "Plan a lighter day after a session.",
       keep: "Put the hardest work on the day after a session.",
@@ -368,6 +397,7 @@ export const FEATURES: FeatureDef[] = [
     cause: {
       side: "high",
       title: "Heavy meeting day",
+      with: (a) => `${a} of meetings`,
       occasion: (a) => `days with ${a} of meetings`,
       noun: () => "meetings",
       fix: "protect_block",
@@ -383,6 +413,7 @@ export const FEATURES: FeatureDef[] = [
     cause: {
       side: "high",
       title: "Many meetings",
+      with: (a) => `${a} meetings`,
       occasion: (a) => `days with ${a} meetings`,
       noun: () => "meetings",
       fix: "protect_block",
@@ -400,6 +431,7 @@ export const FEATURES: FeatureDef[] = [
     cause: {
       side: "high",
       title: "Three meetings or more",
+      with: () => "3 or more meetings",
       occasion: () => "days with 3 or more meetings",
       avoid: "Cap the day at two meetings when a hard block is on it.",
       fix: "protect_block",
@@ -415,6 +447,8 @@ export const FEATURES: FeatureDef[] = [
     cause: {
       side: "high",
       title: "Late first block",
+      with: (a) => `a first block ${a}`,
+      short: "a late first block",
       occasion: (a) => `days your first block started ${a}`,
       avoid: (t) => `Start the first block before ${t}.`,
       keep: "Keep the later start for the first block.",
@@ -488,6 +522,7 @@ export const FEATURES: FeatureDef[] = [
     cause: {
       side: "high",
       title: "Long AI sessions",
+      with: (a) => `${a} in AI tools`,
       occasion: (a) => `days with ${a} in AI tools`,
       noun: () => "AI tools",
     },
@@ -502,6 +537,8 @@ export const FEATURES: FeatureDef[] = [
     cause: {
       side: "high",
       title: "Late last meal",
+      with: (a) => `a last meal ${a}`,
+      short: "a late dinner",
       occasion: (a) => `days your last meal was ${a}`,
       avoid: (t) => `Last meal before ${t}.`,
       keep: "Keep the later last meal.",
@@ -518,6 +555,7 @@ export const FEATURES: FeatureDef[] = [
       side: "high",
       at: 15 * 60,
       title: "Late coffee",
+      with: (a) => `coffee ${a}`,
       occasion: (a) => `days with coffee ${a}`,
       avoid: "Last coffee before 15:00.",
     },

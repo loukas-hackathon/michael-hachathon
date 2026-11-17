@@ -34,13 +34,48 @@ export function formatMonth(iso: string | Date) {
 const athensDay = new Intl.DateTimeFormat("en-CA", { timeZone: TZ });
 const shortDateFmt = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: TZ });
 
+const shortWeekdayFmt = new Intl.DateTimeFormat("en-GB", { weekday: "short", timeZone: TZ });
+
+/** Whole Athens calendar days from `d` to `now`: 0 today, 1 yesterday, negative in the future. */
+function athensDaysAgo(d: Date, now: Date) {
+  return Math.round((Date.parse(athensDay.format(now)) - Date.parse(athensDay.format(d))) / 86_400_000);
+}
+
+/** True when both moments fall on the same Athens calendar day. */
+export function sameAthensDay(a: string | Date, b: string | Date) {
+  return athensDay.format(new Date(a)) === athensDay.format(new Date(b));
+}
+
+/**
+ * A chat line's time: "12:48" today, "Yesterday 21:44", "Sat 21:44" within the week, then
+ * "9 Nov 21:44". A bare clock on yesterday's line read as today's (#483).
+ */
+export function formatStamp(iso: string | Date, now: Date = new Date()) {
+  const d = typeof iso === "string" ? new Date(iso) : iso;
+  const days = athensDaysAgo(d, now);
+  if (days <= 0) return formatTime(d);
+  if (days === 1) return `Yesterday ${formatTime(d)}`;
+  if (days < 7) return `${shortWeekdayFmt.format(d)} ${formatTime(d)}`;
+  return `${shortDateFmt.format(d)} ${formatTime(d)}`;
+}
+
+/** A quiet day separator in a conversation: "Today", "Yesterday", "Saturday", then "9 Nov". */
+export function formatDayLabel(iso: string | Date, now: Date = new Date()) {
+  const d = typeof iso === "string" ? new Date(iso) : iso;
+  const days = athensDaysAgo(d, now);
+  if (days <= 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 7) return formatWeekday(d);
+  return shortDateFmt.format(d);
+}
+
 /**
  * When something last happened, as Messages lists it: "14:02" today, "Yesterday", the weekday
  * within the week, then "9 Nov".
  */
 export function formatWhen(iso: string | Date, now: Date = new Date()) {
   const d = typeof iso === "string" ? new Date(iso) : iso;
-  const days = Math.round((Date.parse(athensDay.format(now)) - Date.parse(athensDay.format(d))) / 86_400_000);
+  const days = athensDaysAgo(d, now);
   if (days <= 0) return formatTime(d);
   if (days === 1) return "Yesterday";
   if (days < 7) return formatWeekday(d);

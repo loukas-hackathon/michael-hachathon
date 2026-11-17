@@ -2,12 +2,14 @@ import { goalKind } from "@michael/shared";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
+import { AskClaude } from "@/components/claude/ask-claude";
 import { CountUp } from "@/components/count-up";
 import { TodayFocusNow } from "@/components/focus/today-focus";
 import { TodayLearnt } from "@/components/learnt/learnt-card";
 import { LiveRefresh } from "@/components/live-refresh";
 import { LogTimeForm } from "@/components/log-time";
 import { Tween } from "@/components/motion-ui";
+import { TodayNumbers } from "@/components/numbers/numbers-card";
 import { HowICount, ScoreLearning } from "@/components/score/how-i-count";
 import { ScreenHeader } from "@/components/screen";
 import { MoreFromMichaelSkeleton } from "@/components/skeletons";
@@ -18,10 +20,10 @@ import { TodayChecklist } from "@/components/today/checklist";
 import { DemoWeekLine } from "@/components/today/demo-week-line";
 import { Fold, FoldLink, MoreFromMichael } from "@/components/today/fold";
 import { GetStarted } from "@/components/today/get-started";
-import { KeepWeekStrip, keepLine, streakLine } from "@/components/today/keep-week";
+import { KeepWeekStrip, keepLine } from "@/components/today/keep-week";
 import { LastWeekLine } from "@/components/today/last-week-line";
 import { MeetingRecapCard } from "@/components/today/meeting-recap";
-import { MichaelCard } from "@/components/today/michael-card";
+import { MichaelCard, PhoneFocusLine } from "@/components/today/michael-card";
 import { MomentCard } from "@/components/today/moment-card";
 import { NextBlocks } from "@/components/today/next-blocks";
 import { RecommendationsPanel, todaySuggestions } from "@/components/today/recommendations";
@@ -34,6 +36,7 @@ import { WeekGlance } from "@/components/today/week-glance";
 import {
   getChecklist,
   getGoals,
+  getGoalsWeek,
   getKeepWeek,
   getLastLostWeek,
   getLostWeek,
@@ -43,11 +46,23 @@ import {
 } from "@/lib/api";
 import type { ChecklistDay } from "@/lib/checklist";
 import { aheadOf, type DayView, nowIndex, tape, totals } from "@/lib/day";
+import { getSetup } from "@/lib/first-run";
 import { formatDay, formatTime, hm, spokenDuration } from "@/lib/format";
 import { verdict } from "@/lib/gamification";
+import { rank } from "@/lib/goals-view";
 import type { LostWeek } from "@/lib/lost-week";
 import { momentKindFor } from "@/lib/moments";
 import { ritualPreview, ritualShows } from "@/lib/ritual";
+import {
+  askClaudeLine,
+  furthestBehind,
+  logTimePreview,
+  noBlocksLine,
+  noBriefLine,
+  streakLine,
+  weekdayIndex,
+  weekRowPreview,
+} from "@/lib/today-lines";
 import { preloadTodaySections } from "@/lib/today-preload";
 import { isSundayIn } from "@/lib/week";
 
@@ -60,6 +75,10 @@ function tapeLabel(t: ReturnType<typeof totals>) {
   if (t.ahead > 0) parts.push(`${spokenDuration(t.ahead)} still ahead`);
   return `Today's tape: ${parts.join(", ")}`;
 }
+
+/** Typed into Claude for the person by the Ask Claude card. (Brand) */
+const TODAY_PROMPT =
+  "Using my Michael connector, look at my week: my Optimisation score, my phone and my numbers (sleep, recovery, phone late at night and time lost in goal blocks). Explain them in plain words and tell me the one thing to change first.";
 
 const TITLE: Record<DayView["moment"], string> = { morning: "Morning", today: "Today", evening: "Evening" };
 
@@ -91,11 +110,17 @@ export default async function TodayPage({
     getKeepWeek(demo),
     getLastLostWeek(demo),
     demo === "sample" ? null : getRitual(ritualPreview(preview)),
+    // Each goal against its budget, for the lines that name the goal furthest behind.
+    getGoalsWeek(demo).catch(() => null),
   ]);
   loads.catch(() => {});
   preloadTodaySections(demo);
   if (await needsOnboarding()) redirect("/onboarding");
-  const [day, checklist, goals, lostWeek, keepWeek, lastWeek, ritual] = await loads;
+  const [day, checklist, goals, lostWeek, keepWeek, lastWeek, ritual, goalsWeek] = await loads;
+  // The person's own week for the lines below: the goal furthest behind, and the day of the week.
+  const ranked = goalsWeek ? rank(goalsWeek) : [];
+  const behind = furthestBehind(ranked);
+  const weekday = weekdayIndex(day.now);
   // The daily ritual (#318): while its card shows, the outcomes live in it, not in the list.
   const ritualCard = ritualShows(ritual) ? <RitualCard ritual={ritual} /> : null;
   const lists = checklistsFor(checklist, goals).filter((l) => !ritualCard || l.goalId !== ritual?.goal_id);
@@ -114,6 +139,10 @@ export default async function TodayPage({
   const { primary } = await suggestions;
   // A new user's empty day keeps the reading column on a laptop: one action, nothing to spread out.
   const empty = day.blocks.length === 0 && day.week.scorePct == null;
+  // A brand new account (#478): goals or the calendar still to do. Get started is the whole screen,
+  // with its one action; the ritual, focus, suggestions and study lines wait for the first real day.
+  const setup = empty && !day.sample ? await getSetup(demo) : null;
+  const firstDay = setup?.steps.some((s) => (s.key === "goals" || s.key === "calendar") && !s.done) ?? false;
 
   return (
     <main className={empty ? "screen" : "screen m-dash"}>
@@ -129,7 +158,18 @@ export default async function TodayPage({
       <DemoWeekLine />
       <RecommendationsPanel slot="booked" />
 
-      {empty ? (
+      {empty && firstDay ? (
+        <>
+          <GetStarted demo={demo} />
+          <TodayEmpty demo={demo} />
+          <MeetingRecapCard />
+          {/* The ritual only when asked for by link (?ritual=, the stage and its test). */}
+          {preview ? ritualCard : null}
+          {lists.map((l) => (
+            <TodayChecklist key={l.goalId} {...l} />
+          ))}
+        </>
+      ) : empty ? (
         <>
           <GetStarted demo={demo} />
           {day.sample ? null : <MeetingRecapCard />}
@@ -148,6 +188,9 @@ export default async function TodayPage({
           <Suspense fallback={null}>
             <TodayLearnt demo={demo} />
           </Suspense>
+          <Suspense fallback={null}>
+            <TodayNumbers demo={demo} />
+          </Suspense>
           {/* No moment card or brief on an empty day: both would only say there is nothing yet, which
               Get started already says with one action. */}
           <Suspense fallback={null}>
@@ -155,7 +198,7 @@ export default async function TodayPage({
               <WatchLine demo={demo} />
               <RecommendationsPanel slot="rest" />
               {loggable.length > 0 && !day.sample ? (
-                <Fold title="Log time" preview="Did something for a goal without a block? Tell me how long.">
+                <Fold title="Log time" preview={logTimePreview(loggable, behind, weekday)}>
                   <LogTimeForm goals={loggable} />
                 </Fold>
               ) : null}
@@ -207,9 +250,7 @@ export default async function TodayPage({
                   </h2>
                 </HowICount>
               ) : (
-                <p className="text-title3 font-semibold">
-                  No goal blocks today. It neither keeps nor breaks the run.
-                </p>
+                <p className="text-title3 font-semibold">{noBlocksLine(behind)}</p>
               )}
 
               {keepWeek ? (
@@ -238,8 +279,24 @@ export default async function TodayPage({
               ) : null}
             </section>
 
+            {/* Michael's phone finding second, straight under the score: the time the phone took and
+                what it cost the week's focus. */}
+            {day.lead ? (
+              <div className="max-xl:order-1 [&>article]:mt-5" data-live-key="lead" data-live-pop="">
+                <MichaelCard
+                  lead={day.lead}
+                  primary={!primary}
+                  cost={
+                    <Suspense fallback={null}>
+                      <PhoneFocusLine demo={demo} />
+                    </Suspense>
+                  }
+                />
+              </div>
+            ) : null}
+
             {lostWeek && lostWeek.total > 0 ? (
-              <LostWeekLine week={lostWeek} demo={demo} className="max-xl:order-3" />
+              <LostWeekLine week={lostWeek} demo={demo} className="max-xl:order-3 xl:mt-3" />
             ) : null}
             {lastWeek ? (
               <div className="max-xl:order-4">
@@ -321,7 +378,7 @@ export default async function TodayPage({
             />
 
             {day.sample ? null : (
-              <div className="max-xl:order-8">
+              <div className="max-xl:order-9">
                 <Suspense fallback={null}>
                   <CalendarCard demo={demo} emptyDay={false} />
                 </Suspense>
@@ -329,21 +386,19 @@ export default async function TodayPage({
             )}
 
             {lists.length > 0 ? (
-              <div className="max-xl:order-9">
+              <div className="max-xl:order-10">
                 {lists.map((l) => (
                   <TodayChecklist key={l.goalId} {...l} />
                 ))}
               </div>
             ) : null}
-            {day.lead || day.nudge ? (
+            {day.nudge ? (
               <section
-                aria-label="What I did"
-                // A flex item keeps its first child's margin inside; the card's own mt-5 would add to mt-6.
-                className="mt-6 max-xl:order-10 [&>article:first-child]:mt-0"
+                aria-label="Latest nudge"
+                className="mt-4 max-xl:order-11 [&>div:first-child]:mt-0"
                 data-live-key="did"
                 data-live-pop=""
               >
-                {day.lead ? <MichaelCard lead={day.lead} primary={!primary} /> : null}
                 {day.nudge ? (
                   // Polite: a new nudge arriving with a live refresh is read out once, without interrupting.
                   <div
@@ -368,7 +423,7 @@ export default async function TodayPage({
 
           <div className={COLUMN}>
             {/* What Michael has learnt (#432): after the next move on a phone, top right on a laptop. */}
-            <div className="max-xl:order-7 xl:[&>*]:mt-3">
+            <div className="max-xl:order-8 xl:[&>*]:mt-3">
               <Suspense fallback={null}>
                 <TodayLearnt demo={demo} />
               </Suspense>
@@ -384,7 +439,7 @@ export default async function TodayPage({
               </div>
             ) : null}
 
-            <div className="max-xl:order-11 xl:[&:first-child>*]:mt-3">
+            <div className="max-xl:order-12 xl:[&:first-child>*]:mt-3">
               <Suspense fallback={<MoreFromMichaelSkeleton />}>
                 <MoreFromMichael wideOpen>
                   {momentKind ? <MomentCard kind={momentKind} sample={day.sample} /> : null}
@@ -392,18 +447,18 @@ export default async function TodayPage({
                     <FoldLink
                       title="Your week"
                       href="/week"
-                      preview="The week so far with the maths, and next week's first move."
+                      preview={weekRowPreview(ranked, weekday) ?? undefined}
                     />
                   )}
                   <WatchLine demo={demo} />
                   {day.sample && day.travelPlan ? <TravelCard plan={day.travelPlan} /> : null}
-                  <BriefCard sample={day.sample} />
+                  <BriefCard
+                    sample={day.sample}
+                    empty={noBriefLine({ lost: lostWeek, blocksToday: day.blocks.length, top: behind })}
+                  />
                   <RecommendationsPanel slot="rest" />
                   {loggable.length > 0 && !day.sample ? (
-                    <Fold
-                      title="Log time"
-                      preview="Did something for a goal without a block? Tell me how long."
-                    >
+                    <Fold title="Log time" preview={logTimePreview(loggable, behind, weekday)}>
                       <LogTimeForm goals={loggable} />
                     </Fold>
                   ) : null}
@@ -415,8 +470,27 @@ export default async function TodayPage({
               <WeekGlance demo={demo} className="mt-8 hidden xl:block" />
             </Suspense>
           </div>
+
+          {/* Your numbers: each figure against the usual, with one fix. On a phone right after the
+              next move; on a laptop a band of tiles under the three columns. */}
+          <div className="max-xl:order-7 xl:col-span-3">
+            <Suspense fallback={null}>
+              <TodayNumbers demo={demo} />
+            </Suspense>
+          </div>
         </div>
       )}
+
+      {/* A small card a few seconds in: ask Claude to explain the numbers, or connect it first. */}
+      <Suspense fallback={null}>
+        <AskClaude
+          place="today"
+          prompt={TODAY_PROMPT}
+          demo={demo}
+          ritual={preview}
+          line={(connected) => askClaudeLine({ connected, lost: lostWeek, weekPct: day.week.scorePct })}
+        />
+      </Suspense>
 
       {day.sample ? (
         <p className="mt-8 text-footnote text-label-2">
@@ -450,7 +524,7 @@ function LostWeekLine({ week, demo, className = "" }: { week: LostWeek; demo?: s
   return (
     <Link
       href={`/timeline${demo === "sample" ? "?demo=sample" : ""}`}
-      className={`press mt-1 flex items-start justify-between gap-3 text-subhead text-label-2 ${className}`}
+      className={`hit press mt-1 flex items-start justify-between gap-3 text-subhead text-label-2 ${className}`}
     >
       <span>
         <b className="font-semibold text-label tnum">{hm(week.total)}</b> lost from your goal blocks this

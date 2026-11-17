@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import type { ConnectionStatus } from "@/lib/connections-status";
 import { ConnectionIcon } from "./connection-icon";
+import { LiveStatusLine, WaitOnTap } from "./connection-live-status";
 
 // The frame of every connection's setup page: back to You, the name, what it gives Michael, and
 // its real status in one line. The page's own steps and switches go below.
@@ -44,15 +45,10 @@ export function ConnectionPage({
         <h1 className="text-large-title font-bold tracking-[0.01em]">{row.name}</h1>
       </div>
       <p className="mt-1 text-subhead text-label-2">{row.what}</p>
-      <p
-        className={`mt-4 rounded-group bg-fill px-4 py-3 text-subhead tnum ${
-          row.state === "attention" ? "text-danger" : ""
-        }`}
-      >
-        {row.line}
-      </p>
+      {/* Live (#466): flips to Connected the moment it lands, and says when it is waiting. */}
+      <LiveStatusLine row={row} />
       {/* Coming soon (#295): no steps, no keys, nothing that could fail on stage. */}
-      {row.state === "soon" ? null : <div className="mt-6 flex flex-col gap-6">{children}</div>}
+      {row.state === "soon" ? null : <WaitOnTap row={row}>{children}</WaitOnTap>}
     </main>
   );
 }

@@ -739,3 +739,516 @@ test("go_off_the_record turns it on; no tool turns it off", () =>
       assert.doesNotMatch(props, /off_the_record/, t.name);
     }
   }));
+
+test('"do it" on a Today card: accept_recommendation carries out the offer, and undo takes it back', () =>
+  asNewUser(async () => {
+    const start = Date.now() + 6 * HOUR;
+    const offer = await store.createRecommendation({
+      goal_id: null,
+      title: "An hour for the pitch",
+      rationale: "Your first outcome has no time yet.",
+      action: {
+        kind: "create_focus_block",
+        payload: { start_at: iso(start), end_at: iso(start + HOUR), title: "Pitch" },
+        involves_others: false,
+        undo_until: iso(start),
+      },
+      source: "analysis",
+    });
+    // The offer is in the context with its id, so "yes, book that" can name it.
+    const { readChatContextForTests } = await import("./chat");
+    assert.match(
+      await readChatContextForTests(),
+      new RegExp(`An hour for the pitch \\{recommendation_id ${offer.id}\\}`),
+    );
+
+    const steps: ChatStep[] = [];
+    const done = await withClaude(
+      [{ tool: { name: "accept_recommendation", input: { recommendation_id: offer.id } } }],
+      () =>
+        askMichael(turns("yes, book that"), "context", {
+          onText: async () => {},
+          onStep: async (s) => {
+            steps.push(s);
+          },
+        }),
+    );
+    assert.equal(steps[0]?.label, "Doing what I offered");
+    assert.equal(done.actions[0]?.status, "done");
+    assert.equal(done.answer, `Done: An hour for the pitch. Undo until ${clock(start)}.`);
+    const range = { from: iso(start - HOUR), to: iso(start + 2 * HOUR), source: ["agent" as const] };
+    assert.equal((await store.listEvents(range)).length, 1);
+
+    await withClaude(
+      [{ tool: { name: "undo_action", input: { recommendation_id: offer.id } } }, { text: "Taken back." }],
+      () => askMichael(turns("undo"), "context"),
+    );
+    assert.equal((await store.listEvents(range)).length, 0);
+  }));
+
+test("accept_recommendation refuses an offer that involves other people", () =>
+  asNewUser(async () => {
+    const start = Date.now() + 6 * HOUR;
+    const offer = await store.createRecommendation({
+      goal_id: null,
+      title: "Ask the team to start later",
+      rationale: "Advice only.",
+      action: {
+        kind: "create_focus_block",
+        payload: { start_at: iso(start), end_at: iso(start + HOUR), title: "Team" },
+        involves_others: true,
+        undo_until: iso(start),
+      },
+      source: "analysis",
+    });
+    await withClaude(
+      [
+        { tool: { name: "accept_recommendation", input: { recommendation_id: offer.id } } },
+        { text: "That one has other people in it." },
+      ],
+      async (requests) => {
+        const { actions } = await askMichael(turns("do it"), "context");
+        assert.deepEqual(actions, []);
+        assert.match(String(toolResults(requests[1])[0]?.content), /conflict.*other people/);
+      },
+    );
+    assert.equal((await store.getRecommendation(offer.id))?.status, "proposed");
+  }));
+
+// #483: on Loukas' account Michael said he had added a Gym block when no tool had saved it in that
+// answer, and read Saturday's lines on Sunday as if said today.
+
+test("#483 a claimed booking with no tool call becomes one honest line and an offer", () =>
+  asNewUser(() =>
+    withClaude(
+      [
+        {
+          text: "Yes, I can write to your calendar. I've added Gym for Sunday 10:00 to 11:00. Undo until 10:00.",
+        },
+      ],
+      async () => {
+        const { answer, actions } = await askMichael(
+          turns("Yes do you have access to write as well?"),
+          "context",
+        );
+        assert.deepEqual(actions, []);
+        assert.doesNotMatch(answer, /I've added|Undo until/);
+        assert.match(
+          answer,
+          /^Yes, I can write to your calendar\. I haven't added it yet\. Shall I do it now\?$/,
+        );
+      },
+    ),
+  ));
+
+test("#483 a tool error the model ignores is said as an error, and the block it tried is offered", () =>
+  asNewUser(() => {
+    const start = Date.now() - HOUR;
+    return withClaude(
+      [
+        {
+          tool: {
+            name: "create_focus_block",
+            input: { title: "Gym", start_at: iso(start), end_at: iso(start + HOUR) },
+          },
+        },
+        { text: `Added Gym, ${clock(start)} to ${clock(start + HOUR)}. Undo until ${clock(start)}.` },
+      ],
+      async () => {
+        const { answer, actions } = await askMichael(turns("Add gym for the last hour"), "context");
+        assert.deepEqual(actions, []);
+        assert.equal(answer, "That didn't go through: That time has already started.");
+      },
+    );
+  }));
+
+test("#483 a booking that really happened keeps its words", () =>
+  asNewUser(() => {
+    const start = Date.now() + 3 * HOUR;
+    return withClaude(
+      [
+        {
+          tool: {
+            name: "create_focus_block",
+            input: { title: "Gym", start_at: iso(start), end_at: iso(start + HOUR) },
+          },
+        },
+        { text: `I've added Gym, ${clock(start)} to ${clock(start + HOUR)}.` },
+      ],
+      async () => {
+        const { answer } = await askMichael(turns("Add gym"), "context");
+        assert.equal(
+          answer,
+          `I've added Gym, ${clock(start)} to ${clock(start + HOUR)}. Undo until ${clock(start)}.`,
+        );
+      },
+    );
+  }));
+
+test("#483 an old claim replayed from the thread is not repeated as done; the thread's actions are in the prompt", () =>
+  // The account behind the dev key, so POST /v1/chat reads the same thread.
+  runAsUser(env.DEMO_USER_ID, async () => {
+    await withoutInstructions(store);
+    const start = Date.now() + 5 * HOUR;
+    // Saturday: Gym booked, then undone from the app.
+    const booked = await withClaude(
+      [
+        {
+          tool: {
+            name: "create_focus_block",
+            input: { title: "Gym", start_at: iso(start), end_at: iso(start + HOUR) },
+          },
+        },
+      ],
+      () => askMichael(turns("Add gym"), "context"),
+    );
+    const rec = booked.actions[0];
+    assert.ok(rec);
+    const { undoRecommendation } = await import("../actions/calendar");
+    await undoRecommendation(rec.id);
+    const thread = await store.createChatThread();
+    await store.addChatMessage(thread.id, "user", "Yes please");
+    await store.addChatMessage(
+      thread.id,
+      "assistant",
+      `I've added Gym, ${clock(start)} to ${clock(start + HOUR)}.`,
+      [rec.id],
+    );
+
+    await withClaude(
+      [
+        {
+          text: `Hello. It's there now: Gym, ${clock(start)} to ${clock(start + HOUR)}. Undo until ${clock(start)}.`,
+        },
+      ],
+      async (requests) => {
+        const res = await app.request("/v1/chat", {
+          method: "POST",
+          headers: auth,
+          body: JSON.stringify({ message: "Hello", thread_id: thread.id }),
+        });
+        assert.equal(res.status, 201);
+        const body = ChatResponse.parse(await res.json());
+        assert.equal(body.reply.content, "Hello. I haven't added it yet. Shall I do it now?");
+        const system = JSON.stringify(requests[0]?.system);
+        assert.match(system, /What I did earlier in this conversation, as it stands now:/);
+        assert.match(system, /Gym, \d\d:\d\d to \d\d:\d\d \([A-Za-z]+ \d+ [A-Za-z]+\): undone at /);
+        assert.match(system, /Now: [A-Za-z]+ \d+ [A-Za-z]+, \d\d:\d\d \(Europe\/Athens\)/);
+      },
+    );
+  }));
+
+test("#483 a block booked but gone from the calendar since reads as removed, never as never added", () =>
+  asNewUser(async () => {
+    const start = Date.now() + 5 * HOUR;
+    const booked = await withClaude(
+      [
+        {
+          tool: {
+            name: "create_focus_block",
+            input: { title: "Gym", start_at: iso(start), end_at: iso(start + HOUR) },
+          },
+        },
+      ],
+      () => askMichael(turns("Add gym"), "context"),
+    );
+    const rec = booked.actions[0];
+    assert.ok(rec);
+    const { threadActionLines } = await import("./chat");
+    assert.match((await threadActionLines([rec]))[0] ?? "", /: done at .*; undo until \d\d:\d\d$/);
+    const [block] = await store.listEvents({
+      from: iso(start - 1000),
+      to: iso(start + HOUR),
+      type: ["calendar_event"],
+    });
+    assert.ok(block);
+    await store.deleteEvents([block.id]);
+    assert.match(
+      (await threadActionLines([rec]))[0] ?? "",
+      /the block is no longer on the calendar \(removed since/,
+    );
+  }));
+
+test("#483 lines from an earlier day carry their day, so Saturday's tomorrow is not read on Sunday", async () => {
+  const { toTurns } = await import("./chat");
+  // Sunday 15 November, 12:48 in Athens.
+  const now = Date.parse("2026-11-15T12:48:00+02:00");
+  const line = (role: "user" | "assistant", content: string, at: string) => ({
+    id: randomUUID(),
+    role,
+    content,
+    created_at: at,
+    action_ids: [],
+  });
+  const t = toTurns(
+    [
+      line("user", "How is my day going?", "2026-11-14T20:17:00+02:00"),
+      line("assistant", "Nothing today. Gym tomorrow at 10:00?", "2026-11-14T20:17:01+02:00"),
+      line("user", "What time did I open Instagram today", "2026-11-15T12:40:00+02:00"),
+    ],
+    now,
+  );
+  assert.equal(t[0]?.content, "[Saturday 14 November, 20:17] How is my day going?");
+  // Michael's own lines are left as he wrote them; the user's line before each one dates the pair.
+  assert.equal(t[1]?.content, "Nothing today. Gym tomorrow at 10:00?");
+  assert.equal(t[2]?.content, "What time did I open Instagram today");
+});
+
+test("#483 the cached context reads again after a calendar sync and after midnight in Athens", () =>
+  asNewUser(async () => {
+    const { contextVersion } = await import("./chat");
+    const { currentUserId } = await import("../context");
+    const user = currentUserId();
+    const before = contextVersion(user, Date.parse("2026-11-14T23:59:00+02:00"));
+    // A new day in Athens, with no write: the version moves.
+    assert.notEqual(contextVersion(user, Date.parse("2026-11-15T00:01:00+02:00")), before);
+    // A calendar sync writes through the store: the version moves too.
+    const same = contextVersion(user, Date.parse("2026-11-14T23:59:00+02:00"));
+    assert.equal(same, before);
+    await store.upsertEvents([
+      {
+        source: "google_calendar",
+        type: "calendar_event",
+        start_at: iso(Date.now() + HOUR),
+        end_at: iso(Date.now() + 2 * HOUR),
+        title: "Boatspace",
+        data: {},
+        external_id: `g-${randomUUID()}`,
+      },
+    ]);
+    assert.notEqual(contextVersion(user, Date.parse("2026-11-14T23:59:00+02:00")), before);
+  }));
+
+// #483 follow up: Michael offered to close Instagram on a Mac that was not connected, and called a
+// connected iPhone (shortcut test received, no opens yet) not connected.
+
+/** The mock day comes with Mac and iPhone data: these tests start from a person with neither. */
+async function withoutMac() {
+  const mac = await store.listEvents({
+    from: iso(Date.now() - 30 * 24 * HOUR),
+    to: iso(Date.now() + 24 * HOUR),
+    source: ["macos_usage", "activitywatch", "iphone_usage", "ios_shortcuts"],
+  });
+  await store.deleteEvents(mac.map((e) => e.id));
+}
+
+const macGuard = (start: number) => ({
+  name: "block_mac_app",
+  input: { apps: ["Instagram"], start_at: iso(start), end_at: iso(start + 3 * HOUR) },
+});
+
+test("#483 block_mac_app refuses cleanly with no live Mac, and nothing is recorded as done", () =>
+  asNewUser(async () => {
+    await withoutMac();
+    const start = Date.now() + HOUR;
+    const doneBefore = (await store.listRecommendations({ status: "done" })).length;
+    return withClaude(
+      [{ tool: macGuard(start) }, { text: "Your Mac isn't connected, so I can't close apps on it." }],
+      async (requests) => {
+        const { answer, actions } = await askMichael(turns("Close Instagram during my audit"), "context");
+        assert.deepEqual(actions, []);
+        const [result] = toolResults(requests[1]);
+        assert.equal(result?.is_error, true);
+        assert.match(String(result?.content), /Mac is not connected/);
+        assert.equal(answer, "Your Mac isn't connected, so I can't close apps on it.");
+        assert.equal((await store.listRecommendations({ status: "done" })).length, doneBefore);
+      },
+    );
+  }));
+
+test("#483 block_mac_app works once the Mac sent data in the last 48 hours", () =>
+  asNewUser(async () => {
+    await store.insertEvents([
+      {
+        source: "macos_usage",
+        type: "app_usage",
+        start_at: iso(Date.now() - HOUR),
+        end_at: iso(Date.now() - HOUR + 60_000),
+        title: "Xcode",
+        data: {},
+        external_id: `mac-${randomUUID()}`,
+      },
+    ]);
+    const start = Date.now() + HOUR;
+    await withClaude(
+      [{ tool: macGuard(start) }, { text: "Instagram is closed on your Mac." }],
+      async (requests) => {
+        const { actions } = await askMichael(turns("Close Instagram during my audit"), "context");
+        assert.equal(actions[0]?.status, "done");
+        assert.equal(toolResults(requests[1])[0]?.is_error, undefined);
+      },
+    );
+  }));
+
+test("#483 the connections in the context: Mac not connected, iPhone connected with the test received", () =>
+  asNewUser(async () => {
+    const { connectionsNow } = await import("../connections-state");
+    const { createPersonalToken, userForPersonalToken } = await import("../tokens");
+    const { SETUP_KEY_NAMES } = await import("@michael/shared");
+    await withoutMac();
+    const before = await connectionsNow();
+    assert.equal(before.macLive, false);
+    assert.ok(before.lines.some((l) => l.startsWith("- iPhone: not connected")));
+    assert.ok(before.lines.some((l) => /^- Mac: not connected.*never offer it/.test(l)));
+    // The shortcut's hand run (#476): the key is used, no opens stored yet.
+    const { secret } = await createPersonalToken(SETUP_KEY_NAMES.iphone);
+    await userForPersonalToken(secret);
+    await new Promise((r) => setImmediate(r));
+    const after = await connectionsNow();
+    const iphone = after.lines.find((l) => l.startsWith("- iPhone:")) ?? "";
+    assert.match(iphone, /^- iPhone: connected \(shortcut test received \d\d:\d\d\), no app opens yet\./);
+    assert.match(iphone, /Your iPhone is connected\. I see opens once the App automation runs\./);
+  }));
+
+test("#483 every chat turn tells Michael the connections, read fresh, and never to promise a button", () =>
+  runAsUser(env.DEMO_USER_ID, () =>
+    withClaude([{ text: "I can't see that yet." }], async (requests) => {
+      const res = await app.request("/v1/chat", {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify({ message: "Did Instagram open?", thread_id: "new" }),
+      });
+      assert.equal(res.status, 201);
+      const system = JSON.stringify(requests[0]?.system);
+      assert.match(system, /Connections right now:\\n- Google Calendar: /);
+      assert.match(system, /- Mac: /);
+      assert.match(system, /- iPhone: /);
+      assert.match(system, /otherwise never mention a button below/);
+    }),
+  ));
+
+test("Focus or Do Not Disturb never turns off the record on, even when the model calls the tool", () =>
+  asNewUser(async () => {
+    for (const ask of ["focus", "turn on do not disturb until 16:00", "I need quiet, leave me alone"]) {
+      await withClaude([{ tool: { name: "go_off_the_record", input: {} } }], async (requests) => {
+        await askMichael(turns(ask), "context");
+        assert.equal((await store.privacyRules()).offTheRecord, false, ask);
+        const result = toolResults(requests[1])[0];
+        assert.equal(result?.is_error, true, ask);
+        assert.match(String(result?.content), /needs the user's own words/);
+      });
+    }
+    const tool = CHAT_TOOLS.find((t) => t.name === "go_off_the_record");
+    assert.match(tool?.description ?? "", /Never for Focus, Do Not Disturb/);
+  }));
+
+test("off the record: the connections say so first, and a question about data gets that line", () =>
+  runAsUser(env.DEMO_USER_ID, async () => {
+    const { connectionsNow } = await import("../connections-state");
+    await store.setOffTheRecord(true);
+    try {
+      const since = clock(Date.parse((await store.privacyRules()).since ?? ""));
+      const line = `You're off the record since ${since}, so I'm not collecting anything. Turn it off on You > Privacy and I'll see your opens.`;
+      const now = await connectionsNow();
+      assert.equal(now.offTheRecord, line);
+      assert.match(now.lines[0] ?? "", /^- OFF THE RECORD since \d\d:\d\d: nothing is collected/);
+      assert.ok(now.lines[0]?.includes(line));
+      assert.ok(!now.lines.some((l) => /once the App automation runs/.test(l)));
+      // The production answer (15 Nov): a promise of opens later, with no word of off the record.
+      await withClaude(
+        [{ text: "Not yet. Your iPhone is connected. I'll see them once the App automation runs." }],
+        async (requests) => {
+          const res = await app.request("/v1/chat", {
+            method: "POST",
+            headers: auth,
+            body: JSON.stringify({ message: "Can you see that I opened Instagram", thread_id: "new" }),
+          });
+          assert.equal(res.status, 201);
+          assert.equal(ChatResponse.parse(await res.json()).reply.content, line);
+          assert.match(JSON.stringify(requests[0]?.system), /Connections right now:\\n- OFF THE RECORD/);
+        },
+      );
+      // An answer that already says so keeps its own words.
+      const own = "You're off the record, so nothing comes in.";
+      await withClaude([{ text: own }], async () => {
+        const res = await app.request("/v1/chat", {
+          method: "POST",
+          headers: auth,
+          body: JSON.stringify({ message: "Can you check again", thread_id: "new" }),
+        });
+        assert.equal(ChatResponse.parse(await res.json()).reply.content, own);
+      });
+    } finally {
+      await store.setOffTheRecord(false);
+    }
+  }));
+
+// 15 Nov: the iPhone row on You said Connected while Michael answered "Your iPhone and Mac aren't
+// connected". Both now read deviceState (@michael/shared), and the answer follows it.
+const PRODUCTION_ANSWER =
+  "I can't tell. Your iPhone and Mac aren't connected, so I can't see which apps you open. Right now I only have your Google Calendar.";
+
+async function usedIphoneKey() {
+  const { createPersonalToken, userForPersonalToken } = await import("../tokens");
+  const { SETUP_KEY_NAMES } = await import("@michael/shared");
+  const { secret } = await createPersonalToken(SETUP_KEY_NAMES.iphone);
+  await userForPersonalToken(secret);
+  await new Promise((r) => setImmediate(r));
+}
+
+test("15 Nov a used iPhone key and an unnamed open: Michael says when an app opened, never not connected", () =>
+  asNewUser(async () => {
+    const { connectionsNow } = await import("../connections-state");
+    const { deviceConnected, deviceState } = await import("@michael/shared");
+    await withoutMac();
+    await usedIphoneKey();
+    const openedAt = Date.now() - 60_000;
+    await store.insertEvents([
+      {
+        source: "ios_shortcuts",
+        type: "app_usage",
+        start_at: iso(openedAt),
+        end_at: iso(openedAt + 1000),
+        title: "An app",
+        data: { app_unknown: true },
+        external_id: `ios-${randomUUID()}`,
+      },
+    ]);
+    const c = await connectionsNow();
+    const line = `An app opened at ${clock(openedAt)}. Name the app in your automation and I'll say which.`;
+    assert.equal(c.iphone, line);
+    assert.ok(c.lines.some((l) => l.startsWith("- iPhone: connected, last data")));
+    assert.ok(c.lines.some((l) => l.includes(line)));
+    // The row's rule says the same.
+    const last = (await store.lastEventAtBySource()).ios_shortcuts;
+    assert.ok(deviceConnected(deviceState(last, null)));
+    await withClaude([{ text: PRODUCTION_ANSWER }], async (requests) => {
+      const { answer } = await askMichael(turns("Did I open the instagram"), "context", {
+        now: `Connections right now:\n${c.lines.join("\n")}`,
+        iphone: c.iphone,
+      });
+      assert.equal(answer, line);
+      assert.match(JSON.stringify(requests[0]?.system), /An app opened at \d\d:\d\d\. Name the app/);
+    });
+    // An answer that already says it keeps its own words.
+    await withClaude([{ text: `Not by name. ${line}` }], async () => {
+      const { answer } = await askMichael(turns("Did I open the instagram"), "context", { iphone: c.iphone });
+      assert.equal(answer, `Not by name. ${line}`);
+    });
+  }));
+
+test("15 Nov a used iPhone key with no opens: connected, opens once the automation runs", () =>
+  asNewUser(async () => {
+    const { connectionsNow } = await import("../connections-state");
+    await withoutMac();
+    await usedIphoneKey();
+    const c = await connectionsNow();
+    assert.equal(c.iphone, "Your iPhone is connected. I see opens once the App automation runs.");
+    assert.ok(c.lines.some((l) => l.startsWith("- iPhone: connected (shortcut test received")));
+    await withClaude([{ text: PRODUCTION_ANSWER }], async () => {
+      const { answer } = await askMichael(turns("Did I open the instagram"), "context", { iphone: c.iphone });
+      assert.equal(answer, c.iphone);
+    });
+  }));
+
+test("15 Nov no iPhone key and no opens: Michael may say it is not connected", () =>
+  asNewUser(async () => {
+    const { connectionsNow } = await import("../connections-state");
+    await withoutMac();
+    const c = await connectionsNow();
+    assert.equal(c.iphone, null);
+    await withClaude([{ text: PRODUCTION_ANSWER }], async () => {
+      const { answer } = await askMichael(turns("Did I open the instagram"), "context", { iphone: c.iphone });
+      assert.equal(answer, PRODUCTION_ANSWER);
+    });
+  }));

@@ -1,5 +1,6 @@
 "use client";
 
+import { voiceShortDuration } from "@michael/shared/voice";
 import { useRouter } from "next/navigation";
 import { startTransition, useId, useRef, useState } from "react";
 import { Sheet } from "@/components/sheet";
@@ -14,9 +15,9 @@ import { undoneLine } from "@/lib/say";
 export type LoggableGoal = { id: string; title: string };
 
 const PILL =
-  "press inline-flex min-h-9 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-3.5 text-subhead font-semibold text-tint-text tnum disabled:opacity-60";
+  "hit press inline-flex min-h-9 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--m-tint)_14%,transparent)] px-3.5 text-subhead font-semibold text-tint-text tnum disabled:opacity-60";
 const CHIP =
-  "press min-h-9 rounded-full px-3 text-subhead font-semibold tnum aria-pressed:bg-label aria-pressed:text-bg bg-bg text-label";
+  "hit press min-h-9 rounded-full px-3 text-subhead font-semibold tnum aria-pressed:bg-label aria-pressed:text-bg bg-bg text-label";
 const MINUTES = [15, 30, 45, 60] as const;
 
 /** The line after a log, with Undo; "Taken back. Off the books." (today's phrasing) once undone. */
@@ -133,7 +134,7 @@ export function LogTimeForm({
             onClick={() => setMinutes(m)}
             className={CHIP}
           >
-            {m} min
+            {voiceShortDuration(m)}
           </button>
         ))}
         <label className="flex items-center gap-1.5 text-subhead text-label-2">
@@ -158,7 +159,7 @@ export function LogTimeForm({
       </div>
       {at ? (
         <p className="-mt-2 text-footnote text-label-2">
-          From {at}, {minutes} min.
+          From {at}, {voiceShortDuration(minutes)}.
         </p>
       ) : null}
       {result && !result.ok ? (
@@ -174,7 +175,7 @@ export function LogTimeForm({
           aria-busy={pending}
           className={`${PILL} min-w-[7.5rem]`}
         >
-          {pending ? "Logging" : `Log ${minutes} min`}
+          {pending ? "Logging" : `Log ${voiceShortDuration(minutes)}`}
         </button>
       </div>
     </div>
@@ -287,7 +288,7 @@ export function SettleBlock({ eventId, minutes }: { eventId: string; minutes: nu
             type="button"
             onClick={() => setPart(true)}
             disabled={pending !== null}
-            className="press min-h-9 px-2 text-subhead font-semibold text-tint-text"
+            className="hit press min-h-9 px-2 text-subhead font-semibold text-tint-text"
           >
             Part of it
           </button>
@@ -296,7 +297,7 @@ export function SettleBlock({ eventId, minutes }: { eventId: string; minutes: nu
             onClick={() => settle(false, "didnt")}
             disabled={pending !== null}
             aria-busy={pending === "didnt"}
-            className="press min-h-9 px-2 text-subhead font-semibold text-label-2"
+            className="hit press min-h-9 px-2 text-subhead font-semibold text-label-2"
           >
             {pending === "didnt" ? "Saving" : "Didn't"}
           </button>

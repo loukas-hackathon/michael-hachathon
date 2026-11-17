@@ -15,10 +15,10 @@ type Rec = { id: string; title: string; status: string };
 const focusCard = (page: Page) =>
   page.getByRole("listitem").filter({ hasText: "Block 09:30 to 11:00 for cold outreach." });
 
-test("login offers Google and the demo week", async ({ page }) => {
+test("login offers email and the demo week", async ({ page }) => {
   await page.goto("/login");
   await expect(page.getByRole("heading", { name: "On your side." })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Continue with Google/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Continue with email" })).toBeVisible();
   await page.getByRole("link", { name: "See the demo week" }).click();
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByRole("heading", { level: 1, name: /^(Morning|Today|Evening)$/ })).toBeVisible();

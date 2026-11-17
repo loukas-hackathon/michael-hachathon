@@ -57,7 +57,12 @@ export function ProgressBar({
     >
       <div className="absolute inset-0 overflow-hidden rounded-full bg-context">
         {planned ? (
-          <Fill at={clamp(planned)} className="bg-bg shadow-[inset_0_0_0_1px_var(--m-label-2)]" />
+          // Booked, not spent: the bar's own outline. Hollow on light; on dark a hollow of the black
+          // page read as a black line, so it lifts to a lighter grey (--m-bar-ahead, globals.css).
+          <Fill
+            at={clamp(planned)}
+            className="bg-[var(--m-bar-ahead)] shadow-[inset_0_0_0_1px_var(--m-label-2)]"
+          />
         ) : null}
         {soft != null && soft > v ? <Fill at={clamp(soft)} className={softFill} /> : null}
         <Fill at={v} className={`${fill}${closed ? " m-track-closed" : ""}`} />

@@ -38,13 +38,13 @@ test("the phone, live, reaches the nudge: five opens in a running block, then th
     ]);
     // Nothing from the phone yet: the named trigger has nothing to say, so the usual test line goes.
     const before = await testNudge("phone_block");
-    assert.doesNotMatch(before.text, /phone open/);
+    assert.doesNotMatch(before.text, /phone opened/);
 
     for (const ago of [7, 6, 4.5, 3, 1.5]) {
       phoneLive.record(USER, { app: "Instagram", action: "open", at: undefined }, now - ago * MINUTE);
     }
     const res = await testNudge("phone_block");
-    assert.match(res.text, /^5 phone opens in Ship the pitch\. Put it down until \d\d:\d\d\.$/);
+    assert.match(res.text, /^Your phone opened 5 times in Ship the pitch\. Put it down until \d\d:\d\d\.$/);
     assert.deepEqual(voiceProblems(res.text), []);
     assert.equal(res.nudge.kind, "focus_drift");
     assert.equal(res.nudge.status, "test");

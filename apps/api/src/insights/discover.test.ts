@@ -288,6 +288,85 @@ test("a discovered variant that hits clearly harder is shown after the plain rel
   assert.deepEqual(voiceProblems(`${shown?.title}. ${shown?.line}`), []);
 });
 
+// ---------- two conditions on the same day ----------
+
+/**
+ * Seventy days: training after 19:00 on about half of them, a last meal from 19:30 to 22:00.
+ * The night's deep sleep (on the morning it ends) drops a lot after late training together with
+ * a late last meal, and hardly at all after late training alone.
+ */
+function pairTable() {
+  const rnd = seeded(31);
+  const n = 70;
+  const trained = Array.from({ length: n }, () => (rnd() < 0.45 ? 1 : 0));
+  const meal = Array.from({ length: n }, () => 1170 + Math.round(rnd() * 150));
+  const deep = Array.from({ length: n }, (_, i) => {
+    if (i === 0) return null;
+    const both = trained[i - 1] === 1 && (meal[i - 1] ?? 0) >= 20 * 60 + 45;
+    return (both ? 49 : trained[i - 1] === 1 ? 60 : 62) + (rnd() - 0.5) * 6;
+  });
+  const t = table(n, { evening_workout: trained, last_meal_min: meal, deep_min: deep });
+  return { t, m: mine(t) };
+}
+
+const PAIR = hyp({
+  when: cond("evening_workout", 1),
+  and: cond("last_meal_min", null),
+  outcome: "deep_min",
+  lag: 1,
+});
+
+test("an `and` hypothesis names both conditions: title, line, first step; times on the quarter hour", () => {
+  const { t, m } = pairTable();
+  const out = discoveredInsights(t, m.ps, storiesOf(m), [{ hypothesis: PAIR, words: null }], {
+    table: t,
+    goals: [],
+  });
+  assert.equal(out.length, 1);
+  const shown = out[0]?.phrased.insight;
+  assert.equal(shown?.title, "Late training and a late dinner");
+  const line = shown?.line ?? "";
+  assert.match(
+    line,
+    /^\d+ of \d+ days with training after 19:00 and a last meal at (\d\d:\d\d) or later gave less deep sleep that night: \d+ minutes against (\d+ minutes|1h \d\d)\. Late training alone costs less\.$/,
+  );
+  const clock = line.match(/at (\d\d):(\d\d) or later/);
+  assert.ok(clock && Number(clock[2]) % 15 === 0, `quarter hour: ${clock?.[0]}`);
+  assert.equal(
+    shown?.steps[0]?.label,
+    `Training after 19:00 and last meal after ${clock?.[1]}:${clock?.[2]}`,
+  );
+  assert.match(shown?.steps[0]?.value ?? "", /^\d+ of \d+ days$/);
+  assert.match(shown?.steps[1]?.value ?? "", /^\d+ min against /);
+  // The quarter hour is the test itself: the trigger days are exactly the ones the words describe.
+  const v = verify(t, m.ps, [PAIR])[0];
+  assert.equal(v?.and?.threshold, Number(clock?.[1]) * 60 + Number(clock?.[2]));
+  assert.doesNotMatch(shown?.title ?? ".", /\.$|hit harder/);
+  for (const text of [shown?.title ?? "", line, shown?.fix.text ?? ""]) {
+    assert.deepEqual(voiceProblems(text), [], text);
+  }
+  assert.deepEqual(shown?.sources, ["apple-watch"]);
+});
+
+test("an `and` hypothesis keeps the model's words only when they pass the checks", () => {
+  const { t, m } = pairTable();
+  const v = verify(t, m.ps, [PAIR])[0];
+  assert.ok(v);
+  const good = {
+    title: "Late sessions and late dinners",
+    line: `${v.cmp.held} of ${v.cmp.seen} late sessions with a late dinner cost you deep sleep.`,
+    fix: "Eat before a late session, not after it.",
+  };
+  const ctx = { table: t, goals: [] };
+  const kept = discoveredInsights(t, m.ps, [], [{ hypothesis: PAIR, words: good }], ctx)[0]?.phrased.insight;
+  assert.deepEqual([kept?.title, kept?.line, kept?.fix.text], [good.title, good.line, good.fix]);
+  const invented = { ...good, line: "7 of 7 late sessions with a late dinner cost you 31 minutes." };
+  const replaced = discoveredInsights(t, m.ps, [], [{ hypothesis: PAIR, words: invented }], ctx)[0]?.phrased
+    .insight;
+  assert.equal(replaced?.title, "Late training and a late dinner");
+  assert.match(replaced?.line ?? "", /Late training alone costs less\.$/);
+});
+
 test("the brief carries summaries and goals, never an event", () => {
   const month = plantedMonth({ firstDay: "2026-10-15", days: 30, seed: 7 });
   const study = buildInsights({
