@@ -190,7 +190,7 @@ test("back from Google: one tap starts the talk", async ({ page }) => {
 
 // Every connection is a row on You with Connect and a real status (Loukas, Sun 15 Nov), and each
 // Connect opens a working setup page.
-test("You shows all eight connections, each with Connect", async ({ page, context, baseURL }) => {
+test("You shows all nine connections, each with Connect", async ({ page, context, baseURL }) => {
   const user = randomUUID();
   await context.addCookies([{ name: "michael_e2e_user", value: user, url: baseURL ?? "" }]);
   // An empty account: nothing connected yet.
@@ -204,6 +204,7 @@ test("You shows all eight connections, each with Connect", async ({ page, contex
     "Google Calendar",
     "Apple Watch",
     "Mac",
+    "Windows PC",
     "iPhone",
     "Claude",
     "Nudges",
@@ -216,7 +217,7 @@ test("You shows all eight connections, each with Connect", async ({ page, contex
   await expect(list.getByRole("link", { name: "Connect", exact: true })).toHaveCount(
     await list.getByText("Not connected").count(),
   );
-  expect(await list.getByRole("link", { name: /^(Connect|Manage)$/ }).count()).toBe(8);
+  expect(await list.getByRole("link", { name: /^(Connect|Manage)$/ }).count()).toBe(9);
 
   // The device rows open their real setup steps, never Coming soon.
   await tap(list.getByRole("link", { name: /Apple Watch/ }));

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { expect, test } from "./fixtures";
+import { API_URL, expect, test } from "./fixtures";
 
 // Every connection is live (Loukas, Sun 15 Nov): its setup page shows the real steps to everyone.
 // ?preview=1 is no longer needed, and stays harmless.
@@ -25,6 +25,36 @@ test("Apple Watch: the setup steps show for everyone, with or without ?preview=1
   // The QR page without a setup token asks for the code again, never a dead end.
   await page.goto("/setup/apple-watch");
   await expect(page.getByText("This link is not complete. Scan the code in Michael again.")).toBeVisible();
+});
+
+// A Windows PC (the Mac's twin): one line for PowerShell with Copy, what it reads, and the live
+// first data check under the steps. The installer itself is public, plain text.
+test("Windows PC: the PowerShell line with Copy, app names only, waiting for the first data", async ({
+  page,
+  context,
+  baseURL,
+  request,
+}) => {
+  await context.addCookies([{ name: "michael_e2e_user", value: randomUUID(), url: baseURL ?? "" }]);
+  await page.goto("/you/connections/windows");
+  const main = page.getByRole("main");
+  await expect(main.getByRole("heading", { name: "Windows PC" })).toBeVisible();
+  await expect(main.getByText("App names only, never window titles", { exact: false })).toBeVisible();
+  await expect(page.getByText("Coming soon. I will tell you when it is ready.")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Connect this PC" }).click();
+  const line = main.locator("code", { hasText: "/v1/setup/windows.ps1" });
+  await expect(line).toBeVisible();
+  await expect(line).toHaveText(
+    /^\[Net\.ServicePointManager\].*irm http\S+\/v1\/setup\/windows\.ps1\)\)\) ms_[A-Za-z0-9_-]{20,}$/,
+  );
+  await expect(main.getByRole("button", { name: "Copy", exact: true })).toBeVisible();
+  await expect(main.getByText(/Open PowerShell/)).toBeVisible();
+  await expect(main.getByText("Waiting for your first data. This updates by itself.")).toBeVisible();
+
+  const script = await request.get(`${API_URL}/v1/setup/windows.ps1`);
+  expect(script.status()).toBe(200);
+  expect(await script.text()).toContain('param([string]$Token = "")');
 });
 
 // The shared iCloud links (Loukas, 15 Nov): Add opens Shortcuts on Add Shortcut, no browser.

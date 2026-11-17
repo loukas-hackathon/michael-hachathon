@@ -6,6 +6,7 @@ export type ConnectorId =
   | "google-calendar"
   | "apple-watch"
   | "mac"
+  | "windows"
   | "iphone"
   | "claude"
   | "nudges"
@@ -27,6 +28,8 @@ export const CONNECTOR_STATUS: Record<ConnectorId, ConnectorStatus> = {
   "apple-watch": "live",
   // Mac collector: no real Mac has sent data to production yet.
   mac: "live",
+  // Windows collector reading ActivityWatch: no real Windows PC has sent data to production yet.
+  windows: "live",
   // iPhone Shortcuts: keys made, no real app opens have arrived yet.
   iphone: "live",
   // Places save, but travel times need Google Maps, which production does not have yet.

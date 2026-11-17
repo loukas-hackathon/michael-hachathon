@@ -15,6 +15,7 @@ const NAMES: [ConnectorId, string][] = [
   ["claude", String.raw`claude\b`],
   ["nudges", String.raw`(?:nudges?|notifications?|push)\b`],
   ["apple-watch", String.raw`(?:watch|health)\b`],
+  ["windows", String.raw`(?:windows|windows pc|pc)\b`],
   ["mac", String.raw`(?:mac|macbook|laptop)\b`],
   ["iphone", String.raw`(?:iphone|phone|screen time)\b`],
   ["travel", String.raw`(?:location|places|traffic|travel)\b`],
@@ -39,6 +40,7 @@ export const CONNECT_TARGET: Record<ConnectorId, { label: string; href: string; 
   nudges: { label: "Turn on nudges", href: "/you/connections/nudges", external: false },
   "apple-watch": { label: "Connect Apple Watch", href: "/you/connections/apple-watch", external: false },
   mac: { label: "Connect your Mac", href: "/you/connections/mac", external: false },
+  windows: { label: "Connect your Windows PC", href: "/you/connections/windows", external: false },
   iphone: { label: "Connect your iPhone", href: "/you/connections/iphone", external: false },
   travel: { label: "Add your places", href: "/you/connections/travel", external: false },
 };

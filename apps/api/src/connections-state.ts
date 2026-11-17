@@ -1,4 +1,4 @@
-import { DEVICE_QUIET_MS, deviceState, pickIphoneKey, type Source } from "@michael/shared";
+import { DEVICE_QUIET_MS, deviceState, pickIphoneKey, SETUP_KEY_NAMES, type Source } from "@michael/shared";
 import { MAC_FRESH_MS } from "./focus/session";
 import { DEFAULT_TIMEZONE } from "./patterns";
 import { Zone } from "./patterns/time";
@@ -13,7 +13,9 @@ import { listPersonalTokens } from "./tokens";
 /** A device source with nothing for this long needs attention (the rows' QUIET_MS). */
 const QUIET_MS = DEVICE_QUIET_MS;
 
-const MAC_SOURCES: Source[] = ["macos_usage", "activitywatch"];
+// ActivityWatch runs on Windows too, so it says nothing about a Mac: Apple's own log only.
+const MAC_SOURCES: Source[] = ["macos_usage"];
+const WINDOWS_SOURCES: Source[] = ["activitywatch"];
 const WATCH_SOURCES: Source[] = ["health_auto_export"];
 const IPHONE_SOURCES: Source[] = ["iphone_usage", "ios_shortcuts"];
 
@@ -106,6 +108,12 @@ export async function connectionsNow(now = Date.now()): Promise<ConnectionsNow> 
       ? `${device("Mac", MAC_SOURCES)} Closing Mac apps (block_mac_app) works.`
       : `${device("Mac", MAC_SOURCES)} Closing Mac apps is not available: never offer it. Offer a calendar block for the time instead.`,
   );
+
+  // A Windows PC is mentioned only once the person set one up (its key exists): most have a Mac.
+  if (tokens.some((t) => t.name === SETUP_KEY_NAMES.windows))
+    lines.push(
+      `${device("Windows PC", WINDOWS_SOURCES)} App time only; closing Windows apps is not available.`,
+    );
 
   // The iPhone shortcut's key was used (a hand run is the test, #466): connected before any open.
   const key = pickIphoneKey(tokens);

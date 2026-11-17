@@ -1,7 +1,7 @@
 # Michael collector
 
-Runs on your own Mac. It reads what the Mac already knows about your day and posts it to Michael's
-timeline. It only reads: it never changes the files it looks at, and it sends nothing anywhere
+Runs on your own Mac or Windows PC. It reads what the computer already knows about your day and
+posts it to Michael's timeline. It only reads: it never changes the files it looks at, and it sends nothing anywhere
 except the API address you give it.
 
 **On your own Mac, the easy way:** Michael, You, Mac, **Connect this Mac**. Paste the one
@@ -9,6 +9,9 @@ line it shows into Terminal (or download and double-click `Michael.command`). It
 collector into `~/.michael` without admin rights, connects it to your account with a setup token that
 works once, and starts it; `~/.michael/Michael.command` starts it again, and it opens at login.
 The installer is `GET /v1/setup/mac.sh` (`apps/api/src/setup/mac-script.ts`).
+
+**On Windows:** Michael, You, Windows PC, **Connect this PC**, and paste the one line into
+PowerShell. See [Windows](#windows) below.
 
 From this repository:
 
@@ -24,12 +27,16 @@ By default it posts to `http://localhost:8787` with the key `dev-key`. Point it 
 data lands in your account, not the demo week). Positions are kept in `~/.michael/collector-state.json`,
 so a restart continues where it stopped, and running a backfill twice never duplicates events.
 
-| Source         | What it reads                                                                                                | Needs                                                            |
-| -------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
-| `mac-usage`    | Which app was in front and when, notifications, screen on and off (about 4 weeks back)                       | Full Disk Access for the terminal or app that runs the collector |
-| `iphone-usage` | iPhone and Apple Watch app usage synced by Screen Time, about a day behind the phone                         | Full Disk Access, and Share Across Devices on in Screen Time     |
-| `chrome`       | Sites visited in Chrome, time on each, and what was searched for (months back)                               | Nothing: Chrome's history file is readable without a permission  |
-| `claude-code`  | Claude Code sessions: work stretches, prompts typed, time spent waiting for you, tokens (about 30 days back) | Nothing: the transcripts sit in your own `~/.claude` folder      |
+| Source          | What it reads                                                                                                | Needs                                                            |
+| --------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| `mac-usage`     | Which app was in front and when, notifications, screen on and off (about 4 weeks back)                       | Full Disk Access for the terminal or app that runs the collector |
+| `iphone-usage`  | iPhone and Apple Watch app usage synced by Screen Time, about a day behind the phone                         | Full Disk Access, and Share Across Devices on in Screen Time     |
+| `chrome`        | Sites visited in Chrome, time on each, and what was searched for (months back)                               | Nothing: Chrome's history file is readable without a permission  |
+| `claude-code`   | Claude Code sessions: work stretches, prompts typed, time spent waiting for you, tokens (about 30 days back) | Nothing: the transcripts sit in your own `~/.claude` folder      |
+| `activitywatch` | Which app was in front and when, and when you were away, from ActivityWatch (Windows, Mac, Linux)            | ActivityWatch running (`localhost:5600`); no permission          |
+
+`mac-usage`, `iphone-usage` and `chrome` read Mac files and run on a Mac only. On Windows the
+collector runs `claude-code` and `activitywatch` (`readersFor` in `src/readers/index.ts`).
 
 `iphone-usage` needs "Share Across Devices" on in Screen Time on both the iPhone and the Mac. It
 gives which app was in front, for how long and where it was opened from, about 4 weeks back. The
@@ -40,6 +47,54 @@ the lock screen and other system surfaces are not counted as apps.
 These files are private to macOS and can change between versions. They are the fast route for the
 hackathon. The product replaces them with our own menu bar app, browser extension and phone app,
 which post the same events (see `docs/data-sources.md`).
+
+## Windows
+
+The collector itself is plain Node and runs on Windows: state in `%USERPROFILE%\.michael`, paths
+from `os.homedir()` and `path.join`, and no Mac only call on that path (focus guards and Do Not
+Disturb start on a Mac only).
+
+**What it reads.** [ActivityWatch](https://activitywatch.net) (open source) records which app is in
+front and when you are away, on a local server at `http://localhost:5600`. The `activitywatch`
+reader asks it for this computer's two buckets (`aw-watcher-window_<host>`, `aw-watcher-afk_<host>`;
+buckets synced from another computer and the web watcher are left out), from where the last pass
+stopped, and posts them to `POST /v1/webhooks/activitywatch` with `device: "windows"`. The API turns
+process names into the names people know (`chrome.exe` is Google Chrome) and makes `app_usage` runs
+and `focus_session` stretches, exactly like the Mac. Window titles are dropped on the PC, before
+anything is sent: app names and times only.
+
+- Each pass sends the last three hours again (from the start of a run, never inside one), so a run
+  still open last time is sent whole once it ends. The API stores each run once.
+- A backfill (first run, `--backfill-days`, 30 by default) is sent a day at a time.
+- ActivityWatch not running: one line in the log, nothing else, and the position stays.
+- `MICHAEL_AW_URL` points to another ActivityWatch server.
+
+**The one line.** `GET /v1/setup/windows.ps1` (`apps/api/src/setup/windows-script.ts`) runs in the
+person's own PowerShell, with no admin rights where Windows allows:
+
+1. ActivityWatch: uses it if it runs, starts it if installed, else installs it with winget
+   (`ActivityWatch.ActivityWatch`) or, without winget, from the official GitHub release, checked
+   against the SHA-256 GitHub lists for the file. Its installer may ask Windows for permission.
+2. Node.js 22.13 or newer from the PC, else the official zip into `.michael\node`, checked against
+   nodejs.org's SHA-256 list (no MSI, no admin).
+3. The collector and `packages/shared` from the public repository into `.michael\app`, plus `tsx`
+   and `zod`.
+4. Swaps the setup token for a device key, written to `.michael\michael.env` (current user only).
+5. Writes `.michael\Michael.ps1` (reads `michael.env`, starts ActivityWatch if needed, then the
+   collector, hidden; log in `.michael\collector.log`), registers the Scheduled Task "Michael
+   collector" for this user at sign in (or `Michael.cmd` in the Startup folder when Task Scheduler
+   says no), and starts it.
+
+To stop it: Task Scheduler, "Michael collector", End and Disable (or delete `Michael.cmd` from the
+Startup folder). To remove it: also delete `%USERPROFILE%\.michael`.
+
+**Untested on a real Windows PC so far.** CI checks the installer text
+(`apps/api/src/setup/windows-script.test.ts`) and, where `pwsh` is installed, parses it with
+PowerShell's own parser; the CI container has no `pwsh`, so that check has not run yet. The reader
+is tested against a fake ActivityWatch server (`src/readers/activitywatch.test.ts`). The first real
+run should check: winget's ActivityWatch install path (`%LOCALAPPDATA%\Programs\ActivityWatch` or
+`Program Files`), that a non admin can register the sign in task, and that `tar.exe` picks the two
+folders out of the repository archive.
 
 ## Focus guards: muting distracting apps
 

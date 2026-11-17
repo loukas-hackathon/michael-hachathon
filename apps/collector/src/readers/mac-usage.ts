@@ -27,6 +27,7 @@ export const macUsage: Reader = {
   name: "mac-usage",
   source: "macos_usage",
   describe: "Mac app usage, notifications and screen state from macOS's own log (needs Full Disk Access)",
+  platforms: ["darwin"],
   async read(ctx) {
     const db = openCopy(DB_PATH, ctx.tmpDir);
     try {

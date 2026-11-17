@@ -26,7 +26,11 @@ export default async function MacPage({ searchParams }: { searchParams: Promise<
             <Link href={CONNECTION_ROUTES.iphone} className="font-semibold text-tint-text">
               iPhone
             </Link>{" "}
-            can tell me which apps you open, live.
+            can tell me which apps you open, live. On Windows?{" "}
+            <Link href={CONNECTION_ROUTES.windows} className="font-semibold text-tint-text">
+              Connect your PC
+            </Link>
+            .
           </p>
           {row.state === "none" ? <SkipMacButton /> : null}
         </section>

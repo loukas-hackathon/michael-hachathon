@@ -20,6 +20,10 @@ const TITLES: Record<SetupConnection, { title: string; body: string }> = {
     title: "Connect your Mac",
     body: "Open Michael on your Mac, then You, Mac. One line installs it there.",
   },
+  windows: {
+    title: "Connect your Windows PC",
+    body: "Open Michael on your PC, then You, Windows PC. One line in PowerShell installs it there.",
+  },
 };
 
 // The page a QR code opens on the iPhone (#120). Public: the person may not be signed in on the

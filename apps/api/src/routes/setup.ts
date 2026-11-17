@@ -10,6 +10,7 @@ import { env } from "../env";
 import { HttpError, jsonBody, parse } from "../http";
 import { publicBase, publicWebUrl } from "../public-url";
 import { macInstallCommand, macInstallScript } from "../setup/mac-script";
+import { windowsInstallCommand, windowsInstallScript } from "../setup/windows-script";
 import { createSetupToken, exchangeSetupToken } from "../setup-tokens";
 
 // One tap setup (#120). The signed-in person mints a setup token for one connection; the device
@@ -34,7 +35,12 @@ export const setupTokens = new Hono().post("/setup-tokens", async (c) => {
     expires_at,
     // The token rides in the fragment, which browsers never send to a server, so it stays out of logs.
     setup_url: `${publicWebUrl()}/setup/${connection}#${token}`,
-    install_command: connection === "mac" ? macInstallCommand(api, token) : null,
+    install_command:
+      connection === "mac"
+        ? macInstallCommand(api, token)
+        : connection === "windows"
+          ? windowsInstallCommand(api, token)
+          : null,
   };
   return c.json(body, 201);
 });
@@ -56,4 +62,13 @@ export const setupPublic = new Hono()
       ref: env.COLLECTOR_REF,
     });
     return c.body(script, 200, { "content-type": "text/x-shellscript; charset=utf-8" });
+  })
+  // The Windows one, read by PowerShell's irm (plain text, so it arrives as one string).
+  .get("/setup/windows.ps1", (c) => {
+    const script = windowsInstallScript({
+      apiBase: publicBase(c),
+      repo: env.COLLECTOR_REPO,
+      ref: env.COLLECTOR_REF,
+    });
+    return c.body(script, 200, { "content-type": "text/plain; charset=utf-8" });
   });

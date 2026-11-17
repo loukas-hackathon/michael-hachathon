@@ -24,6 +24,13 @@ const paths: Record<ConnectionId, React.ReactNode> = {
       <path d="M9 20.5h6M12 16.5v4" />
     </>
   ),
+  windows: (
+    <>
+      <rect x="4" y="5" width="16" height="11" rx="1.5" />
+      <path d="M2.5 19h19" />
+      <path d="M12 7.5v6M8.5 10.5h7" />
+    </>
+  ),
   iphone: (
     <>
       <rect x="6.5" y="2.5" width="11" height="19" rx="3" />

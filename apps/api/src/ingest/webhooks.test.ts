@@ -346,6 +346,50 @@ test("ActivityWatch: reads the /api/0/export shape and waits for open runs", () 
   );
 });
 
+test("ActivityWatch on Windows: process names read as the apps people know, and focus still counts", () => {
+  const f = fixture("activitywatch");
+  const exe: Record<string, string> = {
+    Code: "Code.exe",
+    Terminal: "WindowsTerminal.exe",
+    "Google Chrome": "chrome.exe",
+    WhatsApp: "WhatsApp.exe",
+    Slack: "slack.exe",
+  };
+  const window = (f.window as { data: { app: string; title?: string } }[]).map((e) => ({
+    ...e,
+    data: { ...e.data, app: exe[e.data.app] ?? e.data.app },
+  }));
+  const events = mapActivityWatch(
+    AwPayload.parse({ window, afk: f.afk, device: "windows" }),
+    Date.parse("2026-11-14T10:00:00Z"),
+  );
+  const usage = events.filter((e) => e.type === "app_usage");
+  assert.deepEqual(
+    usage.map((e) => e.title),
+    [
+      "Visual Studio Code",
+      "Windows Terminal",
+      "Google Chrome",
+      "Visual Studio Code",
+      "WhatsApp",
+      "Visual Studio Code",
+      "Slack",
+    ],
+  );
+  assert.ok(usage.every((e) => e.data?.device === "windows"));
+  assert.ok(
+    usage.every((e) => !("title" in (e.data ?? {}))),
+    "window titles are never stored",
+  );
+  assert.equal(usage[0]?.external_id?.startsWith("aw:visual studio code:"), true);
+  const focus = events.filter((e) => e.type === "focus_session");
+  assert.equal(focus[0]?.title, "Deep work: Visual Studio Code + Windows Terminal (36m)");
+
+  // Left out, the computer is a Mac, as before.
+  const mac = mapActivityWatch(AwPayload.parse(f), Date.parse("2026-11-14T10:00:00Z"));
+  assert.equal(mac.find((e) => e.type === "app_usage")?.data?.device, "mac");
+});
+
 test("POST /v1/webhooks/activitywatch rejects a body that is not AW events", async () => {
   assert.equal((await post("activitywatch", { nope: [] })).status, 400);
   const res = IngestResponse.parse(await (await post("activitywatch", fixture("activitywatch"))).json());
