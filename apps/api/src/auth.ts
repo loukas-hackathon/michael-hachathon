@@ -30,6 +30,8 @@ const isPresenterKey = (value: string | undefined) =>
   Boolean(presenterKey && value && timingSafeEqual(digest(value.trim()), presenterKey));
 
 // `e2e_<uuid>`: a test user, accepted only with E2E_TEST_AUTH=on (see env.ts).
+// The test user's email, so tests can make one an admin (ADMIN_EMAILS).
+export const e2eEmail = (userId: string) => `${userId}@e2e.michael.test`;
 const E2E_TOKEN = /^e2e_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 const supabase =
@@ -38,7 +40,7 @@ const supabase =
     : null;
 
 // Verified Supabase access tokens, cached briefly (never past the token's own expiry).
-const tokenCache = new Map<string, { userId: string; until: number }>();
+const tokenCache = new Map<string, { userId: string; email: string | null; until: number }>();
 const TOKEN_TTL_MS = 60_000;
 
 /**
@@ -47,18 +49,26 @@ const TOKEN_TTL_MS = 60_000;
  * expiry, so a fresh token costs no round trip to Auth (#234). Projects still on a shared HS256
  * secret fall back to asking Auth (getUser) inside getClaims.
  */
-async function userFromSupabaseToken(token: string): Promise<string | null> {
+async function userFromSupabaseToken(
+  token: string,
+): Promise<{ userId: string; email: string | null } | null> {
   if (!supabase) return null;
   const hit = tokenCache.get(token);
-  if (hit && hit.until > Date.now()) return hit.userId;
+  if (hit && hit.until > Date.now()) return { userId: hit.userId, email: hit.email };
   const { data, error } = await supabase.auth.getClaims(token);
   const claims = data?.claims;
   // Only end user sessions: never the anon or service role keys, which carry no user.
   if (error || !claims?.sub || claims.role !== "authenticated") return null;
   const expiresAt = typeof claims.exp === "number" ? claims.exp * 1000 : Date.now();
-  tokenCache.set(token, { userId: claims.sub, until: Math.min(Date.now() + TOKEN_TTL_MS, expiresAt) });
+  // The email claim says which address signed in (admin checks, ADMIN_EMAILS); Supabase signs it.
+  const email = typeof claims.email === "string" && claims.email ? claims.email.toLowerCase() : null;
+  tokenCache.set(token, {
+    userId: claims.sub,
+    email,
+    until: Math.min(Date.now() + TOKEN_TTL_MS, expiresAt),
+  });
   if (tokenCache.size > 1000) tokenCache.clear();
-  return claims.sub;
+  return { userId: claims.sub, email };
 }
 
 /**
@@ -147,10 +157,12 @@ export const requireUser =
     let via: AuthMethod;
     let agentId: string | null = null;
     let visitor: string | undefined;
+    let email: string | undefined;
     if (env.E2E_TEST_AUTH === "on" && E2E_TOKEN.test(token)) {
       // Test sign in for the end-to-end suite; env.ts refuses it outside the in-memory store.
       userId = token.slice(4);
       via = "session";
+      email = e2eEmail(userId);
     } else if (isApiKey(token)) {
       userId = env.DEMO_USER_ID;
       via = "api_key";
@@ -177,7 +189,9 @@ export const requireUser =
       agentId = oauth?.agent_id ?? null;
       via = "mcp_oauth";
     } else {
-      userId = await userFromSupabaseToken(token);
+      const session = await userFromSupabaseToken(token);
+      userId = session?.userId ?? null;
+      email = session?.email ?? undefined;
       via = "session";
     }
     const t = currentTiming();
@@ -206,5 +220,5 @@ export const requireUser =
       await runAsUser(uid, () => next(), via, agent);
       return;
     }
-    await runAsUser(userId, () => next(), via, undefined, visitor);
+    await runAsUser(userId, () => next(), via, undefined, visitor, email);
   };

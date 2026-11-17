@@ -16,3 +16,5 @@ export * from "./schemas";
 export * from "./sleep";
 export * from "./voice";
 export * from "./voice-limits";
+export * from "./waitlist";
+export * from "./waitlist-labels";

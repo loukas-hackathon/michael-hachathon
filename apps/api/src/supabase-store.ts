@@ -28,6 +28,7 @@ import type {
   RecommendationStatus,
   Source,
   SourceSetting,
+  WaitlistEntry,
   WeeklyTarget,
 } from "@michael/shared";
 import { Source as SourceEnum } from "@michael/shared";
@@ -65,6 +66,7 @@ import {
   type NewFocusSession,
   type NewMeetingSession,
   type NewRecommendation,
+  type NewWaitlistEntry,
   type NudgeCreate,
   ONE_ACTIVE_FOCUS,
   type PushDevice,
@@ -119,6 +121,23 @@ async function readAll<T>(
 // Postgres returns "2026-11-14 07:40:00+00" style values via PostgREST as ISO strings with offset,
 // which already satisfy the shared IsoDateTime schema; normalise to a canonical ISO string anyway.
 const iso = (v: string | null): string | null => (v === null ? null : new Date(v).toISOString());
+
+const toWaitlistEntry = (r: Record<string, unknown>): WaitlistEntry => ({
+  id: r.id as string,
+  email: r.email as string,
+  name: r.name as string,
+  role: r.role as WaitlistEntry["role"],
+  hours_lost_per_week: Number(r.hours_lost_per_week),
+  computer: r.computer as WaitlistEntry["computer"],
+  phone: r.phone as WaitlistEntry["phone"],
+  calendar: r.calendar as WaitlistEntry["calendar"],
+  founding_member: Boolean(r.founding_member),
+  referral_code: r.referral_code as string,
+  referred_by: (r.referred_by as string | null) ?? null,
+  source: (r.source as string | null) ?? null,
+  created_at: iso(r.created_at as string) as string,
+  invited_at: iso((r.invited_at as string | null) ?? null),
+});
 
 const toEvent = (r: Record<string, unknown>): Event => ({
   id: r.id as string,
@@ -2074,6 +2093,53 @@ export class SupabaseStore implements Store {
     return (rows ?? []).map(
       (r) => ({ ...r, events: Number(r.events), seconds: Number(r.seconds) }) as EventSummary,
     );
+  }
+
+  // ---- the waiting list: not scoped to a user (nobody on it has an account) ----
+
+  async addWaitlistEntry(entry: NewWaitlistEntry) {
+    // An inviter's code that matches nobody is dropped, not refused (the foreign key would refuse it).
+    const referred_by = entry.referred_by
+      ? ((await this.getWaitlistEntry({ code: entry.referred_by }))?.referral_code ?? null)
+      : null;
+    const { data, error } = await this.db
+      .from("waitlist")
+      .insert({ ...entry, referred_by })
+      .select("*")
+      .single();
+    if (error) {
+      // Unique violation on the email: already on the list, the caller reads that entry.
+      if (error.code === "23505" && /email/.test(error.message)) return null;
+      if (error.code === "23505") throw new HttpError("conflict", "That referral code is taken");
+      throw new HttpError("upstream_error", `Database error: ${error.message}`);
+    }
+    return toWaitlistEntry(data as Record<string, unknown>);
+  }
+
+  async getWaitlistEntry(by: { email: string } | { code: string }) {
+    const q = this.db.from("waitlist").select("*");
+    const r = check(
+      await ("email" in by ? q.eq("email", by.email) : q.eq("referral_code", by.code)).maybeSingle(),
+    );
+    return r ? toWaitlistEntry(r as Record<string, unknown>) : null;
+  }
+
+  async listWaitlist() {
+    // PostgREST answers at most 1000 rows a call: page through, oldest first.
+    const out: WaitlistEntry[] = [];
+    const PAGE = 1000;
+    for (let from = 0; ; from += PAGE) {
+      const rows = check(
+        await this.db
+          .from("waitlist")
+          .select("*")
+          .order("created_at")
+          .order("id")
+          .range(from, from + PAGE - 1),
+      );
+      for (const r of rows ?? []) out.push(toWaitlistEntry(r as Record<string, unknown>));
+      if (!rows || rows.length < PAGE) return out;
+    }
   }
 
   async usersWithEventsBefore(before: string) {

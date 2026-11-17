@@ -40,6 +40,7 @@ import {
   type RitualKind,
   type Source,
   type SourceSetting,
+  type WaitlistEntry,
   type WeeklyTarget,
 } from "@michael/shared";
 import type { z } from "zod";
@@ -519,7 +520,17 @@ export interface Store extends PrivacyBackend {
   ): Promise<StoredCheckIn | null>;
   /** Really deletes one question and its answer (and its follow ups). */
   deleteCheckIn(id: string): Promise<boolean>;
+
+  // ---- the public waiting list (routes/waitlist.ts). NOT scoped to a user: nobody on it has one ----
+  /** Null when that email is already on the list (the caller reads the existing entry). */
+  addWaitlistEntry(entry: NewWaitlistEntry): Promise<WaitlistEntry | null>;
+  /** One entry by its (lowercased) email or its referral code. */
+  getWaitlistEntry(by: { email: string } | { code: string }): Promise<WaitlistEntry | null>;
+  /** Every entry, oldest first. */
+  listWaitlist(): Promise<WaitlistEntry[]>;
 }
+
+export type NewWaitlistEntry = Omit<WaitlistEntry, "id" | "created_at" | "invited_at">;
 
 export type TargetInput = Omit<WeeklyTarget, "created_at" | "updated_at">;
 
@@ -834,6 +845,43 @@ export class MemoryStore implements Store {
   async saveProfile(profile: Profile) {
     this.profiles.set(currentUserId(), structuredClone(profile));
     return structuredClone(profile);
+  }
+
+  // The waiting list: one list for the whole process, never per user.
+  private waitlist: WaitlistEntry[] = [];
+
+  async addWaitlistEntry(entry: NewWaitlistEntry) {
+    if (this.waitlist.some((e) => e.email === entry.email)) return null;
+    if (this.waitlist.some((e) => e.referral_code === entry.referral_code)) {
+      throw new HttpError("conflict", "That referral code is taken");
+    }
+    const referred_by =
+      entry.referred_by && this.waitlist.some((e) => e.referral_code === entry.referred_by)
+        ? entry.referred_by
+        : null;
+    // Strictly increasing, so two sign ups in the same millisecond still have an order.
+    const last = this.waitlist.at(-1)?.created_at;
+    const at = Math.max(Date.now(), last ? Date.parse(last) + 1 : 0);
+    const row: WaitlistEntry = {
+      ...entry,
+      referred_by,
+      id: crypto.randomUUID(),
+      created_at: new Date(at).toISOString(),
+      invited_at: null,
+    };
+    this.waitlist.push(row);
+    return structuredClone(row);
+  }
+
+  async getWaitlistEntry(by: { email: string } | { code: string }) {
+    const hit = this.waitlist.find((e) =>
+      "email" in by ? e.email === by.email : e.referral_code === by.code,
+    );
+    return structuredClone(hit ?? null);
+  }
+
+  async listWaitlist() {
+    return structuredClone(this.waitlist);
   }
 
   private insightRuns = new Map<string, Record<string, unknown>>();
@@ -1681,7 +1729,14 @@ export class MemoryStore implements Store {
 // threads' titles, which may lag by the context cache's two minutes), nor on our geocoding cache.
 const WRITES =
   /^(add|answer|bind|clear|create|delete|insert|mark|record|remove|replace|save|seed|set|sync|unbind|update|upsert)[A-Z]/;
-const QUIET_WRITES = new Set(["addChatMessage", "createChatThread", "updateChatThread", "saveGeocode"]);
+// The waiting list belongs to no user, so a sign up changes nobody's data.
+const QUIET_WRITES = new Set([
+  "addChatMessage",
+  "createChatThread",
+  "updateChatThread",
+  "saveGeocode",
+  "addWaitlistEntry",
+]);
 
 /** The store, noting each write before and after it, so caches of a user's data know to read again. */
 function noticingWrites(inner: Store): Store {
