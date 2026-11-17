@@ -1,14 +1,17 @@
-import { bundleIdForAppName, categoriseApp, categoryRole, isBrowser } from "@michael/shared";
+import { bundleIdForAppName, categoriseApp, categoryRole, isBrowser, windowsAppName } from "@michael/shared";
 import { z } from "zod";
 import { formatMinutes, type MappedEvent } from "./common";
 
-// ActivityWatch (Mac, local server on localhost:5600) -> `app_usage` and `focus_session`.
+// ActivityWatch (Mac, Windows or Linux, local server on localhost:5600) -> `app_usage` and
+// `focus_session`. The collector's `activitywatch` reader (apps/collector) forwards it.
 // Events are AW bucket events exactly as `GET /api/0/buckets/<id>/events` returns them:
 //   { id, timestamp: ISO, duration: seconds, data: { app, title } }        (aw-watcher-window)
 //   { id, timestamp: ISO, duration: seconds, data: { status: "afk" | "not-afk" } } (aw-watcher-afk)
 // Docs: https://docs.activitywatch.net/en/latest/buckets-and-events.html
-// A small forwarder on the Mac posts either `{ window: [...], afk?: [...] }` or the body of
-// `GET /api/0/export` (`{ buckets: { "<id>": { type, events } } }`).
+// A forwarder posts either `{ window: [...], afk?: [...], device? }` or the body of
+// `GET /api/0/export` (`{ buckets: { "<id>": { type, events } } }`). `device` says which computer
+// ("mac" when left out); on Windows the process names ("chrome.exe") become the names people know
+// ("Google Chrome", windowsAppName in @michael/shared).
 //
 // Window titles are never stored (they carry document names, chats, addresses); only app names.
 // Apple's own activity store (apps/collector, #60) is the main Mac source; this one is optional.
@@ -46,15 +49,21 @@ const AwEvent = z.object({
 });
 const events = z.array(z.unknown()).optional().catch(undefined);
 
+const AwDevice = z.enum(["mac", "windows", "linux"]).optional().catch(undefined);
 export const AwPayload = z.union([
-  z.object({ window: z.array(z.unknown()), afk: events }),
+  z.object({ window: z.array(z.unknown()), afk: events, device: AwDevice }),
   z.object({
     buckets: z.record(
       z.string(),
       z.object({ type: z.string().optional(), events: z.array(z.unknown()).catch([]) }),
     ),
+    device: AwDevice,
   }),
 ]);
+
+/** The app's name as people know it: Windows process names lose ".exe" and gain their product name. */
+const appNameOf = (raw: string, device: string) =>
+  device === "windows" || /\.exe$/i.test(raw) ? windowsAppName(raw) : raw;
 
 interface Span {
   start: number;
@@ -113,10 +122,11 @@ export function mapActivityWatch(payload: z.infer<typeof AwPayload>, now: number
     }
   }
 
+  const device = payload.device ?? "mac";
   const away = spans(afkRaw).filter((s) => s.status === "afk");
   const pieces = spans(windowRaw)
     .filter((s): s is Run => Boolean(s.app?.trim()))
-    .map((s) => ({ app: (s.app as string).trim(), start: s.start, end: s.end }))
+    .map((s) => ({ app: appNameOf((s.app as string).trim(), device), start: s.start, end: s.end }))
     .flatMap((s) => subtract(s, away))
     .sort((a, b) => a.start - b.start);
 
@@ -137,7 +147,7 @@ export function mapActivityWatch(payload: z.infer<typeof AwPayload>, now: number
     start_at: iso(r.start),
     end_at: iso(r.end),
     title: r.app,
-    data: { app: r.app, device: "mac", seconds: Math.round((r.end - r.start) / SECOND) },
+    data: { app: r.app, device, seconds: Math.round((r.end - r.start) / SECOND) },
     external_id: `aw:${r.app.toLowerCase()}:${iso(r.start).slice(0, 19)}`,
   }));
 

@@ -303,6 +303,7 @@ export const iphoneUsage: Reader = {
   source: "iphone_usage",
   describe:
     "iPhone app usage synced to this Mac by Screen Time, about a day behind (needs Full Disk Access and Share Across Devices)",
+  platforms: ["darwin"],
   async read(ctx) {
     const folders = listDeviceFolders();
     if (folders.length === 0) {

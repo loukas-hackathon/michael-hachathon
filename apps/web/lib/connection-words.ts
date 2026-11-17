@@ -20,6 +20,7 @@ export const STATE_WORDS: Record<ConnectionState, string> = {
 export const FINISH_ELSEWHERE: ReadonlySet<string> = new Set([
   "telegram",
   "mac",
+  "windows",
   "apple-watch",
   "iphone",
   "claude",

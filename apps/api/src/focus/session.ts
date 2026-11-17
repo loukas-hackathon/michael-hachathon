@@ -289,7 +289,8 @@ async function runningBlock(
 async function macConnected(now: number): Promise<boolean> {
   const [rules, last] = await Promise.all([store.privacyRules(), store.lastEventAtBySource()]);
   if (rules.offTheRecord) return false;
-  const at = last.macos_usage ?? last.activitywatch;
+  // Apple's own log only: ActivityWatch also runs on Windows, where no Mac app can be muted.
+  const at = last.macos_usage;
   return Boolean(at && now - Date.parse(at) <= MAC_FRESH_MS);
 }
 

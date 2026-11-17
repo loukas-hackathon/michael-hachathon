@@ -94,9 +94,9 @@ Enums:
   communication, social, video, news, shopping, travel; `neutral`: the rest). The patterns, the
   score, the retention roll up, the web timeline colours, ActivityWatch focus, the collector and
   (as a generated copy) the browser extension all use them.
-- `ConnectorId`: `google-calendar | apple-watch | mac | iphone | claude | nudges | telegram | travel`;
+- `ConnectorId`: `google-calendar | apple-watch | mac | windows | iphone | claude | nudges | telegram | travel`;
   `ConnectorStatus`: `live | soon`. `CONNECTOR_STATUS` (shared, not served by the API) says which
-  connections are offered. All eight are `live` (every row on You has Connect or Manage); a `soon`
+  connections are offered. All nine are `live` (every row on You has Connect or Manage); a `soon`
   one would show as a quiet Coming soon row with nothing to tap (#295).
 - `IntegrationProvider`: `google_calendar | whoop`
 - `IntegrationStatus`: `connected | disconnected | error`
@@ -356,12 +356,17 @@ type ShortcutsPayload = {
 `POST /v1/webhooks/activitywatch` takes ActivityWatch bucket events exactly as
 `GET /api/0/buckets/<id>/events` returns them (`{ timestamp, duration, data: { app, title } }`
 for `aw-watcher-window`, `data: { status: "afk" | "not-afk" }` for `aw-watcher-afk`), as either
-`{ window: AwEvent[], afk?: AwEvent[] }` or the body of `GET /api/0/export` (`{ buckets: {...} }`).
+`{ window: AwEvent[], afk?: AwEvent[], device?: "mac" | "windows" | "linux" }` or the body of
+`GET /api/0/export` (`{ buckets: {...}, device? }`). The collector's `activitywatch` reader sends
+the first shape, without titles. `device` is the computer (`mac` when left out); on `windows`
+process names become the names people know (`chrome.exe` is `Google Chrome`, `WINWORD.EXE` is
+`Microsoft Word`: `windowsAppName` in `packages/shared/src/windows-apps.ts`; others lose `.exe`).
+The patterns read ActivityWatch as the computer's live backup either way.
 Format: https://docs.activitywatch.net/en/latest/buckets-and-events.html. Mapping
 (`apps/api/src/ingest/activitywatch.ts`):
 
 - Away time (`afk`) is cut out, then the same app within 10 seconds is one run: one `app_usage`
-  event (`title` = app, `data`: `app`, `device: "mac"`, `seconds`; `external_id` =
+  event (`title` = app, `data`: `app`, `device` (`mac` unless sent), `seconds`; `external_id` =
   `aw:<app lowercased>:<start, UTC second>`). Window titles are never stored.
 - Focus rule: work app runs (an app whose name the shared categoriser reads as a `work` or `ai`
   app, `bundleIdForAppName` in `packages/shared/src/categories.ts`) where
@@ -2844,14 +2849,17 @@ for a device key for one connection. It is what a QR code, the Mac install line 
 folder. Only the sha256 is stored (`setup_tokens`).
 
 ```ts
-type SetupConnection = "mac" | "apple-watch" | "iphone";
+type SetupConnection = "mac" | "windows" | "apple-watch" | "iphone";
 type SetupTokenCreate = { connection: SetupConnection };
 type SetupTokenCreated = {
   token: string; // "ms_...", shown once
   connection: SetupConnection;
   expires_at: string;
   setup_url: string; // `${web}/setup/${connection}#${token}`: the token rides in the fragment
-  install_command: string | null; // mac only: `curl -fsSL ${api}/v1/setup/mac.sh | bash -s -- ms_...`
+  // mac: `curl -fsSL ${api}/v1/setup/mac.sh | bash -s -- ms_...`
+  // windows: `[Net.ServicePointManager]::SecurityProtocol = 'Tls12'; & ([scriptblock]::Create((irm ${api}/v1/setup/windows.ps1))) ms_...`
+  // null for the others
+  install_command: string | null;
 };
 type SetupTokenExchange = { token: string };
 type SetupTokenExchanged = { connection: SetupConnection; secret: string /* "mk_..." */; api_url: string };
@@ -2862,10 +2870,12 @@ type SetupTokenExchanged = { connection: SetupConnection; secret: string /* "mk_
 | POST   | `/v1/setup-tokens`          | signed in only | `SetupTokenCreate`   | `201 SetupTokenCreated`; `403` for keys        | live   |
 | POST   | `/v1/setup-tokens/exchange` | none           | `SetupTokenExchange` | `200 SetupTokenExchanged`, `401` used/expired  | live   |
 | GET    | `/v1/setup/mac.sh`          | none           |                      | `200` the Mac installer (`text/x-shellscript`) | live   |
+| GET    | `/v1/setup/windows.ps1`     | none           |                      | `200` the Windows installer (`text/plain`)     | live   |
 
 - The exchange marks the token used in the same statement that reads it, so it works once even
   when two devices race. Unknown, used and expired tokens get the same `401`. The new key is named
-  for the connection (`Mac collector`, `Health Auto Export`, `iPhone Shortcuts`) and is ingest only,
+  for the connection (`Mac collector`, `Windows collector`, `Health Auto Export`, `iPhone Shortcuts`)
+  and is ingest only,
   like any device key.
 - `GET /v1/setup/mac.sh` holds no secret; the token comes in as its argument. Without admin rights
   it uses the Mac's Node.js 22.13+ or downloads the official build into `~/.michael/node` (SHA-256
@@ -2873,6 +2883,17 @@ type SetupTokenExchanged = { connection: SetupConnection; secret: string /* "mk_
   (`COLLECTOR_REPO`, `COLLECTOR_REF`), swaps the token, writes the key to `~/.michael/michael.env`
   (mode 600), adds `~/.michael/Michael.command` and a login item, points to Full Disk Access when
   Terminal lacks it, and starts the collector.
+- `GET /v1/setup/windows.ps1` (`apps/api/src/setup/windows-script.ts`) holds no secret either; the
+  install line turns the download into a script block and passes the token to it, so the execution
+  policy does not apply and nothing is saved first. It runs ActivityWatch (starts it, or installs it
+  with winget `ActivityWatch.ActivityWatch`, else from the official GitHub release, checked against
+  the SHA-256 GitHub lists for the file), uses this PC's Node.js 22.13+ or downloads the official
+  zip into `%USERPROFILE%\.michael\node` (SHA-256 checked), downloads the collector like the Mac,
+  swaps the token, writes the key to `%USERPROFILE%\.michael\michael.env` (current user only),
+  writes `Michael.ps1` and registers a Scheduled Task for this user at sign in (or a line in the
+  Startup folder when Task Scheduler refuses), and starts it hidden; the log is
+  `.michael\collector.log`. No admin rights, except where Windows asks to install ActivityWatch.
+  Not yet run on a real Windows PC: CI checks the text, and PowerShell's parser when pwsh exists.
 - The web app uses the same endpoints for every device. On the device itself (iPhone) it mints and
   swaps at once and opens the app with the key: Health Auto Export's `com.HealthExport://automation`
   deep link (URL, `Authorization` header, metrics, cadence all filled), or the Michael shortcut via

@@ -7,8 +7,9 @@ import { startDndKeeper } from "./dnd";
 import { startFocusGuardian } from "./focus-guard";
 import { readers } from "./readers/index";
 
-// Michael's collector: runs on the user's own Mac, reads what the Mac already knows about the day
-// and posts it to Michael's timeline. It only reads; it never changes the files it looks at.
+// Michael's collector: runs on the user's own Mac or Windows PC, reads what the computer already
+// knows about the day and posts it to Michael's timeline. It only reads; it never changes the files
+// it looks at. On Windows it reads ActivityWatch and Claude Code (readersFor in readers/index.ts).
 // While watching it also enforces focus guards (focus-guard.ts): muted apps are closed when they
 // come to the front. --no-guard turns that off.
 
@@ -49,6 +50,24 @@ const saveState = (state: State) => {
   writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
 };
 
+type Totals = { inserted: number; duplicates: number; ignored: number };
+
+/** One body to a source's own ingest route (ActivityWatch's webhook). Same answer as the batch. */
+async function postTo(path: string, body: unknown, totals: Totals) {
+  const response = await fetch(`${API_URL}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${API_KEY}` },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(`API answered ${response.status}: ${(await response.text()).slice(0, 300)}`);
+  }
+  const r = (await response.json()) as { inserted: number; duplicates: number; ignored?: number };
+  totals.inserted += r.inserted;
+  totals.duplicates += r.duplicates;
+  totals.ignored += r.ignored ?? 0;
+}
+
 async function post(events: EventInput[]) {
   const totals = { inserted: 0, duplicates: 0, ignored: 0 };
   for (let i = 0; i < events.length; i += BATCH) {
@@ -81,6 +100,12 @@ async function runOnce(selected: typeof readers, dryRun: boolean, backfillDays: 
           tmpDir,
           log,
         });
+        const posts = result.posts ?? [];
+        if (dryRun && posts.length > 0) {
+          const read = posts.reduce((n, p) => n + p.count, 0);
+          log(`dry run: ${read} events in ${posts.length} posts to ${posts[0]?.path}`);
+          continue;
+        }
         if (dryRun) {
           const byType = new Map<string, number>();
           for (const e of result.events) byType.set(e.type, (byType.get(e.type) ?? 0) + 1);
@@ -88,6 +113,13 @@ async function runOnce(selected: typeof readers, dryRun: boolean, backfillDays: 
           const last = result.events.at(-1)?.start_at ?? "none";
           log(`dry run: ${JSON.stringify(Object.fromEntries(byType))} from ${first} to ${last}`);
           continue;
+        }
+        if (posts.length > 0) {
+          const totals: Totals = { inserted: 0, duplicates: 0, ignored: 0 };
+          for (const p of posts) await postTo(p.path, p.body, totals);
+          log(
+            `posted: ${totals.inserted} new, ${totals.duplicates} already there, ${totals.ignored} ignored`,
+          );
         }
         if (result.events.length > 0) {
           const totals = await post(result.events);
@@ -113,7 +145,7 @@ async function main() {
 
   pnpm --filter @michael/collector start [options]
 
-  --list               show the sources this Mac can read
+  --list               show the sources this computer can read
   --sources a,b        only these sources (default: all)
   --backfill-days N    how far back the first run reads (default 30)
   --once               run one pass and exit (default: repeat every --interval seconds)
@@ -124,7 +156,8 @@ async function main() {
   --no-dnd             never switch on Do Not Disturb, even when you ask for it in a nudge
 
   MICHAEL_API_URL      where to post (default http://localhost:8787)
-  MICHAEL_API_KEY      bearer key for the API (default dev-key)`);
+  MICHAEL_API_KEY      bearer key for the API (default dev-key)
+  MICHAEL_AW_URL       ActivityWatch's local server (default http://localhost:5600)`);
     return;
   }
   if (values.list) {

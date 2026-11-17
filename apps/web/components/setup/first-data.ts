@@ -2,7 +2,7 @@
 // with node:test. The page notes the latest arrival when the person starts (the baseline), then
 // asks again every few seconds: anything newer than the baseline proves the whole path works.
 
-export type WatchedConnection = "apple-watch" | "mac" | "iphone";
+export type WatchedConnection = "apple-watch" | "mac" | "windows" | "iphone";
 
 /** How long to wait before saying exactly which step to recheck. */
 export const LATE_AFTER_MS = 2 * 60_000;
@@ -48,6 +48,8 @@ export const RECHECK: Record<WatchedConnection, string> = {
   "apple-watch":
     "Nothing yet. In Health Auto Export, open Automations, tap Michael health, then Export Now. If it asks for Health access, allow it.",
   mac: "Nothing yet. Check the Michael line in Terminal finished without an error, then use your Mac for a minute.",
+  windows:
+    "Nothing yet. Check the line in PowerShell ended with Michael is running, then use your PC for a few minutes.",
   iphone:
     "Nothing yet. Open an app you picked. Then check Shortcuts, Automation lists it with Run Immediately.",
 };

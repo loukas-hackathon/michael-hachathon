@@ -107,3 +107,30 @@ test("POST /v1/setup-tokens answers the setup page and, for the Mac, the install
   );
   assert.equal(((await watch.json()) as { install_command: string | null }).install_command, null);
 });
+
+test("the Windows installer is public, and a Windows setup token answers the PowerShell line", async () => {
+  const res = await app.request("/v1/setup/windows.ps1");
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get("content-type") ?? "", /text\/plain/);
+  const script = await res.text();
+  assert.match(script, /param\(\[string\]\$Token = ""\)/);
+  assert.match(script, /\/v1\/setup-tokens\/exchange/);
+  assert.doesNotMatch(script, /__API__|__REPO__|__REF__/);
+
+  const { setupTokens } = await import("./setup");
+  const created = await runAsUser(
+    OWNER,
+    () => setupTokens.request("/setup-tokens", json({ connection: "windows" })),
+    "session",
+  );
+  assert.equal(created.status, 201);
+  const body = (await created.json()) as { token: string; install_command: string | null };
+  assert.match(body.install_command ?? "", /irm https?:\/\/\S+\/v1\/setup\/windows\.ps1\)\)\) ms_/);
+  assert.ok(body.install_command?.endsWith(` ${body.token}`));
+
+  // The token becomes a key named for Windows.
+  const swap = await app.request("/v1/setup-tokens/exchange", json({ token: body.token }));
+  assert.equal(((await swap.json()) as SetupTokenExchanged).connection, "windows");
+  const keys = await runAsUser(OWNER, () => listPersonalTokens(), "session");
+  assert.ok(keys.some((k) => k.name === "Windows collector"));
+});

@@ -161,6 +161,8 @@ export function createChromeReader(options: Options = {}): Reader {
     name: "chrome",
     source: "chrome",
     describe: "Chrome history: sites visited, time on each, and searches (no special permission)",
+    // The Mac's Chrome folder. On Windows the browser extension sends the same visits.
+    platforms: ["darwin"],
     async read(ctx) {
       const profiles = listProfiles(chromeDir);
       if (profiles.length === 0) throw new Error(`No Chrome history found in ${chromeDir}`);

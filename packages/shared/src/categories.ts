@@ -9,6 +9,7 @@ const APPS: Record<Exclude<AppCategory, "other">, string[]> = {
     // editors and IDEs
     "com.microsoft.VSCode",
     "com.microsoft.VSCodeInsiders",
+    "com.microsoft.visual-studio",
     "com.vscodium",
     "com.todesktop.230313mzl4w4u92", // Cursor
     "com.exafunction.windsurf",
@@ -28,6 +29,9 @@ const APPS: Record<Exclude<AppCategory, "other">, string[]> = {
     "org.alacritty",
     "com.github.wez.wezterm",
     "co.zeit.hyper",
+    "com.microsoft.WindowsTerminal",
+    "com.microsoft.powershell",
+    "com.microsoft.cmd",
     // developer tools
     "com.github.GitHubClient",
     "com.torusknot.SourceTreeNotMAS",
@@ -176,6 +180,8 @@ const APPS: Record<Exclude<AppCategory, "other">, string[]> = {
   ],
   system: [
     "com.apple.finder",
+    "com.microsoft.explorer",
+    "com.microsoft.taskmgr",
     "com.apple.systempreferences",
     "com.apple.Preferences",
     "com.apple.loginwindow",
@@ -557,6 +563,7 @@ const APP_NAMES: Record<string, string> = {
   code: "com.microsoft.VSCode",
   "visual studio code": "com.microsoft.VSCode",
   "vs code": "com.microsoft.VSCode",
+  "visual studio": "com.microsoft.visual-studio",
   cursor: "com.todesktop.230313mzl4w4u92",
   windsurf: "com.exafunction.windsurf",
   zed: "dev.zed.Zed",
@@ -571,6 +578,9 @@ const APP_NAMES: Record<string, string> = {
   ghostty: "com.mitchellh.ghostty",
   kitty: "net.kovidgoyal.kitty",
   alacritty: "org.alacritty",
+  "windows terminal": "com.microsoft.WindowsTerminal",
+  powershell: "com.microsoft.powershell",
+  "command prompt": "com.microsoft.cmd",
   wezterm: "com.github.wez.wezterm",
   "intellij idea": "com.jetbrains.intellij",
   pycharm: "com.jetbrains.pycharm",
@@ -710,18 +720,20 @@ const APP_NAMES: Record<string, string> = {
   dock: "com.apple.dock",
   spotlight: "com.apple.Spotlight",
   "activity monitor": "com.apple.ActivityMonitor",
+  "file explorer": "com.microsoft.explorer",
+  "task manager": "com.microsoft.taskmgr",
   "app store": "com.apple.AppStore",
 };
 
 /**
  * Bundle id of a well known app from its name ("Google Chrome", "Code.app", "Instagram"), or null.
- * Case and a trailing ".app" do not matter. Unknown names are null: we never guess.
+ * Case and a trailing ".app" (Mac) or ".exe" (Windows) do not matter. Unknown names are null: we never guess.
  */
 export function bundleIdForAppName(name: string): string | null {
   const key = name
     .trim()
     .toLowerCase()
-    .replace(/\.app$/, "");
+    .replace(/\.(app|exe)$/, "");
   return Object.hasOwn(APP_NAMES, key) ? (APP_NAMES[key] ?? null) : null;
 }
 
