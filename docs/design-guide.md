@@ -105,6 +105,8 @@ Inside the app, the system font. Outside the app (slides, film, website, brand p
 - Blur only on floating controls and sheet backdrops, as on iOS: one recipe, `.m-float` in
   `globals.css` (tab bar, Focus pill, meeting pill, the answer card under Michael's island), with a
   solid `--m-fill` fallback where the browser cannot blur or the user asks for less transparency.
+  Floating text that sits over content (the answer card, the hint under Mi) adds `.m-solid`: the
+  solid `--m-fill` fallback always, so nothing behind it shows through its words.
   Never glass on glass, never glass on content. The island itself is solid black, a place.
 
 ## Components

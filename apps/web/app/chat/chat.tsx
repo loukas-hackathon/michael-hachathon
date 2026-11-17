@@ -12,8 +12,10 @@ import { ScreenHeader } from "@/components/screen";
 import { Bone } from "@/components/skeleton";
 import { useWide } from "@/components/use-wide";
 import { TALK_HINT, TalkButton, useTalk } from "@/components/voice/conversation-sheet";
+import { HoldHint } from "@/components/voice/hold-to-talk";
 import { PushToTalk } from "@/components/voice/push-to-talk";
 import { speakable } from "@/components/voice/speech";
+import { useOfferShowing, WakeOffer } from "@/components/voice/wake-offer";
 import { withoutUndoLine } from "@/lib/chat-undo";
 import { formatDayLabel, formatStamp, sameAthensDay } from "@/lib/format";
 import { ActionChips } from "./action-chips";
@@ -106,6 +108,10 @@ export function Chat({
   const { atEnd, atEndRef, toEnd } = useLatest();
   const keyboard = useKeyboardInset();
   const talk = useTalk(elevenlabs);
+  // After his first answer here, once: "Hold me to talk." under the Mi button (not while Michael's
+  // offer to listen for his name is still on screen: one thing at a time).
+  const offerShowing = useOfferShowing();
+  const answered = current.lines.some((l) => l.role === "assistant" && l.id !== streamingId);
 
   // From the You sheet: the conversation opens at once and starts on the first tap (iOS only lets
   // Michael's voice play from a tap on this page). The address drops ?talk so a reload does not reopen it.
@@ -227,6 +233,7 @@ export function Chat({
           }
           title="Chat"
           pinned
+          miHint={answered && !offerShowing ? <HoldHint /> : null}
           actions={
             <HeaderButton label="New chat" onClick={startNew}>
               <path d="M12 6v12M6 12h12" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
@@ -357,12 +364,15 @@ export function Chat({
                 ) : null}
               </div>
             ) : (
-              // First visit only: the two voice buttons do different things, said once.
-              <Hint id={TALK_HINT} className="mb-1 px-1">
-                <span className="lg:hidden">Tap Talk to speak with me.</span>
-                <span className="hidden lg:inline">Click Talk to speak with me.</span> Hold the mic to dictate
-                a message.
-              </Hint>
+              // The first visit: Michael offers to listen for his name, once. Then, also once, the
+              // two voice buttons do different things, said once.
+              <WakeOffer place="chat" className="mb-2">
+                <Hint id={TALK_HINT} className="mb-1 px-1">
+                  <span className="lg:hidden">Tap Talk to speak with me.</span>
+                  <span className="hidden lg:inline">Click Talk to speak with me.</span> Hold the mic to
+                  dictate a message.
+                </Hint>
+              </WakeOffer>
             )}
             {/* At 200% text the field keeps a usable width and the buttons wrap under it. */}
             <div className="m-field flex flex-wrap items-end justify-end gap-2 rounded-card bg-fill p-1.5 pl-4">

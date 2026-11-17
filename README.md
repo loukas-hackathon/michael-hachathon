@@ -25,6 +25,25 @@ columns and keyboard shortcuts. Same account, same data, on both.
 | **The whole experience from zero**         | On the login page tap **Continue with email**, then **Create account**. No email confirmation. You land in onboarding and set your goals in under a minute.            |
 | **Michael inside Claude**                  | claude.ai: Settings, Connectors, Add custom connector, paste `https://api-production-16521a26.up.railway.app/mcp`, sign in, tap Allow. Then ask "How is my day going?" |
 
+## New since the hackathon (17 November)
+
+| Try this                         | How                                                                                                                                                                                                                                                                                                                                                  |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Yo Michael**                   | Say "Michael", "yo Michael" or "hey Michael" while the app is open, and he answers by voice on the screen you are on. Turn it on when Michael offers it the first time you open **Chat**, or in **You**, "Yo Michael". Best in Chrome on a laptop or Android; Safari on iPhone and Mac works too. Try "Michael, how is my day going?" in one breath. |
+| **Hold Mi to talk**              | Press and hold the **Mi** button (top right, or the sidebar on a laptop), speak, let go. Works everywhere, including the iPhone Home Screen app, where saying his name is not allowed by iOS.                                                                                                                                                        |
+| **The waiting list**             | https://michael-zeta-sand.vercel.app/join : how many hours you lose a week, your email, done. Then your place in the queue and your invite link: each friend who joins moves you up 5 places.                                                                                                                                                        |
+| **Admin: who joined**            | https://michael-zeta-sand.vercel.app/waitlist : the list, the numbers and a CSV. Needs `ADMIN_EMAILS` set once (below).                                                                                                                                                                                                                              |
+| **Admin: numbers for investors** | https://michael-zeta-sand.vercel.app/traction : the waiting list, sign ups, activation, weekly active, retention and time won back, with **Copy for investors**. No names on it, so it is safe to show on screen. Needs `ADMIN_EMAILS`.                                                                                                              |
+| **Windows laptops**              | **You**, **Windows PC**, **Connect this PC**: paste one line into PowerShell. Michael then sees which apps you use and when (app names only, never window titles). Websites already work through the browser extension in Chrome and Edge. Not yet tried on a real Windows PC.                                                                       |
+
+**Admins, once:** on Railway, service `api`, **Variables**, set `ADMIN_EMAILS` to the founders'
+sign in emails, comma separated. Then sign in with one of them and open `/waitlist` or `/traction`
+(`docs/setup-manual.md`, step 2c). Everyone else sees "not found".
+
+**If Yo Michael does not answer:** open `?debug=voice` on any screen (for example
+https://michael-zeta-sand.vercel.app/?debug=voice) and tap the small island: it shows what he last
+heard and why a session ended. `?debug=off` hides it again.
+
 ## What to look at
 
 1. **Today:** one score (the share of your planned goal time you actually spent), the minutes lost

@@ -23,6 +23,11 @@ const WAKE = new RegExp(`^\\s*${LEAD}${NAME}(?=$|[\\s,.!?:;])[\\s,.!?:;]*(.*)$`,
 export type Wake = {
   /** What the user said after the name, ready to send; null when it was only the name. */
   first: string | null;
+  /**
+   * Held, not spoken: the Mi button is pressed and held (components/voice/hold-to-talk.ts). He
+   * listens while it is held and answers once it is let go.
+   */
+  hold?: boolean;
 };
 
 /**
@@ -60,10 +65,22 @@ export function wakeIn(e: {
 /** After the name, wait this long for the rest of the sentence before acting on an unfinished phrase. */
 export const WAKE_SETTLE_MS = 900;
 
-/** A listening session shorter than this, with nothing heard, counts as a failure for the backoff. */
+/** A listening session shorter than this, with nothing heard, counts as a quick end. */
 export const SHORT_SESSION_MS = 2000;
 /** Consecutive failures before the loop gives up until the app is opened again or the switch flips. */
 export const MAX_FAILURES = 6;
+/**
+ * The gap between one listening session and the next after the browser ends one on its own.
+ * Safari ends sessions every few seconds and Chrome after about a minute: the next starts well
+ * inside 300ms, so a name said straight after is heard by the new one.
+ */
+export const RESTART_MS = 100;
+/**
+ * Quick clean ends (no error, nothing heard, under SHORT_SESSION_MS) that still restart at once.
+ * iPhone Safari ends some sessions within a second or two of silence: that is how it listens, not a
+ * failure, so only a long run of them backs off.
+ */
+export const QUICK_FREE = 4;
 
 /**
  * How long to wait before listening again. Browsers end a session on their own every minute or
@@ -72,9 +89,32 @@ export const MAX_FAILURES = 6;
  * keeps failing never spins the battery down.
  */
 export function restartDelay(failures: number): number | null {
-  if (failures <= 0) return 250;
+  if (failures <= 0) return RESTART_MS;
   if (failures > MAX_FAILURES) return null;
   return Math.min(60_000, 1000 * 2 ** (failures - 1));
+}
+
+export type LoopCount = { failures: number; quick: number };
+
+/**
+ * What one session's end means for the next: errors back off at once; quick clean ends restart at
+ * once for the first QUICK_FREE in a row, then back off as errors do; a session that heard
+ * something or ran its course resets both counts. `delay` null: rest until the app is opened again.
+ */
+export function nextRestart(
+  count: LoopCount,
+  end: { errored: boolean; short: boolean },
+): LoopCount & { delay: number | null } {
+  if (end.errored) {
+    const failures = count.failures + 1;
+    return { failures, quick: count.quick, delay: restartDelay(failures) };
+  }
+  if (end.short) {
+    const quick = count.quick + 1;
+    const over = Math.max(0, quick - QUICK_FREE);
+    return { failures: count.failures, quick, delay: restartDelay(over) };
+  }
+  return { failures: 0, quick: 0, delay: RESTART_MS };
 }
 
 /** Errors that end listening for good until the user acts: no microphone, or no recogniser here. */
@@ -272,3 +312,172 @@ const heard = flag();
 export const setWakeHeard = heard.set;
 export const isWakeHeard = heard.get;
 export const useWakeHeard = heard.use;
+
+// ---------- where it can work (pure) ----------
+
+/** What decides whether "Yo Michael" can run on this device, read in the browser. */
+export type WakeEnv = {
+  /** The browser has a speech recogniser (SpeechRecognition or webkitSpeechRecognition). */
+  recognition: boolean;
+  /** It refused to run here before (remembered per device, components/voice/speech.ts). */
+  refused: boolean;
+  /** An app added to the iPhone Home Screen: iOS refuses web speech recognition there. */
+  iosHomeScreen: boolean;
+  /** The microphone permission as the browser reports it; "unknown" where it cannot say. */
+  mic: "granted" | "denied" | "prompt" | "unknown";
+};
+
+export type WakeSupport = "ok" | "home-screen" | "no-recogniser" | "mic-blocked";
+
+export function wakeSupport(env: WakeEnv): WakeSupport {
+  if (env.iosHomeScreen) return "home-screen";
+  if (!env.recognition || env.refused) return "no-recogniser";
+  if (env.mic === "denied") return "mic-blocked";
+  return "ok";
+}
+
+export const HOME_SCREEN_LINE =
+  "On iPhone, hold the Mi button to talk. Saying my name needs Safari or Chrome.";
+export const NO_RECOGNISER_LINE = "This browser can't listen for my name. Hold the Mi button to talk.";
+
+/** How to let the microphone back in, in one line, for the browser in front of the user. */
+export function micBlockedLine(ua: string): string {
+  const ios = /iPhone|iPad|iPod/.test(ua);
+  if (ios && /CriOS/.test(ua)) return "Microphone blocked. Allow it in Settings, Apps, Chrome, Microphone.";
+  if (ios) return "Microphone blocked. Tap aA in the address bar, Website Settings, Microphone, Allow.";
+  if (/Firefox\//.test(ua)) return "Microphone blocked. Click the icon left of the address and allow it.";
+  if (/Chrome\/|Chromium\/|Edg\//.test(ua)) {
+    const verb = /Android/.test(ua) ? "Tap" : "Click";
+    return `Microphone blocked. ${verb} the icon left of the address and allow it.`;
+  }
+  if (/Safari\//.test(ua) && /Macintosh/.test(ua)) {
+    return "Microphone blocked. In the Safari menu, open Settings for this website and allow it.";
+  }
+  return "Microphone blocked. Allow it for this site in your browser settings.";
+}
+
+/** The one line that says why "Yo Michael" cannot run here and what to do; null when it can. */
+export function supportLine(support: WakeSupport, ua: string): string | null {
+  if (support === "home-screen") return HOME_SCREEN_LINE;
+  if (support === "no-recogniser") return NO_RECOGNISER_LINE;
+  if (support === "mic-blocked") return micBlockedLine(ua);
+  return null;
+}
+
+// ---------- the offer: asked once, at the right moment ----------
+
+/**
+ * Michael offers "Yo Michael" once: the first time Chat opens, or on Today once the user has had
+ * him for a day and never opened Chat. Where saying his name cannot work, he offers holding the Mi
+ * button instead; where the microphone is blocked, he says how to allow it. After any choice,
+ * never again on this device.
+ */
+export type OfferChoice = "on" | "no";
+export type OfferKind = "wake" | "hold" | "blocked";
+export const DAY_MS = 24 * 60 * 60 * 1000;
+
+export function offerKind(o: {
+  place: "chat" | "today";
+  choice: OfferChoice | null;
+  wakeOn: boolean;
+  chatOpened: boolean;
+  firstSeen: number | null;
+  now: number;
+  support: WakeSupport;
+}): OfferKind | null {
+  if (o.choice || o.wakeOn) return null;
+  if (o.place === "today" && (o.chatOpened || o.firstSeen === null || o.now - o.firstSeen < DAY_MS)) {
+    return null;
+  }
+  if (o.support === "ok") return "wake";
+  if (o.support === "mic-blocked") return "blocked";
+  return "hold";
+}
+
+export const OFFER_WAKE_LINE = "Want to just say my name to talk to me?";
+export const OFFER_ON_LINE = "On. Say my name any time the app is open.";
+export const OFFER_HOLD_ON_LINE = "Ready. Hold the Mi button and talk.";
+
+const OFFER_KEY = "michael.wake.offer";
+const SEEN_KEY = "michael.firstSeen";
+const CHAT_KEY = "michael.chatOpened";
+
+function readKey(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeKey(key: string, value: string): void {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Private mode: for this visit only.
+  }
+}
+
+export function readOfferChoice(): OfferChoice | null {
+  const v = readKey(OFFER_KEY);
+  return v === "on" || v === "no" ? v : null;
+}
+
+export function setOfferChoice(choice: OfferChoice): void {
+  writeKey(OFFER_KEY, choice);
+}
+
+/** When this device first opened Today or Chat, set on the first call. */
+export function firstSeen(now: number): number {
+  const v = Number(readKey(SEEN_KEY));
+  if (Number.isFinite(v) && v > 0) return v;
+  writeKey(SEEN_KEY, String(now));
+  return now;
+}
+
+export const readChatOpened = (): boolean => readKey(CHAT_KEY) === "1";
+export const markChatOpened = (): void => writeKey(CHAT_KEY, "1");
+
+// ---------- the diagnostic (?debug=voice) ----------
+
+/** What the listening loop last did, for the founder to debug on his phone. */
+export type WakeDebug = {
+  /** The last words the recogniser heard, wake or not. */
+  heard: string;
+  heardAt: number;
+  /** Listening sessions started since the page loaded. */
+  sessions: number;
+  /** How the last session ended: "end", or the error code. */
+  lastEnd: string;
+  /** From the last end to the next start, in ms. */
+  gapMs: number | null;
+};
+
+let debug: WakeDebug = { heard: "", heardAt: 0, sessions: 0, lastEnd: "", gapMs: null };
+const debugListeners = new Set<() => void>();
+
+export function noteWakeDebug(patch: Partial<WakeDebug>): void {
+  debug = { ...debug, ...patch };
+  for (const l of debugListeners) l();
+}
+
+export const readWakeDebug = (): WakeDebug => debug;
+
+export function useWakeDebug(): WakeDebug {
+  return useSyncExternalStore(
+    (l) => {
+      debugListeners.add(l);
+      return () => debugListeners.delete(l);
+    },
+    () => debug,
+    () => debug,
+  );
+}
+
+/** The diagnostic shows with ?debug=voice in the address, and stays on for the visit. */
+export function wantsVoiceDebug(search: string, remembered: boolean): boolean {
+  const v = new URLSearchParams(search).get("debug");
+  if (v === "voice") return true;
+  if (v === "off") return false;
+  return remembered;
+}
