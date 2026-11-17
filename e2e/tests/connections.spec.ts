@@ -13,8 +13,10 @@ test("Apple Watch: the setup steps show for everyone, with or without ?preview=1
 
   for (const path of ["/you/connections/apple-watch", "/you/connections/apple-watch?preview=1"]) {
     await page.goto(path);
-    await expect(page.getByText("Not connected")).toBeVisible();
-    await expect(page.getByText(/Free for 7 days, then Premium/)).toBeVisible();
+    // Scoped to the page: while the route streams, Next keeps a hidden copy of the content for a moment.
+    const main = page.getByRole("main");
+    await expect(main.getByText("Not connected")).toBeVisible();
+    await expect(main.getByText(/Free for 7 days, then Premium/)).toBeVisible();
     // On a laptop the QR code carries it to the iPhone.
     await expect(page.getByRole("button", { name: "Show the code" })).toBeVisible();
     await expect(page.getByText("Coming soon. I will tell you when it is ready.")).toHaveCount(0);
