@@ -82,8 +82,12 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
       getGoogleCalendar().catch(() => null),
     ]);
     const connected = integration?.status === "connected" || sp.connected === "google_calendar";
-    if (connected && sp.sync === "pending") await syncGoogleCalendar(28).catch(() => null);
-    const back = sp.connected === "google_calendar" ? "connected" : failed ? "failed" : null;
+    // A failure flag next to a calendar that is in (Google's redirect landed twice) is a success:
+    // say so, and read the four weeks the first landing would have read.
+    const arrived = sp.connected === "google_calendar" || (failed && connected);
+    if (connected && (sp.sync === "pending" || (failed && arrived)))
+      await syncGoogleCalendar(28).catch(() => null);
+    const back = arrived ? "connected" : failed ? "failed" : null;
     return (
       <Talk elevenlabs={elevenlabs} calendar={connected} back={back} calendarHref={calendarHref(TALK_PATH)} />
     );
@@ -98,7 +102,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
   if (step === "goals") {
     // Straight back from Google: read the last four weeks here, behind loading.tsx's "Reading your
     // calendar", rather than on Google's page. A failed read still shows the starters.
-    if (calendarOn && sp.sync === "pending") await syncGoogleCalendar(28).catch(() => null);
+    if (calendarOn && (sp.sync === "pending" || failed)) await syncGoogleCalendar(28).catch(() => null);
     const suggestions = calendarOn ? await getGoalSuggestions() : [];
     return (
       <GoalsStep
@@ -131,7 +135,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
       line={
         insight
           ? undefined
-          : failed
+          : failed && !calendarOn
             ? "Google Calendar didn't connect. Try once more below."
             : "All optional, one tap each. The more I see, the better I coach."
       }
