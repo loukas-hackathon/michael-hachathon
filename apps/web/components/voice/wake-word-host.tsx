@@ -45,7 +45,7 @@ import { isIosHomeScreenApp, markRefused, type Recognition, recognitionCtor, unl
 // - Firefox: no recogniser, so the switch is hidden.
 
 /** Screens where Michael already holds the microphone or there is no user yet. */
-const HIDDEN_ON = ["/onboarding", "/connect", "/stage", "/setup", "/login", "/auth"];
+const HIDDEN_ON = ["/onboarding", "/connect", "/stage", "/setup", "/login", "/auth", "/join"];
 
 const MIC_COPY = "I need the microphone to hear my name.";
 const REFUSED_COPY = "This browser won't let me listen for my name.";
