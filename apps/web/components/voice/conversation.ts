@@ -3,7 +3,7 @@
 import { useSyncExternalStore } from "react";
 import { sendLine } from "@/app/chat/chat-session";
 import { hapticTwice } from "@/components/haptics";
-import { micBlockedLine } from "@/lib/wake-word";
+import { micBlockedLine, traceVoice } from "@/lib/wake-word";
 import { playEarcon } from "./earcons";
 import {
   checkRecorderPath,
@@ -12,6 +12,7 @@ import {
   primeRecorder,
   type Recording,
   releaseMic,
+  resetVoiceAudio,
   startRecording,
   startSideMeter,
   transcribeErrorCopy,
@@ -210,8 +211,15 @@ export function startConversation(opts: {
 }): void {
   elevenlabs = opts.elevenlabs;
   released = false;
-  // A new hold cuts in on whatever he was saying.
-  if (opts.hold) stopSpeaking();
+  // A new hold cuts in on whatever he was saying, and on anything left half done: a turn that never
+  // finished (a microphone that never opened, a reply that never ended) can never block the next.
+  if (opts.hold) {
+    stopSpeaking();
+    gen++;
+    clearTimers();
+    dropRecogniser();
+    dropRecording();
+  }
   unlockAudio();
   // Inside the tap too: the level meter's audio context may only start in a gesture on iOS.
   primeRecorder();
@@ -223,6 +231,7 @@ export function startConversation(opts: {
   }
   const recorded = mode === "recorder";
   const hold = opts.hold === true;
+  if (hold) traceVoice(`hold, ${recorded ? "recorded for the API" : "browser recogniser"}`);
   set({
     ...OFF,
     recorded,
@@ -434,6 +443,7 @@ function listenRecorded() {
   set({ phase: "listening", heard: "", level: 0 });
   const held = state.hold;
   let spoke = false;
+  const opening = Date.now();
   startRecording({
     onLevel: (level) => {
       if (mine === gen) set({ level });
@@ -452,6 +462,7 @@ function listenRecorded() {
   })
     .then((r) => {
       if (mine !== gen || state.phase !== "listening") return r.cancel();
+      traceVoice(`mic open in ${Date.now() - opening} ms${r.metered ? "" : ", no meter"}`);
       recording = r;
       // Let go while the microphone was still opening: the turn ends now.
       if (held) {
@@ -469,7 +480,10 @@ function listenRecorded() {
     })
     .catch((err: unknown) => {
       if (mine !== gen) return;
-      endConversation(micCopy(err instanceof MicError ? err.code : "unknown"));
+      const code = err instanceof MicError ? err.code : "unknown";
+      traceVoice(`mic failed: ${code}`);
+      resetVoiceAudio();
+      endConversation(micCopy(code));
     });
 }
 
@@ -485,14 +499,21 @@ async function finishRecordedTurn() {
   // The microphone is off while Michael thinks and speaks: his voice is never recorded.
   releaseMic();
   if (mine !== gen) return;
+  traceVoice(blob ? `recorded ${Math.round(blob.size / 1024)} KB ${blob.type}` : "recorded nothing");
   if (!blob) {
+    // Nothing came out of the recorder: the next hold opens a fresh microphone.
+    resetVoiceAudio();
     if (state.hold) return heldMiss(HOLD_SHORT_COPY);
     set({ phase: "listening" });
     return listen();
   }
   const res = await transcribeRecording(blob);
   if (mine !== gen) return;
-  if (!res.ok) return endConversation(transcribeErrorCopy(res.code));
+  traceVoice(res.ok ? `heard: "${res.text}"` : `transcribe failed: ${res.code}`);
+  if (!res.ok) {
+    resetVoiceAudio();
+    return endConversation(transcribeErrorCopy(res.code));
+  }
   if (!res.text && state.hold) return heldMiss(HOLD_MISSED_COPY);
   if (!res.text) {
     // Only noise: keep listening, within the same quiet limit (woken by name, it says so once).
@@ -518,6 +539,7 @@ async function finishTurn() {
 async function answer(text: string, mine: number) {
   const res = await sendLine(text, { spoken: true });
   if (mine !== gen) return;
+  traceVoice(!res ? "no answer" : res.ok ? "answered" : `answer failed: ${res.error}`);
   if (!res) return endConversation();
   // Woken by name and offline: the line says so plainly, as the island shows it.
   const error =
@@ -526,6 +548,7 @@ async function answer(text: string, mine: number) {
   set({ phase: "speaking", heard: "", turns: state.turns + 1, misses: 0 });
   if (state.bargeIn) listen(true);
   await speakReply(saying, res.ok && elevenlabs);
+  if (mine === gen) traceVoice("said it");
   if (mine !== gen || phase() !== "speaking") return;
   // One calm line stays on screen for what went wrong (no network, a refusal); he has just said it.
   if (!res.ok) return endConversation(saying);
@@ -595,7 +618,11 @@ const quietNote = (): string | null => (state.wake ? null : QUIET_COPY);
 const pauseMs = (): number => (state.wake && state.turns === 0 ? WAKE_PAUSE_MS : TURN_PAUSE_MS);
 
 /** The line for a microphone that will not open, in the island's words when woken by name. */
+/** The microphone did not open in time (iOS can leave it pending after the app was away). */
+export const MIC_TIMEOUT_COPY = "The microphone didn't open. Hold me again.";
+
 function micCopy(code: string): string | null {
+  if (code === "timeout") return MIC_TIMEOUT_COPY;
   if (state.wake && (code === "not-allowed" || code === "service-not-allowed")) {
     return typeof navigator === "undefined" ? WAKE_MIC_COPY : micBlockedLine(navigator.userAgent);
   }

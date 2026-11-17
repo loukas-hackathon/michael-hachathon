@@ -555,6 +555,11 @@ async function speakWithElevenLabs(text: string, gen: number, opts: SpeakOptions
 }
 
 /** Reads Michael's reply aloud: ElevenLabs when the API has it, else (or on any failure) the browser. */
+/** The longest a reply may take to say: 6 s to start (a voice fetched from the API) plus 120 ms a character. */
+export function replyCeilingMs(line: string): number {
+  return Math.min(90_000, 6000 + line.length * 120);
+}
+
 export async function speakReply(text: string, elevenlabs: boolean, opts: SpeakOptions = {}): Promise<void> {
   if (typeof window === "undefined") return;
   const line = speakable(text);
@@ -571,10 +576,19 @@ export async function speakReply(text: string, elevenlabs: boolean, opts: SpeakO
   // The wake word never listens while he talks: he must not wake himself.
   voicesOut++;
   setWakeHold("speaking", true);
+  // iOS can leave audio that was never allowed to play pending for good: after the time the line
+  // takes to say, with a margin, the reply counts as said and the conversation moves on.
+  let ceilingTimer: ReturnType<typeof setTimeout> | undefined;
+  const ceiling = new Promise<"ceiling">((resolve) => {
+    ceilingTimer = setTimeout(() => resolve("ceiling"), replyCeilingMs(line));
+  });
   try {
-    if ((await Promise.race([said, stopped])) === "stopped") return;
+    const end = await Promise.race([said, stopped, ceiling]);
+    if (end === "stopped") return;
+    if (end === "ceiling" && gen === generation) stopSpeaking();
     settle = null;
   } finally {
+    clearTimeout(ceilingTimer);
     voicesOut--;
     if (voicesOut === 0) setWakeHold("speaking", false);
   }

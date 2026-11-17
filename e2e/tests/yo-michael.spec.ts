@@ -19,7 +19,8 @@ test.use({
   permissions: ["microphone"],
 });
 
-/** conversation.ts HOLD_MISSED_COPY (that module needs the app's path aliases). */
+/** conversation.ts MIC_TIMEOUT_COPY and HOLD_MISSED_COPY (that module needs the app's path aliases). */
+const MIC_TIMEOUT_COPY = "The microphone didn't open. Hold me again.";
 const HOLD_MISSED_COPY = "I didn't catch that. Hold me and speak.";
 const REPLY = "Forty seven minutes of deep work so far. Block 15:00 to finish it.";
 const offer = (page: Page) => page.getByTestId("wake-offer");
@@ -231,4 +232,64 @@ test("after his first answer in Chat, once: Hold me to talk, under Mi", async ({
   await page.reload();
   await expect(field).toBeVisible();
   await expect(page.getByTestId("hold-hint")).toHaveCount(0);
+});
+
+test("iPhone Home Screen app: hold after hold keeps working, and ?debug=voice shows each step", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  let n = 0;
+  await page.route("**/chat/transcribe", async (route: Route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: { available: true } });
+    n++;
+    return route.fulfill({ json: { text: `Question ${n}`, language: "en" } });
+  });
+  await streamReply(page, "Train at 18:00.");
+  await stubSpeech(page, { standalone: true });
+  await enterDemo(page);
+  await page.goto("/?debug=voice");
+  for (let i = 1; i <= 4; i++) {
+    await holdMi(page);
+    await expect(island(page), `hold ${i}`).toHaveAttribute("data-phase", "listening");
+    await page.waitForTimeout(700);
+    await page.mouse.up();
+    await expect(page.getByTestId("wake-reply"), `hold ${i}`).toHaveText("Train at 18:00.");
+    await page.waitForTimeout(i % 2 ? 400 : 7000);
+  }
+  expect(n).toBe(4);
+  await tap(page.getByTestId("wake-debug"));
+  const steps = page.getByTestId("voice-steps");
+  await expect(steps).toContainText("hold, recorded for the API");
+  await expect(steps).toContainText(/mic open in \d+ ms/);
+  await expect(steps).toContainText('heard: "Question 4"');
+  await expect(steps).toContainText("answered");
+});
+
+test("iPhone Home Screen app: a microphone that never opens says so, and the next hold works", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await stubTranscribe(page, "How is my day going?");
+  await streamReply(page, "Train at 18:00.");
+  await stubSpeech(page, { standalone: true });
+  // The first getUserMedia never answers (iOS after the app was in the background); later ones do.
+  await page.addInitScript(() => {
+    const real = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    let calls = 0;
+    navigator.mediaDevices.getUserMedia = (c?: MediaStreamConstraints) => {
+      calls++;
+      return calls === 1 ? new Promise<MediaStream>(() => {}) : real(c);
+    };
+  });
+  await enterDemo(page);
+  await holdMi(page);
+  await expect(island(page)).toHaveAttribute("data-phase", "listening");
+  await page.mouse.up();
+  await expect(page.getByText(MIC_TIMEOUT_COPY)).toBeVisible({ timeout: 10_000 });
+  await page.waitForTimeout(6500);
+  await holdMi(page);
+  await expect(island(page)).toHaveAttribute("data-phase", "listening");
+  await page.waitForTimeout(800);
+  await page.mouse.up();
+  await expect(page.getByTestId("wake-reply")).toHaveText("Train at 18:00.");
 });

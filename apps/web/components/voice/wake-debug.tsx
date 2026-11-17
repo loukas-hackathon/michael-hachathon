@@ -3,10 +3,11 @@
 import { useEffect, useState } from "react";
 import { useWakeArmed, useWakeDebug, wantsVoiceDebug } from "@/lib/wake-word";
 
-// The founder's diagnostic for "Yo Michael" on a real phone: open any screen with ?debug=voice and,
-// while the wake word listens, a small island at the top says "Armed". Tap it to see what the
-// recogniser last heard, how many sessions it has started, how the last one ended and how quickly
-// the next began. Hidden unless asked for, in every build; ?debug=off hides it again.
+// The founder's diagnostic for talking to Michael on a real phone: open any screen with ?debug=voice
+// and a small pill sits at the top ("Armed" while the wake word listens, "Voice" otherwise). Tap it
+// to see what the recogniser last heard, its sessions and restarts, and the last steps of a hold
+// (how long the microphone took to open, what was recorded, what the API heard, the answer).
+// Hidden unless asked for, in every build; ?debug=off hides it again.
 
 const KEY = "michael.debug.voice";
 
@@ -51,7 +52,7 @@ export function WakeDebugPill() {
     return () => clearInterval(t);
   }, [open]);
 
-  if (!on || !armed) return null;
+  if (!on) return null;
   return (
     <div className="pointer-events-none fixed inset-x-0 top-[calc(var(--m-safe-top)+8px)] z-40 flex flex-col items-center px-4 lg:pl-[calc(16rem+16px)]">
       <button
@@ -61,7 +62,7 @@ export function WakeDebugPill() {
         aria-expanded={open}
         className="press pointer-events-auto flex h-7 items-center rounded-full bg-[#000] px-3 text-caption font-semibold text-[#fff] tnum"
       >
-        Armed {d.sessions}
+        {armed ? `Armed ${d.sessions}` : "Voice"}
       </button>
       {open ? (
         <dl
@@ -78,6 +79,19 @@ export function WakeDebugPill() {
           <dd className="text-label">{d.lastEnd || "None yet"}</dd>
           <dt className="text-label-2">Restart gap</dt>
           <dd className="text-label tnum">{d.gapMs === null ? "None yet" : `${d.gapMs} ms`}</dd>
+          <dt className="col-span-2 mt-1 text-label-2">Last steps</dt>
+          <dd data-testid="voice-steps" className="col-span-2 min-w-0 break-words text-label tnum">
+            {d.steps.length ? (
+              <ol>
+                {d.steps.map((step, i) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: a log; steps can repeat word for word.
+                  <li key={i}>{step}</li>
+                ))}
+              </ol>
+            ) : (
+              "Hold Mi to talk, then look here."
+            )}
+          </dd>
         </dl>
       ) : null}
     </div>
